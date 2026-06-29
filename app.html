@@ -6922,6 +6922,7 @@ function buildEvalTable(form, periodIdx, studentId) {
   const period = form.periods[periodIdx];
   const scores = period ? period.scores : {};
   const notes = period ? period.notes : {};
+  const targets = period ? (period.targets || {}) : {};
 
   // editable date header
   const dateRow = period ? `
@@ -6941,14 +6942,21 @@ function buildEvalTable(form, periodIdx, studentId) {
   const rows = form.rows.map(row => {
     const score = scores[row.id] !== undefined ? scores[row.id] : '';
     const note = notes[row.id] || '';
+    const target = targets[row.id] !== undefined ? targets[row.id] : '';
     const pct = score !== '' ? Math.round((parseFloat(score) / row.maxScore) * 100) : 0;
+    const tgtPct = target !== '' ? Math.round((parseFloat(target) / row.maxScore) * 100) : null;
     const barColor = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'rgba(251,191,36,1)' : 'var(--red)';
+    const gapBadge = tgtPct !== null && score !== '' ? (() => {
+      const gap = tgtPct - pct;
+      if (gap <= 0) return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(62,207,142,.15);color:var(--green)">✓ هدف</span>`;
+      return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(251,191,36,.15);color:rgba(251,191,36,1)">${fa(gap)}٪ مانده</span>`;
+    })() : '';
     return `
       <tr>
         <td style="padding:8px 10px;font-size:12px;color:var(--text);font-weight:500;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td>
         <td style="padding:8px 6px;border-bottom:1px solid var(--border)">
           ${period ? `
-            <div style="display:flex;align-items:center;gap:6px">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               <input type="number" min="0" max="${row.maxScore}" value="${score}"
                 style="width:50px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text);text-align:center"
                 onchange="updateEvalScore(${form.id},${row.id},this.value,${periodIdx})">
@@ -6956,6 +6964,7 @@ function buildEvalTable(form, periodIdx, studentId) {
               <div style="width:34px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
                 <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px"></div>
               </div>
+              ${gapBadge}
             </div>` : `<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>`}
         </td>
         <td style="padding:8px 6px;border-bottom:1px solid var(--border)">
@@ -6963,10 +6972,33 @@ function buildEvalTable(form, periodIdx, studentId) {
             style="width:100%;padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text)"
             onchange="updateEvalNote(${form.id},${row.id},this.value,${periodIdx})">` : ''}
         </td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--border)">
+          ${period ? `<input type="number" min="0" max="${row.maxScore}" value="${target}" placeholder="هدف"
+            style="width:46px;padding:3px 5px;font-size:11px;border:1px solid rgba(96,165,250,.3);border-radius:5px;background:rgba(96,165,250,.05);color:var(--blue);text-align:center"
+            title="هدف این شاخص"
+            onchange="updateEvalTarget(${form.id},${row.id},this.value,${periodIdx})">` : ''}
+        </td>
       </tr>`;
   }).join('');
 
   const totalScore = evalPeriodTotal(form, period);
+
+  // summary + actions section
+  const coachSection = period ? `
+    <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">📝 جمع‌بندی مربی</div>
+        <textarea rows="2" placeholder="نظر کلی، مهم‌ترین نکات این دوره..."
+          style="width:100%;padding:7px 10px;font-size:12px;border:1px solid var(--border);border-radius:7px;background:var(--bg3);color:var(--text);resize:vertical;font-family:inherit;line-height:1.7"
+          onchange="updateEvalSummary(${form.id},${periodIdx},this.value)">${escapeHtml(period.summary || '')}</textarea>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">🎯 اقدام بعدی</div>
+        <textarea rows="2" placeholder="تکالیف و اقدامات مشخص برای دوره بعد..."
+          style="width:100%;padding:7px 10px;font-size:12px;border:1px solid rgba(96,165,250,.3);border-radius:7px;background:rgba(96,165,250,.04);color:var(--text);resize:vertical;font-family:inherit;line-height:1.7"
+          onchange="updateEvalActions(${form.id},${periodIdx},this.value)">${escapeHtml(period.actions || '')}</textarea>
+      </div>
+    </div>` : '';
 
   const dlBtn = period ? `
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
@@ -6985,9 +7017,10 @@ function buildEvalTable(form, periodIdx, studentId) {
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="background:var(--bg2)">
-          <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:38%">شاخص</th>
-          <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:27%">امتیاز</th>
-          <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:35%">توضیحات</th>
+          <th style="padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:34%">شاخص</th>
+          <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:28%">امتیاز</th>
+          <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);width:28%">توضیحات</th>
+          <th style="padding:7px 6px;text-align:center;font-size:11px;font-weight:600;color:var(--blue);border-bottom:1px solid var(--border);width:10%" title="هدف">🎯</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -6997,6 +7030,7 @@ function buildEvalTable(form, periodIdx, studentId) {
         <span style="font-size:12px;color:var(--text2)">امتیاز کل این دوره:</span>
         <span style="font-size:18px;font-weight:700;color:var(--green)">${fa(totalScore)}٪</span>
       </div>` : ''}
+    ${coachSection}
     ${dlBtn}`;
 }
 
@@ -7028,7 +7062,7 @@ function confirmNewEvalPeriod(studentId, displayName, formId) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) return;
-  form.periods.push({ date: dateVal, scores: {}, notes: {} });
+  form.periods.push({ date: dateVal, scores: {}, notes: {}, targets: {}, summary: '', actions: '' });
   saveEvalForms(studentId, forms);
   showToast(`دوره ${fa(form.periods.length)} ارزیابی ثبت شد ✅`);
   openEvalFormDetail(studentId, displayName, formId, form.periods.length - 1);
@@ -7139,6 +7173,39 @@ function updateEvalScore(formId, rowId, value, periodIdx) {
       }
     }
   }
+}
+
+function updateEvalTarget(formId, rowId, value, periodIdx) {
+  const key = evalFindKey(formId);
+  if (!key) return;
+  const forms = _evalLoadByKey(key);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods[periodIdx]) return;
+  if (!form.periods[periodIdx].targets) form.periods[periodIdx].targets = {};
+  form.periods[periodIdx].targets[rowId] = value === '' ? '' : parseFloat(value);
+  _evalSaveByKey(key, forms);
+}
+
+function updateEvalSummary(formId, periodIdx, value) {
+  const key = evalFindKey(formId);
+  if (!key) return;
+  const forms = _evalLoadByKey(key);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods[periodIdx]) return;
+  form.periods[periodIdx].summary = value;
+  _evalSaveByKey(key, forms);
+  showToast('جمع‌بندی ذخیره شد ✅');
+}
+
+function updateEvalActions(formId, periodIdx, value) {
+  const key = evalFindKey(formId);
+  if (!key) return;
+  const forms = _evalLoadByKey(key);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods[periodIdx]) return;
+  form.periods[periodIdx].actions = value;
+  _evalSaveByKey(key, forms);
+  showToast('اقدامات ذخیره شدند ✅');
 }
 
 function updateEvalNote(formId, rowId, value, periodIdx) {
@@ -7657,12 +7724,20 @@ function shareEvalPeriod(formId, periodIdx) {
   const rowsHtml = form.rows.map(row => {
     const score = period.scores[row.id] !== undefined ? parseFloat(period.scores[row.id]) : null;
     const note = period.notes[row.id] || '';
+    const target = (period.targets || {})[row.id];
     const pct = score !== null ? Math.round((score / row.maxScore) * 100) : null;
+    const tgtPct = target !== undefined && target !== '' ? Math.round((parseFloat(target) / row.maxScore) * 100) : null;
     const barColor = pct !== null ? (pct >= 70 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626') : '#e5e7eb';
+    const gapCell = tgtPct !== null && pct !== null
+      ? (tgtPct <= pct
+          ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#d1fae5;color:#065f46">✓ هدف</span>`
+          : `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e">${tgtPct - pct}٪ مانده</span>`)
+      : '';
     return `<tr>
       <td>${row.label}</td>
       <td>${score !== null ? `<span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${barColor}"></span></span>${score}/${row.maxScore} <span style="font-size:10px;color:#9ca3af">(${pct}٪)</span>` : '—'}</td>
       <td style="color:#6b7280;font-size:11px">${note || '—'}</td>
+      <td style="text-align:center">${tgtPct !== null ? `<span style="font-size:10px;color:#6b7280">${target}/${row.maxScore}</span><br>${gapCell}` : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -7673,14 +7748,25 @@ function shareEvalPeriod(formId, periodIdx) {
       <span style="font-size:12px;font-weight:600;color:#0369a1">شاگرد: ${studentName}</span>
     </div>` : '';
 
+  const summarySection = period.summary ? `
+    <div class="section-title">جمع‌بندی مربی</div>
+    <div style="padding:10px 14px;background:#f9fafb;border-right:3px solid #7c6af7;border-radius:0 8px 8px 0;font-size:12px;color:#374151;line-height:1.9;margin-bottom:12px">${period.summary.replace(/\n/g,'<br>')}</div>` : '';
+
+  const actionsSection = period.actions ? `
+    <div class="section-title">اقدامات و تکالیف بعدی</div>
+    <div style="padding:10px 14px;background:#f0fdf4;border-right:3px solid #059669;border-radius:0 8px 8px 0;font-size:12px;color:#374151;line-height:1.9;margin-bottom:12px">${period.actions.replace(/\n/g,'<br>')}</div>` : '';
+
   const body = `
+    ${studentBadge}
     ${totalScore !== null ? `<div class="total-box"><span style="font-size:12px;color:#374151">امتیاز کل · دوره ${periodIdx+1}</span><span class="total-val">${fa(totalScore)}٪</span></div>` : ''}
     <div class="section-title">جدول ارزیابی</div>
     <table>
-      <thead><tr><th style="width:40%">شاخص</th><th style="width:35%">امتیاز</th><th style="width:25%">توضیحات</th></tr></thead>
+      <thead><tr><th style="width:35%">شاخص</th><th style="width:30%">امتیاز</th><th style="width:22%">توضیحات</th><th style="width:13%;text-align:center">هدف</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
-    <p style="font-size:10px;color:#9ca3af;margin-top:8px">تاریخ دوره: ${period.date}</p>`;
+    <p style="font-size:10px;color:#9ca3af;margin-top:8px;margin-bottom:14px">تاریخ دوره: ${period.date}</p>
+    ${summarySection}
+    ${actionsSection}`;
 
   const title = `ارزیابی عملکرد · ${form.title} · ${studentName ? studentName + ' · ' : ''}دوره ${periodIdx+1}`;
   const html = _evalBuildSharePage(title, sender, body, studentName);
