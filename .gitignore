@@ -1,0 +1,14 @@
+# نادیده گرفتن پوشه‌های اضافی و بک‌آپ
+Backups/
+New folder/
+TeamPulse-Deploy/
+win_package/
+web_final/
+
+# نادیده گرفتن فایل‌های فشرده
+*.zip
+
+# نادیده گرفتن فایل‌های سیستمی
+.DS_Store
+Thumbs.db
+*.log
