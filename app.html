@@ -6882,18 +6882,120 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
 
   const tableHtml = buildEvalTable(form, curIdx, studentId);
 
+  // ── تحلیل خودکار: سرعت رشد + نقاط قوت/ضعف ──
+  const analysisHtml = form.periods.length >= 2 ? (() => {
+    const last = form.periods[form.periods.length - 1];
+    const prev = form.periods[form.periods.length - 2];
+    const growthData = form.rows.map(row => {
+      const s1 = prev.scores[row.id] !== undefined ? parseFloat(prev.scores[row.id]) : null;
+      const s2 = last.scores[row.id] !== undefined ? parseFloat(last.scores[row.id]) : null;
+      const pct2 = s2 !== null ? Math.round((s2 / row.maxScore) * 100) : null;
+      const diff = (s1 !== null && s2 !== null) ? Math.round(((s2 - s1) / row.maxScore) * 100) : null;
+      return { label: row.label, pct: pct2, diff, s2, maxScore: row.maxScore };
+    }).filter(r => r.pct !== null);
+
+    // نقاط قوت: top 3 بیشترین امتیاز
+    const strengths = [...growthData].sort((a,b) => b.pct - a.pct).slice(0,3);
+    // نقاط ضعف: bottom 3 کمترین امتیاز
+    const weaknesses = [...growthData].sort((a,b) => a.pct - b.pct).slice(0,3);
+    // سرعت رشد: مرتب‌شده از بیشترین رشد
+    const sorted = [...growthData].filter(r => r.diff !== null).sort((a,b) => b.diff - a.diff);
+    const topGrowth = sorted.slice(0,3);
+    const stagnant = sorted.filter(r => r.diff <= 0).slice(-3).reverse();
+
+    const strengthsList = strengths.map(r =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--green)">${fa(r.pct)}٪</span>
+      </div>`).join('');
+
+    const weaknessesList = weaknesses.map(r =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--red)">${fa(r.pct)}٪</span>
+      </div>`).join('');
+
+    const growthList = topGrowth.map(r =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:11px;font-weight:600;color:${r.diff > 0 ? 'var(--green)' : 'var(--text3)'}">${r.diff > 0 ? '▲' : '='} ${fa(Math.abs(r.diff))}٪</span>
+      </div>`).join('');
+
+    const stagnantList = stagnant.map(r =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:11px;font-weight:600;color:${r.diff < 0 ? 'var(--red)' : 'var(--text3)'}">${r.diff < 0 ? '▼' : '='} ${fa(Math.abs(r.diff))}٪</span>
+      </div>`).join('');
+
+    return `
+      <div style="margin-top:16px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px">📊 تحلیل خودکار — آخرین دوره</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div style="font-size:10px;font-weight:600;color:var(--green);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">💪 نقاط قوت</div>
+            ${strengthsList}
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:600;color:var(--red);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">⚠️ نقاط ضعف</div>
+            ${weaknessesList}
+          </div>
+          ${topGrowth.length > 0 ? `
+          <div>
+            <div style="font-size:10px;font-weight:600;color:var(--blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">🚀 بیشترین رشد</div>
+            ${growthList}
+          </div>` : ''}
+          ${stagnant.length > 0 ? `
+          <div>
+            <div style="font-size:10px;font-weight:600;color:rgba(251,191,36,1);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">🔄 گیر کرده</div>
+            ${stagnantList}
+          </div>` : ''}
+        </div>
+      </div>`;
+  })() : '';
+
+  // ── تنظیمات یادآوری ──
+  const reminder = form.reminder || {};
+  const reminderHtml = `
+    <div style="margin-top:12px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--text)">⏰ یادآوری ارزیابی</div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="er-enabled" ${reminder.enabled ? 'checked' : ''} onchange="saveEvalReminder(${formId},${studentId})">
+          <span style="font-size:11px;color:var(--text2)">فعال</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3)">هر</span>
+        <input type="number" id="er-interval" value="${reminder.interval || 30}" min="1" max="365"
+          style="width:60px;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);text-align:center"
+          onchange="saveEvalReminder(${formId},${studentId})">
+        <select id="er-unit" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)"
+          onchange="saveEvalReminder(${formId},${studentId})">
+          <option value="day" ${(reminder.unit||'day')==='day'?'selected':''}>روز</option>
+          <option value="week" ${(reminder.unit||'')==='week'?'selected':''}>هفته</option>
+        </select>
+        <span style="font-size:11px;color:var(--text3)">یک‌بار · یادآوری</span>
+        <input type="number" id="er-before" value="${reminder.beforeHours || 24}" min="1" max="720"
+          style="width:60px;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);text-align:center"
+          onchange="saveEvalReminder(${formId},${studentId})">
+        <span style="font-size:11px;color:var(--text3)">ساعت قبل</span>
+      </div>
+      ${reminder.nextDate ? `<div style="margin-top:8px;font-size:10px;color:var(--text3)">یادآوری بعدی: ${reminder.nextDate}</div>` : ''}
+    </div>`;
+
   openModal(`📊 ${escapeHtml(form.title)} — ${displayName}`, `
     <div class="detail-section" style="max-height:65vh;overflow-y:auto">
       ${form.desc ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${escapeHtml(form.desc)}</div>` : ''}
       ${periodTabsHtml}
       <div id="eval-table-container" data-student="${escapeHtml(displayName)}">${tableHtml}</div>
+      ${analysisHtml}
+      ${reminderHtml}
     </div>
   `, [
     { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` },
     { label: '✏️ ویرایش شاخص‌ها', cls: 'btn-ghost', action: `openEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` },
     { label: 'بازگشت', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
   ]);
-  // attach calendar picker to eval date inputs
   setTimeout(() => {
     document.querySelectorAll('#eval-table-container .jdate').forEach(el => attachJalaliDatePicker(el));
   }, 0);
@@ -7174,6 +7276,93 @@ function updateEvalScore(formId, rowId, value, periodIdx) {
     }
   }
 }
+
+// ── EVAL REMINDER ──────────────────────────────────────────────────────────
+function saveEvalReminder(formId, studentId) {
+  const enabled = document.getElementById('er-enabled')?.checked || false;
+  const interval = parseInt(document.getElementById('er-interval')?.value) || 30;
+  const unit = document.getElementById('er-unit')?.value || 'day';
+  const beforeHours = parseInt(document.getElementById('er-before')?.value) || 24;
+
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(f => f.id === formId);
+  if (!form) return;
+
+  // محاسبه تاریخ بعدی بر اساس آخرین دوره
+  let nextDate = '';
+  if (enabled && form.periods.length > 0) {
+    const lastDate = form.periods[form.periods.length - 1].date;
+    const parts = lastDate.split('/').map(Number);
+    if (parts.length === 3) {
+      // تبدیل شمسی به میلادی برای محاسبه
+      try {
+        const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+        const base = new Date(gy, gm - 1, gd);
+        const days = unit === 'week' ? interval * 7 : interval;
+        base.setDate(base.getDate() + days);
+        const [jy, jm, jd] = gregorianToJalali(base.getFullYear(), base.getMonth() + 1, base.getDate());
+        nextDate = `${jy}/${String(jm).padStart(2,'0')}/${String(jd).padStart(2,'0')}`;
+      } catch(e) {}
+    }
+  }
+
+  form.reminder = { enabled, interval, unit, beforeHours, nextDate };
+  saveEvalForms(studentId, forms);
+  showToast(enabled ? `یادآوری هر ${fa(interval)} ${unit==='week'?'هفته':'روز'} فعال شد ✅` : 'یادآوری غیرفعال شد');
+
+  // آپدیت نمایش nextDate
+  const nd = document.querySelector('.er-next-date');
+  if (nd) nd.textContent = nextDate ? `یادآوری بعدی: ${nextDate}` : '';
+}
+
+// بررسی یادآوری‌های eval هنگام لود
+function checkEvalReminders() {
+  if (!_db || !_db.eval_forms) return;
+  const today = todayJalali();
+  const todayStr = `${today[0]}/${String(today[1]).padStart(2,'0')}/${String(today[2]).padStart(2,'0')}`;
+
+  Object.entries(_db.eval_forms).forEach(([sid, forms]) => {
+    if (!Array.isArray(forms)) return;
+    forms.forEach(form => {
+      const r = form.reminder;
+      if (!r || !r.enabled || !r.nextDate) return;
+
+      // تبدیل nextDate به میلادی برای مقایسه
+      try {
+        const nParts = r.nextDate.split('/').map(Number);
+        const [ngy, ngm, ngd] = jalaliToGregorian(nParts[0], nParts[1], nParts[2]);
+        const nextMs = new Date(ngy, ngm - 1, ngd).getTime();
+        const nowMs = Date.now();
+        const beforeMs = (r.beforeHours || 24) * 3600000;
+
+        // اگه در بازه یادآوری هستیم
+        if (nowMs >= nextMs - beforeMs && nowMs < nextMs + 86400000) {
+          const alreadyKey = `eval_reminded_${form.id}_${r.nextDate}`;
+          if (!localStorage.getItem(alreadyKey)) {
+            localStorage.setItem(alreadyKey, '1');
+            const student = _db.students?.find(s => s.id === parseInt(sid));
+            const name = student ? `${student.name} ${student.lname}` : 'شاگرد';
+            showToast(`⏰ وقت ارزیابی عملکرد ${name} — ${form.title}`, 5000);
+            // ارسال push notification
+            if (window._pushSubscription) {
+              _apiFetch('/api/reminders/send-push', {
+                method: 'POST',
+                body: JSON.stringify({
+                  title: `⏰ یادآوری ارزیابی عملکرد`,
+                  body: `${name} — ${form.title}`,
+                  url: '/app'
+                })
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch(e) {}
+    });
+  });
+}
+
+// چک هر ۱۵ دقیقه
+setInterval(checkEvalReminders, 15 * 60 * 1000);
 
 function updateEvalTarget(formId, rowId, value, periodIdx) {
   const key = evalFindKey(formId);
