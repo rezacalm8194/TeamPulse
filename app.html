@@ -109,6 +109,7 @@ button { cursor: pointer; font-family: var(--font); }
   -webkit-app-region: drag;
   overflow: hidden;
   min-width: 0;
+  flex-shrink: 0;
 }
 .sidebar-logo h1 { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-logo p  { font-size: 9px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -122,7 +123,7 @@ button { cursor: pointer; font-family: var(--font); }
 }
 /* sidebar-logo h1/p defined above */
 
-.sidebar-nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+.sidebar-nav { flex: 1; min-height: 0; padding: 10px 8px; overflow-y: auto; }
 .nav-section {
   font-size: 10px; font-weight: 700; color: var(--text3);
   padding: 10px 8px 4px; letter-spacing: .05em;
@@ -1081,7 +1082,8 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* Sidebar: drawer from right */
   .sidebar{position:fixed;top:0;right:-100%;height:100vh;height:100dvh;width:min(280px,85vw);z-index:30;
     transition:right .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
-    padding-top:env(safe-area-inset-top,0);box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0))}
   .sidebar.open{right:0}
   .hamburger{display:flex}
   .sidebar-bottom{padding-bottom:env(safe-area-inset-bottom,12px)}
