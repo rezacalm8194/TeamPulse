@@ -1039,7 +1039,7 @@ body.light mark { background: rgba(251,191,36,.5); }
 
 /* ══════════════════ RESPONSIVE ══════════════════ */
 .hamburger{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;flex-shrink:0}
-.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:29;-webkit-tap-highlight-color:transparent}
+.sidebar-backdrop{display:none;position:fixed;inset:0;height:100vh;height:100dvh;background:rgba(0,0,0,.6);z-index:29;-webkit-tap-highlight-color:transparent}
 .sidebar-backdrop.open{display:block}
 .bottom-nav{display:none;position:fixed;bottom:0;right:0;left:0;height:56px;background:var(--bg2);border-top:1px solid var(--border);z-index:20;flex-direction:row;align-items:center;justify-content:space-around;padding:0 4px}
 .bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 8px;border-radius:10px;cursor:pointer;color:var(--text3);font-size:10px;min-width:44px;transition:all .15s;position:relative}
@@ -1053,11 +1053,12 @@ body.light mark { background: rgba(251,191,36,.5); }
 
 /* ── Tablet & Mobile (≤768px) ─────────────────────── */
 @media(max-width:768px){
-  body{overflow:auto}
+  /* body باید overflow:hidden بمونه تا fixed positioning (sidebar/bottom-nav) روی iOS درست کار کنه — اسکرول فقط داخل .content */
 
   /* Sidebar: drawer from right */
-  .sidebar{position:fixed;top:0;right:-100%;height:100%;width:min(280px,85vw);z-index:30;
-    transition:right .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4)}
+  .sidebar{position:fixed;top:0;right:-100%;height:100vh;height:100dvh;width:min(280px,85vw);z-index:30;
+    transition:right .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
+    padding-top:env(safe-area-inset-top,0);box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .sidebar.open{right:0}
   .hamburger{display:flex}
   .sidebar-bottom{padding-bottom:env(safe-area-inset-bottom,12px)}
