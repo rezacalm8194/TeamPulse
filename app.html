@@ -8984,8 +8984,8 @@ function setContent(html) {
     try { _applyResponsiveTableLabels(); } catch(e) {}
   }
   
-  // Restore content search
-  if (prevCVal !== null) {
+  // Restore content search — فقط اگه قبلاً واقعاً متن جستجو وارد شده بود
+  if (prevCVal) {
     const nextC = document.querySelector('#content .table-search input');
     if (nextC && nextC.value === prevCVal) {
       nextC.focus();
@@ -9001,8 +9001,8 @@ function updateTopbarActions(html) {
   
   document.getElementById('topbar-actions').innerHTML = html;
   
-  // Restore search focus after rebuild
-  if (prevVal !== null) {
+  // Restore search focus after rebuild — فقط اگه قبلاً واقعاً متن جستجو وارد شده بود
+  if (prevVal) {
     const next = document.querySelector('#topbar-actions .table-search input');
     if (next && next.value === prevVal) {
       next.focus();
@@ -13781,6 +13781,10 @@ function openSidebar(){document.getElementById('sidebar').classList.add('open');
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');document.body.style.overflow='';}
 function bnNav(el){
   const page=el.dataset.page;if(!page)return;
+  // بستن کیبورد iOS قبل از تغییر صفحه — جلوگیری از به‌هم‌ریختگی layout روی iOS Safari
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
@@ -13802,12 +13806,26 @@ document.addEventListener('click', function(e) {
   e.preventDefault();
   const page = navEl.dataset.page;
   if (!page) return;
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   navEl.classList.add('active');
   currentPage = page;
   updatePageTitle();
   renderPage();
 }, true); // capture phase
+
+// بستن کیبورد iOS قبل از هر navigation (سایدبار، bottom-nav، دکمه‌های بازگشت)
+// جلوگیری از باگ به‌هم‌ریختگی layout روی iOS Safari وقتی input فوکوس‌دار باز می‌مونه
+document.addEventListener('click', function(e) {
+  const target = e.target.closest('[data-page], .bn-item, [onclick*="renderPage()"], [onclick*="currentPage="]');
+  if (!target) return;
+  if (document.activeElement && document.activeElement !== document.body &&
+      document.activeElement !== target && !target.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+}, true); // capture phase — قبل از سایر handler ها اجرا می‌شه
 
 // GDrive connect UI
 async function gdriveConnectUI() {
