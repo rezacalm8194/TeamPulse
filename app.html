@@ -2244,7 +2244,10 @@ window.api = {
     delete: (id)=>{ _db.staff=_db.staff.filter(x=>x.id!==id);['staff_payments','staff_reminders','staff_adjustments','staff_monthly'].forEach(k=>{_db[k]=_db[k].filter(x=>x.staff_id!==id);}); _save(); return _P({ok:true}); },
     paySalary: (p)=>{
       const s=_db.staff.find(x=>x.id===p.staff_id); if(!s)return _P({ok:false});
-      const[tjy,tjm]=_todayJalali();
+      const[ty,tm]=_todayJalali();
+      // اگه ماه/سال هدف مشخص شده (یعنی این پرداخت برای کدوم ماه حقوق است) از همون استفاده کن
+      const tjy = p.for_jy || ty;
+      const tjm = p.for_jm || tm;
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
       const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:(r.amount||0)*(r.count??1)};});
@@ -6690,13 +6693,42 @@ function openBankTransfer() {
 async function payStaffSalary(staffId, name) {
   const list = await window.api.staff.getAll();
   const s = list.find(x => x.id === staffId);
+  const reminders = await window.api.staffReminders.getAll();
+  const rem = reminders.find(r => r.staff_id === staffId);
+
+  // پیش‌فرض: ماهی که این پرداخت برای آن است = ماه سررسید یادآوری (نه لزوماً ماه امروز)
+  let defJy, defJm;
+  if (rem && rem.due_date_jalali) {
+    const parts = rem.due_date_jalali.split('/').map(Number);
+    defJy = parts[0]; defJm = parts[1];
+  } else {
+    [defJy, defJm] = todayJalali();
+  }
+
+  const monthOptions = JMONTHS.map((mn, i) =>
+    `<option value="${i+1}" ${i+1===defJm?'selected':''}>${mn}</option>`).join('');
+
   openModal(`✓ تأیید پرداخت حقوق — ${name}`, `
     <p style="font-size:12px;color:var(--text2);margin-bottom:8px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + نقش‌ها × تعداد)</p>
+
     <div class="form-group full">
-      <label class="form-label">تاریخ پرداخت (شمسی)</label>
+      <label class="form-label">تاریخ واقعی پرداخت (شمسی)</label>
       <input class="form-input jdate" id="psp-date" value="${formatJalali(...todayJalali())}">
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">یعنی امروز چه زمانی پول رو واریز کردی — حتی اگه زودتر یا دیرتر از موعد باشه</div>
     </div>
-    <p style="font-size:11px;color:var(--text3);margin-top:8px">پس از تأیید: این مبلغ در تاریخچه پرداخت‌ها ثبت می‌شود، یادآوری ماه بعد تنظیم می‌شود و تعداد دفعات نقش‌ها برای ورود اطلاعات ماه جدید صفر می‌شود.</p>
+
+    <div class="form-group full" style="margin-top:10px">
+      <label class="form-label">این پرداخت برای حقوق کدوم ماه است؟ ⚠️</label>
+      <div style="display:flex;gap:8px">
+        <select class="form-input" id="psp-month" style="flex:1.4">${monthOptions}</select>
+        <input class="form-input" id="psp-year" type="number" value="${defJy}" style="flex:1" placeholder="سال">
+      </div>
+      <div style="font-size:10px;color:var(--amber);margin-top:3px">
+        💡 اگه زودتر از موعد پرداخت می‌کنی (مثلاً حقوق تیر رو در خرداد می‌دی)، اینجا «تیر» رو انتخاب کن — نه ماهی که الان توشی.
+      </div>
+    </div>
+
+    <p style="font-size:11px;color:var(--text3);margin-top:10px">پس از تأیید: این مبلغ در تاریخچه پرداخت‌ها ثبت می‌شود، یادآوری ماه بعد تنظیم می‌شود و تعداد دفعات نقش‌ها برای ورود اطلاعات ماه جدید صفر می‌شود.</p>
   `, [
     { label: 'تأیید پرداخت', cls: 'btn-primary', action: `confirmPayStaffSalary(${staffId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -6704,7 +6736,14 @@ async function payStaffSalary(staffId, name) {
   initDatePickers();
 }
 async function confirmPayStaffSalary(staffId) {
-  await window.api.staff.paySalary({ staff_id: staffId, date: document.getElementById('psp-date')?.value });
+  const forMonth = parseInt(document.getElementById('psp-month')?.value);
+  const forYear = parseInt(document.getElementById('psp-year')?.value);
+  await window.api.staff.paySalary({
+    staff_id: staffId,
+    date: document.getElementById('psp-date')?.value,
+    for_jy: forYear,
+    for_jm: forMonth,
+  });
   closeModal();
   showToast('پرداخت ثبت شد ✓', 'success');
   await renderStaff();
