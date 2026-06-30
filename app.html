@@ -181,25 +181,24 @@ button { cursor: pointer; font-family: var(--font); }
   display: flex; align-items: center;
   padding: 0 10px; gap: 8px;
   flex-shrink: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
   min-width: 0;
-  scrollbar-width: none;
   position: sticky;
   top: 0;
   z-index: 50;
   -webkit-transform: translate3d(0,0,0);
   transform: translate3d(0,0,0);
   will-change: transform;
-  position: relative;
-  z-index: 50;
-  -webkit-transform: translate3d(0,0,0);
-  transform: translate3d(0,0,0);
 }
 .topbar::-webkit-scrollbar { display: none; }
 .page-title { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex-shrink: 0; }
-.topbar-actions { display: flex; gap: 8px; margin-right: auto; flex-shrink: 0; }
+.topbar-actions {
+  display: flex; gap: 8px; margin-right: auto;
+  flex-shrink: 1; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.topbar-actions::-webkit-scrollbar { display: none; }
 
 .content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
 
@@ -1073,7 +1072,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   .content{padding:12px 10px;padding-bottom:calc(70px + env(safe-area-inset-bottom,0))}
 
   /* Bottom nav (mobile tab bar) */
-  .bottom-nav{display:flex;padding-bottom:env(safe-area-inset-bottom,0);height:calc(56px + env(safe-area-inset-bottom,0));box-sizing:content-box}
+  .bottom-nav{display:flex;height:calc(56px + env(safe-area-inset-bottom,0));padding-bottom:env(safe-area-inset-bottom,0);box-sizing:border-box}
 
   /* Stats */
   .stats-row{grid-template-columns:1fr 1fr!important;gap:8px}
@@ -1153,8 +1152,14 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-card:not(.tbl-responsive) table { min-width: 480px; }
 
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
-  .table-search{width:100%;max-width:none!important}
-  .table-search input{width:100%}
+  .table-header .table-search{width:100%;max-width:none!important}
+  .table-header .table-search input{width:100%}
+
+  /* سرچ داخل topbar باید جمع‌وجور بمونه — نه تمام عرض، تا بقیه آیتم‌های toolbar دیده بشن */
+  .topbar-actions .table-search{flex-shrink:0;max-width:130px}
+  .topbar-actions .table-search input{width:70px}
+  .topbar-actions .table-search.tb-search-expanded{max-width:200px}
+  .topbar-actions .table-search.tb-search-expanded input{width:140px}
 
   /* Forms */
   .form-grid{grid-template-columns:1fr!important}
