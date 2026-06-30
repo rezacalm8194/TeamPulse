@@ -224,6 +224,31 @@ button { cursor: pointer; font-family: var(--font); }
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px; margin-bottom: 20px;
 }
+/* بنتو layout — فقط صفحه مدیریت (.stats-bento) */
+.stats-bento {
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(110px, auto);
+  gap: 14px;
+}
+.stats-bento .stat-card:first-child {
+  grid-column: span 2;
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.stats-bento .stat-card:first-child .stat-value { font-size: 34px; }
+.stats-bento .stat-card:first-child .stat-label { font-size: 12px; }
+
+@media (max-width: 900px) {
+  .stats-bento { grid-template-columns: repeat(2, 1fr); }
+  .stats-bento .stat-card:first-child { grid-column: span 2; grid-row: span 1; }
+  .stats-bento .stat-card:first-child .stat-value { font-size: 26px; }
+}
+@media (max-width: 520px) {
+  .stats-bento { grid-template-columns: 1fr; gap: 10px; }
+  .stats-bento .stat-card:first-child { grid-column: span 1; }
+}
 .stat-card {
   position: relative;
   background: var(--bg2);
@@ -246,8 +271,8 @@ button { cursor: pointer; font-family: var(--font); }
   padding: 1.5px;
   background: radial-gradient(
     var(--glow-radius) circle at var(--glow-x) var(--glow-y),
-    rgba(var(--glow-color), calc(var(--glow-intensity) * .9)) 0%,
-    rgba(var(--glow-color), calc(var(--glow-intensity) * .35)) 35%,
+    rgba(var(--glow-color), calc(var(--glow-intensity) * .55)) 0%,
+    rgba(var(--glow-color), calc(var(--glow-intensity) * .2)) 35%,
     transparent 65%
   );
   border-radius: inherit;
@@ -264,7 +289,7 @@ button { cursor: pointer; font-family: var(--font); }
   inset: 0;
   background: radial-gradient(
     var(--glow-radius) circle at var(--glow-x) var(--glow-y),
-    rgba(var(--glow-color), calc(var(--glow-intensity) * .12)) 0%,
+    rgba(var(--glow-color), calc(var(--glow-intensity) * .06)) 0%,
     transparent 60%
   );
   pointer-events: none;
@@ -272,7 +297,7 @@ button { cursor: pointer; font-family: var(--font); }
   border-radius: inherit;
 }
 .stat-card:hover {
-  box-shadow: 0 8px 28px rgba(0,0,0,.18), 0 0 24px rgba(var(--glow-color), .15);
+  box-shadow: 0 6px 20px rgba(0,0,0,.14), 0 0 14px rgba(var(--glow-color), .08);
 }
 .stat-card .sc-particle {
   position: absolute;
@@ -5663,7 +5688,7 @@ async function renderStaff() {
   const today = jalaliKey(formatJalali(...todayJalali()));
 
   let html = `
-  <div class="stats-row">
+  <div class="stats-row stats-bento">
     <div class="stat-card s-accent">
       <div class="stat-label">تعداد همکاران</div>
       <div class="stat-value">${fa(dash.totalStaff)}</div>
@@ -13867,10 +13892,10 @@ _initAuth().then(authed => {
     card.style.setProperty('--glow-intensity', glow.toString());
 
     // tilt (light) + magnetism
-    const rotateX = ((y - centerY) / centerY) * -4;
-    const rotateY = ((x - centerX) / centerX) * 4;
-    const magnetX = (x - centerX) * 0.04;
-    const magnetY = (y - centerY) * 0.04;
+    const rotateX = ((y - centerY) / centerY) * -2;
+    const rotateY = ((x - centerX) / centerX) * 2;
+    const magnetX = (x - centerX) * 0.02;
+    const magnetY = (y - centerY) * 0.02;
     card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translate(${magnetX}px, ${magnetY}px)`;
   });
 
