@@ -10981,6 +10981,58 @@ async function _initAuth() {
     return false;
   }
 
+  // اگه قبل از رفرش در حال impersonate بودیم، اون وضعیت رو از سر بگیر
+  let impersonatingState = null;
+  try { impersonatingState = JSON.parse(localStorage.getItem('tp_impersonating_state') || 'null'); } catch(e) {}
+
+  if (impersonatingState && !actionLogin && !actionLogout) {
+    try {
+      const impUser = JSON.parse(localStorage.getItem('tp_impersonating_user') || 'null');
+      const adminSession = localStorage.getItem('tp_admin_backup_session');
+      const adminUser = JSON.parse(localStorage.getItem('tp_admin_backup_user') || 'null');
+      const adminDBKey = localStorage.getItem('tp_admin_backup_dbkey');
+
+      if (impUser && adminSession && adminUser) {
+        // session فعلی همیشه باید session ادمین باشه (برای auth API)
+        _sbSession = { token: JSON.parse(adminSession)?.token || saved.token };
+        _sbUser = { ...impUser };
+        const targetKey = 'tp_impersonate_' + impersonatingState.userId;
+        window._activeDBKey = targetKey;
+        window._impersonating = {
+          userId: impersonatingState.userId,
+          userName: impersonatingState.userName,
+          adminSession, adminUser, adminDBKey,
+        };
+
+        // لود مجدد داده تازه از سرور برای کاربر هدف (نه از کش قدیمی)
+        window._impersonateLoadPending = true;
+        try {
+          const dataRes = await _apiFetch('/api/data/' + impersonatingState.userId);
+          if (dataRes.ok) {
+            const ct = dataRes.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const json = await dataRes.json();
+              if (json.data && Object.keys(json.data).length > 0) {
+                _db = json.data;
+                _migrate(_db);
+                localStorage.setItem(targetKey, JSON.stringify(_db));
+              }
+            }
+          }
+        } catch(e) { _load(); }
+        window._impersonateLoadPending = false;
+
+        _hideAuthScreen();
+        _updateAuthUI();
+        await _authOnSuccess();
+        return true;
+      }
+    } catch(e) { console.warn('[Impersonate restore] error:', e.message); }
+    // اگه بازسازی impersonation شکست خورد، وضعیتش رو پاک کن و عادی ادامه بده
+    localStorage.removeItem('tp_impersonating_state');
+    localStorage.removeItem('tp_impersonating_user');
+  }
+
   if (actionLogin) {
     // از لندینگ اومده با دکمه ورود — session داره، مستقیم load
     _sbSession = { token: saved.token };
@@ -12264,8 +12316,27 @@ function deleteTodo(id) {
   renderTodoList();
 }
 
-function openTodoArchive() {
+async function openTodoArchive() {
   _todosInit();
+
+  // Safety: اگه در حال impersonate هستیم و todos خالیه، یه بار دیگه از سرور بکش
+  // (جلوگیری از باگ احتمالی sync بعد از رفرش صفحه)
+  if (window._impersonating && (!_db.todos || _db.todos.length === 0)) {
+    try {
+      const dataRes = await _apiFetch('/api/data/' + window._impersonating.userId);
+      if (dataRes.ok) {
+        const ct = dataRes.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const json = await dataRes.json();
+          if (json.data && Object.keys(json.data).length > 0) {
+            _db = json.data;
+            _migrate(_db);
+            localStorage.setItem(window._activeDBKey, JSON.stringify(_db));
+          }
+        }
+      }
+    } catch(e) {}
+  }
 
   // چک اتوماتیک: اگه الان ۱ فروردین هست، بایگانی سال قبل رو پاک کن
   const todayJ = _todayJalaliStr();
@@ -13315,6 +13386,11 @@ async function _adminImpersonate(userId, userName) {
     const targetKey = 'tp_impersonate_' + userId;
     window._activeDBKey = targetKey;
     window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey };
+    // ذخیره وضعیت impersonate در localStorage تا با رفرش صفحه از بین نره
+    try {
+      localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey }));
+      localStorage.setItem('tp_impersonating_user', JSON.stringify(user));
+    } catch(e) {}
 
     // block کردن sync تا داده کاربر هدف load بشه
     window._impersonateLoadPending = true;
@@ -13398,6 +13474,21 @@ function _hideImpersonateBar() {
 }
 
 async function _adminReturnToAdmin() {
+  // اگه بعد از رفرش هستیم، window._impersonating نال است — بازسازی از localStorage
+  if (!window._impersonating) {
+    try {
+      const savedState = JSON.parse(localStorage.getItem('tp_impersonating_state') || 'null');
+      if (savedState) {
+        window._impersonating = {
+          userId: savedState.userId,
+          userName: savedState.userName,
+          adminSession: localStorage.getItem('tp_admin_backup_session'),
+          adminUser: JSON.parse(localStorage.getItem('tp_admin_backup_user') || 'null'),
+          adminDBKey: savedState.adminDBKey || localStorage.getItem('tp_admin_backup_dbkey'),
+        };
+      }
+    } catch(e) {}
+  }
   if (!window._impersonating) return;
   try {
     const { adminSession, adminUser, adminDBKey, userId } = window._impersonating;
@@ -13405,6 +13496,8 @@ async function _adminReturnToAdmin() {
     // پاک کردن داده impersonation از localStorage
     const impKey = 'tp_impersonate_' + userId;
     localStorage.removeItem(impKey);
+    localStorage.removeItem('tp_impersonating_state');
+    localStorage.removeItem('tp_impersonating_user');
 
     // بازگردانی session ادمین
     if (adminSession) localStorage.setItem('tp_session', adminSession);
