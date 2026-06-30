@@ -1064,16 +1064,16 @@ body.light mark { background: rgba(251,191,36,.5); }
   .sidebar-bottom{padding-bottom:env(safe-area-inset-bottom,12px)}
 
   /* Topbar */
-  .topbar{padding:0 10px;gap:6px;height:52px}
+  .topbar{padding:0 10px;gap:6px;height:52px;padding-top:env(safe-area-inset-top,0);height:calc(52px + env(safe-area-inset-top,0))}
   .topbar-actions{gap:4px}
   .topbar-actions .btn{padding:5px 8px;font-size:11px}
   .page-title{font-size:13px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* Content area */
-  .content{padding:12px 10px;padding-bottom:70px}
+  .content{padding:12px 10px;padding-bottom:calc(70px + env(safe-area-inset-bottom,0))}
 
   /* Bottom nav (mobile tab bar) */
-  .bottom-nav{display:flex;padding-bottom:env(safe-area-inset-bottom,0)}
+  .bottom-nav{display:flex;padding-bottom:env(safe-area-inset-bottom,0);height:calc(56px + env(safe-area-inset-bottom,0));box-sizing:content-box}
 
   /* Stats */
   .stats-row{grid-template-columns:1fr 1fr!important;gap:8px}
@@ -1245,6 +1245,8 @@ body.light mark { background: rgba(251,191,36,.5); }
 }
 
 /* ── PWA / Standalone mode ────────────────────────── */
+/* توجه: این مقادیر الان به‌صورت پیش‌فرض در media query موبایل (max-width:768px) هم اعمال می‌شن
+   (نه فقط در حالت standalone) — چون Safari معمولی هم با viewport-fit=cover به safe-area نیاز داره */
 @media(display-mode:standalone){
   .topbar{padding-top:env(safe-area-inset-top,0)}
   .bottom-nav{padding-bottom:env(safe-area-inset-bottom,0);height:calc(56px + env(safe-area-inset-bottom,0))}
