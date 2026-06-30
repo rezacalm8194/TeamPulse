@@ -1076,45 +1076,67 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-card.tbl-responsive thead { display: none; }
   .table-card.tbl-responsive tbody, .table-card.tbl-responsive tr { display: block; width: 100%; }
   .table-card.tbl-responsive tr {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+    border-bottom: 8px solid var(--bg);
   }
   .table-card.tbl-responsive tr:last-child { border-bottom: none; }
   .table-card.tbl-responsive td {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 6px 0;
+    gap: 8px;
+    padding: 5px 0;
     border-bottom: none;
-    font-size: 12px;
-    text-align: left;
+    font-size: 12.5px;
+    text-align: right;
   }
   .table-card.tbl-responsive td[colspan] {
     display: block !important;
     text-align: center;
+    padding: 16px 0;
   }
   .table-card.tbl-responsive td[data-label]::before {
     content: attr(data-label);
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 10.5px;
+    font-weight: 500;
     color: var(--text3);
     flex-shrink: 0;
-    margin-left: 10px;
   }
-  /* سلول عملیات (چند دکمه‌ای) — زیر هم با wrap */
-  .table-card.tbl-responsive td[style*="flex-wrap"],
+  /* مقادیر خالی یا بی‌اهمیت رو با رنگ کم‌رنگ‌تر نشون بده (از قبل با inline style هندل میشه) */
+  /* سلول عملیات (چند دکمه‌ای) — گرید دو‌ستونه فشرده */
   .table-card.tbl-responsive td[data-label="عملیات"] {
-    flex-direction: column;
-    align-items: flex-start;
+    display: block;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
   }
-  .table-card.tbl-responsive td[data-label="عملیات"]::before { margin-bottom: 4px; }
+  .table-card.tbl-responsive td[data-label="عملیات"]::before {
+    display: block;
+    margin-bottom: 6px;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"] {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"]::before {
+    grid-column: 1 / -1;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"] .btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 11px;
+    padding: 7px 6px;
+  }
   .table-card.tbl-responsive td:empty,
   .table-card.tbl-responsive td[data-label=""] { display: none; }
-  .table-card.tbl-responsive td > * { margin-right: auto; }
   .table-card.tbl-responsive .name-cell { width: 100%; }
   .table-card.tbl-responsive td:first-child::before { display: none; }
-  .table-card.tbl-responsive td:first-child { padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .table-card.tbl-responsive td:first-child {
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
 
   /* fallback: tables not yet converted to card mode keep horizontal scroll */
   .table-card:not(.tbl-responsive) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
