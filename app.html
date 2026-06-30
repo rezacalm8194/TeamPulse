@@ -224,17 +224,23 @@ button { cursor: pointer; font-family: var(--font); }
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px; margin-bottom: 20px;
 }
-/* بنتو layout — همه کارت‌ها هم‌اندازه، فقط صفحه مدیریت (.stats-bento) */
+/* بنتو layout — کارت‌های کوچک، هم‌اندازه، فقط صفحه مدیریت (.stats-bento) */
 .stats-bento {
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: 10px;
 }
+.stats-bento .stat-card {
+  padding: 10px 12px;
+}
+.stats-bento .stat-label { font-size: 10px; }
+.stats-bento .stat-value { font-size: 16px; }
+.stats-bento .stat-sub { font-size: 9px; }
 
 @media (max-width: 900px) {
   .stats-bento { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
-  .stats-bento { grid-template-columns: 1fr; gap: 10px; }
+  .stats-bento { grid-template-columns: 1fr; gap: 8px; }
 }
 .stat-card {
   position: relative;
