@@ -60,7 +60,9 @@ body.light {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html {
   overflow-x: hidden;
+  overflow-y: hidden;
   width: 100%;
+  height: 100%;
 }
 body {
   font-family: var(--font);
@@ -73,6 +75,7 @@ body {
   width: 100%;
   height: 100vh;
   height: 100dvh;
+  height: var(--app-vh, 100dvh);
   line-height: 1.6;
   transition: background .3s, color .3s;
   overflow: hidden;
@@ -82,7 +85,7 @@ a { text-decoration: none; color: inherit; cursor: pointer; }
 button { cursor: pointer; font-family: var(--font); }
 
 /* ── Layout ─────────────────────────────────────────────── */
-.app { display: flex; height: 100vh; height: 100dvh; width: 100%; overflow: hidden; position: relative; max-width: 100vw; }
+.app { display: flex; height: 100vh; height: 100dvh; height: var(--app-vh, 100dvh); width: 100%; overflow: hidden; position: relative; max-width: 100vw; }
 
 /* ── Sidebar ────────────────────────────────────────────── */
 .sidebar {
@@ -1314,7 +1317,7 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
 /* Fix 100vh on mobile browsers with address bar */
-.app { height: 100dvh; min-height: 100vh; }
+.app { height: 100dvh; height: var(--app-vh, 100dvh); min-height: 100vh; }
 
 
   </style>
@@ -14050,6 +14053,16 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+
+// ── محاسبه‌ی دقیق ارتفاع واقعی صفحه با JS (رفع باگ‌های vh/dvh در iOS Safari) ──
+function _setRealAppHeight() {
+  // window.innerHeight معمولاً قابل‌اطمینان‌تر از vh/dvh برای کل shell برنامه است
+  const h = window.innerHeight;
+  document.documentElement.style.setProperty('--app-vh', h + 'px');
+}
+_setRealAppHeight();
+window.addEventListener('resize', _setRealAppHeight);
+window.addEventListener('orientationchange', () => setTimeout(_setRealAppHeight, 200));
 
 // ── تشخیص کیبورد مجازی موبایل ─────────────────────────────────────────────
 window._mobileKeyboardOpen = false;
