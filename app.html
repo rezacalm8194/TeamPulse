@@ -1043,7 +1043,7 @@ body.light mark { background: rgba(251,191,36,.5); }
 .hamburger{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;flex-shrink:0}
 .sidebar-backdrop{display:none;position:fixed;inset:0;height:100vh;height:100dvh;background:rgba(0,0,0,.6);z-index:29;-webkit-tap-highlight-color:transparent}
 .sidebar-backdrop.open{display:block}
-.bottom-nav{display:none;position:fixed;bottom:0;right:0;left:0;min-height:56px;background:var(--bg2);border-top:1px solid var(--border);z-index:20;flex-direction:row;align-items:center;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom,0);box-sizing:border-box}
+.bottom-nav{display:none;position:relative;flex-shrink:0;min-height:56px;background:var(--bg2);border-top:1px solid var(--border);z-index:20;flex-direction:row;align-items:center;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom,0);box-sizing:border-box}
 .bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 8px;border-radius:10px;cursor:pointer;color:var(--text3);font-size:10px;min-width:44px;transition:all .15s;position:relative}
 .bn-item.active{color:var(--accent2)}
 .bn-icon{font-size:20px;line-height:1}
@@ -1072,7 +1072,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   .page-title{font-size:13px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* Content area */
-  .content{padding:12px 10px;padding-bottom:calc(70px + env(safe-area-inset-bottom,0))}
+  .content{padding:12px 10px}
 
   /* روی موبایل فقط آیکون آدم نشون داده بشه، اسم حساب مخفی بمونه تا toolbar جا داشته باشه */
   #account-btn{padding:6px!important;border-radius:50%!important;width:34px;height:34px;justify-content:center}
@@ -1162,20 +1162,21 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-header .table-search{width:100%;max-width:none!important}
   .table-header .table-search input{width:100%}
 
-  /* سرچ داخل topbar روی موبایل: فقط آیکون ذره‌بین — با کلیک باز می‌شه */
+  /* سرچ داخل topbar روی موبایل: فقط آیکون ذره‌بین بدون باکس — با کلیک باز می‌شه */
   .topbar-actions .table-search{
     flex-shrink:0;
-    transition:max-width .2s ease, padding .2s ease;
+    transition:max-width .2s ease, padding .2s ease, background .2s ease, border-color .2s ease;
   }
   .topbar-actions .table-search:not(.tb-search-open){
-    max-width:34px; width:34px; padding:7px; justify-content:center;
-    border-radius:50%; cursor:pointer;
+    max-width:28px; width:28px; padding:5px; justify-content:center;
+    background:transparent; border-color:transparent; cursor:pointer;
   }
   .topbar-actions .table-search:not(.tb-search-open) input{
     width:0; padding:0; opacity:0; pointer-events:none;
   }
   .topbar-actions .table-search.tb-search-open{
     max-width:160px; width:auto;
+    background:var(--bg3); border-color:var(--border2);
   }
   .topbar-actions .table-search.tb-search-open input{
     width:110px; opacity:1; pointer-events:auto;
@@ -1250,7 +1251,6 @@ body.light mark { background: rgba(251,191,36,.5); }
   .bottom-nav .nav-icon{font-size:18px}
   .bottom-nav{min-height:52px}
   .topbar{height:calc(48px + env(safe-area-inset-top,0))}
-  .content{padding-bottom:calc(60px + env(safe-area-inset-bottom,0))}
 }
 
 /* ── Extra small (≤360px) ─────────────────────────── */
@@ -1258,7 +1258,6 @@ body.light mark { background: rgba(251,191,36,.5); }
   .stat-card{padding:6px 8px}
   .stat-value{font-size:13px!important}
   .bottom-nav{min-height:50px}
-  .content{padding-bottom:calc(58px + env(safe-area-inset-bottom,0))}
   .topbar{height:calc(46px + env(safe-area-inset-top,0))}
 }
 
@@ -1333,11 +1332,6 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 
 
   </style>
-<link rel="manifest" href="/manifest.json">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="TeamPulse">
 <link rel="apple-touch-icon" href="/logo.png">
 </head>
 <body>
@@ -1457,16 +1451,16 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
       }
     }, 5000);
     </script>
+
+    <nav class="bottom-nav">
+      <div class="bn-item active" data-page="students" onclick="bnNav(this)"><span class="bn-icon">👥</span><span>شاگردان</span></div>
+      <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon">📋</span><span>دستورالعمل</span></div>
+      <div class="bn-item" data-page="sessions" onclick="bnNav(this)"><span class="bn-icon">📅</span><span>جلسات</span></div>
+      <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>لیست کارها</span></div>
+      <div class="bn-item" onclick="openSidebar()"><span class="bn-icon">☰</span><span>بیشتر</span></div>
+    </nav>
   </div>
 </div>
-
-<nav class="bottom-nav">
-  <div class="bn-item active" data-page="students" onclick="bnNav(this)"><span class="bn-icon">👥</span><span>شاگردان</span></div>
-  <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon">📋</span><span>دستورالعمل</span></div>
-  <div class="bn-item" data-page="sessions" onclick="bnNav(this)"><span class="bn-icon">📅</span><span>جلسات</span></div>
-  <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>لیست کارها</span></div>
-  <div class="bn-item" onclick="openSidebar()"><span class="bn-icon">☰</span><span>بیشتر</span></div>
-</nav>
 
 <div id="modals"></div>
 <div class="toast" id="toast"></div>
@@ -9115,10 +9109,10 @@ async function renderInstructions(instrSearch) {
       <input placeholder="جستجو در یادداشت‌ها..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
     <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">
-      📝 یادداشت جدید
+      <span class="btn-icon">📝</span><span> یادداشت جدید</span>
     </button>
     <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')" style="margin-right:4px">
-      📁 پوشه جدید
+      <span class="btn-icon">📁</span><span> پوشه جدید</span>
     </button>
   `);
 
