@@ -176,7 +176,7 @@ button { cursor: pointer; font-family: var(--font); }
 .toggle-btn.on .toggle-thumb { transform: translateX(-17px); }
 
 /* ── Main ───────────────────────────────────────────────── */
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; max-width: 100%; overflow: hidden; position: relative; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; position: relative; }
 .topbar {
   height: var(--topbar);
   background: var(--bg2);
@@ -203,7 +203,7 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .topbar-actions::-webkit-scrollbar { display: none; }
 
-.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; width: 100%; min-width: 0; min-height: 0; max-width: 100%; box-sizing: border-box; }
 
 .loading { text-align: center; padding: 60px; color: var(--text3); }
 
