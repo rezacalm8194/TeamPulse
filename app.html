@@ -10333,13 +10333,15 @@ function _showWelcomeTour() {
 }
 
 function _renderWelcomeStep() {
+  const preset = () => _JOB_PRESETS.find(j=>j.id===_selectedJob) || _JOB_PRESETS.find(j=>j.id==='other') || _JOB_PRESETS[9];
+
   const steps = [
     // Step 0: انتخاب شغل
     () => `
       <div style="text-align:center;padding:4px 0 8px">
         <div style="font-size:32px;margin-bottom:10px">👋</div>
         <h3 style="font-size:17px;font-weight:700;margin:0 0 6px">خوش اومدی به TeamPulse!</h3>
-        <p style="font-size:13px;color:var(--text2);margin:0 0 20px">اول شغلت رو انتخاب کن تا برنامه رو برات تنظیم کنیم:</p>
+        <p style="font-size:13px;color:var(--text2);margin:0 0 20px">۱) شغل خود را انتخاب کنید:</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:right">
           ${_JOB_PRESETS.map(j => `
           <button onclick="_selectJob('${j.id}')"
@@ -10358,51 +10360,91 @@ function _renderWelcomeStep() {
         </div>
       </div>`,
 
-    // Step 1: معرفی بخش‌ها
-    () => {
-      const preset = _JOB_PRESETS.find(j=>j.id===_selectedJob)||_JOB_PRESETS.find(j=>j.id==='other')||_JOB_PRESETS[9];
-      const sections = [
-        {icon:'👥',title:preset.sp,desc:`مدیریت کامل ${preset.sp}: اطلاعات، پکیج، پرداخت و کیف پول`},
-        {icon:'📅',title:preset.ssp,desc:`ثبت و پیگیری تمام ${preset.ssp} با یادداشت و پیوست فایل`},
-        {icon:'🛒',title:'پرداخت‌ها',desc:'تاریخچه کامل مالی و بدهی‌ها'},
-        {icon:'✅',title:'لیست کارها',desc:'کارهای روزانه با یادآوری و تکرار خودکار'},
-        {icon:'📊',title:'داشبورد',desc:'نمای کلی درآمد و وضعیت مالی'},
-        {icon:'🧑‍💼',title:'همکاران',desc:'مدیریت پرسنل، حقوق و نقش‌ها'},
-      ];
-      return `
-        <div style="padding:4px 0 8px">
-          <h3 style="font-size:16px;font-weight:700;margin:0 0 4px;text-align:center">بخش‌های TeamPulse</h3>
-          <p style="font-size:12px;color:var(--text2);text-align:center;margin:0 0 16px">برای ${preset.label} تنظیم شد ✓</p>
-          <div style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto">
-            ${sections.map(s=>`
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:10px">
-              <span style="font-size:22px;flex-shrink:0">${s.icon}</span>
-              <div><div style="font-size:13px;font-weight:600">${s.title}</div>
-              <div style="font-size:11px;color:var(--text3)">${s.desc}</div></div>
-            </div>`).join('')}
+    // Step 1: برچسب برنامه (همون فیلدهای صفحه تنظیمات)
+    () => `
+      <div style="padding:4px 0 8px">
+        <div style="text-align:center;margin-bottom:14px">
+          <div style="font-size:32px;margin-bottom:8px">🏷️</div>
+          <h3 style="font-size:16px;font-weight:700;margin:0 0 4px">۲) برچسب برنامه را مشخص کنید</h3>
+          <p style="font-size:12px;color:var(--text2);margin:0">بر اساس شغلت پیش‌فرض پر شده — می‌تونی تغییرش بدی</p>
+        </div>
+        <div class="form-grid" style="text-align:right">
+          <div class="form-group">
+            <label class="form-label">نام برنامه</label>
+            <input class="form-input" id="wz-app-title" value="${META.appTitle || ''}">
           </div>
-          <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
-            <button class="btn btn-ghost" onclick="_welcomeStep=0;_renderWelcomeStep()">← قبلی</button>
-            <button class="btn btn-primary" onclick="_welcomeStep=2;_renderWelcomeStep()">بعدی →</button>
+          <div class="form-group"></div>
+          <div class="form-group">
+            <label class="form-label">نام موجودیت (مفرد)</label>
+            <input class="form-input" id="wz-entity-singular" value="${META.entitySingular || preset().s}">
           </div>
-        </div>`;
-    },
+          <div class="form-group">
+            <label class="form-label">نام موجودیت (جمع)</label>
+            <input class="form-input" id="wz-entity-plural" value="${META.entityPlural || preset().sp}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">نام رویداد (مفرد)</label>
+            <input class="form-input" id="wz-session-singular" value="${META.sessionSingular || preset().ss}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">نام رویداد (جمع)</label>
+            <input class="form-input" id="wz-session-plural" value="${META.sessionPlural || preset().ssp}">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
+          <button class="btn btn-ghost" onclick="_welcomeStep=0;_renderWelcomeStep()">← قبلی</button>
+          <button class="btn btn-primary" onclick="_applyLabelsAndNext()">بعدی →</button>
+        </div>
+      </div>`,
 
-    // Step 2: پیام تنظیمات برچسب
+    // Step 2: نوتیفیکیشن‌های یادآور
     () => `
       <div style="text-align:center;padding:4px 0 8px">
-        <div style="font-size:40px;margin-bottom:12px">⚙️</div>
-        <h3 style="font-size:16px;font-weight:700;margin:0 0 10px">تنظیمات برچسب‌ها</h3>
-        <div style="background:rgba(124,106,247,.1);border:1px solid rgba(124,106,247,.3);border-radius:12px;padding:14px;text-align:right;margin-bottom:16px">
-          <p style="font-size:13px;color:var(--text2);line-height:1.8;margin:0">
-            برچسب‌های برنامه بر اساس شغل <b style="color:var(--accent2)">${(_JOB_PRESETS.find(j=>j.id===_selectedJob)||_JOB_PRESETS.find(j=>j.id==='other')||_JOB_PRESETS[9]).label}</b> تنظیم شد.<br>
-            برای تغییر بیشتر برو به:<br>
-            <b>⚙️ تنظیمات ← برچسب‌ها</b>
-          </p>
+        <div style="font-size:32px;margin-bottom:10px">🔔</div>
+        <h3 style="font-size:16px;font-weight:700;margin:0 0 6px">۳) نوتیفیکیشن‌های یادآور</h3>
+        <p style="font-size:12px;color:var(--text2);margin:0 0 16px;line-height:1.8">
+          برای دریافت یادآور کارها و ارزیابی‌ها روی این دستگاه، نوتیفیکیشن رو فعال کن.
+        </p>
+        <div id="wz-push-status" style="padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;
+          background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);color:var(--amber);text-align:right">
+          هنوز فعال نشده
         </div>
-        <div style="display:flex;gap:8px;justify-content:center">
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" id="wz-push-enable-btn" onclick="_enablePushFromWizard()">
+            🔔 فعال‌سازی نوتیفیکیشن
+          </button>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
           <button class="btn btn-ghost" onclick="_welcomeStep=1;_renderWelcomeStep()">← قبلی</button>
-          <button class="btn btn-primary" onclick="closeModal();_gotoSettings()">
+          <button class="btn btn-primary" onclick="_welcomeStep=3;_renderWelcomeStep()">بعدی →</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:10px">می‌تونی این مرحله رو رد کنی و بعداً از تنظیمات فعالش کنی</div>
+      </div>`,
+
+    // Step 3: پکیج‌ها / خدمات قابل ارائه
+    () => `
+      <div style="padding:4px 0 8px">
+        <div style="text-align:center;margin-bottom:14px">
+          <div style="font-size:32px;margin-bottom:8px">📦</div>
+          <h3 style="font-size:16px;font-weight:700;margin:0 0 4px">۴) پکیج‌ها / خدمات قابل ارائه</h3>
+          <p style="font-size:12px;color:var(--text2);margin:0">خدماتی که ارائه می‌دید رو مشخص کنید</p>
+        </div>
+        <div class="settings-list" id="wz-pkg-types-list" style="text-align:right">
+          ${PKG_TYPES.map(pt => `
+            <div class="settings-pkg-row" data-pkg-id="${pt.id}">
+              <input type="color" class="color-input" value="${pt.color}" onchange="updatePkgType(${pt.id}, this.value, null)">
+              <input class="form-input" style="flex:1" value="${pt.label}" onchange="updatePkgType(${pt.id}, null, this.value)">
+              <button class="btn btn-danger btn-sm" onclick="_wzDeletePkgType(${pt.id})">🗑</button>
+            </div>`).join('')}
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;margin-top:10px">
+          <input class="form-input" id="wz-new-pkg-label" placeholder="نام پکیج/خدمت جدید" style="max-width:200px">
+          <input type="color" class="color-input" id="wz-new-pkg-color" value="#7c6af7">
+          <button class="btn btn-ghost" onclick="_wzAddPkgType()">+ افزودن</button>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
+          <button class="btn btn-ghost" onclick="_welcomeStep=2;_renderWelcomeStep()">← قبلی</button>
+          <button class="btn btn-primary" onclick="_finishWizardAndGoToStudents()">
             🚀 شروع کنیم!
           </button>
         </div>
@@ -10414,11 +10456,13 @@ function _renderWelcomeStep() {
 
   document.getElementById('modals').innerHTML = `
     <div class="modal-overlay open">
-      <div class="modal" style="max-width:440px">
+      <div class="modal" style="max-width:460px">
         ${html}
         <div style="display:flex;justify-content:center;gap:5px;margin-top:10px">${dots}</div>
       </div>
     </div>`;
+
+  if (_welcomeStep === 2) setTimeout(_checkPushStatusForWizard, 100);
 }
 
 function _selectJob(id) {
@@ -10432,14 +10476,13 @@ function _selectJob(id) {
 function _applyJobAndNext() {
   if (!_selectedJob) return;
   const preset = _JOB_PRESETS.find(j=>j.id===_selectedJob)||_JOB_PRESETS.find(j=>j.id==='other')||_JOB_PRESETS[9];
-  // اعمال برچسب‌ها
+  // اعمال برچسب‌ها به صورت پیش‌فرض (در مرحله بعد قابل ویرایش است)
   if (_db && _db.meta) {
     _db.meta.entitySingular = preset.s;
     _db.meta.entityPlural = preset.sp;
     _db.meta.sessionSingular = preset.ss;
     _db.meta.sessionPlural = preset.ssp;
     _save();
-    // آپدیت META global
     META.entitySingular = preset.s;
     META.entityPlural = preset.sp;
     META.sessionSingular = preset.ss;
@@ -10447,7 +10490,166 @@ function _applyJobAndNext() {
     applyMetaToUI();
   }
   _welcomeStep = 1;
+  PKG_TYPES = []; // will load fresh in step 3
+  window.api.packageTypes.getAll().then(types => { PKG_TYPES = types; });
   _renderWelcomeStep();
+}
+
+// ── Step 1: ذخیره برچسب‌ها و رفتن به مرحله نوتیفیکیشن ──
+function _applyLabelsAndNext() {
+  const appTitle = document.getElementById('wz-app-title')?.value.trim() || 'سیستم مدیریت';
+  const entitySingular = document.getElementById('wz-entity-singular')?.value.trim() || 'شاگرد';
+  const entityPlural = document.getElementById('wz-entity-plural')?.value.trim() || 'شاگردان';
+  const sessionSingular = document.getElementById('wz-session-singular')?.value.trim() || 'جلسه';
+  const sessionPlural = document.getElementById('wz-session-plural')?.value.trim() || 'جلسات';
+
+  META = { ...META, appTitle, entitySingular, entityPlural, sessionSingular, sessionPlural };
+  if (_db) {
+    _db.meta = { ..._db.meta, ...META };
+    _save();
+  }
+  applyMetaToUI();
+
+  _welcomeStep = 2;
+  _renderWelcomeStep();
+}
+
+// ── Step 2: نوتیفیکیشن داخل ویزارد ──
+async function _enablePushFromWizard() {
+  const statusBox = document.getElementById('wz-push-status');
+  const btn = document.getElementById('wz-push-enable-btn');
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (statusBox) { statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند'; }
+    return;
+  }
+
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      if (statusBox) {
+        statusBox.style.background='rgba(248,113,113,.08)'; statusBox.style.borderColor='rgba(248,113,113,.3)'; statusBox.style.color='var(--red)';
+        statusBox.textContent='❌ اجازه نوتیفیکیشن داده نشد — می‌تونی بعداً از تنظیمات فعالش کنی';
+      }
+      return;
+    }
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+
+    const keyRes = await fetch('/api/reminders/vapid-key');
+    const { publicKey } = await keyRes.json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8Array(publicKey) });
+    await _apiFetch('/api/reminders/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub }) });
+
+    if (statusBox) {
+      statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)';
+      statusBox.textContent='✅ نوتیفیکیشن روی این دستگاه فعال شد';
+    }
+    if (btn) btn.style.display = 'none';
+    showToast('نوتیفیکیشن فعال شد ✓', 'success');
+  } catch(e) {
+    if (statusBox) statusBox.textContent = '❌ خطا: ' + e.message;
+  }
+}
+
+async function _checkPushStatusForWizard() {
+  const statusBox = document.getElementById('wz-push-status');
+  const btn = document.getElementById('wz-push-enable-btn');
+  if (!statusBox) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    statusBox.style.background='rgba(248,113,113,.08)'; statusBox.style.borderColor='rgba(248,113,113,.3)'; statusBox.style.color='var(--red)';
+    statusBox.textContent = '❌ نوتیفیکیشن مسدود شده — از تنظیمات مرورگر Allow کن';
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)';
+      statusBox.textContent = '✅ نوتیفیکیشن از قبل فعال است';
+      if (btn) btn.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+// ── Step 3: پکیج‌ها داخل ویزارد ──
+async function _wzAddPkgType() {
+  const label = document.getElementById('wz-new-pkg-label')?.value.trim();
+  const color = document.getElementById('wz-new-pkg-color')?.value || '#7c6af7';
+  if (!label) { showToast('نام پکیج را وارد کنید', 'error'); return; }
+  await window.api.packageTypes.add({ label, color });
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  _renderWelcomeStep();
+}
+
+async function _wzDeletePkgType(id) {
+  const res = await window.api.packageTypes.delete(id);
+  if (res && res.ok === false) { showToast(res.error || 'حذف نشد', 'error'); return; }
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  _renderWelcomeStep();
+}
+
+// ── پایان ویزارد → رفتن به صفحه شاگردان با راهنمای آیکون ──
+function _finishWizardAndGoToStudents() {
+  closeModal();
+  if (_db && _db.meta) {
+    _db.meta.onboarded = true;
+    _save();
+  }
+  currentPage = 'students';
+  updatePageTitle();
+  renderPage();
+  closeSidebar();
+  setTimeout(() => _showAddStudentHint(), 600);
+}
+
+// ── راهنمای آیکون «افزودن» روی صفحه شاگردان ──
+function _showAddStudentHint() {
+  const addBtn = document.querySelector('[data-add-student-btn], .btn-add-student, #add-student-btn');
+  // پیدا کردن دکمه افزودن با fallback به onclick pattern
+  const candidates = Array.from(document.querySelectorAll('button, a')).filter(el =>
+    el.getAttribute('onclick')?.includes('openStudentModal')
+  );
+  const target = addBtn || candidates[0];
+
+  const entityS = META.entitySingular || 'شاگرد';
+  showToast(`👇 برای شروع، از دکمه «+ افزودن ${entityS}» اولین ${entityS} رو اضافه کن`, 'success', 6000);
+
+  if (target) {
+    target.style.position = 'relative';
+    const pulse = document.createElement('div');
+    pulse.id = 'add-student-pulse-hint';
+    pulse.style.cssText = `
+      position:fixed;z-index:9998;pointer-events:none;
+      width:54px;height:54px;border-radius:50%;
+      border:2.5px solid var(--accent2);
+      animation:tpHintPulse 1.4s ease-out infinite;
+    `;
+    const rect = target.getBoundingClientRect();
+    pulse.style.top = (rect.top + rect.height/2 - 27) + 'px';
+    pulse.style.left = (rect.left + rect.width/2 - 27) + 'px';
+    document.body.appendChild(pulse);
+
+    if (!document.getElementById('tp-hint-keyframes')) {
+      const style = document.createElement('style');
+      style.id = 'tp-hint-keyframes';
+      style.textContent = `@keyframes tpHintPulse{0%{transform:scale(.8);opacity:1}100%{transform:scale(1.6);opacity:0}}`;
+      document.head.appendChild(style);
+    }
+
+    setTimeout(() => { const p = document.getElementById('add-student-pulse-hint'); if (p) p.remove(); }, 8000);
+    target.addEventListener('click', () => {
+      const p = document.getElementById('add-student-pulse-hint'); if (p) p.remove();
+    }, { once: true });
+  }
 }
 
 function _gotoSettings() {
