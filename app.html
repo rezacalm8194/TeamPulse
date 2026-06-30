@@ -8871,6 +8871,9 @@ function setContent(html) {
   const prevCPos = prevC ? prevC.selectionStart : null;
   
   document.getElementById('content').innerHTML = html;
+  if (typeof _applyResponsiveTableLabels === 'function') {
+    try { _applyResponsiveTableLabels(); } catch(e) {}
+  }
   
   // Restore content search
   if (prevCVal !== null) {
@@ -13869,11 +13872,16 @@ const _tableObserver = new MutationObserver(() => {
   clearTimeout(window._tblLabelTimer);
   window._tblLabelTimer = setTimeout(_applyResponsiveTableLabels, 60);
 });
-document.addEventListener('DOMContentLoaded', () => {
+function _initResponsiveTableObserver() {
   const contentEl = document.getElementById('content');
   if (contentEl) _tableObserver.observe(contentEl, { childList: true, subtree: true });
   _applyResponsiveTableLabels();
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initResponsiveTableObserver);
+} else {
+  _initResponsiveTableObserver();
+}
 
 _initAuth().then(authed => {
   if (authed) {
