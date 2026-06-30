@@ -2327,6 +2327,14 @@ window.api = {
     },
     markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;_db.staff_payments.push({id:_nextId('staff_payments'),staff_id:m.staff_id,amount:m.total,date_jalali:p.date,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.staff_monthly=_db.staff_monthly.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    updateMonth: (p)=>{
+      const m=_db.staff_monthly.find(x=>x.id===p.id); if(!m) return _P({ok:false});
+      // جلوگیری از تداخل با رکورد دیگه‌ای که از قبل همون ماه رو داره
+      const dup=_db.staff_monthly.find(x=>x.id!==p.id&&x.staff_id===m.staff_id&&x.jy===p.jy&&x.jm===p.jm);
+      if(dup) return _P({ok:false,error:'برای این ماه قبلاً رکورد دیگری ثبت شده'});
+      m.jy=p.jy; m.jm=p.jm;
+      _save(); return _P({ok:true});
+    },
   },
 
   instructions: {
@@ -6219,6 +6227,37 @@ async function updateStaffRole(id, label) {
   await window.api.staffRoles.update({ id, label });
   showToast('ذخیره شد ✓', 'success');
 }
+// ── اصلاح ماه یک رکورد حقوق ماهانه (وقتی پرداخت زودتر/دیرتر از موعد ثبت شده) ──
+function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm) {
+  const monthOptions = JMONTHS.map((mn, i) =>
+    `<option value="${i+1}" ${i+1===curJm?'selected':''}>${mn}</option>`).join('');
+
+  openModal(`✏️ اصلاح ماه رکورد حقوق — ${name}`, `
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">
+      الان این رکورد به عنوان حقوق <b>${JMONTHS[curJm-1]} ${fa(curJy)}</b> ثبت شده.
+      اگه اشتباه ثبت شده (مثلاً حقوق یه ماه دیگه رو زودتر پرداخت کردی)، اینجا ماه درست رو انتخاب کن.
+    </p>
+    <div class="form-group full">
+      <label class="form-label">ماه صحیح</label>
+      <div style="display:flex;gap:8px">
+        <select class="form-input" id="fmm-month" style="flex:1.4">${monthOptions}</select>
+        <input class="form-input" id="fmm-year" type="number" value="${curJy}" style="flex:1" placeholder="سال">
+      </div>
+    </div>
+  `, [
+    { label: 'ذخیره اصلاح', cls: 'btn-primary', action: `confirmFixMonthlyMonth(${monthlyId},${staffId},'${escapeHtml(name)}')` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+async function confirmFixMonthlyMonth(monthlyId, staffId, name) {
+  const jm = parseInt(document.getElementById('fmm-month')?.value);
+  const jy = parseInt(document.getElementById('fmm-year')?.value);
+  const res = await window.api.staffMonthly.updateMonth({ id: monthlyId, jy, jm });
+  if (!res.ok) { showToast(res.error || 'خطا در اصلاح', 'error'); return; }
+  showToast('ماه رکورد اصلاح شد ✅', 'success');
+  await openStaffDetail(staffId);
+}
+
 async function deleteStaffRole(id) {
   const result = await window.api.staffRoles.delete(id);
   if (!result.ok) { showToast(result.error, 'error'); return; }
@@ -6293,6 +6332,7 @@ async function openStaffDetail(id) {
           <span class="detail-val" style="display:flex;align-items:center;gap:6px">
             ${fmt(m.total)} تومان
             ${!m.paid?`<button class="btn btn-primary btn-sm" onclick="markMonthlyPaid(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`:''}
+            <button class="btn btn-ghost btn-sm" onclick="openFixMonthlyMonth(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}', ${m.jy}, ${m.jm})">✏️ اصلاح ماه</button>
             <button class="btn btn-danger btn-sm" onclick="deleteMonthly(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑</button>
           </span>
         </div>`;
