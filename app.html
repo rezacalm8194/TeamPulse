@@ -1071,9 +1071,55 @@ body.light mark { background: rgba(251,191,36,.5); }
   .stat-value{font-size:16px!important}
   .stat-label{font-size:10px}
 
-  /* Tables: horizontal scroll */
-  .table-card{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  table{min-width:480px}
+  /* Tables: convert to stacked cards on mobile */
+  .table-card.tbl-responsive table { min-width: 0; }
+  .table-card.tbl-responsive thead { display: none; }
+  .table-card.tbl-responsive tbody, .table-card.tbl-responsive tr { display: block; width: 100%; }
+  .table-card.tbl-responsive tr {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-card.tbl-responsive tr:last-child { border-bottom: none; }
+  .table-card.tbl-responsive td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: none;
+    font-size: 12px;
+    text-align: left;
+  }
+  .table-card.tbl-responsive td[colspan] {
+    display: block !important;
+    text-align: center;
+  }
+  .table-card.tbl-responsive td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text3);
+    flex-shrink: 0;
+    margin-left: 10px;
+  }
+  /* سلول عملیات (چند دکمه‌ای) — زیر هم با wrap */
+  .table-card.tbl-responsive td[style*="flex-wrap"],
+  .table-card.tbl-responsive td[data-label="عملیات"] {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"]::before { margin-bottom: 4px; }
+  .table-card.tbl-responsive td:empty,
+  .table-card.tbl-responsive td[data-label=""] { display: none; }
+  .table-card.tbl-responsive td > * { margin-right: auto; }
+  .table-card.tbl-responsive .name-cell { width: 100%; }
+  .table-card.tbl-responsive td:first-child::before { display: none; }
+  .table-card.tbl-responsive td:first-child { padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+
+  /* fallback: tables not yet converted to card mode keep horizontal scroll */
+  .table-card:not(.tbl-responsive) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-card:not(.tbl-responsive) table { min-width: 480px; }
+
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
   .table-search{width:100%;max-width:none!important}
   .table-search input{width:100%}
@@ -13793,6 +13839,40 @@ document.addEventListener('focusout', (e) => {
       }
     }, 300);
   }
+});
+
+// ── Responsive table → card conversion (mobile) ──────────────────────────
+function _applyResponsiveTableLabels() {
+  document.querySelectorAll('.table-card').forEach(card => {
+    const table = card.querySelector('table');
+    if (!table) return;
+    const headerCells = table.querySelectorAll('thead th');
+    if (!headerCells.length) return;
+    const labels = Array.from(headerCells).map(th => th.textContent.trim());
+
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      // ردیف‌های empty-state با colspan رو دست نزن
+      if (cells.length === 1 && cells[0].hasAttribute('colspan')) return;
+      cells.forEach((td, i) => {
+        if (labels[i] !== undefined && !td.hasAttribute('data-label')) {
+          td.setAttribute('data-label', labels[i]);
+        }
+      });
+    });
+    card.classList.add('tbl-responsive');
+  });
+}
+
+// اجرا بعد از هر بار رندر شدن محتوای صفحه
+const _tableObserver = new MutationObserver(() => {
+  clearTimeout(window._tblLabelTimer);
+  window._tblLabelTimer = setTimeout(_applyResponsiveTableLabels, 60);
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const contentEl = document.getElementById('content');
+  if (contentEl) _tableObserver.observe(contentEl, { childList: true, subtree: true });
+  _applyResponsiveTableLabels();
 });
 
 _initAuth().then(authed => {
