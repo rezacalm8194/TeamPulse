@@ -1202,9 +1202,8 @@ body.light mark { background: rgba(251,191,36,.5); }
 
 /* ── Mobile (≤480px) ──────────────────────────────── */
 @media(max-width:480px){
-  .content{padding:8px;padding-bottom:68px}
+  .content{padding:8px}
   .stat-value{font-size:14px!important}
-  .topbar{height:48px}
   .page-title{font-size:12px;max-width:100px}
 
   /* Stack topbar buttons */
@@ -1224,17 +1223,18 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* Bottom nav labels */
   .bottom-nav .nav-label{font-size:9px}
   .bottom-nav .nav-icon{font-size:18px}
-  .bottom-nav{height:52px}
-  .content{padding-bottom:60px}
+  .bottom-nav{height:calc(52px + env(safe-area-inset-bottom,0))}
+  .topbar{height:calc(48px + env(safe-area-inset-top,0))}
+  .content{padding-bottom:calc(60px + env(safe-area-inset-bottom,0))}
 }
 
 /* ── Extra small (≤360px) ─────────────────────────── */
 @media(max-width:360px){
   .stat-card{padding:6px 8px}
   .stat-value{font-size:13px!important}
-  .bottom-nav{height:50px}
-  .content{padding-bottom:58px}
-  .topbar{height:46px}
+  .bottom-nav{height:calc(50px + env(safe-area-inset-bottom,0))}
+  .content{padding-bottom:calc(58px + env(safe-area-inset-bottom,0))}
+  .topbar{height:calc(46px + env(safe-area-inset-top,0))}
 }
 
 /* ── Desktop (≥1024px) ────────────────────────────── */
