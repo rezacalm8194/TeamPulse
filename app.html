@@ -1040,6 +1040,52 @@ body.light mark { background: rgba(251,191,36,.5); }
 #trends-container .trend-block:last-child { margin-bottom: 0; }
 
 
+/* ── Bottom Sheet ────────────────────────────────────────── */
+.bottom-sheet-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200; opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.bottom-sheet-overlay.open { opacity: 1; pointer-events: all; }
+.bottom-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bg2);
+  border-radius: 20px 20px 0 0;
+  border-top: 1px solid var(--border2);
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom,0));
+  z-index: 201;
+  transform: translateY(100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 -8px 32px rgba(0,0,0,.3);
+}
+.bottom-sheet-overlay.open .bottom-sheet { transform: translateY(0); }
+.bottom-sheet-handle {
+  width: 40px; height: 4px; background: var(--border2);
+  border-radius: 2px; margin: 6px auto 14px;
+}
+.bs-title {
+  font-size: 13px; font-weight: 700; color: var(--text2);
+  text-align: center; margin-bottom: 14px; letter-spacing: .04em;
+}
+.bs-option {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--border2); background: var(--bg3);
+  cursor: pointer; margin-bottom: 10px;
+  transition: all .15s; user-select: none;
+}
+.bs-option:hover, .bs-option:active { background: var(--bg4); }
+.bs-option-icon { font-size: 26px; width: 34px; text-align: center; }
+.bs-option-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.bs-option-desc { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.bs-option.bs-task { border-color: rgba(96,165,250,.3); }
+.bs-option.bs-task:hover { background: rgba(96,165,250,.08); border-color: rgba(96,165,250,.5); }
+.bs-option.bs-goal { border-color: rgba(62,207,142,.3); }
+.bs-option.bs-goal:hover { background: rgba(62,207,142,.08); border-color: rgba(62,207,142,.5); }
+.bs-option.bs-habit { border-color: rgba(251,191,36,.3); }
+.bs-option.bs-habit:hover { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.5); }
+
 /* ══════════════════ RESPONSIVE ══════════════════ */
 .hamburger{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;flex-shrink:0}
 .sidebar-backdrop{display:none;position:fixed;inset:0;height:100vh;height:100dvh;background:rgba(0,0,0,.6);z-index:29;-webkit-tap-highlight-color:transparent}
@@ -1374,6 +1420,8 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
       <a class="nav-item" data-page="sessions"><span class="nav-icon">📅</span><span id="nav-label-sessions">جلسات</span></a>
       <a class="nav-item" data-page="instructions" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">📋</span><span>دستورالعمل‌های من</span></a>
       <a class="nav-item" data-page="todolist"><span class="nav-icon">✅</span><span>لیست کارها</span></a>
+      <a class="nav-item" data-page="goals" onclick="currentPage='goals';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">🎯</span><span>اهداف</span></a>
+      <a class="nav-item" data-page="habits" onclick="currentPage='habits';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">🔥</span><span>عادت‌ها</span></a>
       <a class="nav-item" data-page="staff"><span class="nav-icon">🧑‍💼</span><span>مدیریت</span></a>
       <a class="nav-item" data-page="payments"><span class="nav-icon">🛒</span><span>تاریخچه خریدها و پرداخت‌ها</span></a>
       <a class="nav-item" data-page="reminders"><span class="nav-icon">⏰</span><span>یادآوری پرداخت</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
@@ -1479,9 +1527,9 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
     <nav class="bottom-nav">
       <div class="bn-row">
         <div class="bn-item active" data-page="students" onclick="bnNav(this)"><span class="bn-icon">👥</span><span>شاگردان</span></div>
-        <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon">📋</span><span>دستورالعمل</span></div>
-        <div class="bn-item" data-page="sessions" onclick="bnNav(this)"><span class="bn-icon">📅</span><span>جلسات</span></div>
-        <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>لیست کارها</span></div>
+        <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>کارها</span></div>
+        <div class="bn-item" data-page="goals" onclick="currentPage='goals';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🎯</span><span>اهداف</span></div>
+        <div class="bn-item" data-page="habits" onclick="currentPage='habits';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🔥</span><span>عادت‌ها</span></div>
         <div class="bn-item" onclick="openSidebar()"><span class="bn-icon">☰</span><span>بیشتر</span></div>
       </div>
       <div class="bn-safe-spacer"></div>
@@ -11237,7 +11285,7 @@ function renderTodoList() {
   if (_archiveChanged) _save(false);
 
   updateTopbarActions(`
-    <button class="btn btn-primary" onclick="openAddTodo()">+ کار جدید</button>
+    <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
     <button class="btn btn-ghost" onclick="openTodoArchive()" style="margin-right:6px">📦 بایگانی</button>
   `);
 
@@ -14326,6 +14374,558 @@ _initAuth().then(authed => {
 if (false && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+</script>
+
+<!-- ── Bottom Sheet: ایجاد مورد جدید ── -->
+<div class="bottom-sheet-overlay" id="new-item-sheet" onclick="if(event.target===this)closeNewItemSheet()">
+  <div class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bs-title">ایجاد مورد جدید</div>
+
+    <div class="bs-option bs-task" onclick="closeNewItemSheet();openAddTodo()">
+      <span class="bs-option-icon">📝</span>
+      <div>
+        <div class="bs-option-label">کار</div>
+        <div class="bs-option-desc">یک کار با تاریخ، اولویت و یادآوری</div>
+      </div>
+    </div>
+
+    <div class="bs-option bs-goal" onclick="closeNewItemSheet();openAddGoal()">
+      <span class="bs-option-icon">🎯</span>
+      <div>
+        <div class="bs-option-label">هدف</div>
+        <div class="bs-option-desc">هدف بلندمدت با مراحل و پیشرفت</div>
+      </div>
+    </div>
+
+    <div class="bs-option bs-habit" onclick="closeNewItemSheet();openAddHabit()">
+      <span class="bs-option-icon">🔥</span>
+      <div>
+        <div class="bs-option-label">عادت</div>
+        <div class="bs-option-desc">عادت روزانه با streak و آمار</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Bottom Sheet ──────────────────────────────────────────────
+function openNewItemSheet() {
+  const sheet = document.getElementById('new-item-sheet');
+  if (sheet) sheet.classList.add('open');
+}
+function closeNewItemSheet() {
+  const sheet = document.getElementById('new-item-sheet');
+  if (sheet) sheet.classList.remove('open');
+}
+
+// ── Goals Page ────────────────────────────────────────────────
+function _goalsInit() {
+  if (!_db.goals) _db.goals = [];
+  if (!_db._nextId) _db._nextId = {};
+  if (!_db._nextId.goals) _db._nextId.goals = 1;
+}
+
+function renderGoals() {
+  _goalsInit();
+  updateTopbarActions(`
+    <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
+  `);
+
+  const goals = _db.goals || [];
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const today = _todayJalaliStr ? _todayJalaliStr() : '';
+
+  if (goals.length === 0) {
+    setContent(`
+      <div style="max-width:600px;margin:40px auto;text-align:center;padding:40px 20px">
+        <div style="font-size:56px;margin-bottom:16px">🎯</div>
+        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز هدفی تعریف نکرده‌ای</h2>
+        <p style="color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.8">
+          اهداف بزرگ‌ات را اینجا ثبت کن. هر هدف می‌تواند مراحل، یادداشت و deadline داشته باشد.
+        </p>
+        <button class="btn btn-primary" style="padding:12px 28px;font-size:14px" onclick="openAddGoal()">
+          🎯 اولین هدفم را بسازم
+        </button>
+      </div>`);
+    return;
+  }
+
+  const statusColors = {
+    active: { bg: 'rgba(96,165,250,.12)', color: '#60a5fa', label: 'در جریان' },
+    done:   { bg: 'rgba(62,207,142,.12)', color: 'var(--green)', label: 'تکمیل شده' },
+    paused: { bg: 'rgba(251,191,36,.12)', color: 'var(--amber)', label: 'متوقف' },
+  };
+  const diffColors = { easy: 'var(--green)', medium: 'var(--amber)', hard: 'var(--red)' };
+  const diffLabels = { easy: 'آسان', medium: 'متوسط', hard: 'سخت' };
+
+  const html = goals.map(g => {
+    const sc = statusColors[g.status || 'active'] || statusColors.active;
+    const progress = g.progress || 0;
+    const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
+    const milestones = g.milestones || [];
+    const doneMilestones = milestones.filter(m => m.done).length;
+    const daysLeft = g.deadline ? (() => {
+      try {
+        const [jy,jm,jd] = parseJalali ? parseJalali(g.deadline) : [0,0,0];
+        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+        const diff = Math.ceil((new Date(gy,gm-1,gd) - new Date()) / 86400000);
+        return diff;
+      } catch(e) { return null; }
+    })() : null;
+
+    return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
+      onclick="openGoalDetail(${g.id})"
+      onmouseenter="this.style.borderColor='rgba(62,207,142,.4)'"
+      onmouseleave="this.style.borderColor='var(--border)'">
+      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
+        <span style="font-size:28px;flex-shrink:0">${g.icon || '🎯'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-size:15px;font-weight:700;color:var(--text)">${g.title}</span>
+            <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
+            ${g.difficulty ? `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${diffColors[g.difficulty] || 'var(--text2)'}">⚡ ${diffLabels[g.difficulty] || g.difficulty}</span>` : ''}
+          </div>
+          ${g.category ? `<span style="font-size:11px;color:var(--text3)">${g.category}</span>` : ''}
+        </div>
+        <div style="text-align:center;flex-shrink:0">
+          <div style="font-size:22px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
+          <div style="font-size:9px;color:var(--text3)">پیشرفت</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:4px;transition:width .5s"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        ${g.deadline ? `<span style="font-size:11px;color:${daysLeft !== null && daysLeft < 0 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--amber)' : 'var(--text3)'}">
+          📅 ${g.deadline}${daysLeft !== null ? ' · ' + (daysLeft < 0 ? fa(Math.abs(daysLeft)) + ' روز گذشت' : fa(daysLeft) + ' روز مانده') : ''}
+        </span>` : ''}
+        ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
+        ${g.why ? `<span style="font-size:11px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">💡 ${g.why}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  setContent(`
+    <div style="max-width:680px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:17px;font-weight:700">🎯 اهداف من</h2>
+        <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
+      </div>
+      ${html}
+    </div>`);
+}
+
+function openAddGoal() {
+  openModal('🎯 هدف جدید', `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">عنوان هدف *</label>
+        <input class="form-input" id="goal-title" placeholder="مثلاً: یادگیری زبان انگلیسی" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">آیکون</label>
+        <input class="form-input" id="goal-icon" value="🎯" placeholder="🎯">
+      </div>
+      <div class="form-group">
+        <label class="form-label">دسته‌بندی</label>
+        <input class="form-input" id="goal-category" placeholder="مثلاً: سلامت، مالی، یادگیری">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">💡 چرا این هدف برایم مهم است؟</label>
+        <textarea class="form-textarea" id="goal-why" rows="2" placeholder="انگیزه اصلی‌ات را بنویس..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">📅 Deadline (شمسی)</label>
+        <input class="form-input jdate" id="goal-deadline" placeholder="${formatJalali(...todayJalali())}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">سختی</label>
+        <select class="form-select" id="goal-difficulty">
+          <option value="easy">آسان</option>
+          <option value="medium" selected>متوسط</option>
+          <option value="hard">سخت</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">تصویر ذهنی (وقتی به هدف رسیدم...)</label>
+        <textarea class="form-textarea" id="goal-vision" rows="2" placeholder="چه چیزی تغییر می‌کند؟"></textarea>
+      </div>
+    </div>
+  `, [
+    { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewGoal()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  setTimeout(() => initDatePickers && initDatePickers(), 50);
+}
+
+function saveNewGoal() {
+  _goalsInit();
+  const title = document.getElementById('goal-title')?.value.trim();
+  if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
+  const goal = {
+    id: _db._nextId.goals++,
+    title,
+    icon: document.getElementById('goal-icon')?.value || '🎯',
+    category: document.getElementById('goal-category')?.value || '',
+    why: document.getElementById('goal-why')?.value || '',
+    vision: document.getElementById('goal-vision')?.value || '',
+    deadline: document.getElementById('goal-deadline')?.value || '',
+    difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
+    status: 'active',
+    progress: 0,
+    milestones: [],
+    notes: '',
+    created_at: new Date().toISOString(),
+  };
+  _db.goals.push(goal);
+  _save();
+  closeModal();
+  showToast('هدف ذخیره شد ✓', 'success');
+  if (currentPage === 'goals') renderGoals();
+}
+
+function openGoalDetail(id) {
+  _goalsInit();
+  const g = _db.goals.find(x => x.id === id);
+  if (!g) return;
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const milestones = g.milestones || [];
+  const msHTML = milestones.map((m, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
+      <div onclick="toggleMilestone(${id},${i})" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;
+        background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
+        ${m.done?'<span style="color:white;font-size:13px">✓</span>':''}
+      </div>
+      <span style="flex:1;font-size:13px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${m.title}</span>
+      <button onclick="deleteMilestone(${id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px">🗑</button>
+    </div>`).join('');
+
+  openModal(`${g.icon || '🎯'} ${g.title}`, `
+    <div>
+      ${g.why ? `<div style="background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px">💡 چرا مهم است</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.8">${g.why}</div>
+      </div>` : ''}
+
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--text2)">پیشرفت</span>
+          <span style="font-size:18px;font-weight:800;color:var(--accent2)">${fa(g.progress || 0)}٪</span>
+        </div>
+        <input type="range" min="0" max="100" value="${g.progress||0}" style="width:100%;accent-color:var(--accent)"
+          oninput="updateGoalProgress(${id},this.value,this.nextElementSibling)"
+          onchange="updateGoalProgress(${id},this.value,this.previousElementSibling)">
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text2)">🏁 مراحل (Milestones)</span>
+          <button onclick="addMilestone(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer">+ مرحله</button>
+        </div>
+        <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز مرحله‌ای اضافه نشده</div>'}</div>
+      </div>
+
+      ${g.deadline ? `<div style="font-size:12px;color:var(--text2)">📅 ددلاین: <strong>${g.deadline}</strong></div>` : ''}
+    </div>
+  `, [
+    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditGoal(${id})` },
+    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteGoal(${id})` },
+    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+  ]);
+}
+
+function updateGoalProgress(id, val, _) {
+  const g = (_db.goals||[]).find(x=>x.id===id);
+  if (g) { g.progress = +val; _save(false); }
+}
+function toggleMilestone(goalId, idx) {
+  const g = (_db.goals||[]).find(x=>x.id===goalId);
+  if (!g || !g.milestones[idx]) return;
+  g.milestones[idx].done = !g.milestones[idx].done;
+  _save(); openGoalDetail(goalId);
+}
+function deleteMilestone(goalId, idx) {
+  const g = (_db.goals||[]).find(x=>x.id===goalId);
+  if (!g) return;
+  g.milestones.splice(idx, 1); _save(); openGoalDetail(goalId);
+}
+function addMilestone(goalId) {
+  const g = (_db.goals||[]).find(x=>x.id===goalId);
+  if (!g) return;
+  const title = prompt('عنوان مرحله:');
+  if (!title) return;
+  if (!g.milestones) g.milestones = [];
+  g.milestones.push({ title, done: false });
+  _save(); openGoalDetail(goalId);
+}
+function openEditGoal(id) {
+  const g = (_db.goals||[]).find(x=>x.id===id);
+  if (!g) return;
+  openModal('✏️ ویرایش هدف', `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">عنوان *</label>
+        <input class="form-input" id="eg-title" value="${g.title||''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">آیکون</label>
+        <input class="form-input" id="eg-icon" value="${g.icon||'🎯'}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">دسته‌بندی</label>
+        <input class="form-input" id="eg-category" value="${g.category||''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">📅 Deadline</label>
+        <input class="form-input jdate" id="eg-deadline" value="${g.deadline||''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">وضعیت</label>
+        <select class="form-select" id="eg-status">
+          <option value="active" ${g.status==='active'?'selected':''}>در جریان</option>
+          <option value="done" ${g.status==='done'?'selected':''}>تکمیل شده</option>
+          <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">چرا مهم است؟</label>
+        <textarea class="form-textarea" id="eg-why" rows="2">${g.why||''}</textarea>
+      </div>
+    </div>
+  `, [
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditGoal(${id})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  setTimeout(() => initDatePickers && initDatePickers(), 50);
+}
+function saveEditGoal(id) {
+  const g = (_db.goals||[]).find(x=>x.id===id);
+  if (!g) return;
+  g.title = document.getElementById('eg-title')?.value || g.title;
+  g.icon = document.getElementById('eg-icon')?.value || g.icon;
+  g.category = document.getElementById('eg-category')?.value || '';
+  g.deadline = document.getElementById('eg-deadline')?.value || '';
+  g.status = document.getElementById('eg-status')?.value || 'active';
+  g.why = document.getElementById('eg-why')?.value || '';
+  _save(); closeModal(); if (currentPage === 'goals') renderGoals();
+}
+function deleteGoal(id) {
+  if (!confirm('این هدف حذف شود؟')) return;
+  _db.goals = (_db.goals||[]).filter(x=>x.id!==id);
+  _save(); showToast('حذف شد','error'); if (currentPage === 'goals') renderGoals();
+}
+
+// ── Habits Page ──────────────────────────────────────────────
+function _habitsInit() {
+  if (!_db.habits) _db.habits = [];
+  if (!_db.habit_logs) _db.habit_logs = [];
+  if (!_db._nextId) _db._nextId = {};
+  if (!_db._nextId.habits) _db._nextId.habits = 1;
+}
+
+function renderHabits() {
+  _habitsInit();
+  updateTopbarActions(`<button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>`);
+
+  const habits = _db.habits || [];
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+
+  if (habits.length === 0) {
+    setContent(`
+      <div style="max-width:600px;margin:40px auto;text-align:center;padding:40px 20px">
+        <div style="font-size:56px;margin-bottom:16px">🔥</div>
+        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز عادتی تعریف نکرده‌ای</h2>
+        <p style="color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.8">
+          عادت‌های مثبت روزانه‌ات را اینجا پیگیری کن. Streak بساز و ثابت‌قدم باش!
+        </p>
+        <button class="btn btn-primary" style="padding:12px 28px;font-size:14px" onclick="openAddHabit()">
+          🔥 اولین عادتم را بسازم
+        </button>
+      </div>`);
+    return;
+  }
+
+  const getStreak = (habitId) => {
+    const habitLogs = logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date).sort().reverse();
+    if (!habitLogs.length) return 0;
+    let streak = 0;
+    let checkDate = todayStr;
+    for (let i = 0; i < 365; i++) {
+      if (habitLogs.includes(checkDate)) { streak++; }
+      else if (i === 0) { /* امروز هنوز نزده */ }
+      else break;
+      // برو روز قبل
+      try {
+        const [jy,jm,jd] = parseJalali(checkDate);
+        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+        const prev = new Date(gy,gm-1,gd-1);
+        const pj = gregorianToJalali(prev.getFullYear(),prev.getMonth()+1,prev.getDate());
+        checkDate = formatJalali(...pj);
+      } catch(e) { break; }
+    }
+    return streak;
+  };
+
+  const html = habits.map(h => {
+    const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
+    const streak = getStreak(h.id);
+    const last30 = Array.from({length: 30}, (_, i) => {
+      try {
+        const [jy,jm,jd] = parseJalali(todayStr);
+        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+        const d = new Date(gy,gm-1,gd - (29-i));
+        const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
+        const dateStr = formatJalali(...dj);
+        const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
+        return `<div style="width:10px;height:10px;border-radius:2px;background:${done ? (h.color||'var(--green)') : 'var(--bg4)'}" title="${dateStr}"></div>`;
+      } catch(e) { return '<div style="width:10px;height:10px;border-radius:2px;background:var(--bg4)"></div>'; }
+    }).join('');
+
+    return `<div style="background:var(--bg2);border:1px solid ${doneToday?'rgba(62,207,142,.4)':'var(--border)'};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <button onclick="toggleHabitToday(${h.id})" style="width:46px;height:46px;border-radius:50%;flex-shrink:0;cursor:pointer;
+          background:${doneToday?'var(--green)':'var(--bg3)'};
+          border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
+          font-size:22px;transition:all .2s;display:flex;align-items:center;justify-content:center">
+          ${doneToday ? '✅' : (h.icon || '🔥')}
+        </button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px">${h.title}</div>
+          ${h.time ? `<div style="font-size:11px;color:var(--text3)">⏰ ${h.time}</div>` : ''}
+        </div>
+        <div style="text-align:center;flex-shrink:0">
+          <div style="font-size:20px;font-weight:800;color:${h.color||'var(--amber)'}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
+          <div style="font-size:9px;color:var(--text3)">روز streak</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap">${last30}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:left">← ۳۰ روز اخیر</div>
+    </div>`;
+  }).join('');
+
+  setContent(`
+    <div style="max-width:680px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:17px;font-weight:700">🔥 عادت‌های من</h2>
+        <span style="font-size:12px;color:var(--text3)">${fa(habits.length)} عادت</span>
+      </div>
+      ${html}
+    </div>`);
+}
+
+function toggleHabitToday(habitId) {
+  _habitsInit();
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const existing = _db.habit_logs.find(l => l.habit_id === habitId && l.date === todayStr);
+  if (existing) { existing.done = !existing.done; }
+  else { _db.habit_logs.push({ habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); }
+  _save(); renderHabits();
+}
+
+function openAddHabit() {
+  openModal('🔥 عادت جدید', `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">نام عادت *</label>
+        <input class="form-input" id="hab-title" placeholder="مثلاً: ورزش صبحگاهی" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">آیکون</label>
+        <input class="form-input" id="hab-icon" value="🔥" placeholder="🔥" style="font-size:18px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">رنگ</label>
+        <select class="form-select" id="hab-color">
+          <option value="#fbbf24">🟡 طلایی</option>
+          <option value="#3ecf8e">🟢 سبز</option>
+          <option value="#60a5fa">🔵 آبی</option>
+          <option value="#f472b6">🩷 صورتی</option>
+          <option value="#f87171">🔴 قرمز</option>
+          <option value="#a78bfa">🟣 بنفش</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">⏰ زمان انجام</label>
+        <input class="form-input" id="hab-time" type="time" style="direction:ltr">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">📝 توضیحات</label>
+        <input class="form-input" id="hab-desc" placeholder="توضیح کوتاه...">
+      </div>
+    </div>
+  `, [
+    { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewHabit()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+function saveNewHabit() {
+  _habitsInit();
+  const title = document.getElementById('hab-title')?.value.trim();
+  if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
+  _db.habits.push({
+    id: _db._nextId.habits++,
+    title,
+    icon: document.getElementById('hab-icon')?.value || '🔥',
+    color: document.getElementById('hab-color')?.value || '#fbbf24',
+    time: document.getElementById('hab-time')?.value || '',
+    desc: document.getElementById('hab-desc')?.value || '',
+    created_at: new Date().toISOString(),
+  });
+  _save(); closeModal(); showToast('عادت ذخیره شد ✓', 'success');
+  if (currentPage === 'habits') renderHabits();
+}
+
+// ── Hook into existing renderPage ────────────────────────────
+const _origRenderPage = typeof renderPage === 'function' ? renderPage : null;
+// Override renderPage to handle goals/habits
+(function() {
+  const _patchRenderPage = () => {
+    const orig = window.renderPage;
+    if (!orig || orig._patched) return;
+    window.renderPage = function() {
+      if (window.currentPage === 'goals') { renderGoals(); return; }
+      if (window.currentPage === 'habits') { renderHabits(); return; }
+      orig.apply(this, arguments);
+    };
+    window.renderPage._patched = true;
+  };
+  // Try immediately and after DOMContentLoaded
+  _patchRenderPage();
+  document.addEventListener('DOMContentLoaded', _patchRenderPage);
+  setTimeout(_patchRenderPage, 200);
+  setTimeout(_patchRenderPage, 1000);
+})();
+
+// ── Page title for new pages ──────────────────────────────────
+const _origUpdatePageTitle = typeof updatePageTitle === 'function' ? updatePageTitle : null;
+(function() {
+  const _patchTitle = () => {
+    const orig = window.updatePageTitle;
+    if (!orig || orig._patched) return;
+    window.updatePageTitle = function() {
+      const titles = { goals: '🎯 اهداف', habits: '🔥 عادت‌ها' };
+      if (titles[window.currentPage]) {
+        const el = document.getElementById('page-title');
+        if (el) el.textContent = titles[window.currentPage];
+        return;
+      }
+      orig.apply(this, arguments);
+    };
+    window.updatePageTitle._patched = true;
+  };
+  _patchTitle();
+  document.addEventListener('DOMContentLoaded', _patchTitle);
+  setTimeout(_patchTitle, 200);
+  setTimeout(_patchTitle, 1000);
+})();
 </script>
 </body>
 </html>
