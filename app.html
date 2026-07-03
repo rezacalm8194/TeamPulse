@@ -7466,6 +7466,7 @@ function _ensurePeriodIds(form) {
 }
 
 // Flat, date-sorted (newest first) list of every period across every eval form of a student.
+// An open period (date === null, not yet closed) is treated as the newest/current one.
 function _studentAllPeriodsFlat(studentId) {
   const forms = loadEvalForms(studentId);
   let anyChanged = false;
@@ -7475,7 +7476,7 @@ function _studentAllPeriodsFlat(studentId) {
     (f.periods || []).forEach((p, idx) => flat.push({ formId: f.id, formTitle: f.title, pid: p.id, date: p.date, idx }));
   });
   if (anyChanged) saveEvalForms(studentId, forms);
-  flat.sort((a, b) => _jalaliKey(b.date) - _jalaliKey(a.date));
+  flat.sort((a, b) => (b.date ? _jalaliKey(b.date) : Infinity) - (a.date ? _jalaliKey(a.date) : Infinity));
   return flat;
 }
 
@@ -7491,7 +7492,7 @@ function _buildEvalPeriodSelectOptions(studentId, selectedFormId, selectedPid) {
     f.periods.forEach((p, idx) => {
       const val = `${f.id}:${p.id}`;
       const sel = (String(selectedFormId) === String(f.id) && String(selectedPid) === String(p.id)) ? 'selected' : '';
-      html += `<option value="${val}" ${sel}>دوره ${fa(idx + 1)} · ${p.date}</option>`;
+      html += `<option value="${val}" ${sel}>دوره ${fa(idx + 1)} · ${p.date || 'باز'}</option>`;
     });
     html += `</optgroup>`;
   });
@@ -7506,19 +7507,25 @@ function _defaultEvalPeriodValue(studentId) {
 }
 
 // ── Automatic date → evaluation-period matching ───────────────────────────
-// A period's stored "date" is the day it was closed/evaluated. So a period covers every
-// day from (the previous period's date + 1) up to and including its own date. The most
-// recently created period has no "closing" date yet after it — it's the open/active period.
+// A period with a date has been CLOSED on that date — it covers every day up to and
+// including that date. A period with date === null is OPEN (not yet closed) and covers
+// everything from whenever the previous period closed up to today and beyond, until the
+// coach closes it too. There is always at most one open period per form, and it's always
+// the chronologically last one.
 //
-// The form used for this automatic matching is the student's "primary" evaluation form:
-// whichever form has the most recently dated period (or the first form, if none has any
-// periods yet). This mirrors how most coaches use a single scorecard per student.
+// The form used for automatic matching is the student's "primary" evaluation form: the one
+// with an open period if any form has one, otherwise whichever form has the most recently
+// closed period, otherwise the first form. This mirrors how most coaches use a single
+// scorecard per student.
 function _primaryEvalFormId(studentId) {
   const forms = loadEvalForms(studentId);
   if (!forms.length) return null;
+  const withOpen = forms.find(f => (f.periods || []).some(p => !p.date));
+  if (withOpen) return withOpen.id;
   let best = null, bestKey = -1;
   forms.forEach(f => {
     (f.periods || []).forEach(p => {
+      if (!p.date) return;
       const k = _jalaliKey(p.date);
       if (k > bestKey) { bestKey = k; best = f.id; }
     });
@@ -7527,10 +7534,9 @@ function _primaryEvalFormId(studentId) {
 }
 
 // Given a student + an achievement's date, find which evaluation period it belongs to.
-// Returns { formId, pid }. pid is null when the date falls after every existing period —
-// i.e. it belongs to the still-open period that hasn't been closed yet. It stays unassigned
-// until the coach closes that period (see _reassignOpenSessionsToPeriod), at which point it
-// gets retroactively linked.
+// Returns { formId, pid }. Matches the earliest CLOSED period whose date is on/after the
+// given date; if none, falls back to the OPEN period (if one exists); if there are no
+// periods at all yet, pid is null.
 function _matchPeriodForDate(studentId, dateStr) {
   const formId = _primaryEvalFormId(studentId);
   if (!formId) return { formId: null, pid: null };
@@ -7538,9 +7544,11 @@ function _matchPeriodForDate(studentId, dateStr) {
   const form = forms.find(f => f.id === formId);
   if (!form || !form.periods || !form.periods.length) return { formId, pid: null };
   const dKey = _jalaliKey(dateStr);
-  const sorted = [...form.periods].sort((a, b) => _jalaliKey(a.date) - _jalaliKey(b.date));
-  const match = sorted.find(p => _jalaliKey(p.date) >= dKey);
-  return { formId, pid: match ? match.id : null };
+  const closed = form.periods.filter(p => p.date).sort((a, b) => _jalaliKey(a.date) - _jalaliKey(b.date));
+  const match = closed.find(p => _jalaliKey(p.date) >= dKey);
+  if (match) return { formId, pid: match.id };
+  const open = form.periods.find(p => !p.date);
+  return { formId, pid: open ? open.id : null };
 }
 
 // Human-readable line shown under the achievements textarea explaining where this will land.
@@ -7551,26 +7559,26 @@ function _describeAutoPeriod(studentId, dateStr) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) return '';
-  if (!pid) return `🗓 در دورهٔ ارزیابی فعلی «${escapeHtml(form.title)}» (هنوز باز) ثبت می‌شود — با پایان دادن به این دوره، خودکار به آن متصل خواهد شد.`;
+  if (!pid) return '🗓 هنوز دوره ارزیابی‌ای برای این فرد ساخته نشده — بعد از ساخت اولین دوره، این دستاورد خودکار به آن متصل می‌شود.';
   const idx = form.periods.findIndex(p => p.id === pid);
-  return `🗓 به‌صورت خودکار در «${escapeHtml(form.title)} · دوره ${fa(idx + 1)}» ثبت می‌شود.`;
+  const isOpen = !form.periods[idx].date;
+  return isOpen
+    ? `🗓 به‌صورت خودکار در دورهٔ فعلی «${escapeHtml(form.title)} · دوره ${fa(idx + 1)} (باز)» ثبت می‌شود.`
+    : `🗓 به‌صورت خودکار در «${escapeHtml(form.title)} · دوره ${fa(idx + 1)}» ثبت می‌شود.`;
 }
 
-// Called right after a new period is created (i.e. the previous period was just "closed").
-// Retroactively attaches any still-unassigned achievement-sessions of this student that fall
-// within the newly-closed period's date range to it.
-function _reassignOpenSessionsToPeriod(studentId, formId, newPeriod, prevPeriodDate) {
-  const newKey = _jalaliKey(newPeriod.date);
-  const prevKey = prevPeriodDate ? _jalaliKey(prevPeriodDate) : -1;
+// Recomputes eval_form_id / eval_period_id for every achievement-bearing session of a
+// student, based on the current period timeline. Call this whenever periods are created,
+// closed, edited, or deleted, so every achievement always sits in the right period.
+function _relinkAchievementsForStudent(studentId) {
   let changed = false;
   (_db.sessions || []).forEach(s => {
     if (s.student_id !== studentId) return;
-    if (s.eval_period_id) return; // already linked to something — leave it alone
     if (!s.achievements || !s.achievements.trim()) return;
-    const k = _jalaliKey(s.date_jalali);
-    if (k > prevKey && k <= newKey) {
+    const { formId, pid } = _matchPeriodForDate(studentId, s.date_jalali);
+    if (s.eval_form_id !== formId || s.eval_period_id !== pid) {
       s.eval_form_id = formId;
-      s.eval_period_id = newPeriod.id;
+      s.eval_period_id = pid;
       changed = true;
     }
   });
@@ -7624,8 +7632,9 @@ function _achievementPeriodBadge(session) {
   const tagLabels = (session.achievement_tags || [])
     .map(tid => form.rows.find(r => r.id === tid)?.label)
     .filter(Boolean);
+  const isOpen = !form.periods[idx].date;
   return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
-    <span style="font-size:10px;background:rgba(62,207,142,.1);color:var(--green);border-radius:20px;padding:3px 10px">🗓 ${escapeHtml(form.title)} · دوره ${fa(idx + 1)}</span>
+    <span style="font-size:10px;background:${isOpen?'rgba(96,165,250,.1)':'rgba(62,207,142,.1)'};color:${isOpen?'var(--blue)':'var(--green)'};border-radius:20px;padding:3px 10px">🗓 ${escapeHtml(form.title)} · دوره ${fa(idx + 1)}${isOpen?' (باز)':''}</span>
     ${tagLabels.map(l => `<span style="font-size:10px;background:rgba(96,165,250,.1);color:var(--blue);border-radius:20px;padding:3px 10px">🏷 ${escapeHtml(l)}</span>`).join('')}
   </div>`;
 }
@@ -7723,7 +7732,7 @@ function openEvaluation(studentId, displayName) {
             </div>
           </div>
           ${f.periods.length > 0 ? `<div style="padding:6px 12px 8px;font-size:10px;color:var(--text3)">
-            ${f.periods.map((p,i)=>`<span style="display:inline-block;margin-left:6px;margin-bottom:2px;background:rgba(62,207,142,.1);color:var(--green);border-radius:4px;padding:1px 6px">دوره ${fa(i+1)} · ${p.date}</span>`).join('')}
+            ${f.periods.map((p,i)=>`<span style="display:inline-block;margin-left:6px;margin-bottom:2px;background:${p.date?'rgba(62,207,142,.1)':'rgba(96,165,250,.1)'};color:${p.date?'var(--green)':'var(--blue)'};border-radius:4px;padding:1px 6px">دوره ${fa(i+1)} · ${p.date || 'باز'}</span>`).join('')}
           </div>` : ''}
         </div>`;
       }).join('');
@@ -7943,13 +7952,21 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const periodTabsHtml = form.periods.length === 0
     ? `<div style="font-size:11px;color:var(--text3);padding:4px 0 10px">هنوز دوره‌ای ثبت نشده — از دکمه «دوره جدید» شروع کن.</div>`
     : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px" id="eval-period-tabs">
-        ${form.periods.map((p,i) => `
+        ${form.periods.map((p,i) => {
+          const isOpen = !p.date;
+          const active = i === curIdx;
+          const border = active ? (isOpen ? 'var(--blue)' : 'var(--green)') : 'var(--border)';
+          const bg = active ? (isOpen ? 'rgba(96,165,250,.12)' : 'rgba(62,207,142,.12)') : 'var(--bg3)';
+          const color = active ? (isOpen ? 'var(--blue)' : 'var(--green)') : 'var(--text2)';
+          return `
           <button id="eval-tab-${i}"
             onclick="evalSwitchTab(${studentId},'${escapeHtml(displayName)}',${formId},${i})"
-            style="padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;border:1px solid ${i===curIdx?'var(--green)':'var(--border)'};background:${i===curIdx?'rgba(62,207,142,.12)':'var(--bg3)'};color:${i===curIdx?'var(--green)':'var(--text2)'}">
-            دوره ${fa(i+1)} · ${p.date}
-          </button>`).join('')}
-        ${form.periods.length >= 2 ? `
+            style="padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;border:1px solid ${border};background:${bg};color:${color};display:flex;align-items:center;gap:5px">
+            ${isOpen ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--blue);display:inline-block;flex-shrink:0"></span>' : ''}
+            دوره ${fa(i+1)} · ${isOpen ? 'باز' : p.date}
+          </button>`;
+        }).join('')}
+        ${form.periods.filter(p=>p.date).length >= 2 ? `
           <button onclick="openEvalCompare(${studentId},'${escapeHtml(displayName)}',${formId})"
             style="padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.08);color:var(--blue)">
             📈 مقایسه دوره‌ها
@@ -8086,6 +8103,11 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
       ${reminder.nextDate ? `<div style="margin-top:8px;font-size:10px;color:var(--text3)">یادآوری بعدی: ${reminder.nextDate}</div>` : ''}
     </div>`;
 
+  const openPeriodIdx = form.periods.findIndex(p => !p.date);
+  const primaryBtn = openPeriodIdx !== -1
+    ? { label: `🔵 پایان دوره ${fa(openPeriodIdx + 1)}`, cls: 'btn-primary', action: `endEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId},${openPeriodIdx})` }
+    : { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` };
+
   openModal(`📊 ${escapeHtml(form.title)} — ${displayName}`, `
     <div class="detail-section" style="max-height:65vh;overflow-y:auto">
       ${form.desc ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${escapeHtml(form.desc)}</div>` : ''}
@@ -8095,7 +8117,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
       ${reminderHtml}
     </div>
   `, [
-    { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    primaryBtn,
     { label: '✏️ ویرایش شاخص‌ها', cls: 'btn-ghost', action: `openEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` },
     { label: 'بازگشت', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
   ]);
@@ -8109,12 +8131,15 @@ function evalSwitchTab(studentId, displayName, formId, periodIdx) {
   const form = forms.find(f => f.id === formId);
   if (!form) return;
   // update tab styles
-  form.periods.forEach((_,i) => {
+  form.periods.forEach((p,i) => {
     const btn = document.getElementById(`eval-tab-${i}`);
     if (!btn) return;
-    btn.style.border = i === periodIdx ? '1px solid var(--green)' : '1px solid var(--border)';
-    btn.style.background = i === periodIdx ? 'rgba(62,207,142,.12)' : 'var(--bg3)';
-    btn.style.color = i === periodIdx ? 'var(--green)' : 'var(--text2)';
+    const isOpen = !p.date;
+    const active = i === periodIdx;
+    const c = active ? (isOpen ? 'var(--blue)' : 'var(--green)') : 'var(--text2)';
+    btn.style.border = `1px solid ${active ? c : 'var(--border)'}`;
+    btn.style.background = active ? (isOpen ? 'rgba(96,165,250,.12)' : 'rgba(62,207,142,.12)') : 'var(--bg3)';
+    btn.style.color = c;
   });
   document.getElementById('eval-table-container').innerHTML = buildEvalTable(form, periodIdx, studentId);
   setTimeout(() => {
@@ -8129,10 +8154,10 @@ function buildEvalTable(form, periodIdx, studentId) {
   const notes = period ? period.notes : {};
   const targets = period ? (period.targets || {}) : {};
 
-  // editable date header
-  const dateRow = period ? `
+  // editable date header (closed period) vs. "still open" banner with an end-period button
+  const dateRow = period ? (period.date ? `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:6px 10px;background:var(--bg2);border-radius:7px;border:1px solid var(--border);flex-wrap:wrap">
-      <span style="font-size:11px;color:var(--text3);white-space:nowrap">تاریخ دوره ${fa((periodIdx||0)+1)}:</span>
+      <span style="font-size:11px;color:var(--text3);white-space:nowrap">تاریخ پایان دوره ${fa((periodIdx||0)+1)}:</span>
       <input type="text" id="eval-date-${periodIdx}" value="${period.date}"
         class="form-input jdate" style="font-size:12px;padding:3px 8px;height:30px;text-align:center;width:120px"
         placeholder="۱۴۰۵/۰۱/۰۱"
@@ -8142,7 +8167,19 @@ function buildEvalTable(form, periodIdx, studentId) {
         style="margin-right:auto;padding:3px 10px;font-size:11px;border-radius:6px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.08);color:var(--red);cursor:pointer">
         🗑 حذف این دوره
       </button>
-    </div>` : '';
+    </div>` : `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:6px 10px;background:rgba(96,165,250,.08);border-radius:7px;border:1px solid rgba(96,165,250,.35);flex-wrap:wrap">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--blue);display:inline-block;flex-shrink:0"></span>
+      <span style="font-size:11px;color:var(--blue);font-weight:600;white-space:nowrap">دوره ${fa((periodIdx||0)+1)} هنوز باز است — پایان نیافته</span>
+      <button onclick="endEvalPeriod(${studentId || 'null'},'',${form.id},${periodIdx})"
+        style="margin-right:auto;padding:3px 10px;font-size:11px;border-radius:6px;border:none;background:var(--blue);color:#fff;cursor:pointer;font-weight:600">
+        🔵 پایان دوره و تعیین تاریخ
+      </button>
+      <button onclick="confirmDeleteEvalPeriod(${form.id},${periodIdx})"
+        style="padding:3px 10px;font-size:11px;border-radius:6px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.08);color:var(--red);cursor:pointer">
+        🗑 حذف این دوره
+      </button>
+    </div>`) : '';
 
   const rows = form.rows.map(row => {
     const score = scores[row.id] !== undefined ? scores[row.id] : '';
@@ -8274,20 +8311,50 @@ function _buildPeriodAchievementsHtml(studentId, form, period) {
 }
 
 // ── START a new period (shows date input first) ──
+// "+ دوره جدید" — only relevant when there's no open period yet (e.g. the very first
+// period for this form). If one is already open, just jump to it instead of duplicating.
 function startNewEvalPeriod(studentId, displayName, formId) {
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(f => f.id === formId);
+  if (!form) return;
+  const openIdx = form.periods.findIndex(p => !p.date);
+  if (openIdx !== -1) {
+    showToast('یک دوره در حال حاضر باز است — از دکمه «پایان دوره» برای بستن آن استفاده کن');
+    openEvalFormDetail(studentId, displayName, formId, openIdx);
+    return;
+  }
+  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
+  form.periods.push(newPeriod);
+  saveEvalForms(studentId, forms);
+  _relinkAchievementsForStudent(studentId);
+  showToast(`دوره ${fa(form.periods.length)} شروع شد ✅`);
+  openEvalFormDetail(studentId, displayName, formId, form.periods.length - 1);
+}
+
+// "پایان دوره" — closes the currently open period with a chosen end date, then immediately
+// opens a fresh (open) period right after it. Only valid on a period that is still open.
+function endEvalPeriod(studentId, displayName, formId, periodIdx) {
+  if (!studentId) studentId = _studentIdForForm(formId);
+  if (!displayName) {
+    const titleEl = document.querySelector('.modal-title');
+    displayName = titleEl ? titleEl.textContent.replace(/^📊 .*?—\s*/, '').trim() : '';
+  }
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods[periodIdx] || form.periods[periodIdx].date) return;
   const today = formatJalali(...todayJalali());
-  openModal(`📅 پایان دوره فعلی و شروع دوره جدید`, `
+  openModal(`📅 پایان دوره ${fa(periodIdx + 1)}`, `
     <div class="form-group full">
-      <label class="form-label">تاریخ پایان دوره فعلی / ارزیابی</label>
+      <label class="form-label">تاریخ پایان این دوره</label>
       <input class="form-input jdate" id="enp-date" value="${today}" placeholder="۱۴۰۵/۰۱/۰۱"
         style="text-align:center;font-size:15px;font-weight:600;letter-spacing:1px"
         oninput="this.value=this.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d))">
       <div style="font-size:10px;color:var(--text3);margin-top:4px">تاریخ امروز به‌صورت پیش‌فرض وارد شده — از آیکون 📅 یا تایپ مستقیم تغییر بده</div>
-      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.8">با ثبت این تاریخ، دوره فعلی بسته می‌شود، تمام دستاوردهایی که تا این تاریخ ثبت شده‌اند خودکار به همین دوره متصل می‌شوند و یک دوره جدید (باز) از روز بعد شروع می‌شود.</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.8">با ثبت این تاریخ، دوره ${fa(periodIdx + 1)} بسته می‌شود، تمام دستاوردهای این بازه زمانی خودکار به همین دوره متصل می‌شوند و یک دوره جدید (باز) بلافاصله شروع می‌شود.</div>
     </div>
   `, [
-    { label: '✅ بستن این دوره', cls: 'btn-primary', action: `confirmNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` },
-    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    { label: '✅ پایان دوره', cls: 'btn-primary', action: `confirmEndEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId},${periodIdx})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId},${periodIdx})` },
   ]);
   setTimeout(() => {
     const inp = document.getElementById('enp-date');
@@ -8295,21 +8362,20 @@ function startNewEvalPeriod(studentId, displayName, formId) {
   }, 0);
 }
 
-function confirmNewEvalPeriod(studentId, displayName, formId) {
+function confirmEndEvalPeriod(studentId, displayName, formId, periodIdx) {
   const raw = (document.getElementById('enp-date').value || '').trim();
   const dateVal = raw.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   if (!dateVal) { alert('تاریخ را وارد کنید'); return; }
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
-  if (!form) return;
-  const prevPeriodDate = form.periods.length ? form.periods[form.periods.length - 1].date : null;
-  const newPeriod = { id: genEvalId(), date: dateVal, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
-  form.periods.push(newPeriod);
+  if (!form || !form.periods[periodIdx] || form.periods[periodIdx].date) return;
+  form.periods[periodIdx].date = dateVal;
+  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
+  form.periods.splice(periodIdx + 1, 0, newPeriod);
   saveEvalForms(studentId, forms);
-  // این دوره همین الان «بسته» شد — هر دستاورد بدون دوره در همین بازه زمانی، خودکار به آن وصل شود
-  _reassignOpenSessionsToPeriod(studentId, formId, newPeriod, prevPeriodDate);
-  showToast(`دوره ${fa(form.periods.length)} ارزیابی ثبت شد ✅`);
-  openEvalFormDetail(studentId, displayName, formId, form.periods.length - 1);
+  _relinkAchievementsForStudent(studentId);
+  showToast(`دوره ${fa(periodIdx + 1)} بسته شد و دوره ${fa(periodIdx + 2)} شروع شد ✅`);
+  openEvalFormDetail(studentId, displayName, formId, periodIdx + 1);
 }
 
 // ── UPDATE helpers ──
@@ -8331,7 +8397,7 @@ function confirmDeleteEvalPeriod(formId, periodIdx) {
       <div style="font-size:32px;margin-bottom:12px">⚠️</div>
       <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px">حذف دوره ${fa(periodIdx+1)}</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px;line-height:1.8">
-        دوره <strong>${fa(periodIdx+1)} · ${period.date}</strong> با تمام امتیازها و توضیحاتش حذف می‌شود.
+        دوره <strong>${fa(periodIdx+1)} · ${period.date || 'باز'}</strong> با تمام امتیازها و توضیحاتش حذف می‌شود.
       </div>
       <div style="font-size:11px;color:var(--red);margin-bottom:20px">این عمل غیر قابل بازگشت است.</div>
       <div style="display:flex;gap:10px;justify-content:center">
@@ -8374,6 +8440,7 @@ function doDeleteEvalPeriod(formId, periodIdx) {
 
   // find studentId from key
   const studentId = parseInt(key.replace('eval_forms_',''));
+  _relinkAchievementsForStudent(studentId);
   // re-open form detail — need displayName, try to get from modal title
   const titleEl = document.querySelector('.modal-title');
   const displayName = titleEl ? titleEl.textContent.replace(/^📊 .*?—\s*/, '').trim() : '';
@@ -8391,6 +8458,8 @@ function updateEvalDate(formId, periodIdx, value) {
   if (form && form.periods[periodIdx]) {
     form.periods[periodIdx].date = normalized;
     _evalSaveByKey(key, forms);
+    const studentId = parseInt(key.replace('eval_forms_',''));
+    _relinkAchievementsForStudent(studentId);
     // update tab button — rebuild its full content
     const btn = document.getElementById(`eval-tab-${periodIdx}`);
     if (btn) btn.innerHTML = `دوره ${fa(periodIdx+1)} · ${normalized}`;
@@ -8557,7 +8626,7 @@ function openEvalCompare(studentId, displayName, formId) {
   if (!form || form.periods.length < 2) return;
 
   const periodOptions = form.periods.map((p,i) =>
-    `<option value="${i}">دوره ${fa(i+1)} · ${p.date}</option>`).join('');
+    `<option value="${i}">دوره ${fa(i+1)} · ${p.date || 'باز'}</option>`).join('');
 
   openModal(`📈 مقایسه دوره‌ها — ${escapeHtml(form.title)}`, `
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
@@ -8568,7 +8637,7 @@ function openEvalCompare(studentId, displayName, formId) {
       <div class="form-group" style="flex:1;min-width:120px;margin:0">
         <label class="form-label">دوره دوم</label>
         <select class="form-input" id="cmp-b" style="padding:5px 8px">
-          ${form.periods.map((p,i) => `<option value="${i}" ${i===form.periods.length-1?'selected':''}>${`دوره ${fa(i+1)} · ${p.date}`}</option>`).join('')}
+          ${form.periods.map((p,i) => `<option value="${i}" ${i===form.periods.length-1?'selected':''}>${`دوره ${fa(i+1)} · ${p.date || 'باز'}`}</option>`).join('')}
         </select>
       </div>
       <button class="btn btn-primary" style="flex-shrink:0;padding:6px 14px" onclick="renderEvalCompare(${formId})">مقایسه</button>
@@ -9128,7 +9197,7 @@ function shareEvalPeriod(formId, periodIdx) {
       <thead><tr><th style="width:35%">شاخص</th><th style="width:30%">امتیاز</th><th style="width:22%">توضیحات</th><th style="width:13%;text-align:center">هدف</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
-    <p style="font-size:10px;color:#9ca3af;margin-top:8px;margin-bottom:14px">تاریخ دوره: ${period.date}</p>
+    <p style="font-size:10px;color:#9ca3af;margin-top:8px;margin-bottom:14px">تاریخ دوره: ${period.date || 'باز (هنوز پایان نیافته)'}</p>
     ${summarySection}
     ${actionsSection}`;
 
@@ -9299,7 +9368,7 @@ function downloadEvalPeriod(formId, periodIdx) {
 
   const body = `
     <h1>${form.title}</h1>
-    <div class="meta">دوره ${fa(periodIdx+1)} · تاریخ: ${period.date} ${form.desc ? '· ' + form.desc : ''}</div>
+    <div class="meta">دوره ${fa(periodIdx+1)} · تاریخ: ${period.date || 'باز (هنوز پایان نیافته)'} ${form.desc ? '· ' + form.desc : ''}</div>
     ${totalScore !== null ? `
     <div class="total-box">
       <span class="total-label">امتیاز کل دوره ${fa(periodIdx+1)}</span>
