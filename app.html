@@ -2254,8 +2254,8 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??''});_save();} return _P({ok:true}); },
+    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[])});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_save();}} return _P({ok:true}); },
     addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});_save();} return _P({ok:true}); },
     deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);_save();} return _P({ok:true}); },
@@ -4653,6 +4653,7 @@ async function openSessionDetail(sessionId) {
     <div class="detail-section">
       <h3>🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</h3>
       <p style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(session.achievements)}</p>
+      ${_achievementPeriodBadge(session)}
     </div>` : ''}
     <div class="detail-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -4741,7 +4742,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">${META.entitySingular || 'شاگرد'} *</label>
-        <select class="form-select" id="f-ses-student">${opts}</select>
+        <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
       </div>
       <div class="form-group full">
         <label class="form-label">عنوان ${META.sessionSingular||'جلسه'}</label>
@@ -4784,6 +4785,11 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت، بازخوردهای خوب..."></textarea>
+        <div style="margin-top:8px">
+          <label class="form-label" style="font-size:11px;color:var(--text3)">🗓 این دستاورد مربوط به کدام دوره ارزیابی است؟</label>
+          <select class="form-select" id="f-ses-period" onchange="_onSesPeriodChange(this)">${_buildEvalPeriodSelectOptions(presetStudentId || allStudents[0]?.id, null, null)}</select>
+        </div>
+        <div id="ses-ach-tags"></div>
       </div>
       <div class="form-group full">
         <label class="form-label">📎 پیوست‌ها</label>
@@ -4802,6 +4808,15 @@ async function openAddSessionGeneral(presetStudentId = null) {
   window._pendingSessionAttachments = [];
   window._pendingFollowups = [];
   setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
+  setTimeout(() => {
+    const periodSel = document.getElementById('f-ses-period');
+    if (periodSel) {
+      const initStudent = presetStudentId || +document.getElementById('f-ses-student')?.value;
+      const def = _defaultEvalPeriodValue(initStudent);
+      if (def) periodSel.value = def;
+      _onSesPeriodChange(periodSel);
+    }
+  }, 0);
 }
 
 function _addSesFollowupItem() {
@@ -4839,6 +4854,8 @@ async function saveSessionGeneral() {
   const title = document.getElementById('f-ses-title')?.value || '';
   const note = document.getElementById('f-ses-note')?.value;
   const addAsTopic = document.getElementById('f-ses-add-topic')?.checked;
+  const periodVal = document.getElementById('f-ses-period')?.value || '';
+  const [pvFormId, pvPid] = periodVal ? periodVal.split(':') : [null, null];
   await window.api.sessions.add({
     student_id: studentId, date,
     title,
@@ -4847,6 +4864,9 @@ async function saveSessionGeneral() {
     extra_note: document.getElementById('f-ses-extra')?.value,
     followups: (window._pendingFollowups || []).map(f => ({ text: f.text })),
     achievements: document.getElementById('f-ses-achievements')?.value || '',
+    eval_form_id: pvFormId ? +pvFormId : null,
+    eval_period_id: pvPid ? +pvPid : null,
+    achievement_tags: _getCheckedAchievementTags(),
   });
   window._pendingFollowups = [];
   // ذخیره پیوست‌ها در جلسه جدید
@@ -4920,6 +4940,11 @@ async function openEditSession(sessionId) {
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
+        <div style="margin-top:8px">
+          <label class="form-label" style="font-size:11px;color:var(--text3)">🗓 این دستاورد مربوط به کدام دوره ارزیابی است؟</label>
+          <select class="form-select" id="f-ses-period" onchange="_onSesPeriodChange(this)">${_buildEvalPeriodSelectOptions(session.student_id, session.eval_form_id, session.eval_period_id)}</select>
+        </div>
+        <div id="ses-ach-tags"></div>
       </div>
     </div>
   `, [
@@ -4927,9 +4952,15 @@ async function openEditSession(sessionId) {
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
+  setTimeout(() => {
+    const periodSel = document.getElementById('f-ses-period');
+    if (periodSel) _renderAchievementTagPicker(session.eval_form_id, session.achievement_tags || []);
+  }, 0);
 }
 
 async function saveEditSession(sessionId) {
+  const periodVal = document.getElementById('f-ses-period')?.value || '';
+  const [pvFormId, pvPid] = periodVal ? periodVal.split(':') : [null, null];
   await window.api.sessions.update({
     id: sessionId,
     title: document.getElementById('f-ses-title')?.value || '',
@@ -4938,6 +4969,9 @@ async function saveEditSession(sessionId) {
     note: document.getElementById('f-ses-note')?.value,
     extra_note: document.getElementById('f-ses-extra')?.value,
     achievements: document.getElementById('f-ses-achievements')?.value || '',
+    eval_form_id: pvFormId ? +pvFormId : null,
+    eval_period_id: pvPid ? +pvPid : null,
+    achievement_tags: _getCheckedAchievementTags(),
   });
   closeModal();
   showToast('ذخیره شد ✓', 'success');
@@ -7401,19 +7435,26 @@ async function openSessionsSummary(studentId, displayName) {
 
 function evalKey(studentId) { return `eval_forms_${studentId}`; }
 function loadEvalForms(studentId) {
+  let forms;
   // از _db بخون (sync با سرور)
   if (_db && _db.eval_forms && _db.eval_forms[studentId]) {
-    return _db.eval_forms[studentId];
+    forms = _db.eval_forms[studentId];
+  } else {
+    // migration: داده قدیمی localStorage رو منتقل کن
+    try {
+      const local = JSON.parse(localStorage.getItem(evalKey(studentId)) || '[]');
+      if (local.length > 0) {
+        saveEvalForms(studentId, local);
+        localStorage.removeItem(evalKey(studentId));
+      }
+      forms = local;
+    } catch(e) { forms = []; }
   }
-  // migration: داده قدیمی localStorage رو منتقل کن
-  try {
-    const local = JSON.parse(localStorage.getItem(evalKey(studentId)) || '[]');
-    if (local.length > 0) {
-      saveEvalForms(studentId, local);
-      localStorage.removeItem(evalKey(studentId));
-    }
-    return local;
-  } catch(e) { return []; }
+  // اطمینان از این‌که هر دوره یک id ثابت دارد (برای اتصال دستاوردها به دوره)
+  let anyChanged = false;
+  forms.forEach(f => { if (_ensurePeriodIds(f)) anyChanged = true; });
+  if (anyChanged) saveEvalForms(studentId, forms);
+  return forms;
 }
 function saveEvalForms(studentId, forms) {
   if (!_db) { localStorage.setItem(evalKey(studentId), JSON.stringify(forms)); return; }
@@ -7422,6 +7463,117 @@ function saveEvalForms(studentId, forms) {
   _save();
 }
 function genEvalId() { return Date.now() + Math.floor(Math.random()*1000); }
+
+// ── Achievement ↔ Evaluation-Period linking helpers ──────────────────────
+// Ensures every period has a stable id (older data may not have one yet).
+function _ensurePeriodIds(form) {
+  let changed = false;
+  (form.periods || []).forEach(p => { if (!p.id) { p.id = genEvalId() + Math.floor(Math.random()*1000); changed = true; } });
+  return changed;
+}
+
+// Flat, date-sorted (newest first) list of every period across every eval form of a student.
+function _studentAllPeriodsFlat(studentId) {
+  const forms = loadEvalForms(studentId);
+  let anyChanged = false;
+  const flat = [];
+  forms.forEach(f => {
+    if (_ensurePeriodIds(f)) anyChanged = true;
+    (f.periods || []).forEach((p, idx) => flat.push({ formId: f.id, formTitle: f.title, pid: p.id, date: p.date, idx }));
+  });
+  if (anyChanged) saveEvalForms(studentId, forms);
+  flat.sort((a, b) => _jalaliKey(b.date) - _jalaliKey(a.date));
+  return flat;
+}
+
+// Build <option>/<optgroup> markup for choosing an evaluation period (used in session forms).
+function _buildEvalPeriodSelectOptions(studentId, selectedFormId, selectedPid) {
+  const forms = loadEvalForms(studentId);
+  let anyChanged = false;
+  let html = `<option value="">— بدون دوره ارزیابی —</option>`;
+  forms.forEach(f => {
+    if (_ensurePeriodIds(f)) anyChanged = true;
+    if (!f.periods || !f.periods.length) return;
+    html += `<optgroup label="${escapeHtml(f.title)}">`;
+    f.periods.forEach((p, idx) => {
+      const val = `${f.id}:${p.id}`;
+      const sel = (String(selectedFormId) === String(f.id) && String(selectedPid) === String(p.id)) ? 'selected' : '';
+      html += `<option value="${val}" ${sel}>دوره ${fa(idx + 1)} · ${p.date}</option>`;
+    });
+    html += `</optgroup>`;
+  });
+  if (anyChanged) saveEvalForms(studentId, forms);
+  return html;
+}
+
+// Default period to preselect in the session form = the most recent period overall.
+function _defaultEvalPeriodValue(studentId) {
+  const flat = _studentAllPeriodsFlat(studentId);
+  return flat.length ? `${flat[0].formId}:${flat[0].pid}` : '';
+}
+
+// Render the indicator "which score does this achievement relate to?" chip picker.
+function _renderAchievementTagPicker(formId, selectedTags) {
+  const container = document.getElementById('ses-ach-tags');
+  if (!container) return;
+  if (!formId) { container.innerHTML = ''; return; }
+  const key = evalFindKey(formId);
+  const forms = key ? _evalLoadByKey(key) : [];
+  const form = forms.find(f => f.id === formId);
+  if (!form) { container.innerHTML = ''; return; }
+  const sel = (selectedTags || []).map(String);
+  container.innerHTML = `
+    <div style="font-size:10px;color:var(--text3);margin:8px 0 4px">این دستاورد به کدام شاخص(ها) مربوط است؟ (اختیاری)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${form.rows.map(r => `
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer">
+          <input type="checkbox" value="${r.id}" class="ses-ach-tag-cb" ${sel.includes(String(r.id)) ? 'checked' : ''} style="width:13px;height:13px;accent-color:var(--accent2)">
+          ${escapeHtml(r.label)}
+        </label>`).join('')}
+    </div>`;
+}
+
+function _getCheckedAchievementTags() {
+  return Array.from(document.querySelectorAll('.ses-ach-tag-cb:checked')).map(cb => +cb.value);
+}
+
+// Small "🗓 دوره فلان · شاخص‌های فلان" chip shown under an achievement, wherever it's displayed.
+function _achievementPeriodBadge(session) {
+  if (!session.eval_form_id || !session.eval_period_id) return '';
+  const key = evalFindKey(session.eval_form_id);
+  const forms = key ? _evalLoadByKey(key) : [];
+  const form = forms.find(f => f.id === session.eval_form_id);
+  if (!form) return '';
+  const idx = (form.periods || []).findIndex(p => p.id === session.eval_period_id);
+  if (idx === -1) return '';
+  const tagLabels = (session.achievement_tags || [])
+    .map(tid => form.rows.find(r => r.id === tid)?.label)
+    .filter(Boolean);
+  return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+    <span style="font-size:10px;background:rgba(62,207,142,.1);color:var(--green);border-radius:20px;padding:3px 10px">🗓 ${escapeHtml(form.title)} · دوره ${fa(idx + 1)}</span>
+    ${tagLabels.map(l => `<span style="font-size:10px;background:rgba(96,165,250,.1);color:var(--blue);border-radius:20px;padding:3px 10px">🏷 ${escapeHtml(l)}</span>`).join('')}
+  </div>`;
+}
+
+// Called when the student (session form) changes → rebuild the period dropdown + tag picker.
+function _onSesStudentChangeRebuildPeriods(selectEl) {
+  const studentId = +selectEl.value;
+  const periodSel = document.getElementById('f-ses-period');
+  if (periodSel) {
+    periodSel.innerHTML = _buildEvalPeriodSelectOptions(studentId, null, null);
+    const def = _defaultEvalPeriodValue(studentId);
+    if (def) periodSel.value = def;
+  }
+  _onSesPeriodChange(periodSel);
+}
+
+// Called when the evaluation-period select changes → rebuild the indicator tag picker.
+function _onSesPeriodChange(selectEl) {
+  const val = selectEl ? selectEl.value : '';
+  if (!val) { const c = document.getElementById('ses-ach-tags'); if (c) c.innerHTML = ''; return; }
+  const [formId] = val.split(':').map(Number);
+  _renderAchievementTagPicker(formId, []);
+}
 
 // ── helper: compute weighted total for one period ──
 function evalPeriodTotal(form, period) {
@@ -7432,6 +7584,12 @@ function evalPeriodTotal(form, period) {
     if (!isNaN(s)) { ws += (s / row.maxScore) * (row.weight||1); wt += (row.weight||1); }
   });
   return wt > 0 ? Math.round((ws / wt) * 100) : null;
+}
+
+// ── resolve studentId from a formId ──
+function _studentIdForForm(formId) {
+  const key = evalFindKey(formId);
+  return key ? parseInt(key.replace('eval_forms_', '')) : null;
 }
 
 // ── find form's student key ──
@@ -7498,34 +7656,103 @@ function openEvaluation(studentId, displayName) {
         </div>`;
       }).join('');
 
-  // Build achievements timeline
+  // Build permanent achievements timeline (تاریخچه رشد شاگرد — همه دوره‌ها، همه فرم‌ها)
   const allSessions = (_db.sessions||[]).filter(s=>s.student_id===studentId&&s.achievements&&s.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali));
-  const achHtml = allSessions.length === 0
-    ? '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">هنوز دستاوردی ثبت نشده<br><span style="font-size:11px">هنگام ثبت جلسه، بخش «پیشرفت‌ها» را پر کنید</span></div>'
-    : allSessions.map(s => `
-      <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="flex-shrink:0;width:8px;height:8px;background:var(--green);border-radius:50%;margin-top:5px"></div>
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">${s.date_jalali}</div>
-          <div style="font-size:12px;color:var(--text);line-height:1.7">${renderRich(s.achievements)}</div>
-        </div>
-      </div>`).join('');
+  window._achTimelineState = { filter: 'all', search: '' };
+  const flatPeriodsForFilters = _studentAllPeriodsFlat(studentId);
+  const filterBtn = (key, label, disabled) => `
+    <button class="ach-filter-btn" data-filter="${key}" ${disabled ? 'disabled' : ''} onclick="setAchTimelineFilter(${studentId},'${key}')"
+      style="padding:4px 10px;font-size:11px;border-radius:20px;border:none;cursor:${disabled?'not-allowed':'pointer'};opacity:${disabled?'.4':'1'};font-family:var(--font);
+      background:${key==='all'?'var(--accent)':'var(--bg3)'};color:${key==='all'?'white':'var(--text2)'}">${label}</button>`;
+
+  const achPanelHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${filterBtn('all','همه')}
+      ${filterBtn('current','این دوره', !flatPeriodsForFilters[0])}
+      ${filterBtn('prev','دوره قبل', !flatPeriodsForFilters[1])}
+      ${filterBtn('important','⭐ فقط دستاوردهای مهم')}
+    </div>
+    <input class="form-input" placeholder="🔎 جستجو در دستاوردها..." style="margin-bottom:10px"
+      oninput="setAchTimelineSearch(${studentId}, this.value)">
+    <div id="eval-panel-ach-list"></div>`;
 
   openModal(`📊 ارزیابی عملکرد — ${displayName}`, `
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button id="eval-tab-forms" onclick="document.getElementById('eval-panel-forms').style.display='block';document.getElementById('eval-panel-ach').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-ach').style.background='var(--bg3)';document.getElementById('eval-tab-ach').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--accent);color:white">📋 فرم‌های ارزیابی</button>
-      <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تایم‌لاین دستاوردها (${fa(allSessions.length)})</button>
+      <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تاریخچه دستاوردها (${fa(allSessions.length)})</button>
     </div>
     <div id="eval-panel-forms" style="max-height:55vh;overflow-y:auto">
       <div id="eval-forms-list">${formsHtml}</div>
     </div>
     <div id="eval-panel-ach" style="display:none;max-height:55vh;overflow-y:auto">
-      ${achHtml}
+      ${achPanelHtml}
     </div>
   `, [
     { label: '+ فرم جدید', cls: 'btn-primary', action: `openNewEvalForm(${studentId},'${escapeHtml(displayName)}')` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+  setTimeout(() => renderAchTimelinePanel(studentId), 0);
+}
+
+// ── permanent achievements timeline: filtering + rendering ──
+function _achTimelineFilterSessions(studentId, filter, search) {
+  let sessions = (_db.sessions||[]).filter(s=>s.student_id===studentId&&s.achievements&&s.achievements.trim());
+  const flat = _studentAllPeriodsFlat(studentId);
+  if (filter === 'current' && flat[0]) {
+    sessions = sessions.filter(s => s.eval_form_id===flat[0].formId && s.eval_period_id===flat[0].pid);
+  } else if (filter === 'prev' && flat[1]) {
+    sessions = sessions.filter(s => s.eval_form_id===flat[1].formId && s.eval_period_id===flat[1].pid);
+  } else if (filter === 'important') {
+    sessions = sessions.filter(s => s.importance === 'key');
+  }
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    sessions = sessions.filter(s => (s.achievements||'').toLowerCase().includes(q));
+  }
+  return sessions.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali));
+}
+
+function _achTimelineItemHtml(s) {
+  return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+    <div style="flex-shrink:0;width:8px;height:8px;background:var(--green);border-radius:50%;margin-top:5px"></div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span>${s.date_jalali}</span>
+        ${s.importance==='key' ? '<span style="color:var(--amber)">⭐</span>' : ''}
+      </div>
+      <div style="font-size:12px;color:var(--text);line-height:1.7">${renderRich(s.achievements)}</div>
+      ${_achievementPeriodBadge(s)}
+    </div>
+    <button onclick="closeModal();openSessionDetail(${s.id})" title="باز کردن جلسه"
+      style="flex-shrink:0;align-self:flex-start;border:none;background:none;color:var(--accent2);cursor:pointer;font-size:13px">📄</button>
+  </div>`;
+}
+
+function renderAchTimelinePanel(studentId) {
+  const st = window._achTimelineState || { filter: 'all', search: '' };
+  const sessions = _achTimelineFilterSessions(studentId, st.filter, st.search);
+  const container = document.getElementById('eval-panel-ach-list');
+  if (!container) return;
+  container.innerHTML = sessions.length === 0
+    ? '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">موردی یافت نشد<br><span style="font-size:11px">هنگام ثبت جلسه، بخش «پیشرفت‌ها» را پر کنید</span></div>'
+    : sessions.map(_achTimelineItemHtml).join('');
+}
+
+function setAchTimelineFilter(studentId, filter) {
+  window._achTimelineState = window._achTimelineState || { filter: 'all', search: '' };
+  window._achTimelineState.filter = filter;
+  document.querySelectorAll('.ach-filter-btn').forEach(b => {
+    const active = b.dataset.filter === filter;
+    b.style.background = active ? 'var(--accent)' : 'var(--bg3)';
+    b.style.color = active ? 'white' : 'var(--text2)';
+  });
+  renderAchTimelinePanel(studentId);
+}
+
+function setAchTimelineSearch(studentId, value) {
+  window._achTimelineState = window._achTimelineState || { filter: 'all', search: '' };
+  window._achTimelineState.search = value;
+  renderAchTimelinePanel(studentId);
 }
 
 function deleteEvalForm(studentId, displayName, formId) {
@@ -7704,6 +7931,32 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
         <span style="font-size:11px;font-weight:600;color:${r.diff < 0 ? 'var(--red)' : 'var(--text3)'}">${r.diff < 0 ? '▼' : '='} ${fa(Math.abs(r.diff))}٪</span>
       </div>`).join('');
 
+    // ── داده‌های کیفی: دستاوردهای ثبت‌شده در همین دوره (سطح جلسه) ──
+    const periodAchSessions = _periodAchievementSessions(studentId, form.id, last.id);
+    const tagCountByRow = {};
+    periodAchSessions.forEach(s => (s.achievement_tags || []).forEach(tid => { tagCountByRow[tid] = (tagCountByRow[tid] || 0) + 1; }));
+    const qualitativeNotes = form.rows
+      .map(row => tagCountByRow[row.id] ? { label: row.label, count: tagCountByRow[row.id] } : null)
+      .filter(Boolean);
+
+    const narrativeParts = [];
+    growthData.forEach(r => {
+      const q = qualitativeNotes.find(q => q.label === r.label);
+      if (q && r.diff !== null && r.diff <= 10) {
+        narrativeParts.push(`در شاخص «${r.label}» اگرچه امتیاز عددی ${r.diff > 0 ? `فقط ${fa(r.diff)}٪ رشد داشته` : 'تغییر محسوسی نکرده'}، اما ${fa(q.count)} دستاورد کیفی مرتبط در این دوره ثبت شده — نشانه‌ای از رشدی که هنوز در عدد دیده نمی‌شود.`);
+      } else if (q) {
+        narrativeParts.push(`در شاخص «${r.label}» علاوه بر رشد ${fa(r.diff)}٪ در امتیاز، ${fa(q.count)} دستاورد کیفی نیز ثبت شده است.`);
+      }
+    });
+    const untaggedCount = periodAchSessions.length - periodAchSessions.filter(s => (s.achievement_tags || []).length > 0).length;
+    if (untaggedCount > 0) narrativeParts.push(`${fa(untaggedCount)} دستاورد این دوره به شاخص خاصی متصل نشده و به‌صورت عمومی ثبت شده است.`);
+
+    const qualitativeHtml = periodAchSessions.length > 0 ? `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+        <div style="font-size:10px;font-weight:600;color:var(--green);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">🌱 داده‌های کیفی این دوره (${fa(periodAchSessions.length)} دستاورد)</div>
+        ${narrativeParts.length ? narrativeParts.map(t => `<div style="font-size:12px;color:var(--text);line-height:1.9;padding:3px 0">• ${t}</div>`).join('') : '<div style="font-size:11px;color:var(--text3)">دستاوردهای این دوره هنوز به شاخص خاصی وصل نشده‌اند.</div>'}
+      </div>` : '';
+
     return `
       <div style="margin-top:16px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
         <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px">📊 تحلیل خودکار — آخرین دوره</div>
@@ -7727,6 +7980,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
             ${stagnantList}
           </div>` : ''}
         </div>
+        ${qualitativeHtml}
       </div>`;
   })() : '';
 
@@ -7891,6 +8145,8 @@ function buildEvalTable(form, periodIdx, studentId) {
       </button>
     </div>` : '';
 
+  const achievementsSection = period ? _buildPeriodAchievementsHtml(studentId, form, period) : '';
+
   return `
     ${dateRow}
     <table style="width:100%;border-collapse:collapse">
@@ -7909,8 +8165,40 @@ function buildEvalTable(form, periodIdx, studentId) {
         <span style="font-size:12px;color:var(--text2)">امتیاز کل این دوره:</span>
         <span style="font-size:18px;font-weight:700;color:var(--green)">${fa(totalScore)}٪</span>
       </div>` : ''}
+    ${achievementsSection}
     ${coachSection}
     ${dlBtn}`;
+}
+
+// ── دستاوردهای همین دوره (فقط، نه همه تاریخچه) ──
+function _periodAchievementSessions(studentId, formId, periodId) {
+  return (_db.sessions || [])
+    .filter(s => s.student_id === studentId && s.eval_form_id === formId && s.eval_period_id === periodId && s.achievements && s.achievements.trim())
+    .sort((a, b) => _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali));
+}
+
+function _buildPeriodAchievementsHtml(studentId, form, period) {
+  const sessions = _periodAchievementSessions(studentId, form.id, period.id);
+  if (!sessions.length) {
+    return `<div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:10px;border:1px dashed var(--border);font-size:11px;color:var(--text3);text-align:center">
+      🌱 هنوز دستاوردی برای این دوره ثبت نشده — هنگام ثبت جلسه، «دوره ارزیابی» را روی همین دوره تنظیم کن
+    </div>`;
+  }
+  const items = sessions.map(s => `
+    <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="flex-shrink:0;width:7px;height:7px;background:var(--green);border-radius:50%;margin-top:5px"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:2px">${s.date_jalali}</div>
+        <div style="font-size:12px;color:var(--text);line-height:1.6">${renderRich(s.achievements)}</div>
+      </div>
+      <button onclick="closeModal();openSessionDetail(${s.id})" title="باز کردن جلسه"
+        style="flex-shrink:0;align-self:flex-start;border:none;background:none;color:var(--accent2);cursor:pointer;font-size:13px">📄</button>
+    </div>`).join('');
+  return `
+    <div style="margin-top:14px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">🌱 دستاوردهای این دوره (${fa(sessions.length)})</div>
+      ${items}
+    </div>`;
 }
 
 // ── START a new period (shows date input first) ──
@@ -8285,9 +8573,42 @@ function buildEvalCompareHtml(form, aIdx, bIdx) {
   const allTotals = form.periods.map(p => evalPeriodTotal(form, p));
   const chartHtml = buildEvalTrendChart(form, allTotals, aIdx, bIdx);
 
+  // ── دستاوردهای هر دوره + مقایسه (جدید / تکرارشونده) — شواهد کیفی رشد ──
+  const achCompareHtml = (() => {
+    const studentId = _studentIdForForm(form.id);
+    if (!studentId) return '';
+    const sessA = _periodAchievementSessions(studentId, form.id, pA.id);
+    const sessB = _periodAchievementSessions(studentId, form.id, pB.id);
+    if (!sessA.length && !sessB.length) return '';
+    const norm = t => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const aTexts = sessA.map(s => norm(s.achievements));
+    const newOnes = sessB.filter(s => !aTexts.includes(norm(s.achievements)));
+    const repeatedOnes = sessB.filter(s => aTexts.includes(norm(s.achievements)));
+    const listItem = s => `<div style="font-size:12px;color:var(--text);padding:3px 0;display:flex;align-items:flex-start;gap:6px">
+        <span style="flex:1">${renderRich(s.achievements)}</span>
+        <button onclick="closeModal();openSessionDetail(${s.id})" style="border:none;background:none;color:var(--accent2);cursor:pointer;font-size:12px;flex-shrink:0">📄</button>
+      </div>`;
+    return `
+      <div style="margin-top:14px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">🌱 دستاوردهای دوره ${fa(bIdx+1)} در مقایسه با دوره ${fa(aIdx+1)}</div>
+        ${newOnes.length ? `
+          <div style="margin-bottom:8px">
+            <div style="font-size:10px;font-weight:600;color:var(--green);margin-bottom:4px">✨ دستاوردهای جدید (${fa(newOnes.length)})</div>
+            ${newOnes.map(listItem).join('')}
+          </div>` : ''}
+        ${repeatedOnes.length ? `
+          <div>
+            <div style="font-size:10px;font-weight:600;color:rgba(251,191,36,1);margin-bottom:4px">🔄 دستاوردهای تکرارشونده (${fa(repeatedOnes.length)})</div>
+            ${repeatedOnes.map(listItem).join('')}
+          </div>` : ''}
+        ${!newOnes.length && !repeatedOnes.length ? '<div style="font-size:11px;color:var(--text3)">دستاوردی برای دوره دوم ثبت نشده</div>' : ''}
+      </div>`;
+  })();
+
   return `
     ${summaryHtml}
     ${chartHtml}
+    ${achCompareHtml}
     <table style="width:100%;border-collapse:collapse;margin-top:12px">
       <thead>
         <tr style="background:var(--bg2)">
