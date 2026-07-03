@@ -329,14 +329,68 @@ button { cursor: pointer; font-family: var(--font); }
   border: 1px solid var(--border);
   border-radius: var(--r);
   overflow: hidden;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .table-header {
   display: flex; align-items: center; gap: 10px;
-  padding: 13px 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
 }
 .table-header .title { font-size: 13px; font-weight: 600; }
+.table-header .title-wrap { display: flex; flex-direction: column; gap: 2px; }
+.table-header .subtitle { font-size: 11px; color: var(--text3); font-weight: 400; }
+
+/* ── Row kebab menu ─────────────────────────────────────── */
+.row-menu { position: relative; display: inline-flex; }
+.row-menu-btn {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px;
+  color: var(--text2); font-size: 14px; line-height: 1; transition: all .15s;
+}
+.row-menu-btn:hover { color: var(--text); background: var(--bg4); }
+.row-menu-panel {
+  display: none;
+  position: absolute; top: calc(100% + 4px); left: 0;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 9px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.35);
+  min-width: 170px; padding: 5px; z-index: 60;
+}
+.row-menu-panel.open { display: block; }
+.row-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 6px;
+  font-size: 12px; color: var(--text); cursor: pointer; white-space: nowrap;
+}
+.row-menu-item:hover { background: var(--bg4); }
+.row-menu-item.danger { color: var(--red); }
+.row-menu-item.danger:hover { background: rgba(248,113,113,.12); }
+.row-menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
+
+/* ── Paid badge (replaces heavy button once paid) ──────────── */
+.badge-paid {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 6px 12px; border-radius: 20px;
+  background: rgba(62,207,142,.12); color: var(--green);
+  border: 1px solid rgba(62,207,142,.25); transition: all .15s;
+}
+.badge-paid:hover { background: rgba(62,207,142,.2); }
+.badge-due {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 6px 12px; border-radius: 20px;
+  background: rgba(251,191,36,.12); color: var(--amber);
+  border: 1px solid rgba(251,191,36,.25);
+}
+
+/* ── Masked card number ─────────────────────────────────── */
+.card-masked {
+  direction: ltr; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text2); font-variant-numeric: tabular-nums;
+}
+.card-copy-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  padding: 2px; display: inline-flex; align-items: center; justify-content: center;
+}
+.card-copy-btn:hover { color: var(--accent2); }
 .table-search {
   margin-right: auto;
   display: flex; align-items: center; gap: 6px;
@@ -6396,8 +6450,11 @@ async function renderStaff() {
 
   <div class="table-card">
     <div class="table-header">
-      <span class="title">لیست همکاران</span>
-      <button class="btn btn-ghost btn-sm" onclick="openManageRoles()">🏷 مدیریت نقش‌ها</button>
+      <div class="title-wrap">
+        <span class="title">لیست همکاران</span>
+        <span class="subtitle">${fa(staffList.length)} نفر — مدیریت حقوق و پرداخت پرسنل</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-right:auto" onclick="openManageRoles()">🏷 مدیریت نقش‌ها</button>
     </div>
     <table>
       <thead><tr><th>نام</th><th>نقش‌ها</th><th>شماره کارت</th><th>حقوق کل این ماه (${JMONTHS[todayJalali()[1]-1]})</th><th>جمع پرداختی</th><th>سررسید این ماه</th><th>عملیات</th></tr></thead>
@@ -6419,24 +6476,24 @@ async function renderStaff() {
       // جمع پرداختی واقعی = پرداخت‌ها + پاداش - جریمه
       const totalPaidDisplay = s.totalPaid;
 
-      // Pay button: gold if paid this month AND expectedMonthly is 0 (counts reset), else always active
-      const paidAndReset = s.paid_this_month && s.expectedMonthly === 0;
-      let payBtn;
-      if (paidAndReset) {
-        // Paid and counts reset to 0 — show gold but still clickable for re-payment
-        payBtn = `<button class="btn btn-sm" style="background:linear-gradient(135deg,#c9a84c,#f0d060);color:#1a1400;font-weight:700;border:none;box-shadow:0 2px 8px #c9a84c55" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`;
-      } else if (s.paid_this_month && s.expectedMonthly > 0) {
-        // Has new amount (new month data) — show purple active
-        payBtn = `<button class="btn btn-sm" style="background:var(--accent2);color:#fff;font-weight:700;border:none" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`;
+      // Status: is this staff member already paid for the current cycle?
+      const isPaid = !!s.paid_this_month;
+      const du = s.days_until;
+      const isUrgent = !isPaid && du !== null && du <= 3;
+
+      // Primary action: paid → soft green badge (still correctable); not paid → single primary transfer button
+      let payCell;
+      if (isPaid) {
+        payCell = `<button class="badge-paid" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')" title="برای ثبت پرداخت اصلاحی کلیک کنید">✓ پرداخت شده</button>`;
       } else {
-        const du = s.days_until;
-        if (du !== null && du <= 3) {
-          payBtn = `<button class="btn btn-sm" style="background:var(--red);color:#fff;font-weight:700;border:none" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`;
-        } else {
-          payBtn = `<button class="btn btn-sm" style="background:var(--accent2);color:#fff;font-weight:600;border:none" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`;
-        }
+        payCell = `<button class="btn btn-sm" style="background:${isUrgent?'var(--red)':'var(--green)'};color:#fff;font-weight:600;border:none" onclick="openSalaryTransfer(${s.id})">💳 واریز حقوق</button>`;
       }
 
+      const cardMasked = s.card_number
+        ? `<span class="card-masked">${maskCardNumber(s.card_number)}<button class="card-copy-btn" title="کپی شماره کارت کامل" onclick="copyToClipboard('${(s.card_number||'').replace(/\D/g,'')}', 'شماره کارت کپی شد ✓')">📋</button></span>`
+        : `<span style="color:var(--text3)">—</span>`;
+
+      const rowMenuId = `staff-menu-${s.id}`;
       html += `<tr>
         <td>
           <div class="name-cell">
@@ -6445,17 +6502,23 @@ async function renderStaff() {
           </div>
         </td>
         <td>${roleTags}</td>
-        <td style="direction:ltr;text-align:right;font-size:12px">${s.card_number || '—'}</td>
+        <td>${cardMasked}</td>
         <td><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
         <td><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
         <td style="font-size:12px;color:var(--text2)">${dueDateCell}</td>
-        <td style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-sm" style="background:var(--green);color:#fff;font-weight:600" onclick="openSalaryTransfer(${s.id})">💳 واریز حقوق</button>
-          ${payBtn}
-          <button class="btn btn-ghost btn-sm" onclick="openStaffModal(${s.id})">✏️ ویرایش</button>
-            <button class="btn btn-ghost btn-sm" onclick="openSetStaffPassword(${s.id})">🔐 رمز</button>
-          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 8px" onclick="openStaffDetail(${s.id})">📊</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑</button>
+        <td style="display:flex;gap:6px;align-items:center">
+          ${payCell}
+          <div class="row-menu">
+            <button class="row-menu-btn" onclick="toggleRowMenu(event,'${rowMenuId}')">⋮</button>
+            <div class="row-menu-panel" id="${rowMenuId}">
+              ${!isPaid ? `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ ثبت دستی پرداخت</div>` : ''}
+              <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
+              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ ویرایش</div>
+              <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
+              <div class="row-menu-divider"></div>
+              <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑 حذف همکار</div>
+            </div>
+          </div>
         </td>
       </tr>`;
     });
@@ -6463,7 +6526,7 @@ async function renderStaff() {
   html += `</tbody></table></div>`;
 
   // ── Salary reminders ────────────────────────────────────────────────────
-  html += `<div class="table-card"><div class="table-header"><span class="title">⏰ یادآوری‌های پرداخت حقوق</span></div>`;
+  html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">⏰ یادآوری‌های پرداخت حقوق</span><span class="subtitle">سررسیدهای نزدیک و یادآوری‌های خودکار</span></div></div>`;
   if (reminders.length === 0) {
     html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت حقوق برای یک همکار، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
   } else {
@@ -6484,16 +6547,23 @@ async function renderStaff() {
         const remainText = months>0 ? (remDays>0?`${fa(months)} ماه و ${fa(remDays)} روز مانده`:`${fa(months)} ماه مانده`) : `${fa(remDays)} روز مانده`;
         statusBadge = `<span class="status" style="color:var(--green)">هنوز نرسیده (${remainText})</span>`;
       }
+      const remMenuId = `rem-menu-${r.id}`;
       html += `<tr>
         <td style="font-weight:500">${r.name} ${r.lname}</td>
         <td style="font-size:12px">${r.due_date_jalali}</td>
         <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
         <td>${statusBadge}</td>
-        <td style="display:flex;gap:5px">
-          <button class="btn btn-ghost btn-sm" onclick="openStaffDetail(${r.staff_id})">📊 جزئیات</button>
-          <button class="btn btn-ghost btn-sm" onclick="openEditStaffReminder(${r.id})">✏️ ویرایش</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteStaffReminder(${r.id})">🗑</button>
+        <td>
+          <div class="row-menu">
+            <button class="row-menu-btn" onclick="toggleRowMenu(event,'${remMenuId}')">⋮</button>
+            <div class="row-menu-panel" id="${remMenuId}">
+              <div class="row-menu-item" onclick="openStaffDetail(${r.staff_id})">📊 جزئیات</div>
+              <div class="row-menu-item" onclick="openEditStaffReminder(${r.id})">✏️ ویرایش</div>
+              <div class="row-menu-divider"></div>
+              <div class="row-menu-item danger" onclick="deleteStaffReminder(${r.id})">🗑 حذف</div>
+            </div>
+          </div>
         </td>
       </tr>`;
     });
@@ -6503,7 +6573,7 @@ async function renderStaff() {
 
   // ── Salary payment history (3 columns) ──────────────────────────────────
   const paidHistory = await window.api.staffMonthly.getAllPaid();
-  html += `<div class="table-card"><div class="table-header"><span class="title">📜 تاریخچه پرداخت‌های حقوق</span></div>`;
+  html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">📜 تاریخچه پرداخت‌های حقوق</span><span class="subtitle">${fa(paidHistory.length)} پرداخت ثبت‌شده</span></div></div>`;
   if (paidHistory.length === 0) {
     html += `<div class="empty"><span>📜</span>هنوز پرداختی ثبت نشده</div>`;
   } else {
@@ -7319,6 +7389,25 @@ async function openSalaryTransfer(staffId) {
   `, [
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+}
+
+// ── Row kebab menus (staff / reminders tables) ────────────────────────────
+function toggleRowMenu(ev, menuId) {
+  ev.stopPropagation();
+  document.querySelectorAll('.row-menu-panel.open').forEach(p => { if (p.id !== menuId) p.classList.remove('open'); });
+  const panel = document.getElementById(menuId);
+  if (panel) panel.classList.toggle('open');
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.row-menu-panel.open').forEach(p => p.classList.remove('open'));
+});
+
+// ── Masked card number for table display (e.g. 6037 •••• •••• 0534) ──────
+function maskCardNumber(num) {
+  if (!num) return '—';
+  const digits = String(num).replace(/\D/g, '');
+  if (digits.length < 8) return num;
+  return digits.slice(0, 4) + ' •••• •••• ' + digits.slice(-4);
 }
 
 function copyToClipboard(text, successMsg) {
