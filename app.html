@@ -1714,6 +1714,44 @@ function parseJalali(str) {
   return parts;
 }
 
+// ── Calendar-setting-aware date helpers ─────────────────────────────────────
+// Convert a stored jalali string (۱۴۰۴/۰۳/۲۰) to an ISO date (YYYY-MM-DD) for native <input type="date">
+function jalaliStrToISO(str) {
+  const p = parseJalali(str);
+  if (!p) return '';
+  const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+  return `${gy}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}`;
+}
+// Convert an ISO date (YYYY-MM-DD) from a native date input back to our internal jalali string format
+function isoToJalaliStr(iso) {
+  if (!iso) return '';
+  const [gy, gm, gd] = iso.split('-').map(Number);
+  if (!gy || !gm || !gd) return '';
+  const [jy, jm, jd] = gregorianToJalali(gy, gm, gd);
+  return formatJalali(jy, jm, jd);
+}
+// Render a date field that respects META.calendarType: jalali picker or native Gregorian picker.
+// Returns HTML; use readCalendarDateField(fieldId) to read the value back as our internal jalali string.
+function calendarDateFieldHtml(fieldId, jalaliValue, label) {
+  const isGregorian = META.calendarType === 'gregorian';
+  const lbl = label || 'تاریخ';
+  if (isGregorian) {
+    const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : new Date().toISOString().slice(0,10);
+    return `
+      <label class="form-label">${lbl} (میلادی)</label>
+      <input class="form-input" type="date" id="${fieldId}" data-cal="gregorian" value="${iso}">`;
+  }
+  return `
+    <label class="form-label">${lbl} (شمسی)</label>
+    <input class="form-input jdate" id="${fieldId}" placeholder="انتخاب تاریخ" value="${jalaliValue || formatJalali(...todayJalali())}">`;
+}
+function readCalendarDateField(fieldId) {
+  const el = document.getElementById(fieldId);
+  if (!el) return '';
+  if (el.dataset.cal === 'gregorian') return isoToJalaliStr(el.value);
+  return el.value || '';
+}
+
 // ── Date picker widget ─────────────────────────────────────────────────────
 let activeDatePicker = null;
 let activeDpCloseHandler = null;
@@ -3725,30 +3763,34 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         <input class="form-input" id="f-phone" placeholder="09xxxxxxxxx" value="${s?.phone || ''}">
       </div>
       <div class="form-group">
-        <label class="form-label">تاریخ رزرو / ثبت‌نام (شمسی)</label>
-        <input class="form-input jdate" id="f-date" placeholder="انتخاب تاریخ" value="${s?.date_jalali || formatJalali(...todayJalali())}">
+        ${calendarDateFieldHtml('f-date', s?.date_jalali, 'تاریخ رزرو / ثبت‌نام')}
       </div>
       <div class="form-group full">
-        <label class="form-label">نوع رابطه مالی</label>
+        <label class="form-label">این شخص:</label>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
             <input type="radio" name="f-relation-type" id="f-is-client" value="client" ${(!s?.is_supplier)?'checked':''}>
-            <span>👤 مشتری/شاگرد — <small style="color:var(--text3)">به ما بدهکار است</small></span>
+            <span>👤 از شما خرید می‌کند — <small style="color:var(--text3)">به ما بدهکار است</small></span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
             <input type="radio" name="f-relation-type" id="f-is-supplier" value="supplier" ${s?.is_supplier?'checked':''}>
-            <span>🏭 تامین‌کننده — <small style="color:var(--text3)">ما به او بدهکاریم</small></span>
+            <span>🏭 شما از او خرید می‌کنید — <small style="color:var(--text3)">ما به او بدهکاریم</small></span>
           </label>
         </div>
       </div>
     </div>
 
-    <div class="form-section">پکیج‌ها / خدمات فعال</div>
+    <div class="form-section">این شخص از چه خدماتی استفاده می‌کند؟</div>
     <div id="pkg-selected-summary" style="margin-bottom:8px"></div>
     <div class="pkg-row" id="pkg-rows-container" style="flex-direction:column;align-items:stretch;gap:10px">
-      ${pkgRows}
+      ${PKG_TYPES.length === 0 ? `
+        <div style="text-align:center;padding:16px;background:var(--bg3);border-radius:8px">
+          <p style="font-size:12.5px;color:var(--text2);margin-bottom:8px">هنوز هیچ خدمتی تعریف نکرده‌ای</p>
+          <button class="btn btn-primary btn-sm" onclick="closeModal();switchToSettingsServices()">➕ ساخت اولین خدمت</button>
+        </div>
+      ` : pkgRows}
     </div>
-    <p style="font-size:11px;color:var(--text3);margin-top:6px">می‌توانید چند پکیج/خدمت را همزمان فعال کنید؛ مانده حساب از مجموع همه آن‌ها محاسبه می‌شود.</p>
+    <p style="font-size:11px;color:var(--text3);margin-top:6px">می‌توانید چند خدمت را همزمان فعال کنید؛ مانده حساب از مجموع همه آن‌ها محاسبه می‌شود.</p>
 
     <div class="form-section">حساب مشترک (اختیاری)</div>
     <div class="form-grid">
@@ -3805,6 +3847,19 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
 
   updatePkgSummary();
   initDatePickers();
+  const phoneEl = document.getElementById('f-phone');
+  if (phoneEl) {
+    phoneEl.addEventListener('blur', () => {
+      const v = enDigits(phoneEl.value.trim());
+      if (v && !/^09\d{9}$/.test(v)) {
+        phoneEl.style.borderColor = 'var(--red)';
+        phoneEl.title = 'شماره باید ۱۱ رقم و با ۰۹ شروع شود';
+      } else {
+        phoneEl.style.borderColor = '';
+        phoneEl.title = '';
+      }
+    });
+  }
   setTimeout(() => document.getElementById('f-name')?.focus(), 50);
 }
 
@@ -3873,7 +3928,7 @@ async function saveStudentNew() {
   await window.api.students.add({
     name, lname,
     phone: document.getElementById('f-phone')?.value || '',
-    date: document.getElementById('f-date')?.value || '',
+    date: readCalendarDateField('f-date'),
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplier,
@@ -3898,7 +3953,7 @@ async function saveStudentEdit(id) {
   await window.api.students.update({
     id, name, lname,
     phone: document.getElementById('f-phone')?.value || '',
-    date: document.getElementById('f-date')?.value || '',
+    date: readCalendarDateField('f-date'),
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplierEdit,
@@ -5350,6 +5405,12 @@ function _fmtBackupTime(ts) {
   if (!ts) return 'هنوز گرفته نشده';
   const d = new Date(+ts);
   return d.toLocaleDateString('fa-IR') + ' — ' + d.toLocaleTimeString('fa-IR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function switchToSettingsServices() {
+  currentPage = 'settings';
+  _settingsActiveTab = 'services';
+  renderPage();
 }
 
 let _settingsActiveTab = 'general';
