@@ -2254,8 +2254,13 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note});_save();} return _P({ok:true}); },
+    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??''});_save();} return _P({ok:true}); },
+    toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_save();}} return _P({ok:true}); },
+    addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});_save();} return _P({ok:true}); },
+    deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);_save();} return _P({ok:true}); },
+    getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali}));}); return _P(open); },
+    getRecentAchievements: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid&&x.achievements&&x.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
     delete: (id)=>{ _db.sessions=_db.sessions.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     keyOnes: ()=>{ const r=[]; _db.students.forEach(s=>{_db.sessions.filter(x=>x.student_id===s.id&&x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
     getOrder: ()=>_P([..._db.session_order||[]]),
@@ -4491,13 +4496,23 @@ async function renderSessions(search = '') {
     return;
   }
 
+  // Compute open followup counts per student
+  const followupCounts = {};
+  groupsSorted.forEach(g => {
+    let openCount = 0;
+    g.sessions.forEach(s => { (s.followups||[]).forEach(f => { if (!f.done) openCount++; }); });
+    followupCounts[g.student_id] = openCount;
+  });
+
   html += `<div class="sessions-board" id="sessions-board">`;
   groupsSorted.forEach(g => {
+    const openFU = followupCounts[g.student_id] || 0;
     html += `
     <div class="session-column" draggable="true" data-student-id="${g.student_id}">
       <div class="session-column-header">
         <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${g.name} ${g.lname}</span>
         <span class="scn-count">(${fa(g.sessions.length)})</span>
+        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')" style="cursor:pointer;background:rgba(251,191,36,.15);color:var(--amber);border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}</span>` : ''}
         <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📌 موضوعات مهم</button>
         <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">🌟 رویدادهای مهم</button>
@@ -4622,6 +4637,23 @@ async function openSessionDetail(sessionId) {
       <h3>توضیحات تکمیلی</h3>
       <p style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(session.extra_note)}</p>
     </div>` : ''}
+    ${(session.followups && session.followups.length > 0) ? `
+    <div class="detail-section">
+      <h3>📌 اقدامات تا جلسه بعد</h3>
+      <div>
+        ${session.followups.map(f => `
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border)">
+            <input type="checkbox" ${f.done?'checked':''} onchange="toggleFollowupFromDetail(${sessionId}, ${f.id}, this)" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0">
+            <span style="${f.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'};font-size:13px;flex:1">${escapeHtml(f.text)}</span>
+            ${f.done?'<span style="font-size:11px;color:var(--green)">✓ انجام شد</span>':''}
+          </label>`).join('')}
+      </div>
+    </div>` : ''}
+    ${session.achievements ? `
+    <div class="detail-section">
+      <h3>🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</h3>
+      <p style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(session.achievements)}</p>
+    </div>` : ''}
     <div class="detail-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <h3>📎 پیوست‌ها</h3>
@@ -4638,10 +4670,74 @@ async function openSessionDetail(sessionId) {
   ]);
 }
 
-function openAddSessionGeneral(presetStudentId = null) {
+async function openStudentFollowups(studentId, displayName) {
+  const openFU = await window.api.sessions.getOpenFollowups(studentId);
+  const itemsHtml = openFU.length === 0
+    ? '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">همه اقدامات انجام شده‌اند 🎉</div>'
+    : openFU.map(f => `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" onchange="toggleFollowupAndRefresh(${studentId}, '${escapeHtml(displayName)}', ${f.session_id}, ${f.id}, this)" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer;flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--text)">${escapeHtml(f.text)}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">از جلسه ${f.session_date}</div>
+        </div>
+      </label>`).join('');
+
+  openModal(`📌 اقدامات باز — ${displayName}`, `
+    <div style="margin-bottom:10px;font-size:12px;color:var(--text2)">
+      ${fa(openFU.length)} مورد هنوز انجام نشده
+    </div>
+    <div>${itemsHtml}</div>
+  `, [
+    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+  ]);
+}
+
+async function toggleFollowupAndRefresh(studentId, displayName, sessionId, itemId, checkbox) {
+  await window.api.sessions.toggleFollowup({ session_id: sessionId, item_id: itemId });
+  showToast('✅ انجام شد', 'success');
+  // after a short delay refresh the list
+  setTimeout(() => openStudentFollowups(studentId, displayName), 300);
+}
+
+async function toggleFollowupFromDetail(sessionId, itemId, checkbox) {
+  await window.api.sessions.toggleFollowup({ session_id: sessionId, item_id: itemId });
+  const label = checkbox.nextElementSibling;
+  if (label) label.style.cssText = checkbox.checked ? 'text-decoration:line-through;color:var(--text3);font-size:13px;flex:1' : 'color:var(--text);font-size:13px;flex:1';
+  showToast(checkbox.checked ? '✅ انجام شد' : 'بازگشت به باز', 'success');
+}
+
+async function _buildPreSessionSummary(studentId) {
+  if (!studentId) return '';
+  const openFU = await window.api.sessions.getOpenFollowups(studentId);
+  const recentAch = await window.api.sessions.getRecentAchievements(studentId);
+  const groups = await window.api.sessions.getAll();
+  const g = groups.find(x => x.student_id === studentId);
+  const lastSession = g && g.sessions.length ? g.sessions[0] : null;
+  if (!openFU.length && !recentAch.length && !lastSession) return '';
+  let html = `<div style="background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--accent2);margin-bottom:8px">📋 خلاصه قبل از جلسه</div>`;
+  if (lastSession) html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">⏱ آخرین جلسه: ${lastSession.date_jalali}</div>`;
+  if (openFU.length > 0) {
+    html += `<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--amber);font-weight:600;margin-bottom:4px">📌 اقدامات باز (${fa(openFU.length)} مورد)</div>`;
+    html += openFU.slice(0,5).map(f => `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);padding:2px 0"><span style="color:var(--text3)">☐</span>${escapeHtml(f.text)}</div>`).join('');
+    if (openFU.length > 5) html += `<div style="font-size:10px;color:var(--text3);margin-top:2px">و ${fa(openFU.length-5)} مورد دیگر...</div>`;
+    html += '</div>';
+  }
+  if (recentAch.length > 0) {
+    html += `<div><div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:4px">🌱 آخرین دستاوردها</div>`;
+    html += recentAch.slice(0,3).map(a => `<div style="font-size:11px;color:var(--text2);padding:2px 0">✔ ${escapeHtml(excerpt(a.text, 60))}</div>`).join('');
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+async function openAddSessionGeneral(presetStudentId = null) {
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
   const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===presetStudentId?'selected':''}>${s.name} ${s.lname}</option>`).join('');
-  openModal(`ثبت ${META.sessionSingular || 'جلسه'} جدید`, `
+  const preSummary = presetStudentId ? await _buildPreSessionSummary(presetStudentId) : '';
+  openModal(`ثبت ${META.sessionSingular || 'جلسه'} جدید`, `${preSummary}
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">${META.entitySingular || 'شاگرد'} *</label>
@@ -4677,6 +4773,19 @@ function openAddSessionGeneral(presetStudentId = null) {
         <textarea class="form-textarea" id="f-ses-extra" rows="4" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
       </div>
       <div class="form-group full">
+        <label class="form-label">📌 اقدامات تا جلسه بعد</label>
+        <div id="ses-followup-list" style="margin-bottom:6px"></div>
+        <div style="display:flex;gap:6px">
+          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();_addSesFollowupItem()}">
+          <button type="button" class="btn btn-ghost" onclick="_addSesFollowupItem()">+ افزودن</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">مواردی که باید تا جلسه بعد پیگیری شوند</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت، بازخوردهای خوب..."></textarea>
+      </div>
+      <div class="form-group full">
         <label class="form-label">📎 پیوست‌ها</label>
         <div id="ses-attach-preview" style="margin-bottom:8px"></div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="_pickSessionFiles()">
@@ -4691,7 +4800,36 @@ function openAddSessionGeneral(presetStudentId = null) {
   ]);
   initDatePickers();
   window._pendingSessionAttachments = [];
+  window._pendingFollowups = [];
   setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
+}
+
+function _addSesFollowupItem() {
+  const input = document.getElementById('f-ses-followup-input');
+  const text = input?.value.trim();
+  if (!text) return;
+  window._pendingFollowups = window._pendingFollowups || [];
+  window._pendingFollowups.push({ text });
+  input.value = '';
+  _renderSesFollowupList();
+}
+
+function _removeSesFollowupItem(idx) {
+  window._pendingFollowups = window._pendingFollowups || [];
+  window._pendingFollowups.splice(idx, 1);
+  _renderSesFollowupList();
+}
+
+function _renderSesFollowupList() {
+  const container = document.getElementById('ses-followup-list');
+  if (!container) return;
+  const items = window._pendingFollowups || [];
+  container.innerHTML = items.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+      <span style="color:var(--text3)">☐</span>
+      <span style="flex:1">${escapeHtml(f.text)}</span>
+      <button onclick="_removeSesFollowupItem(${i})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 2px">✕</button>
+    </div>`).join('');
 }
 
 async function saveSessionGeneral() {
@@ -4707,7 +4845,10 @@ async function saveSessionGeneral() {
     importance: document.getElementById('f-ses-importance')?.value || 'normal',
     note,
     extra_note: document.getElementById('f-ses-extra')?.value,
+    followups: (window._pendingFollowups || []).map(f => ({ text: f.text })),
+    achievements: document.getElementById('f-ses-achievements')?.value || '',
   });
+  window._pendingFollowups = [];
   // ذخیره پیوست‌ها در جلسه جدید
   const pending = window._pendingSessionAttachments || [];
   if (pending.length > 0) {
@@ -4761,6 +4902,25 @@ async function openEditSession(sessionId) {
         ${richToolbar('f-ses-extra')}
         <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
       </div>
+      <div class="form-group full">
+        <label class="form-label">📌 اقدامات تا جلسه بعد</label>
+        <div id="ses-edit-followup-list">
+          ${(session.followups || []).map((f, i) => `
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+              <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
+              <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
+              <button onclick="deleteEditFollowup(${sessionId}, ${f.id})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 2px">✕</button>
+            </div>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditFollowup(${sessionId})}">
+          <button type="button" class="btn btn-ghost" onclick="addEditFollowup(${sessionId})">+ افزودن</button>
+        </div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
+      </div>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
@@ -4777,10 +4937,33 @@ async function saveEditSession(sessionId) {
     importance: document.getElementById('f-ses-importance')?.value,
     note: document.getElementById('f-ses-note')?.value,
     extra_note: document.getElementById('f-ses-extra')?.value,
+    achievements: document.getElementById('f-ses-achievements')?.value || '',
   });
   closeModal();
   showToast('ذخیره شد ✓', 'success');
   await renderSessions();
+}
+
+async function toggleEditFollowup(sessionId, itemId, checkbox) {
+  await window.api.sessions.toggleFollowup({ session_id: sessionId, item_id: itemId });
+  // update label style inline
+  const label = checkbox.nextElementSibling;
+  if (label) label.style.cssText = checkbox.checked ? 'flex:1;text-decoration:line-through;color:var(--text3)' : 'flex:1';
+  showToast(checkbox.checked ? '✅ انجام شد' : 'بازگشت به باز', 'success');
+}
+
+async function addEditFollowup(sessionId) {
+  const input = document.getElementById('f-edit-followup-input');
+  const text = input?.value.trim();
+  if (!text) return;
+  await window.api.sessions.addFollowup({ session_id: sessionId, text });
+  showToast('اقدام اضافه شد ✓', 'success');
+  await openEditSession(sessionId);
+}
+
+async function deleteEditFollowup(sessionId, itemId) {
+  await window.api.sessions.deleteFollowup({ session_id: sessionId, item_id: itemId });
+  await openEditSession(sessionId);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -7315,9 +7498,29 @@ function openEvaluation(studentId, displayName) {
         </div>`;
       }).join('');
 
+  // Build achievements timeline
+  const allSessions = (_db.sessions||[]).filter(s=>s.student_id===studentId&&s.achievements&&s.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali));
+  const achHtml = allSessions.length === 0
+    ? '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">هنوز دستاوردی ثبت نشده<br><span style="font-size:11px">هنگام ثبت جلسه، بخش «پیشرفت‌ها» را پر کنید</span></div>'
+    : allSessions.map(s => `
+      <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="flex-shrink:0;width:8px;height:8px;background:var(--green);border-radius:50%;margin-top:5px"></div>
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">${s.date_jalali}</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.7">${renderRich(s.achievements)}</div>
+        </div>
+      </div>`).join('');
+
   openModal(`📊 ارزیابی عملکرد — ${displayName}`, `
-    <div class="detail-section" style="max-height:60vh;overflow-y:auto">
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button id="eval-tab-forms" onclick="document.getElementById('eval-panel-forms').style.display='block';document.getElementById('eval-panel-ach').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-ach').style.background='var(--bg3)';document.getElementById('eval-tab-ach').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--accent);color:white">📋 فرم‌های ارزیابی</button>
+      <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تایم‌لاین دستاوردها (${fa(allSessions.length)})</button>
+    </div>
+    <div id="eval-panel-forms" style="max-height:55vh;overflow-y:auto">
       <div id="eval-forms-list">${formsHtml}</div>
+    </div>
+    <div id="eval-panel-ach" style="display:none;max-height:55vh;overflow-y:auto">
+      ${achHtml}
     </div>
   `, [
     { label: '+ فرم جدید', cls: 'btn-primary', action: `openNewEvalForm(${studentId},'${escapeHtml(displayName)}')` },
