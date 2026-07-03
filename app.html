@@ -1490,7 +1490,7 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">منو اصلی</div>
-      <a class="nav-item active" data-page="students"><span class="nav-icon">👥</span><span id="nav-label-students">شاگردان</span><span class="badge" id="student-badge">0</span></a>
+      <a class="nav-item" data-page="students"><span class="nav-icon">👥</span><span id="nav-label-students">شاگردان</span><span class="badge" id="student-badge">0</span></a>
       <a class="nav-item" data-page="sessions"><span class="nav-icon">📅</span><span id="nav-label-sessions">جلسات</span></a>
       <a class="nav-item" data-page="instructions" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">📋</span><span>دستورالعمل‌های من</span></a>
       <a class="nav-item" data-page="todolist"><span class="nav-icon">✅</span><span>لیست کارها</span></a>
@@ -1600,7 +1600,7 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 
     <nav class="bottom-nav">
       <div class="bn-row">
-        <div class="bn-item active" data-page="students" onclick="bnNav(this)"><span class="bn-icon">👥</span><span>شاگردان</span></div>
+        <div class="bn-item" data-page="students" onclick="bnNav(this)"><span class="bn-icon">👥</span><span>شاگردان</span></div>
         <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>کارها</span></div>
         <div class="bn-item" data-page="goals" onclick="currentPage='goals';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🎯</span><span>اهداف</span></div>
         <div class="bn-item" data-page="habits" onclick="currentPage='habits';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🔥</span><span>عادت‌ها</span></div>
@@ -3078,7 +3078,7 @@ let CURRENCIES = ['تومان'];
 let allStudents = [];
 // safe pages list (don't restore admin panel from refresh unless admin)
 const _SAFE_RESTORE_PAGES = ['students','payments','sessions','families','reminders',
-  'customerlist','archive','staff','instructions','todolist','tutorial','settings','dashboard','admin_panel'];
+  'customerlist','archive','staff','instructions','todolist','tutorial','settings','dashboard','admin_panel','goals','habits'];
 function _getInitialPage() {
   // URL hash takes priority (works with back/forward + shareable links),
   // falls back to last page saved in localStorage, then default.
@@ -3089,6 +3089,18 @@ function _getInitialPage() {
   return 'students';
 }
 let currentPage = _getInitialPage();
+// Apply the correct sidebar/bottom-nav highlight IMMEDIATELY, synchronously,
+// right as the script parses — before any auth/network/init() work runs.
+// This is what prevents the "flash of wrong menu item" on refresh: we never
+// let the browser paint the default HTML state before correcting it.
+(function _syncInitialActiveMenuSync() {
+  document.querySelectorAll('.nav-item[data-page]').forEach(x => {
+    x.classList.toggle('active', x.dataset.page === currentPage);
+  });
+  document.querySelectorAll('.bn-item[data-page]').forEach(x => {
+    x.classList.toggle('active', x.dataset.page === currentPage);
+  });
+})();
 let openSessionGroups = new Set();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -3311,6 +3323,8 @@ function updatePageTitle() {
     admin_panel: '👑 پنل مدیریت',
     dashboard: 'داشبورد مالی',
     settings: 'تنظیمات',
+    goals: '🎯 اهداف',
+    habits: '🔥 عادت‌ها',
   };
   document.getElementById('page-title').textContent = titles[currentPage];
 }
@@ -3363,6 +3377,8 @@ async function renderPage() {
     else if (currentPage === 'tutorial')      await renderTutorial();
     else if (currentPage === 'admin_panel')   await renderAdminPanel();
     else if (currentPage === 'settings')  await renderSettings();
+    else if (currentPage === 'goals')     await renderGoals();
+    else if (currentPage === 'habits')    await renderHabits();
     else await renderDashboard();
   } catch(e) {
     console.error('[TeamPulse] renderPage error:', e);
@@ -16524,49 +16540,8 @@ function openHabitHistory(id) {
 }
 
 
-// ── Hook into existing renderPage ────────────────────────────
-const _origRenderPage = typeof renderPage === 'function' ? renderPage : null;
-// Override renderPage to handle goals/habits
-(function() {
-  const _patchRenderPage = () => {
-    const orig = window.renderPage;
-    if (!orig || orig._patched) return;
-    window.renderPage = function() {
-      if (currentPage === 'goals') { renderGoals(); return; }
-      if (currentPage === 'habits') { renderHabits(); return; }
-      orig.apply(this, arguments);
-    };
-    window.renderPage._patched = true;
-  };
-  // Try immediately and after DOMContentLoaded
-  _patchRenderPage();
-  document.addEventListener('DOMContentLoaded', _patchRenderPage);
-  setTimeout(_patchRenderPage, 200);
-  setTimeout(_patchRenderPage, 1000);
-})();
-
-// ── Page title for new pages ──────────────────────────────────
-const _origUpdatePageTitle = typeof updatePageTitle === 'function' ? updatePageTitle : null;
-(function() {
-  const _patchTitle = () => {
-    const orig = window.updatePageTitle;
-    if (!orig || orig._patched) return;
-    window.updatePageTitle = function() {
-      const titles = { goals: '🎯 اهداف', habits: '🔥 عادت‌ها' };
-      if (titles[currentPage]) {
-        const el = document.getElementById('page-title');
-        if (el) el.textContent = titles[currentPage];
-        return;
-      }
-      orig.apply(this, arguments);
-    };
-    window.updatePageTitle._patched = true;
-  };
-  _patchTitle();
-  document.addEventListener('DOMContentLoaded', _patchTitle);
-  setTimeout(_patchTitle, 200);
-  setTimeout(_patchTitle, 1000);
-})();
+// NOTE: goals/habits routing and titles are now handled natively inside
+// renderPage() and updatePageTitle() above — no monkey-patching needed.
 </script>
 </body>
 </html>
