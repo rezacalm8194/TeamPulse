@@ -3076,10 +3076,19 @@ let PKG_TYPES = [];
 let FAMILIES = [];
 let CURRENCIES = ['تومان'];
 let allStudents = [];
-let currentPage = localStorage.getItem('tp_last_page') || 'students';
 // safe pages list (don't restore admin panel from refresh unless admin)
 const _SAFE_RESTORE_PAGES = ['students','payments','sessions','families','reminders',
   'customerlist','archive','staff','instructions','todolist','tutorial','settings','dashboard','admin_panel'];
+function _getInitialPage() {
+  // URL hash takes priority (works with back/forward + shareable links),
+  // falls back to last page saved in localStorage, then default.
+  const fromHash = (location.hash || '').replace('#', '').trim();
+  if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
+  const fromStorage = localStorage.getItem('tp_last_page');
+  if (fromStorage && _SAFE_RESTORE_PAGES.includes(fromStorage)) return fromStorage;
+  return 'students';
+}
+let currentPage = _getInitialPage();
 let openSessionGroups = new Set();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -3275,6 +3284,16 @@ function bindNavItems() {
 }
 bindNavItems();
 
+// Browser Back/Forward support: jump to whichever page the hash now points to.
+window.addEventListener('hashchange', () => {
+  const page = (location.hash || '').replace('#', '').trim();
+  if (page && page !== currentPage && _SAFE_RESTORE_PAGES.includes(page)) {
+    currentPage = page;
+    updatePageTitle();
+    renderPage();
+  }
+});
+
 function updatePageTitle() {
   const titles = {
     students: META.entityPlural || 'شاگردان',
@@ -3296,6 +3315,17 @@ function updatePageTitle() {
   document.getElementById('page-title').textContent = titles[currentPage];
 }
 
+// Keeps sidebar / bottom-nav highlight in sync with currentPage, no matter
+// which code path changed the page (click, back/forward, refresh restore).
+function setActiveMenu(page) {
+  document.querySelectorAll('.nav-item[data-page]').forEach(x => {
+    x.classList.toggle('active', x.dataset.page === page);
+  });
+  document.querySelectorAll('.bn-item[data-page]').forEach(x => {
+    x.classList.toggle('active', x.dataset.page === page);
+  });
+}
+
 function applyMetaToUI() {
   document.getElementById('app-title').textContent = META.appTitle || 'TeamPulse';
   document.getElementById('app-subtitle').textContent = `مدیریت ${META.entityPlural || 'شاگردان'}`;
@@ -3312,6 +3342,12 @@ async function renderPage() {
   // Save current page for refresh restore
   if (currentPage && currentPage !== 'students' || currentPage === 'students') {
     localStorage.setItem('tp_last_page', currentPage);
+  }
+  // Keep sidebar highlight + URL hash in sync with the page being rendered,
+  // regardless of which handler triggered the navigation.
+  setActiveMenu(currentPage);
+  if (_SAFE_RESTORE_PAGES.includes(currentPage) && location.hash.replace('#', '') !== currentPage) {
+    history.replaceState(null, '', '#' + currentPage);
   }
   try {
     if (currentPage === 'students')  await renderStudents();
