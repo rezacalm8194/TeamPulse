@@ -4750,7 +4750,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       </div>
       <div class="form-group">
         <label class="form-label">تاریخ (شمسی) — پیش‌فرض امروز</label>
-        <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}">
+        <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge()" onchange="_updateSesPeriodBadge()">
       </div>
       <div class="form-group">
         <label class="form-label">اهمیت جلسه</label>
@@ -4785,10 +4785,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت، بازخوردهای خوب..."></textarea>
-        <div style="margin-top:8px">
-          <label class="form-label" style="font-size:11px;color:var(--text3)">🗓 این دستاورد مربوط به کدام دوره ارزیابی است؟</label>
-          <select class="form-select" id="f-ses-period" onchange="_onSesPeriodChange(this)">${_buildEvalPeriodSelectOptions(presetStudentId || allStudents[0]?.id, null, null)}</select>
-        </div>
+        <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
       <div class="form-group full">
@@ -4809,13 +4806,9 @@ async function openAddSessionGeneral(presetStudentId = null) {
   window._pendingFollowups = [];
   setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
   setTimeout(() => {
-    const periodSel = document.getElementById('f-ses-period');
-    if (periodSel) {
-      const initStudent = presetStudentId || +document.getElementById('f-ses-student')?.value;
-      const def = _defaultEvalPeriodValue(initStudent);
-      if (def) periodSel.value = def;
-      _onSesPeriodChange(periodSel);
-    }
+    const initStudent = presetStudentId || +document.getElementById('f-ses-student')?.value;
+    if (initStudent) _renderAchievementTagPicker(_primaryEvalFormId(initStudent), []);
+    _updateSesPeriodBadge();
   }, 0);
 }
 
@@ -4854,8 +4847,7 @@ async function saveSessionGeneral() {
   const title = document.getElementById('f-ses-title')?.value || '';
   const note = document.getElementById('f-ses-note')?.value;
   const addAsTopic = document.getElementById('f-ses-add-topic')?.checked;
-  const periodVal = document.getElementById('f-ses-period')?.value || '';
-  const [pvFormId, pvPid] = periodVal ? periodVal.split(':') : [null, null];
+  const { formId: autoFormId, pid: autoPid } = _matchPeriodForDate(studentId, date);
   await window.api.sessions.add({
     student_id: studentId, date,
     title,
@@ -4864,8 +4856,8 @@ async function saveSessionGeneral() {
     extra_note: document.getElementById('f-ses-extra')?.value,
     followups: (window._pendingFollowups || []).map(f => ({ text: f.text })),
     achievements: document.getElementById('f-ses-achievements')?.value || '',
-    eval_form_id: pvFormId ? +pvFormId : null,
-    eval_period_id: pvPid ? +pvPid : null,
+    eval_form_id: autoFormId || null,
+    eval_period_id: autoPid || null,
     achievement_tags: _getCheckedAchievementTags(),
   });
   window._pendingFollowups = [];
@@ -4940,10 +4932,7 @@ async function openEditSession(sessionId) {
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
-        <div style="margin-top:8px">
-          <label class="form-label" style="font-size:11px;color:var(--text3)">🗓 این دستاورد مربوط به کدام دوره ارزیابی است؟</label>
-          <select class="form-select" id="f-ses-period" onchange="_onSesPeriodChange(this)">${_buildEvalPeriodSelectOptions(session.student_id, session.eval_form_id, session.eval_period_id)}</select>
-        </div>
+        <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
     </div>
@@ -4952,25 +4941,29 @@ async function openEditSession(sessionId) {
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
+  const dateInput = document.getElementById('f-ses-date');
+  if (dateInput) { dateInput.oninput = _updateSesPeriodBadge; dateInput.addEventListener('change', _updateSesPeriodBadge); }
   setTimeout(() => {
-    const periodSel = document.getElementById('f-ses-period');
-    if (periodSel) _renderAchievementTagPicker(session.eval_form_id, session.achievement_tags || []);
+    _renderAchievementTagPicker(_primaryEvalFormId(session.student_id) || session.eval_form_id, session.achievement_tags || []);
+    _updateSesPeriodBadge();
   }, 0);
 }
 
 async function saveEditSession(sessionId) {
-  const periodVal = document.getElementById('f-ses-period')?.value || '';
-  const [pvFormId, pvPid] = periodVal ? periodVal.split(':') : [null, null];
+  const s = (_db.sessions || []).find(x => x.id === sessionId);
+  const studentId = s ? s.student_id : null;
+  const date = document.getElementById('f-ses-date')?.value;
+  const { formId: autoFormId, pid: autoPid } = studentId ? _matchPeriodForDate(studentId, date) : { formId: null, pid: null };
   await window.api.sessions.update({
     id: sessionId,
     title: document.getElementById('f-ses-title')?.value || '',
-    date: document.getElementById('f-ses-date')?.value,
+    date,
     importance: document.getElementById('f-ses-importance')?.value,
     note: document.getElementById('f-ses-note')?.value,
     extra_note: document.getElementById('f-ses-extra')?.value,
     achievements: document.getElementById('f-ses-achievements')?.value || '',
-    eval_form_id: pvFormId ? +pvFormId : null,
-    eval_period_id: pvPid ? +pvPid : null,
+    eval_form_id: autoFormId || null,
+    eval_period_id: autoPid || null,
     achievement_tags: _getCheckedAchievementTags(),
   });
   closeModal();
@@ -7512,6 +7505,88 @@ function _defaultEvalPeriodValue(studentId) {
   return flat.length ? `${flat[0].formId}:${flat[0].pid}` : '';
 }
 
+// ── Automatic date → evaluation-period matching ───────────────────────────
+// A period's stored "date" is the day it was closed/evaluated. So a period covers every
+// day from (the previous period's date + 1) up to and including its own date. The most
+// recently created period has no "closing" date yet after it — it's the open/active period.
+//
+// The form used for this automatic matching is the student's "primary" evaluation form:
+// whichever form has the most recently dated period (or the first form, if none has any
+// periods yet). This mirrors how most coaches use a single scorecard per student.
+function _primaryEvalFormId(studentId) {
+  const forms = loadEvalForms(studentId);
+  if (!forms.length) return null;
+  let best = null, bestKey = -1;
+  forms.forEach(f => {
+    (f.periods || []).forEach(p => {
+      const k = _jalaliKey(p.date);
+      if (k > bestKey) { bestKey = k; best = f.id; }
+    });
+  });
+  return best !== null ? best : forms[0].id;
+}
+
+// Given a student + an achievement's date, find which evaluation period it belongs to.
+// Returns { formId, pid }. pid is null when the date falls after every existing period —
+// i.e. it belongs to the still-open period that hasn't been closed yet. It stays unassigned
+// until the coach closes that period (see _reassignOpenSessionsToPeriod), at which point it
+// gets retroactively linked.
+function _matchPeriodForDate(studentId, dateStr) {
+  const formId = _primaryEvalFormId(studentId);
+  if (!formId) return { formId: null, pid: null };
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods || !form.periods.length) return { formId, pid: null };
+  const dKey = _jalaliKey(dateStr);
+  const sorted = [...form.periods].sort((a, b) => _jalaliKey(a.date) - _jalaliKey(b.date));
+  const match = sorted.find(p => _jalaliKey(p.date) >= dKey);
+  return { formId, pid: match ? match.id : null };
+}
+
+// Human-readable line shown under the achievements textarea explaining where this will land.
+function _describeAutoPeriod(studentId, dateStr) {
+  if (!studentId || !dateStr) return '';
+  const { formId, pid } = _matchPeriodForDate(studentId, dateStr);
+  if (!formId) return '🗓 هنوز دوره ارزیابی‌ای برای این فرد ساخته نشده — بعد از ساخت اولین دوره، این دستاورد خودکار به آن متصل می‌شود.';
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(f => f.id === formId);
+  if (!form) return '';
+  if (!pid) return `🗓 در دورهٔ ارزیابی فعلی «${escapeHtml(form.title)}» (هنوز باز) ثبت می‌شود — با پایان دادن به این دوره، خودکار به آن متصل خواهد شد.`;
+  const idx = form.periods.findIndex(p => p.id === pid);
+  return `🗓 به‌صورت خودکار در «${escapeHtml(form.title)} · دوره ${fa(idx + 1)}» ثبت می‌شود.`;
+}
+
+// Called right after a new period is created (i.e. the previous period was just "closed").
+// Retroactively attaches any still-unassigned achievement-sessions of this student that fall
+// within the newly-closed period's date range to it.
+function _reassignOpenSessionsToPeriod(studentId, formId, newPeriod, prevPeriodDate) {
+  const newKey = _jalaliKey(newPeriod.date);
+  const prevKey = prevPeriodDate ? _jalaliKey(prevPeriodDate) : -1;
+  let changed = false;
+  (_db.sessions || []).forEach(s => {
+    if (s.student_id !== studentId) return;
+    if (s.eval_period_id) return; // already linked to something — leave it alone
+    if (!s.achievements || !s.achievements.trim()) return;
+    const k = _jalaliKey(s.date_jalali);
+    if (k > prevKey && k <= newKey) {
+      s.eval_form_id = formId;
+      s.eval_period_id = newPeriod.id;
+      changed = true;
+    }
+  });
+  if (changed) _save();
+}
+
+// Refresh the small auto-period info line under the achievements field in the session form.
+function _updateSesPeriodBadge() {
+  const badge = document.getElementById('f-ses-period-badge');
+  if (!badge) return;
+  const studentId = +document.getElementById('f-ses-student')?.value || 0;
+  const dateStr = document.getElementById('f-ses-date')?.value || '';
+  badge.textContent = '';
+  badge.innerHTML = _describeAutoPeriod(studentId, dateStr);
+}
+
 // Render the indicator "which score does this achievement relate to?" chip picker.
 function _renderAchievementTagPicker(formId, selectedTags) {
   const container = document.getElementById('ses-ach-tags');
@@ -7555,24 +7630,21 @@ function _achievementPeriodBadge(session) {
   </div>`;
 }
 
-// Called when the student (session form) changes → rebuild the period dropdown + tag picker.
+// Called when the student (session form) changes → rebuild the indicator tag picker
+// and refresh the auto-period info line. The evaluation period itself is no longer
+// picked by the user — it's derived automatically from the session date (see
+// _matchPeriodForDate / _updateSesPeriodBadge).
 function _onSesStudentChangeRebuildPeriods(selectEl) {
   const studentId = +selectEl.value;
-  const periodSel = document.getElementById('f-ses-period');
-  if (periodSel) {
-    periodSel.innerHTML = _buildEvalPeriodSelectOptions(studentId, null, null);
-    const def = _defaultEvalPeriodValue(studentId);
-    if (def) periodSel.value = def;
-  }
-  _onSesPeriodChange(periodSel);
+  _renderAchievementTagPicker(_primaryEvalFormId(studentId), []);
+  _updateSesPeriodBadge();
 }
 
-// Called when the evaluation-period select changes → rebuild the indicator tag picker.
+// Kept for the tag picker refresh; the period select this used to respond to no longer exists.
 function _onSesPeriodChange(selectEl) {
-  const val = selectEl ? selectEl.value : '';
-  if (!val) { const c = document.getElementById('ses-ach-tags'); if (c) c.innerHTML = ''; return; }
-  const [formId] = val.split(':').map(Number);
-  _renderAchievementTagPicker(formId, []);
+  const studentId = +document.getElementById('f-ses-student')?.value || 0;
+  if (!studentId) { const c = document.getElementById('ses-ach-tags'); if (c) c.innerHTML = ''; return; }
+  _renderAchievementTagPicker(_primaryEvalFormId(studentId), []);
 }
 
 // ── helper: compute weighted total for one period ──
@@ -8181,7 +8253,7 @@ function _buildPeriodAchievementsHtml(studentId, form, period) {
   const sessions = _periodAchievementSessions(studentId, form.id, period.id);
   if (!sessions.length) {
     return `<div style="margin-top:14px;padding:10px 12px;background:var(--bg2);border-radius:10px;border:1px dashed var(--border);font-size:11px;color:var(--text3);text-align:center">
-      🌱 هنوز دستاوردی برای این دوره ثبت نشده — هنگام ثبت جلسه، «دوره ارزیابی» را روی همین دوره تنظیم کن
+      🌱 هنوز دستاوردی برای این دوره ثبت نشده — دستاوردهای جلسات این بازه زمانی خودکار اینجا نمایش داده می‌شوند
     </div>`;
   }
   const items = sessions.map(s => `
@@ -8204,16 +8276,17 @@ function _buildPeriodAchievementsHtml(studentId, form, period) {
 // ── START a new period (shows date input first) ──
 function startNewEvalPeriod(studentId, displayName, formId) {
   const today = formatJalali(...todayJalali());
-  openModal(`📅 دوره ارزیابی جدید`, `
+  openModal(`📅 پایان دوره فعلی و شروع دوره جدید`, `
     <div class="form-group full">
-      <label class="form-label">تاریخ این دوره ارزیابی</label>
+      <label class="form-label">تاریخ پایان دوره فعلی / ارزیابی</label>
       <input class="form-input jdate" id="enp-date" value="${today}" placeholder="۱۴۰۵/۰۱/۰۱"
         style="text-align:center;font-size:15px;font-weight:600;letter-spacing:1px"
         oninput="this.value=this.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d))">
       <div style="font-size:10px;color:var(--text3);margin-top:4px">تاریخ امروز به‌صورت پیش‌فرض وارد شده — از آیکون 📅 یا تایپ مستقیم تغییر بده</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.8">با ثبت این تاریخ، دوره فعلی بسته می‌شود، تمام دستاوردهایی که تا این تاریخ ثبت شده‌اند خودکار به همین دوره متصل می‌شوند و یک دوره جدید (باز) از روز بعد شروع می‌شود.</div>
     </div>
   `, [
-    { label: '✅ شروع دوره', cls: 'btn-primary', action: `confirmNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    { label: '✅ بستن این دوره', cls: 'btn-primary', action: `confirmNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId})` },
   ]);
   setTimeout(() => {
@@ -8229,8 +8302,12 @@ function confirmNewEvalPeriod(studentId, displayName, formId) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) return;
-  form.periods.push({ date: dateVal, scores: {}, notes: {}, targets: {}, summary: '', actions: '' });
+  const prevPeriodDate = form.periods.length ? form.periods[form.periods.length - 1].date : null;
+  const newPeriod = { id: genEvalId(), date: dateVal, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
+  form.periods.push(newPeriod);
   saveEvalForms(studentId, forms);
+  // این دوره همین الان «بسته» شد — هر دستاورد بدون دوره در همین بازه زمانی، خودکار به آن وصل شود
+  _reassignOpenSessionsToPeriod(studentId, formId, newPeriod, prevPeriodDate);
   showToast(`دوره ${fa(form.periods.length)} ارزیابی ثبت شد ✅`);
   openEvalFormDetail(studentId, displayName, formId, form.periods.length - 1);
 }
