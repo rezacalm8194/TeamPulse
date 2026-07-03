@@ -1032,6 +1032,26 @@ body.light mark { background: rgba(251,191,36,.5); }
   50% { opacity:.7; }
 }
 
+/* ── Habit checkbox / card completion animation ────────────────────────── */
+@keyframes habitCheckPop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.28); }
+  60%  { transform: scale(.92); }
+  100% { transform: scale(1); }
+}
+@keyframes habitCardFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(62,207,142,.55); }
+  100% { box-shadow: 0 0 0 14px rgba(62,207,142,0); }
+}
+@keyframes habitStreakPop {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  40%  { transform: translateY(-6px) scale(1.25); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.habit-checkbox-pop { animation: habitCheckPop .38s ease; }
+.habit-card-flash { animation: habitCardFlash .5s ease; }
+.habit-streak-pop { animation: habitStreakPop .38s ease; }
+
 /* ── Trend blocks ──────────────────────────────────────────────────────── */
 .trend-block {
   background: var(--bg3); border: 1px solid var(--border2);
@@ -14896,6 +14916,7 @@ function _habitsInit() {
 }
 
 let _habitFilter = 'active';
+let _justToggledHabitId = null;
 
 function _jalaliOrdinal(dateStr) {
   const [jy,jm,jd] = parseJalali(dateStr);
@@ -15030,10 +15051,10 @@ function renderHabits() {
 
   const statsHTML = `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-      ${statCard('🔥','عادت فعال', fa(activeHabits.length))}
+      ${statCard('🔥','عادت فعال', fa(activeHabits.length), '#fb923c')}
       ${statCard('🏆','بهترین استریک', fa(bestStreakOverall)+' روز', 'var(--amber)')}
-      ${statCard('📈','موفقیت این ماه', fa(avgMonthSuccess)+'٪', 'var(--green)')}
-      ${statCard('✅','امروز', fa(doneTodayCount)+'/'+fa(activeHabits.length), '#60a5fa')}
+      ${statCard('📈','موفقیت این ماه', fa(avgMonthSuccess)+'٪', '#60a5fa')}
+      ${statCard('✅','امروز', fa(doneTodayCount)+'/'+fa(activeHabits.length), 'var(--green)')}
     </div>`;
 
   if (displayHabits.length === 0) {
@@ -15061,6 +15082,11 @@ function renderHabits() {
     return;
   }
 
+  const justToggledId = _justToggledHabitId;
+  _justToggledHabitId = null;
+
+  const nowHHMM = (() => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })();
+
   const html = displayHabits.map(h => {
     const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
     const streak = getStreak(h.id);
@@ -15068,6 +15094,7 @@ function renderHabits() {
     const monthSuccess = getMonthSuccess(h.id);
     const lastDone = getLastDone(h.id);
     const color = h.color || 'var(--amber)';
+    const justToggled = h.id === justToggledId;
 
     const last7 = Array.from({length: 7}, (_, i) => {
       try {
@@ -15079,69 +15106,84 @@ function renderHabits() {
         const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
         const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
-          <div style="width:100%;max-width:32px;aspect-ratio:1;border-radius:8px;background:${done ? color : 'var(--bg4)'};
-            display:flex;align-items:center;justify-content:center;font-size:13px" title="${dateStr}">${done?'✓':''}</div>
           <span style="font-size:9px;color:var(--text3)">${wLabel}</span>
+          <div style="width:100%;max-width:32px;aspect-ratio:1;border-radius:8px;background:${done ? color : 'var(--bg4)'};
+            display:flex;align-items:center;justify-content:center;font-size:13px" title="${dateStr}">${done?'✅':'⬜'}</div>
         </div>`;
       } catch(e) { return '<div style="flex:1"></div>'; }
     }).join('');
 
     const wasBroken = !doneToday && bestStreak > 0 && streak === 0;
 
+    // ── وضعیت با سه حالت (نه فقط قرمز/سبز) ─────────────
+    const timeNotYetDue = !!h.time && !doneToday && nowHHMM < h.time;
+    let status;
+    if (doneToday) status = { icon:'✅', text:'انجام شد', color:'var(--green)' };
+    else if (timeNotYetDue) status = { icon:'⏳', text:`هنوز زمانش نرسیده (${h.time})`, color:'var(--text3)' };
+    else status = { icon:'⭕', text:'انجام نشده', color:'var(--text3)' };
+
+    // ── پیام انگیزشی هوشمند و پلکانی ─────────────
     let motivation;
-    if (doneToday) {
-      motivation = (bestStreak > 1 && streak >= bestStreak) ? 'داری رکورد خودت رو می‌شکنی! همینطور ادامه بده 🏆' : 'آفرین! امروز رو ثبت کردی ✅';
-    } else if (wasBroken) {
-      motivation = 'استریکت شکست، ولی مهم نیست. از امروز دوباره شروع کن 💪';
-    } else if (streak === 0) {
-      motivation = 'امروز اولین قدم رو بردار 🚀';
-    } else if (bestStreak > streak) {
-      motivation = `فقط ${fa(bestStreak - streak)} روز دیگه تا رکورد جدیدت 🔥`;
+    if (wasBroken) {
+      motivation = '💪 استریکت شکست، ولی مهم نیست. از امروز دوباره شروع کن.';
+    } else if (streak === 0 && !doneToday) {
+      motivation = '🚀 امروز اولین قدم رو بردار.';
+    } else if (bestStreak > streak && bestStreak - streak <= 5) {
+      motivation = `🔥 فقط ${fa(bestStreak - streak)} روز دیگه تا رکورد جدیدت.`;
+    } else if (streak >= 50) {
+      motivation = '🏆 فوق‌العاده پیش می‌ری، همینطور ادامه بده.';
+    } else if (doneToday) {
+      motivation = '✅ آفرین! امروز رو ثبت کردی.';
     } else {
-      motivation = 'همینطور ادامه بده، داری خوب پیش می‌ری 👏';
+      motivation = '👏 داری خوب پیش می‌ری، ادامه بده.';
     }
 
     const linkedGoal = h.goal_id ? (_db.goals||[]).find(x=>x.id===h.goal_id) : null;
-    const borderColor = doneToday ? 'rgba(62,207,142,.4)' : (wasBroken ? 'rgba(248,113,113,.35)' : 'var(--border)');
-    const cardBg = doneToday ? 'linear-gradient(135deg, rgba(62,207,142,.05), var(--bg2) 60%)' : (wasBroken ? 'linear-gradient(135deg, rgba(248,113,113,.05), var(--bg2) 60%)' : 'var(--bg2)');
+    const borderColor = doneToday ? 'rgba(62,207,142,.4)' : (wasBroken ? 'rgba(248,113,113,.3)' : 'var(--border)');
+    const cardBg = doneToday ? 'linear-gradient(135deg, rgba(62,207,142,.05), var(--bg2) 60%)' : (wasBroken ? 'linear-gradient(135deg, rgba(248,113,113,.04), var(--bg2) 60%)' : 'var(--bg2)');
 
-    return `<div style="background:${cardBg};border:1px solid ${borderColor};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <button onclick="toggleHabitToday(${h.id})" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}" style="width:46px;height:46px;border-radius:50%;flex-shrink:0;cursor:pointer;
+    return `<div class="${justToggled ? 'habit-card-flash' : ''}" style="background:${cardBg};border:1px solid ${borderColor};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
+
+      <!-- ردیف اول: چک‌باکس واقعی + عنوان (بزرگ‌ترین متن) + منوی سه‌نقطه -->
+      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px">
+        <button onclick="toggleHabitToday(${h.id})" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
+          class="${justToggled ? 'habit-checkbox-pop' : ''}"
+          style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;margin-top:1px;
           background:${doneToday?'var(--green)':'var(--bg3)'};
           border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
-          font-size:22px;transition:all .2s;display:flex;align-items:center;justify-content:center">
-          ${doneToday ? '✅' : (h.icon || '🔥')}
+          font-size:16px;font-weight:800;color:white;transition:all .2s;display:flex;align-items:center;justify-content:center">
+          ${doneToday ? '✓' : ''}
         </button>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px;display:flex;align-items:center;gap:5px">
-            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span>
+          <div style="font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4">
+            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${h.icon || '🔥'}</span><span>${escapeHtml(h.title)}</span>
           </div>
-          <div style="font-size:10px;font-weight:600;color:${doneToday ? 'var(--green)' : 'var(--text3)'};margin-bottom:3px">
-            ${doneToday ? '✓ امروز انجام شد — برای لغو دوباره بزن' : '⭕ هنوز ثبت نشده — دایره را بزن'}
-          </div>
-          <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
-            ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
-            ${linkedGoal ? `<span onclick="event.stopPropagation();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">${linkedGoal.icon||'🎯'} ${escapeHtml(linkedGoal.title)}</span>` : ''}
-          </div>
+          <div style="font-size:11px;font-weight:700;color:${status.color};margin-top:2px">${status.icon} ${status.text}</div>
         </div>
-        <button onclick="openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;align-self:flex-start">⋮</button>
-        <div style="text-align:center;flex-shrink:0">
-          <div style="font-size:20px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-          <div style="font-size:9px;color:var(--text3)">روز استریک</div>
-        </div>
+        <button onclick="openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
       </div>
 
+      <!-- ردیف دوم: زمان، آخرین انجام، هدف مرتبط -->
+      <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 38px">
+        ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
+        ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
+        ${linkedGoal ? `<span onclick="event.stopPropagation();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
+      </div>
+
+      <!-- ردیف سوم: استریک، رکورد، درصد موفقیت -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-          <div style="font-size:13px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)} روز</div>
+          <div class="${justToggled ? 'habit-streak-pop' : ''}" style="font-size:16px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
+          <div style="font-size:9px;color:var(--text3)">روز استریک</div>
+        </div>
+        <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
+          <div style="font-size:13px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)}</div>
           <div style="font-size:9px;color:var(--text3)">رکورد</div>
         </div>
-        <div style="flex:1.4;background:var(--bg3);border-radius:8px;padding:8px 10px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <div style="flex:1.6;background:var(--bg3);border-radius:8px;padding:8px 10px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px">
             <span style="font-size:9px;color:var(--text3)">موفقیت این ماه</span>
-            <span style="font-size:12px;font-weight:700;color:var(--green)">${fa(monthSuccess)}٪</span>
+            <span style="font-size:15px;font-weight:800;color:var(--green)">${fa(monthSuccess)}٪</span>
           </div>
           <div style="width:100%;height:6px;border-radius:4px;background:var(--bg4);overflow:hidden">
             <div style="width:${monthSuccess}%;height:100%;background:var(--green);border-radius:4px;transition:width .3s"></div>
@@ -15189,8 +15231,10 @@ function toggleHabitToday(habitId) {
   _habitsInit();
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
   const existing = _db.habit_logs.find(l => l.habit_id === habitId && l.date === todayStr);
-  if (existing) { existing.done = !existing.done; }
-  else { _db.habit_logs.push({ habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); }
+  let nowDone;
+  if (existing) { existing.done = !existing.done; nowDone = existing.done; }
+  else { _db.habit_logs.push({ habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
+  _justToggledHabitId = nowDone ? habitId : null;
   _save(); renderHabits();
 }
 
