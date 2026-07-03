@@ -1169,12 +1169,75 @@ body.light mark { background: rgba(251,191,36,.5); }
 .habit-card-clickable { cursor: pointer; }
 .habit-card-clickable:hover { border-color: var(--border2) !important; }
 
-/* ── Trend blocks ──────────────────────────────────────────────────────── */
+/* ── Trend blocks / Salary report cards ──────────────────────────────────── */
 .trend-block {
   background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
+  border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;
 }
 #trends-container .trend-block:last-child { margin-bottom: 0; }
+
+.salary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.salary-who { display: flex; align-items: center; gap: 10px; }
+.salary-avatar {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.salary-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.salary-name-sub { font-size: 10.5px; color: var(--text3); margin-top: 1px; }
+.salary-current { text-align: left; }
+.salary-current-amount { font-size: 19px; font-weight: 700; color: var(--text); }
+.salary-current-amount span { font-size: 11px; font-weight: 500; color: var(--text3); margin-right: 4px; }
+.salary-change { font-size: 11px; font-weight: 600; margin-top: 3px; }
+.salary-change.up { color: var(--green); }
+.salary-change.down { color: var(--red); }
+.salary-change.flat { color: var(--text3); }
+
+.salary-chart-wrap { margin-bottom: 14px; }
+.salary-chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+.salary-chart-point { cursor: help; transition: r .15s ease; }
+.salary-chart-point:hover { r: 5.5; }
+.salary-chart-labels { display: flex; justify-content: space-between; margin-top: 4px; }
+.salary-chart-labels span { font-size: 9.5px; color: var(--text3); }
+
+.salary-mini-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+}
+@media (max-width: 620px) { .salary-mini-stats { grid-template-columns: repeat(2, 1fr); } }
+.salary-mini-stat {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+}
+.salary-mini-label { font-size: 9.5px; color: var(--text3); margin-bottom: 3px; }
+.salary-mini-value { font-size: 12.5px; font-weight: 700; color: var(--text); }
+
+.salary-breakdown { margin-bottom: 14px; }
+.salary-breakdown-title { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: 600; }
+.salary-breakdown-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 2px; font-size: 11.5px; border-bottom: 1px dashed var(--border);
+}
+.salary-breakdown-row:last-child { border-bottom: none; }
+.salary-breakdown-row .label { color: var(--text2); }
+.salary-breakdown-row .val { font-weight: 600; color: var(--text); }
+.salary-breakdown-row .val.neg { color: var(--red); }
+
+.salary-insight {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; font-size: 11.5px;
+  color: var(--text2); line-height: 1.9; margin-bottom: 12px;
+}
+.salary-insight b { color: var(--text); }
+
+.salary-details summary {
+  cursor: pointer; font-size: 11px; color: var(--accent2); font-weight: 600;
+  list-style: none; user-select: none; padding: 4px 0;
+}
+.salary-details summary::-webkit-details-marker { display: none; }
+.salary-details summary::before { content: '▸ '; }
+.salary-details[open] summary::before { content: '▾ '; }
+.salary-details table { margin-top: 8px; }
 
 
 /* ── Bottom Sheet ────────────────────────────────────────── */
@@ -2588,7 +2651,7 @@ window.api = {
     getTrends: ()=>{
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
-      return _P(_db.staff.map(s=>{const records=[..._db.staff_monthly].filter(m=>m.staff_id===s.id).sort((a,b)=>(a.jy*100+a.jm)-(b.jy*100+b.jm));return{staff_id:s.id,name:s.name,lname:s.lname,months:records.map(r=>({label:`${JMONTHS[r.jm-1]} ${faNum(r.jy)}`,total:r.total,paid:r.paid}))};}).filter(t=>t.months.length>=2));
+      return _P(_db.staff.map(s=>{const records=[..._db.staff_monthly].filter(m=>m.staff_id===s.id).sort((a,b)=>(a.jy*100+a.jm)-(b.jy*100+b.jm));return{staff_id:s.id,name:s.name,lname:s.lname,months:records.map(r=>({label:`${JMONTHS[r.jm-1]} ${faNum(r.jy)}`,total:r.total,paid:r.paid,paid_date:r.paid_date,fixed_salary:r.fixed_salary||0,roles:r.roles||[]}))};}).filter(t=>t.months.length>=2));
     },
     add: (p)=>{
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
@@ -6616,43 +6679,7 @@ async function renderStaff() {
   } else {
     html += `<div id="trends-container">`;
     trends.forEach(t => {
-      const max = Math.max(...t.months.map(m=>m.total), 1);
-      html += `<div class="trend-block" data-name="${t.name} ${t.lname}">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--accent2)">👤 ${t.name} ${t.lname}</div>
-        <table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:6px">
-          <thead><tr style="color:var(--text3)"><th style="text-align:right;padding:3px 6px">ماه</th><th style="text-align:right;padding:3px 6px">حقوق کل</th><th style="text-align:right;padding:3px 6px">تغییر</th><th style="text-align:right;padding:3px 6px">وضعیت</th></tr></thead>
-          <tbody>
-          ${t.months.slice().reverse().map((m, idx, arr) => {
-            const prev = arr[idx+1];
-            let changeBadge = '—', changeColor = 'var(--text3)';
-            if (prev) {
-              const diff = m.total - prev.total;
-              if (diff > 0) { changeBadge = `▲ ${fmt(diff)}`; changeColor = 'var(--green)'; }
-              else if (diff < 0) { changeBadge = `▼ ${fmt(-diff)}`; changeColor = 'var(--red)'; }
-              else { changeBadge = '= بدون تغییر'; }
-            }
-            return `<tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:4px 6px;font-weight:500">${m.label}</td>
-              <td style="padding:4px 6px">${fmt(m.total)} تومان</td>
-              <td style="padding:4px 6px;color:${changeColor};font-weight:600">${changeBadge}</td>
-              <td style="padding:4px 6px">${m.paid?'<span style="color:var(--green)">✓ پرداخت شد</span>':'<span style="color:var(--text3)">در انتظار</span>'}</td>
-            </tr>`;
-          }).join('')}
-          </tbody>
-        </table>
-        <div style="display:flex;gap:6px;align-items:flex-end;height:60px;margin-top:4px">
-          ${t.months.slice(-8).map((m,i,arr) => {
-            const prev = i>0 ? arr[i-1].total : null;
-            let color = 'var(--accent2)';
-            if (prev !== null) color = m.total > prev ? 'var(--green)' : (m.total < prev ? 'var(--red)' : 'var(--accent2)');
-            const h = Math.max(6, Math.round((m.total/max)*50));
-            return `<div style="flex:1;text-align:center">
-              <div title="${m.label}: ${fmt(m.total)} تومان" style="height:${h}px;background:${color};border-radius:4px 4px 0 0;margin-bottom:3px;cursor:help"></div>
-              <div style="font-size:8px;color:var(--text3);overflow:hidden">${m.label.split(' ')[0]}</div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
+      html += buildSalaryReportCard(t);
     });
     html += `</div>`;
   }
@@ -6671,6 +6698,149 @@ async function renderStaff() {
       b.style.display = (!q || name.includes(q) || text.includes(q)) ? '' : 'none';
     });
   };
+}
+
+// ── Salary report card (chart + stats + breakdown + insight) ───────────────────
+function buildSalaryReportCard(t) {
+  const months = t.months;
+  const last = months[months.length - 1];
+  const prev = months.length > 1 ? months[months.length - 2] : null;
+  const totals = months.map(m => m.total);
+  const avg = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+  const maxV = Math.max(...totals);
+  const minV = Math.min(...totals);
+  const paidCount = months.filter(m => m.paid).length;
+
+  // Change vs previous month
+  let changeHtml = `<div class="salary-change flat">— بدون سابقه ماه قبل</div>`;
+  let diff = 0, pct = 0;
+  if (prev) {
+    diff = last.total - prev.total;
+    pct = prev.total ? Math.round((diff / prev.total) * 100) : 0;
+    if (diff > 0) changeHtml = `<div class="salary-change up">▲ ${fmt(diff)} (${fa('+' + pct)}٪) نسبت به ماه قبل</div>`;
+    else if (diff < 0) changeHtml = `<div class="salary-change down">▼ ${fmt(-diff)} (${fa(pct)}٪) نسبت به ماه قبل</div>`;
+    else changeHtml = `<div class="salary-change flat">= بدون تغییر نسبت به ماه قبل</div>`;
+  }
+
+  // ── Sparkline / area chart (SVG) ──
+  const chartMonths = months.slice(-12);
+  const W = 600, H = 120, PAD = 8;
+  const cMin = Math.min(...chartMonths.map(m => m.total));
+  const cMax = Math.max(...chartMonths.map(m => m.total));
+  const range = Math.max(cMax - cMin, 1);
+  const n = chartMonths.length;
+  const stepX = n > 1 ? (W - PAD * 2) / (n - 1) : 0;
+  const pts = chartMonths.map((m, i) => {
+    const x = PAD + i * stepX;
+    const y = PAD + (H - PAD * 2) * (1 - (m.total - cMin) / range);
+    return { x, y, m };
+  });
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${H - PAD} L${pts[0].x.toFixed(1)},${H - PAD} Z`;
+  const dots = pts.map(p => `
+    <circle class="salary-chart-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="var(--accent2)" stroke="var(--bg3)" stroke-width="2">
+      <title>${p.m.label}: ${fmt(p.m.total)} تومان${p.m.paid ? ' (پرداخت شد)' : ' (در انتظار)'}</title>
+    </circle>`).join('');
+  const svg = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sgrad${t.staff_id}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent2)" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="var(--accent2)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#sgrad${t.staff_id})" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="var(--accent2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+    </svg>`;
+  // Show a few month labels beneath the chart (avoid crowding)
+  const labelIdxs = n <= 6 ? pts.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  const chartLabels = labelIdxs.map(i => `<span>${chartMonths[i].label.split(' ')[0]}</span>`).join('');
+
+  // ── Salary breakdown for latest month ──
+  let breakdownHtml = '';
+  if (last.fixed_salary || (last.roles && last.roles.length)) {
+    const rows = [];
+    if (last.fixed_salary) rows.push(`<div class="salary-breakdown-row"><span class="label">حقوق پایه</span><span class="val">${fmt(last.fixed_salary)} تومان</span></div>`);
+    (last.roles || []).forEach(r => {
+      rows.push(`<div class="salary-breakdown-row"><span class="label">${r.role_label || 'مزایا'}</span><span class="val">${fmt(r.amount)} تومان</span></div>`);
+    });
+    breakdownHtml = `<div class="salary-breakdown">
+      <div class="salary-breakdown-title">جزئیات حقوق ${last.label}</div>
+      ${rows.join('')}
+    </div>`;
+  }
+
+  // ── Smart insight sentence ──
+  let insight = '';
+  if (prev && diff !== 0) {
+    const dominant = (last.roles && last.roles.length)
+      ? [...last.roles].sort((a, b) => b.amount - a.amount)[0]
+      : null;
+    const reason = diff > 0
+      ? (dominant ? `که عمدتاً به دلیل <b>${dominant.role_label}</b> بوده است` : `که به دلیل افزایش حقوق پایه بوده است`)
+      : '';
+    insight = `<div class="salary-insight">${diff > 0 ? '📈' : '📉'} حقوق <b>${t.name} ${t.lname}</b> نسبت به ماه قبل <b>${fa(Math.abs(pct))}٪ ${diff > 0 ? 'افزایش' : 'کاهش'}</b> داشته است${reason}. میانگین حقوق در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است.</div>`;
+  } else {
+    insight = `<div class="salary-insight">💰 میانگین حقوق <b>${t.name} ${t.lname}</b> در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است.</div>`;
+  }
+
+  // ── Full month-by-month table (collapsible) ──
+  const tableRows = months.slice().reverse().map((m, idx, arr) => {
+    const p = arr[idx + 1];
+    let changeBadge = '—', changeColor = 'var(--text3)';
+    if (p) {
+      const d = m.total - p.total;
+      if (d > 0) { changeBadge = `▲ ${fmt(d)}`; changeColor = 'var(--green)'; }
+      else if (d < 0) { changeBadge = `▼ ${fmt(-d)}`; changeColor = 'var(--red)'; }
+      else changeBadge = '= بدون تغییر';
+    }
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:4px 6px;font-weight:500">${m.label}</td>
+      <td style="padding:4px 6px">${fmt(m.total)} تومان</td>
+      <td style="padding:4px 6px;color:${changeColor};font-weight:600">${changeBadge}</td>
+      <td style="padding:4px 6px">${m.paid ? '<span style="color:var(--green)">✓ پرداخت شد</span>' : '<span style="color:var(--text3)">در انتظار</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="trend-block" data-name="${t.name} ${t.lname}">
+    <div class="salary-head">
+      <div class="salary-who">
+        <div class="salary-avatar">${(t.name || '؟').charAt(0)}</div>
+        <div>
+          <div class="salary-name">${t.name} ${t.lname}</div>
+          <div class="salary-name-sub">حقوق ${last.label}</div>
+        </div>
+      </div>
+      <div class="salary-current">
+        <div class="salary-current-amount">${fmt(last.total)} <span>تومان</span></div>
+        ${changeHtml}
+      </div>
+    </div>
+
+    <div class="salary-chart-wrap">
+      ${svg}
+      <div class="salary-chart-labels">${chartLabels}</div>
+    </div>
+
+    <div class="salary-mini-stats">
+      <div class="salary-mini-stat"><div class="salary-mini-label">میانگین</div><div class="salary-mini-value">${fmt(avg)}</div></div>
+      <div class="salary-mini-stat"><div class="salary-mini-label">بیشترین</div><div class="salary-mini-value">${fmt(maxV)}</div></div>
+      <div class="salary-mini-stat"><div class="salary-mini-label">کمترین</div><div class="salary-mini-value">${fmt(minV)}</div></div>
+      <div class="salary-mini-stat"><div class="salary-mini-label">پرداخت‌شده</div><div class="salary-mini-value">${fa(paidCount)} از ${fa(months.length)}</div></div>
+    </div>
+
+    ${breakdownHtml}
+    ${insight}
+
+    <details class="salary-details">
+      <summary>مشاهده جزئیات همه ماه‌ها</summary>
+      <table style="width:100%;font-size:11px;border-collapse:collapse">
+        <thead><tr style="color:var(--text3)"><th style="text-align:right;padding:3px 6px">ماه</th><th style="text-align:right;padding:3px 6px">حقوق کل</th><th style="text-align:right;padding:3px 6px">تغییر</th><th style="text-align:right;padding:3px 6px">وضعیت</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </details>
+  </div>`;
 }
 
 // ── Add/Edit staff ────────────────────────────────────────────────────────────
