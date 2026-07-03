@@ -1051,6 +1051,10 @@ body.light mark { background: rgba(251,191,36,.5); }
 .habit-checkbox-pop { animation: habitCheckPop .38s ease; }
 .habit-card-flash { animation: habitCardFlash .5s ease; }
 .habit-streak-pop { animation: habitStreakPop .38s ease; }
+.habit-day-dot { transition: transform .15s ease; }
+.habit-day-dot:hover { transform: scale(1.3); }
+.habit-card-clickable { cursor: pointer; }
+.habit-card-clickable:hover { border-color: var(--border2) !important; }
 
 /* ── Trend blocks ──────────────────────────────────────────────────────── */
 .trend-block {
@@ -14924,6 +14928,77 @@ function _jalaliOrdinal(dateStr) {
   return Math.floor(new Date(gy,gm-1,gd).getTime() / 86400000);
 }
 
+function _habitStreak(habitId) {
+  _habitsInit();
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const habitLogs = logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date).sort().reverse();
+  if (!habitLogs.length) return 0;
+  let streak = 0;
+  let checkDate = todayStr;
+  for (let i = 0; i < 365; i++) {
+    if (habitLogs.includes(checkDate)) { streak++; }
+    else if (i === 0) { /* امروز هنوز نزده */ }
+    else break;
+    try {
+      const [jy,jm,jd] = parseJalali(checkDate);
+      const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+      const prev = new Date(gy,gm-1,gd-1);
+      const pj = gregorianToJalali(prev.getFullYear(),prev.getMonth()+1,prev.getDate());
+      checkDate = formatJalali(...pj);
+    } catch(e) { break; }
+  }
+  return streak;
+}
+
+function _habitBestStreak(habitId) {
+  _habitsInit();
+  const logs = _db.habit_logs || [];
+  try {
+    const ordinals = [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => _jalaliOrdinal(l.date)))].sort((a,b)=>a-b);
+    let best = 0, cur = 0, prev = null;
+    for (const o of ordinals) {
+      cur = (prev !== null && o === prev + 1) ? cur + 1 : 1;
+      if (cur > best) best = cur;
+      prev = o;
+    }
+    return best;
+  } catch(e) { return 0; }
+}
+
+function _habitMonthSuccess(habitId) {
+  _habitsInit();
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  try {
+    const [ty, tm, td] = parseJalali(todayStr);
+    const doneThisMonth = new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))
+      .size ? [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))].filter(d => {
+        const [jy, jm] = parseJalali(d);
+        return jy === ty && jm === tm;
+      }).length : 0;
+    return td > 0 ? Math.round(doneThisMonth / td * 100) : 0;
+  } catch(e) { return 0; }
+}
+
+function _habitLastDone(habitId) {
+  _habitsInit();
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const doneLogs = logs.filter(l => l.habit_id === habitId && l.done && l.logged_at).sort((a,b)=> new Date(b.logged_at)-new Date(a.logged_at));
+  if (!doneLogs.length) return null;
+  const last = doneLogs[0];
+  const dt = new Date(last.logged_at);
+  const timeStr = fa(String(dt.getHours()).padStart(2,'0')) + ':' + fa(String(dt.getMinutes()).padStart(2,'0'));
+  if (last.date === todayStr) return `امروز ساعت ${timeStr}`;
+  try {
+    const daysAgo = _jalaliOrdinal(todayStr) - _jalaliOrdinal(last.date);
+    if (daysAgo === 1) return 'دیروز';
+    return `${fa(daysAgo)} روز پیش`;
+  } catch(e) { return last.date; }
+}
+
 function renderHabits() {
   _habitsInit();
   updateTopbarActions(`<button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>`);
@@ -14949,65 +15024,10 @@ function renderHabits() {
     return;
   }
 
-  const getStreak = (habitId) => {
-    const habitLogs = logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date).sort().reverse();
-    if (!habitLogs.length) return 0;
-    let streak = 0;
-    let checkDate = todayStr;
-    for (let i = 0; i < 365; i++) {
-      if (habitLogs.includes(checkDate)) { streak++; }
-      else if (i === 0) { /* امروز هنوز نزده */ }
-      else break;
-      // برو روز قبل
-      try {
-        const [jy,jm,jd] = parseJalali(checkDate);
-        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-        const prev = new Date(gy,gm-1,gd-1);
-        const pj = gregorianToJalali(prev.getFullYear(),prev.getMonth()+1,prev.getDate());
-        checkDate = formatJalali(...pj);
-      } catch(e) { break; }
-    }
-    return streak;
-  };
-
-  const getBestStreak = (habitId) => {
-    try {
-      const ordinals = [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => _jalaliOrdinal(l.date)))].sort((a,b)=>a-b);
-      let best = 0, cur = 0, prev = null;
-      for (const o of ordinals) {
-        cur = (prev !== null && o === prev + 1) ? cur + 1 : 1;
-        if (cur > best) best = cur;
-        prev = o;
-      }
-      return best;
-    } catch(e) { return 0; }
-  };
-
-  const getMonthSuccess = (habitId) => {
-    try {
-      const [ty, tm, td] = parseJalali(todayStr);
-      const doneThisMonth = new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))
-        .size ? [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))].filter(d => {
-          const [jy, jm] = parseJalali(d);
-          return jy === ty && jm === tm;
-        }).length : 0;
-      return td > 0 ? Math.round(doneThisMonth / td * 100) : 0;
-    } catch(e) { return 0; }
-  };
-
-  const getLastDone = (habitId) => {
-    const doneLogs = logs.filter(l => l.habit_id === habitId && l.done && l.logged_at).sort((a,b)=> new Date(b.logged_at)-new Date(a.logged_at));
-    if (!doneLogs.length) return null;
-    const last = doneLogs[0];
-    const dt = new Date(last.logged_at);
-    const timeStr = fa(String(dt.getHours()).padStart(2,'0')) + ':' + fa(String(dt.getMinutes()).padStart(2,'0'));
-    if (last.date === todayStr) return `امروز ساعت ${timeStr}`;
-    try {
-      const daysAgo = _jalaliOrdinal(todayStr) - _jalaliOrdinal(last.date);
-      if (daysAgo === 1) return 'دیروز';
-      return `${fa(daysAgo)} روز پیش`;
-    } catch(e) { return last.date; }
-  };
+  const getStreak = _habitStreak;
+  const getBestStreak = _habitBestStreak;
+  const getMonthSuccess = _habitMonthSuccess;
+  const getLastDone = _habitLastDone;
 
   // ── فیلتر و آرشیو ─────────────────────────────
   const activeHabits = habits.filter(h => !h.archived);
@@ -15104,11 +15124,13 @@ function renderHabits() {
         const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
         const dateStr = formatJalali(...dj);
         const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
+        const isToday = dateStr === todayStr;
         const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
-        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
-          <span style="font-size:9px;color:var(--text3)">${wLabel}</span>
-          <div style="width:100%;max-width:32px;aspect-ratio:1;border-radius:8px;background:${done ? color : 'var(--bg4)'};
-            display:flex;align-items:center;justify-content:center;font-size:13px" title="${dateStr}">${done?'✅':'⬜'}</div>
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">
+          <span style="font-size:9px;color:${isToday ? 'var(--amber)' : 'var(--text3)'};font-weight:${isToday?'800':'400'}">${wLabel}</span>
+          <div class="habit-day-dot" title="${dateStr}${isToday?' (امروز)':''}" style="width:13px;height:13px;border-radius:50%;
+            background:${done ? 'var(--green)' : 'var(--bg4)'};
+            box-shadow:${isToday ? '0 0 0 3px rgba(251,191,36,.35)' : 'none'}"></div>
         </div>`;
       } catch(e) { return '<div style="flex:1"></div>'; }
     }).join('');
@@ -15139,14 +15161,14 @@ function renderHabits() {
     }
 
     const linkedGoal = h.goal_id ? (_db.goals||[]).find(x=>x.id===h.goal_id) : null;
-    const borderColor = doneToday ? 'rgba(62,207,142,.4)' : (wasBroken ? 'rgba(248,113,113,.3)' : 'var(--border)');
-    const cardBg = doneToday ? 'linear-gradient(135deg, rgba(62,207,142,.05), var(--bg2) 60%)' : (wasBroken ? 'linear-gradient(135deg, rgba(248,113,113,.04), var(--bg2) 60%)' : 'var(--bg2)');
+    const borderColor = doneToday ? 'var(--green)' : (wasBroken ? 'rgba(248,113,113,.35)' : 'var(--border)');
+    const cardGlow = doneToday ? '0 0 0 1px var(--green), 0 4px 18px rgba(62,207,142,.18)' : 'none';
 
-    return `<div class="${justToggled ? 'habit-card-flash' : ''}" style="background:${cardBg};border:1px solid ${borderColor};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
+    return `<div class="habit-card-clickable ${justToggled ? 'habit-card-flash' : ''}" onclick="openHabitDetail(${h.id})" style="background:var(--bg2);border:1px solid ${borderColor};box-shadow:${cardGlow};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
 
       <!-- ردیف اول: چک‌باکس واقعی + عنوان (بزرگ‌ترین متن) + منوی سه‌نقطه -->
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px">
-        <button onclick="toggleHabitToday(${h.id})" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
+        <button onclick="event.stopPropagation();toggleHabitToday(${h.id})" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
           class="${justToggled ? 'habit-checkbox-pop' : ''}"
           style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;margin-top:1px;
           background:${doneToday?'var(--green)':'var(--bg3)'};
@@ -15156,11 +15178,11 @@ function renderHabits() {
         </button>
         <div style="flex:1;min-width:0">
           <div style="font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4">
-            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${h.icon || '🔥'}</span><span>${escapeHtml(h.title)}</span>
+            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span><span>${h.icon || '🔥'}</span>
           </div>
           <div style="font-size:11px;font-weight:700;color:${status.color};margin-top:2px">${status.icon} ${status.text}</div>
         </div>
-        <button onclick="openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
+        <button onclick="event.stopPropagation();openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
       </div>
 
       <!-- ردیف دوم: زمان، آخرین انجام، هدف مرتبط -->
@@ -15170,30 +15192,30 @@ function renderHabits() {
         ${linkedGoal ? `<span onclick="event.stopPropagation();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
       </div>
 
-      <!-- ردیف سوم: استریک، رکورد، درصد موفقیت -->
+      <!-- ردیف سوم: استریک (بزرگ‌تر و مهم‌تر)، رکورد (کوچک‌تر)، درصد موفقیت -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-          <div class="${justToggled ? 'habit-streak-pop' : ''}" style="font-size:16px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-          <div style="font-size:9px;color:var(--text3)">روز استریک</div>
+          <div class="${justToggled ? 'habit-streak-pop' : ''}" style="font-size:20px;font-weight:800;color:${color};line-height:1.1">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">روز استریک</div>
         </div>
-        <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-          <div style="font-size:13px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)}</div>
+        <div style="flex:.7;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
+          <div style="font-size:12px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)}</div>
           <div style="font-size:9px;color:var(--text3)">رکورد</div>
         </div>
         <div style="flex:1.6;background:var(--bg3);border-radius:8px;padding:8px 10px">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
             <span style="font-size:9px;color:var(--text3)">موفقیت این ماه</span>
             <span style="font-size:15px;font-weight:800;color:var(--green)">${fa(monthSuccess)}٪</span>
           </div>
-          <div style="width:100%;height:6px;border-radius:4px;background:var(--bg4);overflow:hidden">
-            <div style="width:${monthSuccess}%;height:100%;background:var(--green);border-radius:4px;transition:width .3s"></div>
+          <div style="width:100%;height:10px;border-radius:5px;background:var(--bg4);overflow:hidden">
+            <div style="width:${monthSuccess}%;height:100%;background:var(--green);border-radius:5px;transition:width .3s"></div>
           </div>
         </div>
       </div>
 
-      <div style="display:flex;gap:5px;margin-bottom:10px">${last7}</div>
+      <div style="display:flex;gap:4px;margin-bottom:10px">${last7}</div>
 
-      <div style="font-size:11px;color:var(--text2);background:rgba(251,191,36,.08);border-radius:8px;padding:7px 10px;text-align:center">
+      <div style="font-size:11px;color:var(--text2);background:rgba(251,191,36,.08);border-radius:8px;padding:7px 10px;text-align:left">
         ${motivation}
       </div>
     </div>`;
@@ -15364,6 +15386,67 @@ function deleteHabit(id) {
   _db.habit_logs = (_db.habit_logs||[]).filter(x => x.habit_id !== id);
   _save(); showToast('حذف شد', 'error');
   if (currentPage === 'habits') renderHabits();
+}
+
+function openHabitDetail(id) {
+  _habitsInit();
+  const h = _db.habits.find(x => x.id === id);
+  if (!h) return;
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const doneToday = logs.some(l => l.habit_id === id && l.date === todayStr && l.done);
+  const streak = _habitStreak(id);
+  const bestStreak = _habitBestStreak(id);
+  const monthSuccess = _habitMonthSuccess(id);
+  const lastDone = _habitLastDone(id);
+  const totalDone = logs.filter(l => l.habit_id === id && l.done).length;
+  const linkedGoal = h.goal_id ? (_db.goals||[]).find(x => x.id === h.goal_id) : null;
+  const color = h.color || 'var(--amber)';
+
+  const statBox = (icon, value, label, c) => `
+    <div style="flex:1;background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
+      <div style="font-size:16px;font-weight:800;color:${c||'var(--text)'}">${icon} ${value}</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px">${label}</div>
+    </div>`;
+
+  openModal(`${h.icon || '🔥'} ${escapeHtml(h.title)}`, `
+    <div>
+      ${h.desc ? `<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:14px;background:var(--bg3);border-radius:10px;padding:10px 12px">📝 ${escapeHtml(h.desc)}</div>` : ''}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        ${h.time ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">⏰ ${h.time}</span>` : ''}
+        ${linkedGoal ? `<span onclick="closeModal();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;font-size:12px;border-radius:20px;padding:5px 12px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
+        ${h.pinned ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">📌 پین شده</span>` : ''}
+        ${h.archived ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">🗃 آرشیو شده</span>` : ''}
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        ${statBox(streak>0?'🔥':'', fa(streak), 'روز استریک', color)}
+        ${statBox('🏆', fa(bestStreak), 'رکورد', 'var(--amber)')}
+        ${statBox('📈', fa(monthSuccess)+'٪', 'موفقیت ماه', 'var(--green)')}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        ${statBox('✅', fa(totalDone), 'کل دفعات انجام', '#60a5fa')}
+        ${statBox('🕐', lastDone || '—', 'آخرین انجام', 'var(--text)')}
+      </div>
+
+      <button onclick="closeModal();toggleHabitToday(${id})" style="width:100%;padding:12px;border-radius:10px;border:none;cursor:pointer;
+        font-family:var(--font);font-size:14px;font-weight:700;margin-bottom:16px;
+        background:${doneToday ? 'var(--bg3)' : 'var(--green)'};color:${doneToday?'var(--text)':'white'}">
+        ${doneToday ? '↩️ لغو ثبت امروز' : '✅ ثبت انجام امروز'}
+      </button>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="closeModal();openHabitHistory(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">📊 تاریخچه</button>
+        <button onclick="closeModal();openEditHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ ویرایش</button>
+        <button onclick="closeModal();toggleArchiveHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${h.archived?'↩️ بازگرداندن':'🗃 آرشیو'}</button>
+      </div>
+    </div>
+  `, [
+    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteHabit(${id})` },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
 }
 
 function openHabitMenu(id) {
