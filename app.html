@@ -1933,7 +1933,7 @@ let _db = null;
 function _freshData() {
   return {
     meta: {...DEFAULT_META},
-    package_types: DEFAULT_PKG_TYPES.map(p=>({...p})),
+    package_types: [],
     families:[], students:[], packages:[], payments:[], sessions:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
@@ -1959,14 +1959,7 @@ function _migrate(d) {
     d.meta.calendarType = loc.calendarType;
     d.meta.language = loc.language;
   }
-  d.package_types = d.package_types || DEFAULT_PKG_TYPES.map(p=>({...p}));
-  ['customer','visitor','other'].forEach(key=>{
-    if (!d.package_types.some(t=>t.key===key)) {
-      const defs = {customer:['مشتری','#34d399'],visitor:['مراجعه‌کننده','#f472b6'],other:['متفرقه','#9399ab']};
-      const maxId = Math.max(0,...d.package_types.map(t=>t.id));
-      d.package_types.push({id:maxId+1,key,label:defs[key][0],color:defs[key][1]});
-    }
-  });
+  d.package_types = d.package_types || [];
   ['families','students','packages','payments','sessions','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos','staff_role_entries'].forEach(k=>{if(!d[k])d[k]=[];});
@@ -10839,16 +10832,26 @@ async function _authOnSuccess() {
 
 // شغل‌ها و برچسب‌های پیشنهادی
 const _JOB_PRESETS = [
-  { id:'coach',    icon:'🏋️', label:'مربی ورزشی',       s:'ورزشکار',   sp:'ورزشکاران',   ss:'تمرین',    ssp:'تمرین‌ها' },
-  { id:'beauty',   icon:'💅', label:'آرایشگاه/سالن',    s:'مشتری',     sp:'مشتریان',     ss:'نوبت',     ssp:'نوبت‌ها' },
-  { id:'tutoring', icon:'📚', label:'معلم/مدرس',        s:'دانش‌آموز', sp:'دانش‌آموزان', ss:'کلاس',     ssp:'کلاس‌ها' },
-  { id:'therapy',  icon:'🧠', label:'روانشناس/مشاور',   s:'مراجع',     sp:'مراجعان',     ss:'جلسه',     ssp:'جلسات' },
-  { id:'business', icon:'💼', label:'مشاور کسب‌وکار',   s:'مشتری',     sp:'مشتریان',     ss:'جلسه',     ssp:'جلسات' },
-  { id:'medical',  icon:'⚕️', label:'پزشک/درمانگر',    s:'بیمار',     sp:'بیماران',     ss:'ویزیت',    ssp:'ویزیت‌ها' },
-  { id:'music',    icon:'🎵', label:'هنر (موسیقی/نقاشی)', s:'هنرجو',  sp:'هنرجویان',    ss:'کلاس',     ssp:'کلاس‌ها' },
-  { id:'cooking',  icon:'👨‍🍳', label:'آشپزی و قنادی',   s:'مشتری',    sp:'مشتریان',    ss:'مراجعه',   ssp:'مراجعه‌ها' },
-  { id:'shop',     icon:'🛍️', label:'فروشگاه',          s:'مشتری',     sp:'مشتریان',     ss:'خرید',     ssp:'خریدها' },
-  { id:'other',    icon:'⭐', label:'سایر',              s:'مخاطب',     sp:'مخاطبان',     ss:'جلسه',     ssp:'جلسات' },
+  { id:'coach',    icon:'🏋️', label:'مربی ورزشی',       s:'ورزشکار',   sp:'ورزشکاران',   ss:'تمرین',    ssp:'تمرین‌ها',
+    pkgs:[{label:'برنامه بدنسازی',color:'#7c6af7'},{label:'تمرین آنلاین',color:'#60a5fa'},{label:'مشاوره تغذیه',color:'#34d399'}] },
+  { id:'beauty',   icon:'💅', label:'آرایشگاه/سالن',    s:'مشتری',     sp:'مشتریان',     ss:'نوبت',     ssp:'نوبت‌ها',
+    pkgs:[{label:'شینیون',color:'#f472b6'},{label:'میکاپ',color:'#fbbf24'},{label:'کراتین',color:'#60a5fa'},{label:'رنگ مو',color:'#7c6af7'}] },
+  { id:'tutoring', icon:'📚', label:'معلم/مدرس',        s:'دانش‌آموز', sp:'دانش‌آموزان', ss:'کلاس',     ssp:'کلاس‌ها',
+    pkgs:[{label:'کلاس خصوصی',color:'#7c6af7'},{label:'کلاس گروهی',color:'#60a5fa'},{label:'دوره آموزشی',color:'#34d399'}] },
+  { id:'therapy',  icon:'🧠', label:'روانشناس/مشاور',   s:'مراجع',     sp:'مراجعان',     ss:'جلسه',     ssp:'جلسات',
+    pkgs:[{label:'مشاوره فردی',color:'#7c6af7'},{label:'زوج‌درمانی',color:'#f472b6'},{label:'جلسه آنلاین',color:'#60a5fa'}] },
+  { id:'business', icon:'💼', label:'مشاور کسب‌وکار',   s:'مشتری',     sp:'مشتریان',     ss:'جلسه',     ssp:'جلسات',
+    pkgs:[{label:'مشاوره کسب‌وکار',color:'#7c6af7'},{label:'کوچینگ',color:'#60a5fa'},{label:'دوره آموزشی',color:'#34d399'}] },
+  { id:'medical',  icon:'⚕️', label:'پزشک/درمانگر',    s:'بیمار',     sp:'بیماران',     ss:'ویزیت',    ssp:'ویزیت‌ها',
+    pkgs:[{label:'ویزیت حضوری',color:'#7c6af7'},{label:'ویزیت آنلاین',color:'#60a5fa'},{label:'فیزیوتراپی',color:'#34d399'}] },
+  { id:'music',    icon:'🎵', label:'هنر (موسیقی/نقاشی)', s:'هنرجو',  sp:'هنرجویان',    ss:'کلاس',     ssp:'کلاس‌ها',
+    pkgs:[{label:'کلاس موسیقی',color:'#7c6af7'},{label:'کلاس نقاشی',color:'#f472b6'},{label:'کلاس گروهی',color:'#60a5fa'}] },
+  { id:'cooking',  icon:'👨‍🍳', label:'آشپزی و قنادی',   s:'مشتری',    sp:'مشتریان',    ss:'مراجعه',   ssp:'مراجعه‌ها',
+    pkgs:[{label:'کلاس آشپزی',color:'#fbbf24'},{label:'سفارش کیک',color:'#f472b6'},{label:'کلاس قنادی',color:'#7c6af7'}] },
+  { id:'shop',     icon:'🛍️', label:'فروشگاه',          s:'مشتری',     sp:'مشتریان',     ss:'خرید',     ssp:'خریدها',
+    pkgs:[{label:'فروش حضوری',color:'#7c6af7'},{label:'فروش آنلاین',color:'#60a5fa'},{label:'خدمات پس از فروش',color:'#34d399'}] },
+  { id:'other',    icon:'⭐', label:'سایر',              s:'مخاطب',     sp:'مخاطبان',     ss:'جلسه',     ssp:'جلسات',
+    pkgs:[{label:'کوچینگ',color:'#7c6af7'},{label:'دوره آموزشی',color:'#60a5fa'},{label:'مشاوره',color:'#34d399'},{label:'طراحی',color:'#f472b6'}] },
 ];
 
 let _welcomeStep = 0;
@@ -10954,9 +10957,22 @@ function _renderWelcomeStep() {
       <div style="padding:4px 0 8px">
         <div style="text-align:center;margin-bottom:14px">
           <div style="font-size:32px;margin-bottom:8px">📦</div>
-          <h3 style="font-size:16px;font-weight:700;margin:0 0 4px">۴) پکیج‌ها / خدمات قابل ارائه</h3>
+          <h3 style="font-size:16px;font-weight:700;margin:0 0 4px">۴) خدمات قابل ارائه</h3>
           <p style="font-size:12px;color:var(--text2);margin:0">خدماتی که ارائه می‌دید رو مشخص کنید</p>
         </div>
+        ${PKG_TYPES.length === 0 ? `
+        <div class="pkg-empty" style="text-align:center">
+          <p style="font-size:12.5px;font-weight:600;margin-bottom:6px">هنوز هیچ خدمتی تعریف نکرده‌ای</p>
+          <p style="font-size:11.5px;color:var(--text2);margin-bottom:10px">خدمت یعنی چیزی که به ${preset().s} ارائه می‌کنی</p>
+          <div class="modal-actions" style="justify-content:center;flex-wrap:wrap;margin-bottom:10px">
+            <input class="form-input" id="wz-new-pkg-label" placeholder="نام اولین خدمت" style="max-width:180px">
+            <input type="color" class="color-input" id="wz-new-pkg-color" value="#7c6af7">
+            <button class="btn btn-primary btn-sm" onclick="_wzAddPkgType()">➕ افزودن</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px">نمی‌دونی از کجا شروع کنی؟</div>
+          <button class="btn btn-ghost btn-sm" onclick="_wzAddSamplePkgTypes()">✨ استفاده از نمونه‌های «${preset().label}»</button>
+        </div>
+        ` : `
         <div class="settings-list" id="wz-pkg-types-list" style="text-align:right">
           ${PKG_TYPES.map(pt => `
             <div class="settings-pkg-row" data-pkg-id="${pt.id}">
@@ -10966,10 +10982,11 @@ function _renderWelcomeStep() {
             </div>`).join('')}
         </div>
         <div class="modal-actions" style="justify-content:flex-start;margin-top:10px">
-          <input class="form-input" id="wz-new-pkg-label" placeholder="نام پکیج/خدمت جدید" style="max-width:200px">
+          <input class="form-input" id="wz-new-pkg-label" placeholder="نام خدمت جدید" style="max-width:200px">
           <input type="color" class="color-input" id="wz-new-pkg-color" value="#7c6af7">
           <button class="btn btn-ghost" onclick="_wzAddPkgType()">+ افزودن</button>
         </div>
+        `}
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
           <button class="btn btn-ghost" onclick="_welcomeStep=2;_renderWelcomeStep()">← قبلی</button>
           <button class="btn btn-primary" onclick="_finishWizardAndGoToStudents()">
@@ -11109,6 +11126,17 @@ async function _checkPushStatusForWizard() {
 }
 
 // ── Step 3: پکیج‌ها داخل ویزارد ──
+async function _wzAddSamplePkgTypes() {
+  const preset = _JOB_PRESETS.find(j=>j.id===_selectedJob) || _JOB_PRESETS.find(j=>j.id==='other') || _JOB_PRESETS[9];
+  const samples = preset.pkgs || _JOB_PRESETS.find(j=>j.id==='other').pkgs;
+  for (const s of samples) {
+    await window.api.packageTypes.add(s);
+  }
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  showToast('خدمات نمونه اضافه شدند ✓', 'success');
+  _renderWelcomeStep();
+}
+
 async function _wzAddPkgType() {
   const label = document.getElementById('wz-new-pkg-label')?.value.trim();
   const color = document.getElementById('wz-new-pkg-color')?.value || '#7c6af7';
