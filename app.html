@@ -14426,6 +14426,24 @@ function _goalsInit() {
   if (!_db._nextId.goals) _db._nextId.goals = 1;
 }
 
+function _goalDaysLeft(deadline) {
+  if (!deadline) return null;
+  try {
+    const [jy,jm,jd] = parseJalali ? parseJalali(deadline) : [0,0,0];
+    const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+    return Math.ceil((new Date(gy,gm-1,gd) - new Date()) / 86400000);
+  } catch(e) { return null; }
+}
+function _formatDaysLeft(daysLeft, fa) {
+  if (daysLeft === null) return '';
+  if (daysLeft < 0) return fa(Math.abs(daysLeft)) + ' روز گذشت';
+  if (daysLeft === 0) return 'امروز آخرین مهلته!';
+  if (daysLeft < 30) return fa(daysLeft) + ' روز مانده';
+  const months = Math.floor(daysLeft / 30);
+  const days = daysLeft % 30;
+  return days > 0 ? `${fa(months)} ماه و ${fa(days)} روز مانده` : `${fa(months)} ماه مانده`;
+}
+
 function renderGoals() {
   _goalsInit();
   updateTopbarActions(`
@@ -14459,25 +14477,60 @@ function renderGoals() {
   const diffColors = { easy: 'var(--green)', medium: 'var(--amber)', hard: 'var(--red)' };
   const diffLabels = { easy: 'آسان', medium: 'متوسط', hard: 'سخت' };
 
+  // ── آمار بالای صفحه ─────────────────────────────
+  const activeCount = goals.filter(g => (g.status||'active') === 'active').length;
+  const doneCount = goals.filter(g => g.status === 'done').length;
+  const pausedCount = goals.filter(g => g.status === 'paused').length;
+  const avgProgress = goals.length ? Math.round(goals.reduce((s,g)=>s+(g.progress||0),0) / goals.length) : 0;
+
+  const statCard = (icon, label, value, color) => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;flex:1;min-width:110px">
+      <div style="font-size:18px;margin-bottom:4px">${icon}</div>
+      <div style="font-size:20px;font-weight:800;color:${color||'var(--text)'}">${value}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${label}</div>
+    </div>`;
+
+  const statsHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${statCard('🎯','کل اهداف', fa(goals.length))}
+      ${statCard('🚀','در حال انجام', fa(activeCount), '#60a5fa')}
+      ${statCard('🏆','تکمیل‌شده', fa(doneCount), 'var(--green)')}
+      ${statCard('📈','میانگین پیشرفت', fa(avgProgress)+'٪', 'var(--accent2)')}
+    </div>`;
+
   const html = goals.map(g => {
     const sc = statusColors[g.status || 'active'] || statusColors.active;
     const progress = g.progress || 0;
     const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
     const milestones = g.milestones || [];
     const doneMilestones = milestones.filter(m => m.done).length;
-    const daysLeft = g.deadline ? (() => {
-      try {
-        const [jy,jm,jd] = parseJalali ? parseJalali(g.deadline) : [0,0,0];
-        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-        const diff = Math.ceil((new Date(gy,gm-1,gd) - new Date()) / 86400000);
-        return diff;
-      } catch(e) { return null; }
-    })() : null;
+    const daysLeft = _goalDaysLeft(g.deadline);
 
-    return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
+    // رنگ‌بندی کارت بر اساس فوریت ددلاین
+    let urgencyColor = 'var(--border)';
+    if (g.status !== 'done' && daysLeft !== null) {
+      if (daysLeft < 0) urgencyColor = 'rgba(239,68,68,.5)';
+      else if (daysLeft <= 3) urgencyColor = 'rgba(239,68,68,.4)';
+      else if (daysLeft <= 7) urgencyColor = 'rgba(251,191,36,.4)';
+      else if (daysLeft <= 30) urgencyColor = 'rgba(96,165,250,.35)';
+      else urgencyColor = 'rgba(62,207,142,.3)';
+    } else if (g.status === 'done') {
+      urgencyColor = 'rgba(62,207,142,.35)';
+    }
+
+    const msPreview = milestones.slice(0, 4).map((m, i) => `
+      <div onclick="event.stopPropagation();toggleMilestone(${g.id},${i})" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer">
+        <div style="width:16px;height:16px;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+          background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
+          ${m.done?'<span style="color:white;font-size:10px">✓</span>':''}
+        </div>
+        <span style="font-size:11.5px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text2)'}">${m.title}</span>
+      </div>`).join('');
+
+    return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
       onclick="openGoalDetail(${g.id})"
-      onmouseenter="this.style.borderColor='rgba(62,207,142,.4)'"
-      onmouseleave="this.style.borderColor='var(--border)'">
+      onmouseenter="this.style.borderColor='rgba(62,207,142,.6)'"
+      onmouseleave="this.style.borderColor='${urgencyColor}'">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <span style="font-size:28px;flex-shrink:0">${g.icon || '🎯'}</span>
         <div style="flex:1;min-width:0">
@@ -14494,26 +14547,48 @@ function renderGoals() {
         </div>
       </div>
 
-      <div style="margin-bottom:10px">
-        <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:4px;transition:width .5s"></div>
+      <div style="margin-bottom:12px">
+        <div style="height:14px;background:var(--bg4);border-radius:7px;overflow:hidden">
+          <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:7px;transition:width .5s"></div>
         </div>
       </div>
 
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-        ${g.deadline ? `<span style="font-size:11px;color:${daysLeft !== null && daysLeft < 0 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--amber)' : 'var(--text3)'}">
-          📅 ${g.deadline}${daysLeft !== null ? ' · ' + (daysLeft < 0 ? fa(Math.abs(daysLeft)) + ' روز گذشت' : fa(daysLeft) + ' روز مانده') : ''}
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:${msPreview?'10px':'0'}">
+        ${g.deadline ? `<span style="font-size:11px;font-weight:600;color:${daysLeft !== null && daysLeft < 0 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--amber)' : 'var(--text3)'}">
+          ⏳ ${_formatDaysLeft(daysLeft, fa)}
         </span>` : ''}
         ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
-        ${g.why ? `<span style="font-size:11px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">💡 ${g.why}</span>` : ''}
       </div>
+
+      ${msPreview ? `<div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:${g.why?'10px':'0'}">${msPreview}</div>` : ''}
+
+      ${g.why ? `<div style="background:rgba(62,207,142,.07);border-radius:8px;padding:8px 10px;font-size:11.5px;color:var(--text2);line-height:1.6">
+        💡 ${g.why}
+      </div>` : ''}
     </div>`;
   }).join('');
 
   setContent(`
     <div style="max-width:680px;margin:0 auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <h2 style="font-size:17px;font-weight:700">🎯 اهداف من</h2>
+      <div style="margin-bottom:16px">
+        <button onclick="openAddGoal()"
+          style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
+            font-family:var(--font);font-size:15px;font-weight:700;
+            background:linear-gradient(135deg,#7c6af7,#5b4de0);
+            color:white;letter-spacing:.01em;
+            box-shadow:0 4px 20px rgba(124,106,247,.4);
+            display:flex;align-items:center;justify-content:center;gap:10px;
+            transition:all .2s"
+          onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(124,106,247,.5)'"
+          onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(124,106,247,.4)'">
+          <span>🎯 هدف جدید اضافه کن</span>
+          <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
+            display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
+        </button>
+      </div>
+      ${statsHTML}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
         <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
       </div>
       ${html}
@@ -14728,6 +14803,12 @@ function _habitsInit() {
   if (!_db._nextId.habits) _db._nextId.habits = 1;
 }
 
+function _jalaliOrdinal(dateStr) {
+  const [jy,jm,jd] = parseJalali(dateStr);
+  const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+  return Math.floor(new Date(gy,gm-1,gd).getTime() / 86400000);
+}
+
 function renderHabits() {
   _habitsInit();
   updateTopbarActions(`<button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>`);
@@ -14736,6 +14817,7 @@ function renderHabits() {
   const logs = _db.habit_logs || [];
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const weekdayLabels = ['ش','ی','د','س','چ','پ','ج'];
 
   if (habits.length === 0) {
     setContent(`
@@ -14773,23 +14855,98 @@ function renderHabits() {
     return streak;
   };
 
+  const getBestStreak = (habitId) => {
+    try {
+      const ordinals = [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => _jalaliOrdinal(l.date)))].sort((a,b)=>a-b);
+      let best = 0, cur = 0, prev = null;
+      for (const o of ordinals) {
+        cur = (prev !== null && o === prev + 1) ? cur + 1 : 1;
+        if (cur > best) best = cur;
+        prev = o;
+      }
+      return best;
+    } catch(e) { return 0; }
+  };
+
+  const getMonthSuccess = (habitId) => {
+    try {
+      const [ty, tm, td] = parseJalali(todayStr);
+      const doneThisMonth = new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))
+        .size ? [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))].filter(d => {
+          const [jy, jm] = parseJalali(d);
+          return jy === ty && jm === tm;
+        }).length : 0;
+      return td > 0 ? Math.round(doneThisMonth / td * 100) : 0;
+    } catch(e) { return 0; }
+  };
+
+  const getLastDone = (habitId) => {
+    const doneLogs = logs.filter(l => l.habit_id === habitId && l.done && l.logged_at).sort((a,b)=> new Date(b.logged_at)-new Date(a.logged_at));
+    if (!doneLogs.length) return null;
+    const last = doneLogs[0];
+    const dt = new Date(last.logged_at);
+    const timeStr = fa(String(dt.getHours()).padStart(2,'0')) + ':' + fa(String(dt.getMinutes()).padStart(2,'0'));
+    if (last.date === todayStr) return `امروز ساعت ${timeStr}`;
+    try {
+      const daysAgo = _jalaliOrdinal(todayStr) - _jalaliOrdinal(last.date);
+      if (daysAgo === 1) return 'دیروز';
+      return `${fa(daysAgo)} روز پیش`;
+    } catch(e) { return last.date; }
+  };
+
+  // ── آمار بالای صفحه ─────────────────────────────
+  const bestStreakOverall = Math.max(0, ...habits.map(h => getStreak(h.id)));
+  const doneTodayCount = habits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
+  const avgMonthSuccess = habits.length ? Math.round(habits.reduce((s,h)=>s+getMonthSuccess(h.id),0) / habits.length) : 0;
+
+  const statCard = (icon, label, value, color) => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;flex:1;min-width:110px">
+      <div style="font-size:18px;margin-bottom:4px">${icon}</div>
+      <div style="font-size:20px;font-weight:800;color:${color||'var(--text)'}">${value}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${label}</div>
+    </div>`;
+
+  const statsHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${statCard('🔥','عادت فعال', fa(habits.length))}
+      ${statCard('🏆','بهترین استریک', fa(bestStreakOverall)+' روز', 'var(--amber)')}
+      ${statCard('📈','موفقیت این ماه', fa(avgMonthSuccess)+'٪', 'var(--green)')}
+      ${statCard('✅','امروز', fa(doneTodayCount)+'/'+fa(habits.length), '#60a5fa')}
+    </div>`;
+
   const html = habits.map(h => {
     const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
     const streak = getStreak(h.id);
-    const last30 = Array.from({length: 30}, (_, i) => {
+    const bestStreak = getBestStreak(h.id);
+    const monthSuccess = getMonthSuccess(h.id);
+    const lastDone = getLastDone(h.id);
+    const color = h.color || 'var(--amber)';
+
+    const last7 = Array.from({length: 7}, (_, i) => {
       try {
         const [jy,jm,jd] = parseJalali(todayStr);
         const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-        const d = new Date(gy,gm-1,gd - (29-i));
+        const d = new Date(gy,gm-1,gd - (6-i));
         const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
         const dateStr = formatJalali(...dj);
         const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
-        return `<div style="width:10px;height:10px;border-radius:2px;background:${done ? (h.color||'var(--green)') : 'var(--bg4)'}" title="${dateStr}"></div>`;
-      } catch(e) { return '<div style="width:10px;height:10px;border-radius:2px;background:var(--bg4)"></div>'; }
+        const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+          <div style="width:100%;max-width:32px;aspect-ratio:1;border-radius:8px;background:${done ? color : 'var(--bg4)'};
+            display:flex;align-items:center;justify-content:center;font-size:13px" title="${dateStr}">${done?'✓':''}</div>
+          <span style="font-size:9px;color:var(--text3)">${wLabel}</span>
+        </div>`;
+      } catch(e) { return '<div style="flex:1"></div>'; }
     }).join('');
 
+    const motivation = streak === 0
+      ? 'امروز انجامش بده و استریکت رو شروع کن 🚀'
+      : (bestStreak > streak
+          ? `فقط ${fa(bestStreak - streak)} روز دیگه تا رکورد جدیدت 🔥`
+          : 'داری رکورد خودت رو می‌شکنی! همینطور ادامه بده 🏆');
+
     return `<div style="background:var(--bg2);border:1px solid ${doneToday?'rgba(62,207,142,.4)':'var(--border)'};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         <button onclick="toggleHabitToday(${h.id})" style="width:46px;height:46px;border-radius:50%;flex-shrink:0;cursor:pointer;
           background:${doneToday?'var(--green)':'var(--bg3)'};
           border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
@@ -14798,22 +14955,57 @@ function renderHabits() {
         </button>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px">${h.title}</div>
-          ${h.time ? `<div style="font-size:11px;color:var(--text3)">⏰ ${h.time}</div>` : ''}
+          <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap">
+            ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
+            ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
+          </div>
         </div>
         <div style="text-align:center;flex-shrink:0">
-          <div style="font-size:20px;font-weight:800;color:${h.color||'var(--amber)'}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-          <div style="font-size:9px;color:var(--text3)">روز streak</div>
+          <div style="font-size:20px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
+          <div style="font-size:9px;color:var(--text3)">روز استریک</div>
         </div>
       </div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap">${last30}</div>
-      <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:left">← ۳۰ روز اخیر</div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
+          <div style="font-size:13px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)} روز</div>
+          <div style="font-size:9px;color:var(--text3)">رکورد</div>
+        </div>
+        <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
+          <div style="font-size:13px;font-weight:700;color:var(--green)">${fa(monthSuccess)}٪</div>
+          <div style="font-size:9px;color:var(--text3)">موفقیت این ماه</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:5px;margin-bottom:10px">${last7}</div>
+
+      <div style="font-size:11px;color:var(--text2);background:rgba(251,191,36,.08);border-radius:8px;padding:7px 10px;text-align:center">
+        ${motivation}
+      </div>
     </div>`;
   }).join('');
 
   setContent(`
     <div style="max-width:680px;margin:0 auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <h2 style="font-size:17px;font-weight:700">🔥 عادت‌های من</h2>
+      <div style="margin-bottom:16px">
+        <button onclick="openAddHabit()"
+          style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
+            font-family:var(--font);font-size:15px;font-weight:700;
+            background:linear-gradient(135deg,#fbbf24,#f59e0b);
+            color:white;letter-spacing:.01em;
+            box-shadow:0 4px 20px rgba(251,191,36,.35);
+            display:flex;align-items:center;justify-content:center;gap:10px;
+            transition:all .2s"
+          onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(251,191,36,.45)'"
+          onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(251,191,36,.35)'">
+          <span>🔥 عادت جدید اضافه کن</span>
+          <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
+            display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
+        </button>
+      </div>
+      ${statsHTML}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:15px;font-weight:700">لیست عادت‌ها</h2>
         <span style="font-size:12px;color:var(--text3)">${fa(habits.length)} عادت</span>
       </div>
       ${html}
