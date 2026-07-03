@@ -872,7 +872,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 
 .sessions-board {
-  display: flex; gap: 14px; overflow-x: auto; align-items: flex-start;
+  display: flex; gap: 12px; overflow-x: auto; align-items: flex-start;
   padding-bottom: 10px;
   -webkit-overflow-scrolling: touch;
   contain: paint;
@@ -888,78 +888,34 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   max-height: calc(100vh - 230px);
 }
 .session-column-header {
-  padding: 11px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
   border-radius: 12px 12px 0 0;
-  position: sticky; top: 0; z-index: 3;
-  cursor: move;
 }
-.scn-row1 { display: flex; align-items: center; gap: 6px; }
-.session-column-header .scn-name {
-  font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; min-width: 0; flex: 1;
+.session-column-header .scn-name { font-size: 13px; font-weight: 700; }
+.session-column-header .scn-count { font-size: 11px; color: var(--text3); margin-right: 6px; }
+.session-column-add {
+  width: 100%; margin-top: 8px; padding: 6px 10px;
+  font-size: 11px; border-radius: 6px;
+  border: 1px dashed var(--border2); background: none; color: var(--text2);
+  cursor: pointer; transition: all .15s;
 }
-.scn-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
-.scn-status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-.scn-status-dot.st-active   { background: var(--green); box-shadow:0 0 0 2px rgba(62,207,142,.18); }
-.scn-status-dot.st-followup { background: var(--amber); box-shadow:0 0 0 2px rgba(251,191,36,.18); }
-.scn-status-dot.st-stale    { background: var(--red);   box-shadow:0 0 0 2px rgba(248,113,113,.18); }
-.scn-status-dot.st-none     { background: var(--text3); }
-.scn-header-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.scn-icon-btn {
-  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
-  border: 1px solid transparent; background: none; color: var(--text2);
-  cursor: pointer; font-size: 14px; line-height: 1;
-  display: flex; align-items: center; justify-content: center;
-  transition: all .15s;
-}
-.scn-icon-btn:hover { background: var(--bg4); color: var(--text); border-color: var(--border2); }
+.session-column-add:hover { background: var(--bg4); color: var(--text); border-color: var(--accent); }
 .session-column-body {
-  flex: 1; overflow-y: auto; padding: 10px;
-  display: flex; flex-direction: column; gap: 12px;
+  flex: 1; overflow-y: auto; padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .session-card {
-  background: var(--bg3); border: 1px solid var(--border); border-right: 3px solid var(--border2);
-  border-radius: 8px; padding: 9px 11px; cursor: pointer;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; cursor: pointer;
   transition: transform .1s, border-color .1s;
-  position: relative;
 }
 .session-card:hover { transform: translateY(-1px); border-color: var(--accent2); }
-.session-card.key { border-color: rgba(251,191,36,.4); border-right-color: var(--amber); background: rgba(251,191,36,.06); }
+.session-card.key { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.06); }
 .session-card .sc-date { font-size: 10px; color: var(--accent2); font-weight: 600; margin-bottom: 3px; }
 .session-card .sc-title { font-size: 12px; font-weight: 600; color: var(--text); }
 .session-card .sc-excerpt { font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.6; }
-.session-card mark { background: rgba(124,106,247,.35); color: inherit; border-radius: 2px; }
-
-/* ── Sessions: preview popover ─────────────────────────────────────────── */
-.sc-preview-pop {
-  position: fixed; z-index: 500; max-width: 300px;
-  background: var(--bg4); border: 1px solid var(--border2); border-radius: 10px;
-  padding: 10px 12px; font-size: 11.5px; color: var(--text2); line-height: 1.7;
-  box-shadow: 0 10px 30px rgba(0,0,0,.35);
-  pointer-events: none; opacity: 0; transform: translateY(4px);
-  transition: opacity .12s, transform .12s;
-}
-.sc-preview-pop.show { opacity: 1; transform: translateY(0); }
-.sc-preview-pop .pv-title { font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-
-/* ── Sessions: key notes chip ──────────────────────────────────────────── */
-.sessions-key-chip {
-  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
-  background: rgba(251,191,36,.1); border:1px solid rgba(251,191,36,.3);
-  color: var(--amber); font-size: 11.5px; font-weight:600;
-  padding: 6px 12px; border-radius: 20px; margin-bottom: 10px;
-  transition: background .15s;
-}
-.sessions-key-chip:hover { background: rgba(251,191,36,.18); }
-
-/* ── Breadcrumb ─────────────────────────────────────────────────────────── */
-.breadcrumb { font-size: 11px; color: var(--text3); display:flex; align-items:center; gap:6px; margin-bottom:2px; }
-.breadcrumb .bc-link { cursor:pointer; }
-.breadcrumb .bc-link:hover { color: var(--accent2); }
-.breadcrumb .bc-sep { color: var(--text3); }
-.breadcrumb .bc-current { color: var(--text2); font-weight: 600; }
 
 /* ── Rich text toolbar ─────────────────────────────────────────────────── */
 .rich-toolbar {
@@ -1575,10 +1531,7 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
   <div class="main">
     <header class="topbar">
       <button class="hamburger" onclick="openSidebar()">☰</button>
-      <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
-        <div class="breadcrumb" id="page-breadcrumb"></div>
-        <h2 class="page-title" id="page-title">شاگردان</h2>
-      </div>
+      <h2 class="page-title" id="page-title">شاگردان</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
       <!-- Auth buttons - shown when NOT logged in -->
       <div id="topbar-auth-btns" style="display:flex;align-items:center;gap:8px;flex-shrink:0">
@@ -3303,21 +3256,13 @@ window.addEventListener('unhandledrejection', (e) => {
   };
 })();
 
-window.addEventListener('popstate', (e) => {
-  const page = (e.state && e.state.tpPage) || (location.hash.startsWith('#/') ? location.hash.slice(2) : null);
-  if (!page || page === currentPage) return;
-  window._suppressHashSync = true;
-  currentPage = page;
-  updatePageTitle();
-  renderPage().finally(() => { window._suppressHashSync = false; });
-});
-
 function bindNavItems() {
   document.querySelectorAll('.nav-item[data-page]').forEach(el => {
     el.onclick = (e) => {
       e.preventDefault();
+      document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
       currentPage = el.dataset.page;
-      syncActiveNavItem();
       updatePageTitle();
       renderPage();
     };
@@ -3344,22 +3289,6 @@ function updatePageTitle() {
     settings: 'تنظیمات',
   };
   document.getElementById('page-title').textContent = titles[currentPage];
-  const bc = document.getElementById('page-breadcrumb');
-  if (bc) {
-    bc.innerHTML = currentPage === 'students'
-      ? `<span class="bc-current">داشبورد</span>`
-      : `<span class="bc-link" onclick="currentPage='students';updatePageTitle();renderPage();syncActiveNavItem();">داشبورد</span><span class="bc-sep">›</span><span class="bc-current">${escapeHtml(titles[currentPage] || '')}</span>`;
-  }
-}
-
-// ── Keep sidebar/bottom-nav active item in sync with currentPage ─────────
-function syncActiveNavItem() {
-  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === currentPage);
-  });
-  document.querySelectorAll('.bn-item[data-page]').forEach(el => {
-    el.classList.toggle('active', el.dataset.page === currentPage);
-  });
 }
 
 function applyMetaToUI() {
@@ -3378,13 +3307,6 @@ async function renderPage() {
   // Save current page for refresh restore
   if (currentPage && currentPage !== 'students' || currentPage === 'students') {
     localStorage.setItem('tp_last_page', currentPage);
-  }
-  syncActiveNavItem();
-  if (!window._suppressHashSync) {
-    const targetHash = '#/' + currentPage;
-    if (location.hash !== targetHash) {
-      try { history.pushState({ tpPage: currentPage }, '', targetHash); } catch(e) {}
-    }
   }
   try {
     if (currentPage === 'students')  await renderStudents();
@@ -4534,55 +4456,22 @@ async function renderPayments(search = '') {
 // ════════════════════════════════════════════════════════════════════════════
 // SESSIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-// ── Sessions page: persisted UI state (search, sort, collapsed columns, scroll) ──
-function _sessionsUIState() {
-  try { return JSON.parse(localStorage.getItem('tp_sessions_ui') || '{}'); } catch(e) { return {}; }
-}
-function _saveSessionsUIState(patch) {
-  const st = { ..._sessionsUIState(), ...patch };
-  try { localStorage.setItem('tp_sessions_ui', JSON.stringify(st)); } catch(e) {}
-  return st;
-}
-
-function _daysAgo(dateJalali) { return -_daysUntil(dateJalali); }
-
-function _studentStatus(g) {
-  if (!g.sessions.length) return 'none';
-  const d = _daysAgo(g.sessions[0].date_jalali);
-  if (d <= 14) return 'active';
-  if (d <= 30) return 'followup';
-  return 'stale';
-}
-const STATUS_DOT_CLASS = { active: 'st-active', followup: 'st-followup', stale: 'st-stale', none: 'st-none' };
-const STATUS_LABEL = { active: 'فعال', followup: 'نیازمند پیگیری', stale: 'مدت زیادی جلسه نداشته', none: 'بدون جلسه' };
-
-function _highlightMatch(text, term) {
-  if (!term) return escapeHtml(text || '');
-  const esc = escapeHtml(text || '');
-  const escTerm = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try { return esc.replace(new RegExp('(' + escTerm + ')', 'gi'), '<mark>$1</mark>'); } catch(e) { return esc; }
-}
-
-async function renderSessions(search = null) {
-  const ui = _sessionsUIState();
-  if (search === null) search = ui.search || '';
-  _saveSessionsUIState({ search });
-
-  const prevScroll = document.getElementById('sessions-board')?.scrollLeft ?? ui.scrollLeft ?? 0;
-
+async function renderSessions(search = '') {
+  const prevScroll = document.getElementById('sessions-board')?.scrollLeft || 0;
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input id="sessions-search-input" placeholder="جستجو در ${META.entitySingular||'شاگرد'}‌ها، ${META.sessionPlural||'جلسات'} و موضوعات..." oninput="renderSessions(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="renderSessions(this.value)" value="${search}">
     </div>
-    <button class="btn btn-primary" onclick="openAddSessionGeneral()" title="میانبر: N">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
+    <button class="btn btn-primary" onclick="openAddSessionGeneral()">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
   `);
-
   allStudents = await window.api.students.getAll();
   const groups = await window.api.sessions.getAll();
   const keyOnes = await window.api.sessions.keyOnes();
 
-  // ── Order: manual (saved drag order) ──────────────────────────────────
+  let html = '';
+
+  // ── Board: students as vertical columns, in stable user-defined order ────
   const savedOrder = await window.api.sessions.getOrder();
   let groupsSorted;
   if (savedOrder && savedOrder.length) {
@@ -4593,65 +4482,38 @@ async function renderSessions(search = null) {
     groupsSorted = groups.slice();
   }
 
-  // ── Unified search: match student name, session title/note, or topics ──
-  const term = search.trim();
-  let matchInfo = new Map(); // student_id -> { nameMatch, sessionIds:Set, topicMatch:bool }
-  if (term) {
-    groupsSorted.forEach(g => {
-      const nameMatch = (g.name + g.lname).includes(term);
-      const sessionIds = new Set(g.sessions.filter(s => (s.title||'').includes(term) || (s.note||'').includes(term) || (s.extra_note||'').includes(term)).map(s => s.id));
-      const topics = (_db?.topics || []).filter(t => t.student_id === g.student_id && ((t.title||'').includes(term) || (t.text||'').includes(term)));
-      matchInfo.set(g.student_id, { nameMatch, sessionIds, topicMatch: topics.length > 0, topicCount: topics.length });
-    });
-    groupsSorted = groupsSorted.filter(g => {
-      const m = matchInfo.get(g.student_id);
-      return m && (m.nameMatch || m.sessionIds.size > 0 || m.topicMatch);
-    });
+  if (search) {
+    groupsSorted = groupsSorted.filter(g => (g.name + g.lname).includes(search));
   }
 
   if (groupsSorted.length === 0) {
-    setContent(`<div class="empty"><span>🔍</span>چیزی پیدا نشد</div>`);
+    setContent(html + `<div class="empty"><span>🔍</span>چیزی پیدا نشد</div>`);
     return;
-  }
-
-  let html = '';
-  if (!search && keyOnes.length > 0) {
-    html += `<div class="sessions-key-chip" onclick="document.getElementById('sessions-key-section')?.scrollIntoView({behavior:'smooth',block:'nearest'})">⭐ ${fa(keyOnes.length)} نکته مهم و کلیدی — مشاهده</div>`;
   }
 
   html += `<div class="sessions-board" id="sessions-board">`;
   groupsSorted.forEach(g => {
-    const status = _studentStatus(g);
-    const m = matchInfo.get(g.student_id);
-    const fullName = `${escapeHtml(g.name)} ${escapeHtml(g.lname)}`;
-
     html += `
     <div class="session-column" draggable="true" data-student-id="${g.student_id}">
-      <div class="session-column-header" title="برای تغییر ترتیب، بکش و رها کن">
-        <div class="scn-row1">
-          <span class="scn-status-dot ${STATUS_DOT_CLASS[status]}" title="${STATUS_LABEL[status]}"></span>
-          <span class="scn-name">${g.name} ${g.lname}</span>
-          <div class="scn-header-actions">
-            <button class="scn-icon-btn" title="افزودن ${META.sessionSingular||'جلسه'}" onclick="event.stopPropagation();openAddSessionGeneral(${g.student_id})">+</button>
-            <button class="scn-icon-btn" title="گزینه‌ها" onclick="event.stopPropagation();openSessionColumnMenu(${g.student_id}, '${fullName}')">⋮</button>
-          </div>
-        </div>
-        <div class="scn-sub">${fa(g.sessions.length)} ${META.sessionPlural||'جلسه'}${term && m && !m.nameMatch ? ` · 🔎 ${fa(m.sessionIds.size + (m.topicCount||0))} نتیجه` : ''}</div>
+      <div class="session-column-header">
+        <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${g.name} ${g.lname}</span>
+        <span class="scn-count">(${fa(g.sessions.length)})</span>
+        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
+        <button class="topics-btn" onclick="openTopics(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📌 موضوعات مهم</button>
+        <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">🌟 رویدادهای مهم</button>
+        <button class="summary-btn" onclick="openSessionsSummary(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
+        <button class="eval-btn" onclick="openEvaluation(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📊 ارزیابی عملکرد</button>
+        <button class="session-column-add" onclick="openAddSessionGeneral(${g.student_id})">+ افزودن ${META.sessionSingular||'جلسه'}</button>
       </div>
       <div class="session-column-body">
         ${g.sessions.length === 0
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
-          : g.sessions.map(s => {
-              const matched = term && m && m.sessionIds.has(s.id);
-              return `
-          <div class="session-card ${s.importance==='key' ? 'key' : ''}" data-session-id="${s.id}" onclick="openSessionDetail(${s.id})"
-               onmouseenter="_scPreviewShow(event, ${s.id})" onmouseleave="_scPreviewHide()" onmousemove="_scPreviewMove(event)">
+          : g.sessions.map(s => `
+          <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
             <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${s.date_jalali} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
-            <div class="sc-title">${term ? _highlightMatch(s.title || '(بدون عنوان)', term) : (escapeHtml(s.title) || '(بدون عنوان)')}</div>
-            ${s.note ? `<div class="sc-excerpt">${term ? _highlightMatch(excerpt(s.note, 60), term) : renderRich(excerpt(s.note, 60))}</div>` : ''}
-            ${matched ? `<div style="font-size:10px;color:var(--accent2);margin-top:2px">🔎 نتیجه جستجو</div>` : ''}
-          </div>`;
-            }).join('')}
+            <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
+            ${s.note ? `<div class="sc-excerpt">${renderRich(excerpt(s.note, 60))}</div>` : ''}
+          </div>`).join('')}
       </div>
     </div>`;
   });
@@ -4660,7 +4522,7 @@ async function renderSessions(search = null) {
   // ── Key sessions summary — horizontal scroll AFTER board ──────────────
   if (!search && keyOnes.length > 0) {
     html += `
-    <div class="detail-section" id="sessions-key-section" style="border-color:var(--amber);margin-top:24px;background:linear-gradient(135deg,var(--bg2) 0%,rgba(251,191,36,.05) 100%)">
+    <div class="detail-section" style="border-color:var(--amber);margin-top:24px;background:linear-gradient(135deg,var(--bg2) 0%,rgba(251,191,36,.05) 100%)">
       <h3 style="margin-bottom:14px;font-size:15px">⭐ نکات مهم و کلیدی</h3>
       <div class="key-sessions-row">
         ${keyOnes.map(s => `
@@ -4677,99 +4539,19 @@ async function renderSessions(search = null) {
   }
 
   setContent(html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`);
-  initSessionsDragDrop();
+  if (!search) initSessionsDragDrop();
 
   const board = document.getElementById('sessions-board');
-  if (board) {
-    board.scrollLeft = prevScroll;
-    board.addEventListener('scroll', () => _saveSessionsUIState({ scrollLeft: board.scrollLeft }), { passive: true });
-  }
+  if (board) board.scrollLeft = prevScroll;
 
   if (search) {
     requestAnimationFrame(() => {
-      const si = document.getElementById('sessions-search-input');
+      const si = document.querySelector('#topbar-actions .table-search input') ||
+                 document.querySelector('.table-search input');
       if (si) { si.focus(); try { si.setSelectionRange(search.length, search.length); } catch(e){} }
     });
   }
 }
-
-// ── Column "⋮" menu: secondary actions moved out of the header ───────────
-function openSessionColumnMenu(studentId, displayName) {
-  const rowBtn = (icon, label, action) => `
-    <button onclick="${action}" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;
-      border:1px solid var(--border);background:var(--bg2);color:var(--text);
-      font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:var(--font);text-align:right">
-      <span style="font-size:16px">${icon}</span><span>${label}</span>
-    </button>`;
-  openModal(displayName, `
-    <div>
-      ${rowBtn('📌', 'موضوعات مهم', `closeModal();openTopics(${studentId}, '${displayName}')`)}
-      ${rowBtn('🌟', 'رویدادهای مهم', `closeModal();openKeyEvents(${studentId}, '${displayName}')`)}
-      ${rowBtn('📋', `خلاصه کل ${META.sessionPlural||'جلسات'}`, `closeModal();openSessionsSummary(${studentId}, '${displayName}')`)}
-      ${rowBtn('📊', 'ارزیابی عملکرد', `closeModal();openEvaluation(${studentId}, '${displayName}')`)}
-      ${rowBtn('📦', `بایگانی این ${META.entitySingular||'شاگرد'}`, `closeModal();archiveStudent(${studentId}, '${displayName}')`)}
-    </div>
-  `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
-}
-
-// ── Quick preview popover on hover ────────────────────────────────────────
-let _scPreviewTimer = null, _scPreviewEl = null;
-function _scPreviewShow(evt, sessionId) {
-  clearTimeout(_scPreviewTimer);
-  _scPreviewTimer = setTimeout(async () => {
-    const groups = await window.api.sessions.getAll();
-    let session = null, student = null;
-    for (const g of groups) { const f = g.sessions.find(s => s.id === sessionId); if (f) { session = f; student = g; break; } }
-    if (!session) return;
-    if (!_scPreviewEl) { _scPreviewEl = document.createElement('div'); _scPreviewEl.className = 'sc-preview-pop'; document.body.appendChild(_scPreviewEl); }
-    _scPreviewEl.innerHTML = `
-      <div class="pv-title">${student.name} ${student.lname} — ${session.date_jalali}</div>
-      <div>${escapeHtml(session.title) || '(بدون عنوان)'}</div>
-      ${session.note ? `<div style="margin-top:4px">${renderRich(excerpt(session.note, 140))}</div>` : ''}
-    `;
-    _scPreviewEl.classList.add('show');
-    _scPreviewMove(evt);
-  }, 400);
-}
-function _scPreviewMove(evt) {
-  if (!_scPreviewEl || !_scPreviewEl.classList.contains('show')) return;
-  const pad = 16;
-  let x = evt.clientX + pad, y = evt.clientY + pad;
-  if (x + 300 > window.innerWidth) x = evt.clientX - 300 - pad;
-  if (y + 140 > window.innerHeight) y = evt.clientY - 140 - pad;
-  _scPreviewEl.style.left = x + 'px';
-  _scPreviewEl.style.top = y + 'px';
-}
-function _scPreviewHide() {
-  clearTimeout(_scPreviewTimer);
-  if (_scPreviewEl) _scPreviewEl.classList.remove('show');
-}
-
-// ── Keyboard shortcuts: N = new session, / = focus search, Esc = close modal ──
-document.addEventListener('keydown', (e) => {
-  const activeTag = (document.activeElement && document.activeElement.tagName) || '';
-  const typing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable;
-
-  // Esc closes open modal/panel from anywhere in the app
-  if (e.key === 'Escape') {
-    if (typing && activeTag === 'INPUT' && document.activeElement.id === 'sessions-search-input' && document.activeElement.value) {
-      document.activeElement.value = '';
-      renderSessions('');
-      return;
-    }
-    if (document.body.classList.contains('modal-open')) { closeModal(); return; }
-    return;
-  }
-
-  if (currentPage !== 'sessions') return;
-  if (e.key === '/' && !typing) {
-    e.preventDefault();
-    document.getElementById('sessions-search-input')?.focus();
-  } else if ((e.key === 'n' || e.key === 'N') && !typing && !document.body.classList.contains('modal-open')) {
-    e.preventDefault();
-    openAddSessionGeneral();
-  }
-});
 
 function initSessionsDragDrop() {
   const board = document.getElementById('sessions-board');
@@ -4801,7 +4583,6 @@ async function saveSessionsOrder() {
   const order = [...board.querySelectorAll('.session-column')].map(el => +el.dataset.studentId);
   await window.api.sessions.setOrder(order);
 }
-
 
 function toggleSessionGroup(studentId) {
   if (openSessionGroups.has(studentId)) openSessionGroups.delete(studentId);
@@ -9612,7 +9393,6 @@ async function init() {
       badge.textContent = fa(pending);
     } catch(e) { console.warn('[TeamPulse] reminders error:', e); }
     console.log('[TeamPulse] renderPage...');
-    try { history.replaceState({ tpPage: currentPage }, '', '#/' + currentPage); } catch(e) {}
     await renderPage();
     console.log('[TeamPulse] init() DONE');
   // Schedule نوتیفیکیشن‌ها بعد از load
