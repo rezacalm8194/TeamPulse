@@ -348,18 +348,27 @@ button { cursor: pointer; font-family: var(--font); }
   color: var(--text2); font-size: 14px; line-height: 1; transition: all .15s;
 }
 .row-menu-btn:hover { color: var(--text); background: var(--bg4); }
-.row-menu-panel {
-  display: none;
-  position: absolute; top: calc(100% + 4px); left: 0;
+/* Source panels hidden in DOM — portal clones their content */
+.row-menu-panel { display: none !important; }
+/* ── Portal dropdown — lives in <body>, never clipped by table/overflow ── */
+#row-menu-portal {
+  position: fixed;
   background: var(--bg3); border: 1px solid var(--border2); border-radius: 9px;
-  box-shadow: 0 10px 28px rgba(0,0,0,.35);
-  min-width: 170px; padding: 5px; z-index: 60;
+  box-shadow: 0 10px 28px rgba(0,0,0,.45);
+  min-width: 180px; padding: 5px; z-index: 9999;
+  display: none;
+  animation: menuFadeIn .12s ease;
 }
-.row-menu-panel.open { display: block; }
+#row-menu-portal.open { display: block; }
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
 .row-menu-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: 6px;
+  padding: 9px 12px; border-radius: 6px;
   font-size: 12px; color: var(--text); cursor: pointer; white-space: nowrap;
+  transition: background .1s;
 }
 .row-menu-item:hover { background: var(--bg4); }
 .row-menu-item.danger { color: var(--red); }
@@ -7392,15 +7401,66 @@ async function openSalaryTransfer(staffId) {
 }
 
 // ── Row kebab menus (staff / reminders tables) ────────────────────────────
-function toggleRowMenu(ev, menuId) {
-  ev.stopPropagation();
-  document.querySelectorAll('.row-menu-panel.open').forEach(p => { if (p.id !== menuId) p.classList.remove('open'); });
-  const panel = document.getElementById(menuId);
-  if (panel) panel.classList.toggle('open');
-}
-document.addEventListener('click', () => {
-  document.querySelectorAll('.row-menu-panel.open').forEach(p => p.classList.remove('open'));
-});
+/* ── Portal dropdown system ──────────────────────────────────────────────
+   منو در <body> رندر می‌شود و با position:fixed از هر overflow/clip آزاد است.
+   مشابه رویکرد Radix UI / Material UI / Ant Design.
+   ────────────────────────────────────────────────────────────────────── */
+(function () {
+  // Create the single portal element once
+  const portal = document.createElement('div');
+  portal.id = 'row-menu-portal';
+  document.body.appendChild(portal);
+
+  let _currentMenuId = null; // which logical menu is open
+
+  function closePortal() {
+    portal.classList.remove('open');
+    portal.innerHTML = '';
+    _currentMenuId = null;
+  }
+
+  // Close on outside click
+  document.addEventListener('click', closePortal);
+  // Close on scroll (keeps portal aligned)
+  document.addEventListener('scroll', closePortal, true);
+
+  window.toggleRowMenu = function (ev, menuId) {
+    ev.stopPropagation();
+
+    // If the same menu is already open → just close
+    if (_currentMenuId === menuId) { closePortal(); return; }
+
+    // Find the hidden source panel
+    const source = document.getElementById(menuId);
+    if (!source) return;
+
+    // Clone its contents into the portal
+    portal.innerHTML = source.innerHTML;
+    _currentMenuId = menuId;
+
+    // Position: align portal below the button that was clicked
+    const btn = ev.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    const MARGIN = 4;
+
+    portal.classList.add('open'); // make visible so we can measure
+    const pw = portal.offsetWidth;
+    const ph = portal.offsetHeight;
+
+    // RTL: prefer opening to the right (towards start of line)
+    // Flip left if it would overflow the viewport
+    let left = rect.right - pw;
+    if (left < 8) left = rect.left;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+
+    let top = rect.bottom + MARGIN;
+    // Flip upward if not enough space below
+    if (top + ph > window.innerHeight - 8) top = rect.top - ph - MARGIN;
+
+    portal.style.top  = top  + 'px';
+    portal.style.left = left + 'px';
+  };
+})();
 
 // ── Masked card number for table display (e.g. 6037 •••• •••• 0534) ──────
 function maskCardNumber(num) {
