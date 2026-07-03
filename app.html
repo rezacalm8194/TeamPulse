@@ -1176,7 +1176,16 @@ body.light mark { background: rgba(251,191,36,.5); }
 }
 #trends-container .trend-block:last-child { margin-bottom: 0; }
 
-.salary-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.salary-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.salary-range-tabs { display: inline-flex; align-items: center; gap: 4px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+.salary-range-tabs button { border: 0; background: transparent; color: var(--text3); border-radius: 6px; padding: 5px 9px; font-size: 10.5px; font-weight: 600; cursor: default; }
+.salary-range-tabs button.active { background: var(--bg3); color: var(--text); box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+.salary-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.salary-action-btn { border: 1px solid var(--border); background: var(--bg2); color: var(--text2); border-radius: 7px; padding: 6px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.salary-action-btn:hover { border-color: var(--border2); color: var(--text); }
+
+.salary-head { display: grid; grid-template-columns: minmax(170px, 1fr) auto; align-items: center; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 620px) { .salary-head { grid-template-columns: 1fr; } .salary-current { text-align: right !important; } }
 .salary-who { display: flex; align-items: center; gap: 10px; }
 .salary-avatar {
   width: 38px; height: 38px; border-radius: 50%;
@@ -1186,18 +1195,24 @@ body.light mark { background: rgba(251,191,36,.5); }
 }
 .salary-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .salary-name-sub { font-size: 10.5px; color: var(--text3); margin-top: 1px; }
-.salary-current { text-align: left; }
-.salary-current-amount { font-size: 19px; font-weight: 700; color: var(--text); }
+.salary-current { text-align: left; background: linear-gradient(135deg, rgba(34,197,94,.1), rgba(59,130,246,.06)); border: 1px solid rgba(34,197,94,.22); border-radius: 10px; padding: 10px 12px; min-width: 220px; }
+.salary-current-kicker { font-size: 10px; font-weight: 600; color: var(--text3); margin-bottom: 3px; }
+.salary-current-amount { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.2; }
 .salary-current-amount span { font-size: 11px; font-weight: 500; color: var(--text3); margin-right: 4px; }
 .salary-change { font-size: 11px; font-weight: 600; margin-top: 3px; }
 .salary-change.up { color: var(--green); }
 .salary-change.down { color: var(--red); }
 .salary-change.flat { color: var(--text3); }
 
-.salary-chart-wrap { margin-bottom: 14px; }
+.salary-change-hero { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; background: var(--bg2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; margin-bottom: 10px; }
+.salary-change-hero strong { font-size: 18px; color: var(--green); }
+.salary-change-hero small { display: block; color: var(--text3); font-size: 10px; margin-top: 2px; }
+.salary-change-hero .amount { color: var(--text2); font-size: 11px; font-weight: 700; }
+
+.salary-chart-wrap { margin-bottom: 14px; min-height: 94px; }
 .salary-chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
-.salary-chart-point { cursor: help; transition: r .15s ease; }
-.salary-chart-point:hover { r: 5.5; }
+.salary-chart-point { cursor: help; transition: r .15s ease, filter .15s ease; }
+.salary-chart-point:hover { r: 5.5; filter: drop-shadow(0 2px 4px rgba(22,163,74,.32)); }
 .salary-chart-labels { display: flex; justify-content: space-between; margin-top: 4px; }
 .salary-chart-labels span { font-size: 9.5px; color: var(--text3); }
 
@@ -1209,26 +1224,43 @@ body.light mark { background: rgba(251,191,36,.5); }
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px;
 }
+.salary-mini-stat.primary { border-color: rgba(34,197,94,.28); background: rgba(34,197,94,.07); }
 .salary-mini-label { font-size: 9.5px; color: var(--text3); margin-bottom: 3px; }
 .salary-mini-value { font-size: 12.5px; font-weight: 700; color: var(--text); }
+.salary-mini-hint { font-size: 9.5px; color: var(--green); margin-top: 3px; font-weight: 700; }
 
-.salary-breakdown { margin-bottom: 14px; }
+.salary-finance-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .72fr); gap: 12px; align-items: start; margin-bottom: 14px; }
+@media (max-width: 720px) { .salary-finance-grid { grid-template-columns: 1fr; } }
+.salary-breakdown { margin-bottom: 0; }
 .salary-breakdown-title { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: 600; }
-.salary-breakdown-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 2px; font-size: 11.5px; border-bottom: 1px dashed var(--border);
-}
+.salary-breakdown-row { padding: 7px 0; font-size: 11.5px; border-bottom: 1px dashed var(--border); }
 .salary-breakdown-row:last-child { border-bottom: none; }
+.salary-breakdown-row .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
 .salary-breakdown-row .label { color: var(--text2); }
-.salary-breakdown-row .val { font-weight: 600; color: var(--text); }
+.salary-breakdown-row .val { font-weight: 700; color: var(--text); }
 .salary-breakdown-row .val.neg { color: var(--red); }
+.salary-bar { height: 5px; background: var(--bg2); border-radius: 999px; overflow: hidden; }
+.salary-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent2), var(--green)); }
+.salary-goal-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 11px; }
+.salary-goal-card + .salary-goal-card { margin-top: 8px; }
+.salary-goal-label { font-size: 10px; color: var(--text3); font-weight: 600; margin-bottom: 5px; }
+.salary-goal-value { font-size: 14px; color: var(--text); font-weight: 800; }
+.salary-goal-sub { font-size: 10px; color: var(--text3); margin-top: 4px; }
 
 .salary-insight {
-  background: var(--bg2); border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(34,197,94,.06)); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 12px; font-size: 11.5px;
   color: var(--text2); line-height: 1.9; margin-bottom: 12px;
 }
 .salary-insight b { color: var(--text); }
+.salary-insight-title { color: var(--text); font-size: 11px; font-weight: 800; margin-bottom: 4px; }
+.salary-timeline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+@media (max-width: 620px) { .salary-timeline { grid-template-columns: 1fr; } }
+.salary-timeline-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.salary-timeline-month { font-size: 11px; font-weight: 800; color: var(--text); }
+.salary-timeline-status { font-size: 10px; color: var(--green); margin-top: 2px; }
+.salary-timeline-amount { font-size: 11px; color: var(--text2); font-weight: 700; text-align: left; }
+.salary-slip-link { margin-top: 3px; color: var(--accent2); font-size: 9.5px; font-weight: 700; }
 
 .salary-details summary {
   cursor: pointer; font-size: 11px; color: var(--accent2); font-weight: 600;
@@ -6677,9 +6709,13 @@ async function renderStaff() {
   if (trends.length === 0) {
     html += `<div class="empty"><span>📈</span>برای نمایش روند، حداقل ۲ ماه حقوق ثبت کنید</div>`;
   } else {
+    const latestTotals = trends
+      .map(t => t.months && t.months.length ? t.months[t.months.length - 1].total : 0)
+      .filter(Boolean);
+    const teamAvg = latestTotals.length ? Math.round(latestTotals.reduce((a, b) => a + b, 0) / latestTotals.length) : 0;
     html += `<div id="trends-container">`;
     trends.forEach(t => {
-      html += buildSalaryReportCard(t);
+      html += buildSalaryReportCard(t, teamAvg);
     });
     html += `</div>`;
   }
@@ -6700,8 +6736,8 @@ async function renderStaff() {
   };
 }
 
-// ── Salary report card (chart + stats + breakdown + insight) ───────────────────
-function buildSalaryReportCard(t) {
+// ── Salary report card (financial profile + chart + insight) ───────────────────
+function buildSalaryReportCard(t, teamAvg = 0) {
   const months = t.months;
   const last = months[months.length - 1];
   const prev = months.length > 1 ? months[months.length - 2] : null;
@@ -6709,22 +6745,35 @@ function buildSalaryReportCard(t) {
   const avg = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
   const maxV = Math.max(...totals);
   const minV = Math.min(...totals);
+  const totalPaid = totals.reduce((a, b) => a + b, 0);
   const paidCount = months.filter(m => m.paid).length;
+  const rangeLabel = months.length <= 3 ? '۳ ماه' : months.length <= 6 ? '۶ ماه' : months.length <= 12 ? '۱۲ ماه' : 'همه';
+  const salaryGoal = Math.max(20000000, Math.ceil(last.total * 1.16 / 1000000) * 1000000);
+  const goalPct = Math.min(100, Math.round((last.total / salaryGoal) * 100));
+  const teamDeltaPct = teamAvg ? Math.round(((last.total - teamAvg) / teamAvg) * 100) : 0;
 
   // Change vs previous month
   let changeHtml = `<div class="salary-change flat">— بدون سابقه ماه قبل</div>`;
+  let changeHero = `<div class="salary-change-hero"><div><strong style="color:var(--text3)">—</strong><small>بدون سابقه ماه قبل</small></div><div class="amount">اولین داده روند</div></div>`;
   let diff = 0, pct = 0;
   if (prev) {
     diff = last.total - prev.total;
     pct = prev.total ? Math.round((diff / prev.total) * 100) : 0;
+    const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
+    const changeClass = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+    const changeColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text3)';
     if (diff > 0) changeHtml = `<div class="salary-change up">▲ ${fmt(diff)} (${fa('+' + pct)}٪) نسبت به ماه قبل</div>`;
     else if (diff < 0) changeHtml = `<div class="salary-change down">▼ ${fmt(-diff)} (${fa(pct)}٪) نسبت به ماه قبل</div>`;
     else changeHtml = `<div class="salary-change flat">= بدون تغییر نسبت به ماه قبل</div>`;
+    changeHero = `<div class="salary-change-hero">
+      <div><strong style="color:${changeColor}">${diff > 0 ? '▲' : diff < 0 ? '▼' : '='} ${fa(sign + Math.abs(pct))}٪</strong><small>${changeClass === 'up' ? 'افزایش' : changeClass === 'down' ? 'کاهش' : 'بدون تغییر'} نسبت به ماه قبل</small></div>
+      <div class="amount">${diff === 0 ? 'بدون تغییر مبلغ' : `${diff > 0 ? '+' : '-'}${fmt(Math.abs(diff))} تومان`}</div>
+    </div>`;
   }
 
   // ── Sparkline / area chart (SVG) ──
   const chartMonths = months.slice(-12);
-  const W = 600, H = 120, PAD = 8;
+  const W = 600, H = chartMonths.length <= 2 ? 76 : 112, PAD = 8;
   const cMin = Math.min(...chartMonths.map(m => m.total));
   const cMax = Math.max(...chartMonths.map(m => m.total));
   const range = Math.max(cMax - cMin, 1);
@@ -6737,10 +6786,21 @@ function buildSalaryReportCard(t) {
   });
   const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${H - PAD} L${pts[0].x.toFixed(1)},${H - PAD} Z`;
-  const dots = pts.map(p => `
-    <circle class="salary-chart-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="var(--accent2)" stroke="var(--bg3)" stroke-width="2">
-      <title>${p.m.label}: ${fmt(p.m.total)} تومان${p.m.paid ? ' (پرداخت شد)' : ' (در انتظار)'}</title>
-    </circle>`).join('');
+  const dots = pts.map((p, i) => {
+    const rolesTotal = (p.m.roles || []).reduce((a, r) => a + (r.amount || 0), 0);
+    const bonus = (p.m.roles || []).filter(r => /پاداش|bonus/i.test(r.role_label || '')).reduce((a, r) => a + (r.amount || 0), 0);
+    const benefit = Math.max(rolesTotal - bonus, 0);
+    const isLast = i === pts.length - 1;
+    return `
+    <circle class="salary-chart-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isLast ? '4.5' : '3.5'}" fill="${isLast && diff >= 0 ? 'var(--green)' : 'var(--accent2)'}" stroke="var(--bg3)" stroke-width="2">
+      <title>${p.m.label}
+حقوق: ${fmt(p.m.total)}
+پایه: ${fmt(p.m.fixed_salary || 0)}
+مزایا: ${fmt(benefit)}
+پاداش: ${fmt(bonus)}
+${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
+    </circle>`;
+  }).join('');
   const svg = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
       <defs>
@@ -6750,7 +6810,7 @@ function buildSalaryReportCard(t) {
         </linearGradient>
       </defs>
       <path d="${areaPath}" fill="url(#sgrad${t.staff_id})" stroke="none"/>
-      <path d="${linePath}" fill="none" stroke="var(--accent2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${linePath}" fill="none" stroke="${diff >= 0 ? 'var(--green)' : 'var(--accent2)'}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}
     </svg>`;
   // Show a few month labels beneath the chart (avoid crowding)
@@ -6761,12 +6821,21 @@ function buildSalaryReportCard(t) {
   let breakdownHtml = '';
   if (last.fixed_salary || (last.roles && last.roles.length)) {
     const rows = [];
-    if (last.fixed_salary) rows.push(`<div class="salary-breakdown-row"><span class="label">حقوق پایه</span><span class="val">${fmt(last.fixed_salary)} تومان</span></div>`);
+    const addBreakdownRow = (label, value) => {
+      const pct = last.total ? Math.max(2, Math.round((Math.abs(value) / last.total) * 100)) : 0;
+      rows.push(`<div class="salary-breakdown-row">
+        <div class="top"><span class="label">${label}</span><span class="val">${value ? `${fmt(value)} تومان` : '—'}</span></div>
+        <div class="salary-bar"><span style="width:${pct}%"></span></div>
+      </div>`);
+    };
+    if (last.fixed_salary) addBreakdownRow('حقوق پایه', last.fixed_salary);
     (last.roles || []).forEach(r => {
-      rows.push(`<div class="salary-breakdown-row"><span class="label">${r.role_label || 'مزایا'}</span><span class="val">${fmt(r.amount)} تومان</span></div>`);
+      addBreakdownRow(r.role_label || 'مزایا', r.amount || 0);
     });
+    if (!(last.roles || []).some(r => /پاداش|bonus/i.test(r.role_label || ''))) addBreakdownRow('پاداش', 0);
+    addBreakdownRow('کسورات', 0);
     breakdownHtml = `<div class="salary-breakdown">
-      <div class="salary-breakdown-title">جزئیات حقوق ${last.label}</div>
+      <div class="salary-breakdown-title">ترکیب حقوق ${last.label}</div>
       ${rows.join('')}
     </div>`;
   }
@@ -6780,10 +6849,43 @@ function buildSalaryReportCard(t) {
     const reason = diff > 0
       ? (dominant ? `که عمدتاً به دلیل <b>${dominant.role_label}</b> بوده است` : `که به دلیل افزایش حقوق پایه بوده است`)
       : '';
-    insight = `<div class="salary-insight">${diff > 0 ? '📈' : '📉'} حقوق <b>${t.name} ${t.lname}</b> نسبت به ماه قبل <b>${fa(Math.abs(pct))}٪ ${diff > 0 ? 'افزایش' : 'کاهش'}</b> داشته است${reason}. میانگین حقوق در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است.</div>`;
+    insight = `<div class="salary-insight"><div class="salary-insight-title">تحلیل هوشمند</div>حقوق این ماه نسبت به ماه قبل <b>${fa(Math.abs(pct))}٪ ${diff > 0 ? 'افزایش' : 'کاهش'}</b> داشته است${reason}. روند پرداخت در ${fa(months.length)} ماه اخیر ${paidCount === months.length ? '<b>منظم</b>' : `<b>${fa(paidCount)} پرداخت ثبت‌شده</b>`} بوده و میانگین دریافتی <b>${fmt(avg)} تومان</b> است.</div>`;
   } else {
-    insight = `<div class="salary-insight">💰 میانگین حقوق <b>${t.name} ${t.lname}</b> در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است.</div>`;
+    insight = `<div class="salary-insight"><div class="salary-insight-title">تحلیل هوشمند</div>میانگین حقوق <b>${t.name} ${t.lname}</b> در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است. برای تحلیل تغییرات، حداقل یک ماه دیگر داده لازم است.</div>`;
   }
+
+  const goalHtml = `<div>
+    <div class="salary-goal-card">
+      <div class="salary-goal-label">هدف حقوق</div>
+      <div class="salary-goal-value">${fmt(salaryGoal)} تومان</div>
+      <div class="salary-bar" style="margin-top:8px"><span style="width:${goalPct}%"></span></div>
+      <div class="salary-goal-sub">فعلی: ${fmt(last.total)} تومان، ${fa(goalPct)}٪ هدف</div>
+    </div>
+    ${teamAvg ? `<div class="salary-goal-card">
+      <div class="salary-goal-label">مقایسه با تیم</div>
+      <div class="salary-goal-value">${fa(Math.abs(teamDeltaPct))}٪ ${teamDeltaPct >= 0 ? 'بیشتر' : 'کمتر'}</div>
+      <div class="salary-goal-sub">میانگین تیم: ${fmt(teamAvg)} تومان</div>
+    </div>` : ''}
+  </div>`;
+
+  const timelineHtml = months.slice(-2).reverse().map(m => `<div class="salary-timeline-item">
+    <div>
+      <div class="salary-timeline-month">${m.label}</div>
+      <div class="salary-timeline-status">${m.paid ? '✓ پرداخت شد' : 'در انتظار پرداخت'}</div>
+    </div>
+    <div>
+      <div class="salary-timeline-amount">${fmt(m.total)} تومان</div>
+      <div class="salary-slip-link">مشاهده فیش</div>
+    </div>
+  </div>`).join('');
+  const reportTitle = `گزارش حقوق ${t.name} ${t.lname}`;
+  const reportText = `${reportTitle}
+حقوق این ماه: ${fmt(last.total)} تومان
+تغییر نسبت به ماه قبل: ${prev ? `${pct > 0 ? '+' : ''}${fa(pct)}٪، ${fmt(Math.abs(diff))} تومان` : 'بدون سابقه'}
+میانگین: ${fmt(avg)} تومان
+وضعیت پرداخت: ${fa(paidCount)} از ${fa(months.length)} ماه پرداخت شده`;
+  const encodedReportTitle = encodeURIComponent(reportTitle);
+  const encodedReportText = encodeURIComponent(reportText);
 
   // ── Full month-by-month table (collapsible) ──
   const tableRows = months.slice().reverse().map((m, idx, arr) => {
@@ -6800,23 +6902,39 @@ function buildSalaryReportCard(t) {
       <td style="padding:4px 6px">${fmt(m.total)} تومان</td>
       <td style="padding:4px 6px;color:${changeColor};font-weight:600">${changeBadge}</td>
       <td style="padding:4px 6px">${m.paid ? '<span style="color:var(--green)">✓ پرداخت شد</span>' : '<span style="color:var(--text3)">در انتظار</span>'}</td>
+      <td style="padding:4px 6px;color:var(--accent2);font-weight:700">مشاهده فیش</td>
     </tr>`;
   }).join('');
 
   return `<div class="trend-block" data-name="${t.name} ${t.lname}">
+    <div class="salary-toolbar">
+      <div class="salary-range-tabs" aria-label="بازه زمانی">
+        ${['۳ ماه','۶ ماه','۱۲ ماه','همه'].map(x => `<button class="${x === rangeLabel ? 'active' : ''}" type="button">${x}</button>`).join('')}
+      </div>
+      <div class="salary-actions">
+        <button class="salary-action-btn" type="button" onclick="window.print()">دانلود PDF</button>
+        <button class="salary-action-btn" type="button" onclick="shareSalaryReport('${encodedReportText}')">اشتراک‌گذاری</button>
+        <button class="salary-action-btn" type="button" onclick="emailSalaryReport('${encodedReportTitle}','${encodedReportText}')">ارسال ایمیل</button>
+        <button class="salary-action-btn" type="button" onclick="window.print()">چاپ</button>
+      </div>
+    </div>
+
     <div class="salary-head">
       <div class="salary-who">
         <div class="salary-avatar">${(t.name || '؟').charAt(0)}</div>
         <div>
           <div class="salary-name">${t.name} ${t.lname}</div>
-          <div class="salary-name-sub">حقوق ${last.label}</div>
+          <div class="salary-name-sub">پروفایل مالی همکار، حقوق ${last.label}</div>
         </div>
       </div>
       <div class="salary-current">
+        <div class="salary-current-kicker">حقوق این ماه</div>
         <div class="salary-current-amount">${fmt(last.total)} <span>تومان</span></div>
         ${changeHtml}
       </div>
     </div>
+
+    ${changeHero}
 
     <div class="salary-chart-wrap">
       ${svg}
@@ -6824,19 +6942,25 @@ function buildSalaryReportCard(t) {
     </div>
 
     <div class="salary-mini-stats">
+      <div class="salary-mini-stat primary"><div class="salary-mini-label">بیشترین حقوق</div><div class="salary-mini-value">${fmt(maxV)}</div><div class="salary-mini-hint">▲ رکورد</div></div>
       <div class="salary-mini-stat"><div class="salary-mini-label">میانگین</div><div class="salary-mini-value">${fmt(avg)}</div></div>
-      <div class="salary-mini-stat"><div class="salary-mini-label">بیشترین</div><div class="salary-mini-value">${fmt(maxV)}</div></div>
-      <div class="salary-mini-stat"><div class="salary-mini-label">کمترین</div><div class="salary-mini-value">${fmt(minV)}</div></div>
-      <div class="salary-mini-stat"><div class="salary-mini-label">پرداخت‌شده</div><div class="salary-mini-value">${fa(paidCount)} از ${fa(months.length)}</div></div>
+      <div class="salary-mini-stat"><div class="salary-mini-label">مجموع پرداخت</div><div class="salary-mini-value">${fmt(totalPaid)}</div></div>
+      <div class="salary-mini-stat"><div class="salary-mini-label">تعداد پرداخت</div><div class="salary-mini-value">${fa(paidCount)} از ${fa(months.length)} ماه</div></div>
     </div>
 
-    ${breakdownHtml}
+    <div class="salary-finance-grid">
+      ${breakdownHtml}
+      ${goalHtml}
+    </div>
+
     ${insight}
 
+    <div class="salary-timeline">${timelineHtml}</div>
+
     <details class="salary-details">
-      <summary>مشاهده جزئیات همه ماه‌ها</summary>
+      <summary>مشاهده تاریخچه کامل</summary>
       <table style="width:100%;font-size:11px;border-collapse:collapse">
-        <thead><tr style="color:var(--text3)"><th style="text-align:right;padding:3px 6px">ماه</th><th style="text-align:right;padding:3px 6px">حقوق کل</th><th style="text-align:right;padding:3px 6px">تغییر</th><th style="text-align:right;padding:3px 6px">وضعیت</th></tr></thead>
+        <thead><tr style="color:var(--text3)"><th style="text-align:right;padding:3px 6px">ماه</th><th style="text-align:right;padding:3px 6px">حقوق کل</th><th style="text-align:right;padding:3px 6px">تغییر</th><th style="text-align:right;padding:3px 6px">وضعیت</th><th style="text-align:right;padding:3px 6px">فیش</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
     </details>
@@ -7653,6 +7777,24 @@ function copyToClipboard(text, successMsg) {
     document.body.removeChild(el);
     showToast(successMsg || 'کپی شد ✓', 'success');
   });
+}
+
+async function shareSalaryReport(encodedText) {
+  const text = decodeURIComponent(encodedText || '');
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'گزارش حقوق TeamPulse', text });
+      showToast('گزارش آماده اشتراک‌گذاری شد ✓', 'success');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  copyToClipboard(text, 'متن گزارش کپی شد ✓');
+}
+
+function emailSalaryReport(encodedSubject, encodedBody) {
+  window.location.href = `mailto:?subject=${encodedSubject || ''}&body=${encodedBody || ''}`;
 }
 
 function openBankTransfer() {
