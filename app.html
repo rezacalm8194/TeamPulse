@@ -524,29 +524,6 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .form-select:focus,
 .form-textarea:focus { border-color: var(--accent); }
 .form-select option { background: var(--bg2); }
-/* ── Goal form enhancements ─────────────────────────────── */
-.seg-btn {
-  flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid var(--border2);
-  background: var(--bg3); color: var(--text2); font-family: var(--font); font-size: 12px;
-  font-weight: 600; cursor: pointer; transition: all .15s; text-align: center;
-}
-.seg-btn:hover { border-color: var(--accent); }
-.icon-pick-btn {
-  width: 52px; height: 52px; border-radius: 12px; border: 1px solid var(--border2);
-  background: var(--bg3); font-size: 26px; cursor: pointer; display: flex;
-  align-items: center; justify-content: center; flex-shrink: 0; transition: border-color .15s;
-}
-.icon-pick-btn:hover { border-color: var(--accent); }
-.emoji-grid-btn {
-  width: 38px; height: 38px; font-size: 19px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--bg2); cursor: pointer; transition: all .15s;
-  display: flex; align-items: center; justify-content: center;
-}
-.emoji-grid-btn:hover { border-color: var(--accent); background: var(--bg4); transform: scale(1.08); }
-.success-item {
-  display: flex; align-items: center; gap: 8px; background: var(--bg3);
-  border-radius: 8px; padding: 7px 10px; margin-bottom: 6px;
-}
 .form-section {
   font-size: 11px; font-weight: 700; color: var(--text3);
   margin: 16px 0 10px;
@@ -14771,185 +14748,6 @@ function _goalsInit() {
   if (!_db._nextId.goals) _db._nextId.goals = 1;
 }
 
-// ── آیکون‌ها، دسته‌بندی‌ها و کمک‌تابع‌های فرم هدف ──────────────
-const GOAL_ICON_LIST = [
-  {e:'🎯',k:'هدف target'},{e:'🚀',k:'موشک رشد rocket'},{e:'💰',k:'پول مالی money'},
-  {e:'❤️',k:'قلب سلامتی عشق heart health'},{e:'📚',k:'کتاب یادگیری book'},
-  {e:'💼',k:'کیف شغل کار work briefcase'},{e:'👨‍👩‍👧',k:'خانواده family'},
-  {e:'🚗',k:'ماشین خودرو car'},{e:'🏠',k:'خانه home house'},{e:'🌍',k:'سفر دنیا travel world'},
-  {e:'🏋️',k:'ورزش بدنسازی gym sport'},{e:'💪',k:'قدرت عضله strength'},
-  {e:'🧘',k:'مدیتیشن آرامش meditation'},{e:'📈',k:'رشد نمودار chart growth'},
-  {e:'🎓',k:'تحصیل مدرک education graduate'},{e:'✈️',k:'پرواز سفر flight'},
-  {e:'🎨',k:'هنر خلاقیت art'},{e:'🎵',k:'موسیقی music'},{e:'🏆',k:'قهرمانی جایزه trophy'},
-  {e:'⭐',k:'ستاره star'},{e:'🔥',k:'انرژی آتش fire'},{e:'💡',k:'ایده idea'},
-  {e:'📱',k:'موبایل تکنولوژی phone'},{e:'💻',k:'کامپیوتر برنامه‌نویسی laptop code'},
-  {e:'🎮',k:'بازی game'},{e:'⚽',k:'فوتبال football'},{e:'📖',k:'مطالعه study'},
-  {e:'🌱',k:'رشد شخصی growth plant'},{e:'🎁',k:'هدیه gift'},{e:'🛒',k:'خرید shopping'},
-  {e:'👶',k:'فرزند بچه baby'},{e:'💍',k:'ازدواج ring'},{e:'🏥',k:'سلامت پزشکی hospital'},
-  {e:'🕌',k:'معنویت مذهب spiritual'},{e:'📝',k:'نوشتن یادداشت note'},
-];
-const GOAL_CATEGORIES = [
-  { key:'مالی',    icon:'💰', color:'var(--green)' },
-  { key:'سلامتی',  icon:'❤️', color:'var(--red)' },
-  { key:'یادگیری', icon:'📚', color:'#a78bfa' },
-  { key:'شغل',     icon:'💼', color:'var(--blue)' },
-  { key:'خانواده', icon:'👨‍👩‍👧', color:'#f472b6' },
-  { key:'ماشین',   icon:'🚗', color:'#fb923c' },
-  { key:'خانه',    icon:'🏠', color:'#a8763e' },
-  { key:'سفر',     icon:'🌍', color:'#2dd4bf' },
-  { key:'ورزش',    icon:'🏋️', color:'#38bdf8' },
-];
-function _goalCategoryMeta(cat) {
-  return GOAL_CATEGORIES.find(c => c.key === cat) || null;
-}
-
-function _renderIconGrid(filter) {
-  const grid = document.getElementById('icon-grid');
-  if (!grid) return;
-  const f = (filter||'').trim();
-  const list = f ? GOAL_ICON_LIST.filter(x => x.k.includes(f)) : GOAL_ICON_LIST;
-  grid.innerHTML = list.length ? list.map(x =>
-    `<button type="button" class="emoji-grid-btn" onclick="_pickGoalIcon('${x.e}')" title="${x.k.split(' ')[0]}">${x.e}</button>`
-  ).join('') : '<div style="font-size:11px;color:var(--text3);padding:10px;width:100%;text-align:center">چیزی پیدا نشد</div>';
-}
-function toggleIconPicker() {
-  const p = document.getElementById('icon-picker-panel');
-  if (!p) return;
-  const show = p.style.display === 'none' || !p.style.display;
-  p.style.display = show ? 'block' : 'none';
-  if (show) { _renderIconGrid(''); setTimeout(() => document.getElementById('icon-search')?.focus(), 30); }
-}
-function filterIconPicker() { _renderIconGrid(document.getElementById('icon-search')?.value); }
-function _pickGoalIcon(icon) {
-  const btn = document.getElementById('goal-icon-btn');
-  const inp = document.getElementById('goal-icon');
-  if (btn) btn.textContent = icon;
-  if (inp) inp.value = icon;
-  const panel = document.getElementById('icon-picker-panel');
-  if (panel) panel.style.display = 'none';
-}
-
-function _buildGoalCategorySelectHTML(selId, inpId, currentVal) {
-  const known = GOAL_CATEGORIES.some(c => c.key === currentVal);
-  const isCustom = !!currentVal && !known;
-  return `
-    <select class="form-select" id="${selId}" onchange="onGoalCategoryChange('${selId}','${inpId}')">
-      <option value="">بدون دسته</option>
-      ${GOAL_CATEGORIES.map(c => `<option value="${c.key}" ${currentVal===c.key?'selected':''}>${c.icon} ${c.key}</option>`).join('')}
-      <option value="__custom__" ${isCustom?'selected':''}>➕ دسته دلخواه...</option>
-    </select>
-    <input class="form-input" id="${inpId}" style="margin-top:8px;display:${isCustom?'block':'none'}" placeholder="نام دسته دلخواه" value="${isCustom?escapeHtml(currentVal):''}">
-  `;
-}
-function onGoalCategoryChange(selId, inpId) {
-  const sel = document.getElementById(selId);
-  const inp = document.getElementById(inpId);
-  if (!sel || !inp) return;
-  if (sel.value === '__custom__') { inp.style.display = 'block'; inp.value = ''; inp.focus(); }
-  else { inp.style.display = 'none'; inp.value = sel.value; }
-}
-function _getGoalCategoryValue(selId, inpId) {
-  const sel = document.getElementById(selId);
-  const inp = document.getElementById(inpId);
-  if (!sel) return inp?.value.trim() || '';
-  if (sel.value === '__custom__') return inp?.value.trim() || '';
-  return sel.value;
-}
-
-function _segBtnGroupHTML(groupId, hiddenId, options, current) {
-  return `
-    <div id="${groupId}" style="display:flex;gap:8px">
-      ${options.map(o => `<button type="button" class="seg-btn" data-val="${o.val}" data-color="${o.color}"
-        style="${o.val===current?`background:${o.color};color:#fff;border-color:${o.color}`:''}"
-        onclick="_setSegValue('${groupId}','${hiddenId}','${o.val}')">${o.label}</button>`).join('')}
-    </div>
-    <input type="hidden" id="${hiddenId}" value="${current}">`;
-}
-function _setSegValue(groupId, hiddenId, val) {
-  const hidden = document.getElementById(hiddenId);
-  if (hidden) hidden.value = val;
-  document.querySelectorAll('#'+groupId+' .seg-btn').forEach(b => {
-    const active = b.dataset.val === val;
-    b.style.background = active ? b.dataset.color : '';
-    b.style.color = active ? '#fff' : '';
-    b.style.borderColor = active ? b.dataset.color : '';
-  });
-}
-
-let _goalSuccessItems = [];
-function _renderSuccessList() {
-  const el = document.getElementById('success-list');
-  if (!el) return;
-  el.innerHTML = _goalSuccessItems.length ? _goalSuccessItems.map((s,i) => `
-    <div class="success-item">
-      <span style="color:var(--green)">✓</span>
-      <span style="flex:1;font-size:12px;color:var(--text)">${escapeHtml(s)}</span>
-      <button type="button" onclick="_removeSuccessItem(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px">🗑</button>
-    </div>`).join('') : '<div style="font-size:11px;color:var(--text3);padding:2px 0 6px">هنوز شاخصی اضافه نشده (اختیاری)</div>';
-}
-function _addSuccessItem() {
-  const inp = document.getElementById('success-input');
-  const val = inp?.value.trim();
-  if (!val) return;
-  _goalSuccessItems.push(val);
-  inp.value = '';
-  _renderSuccessList();
-  inp.focus();
-}
-function _removeSuccessItem(i) {
-  _goalSuccessItems.splice(i, 1);
-  _renderSuccessList();
-}
-
-function _updateGoalDeadlinePreview(inputId, previewId) {
-  inputId = inputId || 'goal-deadline'; previewId = previewId || 'goal-deadline-preview';
-  const val = document.getElementById(inputId)?.value;
-  const el = document.getElementById(previewId);
-  if (!el) return;
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  if (!val) { el.textContent = ''; return; }
-  const daysLeft = _goalDaysLeft(val);
-  el.textContent = daysLeft === null ? '' : '⏳ ' + _formatDaysLeft(daysLeft, fa);
-}
-
-// ── جستجو، فیلتر و مرتب‌سازی لیست اهداف ────────────────────────
-let _goalSearch = '';
-let _goalStatusFilter = 'all';
-let _goalCategoryFilter = 'all';
-let _goalSort = 'deadline';
-function onGoalSearchInput(v) { _goalSearch = v; renderGoals(); }
-function onGoalStatusFilter(v) { _goalStatusFilter = v; renderGoals(); }
-function onGoalCategoryFilter(v) { _goalCategoryFilter = v; renderGoals(); }
-function onGoalSortChange(v) { _goalSort = v; renderGoals(); }
-function _goalsFilterAndSort(goals) {
-  let list = goals.slice();
-  if (_goalStatusFilter !== 'all') list = list.filter(g => (g.status||'active') === _goalStatusFilter);
-  if (_goalCategoryFilter !== 'all') list = list.filter(g => (g.category||'') === _goalCategoryFilter);
-  if (_goalSearch.trim()) {
-    const q = _goalSearch.trim().toLowerCase();
-    list = list.filter(g => (g.title||'').toLowerCase().includes(q) || (g.category||'').toLowerCase().includes(q));
-  }
-  const prOrder = { high:0, medium:1, low:2 };
-  if (_goalSort === 'deadline') {
-    list.sort((a,b) => {
-      const da = _goalDaysLeft(a.deadline), db = _goalDaysLeft(b.deadline);
-      if (da === null && db === null) return 0;
-      if (da === null) return 1;
-      if (db === null) return -1;
-      return da - db;
-    });
-  } else if (_goalSort === 'priority') {
-    list.sort((a,b) => (prOrder[a.priority||'medium']) - (prOrder[b.priority||'medium']));
-  } else if (_goalSort === 'progress') {
-    list.sort((a,b) => (b.progress||0) - (a.progress||0));
-  } else if (_goalSort === 'name') {
-    list.sort((a,b) => (a.title||'').localeCompare(b.title||'', 'fa'));
-  } else if (_goalSort === 'recent') {
-    list.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
-  }
-  return list;
-}
-
 function _goalDaysLeft(deadline) {
   if (!deadline) return null;
   try {
@@ -15006,11 +14804,6 @@ function renderGoals() {
   const doneCount = goals.filter(g => g.status === 'done').length;
   const pausedCount = goals.filter(g => g.status === 'paused').length;
   const avgProgress = goals.length ? Math.round(goals.reduce((s,g)=>s+(g.progress||0),0) / goals.length) : 0;
-  const overdueCount = goals.filter(g => {
-    if (g.status === 'done') return false;
-    const d = _goalDaysLeft(g.deadline);
-    return d !== null && d < 0;
-  }).length;
 
   const statCard = (icon, label, value, color) => `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;flex:1;min-width:110px">
@@ -15024,66 +14817,10 @@ function renderGoals() {
       ${statCard('🎯','کل اهداف', fa(goals.length))}
       ${statCard('🚀','در حال انجام', fa(activeCount), '#60a5fa')}
       ${statCard('🏆','تکمیل‌شده', fa(doneCount), 'var(--green)')}
-      ${statCard('⏳','عقب‌افتاده', fa(overdueCount), overdueCount>0 ? 'var(--red)' : 'var(--text2)')}
       ${statCard('📈','میانگین پیشرفت', fa(avgProgress)+'٪', 'var(--accent2)')}
     </div>`;
 
-  // ── نوار جستجو، فیلتر و مرتب‌سازی ─────────────────
-  const categoriesInUse = Array.from(new Set(goals.map(g => g.category).filter(Boolean)));
-  const filterBarHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-      <div class="table-search" style="flex:1;min-width:170px">
-        <input type="text" value="${escapeHtml(_goalSearch)}" placeholder="🔍 جستجوی هدف..." oninput="onGoalSearchInput(this.value)"
-          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);
-            color:var(--text);font-family:var(--font);font-size:12px;outline:none">
-      </div>
-      <select class="form-select" style="width:auto;min-width:112px" onchange="onGoalStatusFilter(this.value)">
-        <option value="all" ${_goalStatusFilter==='all'?'selected':''}>همه وضعیت‌ها</option>
-        <option value="active" ${_goalStatusFilter==='active'?'selected':''}>در جریان</option>
-        <option value="paused" ${_goalStatusFilter==='paused'?'selected':''}>متوقف</option>
-        <option value="done" ${_goalStatusFilter==='done'?'selected':''}>تکمیل‌شده</option>
-      </select>
-      ${categoriesInUse.length ? `
-      <select class="form-select" style="width:auto;min-width:112px" onchange="onGoalCategoryFilter(this.value)">
-        <option value="all" ${_goalCategoryFilter==='all'?'selected':''}>همه دسته‌ها</option>
-        ${categoriesInUse.map(c => `<option value="${c}" ${_goalCategoryFilter===c?'selected':''}>${_goalCategoryMeta(c)?_goalCategoryMeta(c).icon+' ':''}${c}</option>`).join('')}
-      </select>` : ''}
-      <select class="form-select" style="width:auto;min-width:150px" onchange="onGoalSortChange(this.value)">
-        <option value="deadline" ${_goalSort==='deadline'?'selected':''}>مرتب‌سازی: ددلاین</option>
-        <option value="priority" ${_goalSort==='priority'?'selected':''}>مرتب‌سازی: اولویت</option>
-        <option value="progress" ${_goalSort==='progress'?'selected':''}>مرتب‌سازی: پیشرفت</option>
-        <option value="name" ${_goalSort==='name'?'selected':''}>مرتب‌سازی: نام</option>
-        <option value="recent" ${_goalSort==='recent'?'selected':''}>مرتب‌سازی: آخرین ویرایش</option>
-      </select>
-    </div>`;
-
-  const filteredGoals = _goalsFilterAndSort(goals);
-
-  if (filteredGoals.length === 0) {
-    setContent(`
-      <div style="max-width:680px;margin:0 auto">
-        <div style="margin-bottom:16px">
-          <button onclick="openAddGoal()"
-            style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
-              font-family:var(--font);font-size:15px;font-weight:700;
-              background:linear-gradient(135deg,#7c6af7,#5b4de0);
-              color:white;letter-spacing:.01em;
-              box-shadow:0 4px 20px rgba(124,106,247,.4);
-              display:flex;align-items:center;justify-content:center;gap:10px">
-            <span>🎯 هدف جدید اضافه کن</span>
-          </button>
-        </div>
-        ${statsHTML}
-        ${filterBarHTML}
-        <div style="text-align:center;padding:40px 20px;color:var(--text3)">
-          <div style="font-size:40px;margin-bottom:10px">🔍</div>
-          <div style="font-size:13px">هیچ هدفی با این فیلترها پیدا نشد</div>
-        </div>
-      </div>`);
-    return;
-  }
-
-  const html = filteredGoals.map(g => {
+  const html = goals.map(g => {
     const sc = statusColors[g.status || 'active'] || statusColors.active;
     const progress = g.progress || 0;
     const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
@@ -15114,11 +14851,7 @@ function renderGoals() {
         <span style="font-size:11.5px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text2)'}">${m.title}</span>
       </div>`).join('');
 
-    const catMeta = _goalCategoryMeta(g.category);
-    const prMeta = { high: { c:'var(--red)', l:'🔴 اولویت بالا' }, low: { c:'var(--green)', l:'🟢 اولویت پایین' } }[g.priority] || { c:'var(--amber)', l:'🟡 اولویت متوسط' };
-    const successCount = (g.success_criteria || []).length;
-
-    return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-inline-start:4px solid ${catMeta?catMeta.color:urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
+    return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
       onclick="openGoalDetail(${g.id})"
       onmouseenter="this.style.borderColor='rgba(62,207,142,.6)'"
       onmouseleave="this.style.borderColor='${urgencyColor}'">
@@ -15128,12 +14861,9 @@ function renderGoals() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700;color:var(--text)">${g.title}</span>
             <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
-            <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${prMeta.c}">${prMeta.l}</span>
             ${g.difficulty ? `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${diffColors[g.difficulty] || 'var(--text2)'}">⚡ ${diffLabels[g.difficulty] || g.difficulty}</span>` : ''}
           </div>
-          ${g.category ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)">
-            <span style="width:7px;height:7px;border-radius:50%;background:${catMeta?catMeta.color:'var(--text3)'}"></span>
-            ${catMeta?catMeta.icon+' ':''}${g.category}</span>` : ''}
+          ${g.category ? `<span style="font-size:11px;color:var(--text3)">${g.category}</span>` : ''}
         </div>
         <div style="text-align:center;flex-shrink:0">
           <div style="font-size:22px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
@@ -15152,7 +14882,6 @@ function renderGoals() {
           ⏳ ${_formatDaysLeft(daysLeft, fa)}
         </span>` : ''}
         ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
-        ${successCount > 0 ? `<span style="font-size:11px;color:var(--text3)">✅ ${fa(successCount)} شاخص موفقیت</span>` : ''}
         ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
         ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
       </div>
@@ -15184,99 +14913,55 @@ function renderGoals() {
         </button>
       </div>
       ${statsHTML}
-      ${filterBarHTML}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
-        <span style="font-size:12px;color:var(--text3)">${filteredGoals.length !== goals.length ? `${fa(filteredGoals.length)} از ${fa(goals.length)} هدف` : `${fa(goals.length)} هدف`}</span>
+        <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
       </div>
       ${html}
     </div>`);
 }
 
 function openAddGoal() {
-  _goalSuccessItems = [];
   openModal('🎯 هدف جدید', `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">عنوان هدف *</label>
         <input class="form-input" id="goal-title" placeholder="مثلاً: یادگیری زبان انگلیسی" autofocus>
       </div>
-
-      <div class="form-group full">
+      <div class="form-group">
         <label class="form-label">آیکون</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button type="button" class="icon-pick-btn" id="goal-icon-btn" onclick="toggleIconPicker()">🎯</button>
-          <input type="hidden" id="goal-icon" value="🎯">
-          <span style="font-size:11px;color:var(--text3)">برای انتخاب آیکون کلیک کن</span>
-        </div>
-        <div id="icon-picker-panel" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3)">
-          <input class="form-input" id="icon-search" placeholder="جستجوی آیکون... مثلاً car" oninput="filterIconPicker()" style="margin-bottom:8px">
-          <div id="icon-grid" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto"></div>
-        </div>
+        <input class="form-input" id="goal-icon" value="🎯" placeholder="🎯">
       </div>
-
-      <div class="form-group full">
+      <div class="form-group">
         <label class="form-label">دسته‌بندی</label>
-        ${_buildGoalCategorySelectHTML('goal-category-select', 'goal-category', '')}
+        <input class="form-input" id="goal-category" placeholder="مثلاً: سلامت، مالی، یادگیری">
       </div>
-
       <div class="form-group full">
-        <label class="form-label">اولویت</label>
-        ${_segBtnGroupHTML('goal-priority-group', 'goal-priority', [
-          { val:'high',   label:'🔴 بالا',   color:'var(--red)' },
-          { val:'medium', label:'🟡 متوسط', color:'var(--amber)' },
-          { val:'low',    label:'🟢 پایین',  color:'var(--green)' },
-        ], 'medium')}
+        <label class="form-label">💡 چرا این هدف برایم مهم است؟</label>
+        <textarea class="form-textarea" id="goal-why" rows="2" placeholder="انگیزه اصلی‌ات را بنویس..."></textarea>
       </div>
-
-      <div class="form-group full">
-        <label class="form-label">سختی</label>
-        ${_segBtnGroupHTML('goal-difficulty-group', 'goal-difficulty', [
-          { val:'easy',   label:'🟢 آسان',  color:'var(--green)' },
-          { val:'medium', label:'🟡 متوسط', color:'var(--amber)' },
-          { val:'hard',   label:'🔴 سخت',   color:'var(--red)' },
-        ], 'medium')}
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">💡 چرایی هدف (انگیزه اصلی)</label>
-        <textarea class="form-textarea" id="goal-why" rows="2" placeholder="اگر به این هدف برسم، چه چیزی در زندگی‌ام تغییر می‌کند؟"></textarea>
-      </div>
-
       <div class="form-group">
         <label class="form-label">📅 Deadline (شمسی)</label>
-        <input class="form-input jdate" id="goal-deadline" placeholder="${formatJalali(...todayJalali())}" oninput="_updateGoalDeadlinePreview()">
-        <div id="goal-deadline-preview" style="font-size:10px;color:var(--text3);margin-top:2px"></div>
+        <input class="form-input jdate" id="goal-deadline" placeholder="${formatJalali(...todayJalali())}">
       </div>
       <div class="form-group">
-        <label class="form-label">وضعیت</label>
-        <select class="form-select" id="goal-status">
-          <option value="active" selected>🟢 فعال</option>
-          <option value="paused">⏸ متوقف</option>
-          <option value="done">🏆 تکمیل شده</option>
+        <label class="form-label">سختی</label>
+        <select class="form-select" id="goal-difficulty">
+          <option value="easy">آسان</option>
+          <option value="medium" selected>متوسط</option>
+          <option value="hard">سخت</option>
         </select>
       </div>
-
       <div class="form-group full">
-        <label class="form-label">زندگی من بعد از رسیدن به هدف</label>
-        <textarea class="form-textarea" id="goal-vision" rows="2" placeholder="وقتی به این هدف برسم چه حسی دارم و چه چیزی عوض می‌شود؟"></textarea>
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">🏁 از کجا بفهمم به هدف رسیده‌ام؟ (شاخص موفقیت)</label>
-        <div id="success-list" style="margin-bottom:8px"></div>
-        <div style="display:flex;gap:8px">
-          <input class="form-input" id="success-input" placeholder="مثلاً: ۵۰۰ میلیون تومان پس‌انداز"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();_addSuccessItem();}">
-          <button type="button" onclick="_addSuccessItem()" class="btn btn-ghost" style="padding:0 14px;white-space:nowrap">+ افزودن</button>
-        </div>
+        <label class="form-label">تصویر ذهنی (وقتی به هدف رسیدم...)</label>
+        <textarea class="form-textarea" id="goal-vision" rows="2" placeholder="چه چیزی تغییر می‌کند؟"></textarea>
       </div>
     </div>
   `, [
-    { label: '🎯 ایجاد هدف', cls: 'btn-primary', action: 'saveNewGoal()' },
+    { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
-  setTimeout(() => { initDatePickers && initDatePickers(); _renderSuccessList(); }, 50);
+  setTimeout(() => initDatePickers && initDatePickers(), 50);
 }
 
 function saveNewGoal() {
@@ -15287,14 +14972,12 @@ function saveNewGoal() {
     id: _db._nextId.goals++,
     title,
     icon: document.getElementById('goal-icon')?.value || '🎯',
-    category: _getGoalCategoryValue('goal-category-select', 'goal-category'),
-    priority: document.getElementById('goal-priority')?.value || 'medium',
+    category: document.getElementById('goal-category')?.value || '',
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
     deadline: document.getElementById('goal-deadline')?.value || '',
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
-    status: document.getElementById('goal-status')?.value || 'active',
-    success_criteria: _goalSuccessItems.slice(),
+    status: 'active',
     progress: 0,
     milestones: [],
     notes: '',
@@ -15323,39 +15006,21 @@ function openGoalDetail(id) {
       <button onclick="deleteMilestone(${id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px">🗑</button>
     </div>`).join('');
 
-  const catMeta = _goalCategoryMeta(g.category);
-  const prMeta = { high: { c:'var(--red)', l:'🔴 اولویت بالا' }, low: { c:'var(--green)', l:'🟢 اولویت پایین' } }[g.priority] || { c:'var(--amber)', l:'🟡 اولویت متوسط' };
-  const successHTML = (g.success_criteria || []).length ? `
-    <div style="margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">🏁 شاخص‌های موفقیت</div>
-      ${g.success_criteria.map(s => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12.5px;color:var(--text)">
-        <span style="color:var(--green)">✓</span>${escapeHtml(s)}</div>`).join('')}
-    </div>` : '';
-
   openModal(`${g.icon || '🎯'} ${g.title}`, `
     <div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:var(--bg3);color:${prMeta.c};font-weight:600">${prMeta.l}</span>
-        ${g.category ? `<span style="font-size:10px;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text2)">${catMeta?catMeta.icon+' ':''}${g.category}</span>` : ''}
-      </div>
       ${g.why ? `<div style="background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-        <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px">💡 چرایی هدف</div>
+        <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px">💡 چرا مهم است</div>
         <div style="font-size:13px;color:var(--text);line-height:1.8">${g.why}</div>
       </div>` : ''}
-      ${g.vision ? `<div style="background:rgba(124,106,247,.08);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-        <div style="font-size:10px;color:var(--accent2);font-weight:700;margin-bottom:4px">🌟 زندگی من بعد از رسیدن به هدف</div>
-        <div style="font-size:13px;color:var(--text);line-height:1.8">${g.vision}</div>
-      </div>` : ''}
-      ${successHTML}
 
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <span style="font-size:12px;font-weight:600;color:var(--text2)">پیشرفت</span>
-          <span style="font-size:18px;font-weight:800;color:var(--accent2)">${fa(g.progress || 0)}٪</span>
+          <span id="goal-progress-label-${id}" style="font-size:18px;font-weight:800;color:var(--accent2)">${fa(g.progress || 0)}٪</span>
         </div>
         <input type="range" min="0" max="100" value="${g.progress||0}" style="width:100%;accent-color:var(--accent)"
-          oninput="updateGoalProgress(${id},this.value,this.nextElementSibling)"
-          onchange="updateGoalProgress(${id},this.value,this.previousElementSibling)">
+          oninput="updateGoalProgress(${id},this.value)"
+          onchange="updateGoalProgress(${id},this.value)">
       </div>
 
       <div style="margin-bottom:14px">
@@ -15366,7 +15031,7 @@ function openGoalDetail(id) {
         <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز مرحله‌ای اضافه نشده</div>'}</div>
       </div>
 
-      ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${g.deadline}</strong> · ${_formatDaysLeft(_goalDaysLeft(g.deadline), fa)}</div>` : ''}
+      ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${g.deadline}</strong></div>` : ''}
 
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -15388,8 +15053,17 @@ function openGoalDetail(id) {
   `, [
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditGoal(${id})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteGoal(${id})` },
-    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+    { label: '💾 ذخیره', cls: 'btn-primary', action: `saveGoalDetailAndClose(${id})` },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+}
+
+// ذخیره تغییرات این مودال (پیشرفت/مراحل) و به‌روزرسانی زنده صفحه پشت مودال بدون نیاز به رفرش
+function saveGoalDetailAndClose(id) {
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  closeModal();
+  showToast('تغییرات هدف ذخیره شد ✓', 'success');
 }
 
 function openGoalLinkedItems(id) {
@@ -15437,20 +15111,32 @@ function openGoalLinkedItems(id) {
   ]);
 }
 
-function updateGoalProgress(id, val, _) {
+function updateGoalProgress(id, val) {
   const g = (_db.goals||[]).find(x=>x.id===id);
-  if (g) { g.progress = +val; _save(false); }
+  if (!g) return;
+  g.progress = +val;
+  _save(false);
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const label = document.getElementById('goal-progress-label-'+id);
+  if (label) label.textContent = fa(g.progress) + '٪';
+  // به‌روزرسانی زنده صفحه اهداف پشت مودال، بدون نیاز به رفرش
+  if (currentPage === 'goals') renderGoals();
 }
 function toggleMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g || !g.milestones[idx]) return;
   g.milestones[idx].done = !g.milestones[idx].done;
-  _save(); openGoalDetail(goalId);
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  openGoalDetail(goalId);
 }
 function deleteMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g) return;
-  g.milestones.splice(idx, 1); _save(); openGoalDetail(goalId);
+  g.milestones.splice(idx, 1);
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  openGoalDetail(goalId);
 }
 function addMilestone(goalId) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
@@ -15459,113 +15145,61 @@ function addMilestone(goalId) {
   if (!title) return;
   if (!g.milestones) g.milestones = [];
   g.milestones.push({ title, done: false });
-  _save(); openGoalDetail(goalId);
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  openGoalDetail(goalId);
 }
 function openEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
-  _goalSuccessItems = (g.success_criteria || []).slice();
   openModal('✏️ ویرایش هدف', `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">عنوان *</label>
-        <input class="form-input" id="eg-title" value="${escapeHtml(g.title||'')}">
+        <input class="form-input" id="eg-title" value="${g.title||''}">
       </div>
-
-      <div class="form-group full">
+      <div class="form-group">
         <label class="form-label">آیکون</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button type="button" class="icon-pick-btn" id="goal-icon-btn" onclick="toggleIconPicker()">${g.icon||'🎯'}</button>
-          <input type="hidden" id="goal-icon" value="${g.icon||'🎯'}">
-          <span style="font-size:11px;color:var(--text3)">برای تغییر آیکون کلیک کن</span>
-        </div>
-        <div id="icon-picker-panel" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3)">
-          <input class="form-input" id="icon-search" placeholder="جستجوی آیکون..." oninput="filterIconPicker()" style="margin-bottom:8px">
-          <div id="icon-grid" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto"></div>
-        </div>
+        <input class="form-input" id="eg-icon" value="${g.icon||'🎯'}">
       </div>
-
-      <div class="form-group full">
+      <div class="form-group">
         <label class="form-label">دسته‌بندی</label>
-        ${_buildGoalCategorySelectHTML('goal-category-select', 'goal-category', g.category || '')}
+        <input class="form-input" id="eg-category" value="${g.category||''}">
       </div>
-
-      <div class="form-group full">
-        <label class="form-label">اولویت</label>
-        ${_segBtnGroupHTML('goal-priority-group', 'goal-priority', [
-          { val:'high',   label:'🔴 بالا',   color:'var(--red)' },
-          { val:'medium', label:'🟡 متوسط', color:'var(--amber)' },
-          { val:'low',    label:'🟢 پایین',  color:'var(--green)' },
-        ], g.priority || 'medium')}
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">سختی</label>
-        ${_segBtnGroupHTML('goal-difficulty-group', 'goal-difficulty', [
-          { val:'easy',   label:'🟢 آسان',  color:'var(--green)' },
-          { val:'medium', label:'🟡 متوسط', color:'var(--amber)' },
-          { val:'hard',   label:'🔴 سخت',   color:'var(--red)' },
-        ], g.difficulty || 'medium')}
-      </div>
-
       <div class="form-group">
         <label class="form-label">📅 Deadline</label>
-        <input class="form-input jdate" id="eg-deadline" value="${g.deadline||''}" oninput="_updateGoalDeadlinePreview('eg-deadline','eg-deadline-preview')">
-        <div id="eg-deadline-preview" style="font-size:10px;color:var(--text3);margin-top:2px"></div>
+        <input class="form-input jdate" id="eg-deadline" value="${g.deadline||''}">
       </div>
       <div class="form-group">
         <label class="form-label">وضعیت</label>
         <select class="form-select" id="eg-status">
-          <option value="active" ${g.status==='active'?'selected':''}>🟢 فعال</option>
-          <option value="paused" ${g.status==='paused'?'selected':''}>⏸ متوقف</option>
-          <option value="done" ${g.status==='done'?'selected':''}>🏆 تکمیل شده</option>
+          <option value="active" ${g.status==='active'?'selected':''}>در جریان</option>
+          <option value="done" ${g.status==='done'?'selected':''}>تکمیل شده</option>
+          <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
         </select>
       </div>
-
       <div class="form-group full">
-        <label class="form-label">💡 چرایی هدف</label>
+        <label class="form-label">چرا مهم است؟</label>
         <textarea class="form-textarea" id="eg-why" rows="2">${g.why||''}</textarea>
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">زندگی من بعد از رسیدن به هدف</label>
-        <textarea class="form-textarea" id="eg-vision" rows="2">${g.vision||''}</textarea>
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">🏁 شاخص موفقیت</label>
-        <div id="success-list" style="margin-bottom:8px"></div>
-        <div style="display:flex;gap:8px">
-          <input class="form-input" id="success-input" placeholder="مثلاً: خرید خودرو"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();_addSuccessItem();}">
-          <button type="button" onclick="_addSuccessItem()" class="btn btn-ghost" style="padding:0 14px;white-space:nowrap">+ افزودن</button>
-        </div>
       </div>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
-  setTimeout(() => {
-    initDatePickers && initDatePickers();
-    _renderSuccessList();
-    _updateGoalDeadlinePreview('eg-deadline', 'eg-deadline-preview');
-  }, 50);
+  setTimeout(() => initDatePickers && initDatePickers(), 50);
 }
 function saveEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
   g.title = document.getElementById('eg-title')?.value || g.title;
-  g.icon = document.getElementById('goal-icon')?.value || g.icon;
-  g.category = _getGoalCategoryValue('goal-category-select', 'goal-category');
-  g.priority = document.getElementById('goal-priority')?.value || 'medium';
-  g.difficulty = document.getElementById('goal-difficulty')?.value || 'medium';
+  g.icon = document.getElementById('eg-icon')?.value || g.icon;
+  g.category = document.getElementById('eg-category')?.value || '';
   g.deadline = document.getElementById('eg-deadline')?.value || '';
   g.status = document.getElementById('eg-status')?.value || 'active';
   g.why = document.getElementById('eg-why')?.value || '';
-  g.vision = document.getElementById('eg-vision')?.value || '';
-  g.success_criteria = _goalSuccessItems.slice();
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
+  showToast('تغییرات هدف ذخیره شد ✓', 'success');
 }
 function deleteGoal(id) {
   if (!confirm('این هدف حذف شود؟')) return;
