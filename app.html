@@ -14891,8 +14891,8 @@ const _origRenderPage = typeof renderPage === 'function' ? renderPage : null;
     const orig = window.renderPage;
     if (!orig || orig._patched) return;
     window.renderPage = function() {
-      if (window.currentPage === 'goals') { renderGoals(); return; }
-      if (window.currentPage === 'habits') { renderHabits(); return; }
+      if (currentPage === 'goals') { renderGoals(); return; }
+      if (currentPage === 'habits') { renderHabits(); return; }
       orig.apply(this, arguments);
     };
     window.renderPage._patched = true;
@@ -14912,9 +14912,9 @@ const _origUpdatePageTitle = typeof updatePageTitle === 'function' ? updatePageT
     if (!orig || orig._patched) return;
     window.updatePageTitle = function() {
       const titles = { goals: '🎯 اهداف', habits: '🔥 عادت‌ها' };
-      if (titles[window.currentPage]) {
+      if (titles[currentPage]) {
         const el = document.getElementById('page-title');
-        if (el) el.textContent = titles[window.currentPage];
+        if (el) el.textContent = titles[currentPage];
         return;
       }
       orig.apply(this, arguments);
