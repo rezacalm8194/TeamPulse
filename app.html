@@ -2203,7 +2203,7 @@ function _detectUserLocale() {
   return {
     timezone: tz,
     language: lang,
-    calendarType: isIran ? 'jalali' : 'gregorian',
+    calendarType: 'jalali',
     country: tz.split('/')[0] || 'Asia',
   };
 }
@@ -2354,6 +2354,31 @@ function _jalaliApproxDays(str) {
   if(!jy)return null;
   return jy*365+(jm-1)*30+jd;
 }
+
+// ── DateService: نقطهٔ مرکزی «نمایش» تاریخ ──────────────────────────────────
+// نکته مهم: فرمت ذخیره‌سازی همچنان رشتهٔ شمسی (۱۴۰۴/۰۴/۱۳) باقی می‌مونه — این
+// سرویس فقط تصمیم می‌گیره که همون مقدار ذخیره‌شده، هنگام نمایش به کاربر،
+// به چه شکلی (شمسی یا میلادی) روی صفحه ظاهر بشه؛ چیزی رو در دیتابیس تغییر نمی‌ده.
+// از این به بعد هر جای UI که می‌خواد یک تاریخ ذخیره‌شده رو به کاربر نشون بده،
+// باید از DateService.disp(...) استفاده کنه، نه این‌که مقدار خام رو مستقیم چاپ کنه.
+const DateService = {
+  // آیا تقویم انتخابی کاربر میلادیه؟
+  isGregorian() {
+    return META.calendarType === 'gregorian';
+  },
+  // یک رشتهٔ شمسیِ ذخیره‌شده (مثلاً s.date_jalali) رو برای نمایش آماده می‌کنه.
+  // اگر تقویم کاربر شمسی باشه، همون مقدار رو بدون تغییر برمی‌گردونه.
+  // اگر میلادی باشه، تبدیلش می‌کنه و به‌صورت YYYY-MM-DD نشون می‌ده.
+  // ورودی خالی/نامعتبر → همون ورودی (یا رشته خالی) برگردونده می‌شه، پس صدا زدنش همیشه امنه.
+  disp(jalaliStr) {
+    if (!jalaliStr) return jalaliStr || '';
+    if (!this.isGregorian()) return jalaliStr;
+    const p = _jalaliParse(jalaliStr);
+    if (!p || p.length !== 3 || p.some(isNaN)) return jalaliStr;
+    const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+    return `${gy}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}`;
+  },
+};
 
 // ── Student summary ─────────────────────────────────────────────────────────
 function _studentSummary(s) {
@@ -3760,7 +3785,7 @@ async function renderStudents(search = '') {
             ${avatar(s.name, i)}
             <div>
               <div style="font-weight:500">${s.name} ${s.lname} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${fam.name}</span>` : ''}</div>
-              <div class="name-cell-sub">${s.date_jalali || '—'}</div>
+              <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
             </div>
           </div>
         </td>
@@ -3872,7 +3897,7 @@ async function openStudentDetail(id) {
   const payRows = payments.length
     ? payments.map(p => `
       <div class="detail-row">
-        <span class="detail-key">${p.date_jalali} — ${p.pkg_label}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
+        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${p.pkg_label}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
         <span class="detail-val amount-paid">
           ${fmt(p.amount)} ${p.currency || 'تومان'}
           <button class="btn btn-ghost btn-sm" style="margin-right:4px" onclick="openEditPayment(${p.id})">✏️</button>
@@ -3884,7 +3909,7 @@ async function openStudentDetail(id) {
   const walletRows = walletHistory.length
     ? walletHistory.slice(0,5).map(w => `
       <div class="detail-row">
-        <span class="detail-key">${w.date_jalali || '—'} ${w.note ? '— ' + w.note : ''}</span>
+        <span class="detail-key">${DateService.disp(w.date_jalali) || '—'} ${w.note ? '— ' + w.note : ''}</span>
         <span class="detail-val" style="color:${w.delta>=0?'var(--green)':'var(--red)'}">${w.delta>=0?'+':''}${fmt(w.delta)} ت</span>
       </div>`).join('')
     : '';
@@ -3910,7 +3935,7 @@ async function openStudentDetail(id) {
     <div class="detail-section">
       <h3>اطلاعات ${META.entitySingular || 'شاگرد'}</h3>
       <div class="detail-row"><span class="detail-key">نام</span><span class="detail-val">${s.name} ${s.lname}</span></div>
-      <div class="detail-row"><span class="detail-key">تاریخ رزرو/ثبت‌نام</span><span class="detail-val">${s.date_jalali || '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">تاریخ رزرو/ثبت‌نام</span><span class="detail-val">${DateService.disp(s.date_jalali) || '—'}</span></div>
       <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${s.phone || '—'}</span></div>
       <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${s.note || '—'}</span></div>
     </div>
@@ -4481,8 +4506,8 @@ async function renderPurchases(search = '') {
         <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
         <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
         <td style="color:var(--text2)">
-          <div>${p.start_date||'—'}</div>
-          ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${_jalaliToGregorianStr(p.start_date)}</div>` : ''}
+          <div>${DateService.disp(p.start_date)||'—'}</div>
+          ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${DateService.isGregorian() ? p.start_date : _jalaliToGregorianStr(p.start_date)}</div>` : ''}
         </td>
         <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
         <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -4525,8 +4550,7 @@ async function openEditPackage(id) {
         <input class="form-input amount-input" id="ep-initial" type="number" value="${p.initial_cost||0}">
       </div>
       <div class="form-group">
-        <label class="form-label">تاریخ شروع (شمسی)</label>
-        <input class="form-input jdate" id="ep-start" value="${p.start_date||''}">
+        ${calendarDateFieldHtml('ep-start', p.start_date||'', 'تاریخ شروع')}
       </div>
       <div class="form-group">
         <label class="form-label">🔁 تکرار</label>
@@ -4554,7 +4578,7 @@ async function saveEditPackage(id, studentId) {
     id, type_id: +(document.getElementById('ep-type')?.value||0),
     total_amount: +(document.getElementById('ep-total')?.value||0),
     initial_cost: +(document.getElementById('ep-initial')?.value||0),
-    start_date: document.getElementById('ep-start')?.value,
+    start_date: readCalendarDateField('ep-start'),
     repeat_months: +(document.getElementById('ep-repeat')?.value||0),
     note: document.getElementById('ep-note')?.value,
   });
@@ -4792,8 +4816,8 @@ async function renderPayments(search = '') {
           <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
           <td style="color:var(--text2)">
-            <div>${p.start_date||'—'}</div>
-            ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${_jalaliToGregorianStr(p.start_date)}</div>` : ''}
+            <div>${DateService.disp(p.start_date)||'—'}</div>
+            ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${DateService.isGregorian() ? p.start_date : _jalaliToGregorianStr(p.start_date)}</div>` : ''}
           </td>
           <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
           <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -4825,7 +4849,7 @@ async function renderPayments(search = '') {
           <td style="font-weight:500">${p.name} ${p.lname}</td>
           <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.pkg_label}</span></td>
           <td><span class="amount amount-paid">${fmt(p.amount)} ${p.currency||'تومان'}</span></td>
-          <td style="color:var(--text2)">${p.date_jalali}</td>
+          <td style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
           <td>${student ? balanceHtml(student.balance) : '—'}</td>
           <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
           <td style="display:flex;gap:5px">
@@ -4915,7 +4939,7 @@ async function renderSessions(search = '') {
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
           : g.sessions.map(s => `
           <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
-            <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${s.date_jalali} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
+            <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${DateService.disp(s.date_jalali)} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
             <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
             ${s.note ? `<div class="sc-excerpt">${renderRich(excerpt(s.note, 60))}</div>` : ''}
           </div>`).join('')}
@@ -4934,7 +4958,7 @@ async function renderSessions(search = '') {
           <div class="key-session-card" onclick="openSessionDetail(${s.id})">
             <div class="ks-top">
               <span class="ks-name">${s.name} ${s.lname}</span>
-              <span class="ks-date">${s.date_jalali}</span>
+              <span class="ks-date">${DateService.disp(s.date_jalali)}</span>
             </div>
             <div class="ks-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
             <div class="ks-excerpt">${renderRich(excerpt(s.note))}</div>
@@ -5011,11 +5035,11 @@ async function openSessionDetail(sessionId) {
   }
   if (!session) return;
 
-  openModal(`${student.name} ${student.lname} — ${session.date_jalali}`, `
+  openModal(`${student.name} ${student.lname} — ${DateService.disp(session.date_jalali)}`, `
     <div class="detail-section">
       ${session.importance==='key' ? '<p style="color:var(--amber);font-weight:700;margin-bottom:8px">⭐ نکته مهم و کلیدی</p>' : ''}
       <div class="detail-row"><span class="detail-key">عنوان</span><span class="detail-val">${escapeHtml(session.title) || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${session.date_jalali} (${jalaliWeekdayName(session.date_jalali)})</span></div>
+      <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${DateService.disp(session.date_jalali)} (${jalaliWeekdayName(session.date_jalali)})</span></div>
       <div class="detail-row"><span class="detail-key">اهمیت</span><span class="detail-val">${session.importance==='key' ? 'مهم و کلیدی' : 'معمولی'}</span></div>
     </div>
     <div class="detail-section">
@@ -5108,7 +5132,7 @@ async function _buildPreSessionSummary(studentId) {
   if (!openFU.length && !recentAch.length && !lastSession) return '';
   let html = `<div style="background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--accent2);margin-bottom:8px">📋 خلاصه قبل از جلسه</div>`;
-  if (lastSession) html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">⏱ آخرین جلسه: ${lastSession.date_jalali}</div>`;
+  if (lastSession) html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">⏱ آخرین جلسه: ${DateService.disp(lastSession.date_jalali)}</div>`;
   if (openFU.length > 0) {
     html += `<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--amber);font-weight:600;margin-bottom:4px">📌 اقدامات باز (${fa(openFU.length)} مورد)</div>`;
     html += openFU.slice(0,5).map(f => `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);padding:2px 0"><span style="color:var(--text3)">☐</span>${escapeHtml(f.text)}</div>`).join('');
@@ -5572,7 +5596,7 @@ async function renderReminders() {
       <td style="font-weight:500">${r.name} ${r.lname}</td>
       <td>${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
       <td>
-        <div>${r.due_date_jalali}</div>
+        <div>${DateService.disp(r.due_date_jalali)}</div>
         <div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${_jalaliToGregorianStr(r.due_date_jalali)}</div>
       </td>
       <td>${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
@@ -6693,7 +6717,7 @@ async function renderArchive() {
           ${avatar(s.name, i)}
           <div>
             <div style="font-weight:500">${s.name} ${s.lname}</div>
-            <div class="name-cell-sub">${s.date_jalali || '—'}</div>
+            <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
           </div>
         </div>
       </td>
@@ -6852,7 +6876,7 @@ async function renderStaff() {
       const remMenuId = `rem-menu-${r.id}`;
       html += `<tr>
         <td style="font-weight:500">${r.name} ${r.lname}</td>
-        <td style="font-size:12px">${r.due_date_jalali}</td>
+        <td style="font-size:12px">${DateService.disp(r.due_date_jalali)}</td>
         <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
         <td>${statusBadge}</td>
@@ -7246,8 +7270,7 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
         <input class="form-input amount-input" id="st-salary" type="number" value="${s?.salary||0}">
       </div>
       <div class="form-group">
-        <label class="form-label">تاریخ شروع همکاری (شمسی)</label>
-        <input class="form-input jdate" id="st-start" value="${s?.start_date || formatJalali(...todayJalali())}">
+        ${calendarDateFieldHtml('st-start', s?.start_date || '', 'تاریخ شروع همکاری')}
       </div>
     </div>
 
@@ -7354,7 +7377,7 @@ async function saveStaffNew() {
     role_id: roles[0]?.role_id || STAFF_ROLES[0]?.id,
     roles,
     salary: +(document.getElementById('st-salary')?.value||0),
-    start_date: document.getElementById('st-start')?.value,
+    start_date: readCalendarDateField('st-start'),
     repeat_months: +(document.getElementById('st-repeat')?.value||0),
     note: document.getElementById('st-note')?.value||'',
   });
@@ -7375,7 +7398,7 @@ async function saveStaffEdit(id) {
     role_id: roles[0]?.role_id || STAFF_ROLES[0]?.id,
     roles,
     salary: +(document.getElementById('st-salary')?.value||0),
-    start_date: document.getElementById('st-start')?.value,
+    start_date: readCalendarDateField('st-start'),
     note: document.getElementById('st-note')?.value||'',
     repeat_months: repeat, // pass to backend for reminder handling
   });
@@ -7483,7 +7506,7 @@ async function openStaffDetail(id) {
       <h3>💰 حقوق و دستمزد (پرداخت‌های آزاد) <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffPayment(${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">+ ثبت پرداخت</button></h3>
       ${payments.length===0?'<p style="font-size:12px;color:var(--text3)">پرداختی ثبت نشده</p>':payments.slice(0,10).map(p=>`
         <div class="detail-row">
-          <span class="detail-key">${p.date_jalali}${p.note?` — ${escapeHtml(p.note)}`:''}</span>
+          <span class="detail-key">${DateService.disp(p.date_jalali)}${p.note?` — ${escapeHtml(p.note)}`:''}</span>
           <span class="detail-val amount-paid" style="display:flex;align-items:center;gap:6px">
             ${fmt(p.amount)} تومان
             <button class="btn btn-ghost btn-sm" onclick="openEditStaffPayment(${p.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✏️</button>
@@ -7496,7 +7519,7 @@ async function openStaffDetail(id) {
       <h3>🎁 پاداش / ⚠️ جریمه / 📁 دستمزد پروژه <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffAdjustment(${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">+ افزودن</button></h3>
       ${adjustments.length===0?'<p style="font-size:12px;color:var(--text3)">موردی ثبت نشده</p>':adjustments.slice(0,10).map(a=>`
         <div class="detail-row">
-          <span class="detail-key">${a.date_jalali} — ${adjLabel[a.type]}${a.title?`: ${escapeHtml(a.title)}`:''}</span>
+          <span class="detail-key">${DateService.disp(a.date_jalali)} — ${adjLabel[a.type]}${a.title?`: ${escapeHtml(a.title)}`:''}</span>
           <span class="detail-val" style="color:${adjColor[a.type]};display:flex;align-items:center;gap:6px">
             ${a.type==='penalty'?'-':'+'}${fmt(a.amount)} تومان
             <button class="btn btn-ghost btn-sm" onclick="openEditStaffAdjustment(${a.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✏️</button>
@@ -8171,7 +8194,7 @@ async function openSessionsSummary(studentId, displayName) {
     ? `<p style="font-size:12px;color:var(--text3)">هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</p>`
     : sessions.map(s => `
       <div class="summary-entry">
-        <div class="summary-entry-date">${s.date_jalali}${s.importance==='key'?' ⭐':''}</div>
+        <div class="summary-entry-date">${DateService.disp(s.date_jalali)}${s.importance==='key'?' ⭐':''}</div>
         <div class="summary-entry-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
         ${s.note ? `<div class="summary-entry-note">${renderRich(s.note)}</div>` : ''}
         ${s.extra_note ? `<div class="summary-entry-extra">${renderRich(s.extra_note)}</div>` : ''}
@@ -8558,7 +8581,7 @@ function _achTimelineItemHtml(s) {
     <div style="flex-shrink:0;width:8px;height:8px;background:var(--green);border-radius:50%;margin-top:5px"></div>
     <div style="flex:1;min-width:0">
       <div style="font-size:10px;color:var(--text3);margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span>${s.date_jalali}</span>
+        <span>${DateService.disp(s.date_jalali)}</span>
         ${s.importance==='key' ? '<span style="color:var(--amber)">⭐</span>' : ''}
       </div>
       <div style="font-size:12px;color:var(--text);line-height:1.7">${renderRich(s.achievements)}</div>
@@ -9057,7 +9080,7 @@ function _buildPeriodAchievementsHtml(studentId, form, period) {
     <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
       <div style="flex-shrink:0;width:7px;height:7px;background:var(--green);border-radius:50%;margin-top:5px"></div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:2px">${s.date_jalali}</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:2px">${DateService.disp(s.date_jalali)}</div>
         <div style="font-size:12px;color:var(--text);line-height:1.6">${renderRich(s.achievements)}</div>
       </div>
       <button onclick="closeModal();openSessionDetail(${s.id})" title="باز کردن جلسه"
@@ -10308,7 +10331,7 @@ async function openTopics(studentId, displayName) {
         ? '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>'
         : topics.map(t => `
           <div class="topic-item">
-            <div class="topic-item-date">${t.date_jalali}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
+            <div class="topic-item-date">${DateService.disp(t.date_jalali)}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
             <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, '${escapeHtml(displayName)}')">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
             <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, '${escapeHtml(displayName)}')">${renderRich(excerpt(t.text, 90))}</div>
             <div style="display:flex;gap:6px;margin-top:4px">
@@ -10398,7 +10421,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
   const topicAttachments = t.attachments || [];
   openModal(`📌 ${escapeHtml(t.title) || '(بدون عنوان)'}`, `
     <div class="detail-section">
-      <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${t.date_jalali}</span></div>
+      <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${DateService.disp(t.date_jalali)}</span></div>
     </div>
     <div class="detail-section">
       <h3>توضیحات کامل</h3>
@@ -10557,8 +10580,8 @@ async function openKeyEvents(studentId, displayName) {
       return '<div class="key-event-item" style="flex-direction:column;gap:6px">' +
         '<div style="display:flex;align-items:flex-start;gap:8px">' +
           '<div style="flex:1">' +
-            '<div class="key-event-date">' + e.date_jalali +
-              (hasRemind ? ' · <span style="color:' + (remindPast?'var(--red)':'var(--amber)') + ';font-size:10px">⏰ یادآوری: ' + e.remind_date + (remindPast?' (گذشته)':'') + (e.repeat_type&&e.repeat_type!=='none'?' 🔁':'') + '</span>' : '') +
+            '<div class="key-event-date">' + DateService.disp(e.date_jalali) +
+              (hasRemind ? ' · <span style="color:' + (remindPast?'var(--red)':'var(--amber)') + ';font-size:10px">⏰ یادآوری: ' + DateService.disp(e.remind_date) + (remindPast?' (گذشته)':'') + (e.repeat_type&&e.repeat_type!=='none'?' 🔁':'') + '</span>' : '') +
             '</div>' +
             '<div class="key-event-text">' + renderRich(e.text) + '</div>' +
           '</div>' +
@@ -10962,7 +10985,7 @@ async function renderInstructions(instrSearch) {
       const isKey = item.importance === 'key';
       const stickerRow = (item.stickers||[]).length ? `<span style="font-size:15px;letter-spacing:2px">${(item.stickers||[]).join('')}</span>` : '';
       const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120);
-      const dateStr = item.date_jalali ? `<span style="font-size:11px;color:var(--text3);margin-right:10px">📅 ${item.date_jalali}</span>` : '';
+      const dateStr = item.date_jalali ? `<span style="font-size:11px;color:var(--text3);margin-right:10px">📅 ${DateService.disp(item.date_jalali)}</span>` : '';
       const updatedStr = item.updated_at ? `<span style="font-size:10px;color:var(--text3)">ویرایش: ${item.updated_at.slice(0,10)}</span>` : '';
       html += `<div style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-right:3px solid ${color};border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .15s;position:relative"
           onclick="openNoteDetail(${item.id})"
@@ -11036,7 +11059,7 @@ function openNoteDetail(id) {
       style="font-size:16px;width:32px;height:32px;border-radius:7px;border:1px solid ${stickers.includes(s)?'var(--accent)':'var(--border)'};background:${stickers.includes(s)?'rgba(124,106,247,.15)':'var(--bg3)'};cursor:pointer;transition:all .15s">${s}</button>`).join('');
 
   const isKey = node.importance === 'key';
-  const dateStr = node.date_jalali ? `<div class="detail-row"><span class="detail-key">📅 تاریخ</span><span class="detail-val">${node.date_jalali}</span></div>` : '';
+  const dateStr = node.date_jalali ? `<div class="detail-row"><span class="detail-key">📅 تاریخ</span><span class="detail-val">${DateService.disp(node.date_jalali)}</span></div>` : '';
   const impStr = `<div class="detail-row"><span class="detail-key">اهمیت</span><span class="detail-val">${isKey?'<span style="color:var(--amber);font-weight:600">⭐ مهم و کلیدی</span>':'معمولی'}</span></div>`;
 
   openModal(`${node.icon||'📝'} ${escapeHtml(node.title)}`, `
@@ -12961,7 +12984,7 @@ function _todoDateBadge(t, todayKey, tomorrowKey, isOverdue) {
     const bgColor = isToday ? 'rgba(124,106,247,.18)' : isTomorrow ? 'rgba(62,207,142,.18)' : isOverdue ? 'rgba(239,68,68,.18)' : 'rgba(245,158,11,.18)';
     const fgColor = isToday ? '#9d8fff' : isTomorrow ? '#3ecf8e' : isOverdue ? '#f87171' : '#fbbf24';
     out += '<span style="font-weight:700;font-size:11px;padding:2px 9px;border-radius:6px;background:' + bgColor + ';color:' + fgColor + ';letter-spacing:.2px">' + dayLabel + '</span>';
-    out += '<span style="color:#9399ab;font-size:11px"> 📅 ' + t.date_jalali + '</span>';
+    out += '<span style="color:#9399ab;font-size:11px"> 📅 ' + DateService.disp(t.date_jalali) + '</span>';
   }
   if (t.time) {
     out += '<span style="color:#9399ab;font-size:11px;font-weight:600"> ⏰ ' + t.time + '</span>';
@@ -14249,7 +14272,7 @@ async function openTodoArchive() {
         '</div>' +
         '<div style="font-size:10px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap">' +
           (doneDate ? '<span>✓ ' + doneDate + '</span>' : '') +
-          (t.date_jalali ? '<span>📅 ' + t.date_jalali + '</span>' : '') +
+          (t.date_jalali ? '<span>📅 ' + DateService.disp(t.date_jalali) + '</span>' : '') +
           (t.time ? '<span>⏰ ' + t.time + '</span>' : '') +
         '</div>' +
       '</div>' +
@@ -14582,7 +14605,7 @@ function renderStaffRolesPanel(staffId) {
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px">
         <div style="flex:1">
           <div style="font-size:13px;font-weight:600">${escapeHtml(e.role_label)}</div>
-          <div style="font-size:11px;color:var(--text3)">${e.date_jalali} • ${e.time} • تعداد: ${fa(e.count)}</div>
+          <div style="font-size:11px;color:var(--text3)">${DateService.disp(e.date_jalali)} • ${e.time} • تعداد: ${fa(e.count)}</div>
           ${e.note?`<div style="font-size:11px;color:var(--text2)">${escapeHtml(e.note)}</div>`:''}
         </div>
         <div style="font-size:12px;font-weight:600;color:var(--accent2)">${fa(e.count * (e.rate||0))} ت</div>
@@ -16458,8 +16481,7 @@ function openAddGoal() {
         <textarea class="form-textarea" id="goal-why" rows="2" placeholder="انگیزه اصلی‌ات را بنویس..."></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">📅 Deadline (شمسی)</label>
-        <input class="form-input jdate" id="goal-deadline" placeholder="${formatJalali(...todayJalali())}">
+        ${calendarDateFieldHtml('goal-deadline', '', '📅 Deadline')}
       </div>
       <div class="form-group">
         <label class="form-label">سختی</label>
@@ -16492,7 +16514,7 @@ function saveNewGoal() {
     category: document.getElementById('goal-category')?.value || '',
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
-    deadline: document.getElementById('goal-deadline')?.value || '',
+    deadline: readCalendarDateField('goal-deadline') || '',
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
     status: 'active',
     progress: 0,
@@ -16548,7 +16570,7 @@ function openGoalDetail(id) {
         <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز مرحله‌ای اضافه نشده</div>'}</div>
       </div>
 
-      ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${g.deadline}</strong></div>` : ''}
+      ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${DateService.disp(g.deadline)}</strong></div>` : ''}
 
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -16684,8 +16706,7 @@ function openEditGoal(id) {
         <input class="form-input" id="eg-category" value="${g.category||''}">
       </div>
       <div class="form-group">
-        <label class="form-label">📅 Deadline</label>
-        <input class="form-input jdate" id="eg-deadline" value="${g.deadline||''}">
+        ${calendarDateFieldHtml('eg-deadline', g.deadline||'', '📅 Deadline')}
       </div>
       <div class="form-group">
         <label class="form-label">وضعیت</label>
@@ -16712,7 +16733,7 @@ function saveEditGoal(id) {
   g.title = document.getElementById('eg-title')?.value || g.title;
   g.icon = document.getElementById('eg-icon')?.value || g.icon;
   g.category = document.getElementById('eg-category')?.value || '';
-  g.deadline = document.getElementById('eg-deadline')?.value || '';
+  g.deadline = readCalendarDateField('eg-deadline') || '';
   g.status = document.getElementById('eg-status')?.value || 'active';
   g.why = document.getElementById('eg-why')?.value || '';
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
