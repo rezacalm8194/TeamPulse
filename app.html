@@ -1663,6 +1663,37 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 /* Fix 100vh on mobile browsers with address bar */
 .app { height: 100dvh; height: var(--app-vh, 100dvh); min-height: 100vh; }
 
+/* ── Students page: filter chips + mobile-first card list ──────────────── */
+.chip-bar{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:2px 0 12px}
+.chip-bar::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;padding:6px 13px;border-radius:20px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-size:11px;font-weight:500;white-space:nowrap;transition:all .15s;font-family:var(--font)}
+.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.mstu-list{display:none}
+.mstu-card{padding:12px 14px;border-bottom:8px solid var(--bg)}
+.mstu-card:last-child{border-bottom:none}
+.mstu-top{display:flex;align-items:center;gap:10px}
+.mstu-name-wrap{flex:1;min-width:0}
+.mstu-name{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mstu-family{font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mstu-mid{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:9px 0 7px}
+.mstu-pkgs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;min-height:20px}
+.mstu-actions{display:flex;gap:8px}
+.mstu-actions .btn{flex:1;justify-content:center}
+@media(max-width:768px){
+  .stu-table-wrap{display:none}
+  .mstu-list{display:block}
+  .table-header.stu-header{flex-wrap:wrap}
+  .table-header.stu-header .table-search{width:100%;max-width:none!important;padding:9px 12px}
+  .table-header.stu-header .table-search input{width:100%}
+  /* Hero-style stats: debt first (biggest), income second, count/sessions compact */
+  .stu-stats-row{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"debt debt" "income count" "income sessions";gap:8px}
+  .stu-stats-row .stat-card:nth-child(1){grid-area:count;padding:9px 10px}
+  .stu-stats-row .stat-card:nth-child(2){grid-area:income;display:flex;flex-direction:column;justify-content:center}
+  .stu-stats-row .stat-card:nth-child(3){grid-area:debt;padding:16px 14px}
+  .stu-stats-row .stat-card:nth-child(3) .stat-value{font-size:22px!important}
+  .stu-stats-row .stat-card:nth-child(4){grid-area:sessions;padding:9px 10px}
+  .stu-stats-row .stat-card:nth-child(1) .stat-value,.stu-stats-row .stat-card:nth-child(4) .stat-value{font-size:14px!important}
+}
 
   </style>
 <link rel="apple-touch-icon" href="/logo.png">
@@ -3593,25 +3624,41 @@ async function renderPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // STUDENTS PAGE
 // ════════════════════════════════════════════════════════════════════════════
+let stuChip = 'all';
+function setStuChip(val) {
+  stuChip = val;
+  const cur = document.querySelector('#content .table-search input');
+  renderStudents(cur ? cur.value : '');
+}
+
 async function renderStudents(search = '') {
   updateTopbarActions(`
-    <button class="btn btn-ghost" onclick="reloadAllData()">🔄 به‌روز</button>
-    <button class="btn btn-primary" onclick="openStudentModal()">+ افزودن ${META.entitySingular || 'شاگرد'}</button>
+    <button class="btn btn-ghost" onclick="reloadAllData()"><span class="btn-icon">🔄</span><span> به‌روز</span></button>
+    <button class="btn btn-primary" onclick="openStudentModal()"><span class="btn-icon">+</span><span> افزودن ${META.entitySingular || 'شاگرد'}</span></button>
   `);
 
   allStudents = await window.api.students.getAll();
   FAMILIES = await window.api.families.getAll();
   document.getElementById('student-badge').textContent = fa(allStudents.length);
 
-  const filtered = search
+  let filtered = search
     ? allStudents.filter(s => (s.name + s.lname).includes(search))
     : allStudents;
+
+  if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
+  else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0);
+  else if (stuChip && stuChip !== 'all') filtered = filtered.filter(s => (s.packages || []).some(p => p.type_label === stuChip));
 
   const totalDebt = allStudents.reduce((a, s) => a + Math.max(0, s.balance), 0);
   const totalPaid = allStudents.reduce((a, s) => a + s.totalPaid, 0);
 
+  // Top package types present (for filter chips)
+  const typeCounts = {};
+  allStudents.forEach(s => (s.packages || []).forEach(p => { typeCounts[p.type_label] = (typeCounts[p.type_label] || 0) + 1; }));
+  const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
+
   let html = `
-  <div class="stats-row">
+  <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
       <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
       <div class="stat-value">${fa(allStudents.length)}</div>
@@ -3635,13 +3682,23 @@ async function renderStudents(search = '') {
   </div>
 
   <div class="table-card">
-    <div class="table-header">
+    <div class="table-header stu-header">
       <span class="title">لیست ${META.entityPlural || 'شاگردان'}</span>
       <div class="table-search">
         <span style="color:var(--text3)">🔍</span>
         <input placeholder="جستجو..." oninput="renderStudents(this.value)" value="${search}">
       </div>
     </div>
+    <div style="padding:10px 14px 0">
+      <div class="chip-bar">
+        <button class="chip ${stuChip==='all'?'active':''}" onclick="setStuChip('all')">همه</button>
+        <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
+        <button class="chip ${stuChip==='paid'?'active':''}" onclick="setStuChip('paid')">🟢 تسویه</button>
+        ${topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip('${escapeHtml(t)}')">${t}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="stu-table-wrap">
     <table>
       <thead>
         <tr>
@@ -3688,6 +3745,55 @@ async function renderStudents(search = '') {
   }
 
   html += `</tbody></table></div>`;
+
+  // ── Compact mobile card list (shown only on narrow screens; see CSS) ──
+  html += `<div class="mstu-list">`;
+  if (filtered.length === 0) {
+    html += `<div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div>`;
+  } else {
+    filtered.forEach((s, i) => {
+      const fam = FAMILIES.find(f => f.id === s.family_id);
+      const pkgs = s.packages || [];
+      const visiblePkgs = pkgs.slice(0, 2);
+      const extra = pkgs.length - visiblePkgs.length;
+      const menuId = `stu-menu-${s.id}`;
+      html += `
+      <div class="mstu-card">
+        <div class="mstu-top">
+          ${avatar(s.name, i)}
+          <div class="mstu-name-wrap">
+            <div class="mstu-name">${s.name} ${s.lname}</div>
+            ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${fam.name}</div>` : ''}
+          </div>
+          <div class="row-menu">
+            <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
+            <div class="row-menu-panel" id="${menuId}">
+              <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+              <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید جدید</div>
+              <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
+              <div class="row-menu-divider"></div>
+              <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
+            </div>
+          </div>
+        </div>
+        <div class="mstu-mid">
+          ${statusHtml(s.balance)}
+          ${balanceHtml(s.balance)}
+        </div>
+        <div class="mstu-pkgs">
+          ${visiblePkgs.map(pkgTag).join('')}
+          ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
+          ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
+        </div>
+        <div class="mstu-actions">
+          <button class="btn btn-ghost btn-sm" onclick="openAddPayment(${s.id})">💳 پرداخت جدید</button>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `</div>`; // .table-card
   setContent(html);
 
   // Restore focus to search box (it's in topbar, so look there first)
