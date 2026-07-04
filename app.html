@@ -3332,6 +3332,7 @@ function _getInitialPage() {
 }
 let currentPage = _getInitialPage();
 let _goalsViewMode = 'full'; // 'full' | 'compact'
+let _habitsViewMode = 'full'; // 'full' | 'compact'
 // Apply the correct sidebar/bottom-nav highlight IMMEDIATELY, synchronously,
 // right as the script parses — before any auth/network/init() work runs.
 // This is what prevents the "flash of wrong menu item" on refresh: we never
@@ -16411,6 +16412,19 @@ function renderGoals() {
     </div>`);
 }
 
+function _toggleHabitsView() {
+  _habitsViewMode = _habitsViewMode === 'compact' ? 'full' : 'compact';
+  const compact = document.getElementById('habits-compact-view');
+  const full = document.getElementById('habits-full-view');
+  const icon = document.getElementById('habits-view-icon');
+  const label = document.getElementById('habits-view-label');
+  if (!compact || !full) return;
+  compact.style.display = _habitsViewMode === 'compact' ? 'block' : 'none';
+  full.style.display = _habitsViewMode === 'compact' ? 'none' : 'block';
+  if (icon) icon.textContent = _habitsViewMode === 'compact' ? '📋' : '🗂';
+  if (label) label.textContent = _habitsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
+}
+
 function _toggleGoalsView() {
   _goalsViewMode = _goalsViewMode === 'compact' ? 'full' : 'compact';
   const compact = document.getElementById('goals-compact-view');
@@ -17042,9 +17056,62 @@ function renderHabits() {
       ${filterHTML}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:15px;font-weight:700">لیست عادت‌ها</h2>
-        <span style="font-size:12px;color:var(--text3)">${fa(displayHabits.length)} عادت</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;color:var(--text3)">${fa(displayHabits.length)} عادت</span>
+          <button id="habits-view-toggle" onclick="_toggleHabitsView()" title="تغییر نما"
+            style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
+            <span id="habits-view-icon">${_habitsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="habits-view-label">${_habitsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
+          </button>
+        </div>
       </div>
+      <div id="habits-compact-view" style="display:${_habitsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+          ${displayHabits.map(h => {
+            const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
+            const streak = getStreak(h.id);
+            const monthSuccess = getMonthSuccess(h.id);
+            const color = h.color || 'var(--amber)';
+            const nowHHMM2 = (() => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })();
+            const timeNotYetDue = !!h.time && !doneToday && nowHHMM2 < h.time;
+            let statusIcon, statusColor;
+            if (doneToday) { statusIcon = '✅'; statusColor = 'var(--green)'; }
+            else if (timeNotYetDue) { statusIcon = '⏳'; statusColor = 'var(--text3)'; }
+            else { statusIcon = '⭕'; statusColor = 'var(--text3)'; }
+            const borderColor2 = doneToday ? 'var(--green)' : 'var(--border)';
+            const cardGlow2 = doneToday ? '0 0 0 1px var(--green),0 4px 18px rgba(62,207,142,.15)' : 'none';
+            return `<div onclick="openHabitDetail(${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
+              onmouseenter="this.style.borderColor='rgba(62,207,142,.5)'" onmouseleave="this.style.borderColor='${borderColor2}'">
+              <div style="display:flex;align-items:flex-start;gap:10px">
+                <button onclick="event.stopPropagation();toggleHabitToday(${h.id})"
+                  style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;
+                  background:${doneToday?'var(--green)':'var(--bg3)'};
+                  border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
+                  font-size:16px;color:white;display:flex;align-items:center;justify-content:center;transition:all .2s">
+                  ${doneToday ? '✓' : ''}
+                </button>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escapeHtml(h.title)} ${h.icon||'🔥'}</div>
+                  <div style="font-size:11px;font-weight:600;color:${statusColor};margin-top:2px">${statusIcon} ${doneToday?'انجام شد':timeNotYetDue?`هنوز نرسیده (${h.time})`:'انجام نشده'}</div>
+                </div>
+                <div style="text-align:center;flex-shrink:0">
+                  <div style="font-size:18px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
+                  <div style="font-size:9px;color:var(--text3)">استریک</div>
+                </div>
+              </div>
+              <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:${monthSuccess}%;background:var(--green);border-radius:3px;transition:width .3s"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:10px;color:var(--text3)">موفقیت این ماه</span>
+                <span style="font-size:12px;font-weight:700;color:var(--green)">${fa(monthSuccess)}٪</span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div id="habits-full-view" style="display:${_habitsViewMode === 'compact' ? 'none' : 'block'}">
       ${html}
+      </div>
     </div>`);
 }
 
