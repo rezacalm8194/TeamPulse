@@ -3331,6 +3331,7 @@ function _getInitialPage() {
   return 'students';
 }
 let currentPage = _getInitialPage();
+let _goalsViewMode = 'full'; // 'full' | 'compact'
 // Apply the correct sidebar/bottom-nav highlight IMMEDIATELY, synchronously,
 // right as the script parses — before any auth/network/init() work runs.
 // This is what prevents the "flash of wrong menu item" on refresh: we never
@@ -16360,52 +16361,52 @@ function renderGoals() {
           <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
           <button id="goals-view-toggle" onclick="_toggleGoalsView()" title="تغییر نما"
             style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
-            <span id="goals-view-icon">🗂</span><span id="goals-view-label">یک نگاه</span>
+            <span id="goals-view-icon">${_goalsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="goals-view-label">${_goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
           </button>
         </div>
       </div>
-      <div id="goals-compact-view" style="display:none;margin-bottom:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      <div id="goals-compact-view" style="display:${_goalsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
           ${goals.map(g => {
             const sc = statusColors[g.status || 'active'] || statusColors.active;
             const progress = g.progress || 0;
             const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
             const daysLeft = _goalDaysLeft(g.deadline);
-            return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;transition:border-color .15s"
+            return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:8px"
               onmouseenter="this.style.borderColor='rgba(62,207,142,.5)'" onmouseleave="this.style.borderColor='var(--border)'">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                <span style="font-size:22px">${g.icon||'🎯'}</span>
+              <div style="display:flex;align-items:flex-start;gap:8px">
+                <span style="font-size:24px;flex-shrink:0;line-height:1.2">${g.icon||'🎯'}</span>
                 <div style="flex:1;min-width:0">
-                  <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.title}</div>
-                  <span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
+                  <div style="font-size:12px;font-weight:700;color:var(--text);line-height:1.4;word-break:break-word">${g.title}</div>
+                  <span style="display:inline-block;margin-top:4px;font-size:10px;padding:2px 8px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
                 </div>
-                <div style="font-size:16px;font-weight:800;color:${progressColor};flex-shrink:0">${fa(progress)}٪</div>
+                <div style="font-size:15px;font-weight:800;color:${progressColor};flex-shrink:0;line-height:1.2">${fa(progress)}٪</div>
               </div>
               <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
                 <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:3px"></div>
               </div>
-              ${g.deadline ? `<div style="font-size:10px;color:${daysLeft!==null&&daysLeft<0?'var(--red)':daysLeft!==null&&daysLeft<=7?'var(--amber)':'var(--text3)'};margin-top:6px">⏳ ${_formatDaysLeft(daysLeft, fa)}</div>` : ''}
+              ${g.deadline ? `<div style="font-size:10px;color:${daysLeft!==null&&daysLeft<0?'var(--red)':daysLeft!==null&&daysLeft<=7?'var(--amber)':'var(--text3)'}">⏳ ${_formatDaysLeft(daysLeft, fa)}</div>` : ''}
             </div>`;
           }).join('')}
         </div>
       </div>
-      <div id="goals-full-view">
+      <div id="goals-full-view" style="display:${_goalsViewMode === 'compact' ? 'none' : 'block'}">
       ${html}
       </div>
     </div>`);
 }
 
 function _toggleGoalsView() {
+  _goalsViewMode = _goalsViewMode === 'compact' ? 'full' : 'compact';
   const compact = document.getElementById('goals-compact-view');
   const full = document.getElementById('goals-full-view');
   const icon = document.getElementById('goals-view-icon');
   const label = document.getElementById('goals-view-label');
   if (!compact || !full) return;
-  const isCompact = compact.style.display !== 'none';
-  compact.style.display = isCompact ? 'none' : 'block';
-  full.style.display = isCompact ? 'block' : 'none';
-  if (icon) icon.textContent = isCompact ? '🗂' : '📋';
-  if (label) label.textContent = isCompact ? 'یک نگاه' : 'نمای کامل';
+  compact.style.display = _goalsViewMode === 'compact' ? 'block' : 'none';
+  full.style.display = _goalsViewMode === 'compact' ? 'none' : 'block';
+  if (icon) icon.textContent = _goalsViewMode === 'compact' ? '📋' : '🗂';
+  if (label) label.textContent = _goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
 }
 
 function openAddGoal() {
