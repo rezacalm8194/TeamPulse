@@ -1664,26 +1664,38 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 .app { height: 100dvh; height: var(--app-vh, 100dvh); min-height: 100vh; }
 
 /* ── Students page: filter chips + mobile-first card list ──────────────── */
-.chip-bar{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:2px 0 12px}
+.chip-bar{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:2px 0 10px}
 .chip-bar::-webkit-scrollbar{display:none}
 .chip{flex-shrink:0;padding:6px 13px;border-radius:20px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-size:11px;font-weight:500;white-space:nowrap;transition:all .15s;font-family:var(--font)}
 .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip-more{width:28px;padding:6px 0;text-align:center;font-weight:700}
 .mstu-list{display:none}
-.mstu-card{padding:12px 14px;border-bottom:8px solid var(--bg)}
-.mstu-card:last-child{border-bottom:none}
-.mstu-top{display:flex;align-items:center;gap:10px}
+.mstu-card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:12px 14px;
+  margin-bottom:10px;
+  box-shadow:0 2px 10px rgba(0,0,0,.12);
+}
+.mstu-top{display:flex;align-items:center;gap:9px}
+.mstu-top .avatar{width:40px;height:40px;font-size:15px}
 .mstu-name-wrap{flex:1;min-width:0}
-.mstu-name{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mstu-family{font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mstu-mid{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:9px 0 7px}
-.mstu-pkgs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;min-height:20px}
-.mstu-actions{display:flex;gap:8px}
+.mstu-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mstu-family{font-size:10.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mstu-status-line{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin:9px 0 8px}
+.mstu-status-line .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.mstu-status-line .amt{margin-right:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.mstu-pkgs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:11px;min-height:20px}
+.mstu-pkgs .tag{filter:saturate(.5)}
+.mstu-actions{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
 .mstu-actions .btn{flex:1;justify-content:center}
+.mstu-actions .btn-details{flex:0 0 auto;padding-inline:14px}
 @media(max-width:768px){
   .stu-table-wrap{display:none}
-  .mstu-list{display:block}
+  .mstu-list{display:block;padding-top:2px}
   .table-header.stu-header{flex-wrap:wrap}
-  .table-header.stu-header .table-search{width:100%;max-width:none!important;padding:9px 12px}
+  .table-header.stu-header .table-search{width:100%;max-width:none!important;padding:6px 12px 10px}
   .table-header.stu-header .table-search input{width:100%}
   /* Hero-style stats: debt first (biggest), income second, count/sessions compact */
   .stu-stats-row{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"debt debt" "income count" "income sessions";gap:8px}
@@ -3360,6 +3372,17 @@ function balanceHtml(balance, isSupplier) {
   if (balance < 0) return `<span class="amount balance-credit">${fmt(-balance)} ت طلب</span>`;
   return `<span class="amount amount-paid">تسویه</span>`;
 }
+function mstuStatusLine(balance) {
+  let color, label, amt = '';
+  if (balance > 0)      { color = 'var(--red)';   label = 'بدهکار'; amt = fmt(balance) + ' تومان'; }
+  else if (balance < 0) { color = 'var(--blue)';  label = 'طلبکار'; amt = fmt(-balance) + ' تومان'; }
+  else                  { color = 'var(--green)'; label = 'تسویه'; }
+  return `<div class="mstu-status-line" style="color:${color}">
+    <span class="dot" style="background:${color}"></span>
+    <span>${label}</span>
+    ${amt ? `<span class="amt">${amt}</span>` : ''}
+  </div>`;
+}
 function statusHtml(balance, isSupplier) {
   if (isSupplier) {
     if (balance > 0) return `<span class="status status-debt">🏭 ما بدهکاریم</span>`;
@@ -3625,8 +3648,14 @@ async function renderPage() {
 // STUDENTS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 let stuChip = 'all';
+let stuChipsExpanded = false;
 function setStuChip(val) {
   stuChip = val;
+  const cur = document.querySelector('#content .table-search input');
+  renderStudents(cur ? cur.value : '');
+}
+function toggleStuChipsExpanded() {
+  stuChipsExpanded = !stuChipsExpanded;
   const cur = document.querySelector('#content .table-search input');
   renderStudents(cur ? cur.value : '');
 }
@@ -3694,7 +3723,11 @@ async function renderStudents(search = '') {
         <button class="chip ${stuChip==='all'?'active':''}" onclick="setStuChip('all')">همه</button>
         <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
         <button class="chip ${stuChip==='paid'?'active':''}" onclick="setStuChip('paid')">🟢 تسویه</button>
-        ${topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip('${escapeHtml(t)}')">${t}</button>`).join('')}
+        ${topTypes.length ? (stuChipsExpanded
+          ? topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip('${escapeHtml(t)}')">${t}</button>`).join('')
+            + `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="بستن فیلترهای بیشتر">−</button>`
+          : `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="فیلترهای بیشتر">+</button>`
+        ) : ''}
       </div>
     </div>
 
@@ -3776,17 +3809,15 @@ async function renderStudents(search = '') {
             </div>
           </div>
         </div>
-        <div class="mstu-mid">
-          ${statusHtml(s.balance)}
-          ${balanceHtml(s.balance)}
-        </div>
+        ${mstuStatusLine(s.balance)}
         <div class="mstu-pkgs">
           ${visiblePkgs.map(pkgTag).join('')}
           ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
           ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
         </div>
         <div class="mstu-actions">
-          <button class="btn btn-ghost btn-sm" onclick="openAddPayment(${s.id})">💳 پرداخت جدید</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddPayment(${s.id})">💳 پرداخت جدید</button>
+          <button class="btn btn-ghost btn-sm btn-details" onclick="openStudentDetail(${s.id})">جزئیات</button>
         </div>
       </div>`;
     });
