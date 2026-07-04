@@ -5198,13 +5198,31 @@ async function addEditFollowup(sessionId) {
   const text = input?.value.trim();
   if (!text) return;
   await window.api.sessions.addFollowup({ session_id: sessionId, text });
+  input.value = '';
   showToast('اقدام اضافه شد ✓', 'success');
-  await openEditSession(sessionId);
+  await _refreshEditFollowupList(sessionId);
 }
 
 async function deleteEditFollowup(sessionId, itemId) {
   await window.api.sessions.deleteFollowup({ session_id: sessionId, item_id: itemId });
-  await openEditSession(sessionId);
+  await _refreshEditFollowupList(sessionId);
+}
+
+async function _refreshEditFollowupList(sessionId) {
+  const groups = await window.api.sessions.getAll();
+  let session = null;
+  for (const g of groups) {
+    const found = g.sessions.find(s => s.id === sessionId);
+    if (found) { session = found; break; }
+  }
+  const container = document.getElementById('ses-edit-followup-list');
+  if (!session || !container) return;
+  container.innerHTML = (session.followups || []).map((f, i) => `
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+      <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
+      <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
+      <button onclick="deleteEditFollowup(${sessionId}, ${f.id})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 2px">✕</button>
+    </div>`).join('');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
