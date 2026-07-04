@@ -15968,11 +15968,22 @@ if (document.readyState === 'loading') {
   _initResponsiveTableObserver();
 }
 
-_initAuth().then(authed => {
-  if (authed) {
-    updateAccountDisplay();
-  }
-});
+function _startApp() {
+  _initAuth().then(authed => {
+    if (authed) {
+      updateAccountDisplay();
+    }
+  });
+}
+// چون فایل چند تگ <script> جدا داره (renderHabits و بقیه‌ی توابع صفحات آخر فایل
+// در یک <script> بعدی تعریف می‌شن)، باید صبر کنیم همه‌ی اسکریپت‌ها اجرا بشن،
+// وگرنه اگه _initAuth سریع resolve بشه و صفحه‌ی ذخیره‌شده «عادت‌ها» باشه،
+// renderHabits هنوز تعریف نشده و خطای ReferenceError می‌ده.
+if (document.readyState === 'complete') {
+  _startApp();
+} else {
+  window.addEventListener('load', _startApp, { once: true });
+}
 
 // ── MagicBento effect for .stat-card (global, event-delegated) ──────────────
 (function() {
