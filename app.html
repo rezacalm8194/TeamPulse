@@ -5319,55 +5319,54 @@ async function openAddSessionGeneral(presetStudentId = null) {
   const title = `ثبت ${META.sessionSingular || 'جلسه'}${initStudent ? `<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${initStudent.name} ${initStudent.lname}</div>` : '<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px"></div>'}`;
 
   openModal(title, `
-    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
-    <div id="ses-presummary-container">${preSummary}</div>
-
-    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
-    <div class="ses-meta-bar">
-      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
-        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
-        <span class="ses-meta-summary" id="ses-meta-summary"></span>
-      </button>
-      <div class="ses-meta-body" id="ses-meta-body">
-        <div class="meta-row" id="meta-student-static-row" style="${presetStudentId ? '' : 'display:none'}">
-          <span class="meta-icon">👤</span>
-          <span class="meta-student-static" id="ses-meta-student-static">${initStudent ? escapeHtml(initStudent.name + ' ' + initStudent.lname) : ''}</span>
-          <button type="button" class="meta-change-link" onclick="_toggleSesStudentEdit()">✏️ تغییر</button>
-        </div>
-        <div class="meta-row" id="meta-student-select-row" style="${presetStudentId ? 'display:none' : 'display:flex'}">
-          <span class="meta-icon">👤</span>
-          <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">📅</span>
-          <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">🏷️</span>
-          <div class="seg-sm" id="f-ses-importance-seg">
-            <button type="button" data-val="normal" class="active" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
-            <button type="button" data-val="key" onclick="_setImportanceSeg('key')">⭐ مهم</button>
-          </div>
-          <input type="hidden" id="f-ses-importance" value="normal">
-        </div>
-      </div>
-    </div>
-
     <div class="form-grid">
 
-      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <label class="form-label">عنوان ${META.sessionSingular||'جلسه'}</label>
-        <input class="form-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="font-size:15px;font-weight:600;padding:12px 14px">
+      <!-- ── عنوان: اولین و مهم‌ترین چیزی که دیده می‌شود ─────────────────── -->
+      <div class="form-group full" style="margin-bottom:2px">
+        <input class="form-input" id="f-ses-title" placeholder="عنوان ${META.sessionSingular||'جلسه'} — مثلاً: بررسی اهداف سه‌ماهه" style="font-size:16px;font-weight:700;padding:12px 14px">
       </div>
 
-      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <label class="form-label">توضیحات جلسه</label>
+      <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context فشرده، نه محتوای اصلی) ── -->
+      <div class="form-group full" style="margin-bottom:0">
+        <div class="ses-meta-bar" style="margin-bottom:0">
+          <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
+            <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
+            <span class="ses-meta-summary" id="ses-meta-summary"></span>
+          </button>
+          <div class="ses-meta-body" id="ses-meta-body">
+            <div class="meta-row" id="meta-student-static-row" style="${presetStudentId ? '' : 'display:none'}">
+              <span class="meta-icon">👤</span>
+              <span class="meta-student-static" id="ses-meta-student-static">${initStudent ? escapeHtml(initStudent.name + ' ' + initStudent.lname) : ''}</span>
+              <button type="button" class="meta-change-link" onclick="_toggleSesStudentEdit()">✏️ تغییر</button>
+            </div>
+            <div class="meta-row" id="meta-student-select-row" style="${presetStudentId ? 'display:none' : 'display:flex'}">
+              <span class="meta-icon">👤</span>
+              <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
+            </div>
+            <div class="meta-row">
+              <span class="meta-icon">📅</span>
+              <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+            </div>
+            <div class="meta-row">
+              <span class="meta-icon">🏷️</span>
+              <div class="seg-sm" id="f-ses-importance-seg">
+                <button type="button" data-val="normal" class="active" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
+                <button type="button" data-val="key" onclick="_setImportanceSeg('key')">⭐ مهم</button>
+              </div>
+              <input type="hidden" id="f-ses-importance" value="normal">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── محتوای جلسه: بلافاصله بعد از عنوان، بدون فاصله زیاد ─────────── -->
+      <div class="form-group full" style="margin-top:2px">
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
       </div>
+
+      <!-- ── خلاصه قبل از جلسه (Accordion، اختیاری و کم‌اهمیت‌تر از ادیتور) ── -->
+      <div class="form-group full" id="ses-presummary-container" style="margin-top:0">${preSummary}</div>
 
       <div class="form-group full">
         <button type="button" onclick="_toggleExtraNote()"
@@ -5581,50 +5580,49 @@ async function openEditSession(sessionId) {
   const preSummary = await _buildPreSessionSummary(session.student_id, sessionId);
 
   openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${student.name} ${student.lname}</div>`, `
-    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
-    <div id="ses-presummary-container">${preSummary}</div>
-
-    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
-    <div class="ses-meta-bar">
-      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
-        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
-        <span class="ses-meta-summary" id="ses-meta-summary"></span>
-      </button>
-      <div class="ses-meta-body" id="ses-meta-body">
-        <div class="meta-row" id="meta-student-static-row">
-          <span class="meta-icon">👤</span>
-          <span class="meta-student-static" id="ses-meta-student-static">${escapeHtml(student.name + ' ' + student.lname)}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">📅</span>
-          <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">🏷️</span>
-          <div class="seg-sm" id="f-ses-importance-seg">
-            <button type="button" data-val="normal" class="${session.importance!=='key'?'active':''}" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
-            <button type="button" data-val="key" class="${session.importance==='key'?'active':''}" onclick="_setImportanceSeg('key')">⭐ مهم</button>
-          </div>
-          <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
-        </div>
-      </div>
-    </div>
-
     <div class="form-grid">
 
-      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <label class="form-label">عنوان</label>
-        <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="font-size:15px;font-weight:600;padding:12px 14px">
+      <!-- ── عنوان: اولین و مهم‌ترین چیزی که دیده می‌شود ─────────────────── -->
+      <div class="form-group full" style="margin-bottom:2px">
+        <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="font-size:16px;font-weight:700;padding:12px 14px">
       </div>
 
-      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <label class="form-label">توضیحات جلسه</label>
+      <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context فشرده، نه محتوای اصلی) ── -->
+      <div class="form-group full" style="margin-bottom:0">
+        <div class="ses-meta-bar" style="margin-bottom:0">
+          <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
+            <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
+            <span class="ses-meta-summary" id="ses-meta-summary"></span>
+          </button>
+          <div class="ses-meta-body" id="ses-meta-body">
+            <div class="meta-row" id="meta-student-static-row">
+              <span class="meta-icon">👤</span>
+              <span class="meta-student-static" id="ses-meta-student-static">${escapeHtml(student.name + ' ' + student.lname)}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-icon">📅</span>
+              <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+            </div>
+            <div class="meta-row">
+              <span class="meta-icon">🏷️</span>
+              <div class="seg-sm" id="f-ses-importance-seg">
+                <button type="button" data-val="normal" class="${session.importance!=='key'?'active':''}" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
+                <button type="button" data-val="key" class="${session.importance==='key'?'active':''}" onclick="_setImportanceSeg('key')">⭐ مهم</button>
+              </div>
+              <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── محتوای جلسه: بلافاصله بعد از عنوان، بدون فاصله زیاد ─────────── -->
+      <div class="form-group full" style="margin-top:2px">
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
+
+      <!-- ── خلاصه قبل از جلسه (Accordion، اختیاری و کم‌اهمیت‌تر از ادیتور) ── -->
+      <div class="form-group full" id="ses-presummary-container" style="margin-top:0">${preSummary}</div>
 
       <div class="form-group full">
         <button type="button" onclick="_toggleExtraNote()"
@@ -6801,14 +6799,15 @@ async function deletePkgType(id) {
 }
 
 function richToolbar(textareaId) {
-  // فقط پراستفاده‌ترین ابزارها همیشه نمایش داده می‌شوند؛ بقیه پشت دکمه «+» هستند (مثل Notion)
+  // فقط ۳ ابزار اصلی همیشه نمایش داده می‌شوند؛ بقیه پشت دکمه «+» هستند (مثل Notion)
   // «حالت تمرکز» چون خیلی زیاد استفاده می‌شود همیشه در دسترس است، نه پشت «+»
-  const mainStickers = ['⭐','📌','🔥','✅','⚠️'];
-  const moreStickers = ['❗','💡','👍','❤️','🎯'];
+  const mainStickers = ['⭐','✅','⚠️'];
+  const moreStickers = ['📌','🔥','❗','💡','👍','❤️','🎯'];
   const moreId = textareaId + '-more';
+  const mainLabels = { '⭐': 'مهم', '✅': 'انجام شد', '⚠️': 'هشدار' };
   return `
   <div class="rich-toolbar">
-    ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
+    ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" title="${mainLabels[s]||''}" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
     <span class="rt-sep"></span>
     <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
     <span class="rt-sep"></span>
@@ -16929,6 +16928,17 @@ document.addEventListener('focusin', (e) => {
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') {
     window._mobileKeyboardOpen = true;
+    // اسکرول خودکار فیلد فوکوس‌شده به بالای کیبورد، مخصوصاً برای ادیتور یادداشت
+    // که وسط مودال است و ممکن است زیر کیبورد گم شود.
+    const field = e.target;
+    const modalBody = field.closest('.modal-body');
+    if (modalBody) {
+      const delay = window.visualViewport ? 350 : 50; // فرصت برای انیمیشن باز شدن کیبورد در iOS/Android
+      setTimeout(() => {
+        if (document.activeElement !== field) return;
+        field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, delay);
+    }
   }
 });
 document.addEventListener('focusout', (e) => {
