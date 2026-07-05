@@ -11443,6 +11443,45 @@ async function _toggleNoteSticker(id, sticker, btn) {
 // Icons for picker
 const INSTR_ICONS = ['📝','📋','🔑','💼','🎯','💡','📌','🔒','🌐','📱','💰','🏆','⚙️','📊','🎨','📚','🔗','💻','🔔','📧','🗺️','🎪','🧩','🛡️','🚀','📁','⭐','🔥','🌟','✅'];
 
+/* ── Progressive-disclosure helpers for the note/folder form ── */
+function _toggleAdvanced(sectionId, btnId) {
+  const el = document.getElementById(sectionId);
+  const btn = document.getElementById(btnId);
+  if (!el) return;
+  const willShow = el.style.display === 'none';
+  el.style.display = willShow ? 'block' : 'none';
+  if (btn) btn.textContent = willShow
+    ? 'تنظیمات کمتر ▴'
+    : 'تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾';
+}
+function _setImportanceChip(inputId, value, btn) {
+  const input = document.getElementById(inputId);
+  if (input) input.value = value;
+  const group = btn.parentElement;
+  group.querySelectorAll('.imp-chip').forEach(function(b) {
+    b.style.background = 'var(--bg3)';
+    b.style.color = 'var(--text2)';
+    b.style.borderColor = 'var(--border2)';
+  });
+  btn.style.background = value === 'key' ? 'rgba(251,191,36,.15)' : 'rgba(124,106,247,.15)';
+  btn.style.color = value === 'key' ? 'var(--amber)' : 'var(--accent2)';
+  btn.style.borderColor = value === 'key' ? 'var(--amber)' : 'var(--accent)';
+}
+function _impChipsHtml(inputId, selected) {
+  const items = [['normal','○ معمولی'], ['key','⭐ مهم']];
+  return `<input type="hidden" id="${inputId}" value="${selected}">
+    <div style="display:flex;gap:6px">
+      ${items.map(function(pair) {
+        const val = pair[0], label = pair[1];
+        const active = val === selected;
+        const border = active ? (val==='key' ? 'var(--amber)' : 'var(--accent)') : 'var(--border2)';
+        const bg = active ? (val==='key' ? 'rgba(251,191,36,.15)' : 'rgba(124,106,247,.15)') : 'var(--bg3)';
+        const color = active ? (val==='key' ? 'var(--amber)' : 'var(--accent2)') : 'var(--text2)';
+        return `<button type="button" class="imp-chip" onclick="_setImportanceChip('${inputId}','${val}',this)" style="padding:7px 14px;border-radius:20px;border:1px solid ${border};background:${bg};color:${color};font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)">${label}</button>`;
+      }).join('')}
+    </div>`;
+}
+
 function openAddInstruction(parentId, type) {
   if (!type) type = 'note';
   const iconBtns = INSTR_ICONS.map(i =>
@@ -11457,48 +11496,66 @@ function openAddInstruction(parentId, type) {
   const modalTitle = type === 'category' ? '📁 پوشه جدید' : '📝 یادداشت جدید';
   const _pId = (parentId && parentId !== 'null') ? +parentId : null;
 
-  const noteFields = type === 'note' ? `
-    <div class="form-group">
-      <label class="form-label">📅 تاریخ (شمسی)</label>
-      <input class="form-input jdate" id="instr-date" value="${formatJalali(...todayJalali())}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">اهمیت</label>
-      <select class="form-select" id="instr-importance">
-        <option value="normal">معمولی</option>
-        <option value="key">⭐ مهم و کلیدی</option>
-      </select>
+  const iconColorBlock = `
+    <div class="form-group full">
+      <label class="form-label">آیکون</label>
+      <input type="hidden" id="instr-icon" value="${defaultIcon}">
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${iconBtns}</div>
     </div>
     <div class="form-group full">
-      <label class="form-label">📄 محتوا</label>
-      ${richToolbar('instr-content')}
-      <textarea class="form-textarea" id="instr-content" rows="5" placeholder="محتوای یادداشت..."></textarea>
-    </div>
-    <div class="form-group full">
-      <label class="form-label">📝 یادداشت تکمیلی</label>
-      ${richToolbar('instr-extra')}
-      <textarea class="form-textarea" id="instr-extra" rows="3" placeholder="نکات تکمیلی..."></textarea>
-    </div>` : '';
+      <label class="form-label">رنگ</label>
+      <input type="hidden" id="instr-color" value="#7c6af7">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${colorOpts}</div>
+    </div>`;
 
-  openModal(modalTitle, `
-    <div class="form-grid">
+  let bodyHtml;
+  if (type === 'category') {
+    /* ── Folders: just 3 fields, nothing to hide ── */
+    bodyHtml = `
+      <div class="form-group full">
+        <label class="form-label">عنوان *</label>
+        <input class="form-input" id="instr-title" placeholder="${pholder}" autofocus>
+      </div>
+      ${iconColorBlock}`;
+  } else {
+    /* ── Notes: title + content up front; everything else behind a toggle ── */
+    bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان *</label>
         <input class="form-input" id="instr-title" placeholder="${pholder}" autofocus>
       </div>
       <div class="form-group full">
-        <label class="form-label">آیکون</label>
-        <input type="hidden" id="instr-icon" value="${defaultIcon}">
-        <div style="display:flex;flex-wrap:wrap;gap:5px">${iconBtns}</div>
+        <label class="form-label">📄 محتوا</label>
+        ${richToolbar('instr-content')}
+        <textarea class="form-textarea" id="instr-content" rows="6" placeholder="محتوای یادداشت..."></textarea>
       </div>
       <div class="form-group full">
-        <label class="form-label">رنگ</label>
-        <input type="hidden" id="instr-color" value="#7c6af7">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${colorOpts}</div>
+        <button type="button" id="instr-adv-toggle" onclick="_toggleAdvanced('instr-advanced','instr-adv-toggle')"
+          style="width:100%;text-align:center;padding:9px;border-radius:8px;border:1px dashed var(--border2);background:none;color:var(--text2);font-size:12px;font-family:var(--font);cursor:pointer">
+          تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾
+        </button>
       </div>
-      ${noteFields}
-    </div>
-  `, [
+      <div id="instr-advanced" style="display:none" class="form-group full">
+        <div class="form-grid">
+          ${iconColorBlock}
+          <div class="form-group">
+            <label class="form-label">اهمیت</label>
+            ${_impChipsHtml('instr-importance','normal')}
+          </div>
+          <div class="form-group">
+            <label class="form-label">📅 تاریخ (شمسی)</label>
+            <input class="form-input jdate" id="instr-date" value="${formatJalali(...todayJalali())}">
+          </div>
+          <div class="form-group full">
+            <label class="form-label">📝 یادداشت تکمیلی</label>
+            ${richToolbar('instr-extra')}
+            <textarea class="form-textarea" id="instr-extra" rows="3" placeholder="نکات تکمیلی..."></textarea>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  openModal(modalTitle, `<div class="form-grid">${bodyHtml}</div>`, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveAddInstruction(${_pId||'null'},'${type}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
@@ -11546,57 +11603,75 @@ function openEditInstruction(id) {
     `<div onclick="document.getElementById('ei-color').value='${c}';document.querySelectorAll('.color-pick-dot2').forEach(d=>d.style.outline='none');this.style.outline='3px solid var(--text)'" class="color-pick-dot2" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0;outline:${c===node.color?'3px solid var(--text)':'none'}"></div>`
   ).join('');
 
-  const noteFields = node.type === 'note' ? `
-    <div class="form-group">
-      <label class="form-label">📅 تاریخ (شمسی)</label>
-      <input class="form-input jdate" id="ei-date" value="${node.date_jalali||''}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">اهمیت</label>
-      <select class="form-select" id="ei-importance">
-        <option value="normal" ${node.importance!=='key'?'selected':''}>معمولی</option>
-        <option value="key" ${node.importance==='key'?'selected':''}>⭐ مهم و کلیدی</option>
-      </select>
+  const iconColorBlock = `
+    <div class="form-group full">
+      <label class="form-label">آیکون</label>
+      <input type="hidden" id="ei-icon" value="${node.icon||'📝'}">
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${iconBtns}</div>
     </div>
     <div class="form-group full">
-      <label class="form-label">📄 محتوا</label>
-      ${richToolbar('ei-content')}
-      <textarea class="form-textarea" id="ei-content" rows="6">${escapeHtml(node.content||'')}</textarea>
-    </div>
-    <div class="form-group full">
-      <label class="form-label">📝 یادداشت تکمیلی</label>
-      ${richToolbar('ei-extra')}
-      <textarea class="form-textarea" id="ei-extra" rows="3">${escapeHtml(node.extra_note||'')}</textarea>
-    </div>
-    <div class="detail-section" style="margin-top:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3>📎 پیوست‌ها</h3>
-        <button class="btn btn-ghost btn-sm" onclick="_triggerAttach('instruction',${id})">+ افزودن فایل</button>
-      </div>
-      ${(node.attachments||[]).length === 0
-        ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
-        : renderAttachmentsGrid(node.attachments||[], null)}
-    </div>` : '';
+      <label class="form-label">رنگ</label>
+      <input type="hidden" id="ei-color" value="${node.color||'#7c6af7'}">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${colorOpts}</div>
+    </div>`;
 
-  openModal(`✏️ ویرایش — ${escapeHtml(node.title)}`, `
-    <div class="form-grid">
+  let bodyHtml;
+  if (node.type === 'category') {
+    /* ── Folders: just 3 fields, nothing to hide ── */
+    bodyHtml = `
+      <div class="form-group full">
+        <label class="form-label">عنوان</label>
+        <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
+      </div>
+      ${iconColorBlock}`;
+  } else {
+    /* ── Notes: title + content up front; everything else behind a toggle ── */
+    bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان</label>
         <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
       </div>
       <div class="form-group full">
-        <label class="form-label">آیکون</label>
-        <input type="hidden" id="ei-icon" value="${node.icon||'📝'}">
-        <div style="display:flex;flex-wrap:wrap;gap:5px">${iconBtns}</div>
+        <label class="form-label">📄 محتوا</label>
+        ${richToolbar('ei-content')}
+        <textarea class="form-textarea" id="ei-content" rows="6">${escapeHtml(node.content||'')}</textarea>
       </div>
       <div class="form-group full">
-        <label class="form-label">رنگ</label>
-        <input type="hidden" id="ei-color" value="${node.color||'#7c6af7'}">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${colorOpts}</div>
+        <button type="button" id="ei-adv-toggle" onclick="_toggleAdvanced('ei-advanced','ei-adv-toggle')"
+          style="width:100%;text-align:center;padding:9px;border-radius:8px;border:1px dashed var(--border2);background:none;color:var(--text2);font-size:12px;font-family:var(--font);cursor:pointer">
+          تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾
+        </button>
       </div>
-      ${noteFields}
-    </div>
-  `, [
+      <div id="ei-advanced" style="display:none" class="form-group full">
+        <div class="form-grid">
+          ${iconColorBlock}
+          <div class="form-group">
+            <label class="form-label">اهمیت</label>
+            ${_impChipsHtml('ei-importance', node.importance==='key' ? 'key' : 'normal')}
+          </div>
+          <div class="form-group">
+            <label class="form-label">📅 تاریخ (شمسی)</label>
+            <input class="form-input jdate" id="ei-date" value="${node.date_jalali||''}">
+          </div>
+          <div class="form-group full">
+            <label class="form-label">📝 یادداشت تکمیلی</label>
+            ${richToolbar('ei-extra')}
+            <textarea class="form-textarea" id="ei-extra" rows="3">${escapeHtml(node.extra_note||'')}</textarea>
+          </div>
+          <div class="detail-section" style="margin-top:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <h3>📎 پیوست‌ها</h3>
+              <button class="btn btn-ghost btn-sm" onclick="_triggerAttach('instruction',${id})">+ افزودن فایل</button>
+            </div>
+            ${(node.attachments||[]).length === 0
+              ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
+              : renderAttachmentsGrid(node.attachments||[], null)}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  openModal(`✏️ ویرایش — ${escapeHtml(node.title)}`, `<div class="form-grid">${bodyHtml}</div>`, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditInstruction(${id},'${node.type}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
