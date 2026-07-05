@@ -1561,19 +1561,25 @@ body.light mark { background: rgba(251,191,36,.5); }
    مرکز دانش (Knowledge Hub) — فشرده‌سازی موبایل
    ══════════════════════════════════════════════════ */
 @media(max-width:768px){
-  /* آمار و فیلتر/نمایش: به‌جای شکستن به چند خط، یک نوار افقی قابل‌اسکرول */
-  #instr-stats-row, #instr-filterview-row{
-    flex-wrap:nowrap!important;
-    justify-content:flex-start!important;
+  /* آمار: نسخه کامل (کارت‌ها) مخفی، فقط خط خلاصه نشون داده می‌شه */
+  .instr-stats-full{ display:none!important; }
+  .instr-stats-compact{ display:block!important; }
+
+  /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
+  #instr-filterview-row{
+    flex-direction:column!important;
+    align-items:stretch!important;
+    overflow-x:visible!important;
+  }
+  #instr-filter-group, #instr-view-group{
+    flex-wrap:wrap!important;
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
     scrollbar-width:none;
     padding-bottom:2px;
   }
-  #instr-stats-row::-webkit-scrollbar, #instr-filterview-row::-webkit-scrollbar{ display:none; }
-  #instr-stats-row > div{ flex-shrink:0; }
-  #instr-filter-group, #instr-view-group{ flex-wrap:nowrap!important; flex-shrink:0; }
-  #instr-filter-group{ padding-left:10px; border-left:1px solid var(--border); margin-left:10px; }
+  #instr-filter-group::-webkit-scrollbar, #instr-view-group::-webkit-scrollbar{ display:none; }
+  #instr-filter-group{ padding-left:0; border-left:none; margin-left:0; }
 
   /* کارت‌های گالری پوشه/یادداشت: فشرده‌تر روی صفحه کوچک */
   ._ifgrid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important; gap:12px!important; }
@@ -1581,8 +1587,11 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد از تاپ‌بار حذف می‌شن — همه از قبل در منوی همبرگری/FAB هستن */
   .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
 
+  /* Breadcrumb جدا حذف می‌شه: هدر بالای صفحه با فلش بازگشت + عنوان پوشه همین نقش را ایفا می‌کنه */
+  .instr-breadcrumb{ display:none!important; }
+
   /* فاصله بین بخش‌های صفحه مرکز دانش: کمتر تا کارت بیشتری بدون اسکرول دیده شه */
-  .instr-breadcrumb, .instr-pinned-section, .instr-recent-section, .instr-folders-section{
+  .instr-pinned-section, .instr-recent-section, .instr-folders-section{
     margin-bottom:12px!important;
   }
 
@@ -1591,6 +1600,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
 }
+.instr-stats-compact{ display:none; }
 
 /* دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل */
 .instr-fab-wrap{
@@ -10982,11 +10992,14 @@ async function renderInstructions(instrSearch) {
     const pinnedCount  = flat.filter(x => x.pinned).length;
     const keyCount     = flat.filter(x => x.importance === 'key').length;
     statsBar = `
-      <div id="instr-stats-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <div id="instr-stats-row" class="instr-stats-full" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
         ${_statChip('📂', fa(totalFolders), 'پوشه')}
         ${_statChip('📝', fa(totalNotes), 'یادداشت')}
         ${_statChip('📌', fa(pinnedCount), 'پین‌شده')}
         ${_statChip('⭐', fa(keyCount), 'مهم')}
+      </div>
+      <div class="instr-stats-compact" style="font-size:12px;color:var(--text2);margin-bottom:12px">
+        ${fa(totalFolders)} پوشه • ${fa(totalNotes)} یادداشت${pinnedCount?` • ${fa(pinnedCount)} پین‌شده`:''}${keyCount?` • ${fa(keyCount)} مهم`:''}
       </div>`;
   }
 
@@ -11154,9 +11167,10 @@ async function renderInstructions(instrSearch) {
               <div style="font-weight:700;font-size:14px;margin-bottom:6px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
               <span style="font-size:11px;color:var(--text3)">${fa(childCount)} آیتم</span>
-              ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ آخرین ویرایش: ${lastEdit}</div>` : ''}
+              ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
             </div>
             ${previewHtml}
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین کردن'}">${item.pinned?'📌':'📍'}</button>
@@ -11196,6 +11210,7 @@ async function renderInstructions(instrSearch) {
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
             <span style="color:var(--text3);flex-shrink:0;font-size:14px">‹</span>
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
@@ -11224,6 +11239,7 @@ async function renderInstructions(instrSearch) {
             <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
             <span style="font-size:10px;color:var(--text3);flex-shrink:0">${fa(childCount)}</span>
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:10px">${item.pinned?'📌':'📍'}</button>
@@ -11262,6 +11278,7 @@ async function renderInstructions(instrSearch) {
             ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
             ${excerptText ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : '<div style="flex:1"></div>'}
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">✏️ ${lastEdit}</div>` : ''}
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
@@ -11296,6 +11313,7 @@ async function renderInstructions(instrSearch) {
               ${excerptText ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>80?'…':''}</div>` : ''}
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
@@ -11322,6 +11340,7 @@ async function renderInstructions(instrSearch) {
             <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${isKey ? `<span style="font-size:10px;color:var(--amber);flex-shrink:0">⭐</span>` : ''}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
+            <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:10px">${item.pinned?'📌':'📍'}</button>
@@ -11345,13 +11364,26 @@ async function renderInstructions(instrSearch) {
   /* ── Floating action button (mobile create shortcut) ── */
   html += _instrFabHtml();
 
-  /* ── Inject hover-reveal CSS once ── */
+  /* ── Inject hover-reveal / tap-reveal CSS once ── */
   if (!document.getElementById('_instr-styles')) {
     const s = document.createElement('style');
     s.id = '_instr-styles';
     s.textContent = `
-      ._ifcard:hover ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
-      ._ifcard:hover ._ifcard-qa      { opacity:1 !important; pointer-events:auto !important; }
+      @media (hover:hover) and (pointer:fine) {
+        ._ifcard:hover ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
+        ._ifcard:hover ._ifcard-qa      { opacity:1 !important; pointer-events:auto !important; }
+      }
+      ._ifcard-more-btn{
+        display:none; width:26px;height:26px;border-radius:7px;flex-shrink:0;
+        border:1px solid var(--border2); background:var(--bg3); color:var(--text2);
+        align-items:center;justify-content:center; font-size:15px; cursor:pointer; z-index:2;
+      }
+      @media (hover:none), (pointer:coarse) {
+        ._ifcard-more-btn{ display:flex; }
+        ._ifcard.show-actions ._ifcard-actions,
+        ._ifcard.show-actions ._ifcard-qa { opacity:1 !important; pointer-events:auto !important; }
+        ._ifcard.show-actions ._ifcard-more-btn{ display:none; }
+      }
     `;
     document.head.appendChild(s);
   }
@@ -11473,6 +11505,29 @@ function _instrTogglePin(id) {
   _save();
   showToast(item.pinned ? '📌 پین شد' : 'پین برداشته شد', 'success');
   renderInstructions();
+}
+
+/* ── Card action menu (edit/pin/delete, quick-add) — tap-to-reveal instead of hover ──
+   On touch devices, :hover doesn't exist, so relying on it made the FIRST tap on a
+   folder/note card only "reveal" these buttons instead of opening it (iOS's ghost-hover
+   behavior) — a second tap was needed to actually navigate. The card's main onclick
+   still fires immediately on tap; this "⋮" button is a separate, always-tappable
+   target for the secondary actions, with its own stopPropagation. ── */
+function _ifToggleActions(btn) {
+  if (window.event) window.event.stopPropagation();
+  const card = btn.closest('._ifcard');
+  if (!card) return;
+  const wasOpen = card.classList.contains('show-actions');
+  document.querySelectorAll('._ifcard.show-actions').forEach(c => c.classList.remove('show-actions'));
+  if (!wasOpen) card.classList.add('show-actions');
+}
+if (!window._ifActionsOutsideClickBound) {
+  window._ifActionsOutsideClickBound = true;
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('._ifcard-more-btn')) {
+      document.querySelectorAll('._ifcard.show-actions').forEach(c => c.classList.remove('show-actions'));
+    }
+  });
 }
 
 function _instrOpenFolder(id, icon, title) {
