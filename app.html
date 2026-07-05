@@ -11030,8 +11030,6 @@ async function renderInstructions(instrSearch) {
       <div id="instr-filter-group" style="display:flex;gap:6px;flex-wrap:wrap">
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده')}
-        ${_filterBtn('folder','📁 پوشه')}
-        ${_filterBtn('note','📝 یادداشت')}
       </div>
       <div id="instr-view-group" style="display:flex;gap:4px">
         ${_viewBtn('gallery','◻ گالری')}
@@ -11456,8 +11454,6 @@ function _instrToolbarHtml() {
       <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       ${_filterBtn('all','همه')}
       ${_filterBtn('pinned','📌 پین‌شده')}
-      ${_filterBtn('folder','📁 پوشه')}
-      ${_filterBtn('note','📝 یادداشت')}
       <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
         <span>${sortLabel}</span>
