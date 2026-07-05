@@ -168,13 +168,13 @@ button { cursor: pointer; font-family: var(--font); }
 
 .sidebar-bottom {
   flex: 0 0 auto;
-  padding: 10px 10px 14px;
+  padding: 8px 10px 10px;
   border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 5px;
 }
 .sidebar-divider { height: 1px; background: var(--border); margin: 2px 2px; flex-shrink: 0; }
 .btn-sidebar {
-  width: 100%; padding: 8px 12px; border-radius: 8px;
+  width: 100%; padding: 6px 12px; border-radius: 8px;
   border: 1px solid var(--border2); background: none;
   color: var(--text2); font-size: 12px;
   transition: all .15s;
@@ -1414,6 +1414,12 @@ body.light mark { background: rgba(251,191,36,.5); }
 /* ══════════════════ RESPONSIVE ══════════════════ */
 .hamburger{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;flex-shrink:0;position:relative;z-index:31}
 .hamburger.open{background:var(--accent);border-color:var(--accent);color:#fff}
+/* CSS animated hamburger → X */
+.hb-icon{display:flex;flex-direction:column;justify-content:center;align-items:center;width:18px;height:14px;gap:4px;pointer-events:none}
+.hb-icon span{display:block;width:18px;height:2px;border-radius:2px;background:currentColor;transition:transform .25s ease,opacity .25s ease,width .25s ease}
+.hamburger.open .hb-icon span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.hamburger.open .hb-icon span:nth-child(2){opacity:0;width:0}
+.hamburger.open .hb-icon span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
 .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:90;-webkit-tap-highlight-color:transparent}
 .sidebar-backdrop.open{display:block}
 .bottom-nav{
@@ -1977,7 +1983,9 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
   </aside>
   <div class="main">
     <header class="topbar">
-      <button class="hamburger" id="hamburger-btn" data-role="menu" onclick="toggleSidebar()">☰</button>
+      <button class="hamburger" id="hamburger-btn" data-role="menu" onclick="toggleSidebar()" aria-label="منو">
+        <span class="hb-icon"><span></span><span></span><span></span></span>
+      </button>
       <h2 class="page-title" id="page-title">شاگردان</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
       <!-- Auth buttons - shown when NOT logged in -->
@@ -11976,16 +11984,16 @@ function _instrSetHeaderNav(inFolder, title) {
   if (!hb) return;
   if (inFolder) {
     hb.dataset.role = 'back';
-    hb.textContent = '←';
+    hb.innerHTML = '←';
     hb.classList.remove('open');
     hb.onclick = function () { history.back(); };
     hb.title = 'بازگشت';
     if (title) { const pt = document.getElementById('page-title'); if (pt) pt.textContent = title; }
   } else {
     hb.dataset.role = 'menu';
+    hb.innerHTML = '<span class="hb-icon"><span></span><span></span><span></span></span>';
     const sb = document.getElementById('sidebar');
     const isOpen = !!(sb && sb.classList.contains('open'));
-    hb.textContent = isOpen ? '✕' : '☰';
     hb.classList.toggle('open', isOpen);
     hb.onclick = toggleSidebar;
     hb.title = '';
@@ -16683,8 +16691,8 @@ async function _submitChargeRequest() {
 
 // ── Web-specific additions ────────────────────────────────────────────────────
 // Mobile sidebar
-function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-backdrop').classList.add('open');document.body.style.overflow='hidden';const hb=document.getElementById('hamburger-btn');if(hb&&hb.dataset.role!=='back'){hb.textContent='✕';hb.classList.add('open');}}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');document.body.style.overflow='';const hb=document.getElementById('hamburger-btn');if(hb&&hb.dataset.role!=='back'){hb.textContent='☰';hb.classList.remove('open');}}
+function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-backdrop').classList.add('open');document.body.style.overflow='hidden';const hb=document.getElementById('hamburger-btn');if(hb&&hb.dataset.role!=='back'){hb.classList.add('open');}}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');document.body.style.overflow='';const hb=document.getElementById('hamburger-btn');if(hb&&hb.dataset.role!=='back'){hb.classList.remove('open');}}
 function toggleSidebar(){const sb=document.getElementById('sidebar');if(sb&&sb.classList.contains('open')){closeSidebar();}else{openSidebar();}}
 function bnNav(el){
   const page=el.dataset.page;if(!page)return;
