@@ -1557,6 +1557,51 @@ body.light mark { background: rgba(251,191,36,.5); }
   #auth-screen .modal{max-width:100vw;width:100vw;border-radius:0;max-height:100vh;overflow-y:auto}
 }
 
+/* ══════════════════════════════════════════════════
+   مرکز دانش (Knowledge Hub) — فشرده‌سازی موبایل
+   ══════════════════════════════════════════════════ */
+@media(max-width:768px){
+  /* آمار و فیلتر/نمایش: به‌جای شکستن به چند خط، یک نوار افقی قابل‌اسکرول */
+  #instr-stats-row, #instr-filterview-row{
+    flex-wrap:nowrap!important;
+    justify-content:flex-start!important;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding-bottom:2px;
+  }
+  #instr-stats-row::-webkit-scrollbar, #instr-filterview-row::-webkit-scrollbar{ display:none; }
+  #instr-stats-row > div{ flex-shrink:0; }
+  #instr-filter-group, #instr-view-group{ flex-wrap:nowrap!important; flex-shrink:0; }
+  #instr-filter-group{ padding-left:10px; border-left:1px solid var(--border); margin-left:10px; }
+
+  /* کارت‌های گالری پوشه/یادداشت: فشرده‌تر روی صفحه کوچک */
+  ._ifgrid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important; gap:12px!important; }
+}
+
+/* دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل */
+.instr-fab-wrap{
+  display:none; position:fixed; left:16px; bottom:calc(78px + env(safe-area-inset-bottom,0));
+  z-index:55; flex-direction:column; align-items:flex-start; gap:10px;
+}
+@media(max-width:768px){ .instr-fab-wrap{ display:flex; } }
+.instr-fab-btn{
+  width:54px; height:54px; border-radius:50%; background:var(--accent); color:#fff; font-size:26px;
+  border:none; box-shadow:0 6px 18px rgba(124,106,247,.45); cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:transform .2s ease; line-height:1;
+}
+.instr-fab-btn.open{ transform:rotate(45deg); }
+.instr-fab-menu{
+  display:flex; flex-direction:column; gap:8px; opacity:0; pointer-events:none;
+  transform:translateY(10px); transition:all .15s ease;
+}
+.instr-fab-menu.open{ opacity:1; pointer-events:auto; transform:translateY(0); }
+.instr-fab-menu-item{
+  display:flex; align-items:center; gap:8px; background:var(--bg2); border:1px solid var(--border2);
+  border-radius:24px; padding:10px 16px; color:var(--text); font-size:13px; font-weight:600;
+  box-shadow:0 4px 14px rgba(0,0,0,.25); cursor:pointer; font-family:var(--font); white-space:nowrap;
+}
+
 /* ── Mobile (≤480px) ──────────────────────────────── */
 @media(max-width:480px){
   .content{padding:8px}
@@ -10916,7 +10961,7 @@ async function renderInstructions(instrSearch) {
     const pinnedCount  = flat.filter(x => x.pinned).length;
     const keyCount     = flat.filter(x => x.importance === 'key').length;
     statsBar = `
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <div id="instr-stats-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
         ${_statChip('📂', fa(totalFolders), 'پوشه')}
         ${_statChip('📝', fa(totalNotes), 'یادداشت')}
         ${_statChip('📌', fa(pinnedCount), 'پین‌شده')}
@@ -10935,14 +10980,14 @@ async function renderInstructions(instrSearch) {
 
   /* ── View toggle + filter bar ── */
   const viewBar = `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <div id="instr-filterview-row" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div id="instr-filter-group" style="display:flex;gap:6px;flex-wrap:wrap">
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده')}
         ${_filterBtn('folder','📁 پوشه')}
         ${_filterBtn('note','📝 یادداشت')}
       </div>
-      <div style="display:flex;gap:4px">
+      <div id="instr-view-group" style="display:flex;gap:4px">
         ${_viewBtn('gallery','◻ گالری')}
         ${_viewBtn('list','☰ فهرست')}
         ${_viewBtn('compact','▤ فشرده')}
@@ -11037,7 +11082,7 @@ async function renderInstructions(instrSearch) {
             <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>
             <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
           </div>` : ''}
-      </div>`);
+      </div>` + _instrFabHtml());
     return;
   }
 
@@ -11057,7 +11102,7 @@ async function renderInstructions(instrSearch) {
 
     if (_instrView === 'gallery') {
       /* ── GALLERY: tall cards, big icon, preview of 3 notes, color bar ── */
-      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px">`;
+      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px">`;
       sortItems(folders).forEach(item => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
         const color = item.color || '#7c6af7';
@@ -11174,7 +11219,7 @@ async function renderInstructions(instrSearch) {
 
     if (_instrView === 'gallery') {
       /* ── GALLERY: tall cards, big icon, full excerpt, color top bar ── */
-      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px">`;
+      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px">`;
       sortItems(notes).forEach(item => {
         const color = item.color || '#7c6af7';
         const isKey = item.importance === 'key';
@@ -11272,6 +11317,9 @@ async function renderInstructions(instrSearch) {
     </div>`;
   }
 
+  /* ── Floating action button (mobile create shortcut) ── */
+  html += _instrFabHtml();
+
   /* ── Inject hover-reveal CSS once ── */
   if (!document.getElementById('_instr-styles')) {
     const s = document.createElement('style');
@@ -11327,6 +11375,41 @@ function _viewBtn(key, label) {
     style="padding:5px 11px;border-radius:8px;border:1px solid ${active?'var(--accent)':'var(--border)'};
     background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
     font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
+}
+
+/* ── دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل ── */
+function _instrFabHtml() {
+  return `
+    <div class="instr-fab-wrap" id="instr-fab-wrap">
+      <div class="instr-fab-menu" id="instr-fab-menu">
+        <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'category')">
+          <span>📁</span><span>پوشه جدید</span>
+        </button>
+        <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'note')">
+          <span>📝</span><span>یادداشت جدید</span>
+        </button>
+      </div>
+      <button type="button" class="instr-fab-btn" id="instr-fab-btn" onclick="_toggleInstrFab()">+</button>
+    </div>`;
+}
+function _toggleInstrFab() {
+  const menu = document.getElementById('instr-fab-menu');
+  const btn = document.getElementById('instr-fab-btn');
+  if (!menu || !btn) return;
+  const open = menu.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+function _closeInstrFab() {
+  const menu = document.getElementById('instr-fab-menu');
+  const btn = document.getElementById('instr-fab-btn');
+  if (menu) menu.classList.remove('open');
+  if (btn) btn.classList.remove('open');
+}
+if (!window._instrFabOutsideClickBound) {
+  window._instrFabOutsideClickBound = true;
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest || !e.target.closest('#instr-fab-wrap')) _closeInstrFab();
+  });
 }
 
 function _relTime(iso) {
