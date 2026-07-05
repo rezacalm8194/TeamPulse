@@ -632,6 +632,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .ses-meta-summary { font-size: 12px; color: var(--text2); flex: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ses-meta-summary .dot { color: var(--text3); font-size: 10px; }
 .ses-meta-body { display: none; padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+.ses-meta-body.open { display: block; }
 .meta-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
 .meta-row + .meta-row { border-top: 1px dashed var(--border); }
 .meta-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; color: var(--text3); }
@@ -646,6 +647,17 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .seg-sm button.active { background: var(--accent); color: #fff; font-weight: 600; }
 .meta-student-static { flex: 1; font-size: 12.5px; color: var(--text); font-weight: 600; }
 .meta-change-link { font-size: 11px; color: var(--accent2); background: none; border: none; cursor: pointer; font-family: var(--font); padding: 2px 4px; flex-shrink: 0; }
+
+/* ── Session title: primary field, styled to stand out like a note heading ── */
+.ses-title-label {
+  font-size: 12.5px; font-weight: 700; color: var(--text2);
+  display: flex; align-items: center; gap: 5px; margin-bottom: 4px;
+}
+.ses-title-input {
+  font-size: 16px !important; font-weight: 700 !important;
+  border-radius: 10px; letter-spacing: -.1px;
+}
+.ses-title-input::placeholder { font-weight: 500; color: var(--text3); }
 
 /* Pkg checkboxes */
 .pkg-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1595,6 +1607,29 @@ body.light mark { background: rgba(251,191,36,.5); }
     cursor:pointer; flex-shrink:0; transition:all .15s;
   }
   .modal-fullpage-back:hover{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+  /* Session meta-bar: collapse student/date/importance into one compact scrollable row */
+  .ses-meta-body.open{
+    display:flex; flex-direction:row; flex-wrap:nowrap; align-items:center;
+    gap:6px; padding:8px 8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .ses-meta-body .meta-row{
+    display:flex; align-items:center; gap:4px; flex:0 0 auto;
+    padding:5px 8px; border:1px solid var(--border); border-radius:8px;
+    background:var(--bg2); white-space:nowrap;
+  }
+  .ses-meta-body .meta-row + .meta-row{ border-top:0; }
+  .ses-meta-body .meta-icon{ font-size:12px; width:auto; }
+  .ses-meta-body .meta-row .form-input,
+  .ses-meta-body .meta-row .form-select{
+    flex:none; width:88px; font-size:12px; padding:5px 6px; min-height:0;
+  }
+  .ses-meta-body .seg-sm{ width:auto; flex-shrink:0; }
+  .ses-meta-body .seg-sm button{ padding:5px 7px; font-size:10.5px; white-space:nowrap; }
+  .ses-meta-body .meta-student-static{
+    font-size:12px; max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ses-meta-body .meta-change-link{ font-size:10px; padding:2px 3px; }
 
   /* Sessions board */
   .sessions-board{gap:10px;padding:4px 0}
@@ -5390,8 +5425,8 @@ async function openAddSessionGeneral(presetStudentId = null) {
 
       <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
-        <label class="form-label">عنوان ${META.sessionSingular||'جلسه'}</label>
-        <input class="form-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="font-size:15px;font-weight:600;padding:12px 14px">
+        <label class="form-label ses-title-label">📝 عنوان جلسه</label>
+        <input class="form-input ses-title-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="padding:13px 14px">
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
@@ -5480,8 +5515,8 @@ function _toggleSesMeta() {
   const body = document.getElementById('ses-meta-body');
   const arrow = document.getElementById('ses-meta-arrow');
   if (!body) return;
-  const open = body.style.display === 'block';
-  body.style.display = open ? 'none' : 'block';
+  const open = body.classList.contains('open');
+  body.classList.toggle('open', !open);
   if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
 }
 
@@ -5647,8 +5682,8 @@ async function openEditSession(sessionId) {
 
       <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
-        <label class="form-label">عنوان</label>
-        <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="font-size:15px;font-weight:600;padding:12px 14px">
+        <label class="form-label ses-title-label">📝 عنوان جلسه</label>
+        <input class="form-input ses-title-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="padding:13px 14px">
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
@@ -6841,6 +6876,7 @@ function richToolbar(textareaId) {
   return `
   <div class="rich-toolbar">
     ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
+    <button type="button" class="rt-btn" title="هایلایت" onclick="wrapSelection('${textareaId}','==','==')">🖍️</button>
     <span class="rt-sep"></span>
     <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
     <span class="rt-sep"></span>
@@ -6848,7 +6884,6 @@ function richToolbar(textareaId) {
   </div>
   <div id="${moreId}" class="rt-more" style="display:none">
     <button type="button" class="rt-btn" title="پررنگ" onclick="wrapSelection('${textareaId}','**','**')"><b>B</b></button>
-    <button type="button" class="rt-btn" title="هایلایت" onclick="wrapSelection('${textareaId}','==','==')">🖍️</button>
     <button type="button" class="rt-btn" title="چک‌لیست" onclick="insertChecklistItem('${textareaId}')" style="font-size:13px">☑</button>
     <button type="button" class="rt-btn" title="لیست شماره‌دار" onclick="insertNumberedItem('${textareaId}')" style="font-size:13px">№</button>
     <button type="button" class="rt-btn" title="جدول" onclick="insertTable('${textareaId}')" style="font-size:12px">⊞</button>
