@@ -5296,6 +5296,17 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
       </div>
 
+      <div class="form-group full">
+        <label class="form-label">توضیحات تکمیلی</label>
+        ${richToolbar('f-ses-extra')}
+        <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
+      </div>
+
+      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap">
+        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
+        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+      </div>
+
       <!-- ── سطح ۲: اطلاعات تکمیلی ─────────────────────────────────────── -->
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label" style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px">اطلاعات تکمیلی</label>
@@ -5344,25 +5355,15 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn"
           style="display:flex;align-items:center;gap:6px;padding:8px 0;background:none;border:none;cursor:pointer;font-family:var(--font);color:var(--text3);font-size:12px;width:100%">
           <span id="f-ses-adv-arrow" style="transition:transform .2s;font-size:10px">▶</span>
-          <span>گزینه‌های بیشتر (توضیحات تکمیلی، پیوست، موضوع مهم)</span>
+          <span>گزینه‌های بیشتر (پیوست‌ها)</span>
         </button>
         <div id="f-ses-adv-body" style="display:none;padding-top:8px">
           <div class="form-group full" style="margin-top:0">
-            <label class="form-label">توضیحات تکمیلی</label>
-            ${richToolbar('f-ses-extra')}
-            <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
-          </div>
-          <div class="form-group full">
             <label class="form-label">📎 پیوست‌ها</label>
             <div id="ses-attach-preview" style="margin-bottom:8px"></div>
             <button type="button" class="btn btn-ghost btn-sm" onclick="_pickSessionFiles()">📎 افزودن فایل یا عکس</button>
             <div id="ses-attach-count" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
           </div>
-          <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:4px 0;flex-wrap:nowrap">
-            <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-            <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
-          </div>
-        </div>
       </div>
 
     </div>
