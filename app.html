@@ -1364,7 +1364,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   flex-direction:row;
   align-items:center;
   justify-content:space-around;
-  height:62px;
+  height:68px;
   padding:0 4px;
 }
 .bn-safe-spacer{
@@ -1598,6 +1598,8 @@ body.light mark { background: rgba(251,191,36,.5); }
   z-index:55; flex-direction:column; align-items:flex-start; gap:10px;
 }
 @media(max-width:768px){ .instr-fab-wrap{ display:flex; } }
+.instr-fab-spacer{ height:0; }
+@media(max-width:768px){ .instr-fab-spacer{ height:72px; } }
 .instr-fab-btn{
   width:54px; height:54px; border-radius:50%; background:var(--accent); color:#fff; font-size:26px;
   border:none; box-shadow:0 6px 18px rgba(124,106,247,.45); cursor:pointer;
@@ -1830,7 +1832,8 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
   </aside>
   <div class="main">
     <header class="topbar">
-      <button class="hamburger" onclick="openSidebar()">☰</button>
+      <button class="hamburger" id="hamburger-btn" onclick="openSidebar()">☰</button>
+      <button class="hamburger" id="instr-home-btn" onclick="_instrGoTo(null,[])" title="مرکز دانش" style="display:none">🏠</button>
       <h2 class="page-title" id="page-title">شاگردان</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
       <!-- Auth buttons - shown when NOT logged in -->
@@ -3691,6 +3694,11 @@ function applyMetaToUI() {
 }
 
 async function renderPage() {
+  // Reset topbar hamburger to its default state; the knowledge-center page
+  // will swap it back to a back-arrow if we're still inside a folder there.
+  if (typeof _instrSetHeaderNav === 'function' && currentPage !== 'instructions') {
+    _instrSetHeaderNav(false);
+  }
   // Save current page for refresh restore
   if (currentPage && currentPage !== 'students' || currentPage === 'students') {
     localStorage.setItem('tp_last_page', currentPage);
@@ -10986,13 +10994,14 @@ async function renderInstructions(instrSearch) {
   let breadcrumb = '';
   if (_instrPath.length) {
     breadcrumb = `<div class="instr-breadcrumb" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:9px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
-      <span onclick="_instrParentId=null;_instrPath=[];renderInstructions()" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">🏠 مرکز دانش</span>`;
+      <span onclick="_instrGoTo(null,[])" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">🏠 مرکز دانش</span>`;
     _instrPath.forEach((p, i) => {
       breadcrumb += `<span style="color:var(--text3)">›</span>
-        <span onclick="_instrParentId=${p.id};_instrPath=_instrPath.slice(0,${i+1});renderInstructions()" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
+        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
     });
     breadcrumb += `</div>`;
   }
+  _instrSetHeaderNav(_instrPath.length > 0, _instrPath.length ? `${_instrPath[_instrPath.length-1].icon||'📁'} ${_instrPath[_instrPath.length-1].title}` : null);
 
   /* ── View toggle + filter bar ── */
   const viewBar = `
@@ -11396,6 +11405,7 @@ function _viewBtn(key, label) {
 /* ── دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل ── */
 function _instrFabHtml() {
   return `
+    <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
       <div class="instr-fab-menu" id="instr-fab-menu">
         <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'category')">
@@ -11466,9 +11476,79 @@ function _instrTogglePin(id) {
 }
 
 function _instrOpenFolder(id, icon, title) {
+  const contentEl = document.querySelector('.content');
+  if (contentEl && history.state && history.state.instrNav) {
+    history.replaceState(Object.assign({}, history.state, {scrollTop: contentEl.scrollTop}), '');
+  }
   _instrPath.push({id, icon, title});
   _instrParentId = id;
+  _instrPushHistory();
   renderInstructions();
+}
+
+/* ── Jump to an arbitrary point in the folder path (breadcrumb / home button) ──
+   Pushed as a new history entry too, so the hardware/gesture back button always
+   steps back exactly one place the user has actually been — never closes the app. */
+function _instrGoTo(parentId, path) {
+  const contentEl = document.querySelector('.content');
+  if (contentEl && history.state && history.state.instrNav) {
+    history.replaceState(Object.assign({}, history.state, {scrollTop: contentEl.scrollTop}), '');
+  }
+  _instrParentId = parentId;
+  _instrPath = path || [];
+  _instrPushHistory();
+  renderInstructions();
+}
+
+function _instrPushHistory() {
+  try {
+    const state = {instrNav: true, parentId: _instrParentId, path: JSON.parse(JSON.stringify(_instrPath))};
+    const hash = _instrParentId ? ('#instructions/' + _instrParentId) : '#instructions';
+    history.pushState(state, '', hash);
+  } catch (e) {}
+}
+
+/* ── Swap the topbar hamburger for a back arrow (+ home shortcut) while inside a folder ── */
+function _instrSetHeaderNav(inFolder, title) {
+  const hb = document.getElementById('hamburger-btn');
+  const homeBtn = document.getElementById('instr-home-btn');
+  if (!hb) return;
+  if (inFolder) {
+    hb.textContent = '←';
+    hb.onclick = function () { history.back(); };
+    hb.title = 'بازگشت';
+    if (homeBtn) homeBtn.style.display = '';
+    if (title) { const pt = document.getElementById('page-title'); if (pt) pt.textContent = title; }
+  } else {
+    hb.textContent = '☰';
+    hb.onclick = openSidebar;
+    hb.title = '';
+    if (homeBtn) homeBtn.style.display = 'none';
+  }
+}
+
+/* ── Hardware/gesture back button (Android back, browser back) drives the folder stack
+   instead of closing the app, and restores scroll position where we left off ── */
+if (!window._instrPopstateBound) {
+  window._instrPopstateBound = true;
+  window.addEventListener('popstate', function (e) {
+    const st = e.state;
+    if (st && st.instrNav) {
+      _instrParentId = st.parentId;
+      _instrPath = st.path || [];
+    } else {
+      _instrParentId = null;
+      _instrPath = [];
+    }
+    if (typeof currentPage !== 'undefined' && currentPage === 'instructions') {
+      renderInstructions().then(function () {
+        if (st && typeof st.scrollTop === 'number') {
+          const contentEl = document.querySelector('.content');
+          if (contentEl) contentEl.scrollTop = st.scrollTop;
+        }
+      });
+    }
+  });
 }
 
 // ── Note detail (rich view) ───────────────────────────────────────────────
