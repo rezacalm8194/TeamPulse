@@ -11104,28 +11104,25 @@ async function renderInstructions(instrSearch) {
       <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📝 یادداشت‌ها (${fa(notes.length)})</div>`;
 
     if (_instrView === 'gallery') {
+      /* ── GALLERY: tall cards, big icon, full excerpt, color top bar ── */
       html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px">`;
       sortItems(notes).forEach(item => {
         const color = item.color || '#7c6af7';
         const isKey = item.importance === 'key';
-        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,90);
+        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         html += `
           <div class="_ifcard"
-            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;transition:all .2s;position:relative"
+            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:18px 16px 14px;cursor:pointer;transition:all .2s;position:relative;min-height:140px;display:flex;flex-direction:column"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="_instrHoverCard(this,'${color}')"
             onmouseout="_instrUnhoverCard(this)">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
-            <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:8px">
-              <span style="font-size:22px;flex-shrink:0">${item.icon||'📝'}</span>
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:700;font-size:13px;color:var(--text);line-height:1.4;margin-bottom:3px">${escapeHtml(item.title)}</div>
-                ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:1px 6px;font-weight:600">⭐ مهم</span>` : ''}
-              </div>
-            </div>
-            ${excerptText ? `<div style="font-size:11px;color:var(--text2);line-height:1.7;max-height:52px;overflow:hidden">${escapeHtml(excerptText)}${(item.content||'').length>90?'…':''}</div>` : ''}
-            ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:8px">✏️ ${lastEdit}</div>` : ''}
+            <div style="font-size:30px;margin-bottom:10px">${item.icon||'📝'}</div>
+            <div style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;margin-bottom:6px">${escapeHtml(item.title)}</div>
+            ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
+            ${excerptText ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : '<div style="flex:1"></div>'}
+            ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">✏️ ${lastEdit}</div>` : ''}
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
@@ -11134,36 +11131,62 @@ async function renderInstructions(instrSearch) {
           </div>`;
       });
       html += `</div>`;
-    } else {
-      /* List & Compact */
-      html += `<div style="display:flex;flex-direction:column;gap:${_instrView==='compact'?'4px':'8px'}">`;
-      sortItems(notes).forEach(item => {
+
+    } else if (_instrView === 'list') {
+      /* ── LIST: horizontal rows — icon | title + excerpt | meta | actions ── */
+      html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">`;
+      sortItems(notes).forEach((item, idx, arr) => {
         const color = item.color || '#7c6af7';
         const isKey = item.importance === 'key';
-        const excerptText = _instrView !== 'compact' ? (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120) : '';
+        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,80);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
+        const isLast = idx === arr.length - 1;
         html += `
           <div class="_ifcard"
-            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-right:3px solid ${color};border-radius:12px;padding:${_instrView==='compact'?'9px 14px':'13px 16px'};cursor:pointer;transition:all .2s;position:relative"
+            style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
-            onmouseover="_instrHoverCard(this,'${color}')"
-            onmouseout="_instrUnhoverCard(this)">
-            <div style="display:flex;align-items:center;gap:10px">
-              ${item.pinned ? `<span style="font-size:13px;flex-shrink:0">📌</span>` : ''}
-              <span style="font-size:${_instrView==='compact'?'18px':'22px'};flex-shrink:0">${item.icon||'📝'}</span>
-              <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <span style="font-weight:700;font-size:${_instrView==='compact'?'12px':'13px'};color:var(--text)">${escapeHtml(item.title)}</span>
-                  ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:1px 6px;font-weight:600">⭐ مهم</span>` : ''}
-                </div>
-                ${excerptText ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : ''}
-                ${lastEdit && _instrView !== 'compact' ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
+            onmouseover="this.style.background='var(--bg3)'"
+            onmouseout="this.style.background=''">
+            <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${item.icon||'📝'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
+                ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:4px;padding:1px 6px;font-weight:600;flex-shrink:0">⭐ مهم</span>` : ''}
+                ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
-              <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
-                <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
-                <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
-                <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
-              </div>
+              ${excerptText ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>80?'…':''}</div>` : ''}
+            </div>
+            ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
+            <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
+              <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
+              <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+
+    } else {
+      /* ── COMPACT: pure density — just icon + title, no excerpt, no meta ── */
+      html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">`;
+      sortItems(notes).forEach((item, idx, arr) => {
+        const color = item.color || '#7c6af7';
+        const isKey = item.importance === 'key';
+        const isLast = idx === arr.length - 1;
+        html += `
+          <div class="_ifcard"
+            style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
+            onmouseover="this.style.background='var(--bg3)'"
+            onmouseout="this.style.background=''">
+            <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📝'}</span>
+            <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
+            ${isKey ? `<span style="font-size:10px;color:var(--amber);flex-shrink:0">⭐</span>` : ''}
+            ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
+            <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
+              <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
+              <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:10px">${item.pinned?'📌':'📍'}</button>
+              <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:10px">🗑</button>
             </div>
           </div>`;
       });
