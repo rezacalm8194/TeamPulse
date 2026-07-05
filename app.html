@@ -1560,11 +1560,14 @@ body.light mark { background: rgba(251,191,36,.5); }
 /* ══════════════════════════════════════════════════
    مرکز دانش (Knowledge Hub) — فشرده‌سازی موبایل
    ══════════════════════════════════════════════════ */
-@media(max-width:768px){
-  /* آمار: نسخه کامل (کارت‌ها) مخفی، فقط خط خلاصه نشون داده می‌شه */
-  .instr-stats-full{ display:none!important; }
-  .instr-stats-compact{ display:block!important; }
+/* Breadcrumb: full trail is the default (desktop); compact pill only appears ≤768px */
+.instr-breadcrumb-compact{ display:none; }
+.instr-breadcrumb-full{ display:flex; }
 
+/* Windows/desktop-only toolbar — hidden on touch/mobile widths (FAB covers that role) */
+.instr-toolbar{ display:flex; }
+
+@media(max-width:768px){
   /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
   #instr-filterview-row{
     flex-direction:column!important;
@@ -1584,11 +1587,12 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* کارت‌های گالری پوشه/یادداشت: فشرده‌تر روی صفحه کوچک */
   ._ifgrid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important; gap:12px!important; }
 
-  /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد از تاپ‌بار حذف می‌شن — همه از قبل در منوی همبرگری/FAB هستن */
-  .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
+  /* هدر شلوغ: دکمه خروج، دکمه‌های ایجاد و تولبار دسکتاپ از تاپ‌بار حذف می‌شن — همه از قبل در FAB هستن */
+  .topbar-logout-btn, .instr-topbar-create-btn, .instr-toolbar{ display:none!important; }
 
-  /* Breadcrumb جدا حذف می‌شه: هدر بالای صفحه با فلش بازگشت + عنوان پوشه همین نقش را ایفا می‌کنه */
-  .instr-breadcrumb{ display:none!important; }
+  /* Breadcrumb کامل جای خودش را به نسخه فشرده (خانه / بالادست / فعلی) می‌ده */
+  .instr-breadcrumb-full{ display:none!important; }
+  .instr-breadcrumb-compact{ display:flex!important; }
 
   /* فاصله بین بخش‌های صفحه مرکز دانش: کمتر تا کارت بیشتری بدون اسکرول دیده شه */
   .instr-pinned-section, .instr-recent-section, .instr-folders-section{
@@ -1600,11 +1604,10 @@ body.light mark { background: rgba(251,191,36,.5); }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
 }
-.instr-stats-compact{ display:none; }
 
-/* دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل */
+/* دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل؛ کمی به گوشه (چپ/پایین) نزدیک‌تر برای تعادل بصری بهتر */
 .instr-fab-wrap{
-  display:none; position:fixed; left:16px; bottom:calc(78px + env(safe-area-inset-bottom,0));
+  display:none; position:fixed; left:4px; bottom:calc(103px + env(safe-area-inset-bottom,0));
   z-index:55; flex-direction:column; align-items:flex-start; gap:10px;
 }
 @media(max-width:768px){ .instr-fab-wrap{ display:flex; } }
@@ -1843,7 +1846,6 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
   <div class="main">
     <header class="topbar">
       <button class="hamburger" id="hamburger-btn" onclick="openSidebar()">☰</button>
-      <button class="hamburger" id="instr-home-btn" onclick="_instrGoTo(null,[])" title="مرکز دانش" style="display:none">🏠</button>
       <h2 class="page-title" id="page-title">شاگردان</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
       <!-- Auth buttons - shown when NOT logged in -->
@@ -10955,6 +10957,7 @@ let _instrParentId = null; // current folder
 /* ── Instructions page state ──────────────────────────────────────────────── */
 let _instrView = 'gallery'; // 'gallery' | 'list' | 'compact'
 let _instrFilter = 'all';   // 'all' | 'pinned' | 'folder' | 'note'
+let _instrSort = 'default'; // 'default' (pinned first) | 'name' | 'recent'
 let _instrRecentIds = [];   // last 5 opened node ids
 
 function _instrRecordOpen(id) {
@@ -10968,14 +10971,8 @@ async function renderInstructions(instrSearch) {
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
+      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها... (Ctrl+K)" oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
-    <button class="btn btn-primary instr-topbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')">
-      <span class="btn-icon">📝</span><span> یادداشت جدید</span>
-    </button>
-    <button class="btn btn-ghost instr-topbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="margin-right:4px">
-      <span class="btn-icon">📁</span><span> پوشه جدید</span>
-    </button>
   `);
 
   if (!_db) { _load(); }
@@ -10984,37 +10981,39 @@ async function renderInstructions(instrSearch) {
 
   const flat = _db.instructions || [];
 
-  /* ── Stats bar (root only) ── */
-  let statsBar = '';
-  if (!_instrParentId && !instrSearch) {
-    const totalFolders = flat.filter(x => x.type === 'category').length;
-    const totalNotes   = flat.filter(x => x.type !== 'category').length;
-    const pinnedCount  = flat.filter(x => x.pinned).length;
-    const keyCount     = flat.filter(x => x.importance === 'key').length;
-    statsBar = `
-      <div id="instr-stats-row" class="instr-stats-full" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
-        ${_statChip('📂', fa(totalFolders), 'پوشه')}
-        ${_statChip('📝', fa(totalNotes), 'یادداشت')}
-        ${_statChip('📌', fa(pinnedCount), 'پین‌شده')}
-        ${_statChip('⭐', fa(keyCount), 'مهم')}
-      </div>
-      <div class="instr-stats-compact" style="font-size:12px;color:var(--text2);margin-bottom:12px">
-        ${fa(totalFolders)} پوشه • ${fa(totalNotes)} یادداشت${pinnedCount?` • ${fa(pinnedCount)} پین‌شده`:''}${keyCount?` • ${fa(keyCount)} مهم`:''}
-      </div>`;
-  }
+  /* ── Stats bar removed: folder/note/pin counters had no effect on what the user
+     was trying to do (find & open something) — pure visual noise on every load. ── */
+  const statsBar = '';
 
-  /* ── Breadcrumb (only shown once inside a folder — at the root it's just noise) ── */
+  /* ── Breadcrumb (only shown once inside a folder — at the root it's just noise) ──
+     Two variants rendered together, toggled by CSS (same pattern stats used to use):
+     full clickable trail on desktop, compact "home / parent / current" pill on mobile —
+     so the path is never simply hidden, it's just adapted to the screen. ── */
   let breadcrumb = '';
   if (_instrPath.length) {
-    breadcrumb = `<div class="instr-breadcrumb" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:9px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+    let full = `<div class="instr-breadcrumb instr-breadcrumb-full" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:9px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
       <span onclick="_instrGoTo(null,[])" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">🏠 مرکز دانش</span>`;
     _instrPath.forEach((p, i) => {
-      breadcrumb += `<span style="color:var(--text3)">›</span>
+      full += `<span style="color:var(--text3)">‹</span>
         <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
     });
-    breadcrumb += `</div>`;
+    full += `</div>`;
+
+    const parent = _instrPath.length > 1 ? _instrPath[_instrPath.length-2] : null;
+    const compact = `<div class="instr-breadcrumb instr-breadcrumb-compact" style="align-items:center;gap:5px;margin-bottom:12px;font-size:12px">
+      <span onclick="_instrGoTo(null,[])" style="cursor:pointer;color:var(--text3)">🏠</span>
+      ${parent ? `<span style="color:var(--text3)">/</span><span onclick='_instrGoTo(${parent.id}, ${JSON.stringify(_instrPath.slice(0,_instrPath.length-1)).replace(/'/g,"&#39;")})' style="cursor:pointer;color:var(--text3)">${escapeHtml(parent.title)}</span>` : ''}
+      <span style="color:var(--text3)">/</span><span style="color:var(--accent2);font-weight:600">${escapeHtml(_instrPath[_instrPath.length-1].title)}</span>
+    </div>`;
+
+    breadcrumb = full + compact;
   }
   _instrSetHeaderNav(_instrPath.length > 0, _instrPath.length ? `${_instrPath[_instrPath.length-1].icon||'📁'} ${_instrPath[_instrPath.length-1].title}` : null);
+
+  /* ── Windows/desktop toolbar: centralizes every create/sort/search action that used
+     to be split between the topbar and per-folder buttons. Hidden on mobile — the FAB
+     already covers create actions there, and there's no room for a toolbar row too. ── */
+  const toolbar = _instrToolbarHtml();
 
   /* ── View toggle + filter bar ── */
   const viewBar = `
@@ -11103,7 +11102,7 @@ async function renderInstructions(instrSearch) {
 
   /* ── Empty state ── */
   if (items.length === 0) {
-    setContent(statsBar + breadcrumb + pinnedBar + recentBar + viewBar + `
+    setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
@@ -11128,10 +11127,17 @@ async function renderInstructions(instrSearch) {
   const folders = items.filter(x => x.type === 'category');
   const notes   = items.filter(x => x.type !== 'category');
 
-  /* ── Sort: pinned first ── */
-  const sortItems = arr => [...arr.filter(x=>x.pinned), ...arr.filter(x=>!x.pinned)];
+  /* ── Sort: pinned always float first; within each group, order depends on _instrSort ── */
+  const sortItems = arr => {
+    const byMode = (a, b) => {
+      if (_instrSort === 'name') return a.title.localeCompare(b.title, 'fa');
+      if (_instrSort === 'recent') return new Date(b.updated_at||0) - new Date(a.updated_at||0);
+      return 0; // 'default' — keep original/creation order
+    };
+    return [...arr.filter(x=>x.pinned).sort(byMode), ...arr.filter(x=>!x.pinned).sort(byMode)];
+  };
 
-  let html = statsBar + breadcrumb + pinnedBar + recentBar + viewBar;
+  let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar;
 
   /* ── FOLDERS ── */
   if (folders.length > 0) {
@@ -11408,16 +11414,6 @@ async function renderInstructions(instrSearch) {
 }
 
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
-function _statChip(icon, val, label) {
-  return `<div style="display:flex;align-items:center;gap:7px;padding:8px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
-    <span style="font-size:16px">${icon}</span>
-    <div>
-      <div style="font-size:15px;font-weight:800;color:var(--text)">${val}</div>
-      <div style="font-size:10px;color:var(--text3)">${label}</div>
-    </div>
-  </div>`;
-}
-
 function _filterBtn(key, label) {
   const active = _instrFilter === key;
   return `<button onclick="_instrFilter='${key}';renderInstructions()"
@@ -11432,6 +11428,48 @@ function _viewBtn(key, label) {
     style="padding:5px 11px;border-radius:8px;border:1px solid ${active?'var(--accent)':'var(--border)'};
     background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
     font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
+}
+
+/* ── تولبار اختصاصی ویندوز/دسکتاپ ── جایگزین دکمه‌های پراکنده‌ی قبلی؛
+   همان الگویی که کاربران از File Explorer، Notion و Google Drive می‌شناسند. ── */
+function _instrToolbarHtml() {
+  const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
+  return `
+    <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+      <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
+        <span class="btn-icon">📝</span><span> یادداشت</span>
+      </button>
+      <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
+        <span class="btn-icon">📁</span><span> پوشه</span>
+      </button>
+      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
+      <button class="btn btn-ghost" onclick="_instrFilter = (_instrFilter==='pinned'?'all':'pinned'); renderInstructions()" style="font-size:12px">
+        <span class="btn-icon">⭐</span><span> فقط پین‌شده</span>
+      </button>
+      <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
+        <span>${sortLabel}</span>
+      </button>
+      <button class="btn btn-ghost" onclick="_instrFocusSearch()" style="font-size:12px;margin-right:auto" title="جستجوی سریع (Ctrl+K)">
+        <span class="btn-icon">🔍</span><span> جستجو</span>
+      </button>
+    </div>`;
+}
+function _instrCycleSort() {
+  _instrSort = _instrSort === 'default' ? 'name' : _instrSort === 'name' ? 'recent' : 'default';
+  renderInstructions();
+}
+function _instrFocusSearch() {
+  const el = document.getElementById('instr-search-input');
+  if (el) el.focus();
+}
+if (!window._instrQuickSearchBound) {
+  window._instrQuickSearchBound = true;
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && typeof currentPage !== 'undefined' && currentPage === 'instructions') {
+      e.preventDefault();
+      _instrFocusSearch();
+    }
+  });
 }
 
 /* ── دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل ── */
@@ -11566,19 +11604,16 @@ function _instrPushHistory() {
 /* ── Swap the topbar hamburger for a back arrow (+ home shortcut) while inside a folder ── */
 function _instrSetHeaderNav(inFolder, title) {
   const hb = document.getElementById('hamburger-btn');
-  const homeBtn = document.getElementById('instr-home-btn');
   if (!hb) return;
   if (inFolder) {
     hb.textContent = '←';
     hb.onclick = function () { history.back(); };
     hb.title = 'بازگشت';
-    if (homeBtn) homeBtn.style.display = '';
     if (title) { const pt = document.getElementById('page-title'); if (pt) pt.textContent = title; }
   } else {
     hb.textContent = '☰';
     hb.onclick = openSidebar;
     hb.title = '';
-    if (homeBtn) homeBtn.style.display = 'none';
   }
 }
 
