@@ -129,16 +129,6 @@ button { cursor: pointer; font-family: var(--font); }
 /* sidebar-logo h1/p defined above */
 
 .sidebar-nav { flex: 1 1 auto; min-height: 0; padding: 10px 8px; overflow-y: auto; }
-.sidebar-nav::after {
-  content: '';
-  display: block;
-  position: sticky;
-  bottom: 0; left: 0; right: 0;
-  height: 26px;
-  margin-top: -26px;
-  background: linear-gradient(to bottom, transparent, var(--bg2));
-  pointer-events: none;
-}
 .nav-section {
   font-size: 10px; font-weight: 700; color: var(--text3);
   padding: 14px 10px 5px; letter-spacing: .06em;
@@ -1463,12 +1453,12 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* body باید overflow:hidden بمونه تا fixed positioning (sidebar/bottom-nav) روی iOS درست کار کنه — اسکرول فقط داخل .content */
 
   /* Sidebar: drawer from right */
-  .sidebar{position:fixed;inset:0 0 0 auto;height:auto;transform:translateX(100%);width:min(280px,75vw);z-index:91;
+  .sidebar{position:fixed;top:env(safe-area-inset-top,0px);right:0;bottom:env(safe-area-inset-bottom,0px);transform:translateX(100%);width:min(280px,75vw);z-index:91;
     transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
     box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0px));flex:0 0 auto}
+  .sidebar .sidebar-logo{padding-top:14px;flex:0 0 auto}
   .sidebar .sidebar-nav{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .sidebar .sidebar-bottom{flex:0 0 auto;padding-bottom:max(14px, env(safe-area-inset-bottom,14px))}
+  .sidebar .sidebar-bottom{flex:0 0 auto;padding-bottom:14px}
   .sidebar.open{transform:translateX(0)}
   .hamburger{display:flex}
 
