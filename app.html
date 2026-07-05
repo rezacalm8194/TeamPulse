@@ -5517,6 +5517,10 @@ async function openEditSession(sessionId) {
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
+      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap">
+        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
+        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+      </div>
       <div class="form-group full">
         <button type="button" onclick="_toggleExtraNote()"
           style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:${session.extra_note?'var(--bg2)':'var(--bg3)'};border:1px solid ${session.extra_note?'var(--accent)':'var(--border)'};border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
@@ -5550,10 +5554,6 @@ async function openEditSession(sessionId) {
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
-      </div>
-      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:4px 0;flex-wrap:nowrap">
-        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
       </div>
     </div>
   `, [
