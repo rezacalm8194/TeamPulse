@@ -648,6 +648,22 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .meta-student-static { flex: 1; font-size: 12.5px; color: var(--text); font-weight: 600; }
 .meta-change-link { font-size: 11px; color: var(--accent2); background: none; border: none; cursor: pointer; font-family: var(--font); padding: 2px 4px; flex-shrink: 0; }
 
+/* ── Pre-session summary: fully closed drawer, opens on click to reveal items ── */
+.ses-presummary-box {
+  background: var(--bg2); border: 1px solid rgba(124,106,247,.25);
+  border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+}
+.ses-presummary-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 11px 14px; background: none; border: none; cursor: pointer;
+  font-family: var(--font); text-align: right;
+}
+.ses-presummary-toggle:hover { background: var(--bg4); }
+.ses-presummary-arrow { font-size: 10px; color: var(--text3); transition: transform .2s; flex-shrink: 0; }
+.ses-presummary-body { border-top: 1px solid var(--border); }
+.ses-presummary-body > div { border-bottom: 1px solid var(--border); }
+.ses-presummary-body > div:last-child { border-bottom: none; }
+
 /* ── Session title: primary field, styled to stand out like a note heading ── */
 .ses-title-label {
   font-size: 12.5px; font-weight: 700; color: var(--text2);
@@ -5323,56 +5339,54 @@ async function _buildPreSessionSummary(studentId, excludeSessionId = null) {
   const lastSession = gSessions.length ? gSessions[0] : null;
   if (!openFU.length && !recentAch.length && !lastSession) return '';
 
-  const _acc = (id, icon, label, badge, badgeColor, contentHtml) => `
-    <div style="border-bottom:1px solid var(--border);last-child:border-bottom:none">
-      <button type="button" onclick="_togglePreAcc('${id}')"
-        style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;background:none;border:none;cursor:pointer;font-family:var(--font);text-align:right">
+  const _sec = (icon, label, badge, badgeColor, contentHtml) => `
+    <div style="padding:10px 14px 12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="font-size:14px">${icon}</span>
         <span style="font-size:12px;font-weight:600;color:var(--text);flex:1">${label}</span>
         ${badge ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${badgeColor}22;color:${badgeColor}">${badge}</span>` : ''}
-        <span id="${id}-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s">▶</span>
-      </button>
-      <div id="${id}" style="display:none;padding:0 14px 12px">
-        ${contentHtml}
       </div>
+      ${contentHtml}
     </div>`;
 
   let sections = '';
 
   if (lastSession) {
     const lastNote = lastSession.note ? `<div style="font-size:11px;color:var(--text2);line-height:1.7;margin-top:6px;background:var(--bg3);border-radius:6px;padding:8px 10px">${escapeHtml(excerpt(lastSession.note, 200))}</div>` : '<div style="font-size:11px;color:var(--text3)">یادداشتی ثبت نشده</div>';
-    sections += _acc('_psa-last', '📄', `جلسه قبل — ${DateService.disp(lastSession.date_jalali)}`, lastSession.title ? excerpt(lastSession.title,20) : '', 'var(--text3)', lastNote);
+    sections += _sec('📄', `جلسه قبل — ${DateService.disp(lastSession.date_jalali)}`, lastSession.title ? excerpt(lastSession.title,20) : '', 'var(--text3)', lastNote);
   }
 
   if (openFU.length > 0) {
     const fuContent = openFU.slice(0,5).map(f =>
       `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3);flex-shrink:0">☐</span><span>${escapeHtml(f.text)}</span></div>`
     ).join('') + (openFU.length > 5 ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">و ${fa(openFU.length-5)} مورد دیگر...</div>` : '');
-    sections += _acc('_psa-fu', '📌', 'اقدامات باز', `${fa(openFU.length)} مورد`, 'var(--amber)', fuContent);
+    sections += _sec('📌', 'اقدامات باز', `${fa(openFU.length)} مورد`, 'var(--amber)', fuContent);
   }
 
   if (recentAch.length > 0) {
     const achContent = recentAch.slice(0,3).map(a =>
       `<div style="display:flex;align-items:flex-start;gap:6px;font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--green);flex-shrink:0">✔</span><span>${escapeHtml(excerpt(a.text, 80))}</span></div>`
     ).join('');
-    sections += _acc('_psa-ach', '🌱', 'آخرین دستاوردها', `${fa(recentAch.length)} مورد`, 'var(--green)', achContent);
+    sections += _sec('🌱', 'آخرین دستاوردها', `${fa(recentAch.length)} مورد`, 'var(--green)', achContent);
   }
 
-  return `<div style="background:var(--bg2);border:1px solid rgba(124,106,247,.25);border-radius:12px;margin-bottom:16px;overflow:hidden">
-    <div style="padding:10px 14px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">
+  return `<div class="ses-presummary-box" id="ses-presummary-box">
+    <button type="button" class="ses-presummary-toggle" onclick="_togglePreSummaryBox()">
       <span style="font-size:11px;font-weight:700;color:var(--accent2)">📋 خلاصه قبل از جلسه</span>
-      <span style="font-size:10px;color:var(--text3)">(کلیک کنید برای باز کردن)</span>
+      <span class="ses-presummary-arrow" id="ses-presummary-arrow">▶</span>
+    </button>
+    <div class="ses-presummary-body" id="ses-presummary-body" style="display:none">
+      ${sections}
     </div>
-    ${sections}
   </div>`;
 }
 
-function _togglePreAcc(id) {
-  const el = document.getElementById(id);
-  const arrow = document.getElementById(id + '-arrow');
-  if (!el) return;
-  const open = el.style.display !== 'none';
-  el.style.display = open ? 'none' : 'block';
+function _togglePreSummaryBox() {
+  const body = document.getElementById('ses-presummary-body');
+  const arrow = document.getElementById('ses-presummary-arrow');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
   if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
 }
 
@@ -5392,8 +5406,6 @@ async function openAddSessionGeneral(presetStudentId = null) {
     <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
     <div class="ses-meta-bar">
       <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
-        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
         <span class="ses-meta-summary" id="ses-meta-summary"></span>
       </button>
       <div class="ses-meta-body" id="ses-meta-body">
@@ -5654,8 +5666,6 @@ async function openEditSession(sessionId) {
     <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
     <div class="ses-meta-bar">
       <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
-        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
         <span class="ses-meta-summary" id="ses-meta-summary"></span>
       </button>
       <div class="ses-meta-body" id="ses-meta-body">
