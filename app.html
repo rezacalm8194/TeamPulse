@@ -1018,7 +1018,13 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .rt-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 .rt-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 2px; }
-.rich-toolbar + textarea { border-radius: 0 0 8px 8px; }
+.rich-toolbar + textarea,
+.rt-more + textarea { border-radius: 0 0 8px 8px; }
+.rt-more {
+  gap: 4px; flex-wrap: wrap; align-items: center;
+  margin: -6px 0 6px; padding: 6px; background: var(--bg3);
+  border: 1px solid var(--border2); border-top: 1px dashed var(--border2); border-bottom: none;
+}
 @keyframes fadeInFocus { from { opacity:0 } to { opacity:1 } }
 @keyframes scaleInFocus { from { transform:scale(.96);opacity:0 } to { transform:scale(1);opacity:1 } }
 
@@ -5211,13 +5217,14 @@ async function toggleFollowupFromDetail(sessionId, itemId, checkbox) {
   showToast(checkbox.checked ? '✅ انجام شد' : 'بازگشت به باز', 'success');
 }
 
-async function _buildPreSessionSummary(studentId) {
+async function _buildPreSessionSummary(studentId, excludeSessionId = null) {
   if (!studentId) return '';
   const openFU = await window.api.sessions.getOpenFollowups(studentId);
   const recentAch = await window.api.sessions.getRecentAchievements(studentId);
   const groups = await window.api.sessions.getAll();
   const g = groups.find(x => x.student_id === studentId);
-  const lastSession = g && g.sessions.length ? g.sessions[0] : null;
+  const gSessions = g ? g.sessions.filter(s => s.id !== excludeSessionId) : [];
+  const lastSession = gSessions.length ? gSessions[0] : null;
   if (!openFU.length && !recentAch.length && !lastSession) return '';
 
   const _acc = (id, icon, label, badge, badgeColor, contentHtml) => `
@@ -5275,49 +5282,23 @@ function _togglePreAcc(id) {
 
 async function openAddSessionGeneral(presetStudentId = null) {
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
-  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===presetStudentId?'selected':''}>${s.name} ${s.lname}</option>`).join('');
-  const preSummary = presetStudentId ? await _buildPreSessionSummary(presetStudentId) : '';
-  openModal(`ثبت ${META.sessionSingular || 'جلسه'} جدید`, `${preSummary}
+  const initStudentId = presetStudentId || allStudents[0]?.id || null;
+  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===initStudentId?'selected':''}>${s.name} ${s.lname}</option>`).join('');
+  const initStudent = allStudents.find(s => s.id === initStudentId);
+  const preSummary = initStudentId ? await _buildPreSessionSummary(initStudentId) : '';
+
+  const title = `ثبت ${META.sessionSingular || 'جلسه'}${initStudent ? `<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${initStudent.name} ${initStudent.lname}</div>` : '<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px"></div>'}`;
+
+  openModal(title, `
+    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
+    <div id="ses-presummary-container">${preSummary}</div>
+
     <div class="form-grid">
 
-      <!-- ── سطح ۱: اطلاعات اصلی ──────────────────────────────────────── -->
-      <div class="form-group full">
-        <label class="form-label" style="font-size:11px;font-weight:700;color:var(--accent2);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px">اطلاعات اصلی</label>
-      </div>
-
+      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
         <label class="form-label">عنوان ${META.sessionSingular||'جلسه'}</label>
         <input class="form-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="font-size:15px;font-weight:600;padding:12px 14px">
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">توضیحات جلسه</label>
-        ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
-      </div>
-
-      <div class="form-group full">
-        <button type="button" onclick="_toggleExtraNote()"
-          style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
-          onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
-          <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s">▶</span>
-          <span style="font-weight:600">توضیحات تکمیلی</span>
-          <span style="color:var(--text3);font-size:11px">(اختیاری)</span>
-        </button>
-        <div id="f-ses-extra-body" style="display:none;margin-top:6px">
-          ${richToolbar('f-ses-extra')}
-          <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
-        </div>
-      </div>
-
-      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap">
-        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
-      </div>
-
-      <!-- ── سطح ۲: اطلاعات تکمیلی ─────────────────────────────────────── -->
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <label class="form-label" style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px">اطلاعات تکمیلی</label>
       </div>
 
       <div class="form-group full">
@@ -5341,8 +5322,29 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <input type="hidden" id="f-ses-importance" value="normal">
       </div>
 
-      <!-- ── اقدامات و دستاوردها ──────────────────────────────────────────── -->
+      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
       <div class="form-group full">
+        <label class="form-label">توضیحات جلسه</label>
+        ${richToolbar('f-ses-note')}
+        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
+      </div>
+
+      <div class="form-group full">
+        <button type="button" onclick="_toggleExtraNote()"
+          style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
+          onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
+          <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s">▶</span>
+          <span style="font-weight:600">یادداشت‌های خصوصی</span>
+          <span style="color:var(--text3);font-size:11px">(اختیاری)</span>
+        </button>
+        <div id="f-ses-extra-body" style="display:none;margin-top:6px">
+          ${richToolbar('f-ses-extra')}
+          <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
+        </div>
+      </div>
+
+      <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
         <div id="ses-followup-list" style="margin-bottom:6px"></div>
         <div style="display:flex;gap:6px">
@@ -5358,14 +5360,18 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <div id="ses-ach-tags"></div>
       </div>
 
-      <!-- ── گزینه‌های پیشرفته (Accordion) ────────────────────────────────── -->
+      <!-- ── تنظیمات بیشتر (Accordion) ────────────────────────────────── -->
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
         <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn"
           style="display:flex;align-items:center;gap:6px;padding:8px 0;background:none;border:none;cursor:pointer;font-family:var(--font);color:var(--text3);font-size:12px;width:100%">
           <span id="f-ses-adv-arrow" style="transition:transform .2s;font-size:10px">▶</span>
-          <span>گزینه‌های بیشتر (پیوست‌ها)</span>
+          <span>⋮ تنظیمات بیشتر</span>
         </button>
         <div id="f-ses-adv-body" style="display:none;padding-top:8px">
+          <div class="form-group full" style="flex-direction:row;align-items:center;gap:8px;padding:2px 0 12px;flex-wrap:nowrap;margin-top:0">
+            <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
+            <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+          </div>
           <div class="form-group full" style="margin-top:0">
             <label class="form-label">📎 پیوست‌ها</label>
             <div id="ses-attach-preview" style="margin-bottom:8px"></div>
@@ -5384,8 +5390,8 @@ async function openAddSessionGeneral(presetStudentId = null) {
   window._pendingFollowups = [];
   setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
   setTimeout(() => {
-    const initStudent = presetStudentId || +document.getElementById('f-ses-student')?.value;
-    if (initStudent) _renderAchievementTagPicker(_primaryEvalFormId(initStudent), []);
+    const sid = initStudentId || +document.getElementById('f-ses-student')?.value;
+    if (sid) _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
     _updateSesPeriodBadge();
   }, 0);
 }
@@ -5495,38 +5501,49 @@ async function openEditSession(sessionId) {
   }
   if (!session) return;
 
-  openModal(`ویرایش ${META.sessionSingular||'جلسه'} — ${student.name} ${student.lname}`, `
+  const preSummary = await _buildPreSessionSummary(session.student_id, sessionId);
+
+  openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${student.name} ${student.lname}</div>`, `
+    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
+    <div id="ses-presummary-container">${preSummary}</div>
+
     <div class="form-grid">
+
+      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
         <label class="form-label">عنوان</label>
-        <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}">
+        <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="font-size:15px;font-weight:600;padding:12px 14px">
       </div>
+
       <div class="form-group">
         <label class="form-label">تاریخ (شمسی)</label>
         <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}">
       </div>
+
       <div class="form-group">
-        <label class="form-label">اهمیت</label>
-        <select class="form-select" id="f-ses-importance">
-          <option value="normal" ${session.importance!=='key'?'selected':''}>معمولی</option>
-          <option value="key" ${session.importance==='key'?'selected':''}>⭐ مهم و کلیدی</option>
-        </select>
+        <label class="form-label">اهمیت جلسه</label>
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden" id="f-ses-importance-seg">
+          <button type="button" data-val="normal" onclick="_setImportanceSeg('normal')"
+            style="flex:1;padding:8px 4px;border:none;background:${session.importance!=='key'?'var(--accent)':'var(--bg3)'};color:${session.importance!=='key'?'#fff':'var(--text2)'};font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border-left:1px solid var(--border)">🟢 معمولی</button>
+          <button type="button" data-val="key" onclick="_setImportanceSeg('key')"
+            style="flex:1;padding:8px 4px;border:none;background:${session.importance==='key'?'var(--accent)':'var(--bg3)'};color:${session.importance==='key'?'#fff':'var(--text2)'};font-size:12px;cursor:pointer;font-family:var(--font)">⭐ مهم</button>
+        </div>
+        <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
       </div>
+
+      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
       <div class="form-group full">
-        <label class="form-label">توضیحات</label>
+        <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
-      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap">
-        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
-      </div>
+
       <div class="form-group full">
         <button type="button" onclick="_toggleExtraNote()"
           style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:${session.extra_note?'var(--bg2)':'var(--bg3)'};border:1px solid ${session.extra_note?'var(--accent)':'var(--border)'};border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
           onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='${session.extra_note?'var(--bg2)':'var(--bg3)'}'">
           <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s;${session.extra_note?'transform:rotate(90deg)':''}">▶</span>
-          <span style="font-weight:600">توضیحات تکمیلی</span>
+          <span style="font-weight:600">یادداشت‌های خصوصی</span>
           ${session.extra_note ? '<span style="font-size:10px;color:var(--accent2)">● دارای محتوا</span>' : '<span style="color:var(--text3);font-size:11px">(اختیاری)</span>'}
         </button>
         <div id="f-ses-extra-body" style="display:${session.extra_note?'block':'none'};margin-top:6px">
@@ -5534,7 +5551,9 @@ async function openEditSession(sessionId) {
           <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
         </div>
       </div>
-      <div class="form-group full">
+
+      <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
         <div id="ses-edit-followup-list">
           ${(session.followups || []).map((f, i) => `
@@ -5549,15 +5568,32 @@ async function openEditSession(sessionId) {
           <button type="button" class="btn btn-ghost" onclick="addEditFollowup(${sessionId})">+ افزودن</button>
         </div>
       </div>
+
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
         <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
+
+      <!-- ── تنظیمات بیشتر (Accordion) ────────────────────────────────── -->
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
+        <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn"
+          style="display:flex;align-items:center;gap:6px;padding:8px 0;background:none;border:none;cursor:pointer;font-family:var(--font);color:var(--text3);font-size:12px;width:100%">
+          <span id="f-ses-adv-arrow" style="transition:transform .2s;font-size:10px">▶</span>
+          <span>⋮ تنظیمات بیشتر</span>
+        </button>
+        <div id="f-ses-adv-body" style="display:none;padding-top:8px">
+          <div class="form-group full" style="flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap;margin-top:0">
+            <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
+            <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+          </div>
+        </div>
+      </div>
+
     </div>
   `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
+    { label: 'ذخیره جلسه', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
@@ -6673,19 +6709,33 @@ async function deletePkgType(id) {
 }
 
 function richToolbar(textareaId) {
-  const stickers = ['⭐','✅','❗','💡','🔥','👍','📌','⚠️','❤️','🎯'];
+  // فقط پراستفاده‌ترین ابزارها همیشه نمایش داده می‌شوند؛ بقیه پشت دکمه «+» هستند (مثل Notion)
+  const mainStickers = ['⭐','📌','🔥','✅','⚠️'];
+  const moreStickers = ['❗','💡','👍','❤️','🎯'];
+  const moreId = textareaId + '-more';
   return `
   <div class="rich-toolbar">
+    ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
+    <span class="rt-sep"></span>
+    <button type="button" class="rt-btn" title="ابزارهای بیشتر" onclick="_toggleToolbarMore('${moreId}')">+</button>
+  </div>
+  <div id="${moreId}" class="rt-more" style="display:none">
     <button type="button" class="rt-btn" title="پررنگ" onclick="wrapSelection('${textareaId}','**','**')"><b>B</b></button>
     <button type="button" class="rt-btn" title="هایلایت" onclick="wrapSelection('${textareaId}','==','==')">🖍️</button>
     <button type="button" class="rt-btn" title="چک‌لیست" onclick="insertChecklistItem('${textareaId}')" style="font-size:13px">☑</button>
     <button type="button" class="rt-btn" title="لیست شماره‌دار" onclick="insertNumberedItem('${textareaId}')" style="font-size:13px">№</button>
     <button type="button" class="rt-btn" title="جدول" onclick="insertTable('${textareaId}')" style="font-size:12px">⊞</button>
     <span class="rt-sep"></span>
-    ${stickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
+    ${moreStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
     <span class="rt-sep"></span>
     <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
   </div>`;
+}
+
+function _toggleToolbarMore(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
 }
 
 function wrapSelection(textareaId, before, after) {
@@ -8641,6 +8691,14 @@ function _onSesStudentChangeRebuildPeriods(selectEl) {
   const studentId = +selectEl.value;
   _renderAchievementTagPicker(_primaryEvalFormId(studentId), []);
   _updateSesPeriodBadge();
+  // اگر در فرم «ثبت جلسه» هستیم، خلاصهٔ قبل از جلسه و زیرعنوان مودال را هم به‌روز کن
+  const preContainer = document.getElementById('ses-presummary-container');
+  const subtitle = document.getElementById('ses-modal-subtitle');
+  const student = (allStudents || []).find(s => s.id === studentId);
+  if (subtitle && student) subtitle.textContent = `${student.name} ${student.lname}`;
+  if (preContainer && studentId) {
+    _buildPreSessionSummary(studentId).then(html => { preContainer.innerHTML = html; });
+  }
 }
 
 // Kept for the tag picker refresh; the period select this used to respond to no longer exists.
