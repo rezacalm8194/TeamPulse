@@ -5297,9 +5297,17 @@ async function openAddSessionGeneral(presetStudentId = null) {
       </div>
 
       <div class="form-group full">
-        <label class="form-label">توضیحات تکمیلی</label>
-        ${richToolbar('f-ses-extra')}
-        <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
+        <button type="button" onclick="_toggleExtraNote()"
+          style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
+          onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
+          <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s">▶</span>
+          <span style="font-weight:600">توضیحات تکمیلی</span>
+          <span style="color:var(--text3);font-size:11px">(اختیاری)</span>
+        </button>
+        <div id="f-ses-extra-body" style="display:none;margin-top:6px">
+          ${richToolbar('f-ses-extra')}
+          <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
+        </div>
       </div>
 
       <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap">
@@ -5391,6 +5399,16 @@ function _setImportanceSeg(val) {
     b.style.color = isActive ? '#fff' : 'var(--text2)';
     b.style.fontWeight = isActive ? '600' : '400';
   });
+}
+
+function _toggleExtraNote() {
+  const body = document.getElementById('f-ses-extra-body');
+  const arrow = document.getElementById('f-ses-extra-arrow');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+  if (!open) setTimeout(() => document.getElementById('f-ses-extra')?.focus(), 50);
 }
 
 function _toggleAdvSes() {
@@ -5500,9 +5518,17 @@ async function openEditSession(sessionId) {
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
       <div class="form-group full">
-        <label class="form-label">توضیحات تکمیلی</label>
-        ${richToolbar('f-ses-extra')}
-        <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
+        <button type="button" onclick="_toggleExtraNote()"
+          style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:${session.extra_note?'var(--bg2)':'var(--bg3)'};border:1px solid ${session.extra_note?'var(--accent)':'var(--border)'};border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s"
+          onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='${session.extra_note?'var(--bg2)':'var(--bg3)'}'">
+          <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s;${session.extra_note?'transform:rotate(90deg)':''}">▶</span>
+          <span style="font-weight:600">توضیحات تکمیلی</span>
+          ${session.extra_note ? '<span style="font-size:10px;color:var(--accent2)">● دارای محتوا</span>' : '<span style="color:var(--text3);font-size:11px">(اختیاری)</span>'}
+        </button>
+        <div id="f-ses-extra-body" style="display:${session.extra_note?'block':'none'};margin-top:6px">
+          ${richToolbar('f-ses-extra')}
+          <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
+        </div>
       </div>
       <div class="form-group full">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
@@ -5525,6 +5551,10 @@ async function openEditSession(sessionId) {
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
+      <div class="form-group full" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:4px 0;flex-wrap:nowrap">
+        <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
+        <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+      </div>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
@@ -5544,18 +5574,23 @@ async function saveEditSession(sessionId) {
   const studentId = s ? s.student_id : null;
   const date = document.getElementById('f-ses-date')?.value;
   const { formId: autoFormId, pid: autoPid } = studentId ? _matchPeriodForDate(studentId, date) : { formId: null, pid: null };
+  const title = document.getElementById('f-ses-title')?.value || '';
+  const note = document.getElementById('f-ses-note')?.value;
   await window.api.sessions.update({
     id: sessionId,
-    title: document.getElementById('f-ses-title')?.value || '',
+    title,
     date,
     importance: document.getElementById('f-ses-importance')?.value,
-    note: document.getElementById('f-ses-note')?.value,
+    note,
     extra_note: document.getElementById('f-ses-extra')?.value,
     achievements: document.getElementById('f-ses-achievements')?.value || '',
     eval_form_id: autoFormId || null,
     eval_period_id: autoPid || null,
     achievement_tags: _getCheckedAchievementTags(),
   });
+  if (document.getElementById('f-ses-add-topic')?.checked && studentId) {
+    await window.api.topics.add({ student_id: studentId, date, title, text: note });
+  }
   closeModal();
   showToast('ذخیره شد ✓', 'success');
   await renderSessions();
