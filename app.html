@@ -1733,7 +1733,7 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
       </div>
 
       <div class="nav-section">مدیریت</div>
-      <a class="nav-item" data-page="instructions" title="دستورالعمل‌های من" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">📋</span><span>دستورالعمل‌های من</span></a>
+      <a class="nav-item" data-page="instructions" title="مرکز دانش" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">🧠</span><span>مرکز دانش</span></a>
       <a class="nav-item" data-page="staff" title="مدیریت"><span class="nav-icon">🧑‍💼</span><span>مدیریت</span></a>
       <a class="nav-item" data-page="customerlist" title="لیست شاگردان"><span class="nav-icon">📋</span><span id="nav-label-customerlist">لیست شاگردان</span></a>
       <a class="nav-item" data-page="archive" title="بایگانی شاگردان"><span class="nav-icon">📦</span><span id="nav-label-archive">بایگانی شاگردان</span></a>
@@ -3597,7 +3597,7 @@ function updatePageTitle() {
     customerlist: `لیست ${META.entityPlural || 'مشتریان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
     staff: 'مدیریت',
-    instructions: 'دستورالعمل‌های من',
+    instructions: 'مرکز دانش',
     todolist: 'لیست کارها',
     tutorial: 'آموزش‌ها',
     admin_panel: '👑 پنل مدیریت',
@@ -10862,7 +10862,7 @@ async function init() {
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// INSTRUCTIONS PAGE — دستورالعمل‌های من
+// INSTRUCTIONS PAGE — مرکز دانش
 // ════════════════════════════════════════════════════════════════════════════
 function _buildInstrTree(flat, parentId) {
   const pid = parentId ? +parentId : null;
@@ -10892,7 +10892,7 @@ async function renderInstructions(instrSearch) {
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input id="instr-search-input" placeholder="جستجوی کامل — عنوان، متن، تگ..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
+      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
     <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">
       <span class="btn-icon">📝</span><span> یادداشت جدید</span>
@@ -10943,9 +10943,9 @@ async function renderInstructions(instrSearch) {
         ${_filterBtn('note','📝 یادداشت')}
       </div>
       <div style="display:flex;gap:4px">
-        ${_viewBtn('gallery','▦ Gallery')}
-        ${_viewBtn('list','☰ List')}
-        ${_viewBtn('compact','⊟ Compact')}
+        ${_viewBtn('gallery','◻ گالری')}
+        ${_viewBtn('list','☰ فهرست')}
+        ${_viewBtn('compact','▤ فشرده')}
       </div>
     </div>`;
 
@@ -11003,14 +11003,14 @@ async function renderInstructions(instrSearch) {
   if (!_instrParentId && !instrSearch && _instrFilter === 'all' && _instrRecentIds.length) {
     const recentNodes = _instrRecentIds.map(id => flat.find(x => x.id === id)).filter(Boolean);
     if (recentNodes.length) {
-      recentBar = `<div style="margin-bottom:20px">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:8px;text-transform:uppercase">🕓 اخیراً باز شده</div>
+      recentBar = `<div style="margin-bottom:20px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">🕓 اخیراً باز شده</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">`;
       recentNodes.forEach(item => {
         const c = item.color || '#7c6af7';
         recentBar += `<div onclick="${item.type==='category'?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${item.type!=='category'?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
-          style="display:flex;align-items:center;gap:7px;padding:6px 11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;cursor:pointer;font-size:12px;color:var(--text2);transition:all .15s"
-          onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+          style="display:flex;align-items:center;gap:7px;padding:7px 14px;background:var(--bg3);border:1px solid var(--border2);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
+          onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
           <span>${item.icon||'📝'}</span><span>${escapeHtml(item.title)}</span>
         </div>`;
       });
@@ -11026,8 +11026,8 @@ async function renderInstructions(instrSearch) {
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
         ${!instrSearch && !_instrParentId ? `
           <p style="font-size:12px;color:var(--text3);line-height:1.8;max-width:300px;margin:0 auto 16px">
-            اینجا دستورالعمل‌هایت را ذخیره کن.<br>
-            هر فرایندی که باید دقیقاً تکرار شود — فروش، SOP، قوانین زندگی.
+            دانش، فرایندها و قوانین زندگیت را اینجا ذخیره کن.<br>
+            هر چیزی که باید بعداً بهش رجوع کنی — SOP، ایده، قوانین کسب‌وکار.
           </p>
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>
@@ -11054,16 +11054,15 @@ async function renderInstructions(instrSearch) {
   if (folders.length > 0) {
     html += `<div style="margin-bottom:24px">
       <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📁 پوشه‌ها (${fa(folders.length)})</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${_instrView==='compact'?'140px':'200px'},1fr));gap:10px">`;
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${_instrView==='compact'?'140px':'200px'},1fr));gap:${_instrView==='compact'?'10px':'20px'}">`;
     sortItems(folders).forEach(item => {
       const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
-      const noteCount  = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').length;
       const color = item.color || '#7c6af7';
       const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
       const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').slice(0,3);
       const previewHtml = preview.length && _instrView !== 'compact' ? `
-        <div style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:3px">
-          ${preview.map(n=>`<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✓ ${escapeHtml(n.title)}</div>`).join('')}
+        <div style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px">
+          ${preview.map(n=>`<div style="font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✓ ${escapeHtml(n.title)}</div>`).join('')}
         </div>` : '';
 
       const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
@@ -11076,14 +11075,12 @@ async function renderInstructions(instrSearch) {
           onmouseover="_instrHoverCard(this,'${color}')"
           onmouseout="_instrUnhoverCard(this)">
           <div style="height:3px;background:${color}"></div>
-          <div style="padding:${_instrView==='compact'?'10px 12px':'14px 14px 10px'}">
+          <div style="padding:${_instrView==='compact'?'10px 12px':'16px 14px 12px'}">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
-            <div style="font-size:${_instrView==='compact'?'22px':'30px'};margin-bottom:6px">${item.icon||'📁'}</div>
-            <div style="font-weight:700;font-size:${_instrView==='compact'?'12px':'13px'};margin-bottom:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-size:11px;color:var(--text3)">${fa(childCount)} مورد</span>
-              ${noteCount ? `<span style="font-size:11px;color:var(--text3)">· ${fa(noteCount)} یادداشت</span>` : ''}
-            </div>
+            <div style="font-size:${_instrView==='compact'?'22px':'32px'};margin-bottom:8px">${item.icon||'📁'}</div>
+            <div style="font-weight:700;font-size:${_instrView==='compact'?'12px':'14px'};margin-bottom:6px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
+            <div style="height:1px;background:var(--border);margin-bottom:6px"></div>
+            <span style="font-size:11px;color:var(--text3)">${fa(childCount)} آیتم</span>
             ${lastEdit && _instrView !== 'compact' ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
           </div>
           ${previewHtml}
@@ -11107,7 +11104,7 @@ async function renderInstructions(instrSearch) {
       <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📝 یادداشت‌ها (${fa(notes.length)})</div>`;
 
     if (_instrView === 'gallery') {
-      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">`;
+      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px">`;
       sortItems(notes).forEach(item => {
         const color = item.color || '#7c6af7';
         const isKey = item.importance === 'key';
@@ -11581,7 +11578,7 @@ const DEFAULT_NAV_ORDER = [
   { page: 'goals',        icon: '🎯', label: () => 'اهداف' },
   { page: 'habits',       icon: '🔥', label: () => 'عادت‌ها' },
   { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
-  { page: 'instructions', icon: '📋', label: () => 'دستورالعمل‌های من' },
+  { page: 'instructions', icon: '📋', label: () => 'مرکز دانش' },
   { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت' },
   { page: 'payments',     icon: '🛒', label: () => 'تاریخچه خریدها و پرداخت‌ها' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری پرداخت' },
@@ -14601,7 +14598,7 @@ async function renderTutorial() {
     { icon:'✅', title:'لیست کارها', color:'#34d399',
       desc:'Todo list حرفه‌ای با امکان تکرار روزانه، هفتگی، ماهانه و یادآوری. کارهای انجام‌شده با صدا تأیید میشن.',
       tips:['کارهای تکراری رو یه بار تنظیم کن','یادآوری قبل از وقت کار رو فعال کن','کارهای انجام‌شده بعد از چند ساعت به بایگانی میرن'] },
-    { icon:'📋', title:'دستورالعمل‌ها', color:'#a78bfa',
+    { icon:'🧠', title:'مرکز دانش', color:'#a78bfa',
       desc:'یه پایگاه دانش شخصی. پوشه‌بندی تودرتو، یادداشت با محتوای کامل، آیکون و رنگ سفارشی.',
       tips:['می‌تونی پوشه داخل پوشه بسازی','فایل و عکس به یادداشت‌ها ضمیمه کن'] },
     { icon:'🧑‍💼', title:'مدیریت', color:'#fb923c',
