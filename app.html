@@ -1567,6 +1567,13 @@ body.light mark { background: rgba(251,191,36,.5); }
 /* Windows/desktop-only toolbar — hidden on touch/mobile widths (FAB covers that role) */
 .instr-toolbar{ display:flex; }
 
+/* Desktop: filter chips now live inside the toolbar above, so the old standalone
+   row is redundant and only shown ≤768px where the toolbar itself is hidden. */
+@media(min-width:769px){
+  #instr-filter-group{ display:none!important; }
+  #instr-filterview-row{ justify-content:flex-end; }
+}
+
 @media(max-width:768px){
   /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
   #instr-filterview-row{
@@ -11430,8 +11437,10 @@ function _viewBtn(key, label) {
     font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
 }
 
-/* ── تولبار اختصاصی ویندوز/دسکتاپ ── جایگزین دکمه‌های پراکنده‌ی قبلی؛
-   همان الگویی که کاربران از File Explorer، Notion و Google Drive می‌شناسند. ── */
+/* ── تولبار اختصاصی ویندوز/دسکتاپ ── جایگزین دکمه‌های پراکنده‌ی قبلی و ردیف فیلتر
+   جداگانه؛ ساخت، فیلتر و مرتب‌سازی همه در یک ردیف — همان الگویی که کاربران از
+   File Explorer، Notion و Google Drive می‌شناسند. (فقط دسکتاپ؛ در موبایل ردیف
+   فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
   const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
   return `
@@ -11443,14 +11452,13 @@ function _instrToolbarHtml() {
         <span class="btn-icon">📁</span><span> پوشه</span>
       </button>
       <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
-      <button class="btn btn-ghost" onclick="_instrFilter = (_instrFilter==='pinned'?'all':'pinned'); renderInstructions()" style="font-size:12px">
-        <span class="btn-icon">⭐</span><span> فقط پین‌شده</span>
-      </button>
+      ${_filterBtn('all','همه')}
+      ${_filterBtn('pinned','📌 پین‌شده')}
+      ${_filterBtn('folder','📁 پوشه')}
+      ${_filterBtn('note','📝 یادداشت')}
+      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
         <span>${sortLabel}</span>
-      </button>
-      <button class="btn btn-ghost" onclick="_instrFocusSearch()" style="font-size:12px;margin-right:auto" title="جستجوی سریع (Ctrl+K)">
-        <span class="btn-icon">🔍</span><span> جستجو</span>
       </button>
     </div>`;
 }
@@ -11462,6 +11470,8 @@ function _instrFocusSearch() {
   const el = document.getElementById('instr-search-input');
   if (el) el.focus();
 }
+/* Ctrl/Cmd+K still jumps to the search field that already lives in the topbar —
+   no separate search button needed in the toolbar itself. */
 if (!window._instrQuickSearchBound) {
   window._instrQuickSearchBound = true;
   document.addEventListener('keydown', function (e) {
