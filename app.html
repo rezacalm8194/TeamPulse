@@ -129,6 +129,16 @@ button { cursor: pointer; font-family: var(--font); }
 /* sidebar-logo h1/p defined above */
 
 .sidebar-nav { flex: 1 1 auto; min-height: 0; padding: 10px 8px; overflow-y: auto; }
+.sidebar-nav::after {
+  content: '';
+  display: block;
+  position: sticky;
+  bottom: 0; left: 0; right: 0;
+  height: 26px;
+  margin-top: -26px;
+  background: linear-gradient(to bottom, transparent, var(--bg2));
+  pointer-events: none;
+}
 .nav-section {
   font-size: 10px; font-weight: 700; color: var(--text3);
   padding: 14px 10px 5px; letter-spacing: .06em;
