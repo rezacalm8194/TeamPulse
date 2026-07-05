@@ -617,6 +617,36 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   letter-spacing: .04em;
 }
 
+/* ── Session meta-bar: student / date / importance as compact context, not primary content ── */
+.ses-meta-bar {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg3); margin-bottom: 14px; overflow: hidden;
+}
+.ses-meta-toggle {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: none; border: none; cursor: pointer;
+  font-family: var(--font); text-align: right; color: var(--text2);
+}
+.ses-meta-toggle:hover { background: var(--bg4); }
+.ses-meta-arrow { font-size: 9px; color: var(--text3); transition: transform .2s; flex-shrink: 0; }
+.ses-meta-summary { font-size: 12px; color: var(--text2); flex: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ses-meta-summary .dot { color: var(--text3); font-size: 10px; }
+.ses-meta-body { display: none; padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+.meta-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.meta-row + .meta-row { border-top: 1px dashed var(--border); }
+.meta-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; color: var(--text3); }
+.meta-row .form-input,
+.meta-row .form-select { flex: 1; }
+.seg-sm { display: flex; border: 1px solid var(--border2); border-radius: 7px; overflow: hidden; width: 160px; flex-shrink: 0; }
+.seg-sm button {
+  flex: 1; padding: 6px 4px; border: none; background: var(--bg2); color: var(--text2);
+  font-size: 11px; font-family: var(--font); cursor: pointer; transition: all .15s;
+}
+.seg-sm button + button { border-right: 1px solid var(--border2); }
+.seg-sm button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.meta-student-static { flex: 1; font-size: 12.5px; color: var(--text); font-weight: 600; }
+.meta-change-link { font-size: 11px; color: var(--accent2); background: none; border: none; cursor: pointer; font-family: var(--font); padding: 2px 4px; flex-shrink: 0; }
+
 /* Pkg checkboxes */
 .pkg-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .pkg-check {
@@ -5293,33 +5323,44 @@ async function openAddSessionGeneral(presetStudentId = null) {
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
 
+    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
+    <div class="ses-meta-bar">
+      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
+        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
+        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
+        <span class="ses-meta-summary" id="ses-meta-summary"></span>
+      </button>
+      <div class="ses-meta-body" id="ses-meta-body">
+        <div class="meta-row" id="meta-student-static-row" style="${presetStudentId ? '' : 'display:none'}">
+          <span class="meta-icon">👤</span>
+          <span class="meta-student-static" id="ses-meta-student-static">${initStudent ? escapeHtml(initStudent.name + ' ' + initStudent.lname) : ''}</span>
+          <button type="button" class="meta-change-link" onclick="_toggleSesStudentEdit()">✏️ تغییر</button>
+        </div>
+        <div class="meta-row" id="meta-student-select-row" style="${presetStudentId ? 'display:none' : 'display:flex'}">
+          <span class="meta-icon">👤</span>
+          <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">📅</span>
+          <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">🏷️</span>
+          <div class="seg-sm" id="f-ses-importance-seg">
+            <button type="button" data-val="normal" class="active" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
+            <button type="button" data-val="key" onclick="_setImportanceSeg('key')">⭐ مهم</button>
+          </div>
+          <input type="hidden" id="f-ses-importance" value="normal">
+        </div>
+      </div>
+    </div>
+
     <div class="form-grid">
 
       <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
         <label class="form-label">عنوان ${META.sessionSingular||'جلسه'}</label>
         <input class="form-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="font-size:15px;font-weight:600;padding:12px 14px">
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">${META.entitySingular || 'شاگرد'} *</label>
-        <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">تاریخ (شمسی)</label>
-        <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge()" onchange="_updateSesPeriodBadge()">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">اهمیت جلسه</label>
-        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden" id="f-ses-importance-seg">
-          <button type="button" data-val="normal" onclick="_setImportanceSeg('normal')"
-            style="flex:1;padding:8px 4px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border-left:1px solid var(--border)">🟢 معمولی</button>
-          <button type="button" data-val="key" onclick="_setImportanceSeg('key')"
-            style="flex:1;padding:8px 4px;border:none;background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer;font-family:var(--font)">⭐ مهم</button>
-        </div>
-        <input type="hidden" id="f-ses-importance" value="normal">
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
@@ -5393,18 +5434,55 @@ async function openAddSessionGeneral(presetStudentId = null) {
     const sid = initStudentId || +document.getElementById('f-ses-student')?.value;
     if (sid) _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
     _updateSesPeriodBadge();
+    _updateSesMetaSummary();
   }, 0);
 }
 
 function _setImportanceSeg(val) {
   document.getElementById('f-ses-importance').value = val;
   const btns = document.querySelectorAll('#f-ses-importance-seg button');
-  btns.forEach(b => {
-    const isActive = b.dataset.val === val;
-    b.style.background = isActive ? 'var(--accent)' : 'var(--bg3)';
-    b.style.color = isActive ? '#fff' : 'var(--text2)';
-    b.style.fontWeight = isActive ? '600' : '400';
-  });
+  btns.forEach(b => b.classList.toggle('active', b.dataset.val === val));
+  _updateSesMetaSummary();
+}
+
+function _toggleSesMeta() {
+  const body = document.getElementById('ses-meta-body');
+  const arrow = document.getElementById('ses-meta-arrow');
+  if (!body) return;
+  const open = body.style.display === 'block';
+  body.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function _sesImportanceLabel(val) { return val === 'key' ? '⭐ مهم' : '🟢 معمولی'; }
+
+function _updateSesMetaSummary() {
+  const summaryEl = document.getElementById('ses-meta-summary');
+  if (!summaryEl) return;
+  const date = document.getElementById('f-ses-date')?.value || '';
+  const importance = document.getElementById('f-ses-importance')?.value || 'normal';
+  let studentLabel = '';
+  const studentStatic = document.getElementById('ses-meta-student-static');
+  if (studentStatic) {
+    studentLabel = studentStatic.textContent.replace('👤 ', '').trim();
+  } else {
+    const sel = document.getElementById('f-ses-student');
+    const opt = sel?.options[sel.selectedIndex];
+    studentLabel = opt ? opt.textContent : '';
+  }
+  summaryEl.innerHTML = `
+    ${studentLabel ? `<span>👤 ${escapeHtml(studentLabel)}</span><span class="dot">•</span>` : ''}
+    <span>📅 ${date}</span><span class="dot">•</span>
+    <span>${_sesImportanceLabel(importance)}</span>`;
+}
+
+function _toggleSesStudentEdit() {
+  const staticEl = document.getElementById('meta-student-static-row');
+  const editEl = document.getElementById('meta-student-select-row');
+  if (!staticEl || !editEl) return;
+  staticEl.style.display = 'none';
+  editEl.style.display = 'flex';
+  document.getElementById('f-ses-student')?.focus();
 }
 
 function _toggleExtraNote() {
@@ -5507,28 +5585,39 @@ async function openEditSession(sessionId) {
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
 
+    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
+    <div class="ses-meta-bar">
+      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
+        <span class="ses-meta-arrow" id="ses-meta-arrow">▶</span>
+        <span style="font-weight:600;font-size:12px;flex-shrink:0">اطلاعات جلسه</span>
+        <span class="ses-meta-summary" id="ses-meta-summary"></span>
+      </button>
+      <div class="ses-meta-body" id="ses-meta-body">
+        <div class="meta-row" id="meta-student-static-row">
+          <span class="meta-icon">👤</span>
+          <span class="meta-student-static" id="ses-meta-student-static">${escapeHtml(student.name + ' ' + student.lname)}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">📅</span>
+          <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">🏷️</span>
+          <div class="seg-sm" id="f-ses-importance-seg">
+            <button type="button" data-val="normal" class="${session.importance!=='key'?'active':''}" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
+            <button type="button" data-val="key" class="${session.importance==='key'?'active':''}" onclick="_setImportanceSeg('key')">⭐ مهم</button>
+          </div>
+          <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
+        </div>
+      </div>
+    </div>
+
     <div class="form-grid">
 
       <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
       <div class="form-group full">
         <label class="form-label">عنوان</label>
         <input class="form-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="font-size:15px;font-weight:600;padding:12px 14px">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">تاریخ (شمسی)</label>
-        <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">اهمیت جلسه</label>
-        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden" id="f-ses-importance-seg">
-          <button type="button" data-val="normal" onclick="_setImportanceSeg('normal')"
-            style="flex:1;padding:8px 4px;border:none;background:${session.importance!=='key'?'var(--accent)':'var(--bg3)'};color:${session.importance!=='key'?'#fff':'var(--text2)'};font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border-left:1px solid var(--border)">🟢 معمولی</button>
-          <button type="button" data-val="key" onclick="_setImportanceSeg('key')"
-            style="flex:1;padding:8px 4px;border:none;background:${session.importance==='key'?'var(--accent)':'var(--bg3)'};color:${session.importance==='key'?'#fff':'var(--text2)'};font-size:12px;cursor:pointer;font-family:var(--font)">⭐ مهم</button>
-        </div>
-        <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
@@ -5598,10 +5687,14 @@ async function openEditSession(sessionId) {
   ]);
   initDatePickers();
   const dateInput = document.getElementById('f-ses-date');
-  if (dateInput) { dateInput.oninput = _updateSesPeriodBadge; dateInput.addEventListener('change', _updateSesPeriodBadge); }
+  if (dateInput) {
+    dateInput.oninput = () => { _updateSesPeriodBadge(); _updateSesMetaSummary(); };
+    dateInput.addEventListener('change', () => { _updateSesPeriodBadge(); _updateSesMetaSummary(); });
+  }
   setTimeout(() => {
     _renderAchievementTagPicker(_primaryEvalFormId(session.student_id) || session.eval_form_id, session.achievement_tags || []);
     _updateSesPeriodBadge();
+    _updateSesMetaSummary();
   }, 0);
 }
 
@@ -6710,12 +6803,15 @@ async function deletePkgType(id) {
 
 function richToolbar(textareaId) {
   // فقط پراستفاده‌ترین ابزارها همیشه نمایش داده می‌شوند؛ بقیه پشت دکمه «+» هستند (مثل Notion)
+  // «حالت تمرکز» چون خیلی زیاد استفاده می‌شود همیشه در دسترس است، نه پشت «+»
   const mainStickers = ['⭐','📌','🔥','✅','⚠️'];
   const moreStickers = ['❗','💡','👍','❤️','🎯'];
   const moreId = textareaId + '-more';
   return `
   <div class="rich-toolbar">
     ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
+    <span class="rt-sep"></span>
+    <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
     <span class="rt-sep"></span>
     <button type="button" class="rt-btn" title="ابزارهای بیشتر" onclick="_toggleToolbarMore('${moreId}')">+</button>
   </div>
@@ -6727,8 +6823,6 @@ function richToolbar(textareaId) {
     <button type="button" class="rt-btn" title="جدول" onclick="insertTable('${textareaId}')" style="font-size:12px">⊞</button>
     <span class="rt-sep"></span>
     ${moreStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
-    <span class="rt-sep"></span>
-    <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
   </div>`;
 }
 
@@ -8691,14 +8785,15 @@ function _onSesStudentChangeRebuildPeriods(selectEl) {
   const studentId = +selectEl.value;
   _renderAchievementTagPicker(_primaryEvalFormId(studentId), []);
   _updateSesPeriodBadge();
-  // اگر در فرم «ثبت جلسه» هستیم، خلاصهٔ قبل از جلسه و زیرعنوان مودال را هم به‌روز کن
+  // اگر در فرم «ثبت جلسه» هستیم، خلاصهٔ قبل از جلسه، زیرعنوان مودال و نوار اطلاعات را هم به‌روز کن
   const preContainer = document.getElementById('ses-presummary-container');
   const subtitle = document.getElementById('ses-modal-subtitle');
   const student = (allStudents || []).find(s => s.id === studentId);
-  if (subtitle && student) subtitle.textContent = `${student.name} ${student.lname}`;
+  if (subtitle && student) subtitle.textContent = `${META.entitySingular||'شاگرد'}: ${student.name} ${student.lname}`;
   if (preContainer && studentId) {
     _buildPreSessionSummary(studentId).then(html => { preContainer.innerHTML = html; });
   }
+  _updateSesMetaSummary();
 }
 
 // Kept for the tag picker refresh; the period select this used to respond to no longer exists.
