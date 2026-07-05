@@ -1595,6 +1595,10 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد قدیمی از تاپ‌بار حذف می‌شن — تولبار جایگزینشون شده */
   .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
 
+  /* دکمه‌های «پوشه جدید» و «یادداشت جدید» از بالای صفحه (تولبار) در موبایل حذف می‌شن؛
+     ساخت پوشه/یادداشت در موبایل فقط از طریق دکمه شناور (+) پایین صفحه انجام می‌شه */
+  .instr-toolbar-create-btn, .instr-toolbar-divider{ display:none!important; }
+
   /* Breadcrumb کامل جای خودش را به نسخه فشرده (خانه / بالادست / فعلی) می‌ده */
   .instr-breadcrumb-full{ display:none!important; }
   .instr-breadcrumb-compact{ display:flex!important; }
@@ -1810,8 +1814,10 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
         <a class="nav-item" data-page="todolist" title="لیست کارها"><span class="nav-icon">✅</span><span>لیست کارها</span></a>
       </div>
 
-      <div class="nav-section">مدیریت</div>
+      <div class="nav-section">دانش</div>
       <a class="nav-item" data-page="instructions" title="مرکز دانش" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="nav-icon">🧠</span><span>مرکز دانش</span></a>
+
+      <div class="nav-section">مدیریت</div>
       <a class="nav-item" data-page="staff" title="مدیریت"><span class="nav-icon">🧑‍💼</span><span>مدیریت</span></a>
       <a class="nav-item" data-page="customerlist" title="لیست شاگردان"><span class="nav-icon">📋</span><span id="nav-label-customerlist">لیست شاگردان</span></a>
       <a class="nav-item" data-page="archive" title="بایگانی شاگردان"><span class="nav-icon">📦</span><span id="nav-label-archive">بایگانی شاگردان</span></a>
@@ -1830,22 +1836,20 @@ body.modal-open { overflow: hidden; position: fixed; width: 100%; }
 
 
     <div class="sidebar-bottom">
-      <button id="admin-panel-btn" class="btn-sidebar" onclick="currentPage='admin_panel';updatePageTitle();renderPage();closeSidebar()" style="display:none;background:rgba(251,191,36,.12);color:#f59e0b;border-color:rgba(251,191,36,.3);font-weight:600;padding:7px 10px;font-size:12px">👑 پنل مدیر</button>
-      <div style="display:flex;gap:6px">
-        <button class="btn-sidebar" onclick="_sbUser?openWalletPanel():_showAuthScreen('login')" style="flex:1;background:rgba(62,207,142,.08);color:var(--green);border-color:rgba(62,207,142,.2);padding:7px 8px;font-size:11px;text-align:center">💰 کیف پول</button>
-        <button id="logout-btn" class="btn-sidebar" onclick="_auth.signOut()" style="flex:1;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:11px;text-align:center">🚪 خروج</button>
-      </div>
-      <div class="sidebar-divider"></div>
-      <div style="display:flex;gap:6px">
-        <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(manualBackup)" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
-        <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(importBackup)" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
-      </div>
       <div class="theme-toggle">
         <span id="theme-label">حالت تیره</span>
         <div class="toggle-wrap" onclick="toggleTheme()">
           <div class="toggle-btn" id="theme-btn"><div class="toggle-thumb"></div></div>
         </div>
       </div>
+      <button class="btn-sidebar" onclick="_sbUser?openWalletPanel():_showAuthScreen('login')" style="width:100%;background:rgba(62,207,142,.08);color:var(--green);border-color:rgba(62,207,142,.2);padding:7px 8px;font-size:12px;text-align:center">💰 کیف پول</button>
+      <div class="sidebar-divider"></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(manualBackup)" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
+        <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(importBackup)" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
+      </div>
+      <div class="sidebar-divider"></div>
+      <button id="logout-btn" class="btn-sidebar" onclick="_auth.signOut()" style="width:100%;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:12px;text-align:center">🚪 خروج</button>
     </div>
   </aside>
   <div class="main">
@@ -3778,7 +3782,7 @@ async function renderStudents(search = '') {
 
   allStudents = await window.api.students.getAll();
   FAMILIES = await window.api.families.getAll();
-  document.getElementById('student-badge').textContent = fa(allStudents.length);
+  { const _sb = document.getElementById('student-badge'); _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; }
 
   let filtered = search
     ? allStudents.filter(s => (s.name + s.lname).includes(search))
@@ -11443,13 +11447,13 @@ function _instrToolbarHtml() {
   const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
   return `
     <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
-      <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
+      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
       </button>
-      <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
+      <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>
-      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
+      <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       ${_filterBtn('all','همه')}
       ${_filterBtn('pinned','📌 پین‌شده')}
       ${_filterBtn('folder','📁 پوشه')}
