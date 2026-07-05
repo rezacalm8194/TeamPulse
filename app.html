@@ -1389,8 +1389,10 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* Sidebar: drawer from right */
   .sidebar{position:fixed;top:0;right:-100%;height:100vh;height:100dvh;width:min(280px,75vw);z-index:30;
     transition:right .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
-    box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0))}
+    box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column}
+  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0));flex-shrink:0}
+  .sidebar .sidebar-nav{-webkit-overflow-scrolling:touch}
+  .sidebar .sidebar-bottom{flex-shrink:0}
   .sidebar.open{right:0}
   .hamburger{display:flex}
   .sidebar-bottom{padding-bottom:env(safe-area-inset-bottom,12px)}
