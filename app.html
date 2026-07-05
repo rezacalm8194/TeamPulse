@@ -99,7 +99,8 @@ button { cursor: pointer; font-family: var(--font); }
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* height عمداً ست نشده: در دسکتاپ با flex-stretch از .app پر می‌شه،
+     در موبایل (media query پایین) با top/right/bottom کنترل می‌شه */
   overflow: hidden;
   z-index: 10;
 }
@@ -113,7 +114,7 @@ button { cursor: pointer; font-family: var(--font); }
   -webkit-app-region: drag;
   overflow: hidden;
   min-width: 0;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 .sidebar-logo h1 { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-logo p  { font-size: 9px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -127,7 +128,7 @@ button { cursor: pointer; font-family: var(--font); }
 }
 /* sidebar-logo h1/p defined above */
 
-.sidebar-nav { flex: 1; min-height: 0; padding: 10px 8px; overflow-y: auto; }
+.sidebar-nav { flex: 1 1 auto; min-height: 0; padding: 10px 8px; overflow-y: auto; }
 .nav-section {
   font-size: 10px; font-weight: 700; color: var(--text3);
   padding: 14px 10px 5px; letter-spacing: .06em;
@@ -166,6 +167,7 @@ button { cursor: pointer; font-family: var(--font); }
 }
 
 .sidebar-bottom {
+  flex: 0 0 auto;
   padding: 10px 10px 14px;
   border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px;
@@ -1451,12 +1453,12 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* body باید overflow:hidden بمونه تا fixed positioning (sidebar/bottom-nav) روی iOS درست کار کنه — اسکرول فقط داخل .content */
 
   /* Sidebar: drawer from right */
-  .sidebar{position:fixed;inset:0 0 0 auto;transform:translateX(100%);width:min(280px,75vw);z-index:91;
+  .sidebar{position:fixed;inset:0 0 0 auto;height:auto;transform:translateX(100%);width:min(280px,75vw);z-index:91;
     transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
-    box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column}
-  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0px));flex-shrink:0}
-  .sidebar .sidebar-nav{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .sidebar .sidebar-bottom{flex-shrink:0;padding-bottom:max(14px, env(safe-area-inset-bottom,14px))}
+    box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+  .sidebar .sidebar-logo{padding-top:calc(14px + env(safe-area-inset-top,0px));flex:0 0 auto}
+  .sidebar .sidebar-nav{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .sidebar .sidebar-bottom{flex:0 0 auto;padding-bottom:max(14px, env(safe-area-inset-bottom,14px))}
   .sidebar.open{transform:translateX(0)}
   .hamburger{display:flex}
 
@@ -16952,15 +16954,47 @@ if ('serviceWorker' in navigator) {
 }
 
 
-// ── محاسبه‌ی دقیق ارتفاع واقعی صفحه با JS (رفع باگ‌های vh/dvh در iOS Safari) ──
+// ── محاسبه‌ی یکپارچه‌ی ارتفاع واقعی Viewport (iOS Safari / Android Chrome / PWA) ──
+// این تابع تنها منبع حقیقت برای ارتفاع واقعی قابل‌مشاهده در کل اپ است.
+// window.innerHeight روی iOS Safari هنگام نمایش/مخفی‌شدن نوار آدرس یا باز شدن
+// کیبورد به‌درستی/به‌موقع به‌روزرسانی نمی‌شود؛ visualViewport.height دقیق‌تر و لحظه‌ای است.
+window._mobileKeyboardOpen = false;
+let _vvBaseHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+function _getRealViewportHeight() {
+  return window.visualViewport ? window.visualViewport.height : window.innerHeight;
+}
+
 function _setRealAppHeight() {
-  // window.innerHeight معمولاً قابل‌اطمینان‌تر از vh/dvh برای کل shell برنامه است
-  const h = window.innerHeight;
+  const h = _getRealViewportHeight();
   document.documentElement.style.setProperty('--app-vh', h + 'px');
+
+  // اگه مودالی باز باشه، ارتفاعش هم با همین مقدار واحد هماهنگ می‌مونه (بدون منبع جدا)
+  const overlay = document.getElementById('modal-overlay');
+  if (overlay) {
+    overlay.style.height = h + 'px';
+    const modal = overlay.querySelector('.modal');
+    if (modal) modal.style.maxHeight = (h * 0.92) + 'px';
+  }
+
+  // تشخیص کیبورد مجازی: اگه ارتفاع بیش از ۱۵۰px نسبت به مقدار پایه کم شده باشه یعنی کیبورد بازه
+  window._mobileKeyboardOpen = (h < _vvBaseHeight - 150);
 }
 _setRealAppHeight();
+
+// پوشش کامل تغییرات ارتفاع در iOS Safari، Android Chrome و PWA
 window.addEventListener('resize', _setRealAppHeight);
-window.addEventListener('orientationchange', () => setTimeout(_setRealAppHeight, 200));
+window.addEventListener('orientationchange', () => {
+  // بعد از چرخش صفحه، iOS با کمی تأخیر ارتفاع نهایی رو گزارش می‌کنه
+  setTimeout(() => {
+    _vvBaseHeight = _getRealViewportHeight();
+    _setRealAppHeight();
+  }, 200);
+});
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', _setRealAppHeight);
+  window.visualViewport.addEventListener('scroll', _setRealAppHeight);
+}
 
 // ── سرچ جمع‌شونده در topbar روی موبایل (فقط آیکون ذره‌بین، با کلیک باز می‌شه) ──
 document.addEventListener('click', function(e) {
@@ -16985,28 +17019,7 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── تشخیص کیبورد مجازی موبایل ─────────────────────────────────────────────
-window._mobileKeyboardOpen = false;
-if (window.visualViewport) {
-  const _initHeight = window.visualViewport.height;
-  const _applyViewportToModal = () => {
-    // تنظیم ارتفاع واقعی قابل‌مشاهده به مودال باز (با احتساب کیبورد iOS)
-    const vh = window.visualViewport.height;
-    document.documentElement.style.setProperty('--real-vh', vh + 'px');
-    const overlay = document.getElementById('modal-overlay');
-    if (overlay) {
-      overlay.style.height = vh + 'px';
-      const modal = overlay.querySelector('.modal');
-      if (modal) modal.style.maxHeight = (vh * 0.92) + 'px';
-    }
-  };
-  window.visualViewport.addEventListener('resize', () => {
-    // اگه ارتفاع بیش از ۱۵۰px کم شد، کیبورد باز شده
-    window._mobileKeyboardOpen = (window.visualViewport.height < _initHeight - 150);
-    _applyViewportToModal();
-  });
-  _applyViewportToModal();
-}
+// ── تشخیص تکمیلی کیبورد مجازی از طریق focus/blur روی فیلدهای ورودی ──────────
 document.addEventListener('focusin', (e) => {
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') {
