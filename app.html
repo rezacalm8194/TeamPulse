@@ -1564,15 +1564,14 @@ body.light mark { background: rgba(251,191,36,.5); }
 .instr-breadcrumb-compact{ display:none; }
 .instr-breadcrumb-full{ display:flex; }
 
-/* Windows/desktop-only toolbar — hidden on touch/mobile widths (FAB covers that role) */
-.instr-toolbar{ display:flex; }
+/* Toolbar (create + filter + sort) now shows on every screen size, not just desktop */
+.instr-toolbar{ display:flex; flex-wrap:wrap; }
 
-/* Desktop: filter chips now live inside the toolbar above, so the old standalone
-   row is redundant and only shown ≤768px where the toolbar itself is hidden. */
-@media(min-width:769px){
-  #instr-filter-group{ display:none!important; }
-  #instr-filterview-row{ justify-content:flex-end; }
-}
+/* Filter chips now live inside the toolbar above on every screen size, so the old
+   standalone filter row is redundant everywhere — only the view-mode group (گالری/
+   فهرست/فشرده) still uses that row. */
+#instr-filter-group{ display:none!important; }
+#instr-filterview-row{ justify-content:flex-end; }
 
 @media(max-width:768px){
   /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
@@ -1581,21 +1580,20 @@ body.light mark { background: rgba(251,191,36,.5); }
     align-items:stretch!important;
     overflow-x:visible!important;
   }
-  #instr-filter-group, #instr-view-group{
+  #instr-view-group{
     flex-wrap:wrap!important;
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
     scrollbar-width:none;
     padding-bottom:2px;
   }
-  #instr-filter-group::-webkit-scrollbar, #instr-view-group::-webkit-scrollbar{ display:none; }
-  #instr-filter-group{ padding-left:0; border-left:none; margin-left:0; }
+  #instr-view-group::-webkit-scrollbar{ display:none; }
 
   /* کارت‌های گالری پوشه/یادداشت: فشرده‌تر روی صفحه کوچک */
   ._ifgrid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important; gap:12px!important; }
 
-  /* هدر شلوغ: دکمه خروج، دکمه‌های ایجاد و تولبار دسکتاپ از تاپ‌بار حذف می‌شن — همه از قبل در FAB هستن */
-  .topbar-logout-btn, .instr-topbar-create-btn, .instr-toolbar{ display:none!important; }
+  /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد قدیمی از تاپ‌بار حذف می‌شن — تولبار جایگزینشون شده */
+  .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
 
   /* Breadcrumb کامل جای خودش را به نسخه فشرده (خانه / بالادست / فعلی) می‌ده */
   .instr-breadcrumb-full{ display:none!important; }
