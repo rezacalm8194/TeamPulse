@@ -10876,13 +10876,23 @@ function _buildInstrTree(flat, parentId) {
 let _instrPath = []; // breadcrumb path: [{id, title, icon}]
 let _instrParentId = null; // current folder
 
+/* ── Instructions page state ──────────────────────────────────────────────── */
+let _instrView = 'gallery'; // 'gallery' | 'list' | 'compact'
+let _instrFilter = 'all';   // 'all' | 'pinned' | 'folder' | 'note'
+let _instrRecentIds = [];   // last 5 opened node ids
+
+function _instrRecordOpen(id) {
+  _instrRecentIds = [id, ..._instrRecentIds.filter(x => x !== id)].slice(0, 5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 async function renderInstructions(instrSearch) {
   instrSearch = instrSearch || '';
   try {
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجو در یادداشت‌ها..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
+      <input id="instr-search-input" placeholder="جستجوی کامل — عنوان، متن، تگ..." oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
     <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">
       <span class="btn-icon">📝</span><span> یادداشت جدید</span>
@@ -10896,8 +10906,26 @@ async function renderInstructions(instrSearch) {
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
 
-  // breadcrumb
-  let breadcrumb = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+  const flat = _db.instructions || [];
+
+  /* ── Stats bar (root only) ── */
+  let statsBar = '';
+  if (!_instrParentId && !instrSearch) {
+    const totalFolders = flat.filter(x => x.type === 'category').length;
+    const totalNotes   = flat.filter(x => x.type !== 'category').length;
+    const pinnedCount  = flat.filter(x => x.pinned).length;
+    const keyCount     = flat.filter(x => x.importance === 'key').length;
+    statsBar = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+        ${_statChip('📂', fa(totalFolders), 'پوشه')}
+        ${_statChip('📝', fa(totalNotes), 'یادداشت')}
+        ${_statChip('📌', fa(pinnedCount), 'پین‌شده')}
+        ${_statChip('⭐', fa(keyCount), 'مهم')}
+      </div>`;
+  }
+
+  /* ── Breadcrumb ── */
+  let breadcrumb = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:9px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
     <span onclick="_instrParentId=null;_instrPath=[];renderInstructions()" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">🏠 ریشه</span>`;
   _instrPath.forEach((p, i) => {
     breadcrumb += `<span style="color:var(--text3)">›</span>
@@ -10905,11 +10933,26 @@ async function renderInstructions(instrSearch) {
   });
   breadcrumb += `</div>`;
 
-  // get flat items
-  const flat = _db.instructions || [];
+  /* ── View toggle + filter bar ── */
+  const viewBar = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${_filterBtn('all','همه')}
+        ${_filterBtn('pinned','📌 پین‌شده')}
+        ${_filterBtn('folder','📁 پوشه')}
+        ${_filterBtn('note','📝 یادداشت')}
+      </div>
+      <div style="display:flex;gap:4px">
+        ${_viewBtn('gallery','▦ Gallery')}
+        ${_viewBtn('list','☰ List')}
+        ${_viewBtn('compact','⊟ Compact')}
+      </div>
+    </div>`;
+
+  /* ── Get items for current folder ── */
   let items = flat.filter(n => (n.parent_id||null) === (_instrParentId ? +_instrParentId : null));
 
-  // search: if query, search across ALL items regardless of folder
+  /* ── Search: full-text across ALL items ── */
   if (instrSearch) {
     const q = instrSearch.toLowerCase();
     function _getAllDesc(pid) {
@@ -10928,98 +10971,227 @@ async function renderInstructions(instrSearch) {
     });
   }
 
+  /* ── Filter ── */
+  if (!instrSearch) {
+    if (_instrFilter === 'pinned') items = items.filter(x => x.pinned);
+    else if (_instrFilter === 'folder') items = items.filter(x => x.type === 'category');
+    else if (_instrFilter === 'note') items = items.filter(x => x.type !== 'category');
+  }
+
+  /* ── Pinned section (root only) ── */
+  let pinnedBar = '';
+  if (!_instrParentId && !instrSearch && _instrFilter === 'all') {
+    const pinned = flat.filter(x => x.pinned);
+    if (pinned.length) {
+      pinnedBar = `<div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:8px;text-transform:uppercase">📌 پین‌شده‌ها</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+      pinned.forEach(item => {
+        const c = item.color || '#7c6af7';
+        pinnedBar += `<div onclick="${item.type==='category'?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${item.type!=='category'?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
+          style="display:flex;align-items:center;gap:7px;padding:7px 12px;background:var(--bg2);border:1px solid var(--border);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
+          onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+          <span>${item.icon||'📁'}</span><span>${escapeHtml(item.title)}</span>
+        </div>`;
+      });
+      pinnedBar += `</div></div>`;
+    }
+  }
+
+  /* ── Recent section (root only) ── */
+  let recentBar = '';
+  if (!_instrParentId && !instrSearch && _instrFilter === 'all' && _instrRecentIds.length) {
+    const recentNodes = _instrRecentIds.map(id => flat.find(x => x.id === id)).filter(Boolean);
+    if (recentNodes.length) {
+      recentBar = `<div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:8px;text-transform:uppercase">🕓 اخیراً باز شده</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">`;
+      recentNodes.forEach(item => {
+        const c = item.color || '#7c6af7';
+        recentBar += `<div onclick="${item.type==='category'?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${item.type!=='category'?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
+          style="display:flex;align-items:center;gap:7px;padding:6px 11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;cursor:pointer;font-size:12px;color:var(--text2);transition:all .15s"
+          onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+          <span>${item.icon||'📝'}</span><span>${escapeHtml(item.title)}</span>
+        </div>`;
+      });
+      recentBar += `</div></div>`;
+    }
+  }
+
+  /* ── Empty state ── */
   if (items.length === 0) {
-    setContent(breadcrumb + `
-      <div class="empty">
-        <span>${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
-        <p>${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
-        ${!instrSearch ? `<div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
-          <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>
-          <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
-        </div>` : ''}
+    setContent(statsBar + breadcrumb + pinnedBar + recentBar + viewBar + `
+      <div class="empty" style="padding:48px 24px">
+        <span style="font-size:52px">${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
+        <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
+        ${!instrSearch && !_instrParentId ? `
+          <p style="font-size:12px;color:var(--text3);line-height:1.8;max-width:300px;margin:0 auto 16px">
+            اینجا دستورالعمل‌هایت را ذخیره کن.<br>
+            هر فرایندی که باید دقیقاً تکرار شود — فروش، SOP، قوانین زندگی.
+          </p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>
+            <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
+          </div>` : !instrSearch ? `
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>
+            <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
+          </div>` : ''}
       </div>`);
     return;
   }
 
-  // separate folders and notes
+  /* ── Separate folders / notes ── */
   const folders = items.filter(x => x.type === 'category');
   const notes   = items.filter(x => x.type !== 'category');
 
-  let html = breadcrumb;
+  /* ── Sort: pinned first ── */
+  const sortItems = arr => [...arr.filter(x=>x.pinned), ...arr.filter(x=>!x.pinned)];
 
-  // ── FOLDERS ──────────────────────────────────────────────────────────────
+  let html = statsBar + breadcrumb + pinnedBar + recentBar + viewBar;
+
+  /* ── FOLDERS ── */
   if (folders.length > 0) {
-    html += `<div style="margin-bottom:20px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📁 پوشه‌ها</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">`;
-    folders.forEach(item => {
+    html += `<div style="margin-bottom:24px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📁 پوشه‌ها (${fa(folders.length)})</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${_instrView==='compact'?'140px':'200px'},1fr));gap:10px">`;
+    sortItems(folders).forEach(item => {
       const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
+      const noteCount  = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').length;
       const color = item.color || '#7c6af7';
-      html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:all .15s;position:relative"
-          onclick="_instrOpenFolder(${item.id},'${escapeHtml(item.icon||'📁').replace(/'/g,"\\'")}','${escapeHtml(item.title).replace(/'/g,"\\'")}')"
-          onmouseover="this.style.borderColor='${color}';this.style.transform='translateY(-2px)'"
-          onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'">
-        <div style="height:3px;background:${color}"></div>
-        <div style="padding:14px">
-          <div style="font-size:28px;margin-bottom:6px">${item.icon||'📁'}</div>
-          <div style="font-weight:700;font-size:13px;margin-bottom:3px;color:var(--text)">${escapeHtml(item.title)}</div>
-          <div style="font-size:11px;color:var(--text3)">${fa(childCount)} مورد</div>
-        </div>
-        <div style="position:absolute;top:7px;left:7px;display:flex;gap:3px">
-          <button onclick="event.stopPropagation();openEditInstruction(+this.dataset.id)" data-id="${item.id}" style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
-          <button onclick="event.stopPropagation();deleteInstruction(+this.dataset.id)" data-id="${item.id}" style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
-          <button onclick="event.stopPropagation();openAddInstruction(${item.id},'category')" style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--accent2);cursor:pointer;font-size:11px" title="زیرپوشه">📁+</button>
-        </div>
-      </div>`;
+      const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
+      const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').slice(0,3);
+      const previewHtml = preview.length && _instrView !== 'compact' ? `
+        <div style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:3px">
+          ${preview.map(n=>`<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✓ ${escapeHtml(n.title)}</div>`).join('')}
+        </div>` : '';
+
+      const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
+      const titleSafe = item.title.replace(/'/g,"\\'");
+
+      html += `
+        <div class="_ifcard" data-id="${item.id}"
+          style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative;display:flex;flex-direction:column"
+          onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
+          onmouseover="_instrHoverCard(this,'${color}')"
+          onmouseout="_instrUnhoverCard(this)">
+          <div style="height:3px;background:${color}"></div>
+          <div style="padding:${_instrView==='compact'?'10px 12px':'14px 14px 10px'}">
+            ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
+            <div style="font-size:${_instrView==='compact'?'22px':'30px'};margin-bottom:6px">${item.icon||'📁'}</div>
+            <div style="font-weight:700;font-size:${_instrView==='compact'?'12px':'13px'};margin-bottom:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:11px;color:var(--text3)">${fa(childCount)} مورد</span>
+              ${noteCount ? `<span style="font-size:11px;color:var(--text3)">· ${fa(noteCount)} یادداشت</span>` : ''}
+            </div>
+            ${lastEdit && _instrView !== 'compact' ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
+          </div>
+          ${previewHtml}
+          <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
+            <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+            <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین کردن'}">${item.pinned?'📌':'📍'}</button>
+            <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
+          </div>
+          <div class="_ifcard-qa" style="position:absolute;bottom:0;left:0;right:0;display:flex;gap:0;opacity:0;transition:opacity .15s;pointer-events:none;border-top:1px solid var(--border)">
+            <button onclick="event.stopPropagation();openAddInstruction(${item.id},'note')" style="flex:1;padding:8px 4px;border:none;background:var(--bg3);color:var(--accent2);cursor:pointer;font-size:11px;font-family:var(--font);font-weight:600;border-radius:0 0 0 14px">📝 یادداشت</button>
+            <button onclick="event.stopPropagation();openAddInstruction(${item.id},'category')" style="flex:1;padding:8px 4px;border:none;border-right:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px;font-family:var(--font);font-weight:600;border-radius:0 0 14px 0">📁 زیرپوشه</button>
+          </div>
+        </div>`;
     });
     html += `</div></div>`;
   }
 
-  // ── NOTES ─────────────────────────────────────────────────────────────────
+  /* ── NOTES ── */
   if (notes.length > 0) {
     html += `<div>
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📝 یادداشت‌ها</div>
-      <div style="display:flex;flex-direction:column;gap:10px">`;
-    notes.forEach(item => {
-      const color = item.color || '#7c6af7';
-      const isKey = item.importance === 'key';
-      const stickerRow = (item.stickers||[]).length ? `<span style="font-size:15px;letter-spacing:2px">${(item.stickers||[]).join('')}</span>` : '';
-      const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120);
-      const dateStr = item.date_jalali ? `<span style="font-size:11px;color:var(--text3);margin-right:10px">📅 ${DateService.disp(item.date_jalali)}</span>` : '';
-      const updatedStr = item.updated_at ? `<span style="font-size:10px;color:var(--text3)">ویرایش: ${item.updated_at.slice(0,10)}</span>` : '';
-      html += `<div style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-right:3px solid ${color};border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .15s;position:relative"
-          onclick="openNoteDetail(${item.id})"
-          onmouseover="this.style.transform='translateX(-2px)'"
-          onmouseout="this.style.transform='none'">
-        <div style="display:flex;align-items:flex-start;gap:10px">
-          <span style="font-size:24px;flex-shrink:0">${item.icon||'📝'}</span>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-              <span style="font-weight:700;font-size:14px;color:var(--text)">${escapeHtml(item.title)}</span>
-              ${isKey ? '<span style="font-size:11px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:6px;padding:1px 7px;font-weight:600">⭐ مهم</span>' : ''}
-              ${stickerRow}
+      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📝 یادداشت‌ها (${fa(notes.length)})</div>`;
+
+    if (_instrView === 'gallery') {
+      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">`;
+      sortItems(notes).forEach(item => {
+        const color = item.color || '#7c6af7';
+        const isKey = item.importance === 'key';
+        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,90);
+        const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
+        html += `
+          <div class="_ifcard"
+            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;transition:all .2s;position:relative"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
+            onmouseover="_instrHoverCard(this,'${color}')"
+            onmouseout="_instrUnhoverCard(this)">
+            ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
+            <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:8px">
+              <span style="font-size:22px;flex-shrink:0">${item.icon||'📝'}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:13px;color:var(--text);line-height:1.4;margin-bottom:3px">${escapeHtml(item.title)}</div>
+                ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:1px 6px;font-weight:600">⭐ مهم</span>` : ''}
+              </div>
             </div>
-            ${excerptText ? `<div style="font-size:12px;color:var(--text2);line-height:1.7;overflow:hidden;max-height:42px">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : ''}
-            <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
-              ${dateStr}${updatedStr}
+            ${excerptText ? `<div style="font-size:11px;color:var(--text2);line-height:1.7;max-height:52px;overflow:hidden">${escapeHtml(excerptText)}${(item.content||'').length>90?'…':''}</div>` : ''}
+            ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:8px">✏️ ${lastEdit}</div>` : ''}
+            <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
+              <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
+              <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
             </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;margin-right:4px">
-            <button onclick="event.stopPropagation();openEditInstruction(+this.dataset.id)" data-id="${item.id}" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px" title="ویرایش">✏️</button>
-            <button onclick="event.stopPropagation();deleteInstruction(+this.dataset.id)" data-id="${item.id}" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:12px" title="حذف">🗑</button>
-          </div>
-        </div>
-      </div>`;
-    });
-    html += `</div></div>`;
+          </div>`;
+      });
+      html += `</div>`;
+    } else {
+      /* List & Compact */
+      html += `<div style="display:flex;flex-direction:column;gap:${_instrView==='compact'?'4px':'8px'}">`;
+      sortItems(notes).forEach(item => {
+        const color = item.color || '#7c6af7';
+        const isKey = item.importance === 'key';
+        const excerptText = _instrView !== 'compact' ? (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120) : '';
+        const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
+        html += `
+          <div class="_ifcard"
+            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-right:3px solid ${color};border-radius:12px;padding:${_instrView==='compact'?'9px 14px':'13px 16px'};cursor:pointer;transition:all .2s;position:relative"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
+            onmouseover="_instrHoverCard(this,'${color}')"
+            onmouseout="_instrUnhoverCard(this)">
+            <div style="display:flex;align-items:center;gap:10px">
+              ${item.pinned ? `<span style="font-size:13px;flex-shrink:0">📌</span>` : ''}
+              <span style="font-size:${_instrView==='compact'?'18px':'22px'};flex-shrink:0">${item.icon||'📝'}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-weight:700;font-size:${_instrView==='compact'?'12px':'13px'};color:var(--text)">${escapeHtml(item.title)}</span>
+                  ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:1px 6px;font-weight:600">⭐ مهم</span>` : ''}
+                </div>
+                ${excerptText ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : ''}
+                ${lastEdit && _instrView !== 'compact' ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
+              </div>
+              <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
+                <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+                <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
+                <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
+              </div>
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
   }
 
-  // add buttons at bottom when inside folder
+  /* ── Bottom add buttons when inside folder ── */
   if (_instrParentId) {
     html += `<div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت داخل این پوشه</button>
       <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
     </div>`;
+  }
+
+  /* ── Inject hover-reveal CSS once ── */
+  if (!document.getElementById('_instr-styles')) {
+    const s = document.createElement('style');
+    s.id = '_instr-styles';
+    s.textContent = `
+      ._ifcard:hover ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
+      ._ifcard:hover ._ifcard-qa      { opacity:1 !important; pointer-events:auto !important; }
+    `;
+    document.head.appendChild(s);
   }
 
   setContent(html);
@@ -11039,6 +11211,70 @@ async function renderInstructions(instrSearch) {
       + '<button class="btn btn-primary" onclick="renderInstructions()">🔄 تلاش مجدد</button>'
       + '</div>');
   }
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────────────── */
+function _statChip(icon, val, label) {
+  return `<div style="display:flex;align-items:center;gap:7px;padding:8px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+    <span style="font-size:16px">${icon}</span>
+    <div>
+      <div style="font-size:15px;font-weight:800;color:var(--text)">${val}</div>
+      <div style="font-size:10px;color:var(--text3)">${label}</div>
+    </div>
+  </div>`;
+}
+
+function _filterBtn(key, label) {
+  const active = _instrFilter === key;
+  return `<button onclick="_instrFilter='${key}';renderInstructions()"
+    style="padding:5px 13px;border-radius:20px;border:1px solid ${active?'var(--accent)':'var(--border)'};
+    background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
+    font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
+}
+
+function _viewBtn(key, label) {
+  const active = _instrView === key;
+  return `<button onclick="_instrView='${key}';renderInstructions()"
+    style="padding:5px 11px;border-radius:8px;border:1px solid ${active?'var(--accent)':'var(--border)'};
+    background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
+    font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
+}
+
+function _relTime(iso) {
+  if (!iso) return '';
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins  = Math.floor(diff/60000);
+    const hours = Math.floor(diff/3600000);
+    const days  = Math.floor(diff/86400000);
+    if (mins < 2)   return 'همین الان';
+    if (mins < 60)  return fa(mins) + ' دقیقه پیش';
+    if (hours < 24) return fa(hours) + ' ساعت پیش';
+    if (days === 1) return 'دیروز';
+    if (days < 30)  return fa(days) + ' روز پیش';
+    return iso.slice(0,10);
+  } catch(e){ return ''; }
+}
+
+function _instrHoverCard(el, color) {
+  el.style.borderColor = color;
+  el.style.transform   = 'translateY(-2px)';
+  el.style.boxShadow   = `0 4px 20px ${color}22`;
+}
+function _instrUnhoverCard(el) {
+  el.style.borderColor = '';
+  el.style.transform   = '';
+  el.style.boxShadow   = '';
+}
+
+function _instrTogglePin(id) {
+  if (!_db.instructions) return;
+  const item = _db.instructions.find(x => x.id === +id);
+  if (!item) return;
+  item.pinned = !item.pinned;
+  _save();
+  showToast(item.pinned ? '📌 پین شد' : 'پین برداشته شد', 'success');
+  renderInstructions();
 }
 
 function _instrOpenFolder(id, icon, title) {
