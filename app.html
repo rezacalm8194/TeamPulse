@@ -5482,9 +5482,9 @@ async function openSessionDetail(sessionId) {
         : renderAttachmentsGrid(session.attachments||[], null)}
     </div>
   `, [
-    { label: '✏️ ویرایش', cls: 'btn-secondary', action: `closeModal();openEditSession(${sessionId})` },
+    { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditSession(${sessionId})`, style: 'min-width:160px;font-size:14px;padding:12px 28px;box-shadow:0 4px 16px rgba(124,106,247,.45)' },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteSession(${sessionId})` },
-    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()', style: 'opacity:.45;font-size:11px;padding:7px 12px;box-shadow:none' },
   ]);
 }
 
@@ -11429,7 +11429,7 @@ function openModal(title, body, actions = [], opts = {}) {
   }
   document.body.classList.add('modal-open');
   const btns = actions.map(a =>
-    `<button class="btn ${a.cls}" onclick="${a.action}">${a.label}</button>`
+    `<button class="btn ${a.cls}" onclick="${a.action}"${a.style ? ` style="${a.style}"` : ''}>${a.label}</button>`
   ).join('');
 
   const fullPage = !!opts.fullPage;
