@@ -560,6 +560,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   padding: 20px 24px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0; /* رفع باگ معروف Flexbox: بدون این خط، وقتی محتوای فرم بلند باشد، این باکس به‌جای اسکرول‌شدن داخلی، کل Modal (و در نتیجه فوتر/دکمه ذخیره) را از دید خارج می‌کرد */
   -webkit-overflow-scrolling: touch;
 }
 
@@ -633,9 +634,9 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* دکمهٔ اصلی (ذخیره/ثبت) باید در کمتر از نیم‌ثانیه به چشم بیاید:
    عریض‌تر، پررنگ‌تر و با کمی سایه‌ی رنگی؛ دکمهٔ انصراف در مقابل، کم‌رنگ و ساده. */
 .modal-actions .btn-primary {
-  min-width: 150px; justify-content: center;
-  padding: 10px 22px; font-size: 13px; font-weight: 700;
-  box-shadow: 0 3px 10px rgba(124,106,247,.35);
+  min-width: 160px; justify-content: center;
+  padding: 11px 24px; font-size: 13.5px; font-weight: 700;
+  box-shadow: 0 3px 12px rgba(124,106,247,.4);
 }
 .modal-actions .btn-ghost {
   background: transparent; border-color: transparent;
@@ -1191,14 +1192,14 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   border-radius: 8px 8px 0 0; border: 1px solid var(--border2); border-bottom: none;
 }
 .rt-btn {
-  width: 28px; height: 28px; border-radius: 6px;
-  border: 1px solid var(--border2); background: var(--bg2);
-  color: var(--text2); cursor: pointer; font-size: 13px;
+  width: 25px; height: 25px; border-radius: 6px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--text3); cursor: pointer; font-size: 12px;
   display: flex; align-items: center; justify-content: center;
-  transition: all .12s;
+  transition: all .12s; opacity: .85;
 }
-.rt-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
-.rt-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 2px; }
+.rt-btn:hover { background: var(--accent); color: white; border-color: var(--accent); opacity: 1; }
+.rt-sep { width: 1px; height: 16px; background: var(--border2); margin: 0 2px; }
 .rich-toolbar + textarea,
 .rt-more + textarea { border-radius: 0 0 8px 8px; }
 .rt-more {
@@ -5650,7 +5651,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
         </button>
         <div id="f-ses-extra-body" style="display:none;margin-top:6px">
           ${richToolbar('f-ses-extra')}
-          <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
+          <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..." data-no-voice></textarea>
         </div>
       </div>
 
@@ -5666,7 +5667,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
 
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردها</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..."></textarea>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..." data-no-voice></textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
@@ -5905,7 +5906,7 @@ async function openEditSession(sessionId) {
         </button>
         <div id="f-ses-extra-body" style="display:${session.extra_note?'block':'none'};margin-top:6px">
           ${richToolbar('f-ses-extra')}
-          <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
+          <textarea class="form-textarea" id="f-ses-extra" rows="4" data-no-voice>${escapeHtml(session.extra_note || '')}</textarea>
         </div>
       </div>
 
@@ -5928,7 +5929,7 @@ async function openEditSession(sessionId) {
 
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت..." data-no-voice>${escapeHtml(session.achievements || '')}</textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
@@ -19154,7 +19155,7 @@ function _toggleVoiceInput(el, btn, statusEl) {
 
 // ── اتصال خودکار دکمه‌ی میکروفون به هر TextArea موجود در برنامه ──────────────
 function _attachVoiceButton(el) {
-  if (!el || el.dataset.voiceReady) return;
+  if (!el || el.dataset.voiceReady || el.hasAttribute('data-no-voice')) return;
   el.dataset.voiceReady = '1';
 
   const parent = el.parentElement;
@@ -19191,10 +19192,10 @@ function _attachVoiceButton(el) {
 
 function _voiceScanAndAttach(root) {
   const scope = root || document;
-  const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-voice-ready])') : [];
+  const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-voice-ready]):not([data-no-voice])') : [];
   nodes.forEach(_attachVoiceButton);
   // اگر خودِ root یک textarea باشد (مثلاً در حالت تمرکز/Focus Mode)
-  if (scope.matches && scope.matches('textarea.form-textarea:not([data-voice-ready])')) {
+  if (scope.matches && scope.matches('textarea.form-textarea:not([data-voice-ready]):not([data-no-voice])')) {
     _attachVoiceButton(scope);
   }
 }
