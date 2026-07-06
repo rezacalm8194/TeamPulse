@@ -269,6 +269,8 @@ button { cursor: pointer; font-family: var(--font); }
 .btn-ghost:hover { color: var(--text); }
 .btn-danger { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.2); }
 .btn-danger:hover { background: rgba(248,113,113,.2); }
+.btn-secondary { background: rgba(124,106,247,.12); color: var(--accent2); border: 1px solid rgba(124,106,247,.25); font-weight: 600; }
+.btn-secondary:hover { background: rgba(124,106,247,.22); }
 .btn-sm { padding: 5px 10px; font-size: 11px; }
 
 /* ── Cards / Stats — MagicBento style ───────────────────── */
@@ -5480,7 +5482,7 @@ async function openSessionDetail(sessionId) {
         : renderAttachmentsGrid(session.attachments||[], null)}
     </div>
   `, [
-    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditSession(${sessionId})` },
+    { label: '✏️ ویرایش', cls: 'btn-secondary', action: `closeModal();openEditSession(${sessionId})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteSession(${sessionId})` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
