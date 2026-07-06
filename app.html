@@ -7223,9 +7223,9 @@ function _openFocusMode(textarea, noteId, field) {
   // و هدر/تولبار/فوتر همگی دقیقاً هم‌عرض همان ستون می‌شوند.
   const FOCUS_IS_MOBILE = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
   const FOCUS_MAXW = FOCUS_IS_MOBILE ? '480px' : '1040px';
-  const FOCUS_PAD = FOCUS_IS_MOBILE ? '16px' : '40px';
+  const FOCUS_PAD = FOCUS_IS_MOBILE ? 'max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))' : '40px';
   const FOCUS_HEADER_H = FOCUS_IS_MOBILE ? '48px' : '60px';
-  const FOCUS_TOP_GAP = FOCUS_IS_MOBILE ? '36px' : '0px';
+  const FOCUS_TOP_GAP = FOCUS_IS_MOBILE ? 'max(48px, calc(env(safe-area-inset-top, 0px) + 8px))' : '0px';
   const FOCUS_BTN_PAD = '4px 14px';
   const FOCUS_BTN_FONT = '12px';
 
