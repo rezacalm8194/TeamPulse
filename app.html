@@ -3212,6 +3212,9 @@ window.api = {
   instructions: {
     getAll: () => _P(_buildInstrTree(_db.instructions||[], null)),
     add: (p) => {
+      if (typeof _teamCanCreateInstruction === 'function' && !_teamCanCreateInstruction(p.parent_id || null)) {
+        return _P({ok:false,error:'به این پوشه دسترسی نداری'});
+      }
       const id = _nextId('instructions');
       const item = {
         id, parent_id: p.parent_id||null,
@@ -3232,6 +3235,9 @@ window.api = {
       _save(); return _P({ok:true, id});
     },
     update: (p) => {
+      if (typeof _teamCanInstructionNode === 'function' && !_teamCanInstructionNode(p.id)) {
+        return _P({ok:false,error:'به این مورد دسترسی نداری'});
+      }
       const item = (_db.instructions||[]).find(n => n.id == p.id);
       if (item) {
         if (p.title !== undefined) item.title = p.title;
@@ -3247,6 +3253,9 @@ window.api = {
       _save(); return _P({ok:true});
     },
     delete: (id) => {
+      if (typeof _teamCanInstructionNode === 'function' && !_teamCanInstructionNode(id)) {
+        return _P({ok:false,error:'به این مورد دسترسی نداری'});
+      }
       const numId = +id;
       // Collect all ids to delete (item + all descendants)
       const toDelete = new Set();
@@ -3826,6 +3835,7 @@ function _acceptTeamInviteToken(token) {
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
     permissions: payload.permissions,
+    instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
   }));
   if (payload.accountId) localStorage.setItem('teampulse_current_account', payload.accountId);
@@ -3842,6 +3852,60 @@ function _leaveTeamAccess() {
 function _teamActiveDBKey() {
   const s = _teamAccessSession();
   return s?.ownerDbKey || _userDBKey();
+}
+function _teamInstructionFolderIds(source) {
+  const raw = source || _teamAccessSession() || {};
+  const ids = raw.instructionFolders || raw.instruction_folders || [];
+  return Array.isArray(ids) ? ids.map(Number).filter(Boolean) : [];
+}
+function _instrAncestors(id) {
+  const flat = _db?.instructions || [];
+  const out = [];
+  let current = flat.find(n => +n.id === +id);
+  let guard = 0;
+  while (current && current.parent_id && guard++ < 40) {
+    const parent = flat.find(n => +n.id === +current.parent_id);
+    if (!parent) break;
+    out.push(parent.id);
+    current = parent;
+  }
+  return out;
+}
+function _instrDescendants(id) {
+  const flat = _db?.instructions || [];
+  const out = [];
+  const walk = (pid) => {
+    flat.filter(n => +n.parent_id === +pid).forEach(n => {
+      out.push(n.id);
+      if (n.type === 'category') walk(n.id);
+    });
+  };
+  walk(+id);
+  return out;
+}
+function _teamCanInstructionNode(id) {
+  const session = _teamAccessSession();
+  if (!session) return true;
+  if (!_teamCan('instructions')) return false;
+  const allowed = _teamInstructionFolderIds(session);
+  if (!allowed.length) return true;
+  const node = (_db?.instructions || []).find(n => +n.id === +id);
+  if (!node) return false;
+  const ancestors = _instrAncestors(id);
+  if (allowed.includes(+id) || ancestors.some(a => allowed.includes(+a))) return true;
+  if (node.type === 'category') {
+    const descendants = _instrDescendants(id);
+    return descendants.some(d => allowed.includes(+d));
+  }
+  return false;
+}
+function _teamCanCreateInstruction(parentId) {
+  const session = _teamAccessSession();
+  if (!session) return true;
+  if (!_teamCan('instructions')) return false;
+  const allowed = _teamInstructionFolderIds(session);
+  if (!allowed.length) return true;
+  return parentId && _teamCanInstructionNode(parentId);
 }
 // Apply the correct sidebar/bottom-nav highlight IMMEDIATELY, synchronously,
 // right as the script parses — before any auth/network/init() work runs.
@@ -4016,6 +4080,7 @@ window.addEventListener('unhandledrejection', (e) => {
     },
     add: function(p) {
       if (!_db) _load();
+      if (typeof _teamCanCreateInstruction === 'function' && !_teamCanCreateInstruction(p.parent_id || null)) return Promise.resolve({ok:false,error:'به این پوشه دسترسی نداری'});
       if (!_db.instructions) _db.instructions = [];
       if (!_db._nextId) _db._nextId = {};
       if (!_db._nextId.instructions) _db._nextId.instructions = 1;
@@ -4027,12 +4092,14 @@ window.addEventListener('unhandledrejection', (e) => {
       return Promise.resolve({ok:true, id:id});
     },
     update: function(p) {
+      if (typeof _teamCanInstructionNode === 'function' && !_teamCanInstructionNode(p.id)) return Promise.resolve({ok:false,error:'به این مورد دسترسی نداری'});
       if (!_db || !_db.instructions) return Promise.resolve({ok:false});
       var idx = _db.instructions.findIndex(function(x){return x.id==p.id;});
       if (idx >= 0) { _db.instructions[idx] = Object.assign({}, _db.instructions[idx], p); _save(); }
       return Promise.resolve({ok:true});
     },
     delete: function(id) {
+      if (typeof _teamCanInstructionNode === 'function' && !_teamCanInstructionNode(id)) return Promise.resolve({ok:false,error:'به این مورد دسترسی نداری'});
       if (!_db || !_db.instructions) return Promise.resolve({ok:false});
       var del = new Set();
       function col(x) { del.add(x); (_db.instructions||[]).filter(function(n){return n.parent_id==x;}).forEach(function(n){col(n.id);}); }
@@ -6835,6 +6902,7 @@ function _teamInviteLink(member) {
     accountId: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
     ownerDbKey: window._activeDBKey || _userDBKey(),
     permissions: member.permissions || [],
+    instructionFolders: member.instruction_folders || [],
     createdAt: member.created_at || new Date().toISOString(),
   };
   const token = _teamEncodeInvite(payload);
@@ -6865,20 +6933,71 @@ function _teamSelectAll(prefix, checked) {
   document.querySelectorAll(`.${prefix}-team-perm`).forEach(x => x.checked = checked);
 }
 
+function _teamInstructionFolderPicker(prefix, selected) {
+  const selectedIds = new Set((selected || []).map(Number));
+  const allChecked = selectedIds.size === 0;
+  const folders = (_db.instructions || []).filter(n => n.type === 'category');
+  const depthOf = (node) => _instrAncestors(node.id).length;
+  const rows = folders.length ? folders
+    .slice()
+    .sort((a,b) => depthOf(a) - depthOf(b) || String(a.title||'').localeCompare(String(b.title||''), 'fa'))
+    .map(f => {
+      const depth = depthOf(f);
+      return `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border2);border-radius:9px;background:var(--bg3);cursor:pointer;margin-right:${Math.min(depth,4)*16}px">
+        <input type="checkbox" class="${prefix}-team-folder" value="${f.id}" ${selectedIds.has(+f.id)?'checked':''}
+          onchange="if(this.checked){const all=document.getElementById('${prefix}-team-folder-all');if(all)all.checked=false;}" style="width:16px;height:16px;accent-color:var(--accent)">
+        <span style="font-size:15px">${f.icon || '📁'}</span>
+        <span style="font-size:12px;font-weight:700;color:var(--text);flex:1">${escapeHtml(f.title || 'بدون عنوان')}</span>
+      </label>`;
+    }).join('')
+    : `<div style="font-size:12px;color:var(--text3);padding:10px;border:1px dashed var(--border2);border-radius:9px">هنوز پوشه‌ای در مرکز دانش ساخته نشده است.</div>`;
+
+  return `<div style="margin-top:14px;padding:12px;border:1px solid rgba(96,165,250,.25);border-radius:12px;background:rgba(96,165,250,.04)">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:800;color:var(--text)">دسترسی پوشه‌های مرکز دانش</div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.7">اگر «تمام مرکز دانش» روشن باشد، همه پوشه‌ها دیده می‌شوند. در غیر این صورت فقط پوشه‌های انتخاب‌شده و محتوای داخلشان نمایش داده می‌شود.</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-size:12px;font-weight:700;color:var(--text2)">
+        <input id="${prefix}-team-folder-all" type="checkbox" ${allChecked?'checked':''}
+          onchange="if(this.checked)document.querySelectorAll('.${prefix}-team-folder').forEach(x=>x.checked=false)" style="width:16px;height:16px;accent-color:var(--accent)">
+        تمام مرکز دانش
+      </label>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:7px">${rows}</div>
+  </div>`;
+}
+
+function _teamSelectedInstructionFolders(prefix) {
+  const all = document.getElementById(`${prefix}-team-folder-all`);
+  if (all?.checked) return [];
+  return [...document.querySelectorAll(`.${prefix}-team-folder:checked`)].map(x => +x.value).filter(Boolean);
+}
+function _teamInstructionFolderNeedsSelection(prefix) {
+  const all = document.getElementById(`${prefix}-team-folder-all`);
+  return all && !all.checked && _teamSelectedInstructionFolders(prefix).length === 0;
+}
+
 function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
   const email = (document.getElementById('team-email')?.value || '').trim().toLowerCase();
   const permissions = _teamSelectedPerms('new');
+  if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('new')) {
+    showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
+    return;
+  }
+  const instructionFolders = permissions.includes('instructions') ? _teamSelectedInstructionFolders('new') : [];
   if (!email || !email.includes('@')) { showToast('ایمیل معتبر وارد کن', 'error'); return; }
   if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
   const existing = (_db.team_members || []).find(m => (m.email || '').toLowerCase() === email);
   const member = existing || { id:'tm_' + Date.now(), email, created_at:new Date().toISOString(), status:'دعوت‌شده' };
   member.permissions = permissions;
+  member.instruction_folders = instructionFolders;
   member.updated_at = new Date().toISOString();
   member.invite_link = _teamInviteLink(member);
   if (!existing) _db.team_members.unshift(member);
   _db.team_invites = _db.team_invites || [];
-  _db.team_invites.unshift({ id:member.id, email, permissions, created_at:member.created_at, status:member.status });
+  _db.team_invites.unshift({ id:member.id, email, permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
   _save();
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
@@ -6914,6 +7033,7 @@ function _openEditTeamMember(id) {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">
       ${_teamPermCards('edit', member.permissions)}
     </div>
+    ${_teamInstructionFolderPicker('edit', member.instruction_folders || [])}
   `, [
     {label:'ذخیره دسترسی', cls:'btn-primary', action:`_saveTeamMemberEdit('${id}')`},
     {label:'انصراف', cls:'btn-ghost', action:'closeModal()'},
@@ -6925,7 +7045,12 @@ function _saveTeamMemberEdit(id) {
   if (!member) return;
   const permissions = _teamSelectedPerms('edit');
   if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
+  if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('edit')) {
+    showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
+    return;
+  }
   member.permissions = permissions;
+  member.instruction_folders = permissions.includes('instructions') ? _teamSelectedInstructionFolders('edit') : [];
   member.updated_at = new Date().toISOString();
   member.invite_link = _teamInviteLink(member);
   _save();
@@ -6938,11 +7063,16 @@ function _teamSettingsHtml() {
   const session = _teamAccessSession();
   if (session) {
     const perms = (session.permissions || []).map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
+    const folderIds = _teamInstructionFolderIds(session);
+    const folderLabel = (session.permissions || []).includes('instructions')
+      ? (folderIds.length ? `${fa(folderIds.length)} پوشه مشخص در مرکز دانش` : 'تمام مرکز دانش')
+      : 'مرکز دانش فعال نیست';
     return `
       <div class="detail-section" style="border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.05)">
         <h3>👥 دسترسی هم‌تیمی</h3>
         <p style="font-size:13px;color:var(--text2);line-height:1.9">شما با ایمیل <b>${escapeHtml(session.email)}</b> به حساب <b>${escapeHtml(session.ownerName || session.ownerEmail || 'صاحب حساب')}</b> وصل شده‌اید.</p>
         <div class="detail-row"><span class="detail-key">بخش‌های مجاز</span><span class="detail-val">${escapeHtml(perms)}</span></div>
+        <div class="detail-row"><span class="detail-key">محدوده مرکز دانش</span><span class="detail-val">${escapeHtml(folderLabel)}</span></div>
         <button class="btn btn-danger" style="margin-top:12px" onclick="_leaveTeamAccess()">خروج از دسترسی هم‌تیمی</button>
       </div>`;
   }
@@ -6951,11 +7081,15 @@ function _teamSettingsHtml() {
   const memberRows = members.length ? members.map(m => {
     const count = (m.permissions || []).length;
     const labels = (m.permissions || []).slice(0, 4).map(_teamSectionLabel).join('، ');
+    const folderIds = _teamInstructionFolderIds(m);
+    const folderText = (m.permissions || []).includes('instructions')
+      ? (folderIds.length ? ` · مرکز دانش: ${fa(folderIds.length)} پوشه` : ' · مرکز دانش: کامل')
+      : '';
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);flex-wrap:wrap">
         <div style="min-width:220px;flex:1">
           <div style="font-size:13px;font-weight:800;color:var(--text);direction:ltr;text-align:right">${escapeHtml(m.email)}</div>
-          <div style="font-size:11px;color:var(--text3);line-height:1.8">${fa(count)} بخش فعال${labels ? ` — ${escapeHtml(labels)}${count>4?' ...':''}` : ''}</div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.8">${fa(count)} بخش فعال${labels ? ` — ${escapeHtml(labels)}${count>4?' ...':''}` : ''}${folderText}</div>
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" onclick="_copyTeamInvite('${m.id}')">کپی لینک</button>
@@ -6981,6 +7115,7 @@ function _teamSettingsHtml() {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:12px">
         ${_teamPermCards('new', ['students','sessions','goals','todolist'])}
       </div>
+      ${_teamInstructionFolderPicker('new', [])}
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">
         <button class="btn btn-primary" onclick="_createTeamInvite()">ساخت و کپی لینک دعوت</button>
         <button class="btn btn-ghost" onclick="_teamSelectAll('new', false)">پاک کردن انتخاب‌ها</button>
@@ -12214,7 +12349,13 @@ async function renderInstructions(instrSearch) {
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
 
-  const flat = _db.instructions || [];
+  const rawFlat = _db.instructions || [];
+  if (_instrParentId && !_teamCanInstructionNode(_instrParentId)) {
+    updateTopbarActions('');
+    setContent(_teamAccessDeniedHtml('instructions'));
+    return;
+  }
+  const flat = rawFlat.filter(n => _teamCanInstructionNode(n.id));
 
   /* ── Stats bar removed: folder/note/pin counters had no effect on what the user
      was trying to do (find & open something) — pure visual noise on every load. ── */
@@ -12335,11 +12476,12 @@ async function renderInstructions(instrSearch) {
 
   /* ── Empty state ── */
   if (items.length === 0) {
+    const canCreateHere = _teamCanCreateInstruction(_instrParentId);
     setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
-        ${!instrSearch && !_instrParentId ? `
+        ${!instrSearch && !_instrParentId && canCreateHere ? `
           <p style="font-size:12px;color:var(--text3);line-height:1.8;max-width:300px;margin:0 auto 16px">
             دانش، فرایندها و قوانین زندگیت را اینجا ذخیره کن.<br>
             هر چیزی که باید بعداً بهش رجوع کنی — SOP، ایده، قوانین کسب‌وکار.
@@ -12347,7 +12489,7 @@ async function renderInstructions(instrSearch) {
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>
             <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
-          </div>` : !instrSearch ? `
+          </div>` : !instrSearch && canCreateHere ? `
           <div style="display:flex;gap:8px;justify-content:center">
             <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>
             <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
@@ -12593,7 +12735,7 @@ async function renderInstructions(instrSearch) {
   }
 
   /* ── Bottom add buttons when inside folder ── */
-  if (_instrParentId) {
+  if (_instrParentId && _teamCanCreateInstruction(_instrParentId)) {
     html += `<div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت داخل این پوشه</button>
       <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
@@ -12669,15 +12811,17 @@ function _viewBtn(key, label) {
    فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
   const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
+  const canCreate = _teamCanCreateInstruction(_instrParentId);
   return `
     <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+      ${canCreate ? `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
       </button>
       <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>
-      <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
+      <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>` : ''}
       ${_filterBtn('all','همه')}
       ${_filterBtn('pinned','📌 پین‌شده')}
       <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
@@ -12708,6 +12852,7 @@ if (!window._instrQuickSearchBound) {
 
 /* ── دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل ── */
 function _instrFabHtml() {
+  if (!_teamCanCreateInstruction(_instrParentId)) return '';
   return `
     <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
@@ -12771,6 +12916,7 @@ function _instrUnhoverCard(el) {
 
 function _instrTogglePin(id) {
   if (!_db.instructions) return;
+  if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const item = _db.instructions.find(x => x.id === +id);
   if (!item) return;
   item.pinned = !item.pinned;
@@ -12803,6 +12949,7 @@ if (!window._ifActionsOutsideClickBound) {
 }
 
 function _instrOpenFolder(id, icon, title) {
+  if (!_teamCanInstructionNode(id)) { showToast('به این پوشه دسترسی نداری', 'error'); return; }
   const contentEl = document.querySelector('.content');
   if (contentEl && history.state && history.state.instrNav) {
     history.replaceState(Object.assign({}, history.state, {scrollTop: contentEl.scrollTop}), '');
@@ -12883,6 +13030,7 @@ function openNoteDetail(id) {
   const numId = +id;
   const node = (_db.instructions||[]).find(n => n.id === numId);
   if (!node) { showToast('یادداشت پیدا نشد','error'); return; }
+  if (!_teamCanInstructionNode(numId)) { showToast('به این یادداشت دسترسی نداری', 'error'); return; }
 
   const stickers = node.stickers || [];
   const stickerBtns = ['⭐','🔥','💡','✅','❗','🚀','🎯','🔑','📌','💰','⚠️','🎉','🔒','💻','📱','🌟','🏆','🔔','💎','🎵']
@@ -12989,6 +13137,7 @@ function _impChipsHtml(inputId, selected) {
 }
 
 function openAddInstruction(parentId, type) {
+  if (!_teamCanCreateInstruction(parentId)) { showToast('برای ساختن مورد جدید در این پوشه دسترسی نداری', 'error'); return; }
   if (!type) type = 'note';
   const iconBtns = INSTR_ICONS.map(i =>
     `<button type="button" onclick="document.getElementById('instr-icon').value='${i}';document.querySelectorAll('.icon-pick-btn').forEach(b=>b.style.background='var(--bg3)');this.style.background='var(--accent2)33'" class="icon-pick-btn" style="width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer">${i}</button>`
@@ -13084,13 +13233,15 @@ async function saveAddInstruction(parentId, type) {
   const title = document.getElementById('instr-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
   const _parentId = (!parentId || parentId === 'null' || parentId === '') ? null : +parentId;
+  if (!_teamCanCreateInstruction(_parentId)) { showToast('برای ذخیره در این پوشه دسترسی نداری', 'error'); return; }
   const icon = document.getElementById('instr-icon')?.value || '📝';
   const color = document.getElementById('instr-color')?.value || '#7c6af7';
   const content = document.getElementById('instr-content')?.value || '';
   const extra_note = document.getElementById('instr-extra')?.value || '';
   const importance = document.getElementById('instr-importance')?.value || 'normal';
   const date_jalali = document.getElementById('instr-date')?.value || '';
-  await window.api.instructions.add({ parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali });
+  const res = await window.api.instructions.add({ parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali });
+  if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
   showToast('ذخیره شد ✓', 'success');
   renderInstructions();
@@ -13100,6 +13251,7 @@ function openEditInstruction(id) {
   const numId = +id;
   const node = (_db.instructions||[]).find(n => n.id === numId);
   if (!node) { showToast('مورد پیدا نشد','error'); return; }
+  if (!_teamCanInstructionNode(numId)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   window._currentEditNoteId = numId;
 
   const iconBtns = INSTR_ICONS.map(i =>
@@ -13194,9 +13346,10 @@ function openEditInstruction(id) {
 }
 
 async function saveEditInstruction(id, type) {
+  if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const title = document.getElementById('ei-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید','error'); return; }
-  await window.api.instructions.update({
+  const res = await window.api.instructions.update({
     id, title,
     icon: document.getElementById('ei-icon')?.value,
     color: document.getElementById('ei-color')?.value,
@@ -13205,6 +13358,7 @@ async function saveEditInstruction(id, type) {
     importance: document.getElementById('ei-importance')?.value || 'normal',
     date_jalali: document.getElementById('ei-date')?.value || '',
   });
+  if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
   showToast('ذخیره شد ✓','success');
   renderInstructions();
@@ -13212,6 +13366,7 @@ async function saveEditInstruction(id, type) {
 
 async function deleteInstruction(id) {
   const node = (_db.instructions||[]).find(n => n.id === +id);
+  if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const name = node ? escapeHtml(node.title) : 'این مورد';
   const isFolder = node && node.type === 'category';
   const childCount = isFolder ? (_db.instructions||[]).filter(x => x.parent_id && +x.parent_id === +id).length : 0;
@@ -13232,8 +13387,12 @@ async function deleteInstruction(id) {
 }
 
 async function _confirmDeleteInstruction(id) {
+  if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   closeModal();
-  if (window.api && window.api.instructions) { await window.api.instructions.delete(id); } else {
+  if (window.api && window.api.instructions) {
+    const res = await window.api.instructions.delete(id);
+    if (res && res.ok === false) { showToast(res.error || 'حذف نشد', 'error'); return; }
+  } else {
     const ds=new Set(); function dc(x){ds.add(x);(_db.instructions||[]).filter(n=>n.parent_id==x).forEach(n=>dc(n.id));} dc(id);
     _db.instructions=(_db.instructions||[]).filter(n=>!ds.has(n.id)); _save();
   }
