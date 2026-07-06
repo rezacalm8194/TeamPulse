@@ -7499,7 +7499,7 @@ async function renderArchive() {
 let STAFF_ROLES = [];
 
 async function renderStaff() {
-  updateTopbarActions(`<button class="btn btn-ghost" onclick="renderStaff()">🔄 به‌روز</button><button class="btn btn-primary" onclick="openStaffModal()">+ افزودن همکار</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
+  updateTopbarActions(`<button class="btn btn-ghost" onclick="renderStaff()">🔄 به‌روز</button><button class="btn btn-primary" onclick="openQuickStaffModal()">⚡ افزودن سریع همکار</button><button class="btn btn-ghost" onclick="openStaffModal()">+ افزودن کامل</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
   STAFF_ROLES = await window.api.staffRoles.getAll();
   const staffList = await window.api.staff.getAll();
   const dash = await window.api.staff.getDashboard();
@@ -7961,6 +7961,63 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
 function openStaffModal(id = null) {
   const editing = id !== null;
   refreshRolesAndOpenStaffModal(editing, id);
+}
+
+async function openQuickStaffModal() {
+  STAFF_ROLES = await window.api.staffRoles.getAll();
+  openModal('⚡ افزودن سریع همکار', `
+    <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">ثبت سریع برای وقتی که فقط می‌خواهی همکار را وارد لیست کنی.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">بعداً از گزینه ویرایش می‌توانی نقش‌ها، یادآوری حقوق و جزئیات کامل را تکمیل کنی.</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">نام *</label>
+        <input class="form-input" id="qst-name" placeholder="نام" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">نام خانوادگی</label>
+        <input class="form-input" id="qst-lname" placeholder="نام خانوادگی">
+      </div>
+      <div class="form-group">
+        <label class="form-label">شماره تماس</label>
+        <input class="form-input" id="qst-phone" inputmode="tel" placeholder="مثلاً 0912...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">حقوق ثابت ماهانه</label>
+        <input class="form-input amount-input" id="qst-salary" type="number" placeholder="اختیاری">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">شماره کارت</label>
+        <input class="form-input" id="qst-card" style="direction:ltr;text-align:right" placeholder="اختیاری">
+      </div>
+    </div>
+  `, [
+    { label: 'افزودن سریع', cls: 'btn-primary', action: 'saveQuickStaff()' },
+    { label: 'افزودن کامل به‌جایش', cls: 'btn-ghost', action: 'closeModal();openStaffModal()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  setTimeout(() => document.getElementById('qst-name')?.focus(), 80);
+}
+
+async function saveQuickStaff() {
+  const name = document.getElementById('qst-name')?.value.trim();
+  if (!name) { showToast('نام را وارد کنید', 'error'); return; }
+  await window.api.staff.add({
+    name,
+    lname: document.getElementById('qst-lname')?.value || '',
+    phone: document.getElementById('qst-phone')?.value || '',
+    card_number: document.getElementById('qst-card')?.value || '',
+    role_id: STAFF_ROLES[0]?.id,
+    roles: [],
+    salary: +(document.getElementById('qst-salary')?.value || 0),
+    start_date: '',
+    repeat_months: 0,
+    note: 'ثبت سریع',
+  });
+  closeModal();
+  showToast(`${name} سریع اضافه شد ✓`, 'success');
+  await renderStaff();
 }
 
 async function refreshRolesAndOpenStaffModal(editing, id) {
