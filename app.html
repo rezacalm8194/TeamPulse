@@ -7214,6 +7214,12 @@ function _openFocusMode(textarea, noteId, field) {
   if (document.getElementById('focus-mode-overlay')) return;
   noteId = noteId || null; field = field || 'content';
 
+  // ── Focus Mode باید حس «نوشتن در یک ادیتور حرفه‌ای» بدهد (مثل Notion/Obsidian/Apple Notes)،
+  // نه یک فرم تمام‌عرض. برای همین محتوا در یک ستون مرکزی با عرض محدود قرار می‌گیرد
+  // و هدر/تولبار/فوتر همگی دقیقاً هم‌عرض همان ستون می‌شوند.
+  const FOCUS_MAXW = '1040px';
+  const FOCUS_PAD = '40px';
+
   const overlay = document.createElement('div');
   overlay.id = 'focus-mode-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:stretch;justify-content:stretch;animation:fadeInFocus .2s ease';
@@ -7222,9 +7228,11 @@ function _openFocusMode(textarea, noteId, field) {
   const box = document.createElement('div');
   box.style.cssText = 'background:var(--bg2);border-radius:0;width:100vw;height:100vh;height:100dvh;display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden';
 
-  // header
+  // header — کوتاه (۶۰px) و محتوایش هم‌عرض ستون نوشتن، نه چسبیده به لبه‌های صفحه
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:40px';
+  header.style.cssText = 'display:flex;align-items:center;justify-content:center;height:60px;min-height:60px;border-bottom:1px solid var(--border);flex-shrink:0';
+  const headerInner = document.createElement('div');
+  headerInner.style.cssText = `width:100%;max-width:${FOCUS_MAXW};margin:0 auto;padding:0 ${FOCUS_PAD};display:flex;align-items:center;justify-content:space-between;box-sizing:border-box`;
   const modeToggle = document.createElement('div');
   modeToggle.style.cssText = 'display:flex;gap:4px;background:var(--bg3);border-radius:8px;padding:3px';
   const _btnEdit = document.createElement('button');
@@ -7251,17 +7259,21 @@ function _openFocusMode(textarea, noteId, field) {
   _btnClose.onclick = function(){ textarea.value = focusTa.value; textarea.dispatchEvent(new Event('input',{bubbles:true})); overlay.remove(); };
   rightSide.appendChild(_spanEsc);
   rightSide.appendChild(_btnClose);
-  header.appendChild(modeToggle); header.appendChild(rightSide);
+  headerInner.appendChild(modeToggle); headerInner.appendChild(rightSide);
+  header.appendChild(headerInner);
 
-  // edit pane
+  // edit pane — این خودِ ناحیه‌ی اسکرول‌شونده‌ی تمام‌عرض است؛ محتوای داخلش محدود می‌شود
   const editPane = document.createElement('div');
   editPane.id = 'fm-edit-pane';
-  editPane.style.cssText = 'flex:1;display:flex;flex-direction:column;overflow:hidden';
+  editPane.style.cssText = 'flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden';
 
-  // toolbar برای focus mode
+  const editInner = document.createElement('div');
+  editInner.style.cssText = `width:100%;max-width:${FOCUS_MAXW};margin:0 auto;display:flex;flex-direction:column;flex:1;box-sizing:border-box`;
+
+  // toolbar — هم‌عرض ستون نوشتن، نزدیک به متن (نه چسبیده به گوشه‌ی بالای صفحه)
   const fmToolbar = document.createElement('div');
   fmToolbar.className = 'rich-toolbar';
-  fmToolbar.style.cssText = 'flex-shrink:0;border-radius:0;border-left:none;border-right:none;border-top:none';
+  fmToolbar.style.cssText = `flex-shrink:0;margin:20px ${FOCUS_PAD} 0;border-radius:10px;width:auto`;
   const _fmStickers = ['⭐','✅','❗','💡','🔥','👍','📌','⚠️','❤️','🎯'];
   (function() {
     function _b(title, html, fn, st) {
@@ -7280,25 +7292,38 @@ function _openFocusMode(textarea, noteId, field) {
     _sep();
     _fmStickers.forEach(function(s){ _b(s,s,function(){ insertAtCursor('fm-textarea',s); },'font-size:15px'); });
   })();
-  editPane.appendChild(fmToolbar);
+  editInner.appendChild(fmToolbar);
+
+  // ستون متن: فاصله‌ی افقی ۴۰px از دو طرف، و کمی فاصله از پایین تا میکروفون به فوتر نچسبد
+  const textWrap = document.createElement('div');
+  textWrap.style.cssText = `position:relative;flex:1;display:flex;flex-direction:column;padding:0 ${FOCUS_PAD};margin-bottom:40px;box-sizing:border-box`;
 
   const focusTa = document.createElement('textarea');
   focusTa.id = 'fm-textarea';
   focusTa.value = textarea.value;
-  focusTa.style.cssText = 'flex:1;width:100%;resize:none;background:transparent;border:none;padding:20px 24px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap';
+  focusTa.style.cssText = 'flex:1;width:100%;resize:none;background:transparent;border:none;padding:32px 0 20px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap;box-sizing:border-box';
   focusTa.placeholder = textarea.placeholder || 'بنویس...';
-  editPane.appendChild(focusTa);
-  // ورودی صوتی دقیقا همان‌جایی که کاربر در Focus Mode بیشترین نیاز را دارد: Floating، پایین-چپ متن
+  textWrap.appendChild(focusTa);
+  editInner.appendChild(textWrap);
+  editPane.appendChild(editInner);
+  // ورودی صوتی دقیقا همان‌جایی که کاربر در Focus Mode بیشترین نیاز را دارد: Floating، پایین-چپ ستون متن
+  // (نه چسبیده به دکمهٔ ذخیره در فوتر — بین آن‌ها فاصلهٔ عمودی کافی وجود دارد)
   _attachVoiceButton(focusTa);
 
-  // preview pane
+  // preview pane — همان منطق ستون مرکزی
   const previewPane = document.createElement('div');
   previewPane.id = 'fm-preview-pane';
-  previewPane.style.cssText = 'flex:1;overflow-y:auto;padding:20px 24px;font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;display:none';
+  previewPane.style.cssText = 'flex:1;overflow-y:auto;display:none';
+  const previewInner = document.createElement('div');
+  previewInner.id = 'fm-preview-inner';
+  previewInner.style.cssText = `max-width:${FOCUS_MAXW};margin:0 auto;padding:32px ${FOCUS_PAD} 60px;font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;box-sizing:border-box`;
+  previewPane.appendChild(previewInner);
 
-  // footer
+  // footer — هم‌عرض ستون نوشتن، نه تمام‌عرض صفحه
   const footer = document.createElement('div');
-  footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border);flex-shrink:0';
+  footer.style.cssText = 'display:flex;justify-content:center;border-top:1px solid var(--border);flex-shrink:0';
+  const footerInner = document.createElement('div');
+  footerInner.style.cssText = `width:100%;max-width:${FOCUS_MAXW};margin:0 auto;padding:14px ${FOCUS_PAD};display:flex;justify-content:space-between;align-items:center;box-sizing:border-box`;
   const charCount = document.createElement('span');
   charCount.style.cssText = 'font-size:11px;color:var(--text3)';
   charCount.textContent = focusTa.value.length + ' کاراکتر';
@@ -7311,7 +7336,8 @@ function _openFocusMode(textarea, noteId, field) {
     textarea.dispatchEvent(new Event('input', {bubbles:true}));
     overlay.remove();
   };
-  footer.appendChild(charCount); footer.appendChild(closeBtn);
+  footerInner.appendChild(charCount); footerInner.appendChild(closeBtn);
+  footer.appendChild(footerInner);
 
   // sync textarea → اصلی هنگام input
   focusTa.addEventListener('input', function() {
@@ -7319,7 +7345,7 @@ function _openFocusMode(textarea, noteId, field) {
     charCount.textContent = focusTa.value.length + ' کاراکتر';
     textarea.dispatchEvent(new Event('input', {bubbles:true}));
     if (previewPane.style.display !== 'none') {
-      previewPane.innerHTML = renderRich(focusTa.value, {interactive:!!noteId, noteId:noteId, field:field});
+      previewInner.innerHTML = renderRich(focusTa.value, {interactive:!!noteId, noteId:noteId, field:field});
     }
   });
 
@@ -7329,7 +7355,7 @@ function _openFocusMode(textarea, noteId, field) {
   window._fmSetMode = function(mode) {
     const eb = document.getElementById('fm-edit-btn'), pb = document.getElementById('fm-preview-btn');
     if (mode === 'preview') {
-      previewPane.innerHTML = renderRich(focusTa.value, {interactive:!!noteId, noteId:noteId, field:field});
+      previewInner.innerHTML = renderRich(focusTa.value, {interactive:!!noteId, noteId:noteId, field:field});
       editPane.style.display = 'none'; previewPane.style.display = 'block';
       if(eb){eb.style.background='transparent';eb.style.color='var(--text2)';}
       if(pb){pb.style.background='var(--accent2)';pb.style.color='#fff';}
