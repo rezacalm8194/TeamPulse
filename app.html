@@ -2783,7 +2783,9 @@ function _staffSummary(s) {
   const expectedMonthly=(s.salary||0)+roles.reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
   const [tjy,tjm]=_todayJalali();
   const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===s.id&&m.jy===tjy&&m.jm===tjm&&m.paid);
-  const rem=_db.staff_reminders.find(r=>r.staff_id===s.id);
+  const rem=_db.staff_reminders
+    .filter(r=>r.staff_id===s.id&&!r.done)
+    .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
   const daysUntil=rem?_daysUntil(rem.due_date_jalali):null;
   return{...s,roles,expectedMonthly,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
 }
@@ -3083,7 +3085,8 @@ window.api = {
       const id=_nextId('staff');
       _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',card_number:p.card_number||'',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',note:p.note||'',created_at:new Date().toISOString()});
       const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
-      if(totalSalary>0&&p.start_date&&(p.repeat_months||1)>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const next=_addMonths(jy,jm,jd,p.repeat_months||1);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...next),repeat_months:p.repeat_months||1,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
+      const repeatMonths = p.repeat_months ?? 1;
+      if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const next=_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...next),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
       _save(); return _P({id});
     },
     update: (p)=>{
@@ -3113,8 +3116,20 @@ window.api = {
       else{m.fixed_salary=s.salary||0;m.roles=roles;m.total=total;}
       m.paid=true;m.paid_date=p.date;
       _db.staff_payments.push({id:_nextId('staff_payments'),staff_id:s.id,amount:total,date_jalali:p.date,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()});
-      const rem=_db.staff_reminders.find(x=>x.staff_id===s.id);
-      if(rem){const[jy,jm,jd]=_jalaliParse(rem.due_date_jalali);const next=_addMonths(jy,jm,jd,1);rem.due_date_jalali=_formatJalali(...next);rem.done=false;rem.notified_levels=[];}
+      const rem=_db.staff_reminders
+        .filter(x=>x.staff_id===s.id&&!x.done)
+        .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+      if(rem){
+        if((rem.repeat_months||0)>0){
+          const[jy,jm,jd]=_jalaliParse(rem.due_date_jalali);
+          const next=_addMonths(jy,jm,jd,rem.repeat_months);
+          rem.due_date_jalali=_formatJalali(...next);
+          rem.done=false;
+        } else {
+          rem.done=true;
+        }
+        rem.notified_levels=[];
+      }
       (s.roles||[]).forEach(r=>{r.count=0;});
       _save(); return _P({ok:true});
     },
@@ -3137,7 +3152,7 @@ window.api = {
         return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:sum?sum.expectedMonthly:r.amount,paid_this_month:paidThisMonth};
       }).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali)));
     },
-    add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months||1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     update: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.staff_reminders=_db.staff_reminders.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     markPaid: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){if(r.repeat_months>0){const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);const next=_addMonths(jy,jm,jd,r.repeat_months);r.due_date_jalali=_formatJalali(...next);r.done=false;r.notified_levels=[];}else r.done=true;_save();} return _P({ok:true}); },
@@ -7490,7 +7505,7 @@ async function renderStaff() {
   const dash = await window.api.staff.getDashboard();
   const reminders = await window.api.staffReminders.getAll();
   const remByStaff = {};
-  reminders.forEach(r => { remByStaff[r.staff_id] = r; });
+  reminders.forEach(r => { if (!remByStaff[r.staff_id]) remByStaff[r.staff_id] = r; });
   const today = jalaliKey(formatJalali(...todayJalali()));
 
   let html = `
@@ -7595,7 +7610,7 @@ async function renderStaff() {
   html += `</tbody></table></div>`;
 
   // ── Salary reminders ────────────────────────────────────────────────────
-  html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">⏰ یادآوری‌های پرداخت حقوق</span><span class="subtitle">سررسیدهای نزدیک و یادآوری‌های خودکار</span></div></div>`;
+  html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">⏰ یادآوری‌های پرداخت حقوق</span><span class="subtitle">سررسیدهای نزدیک و یادآوری‌های خودکار</span></div><button class="btn btn-primary btn-sm" style="margin-right:auto" onclick="openAddStaffReminder()">+ افزودن یادآوری پرداخت حقوق</button></div>`;
   if (reminders.length === 0) {
     html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت حقوق برای یک همکار، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
   } else {
@@ -8873,6 +8888,137 @@ async function confirmPayStaffSalary(staffId) {
   showToast('پرداخت ثبت شد ✓', 'success');
   await renderStaff();
 }
+
+let _staffReminderDateRowSeq = 0;
+
+function _staffReminderRepeatOptions(selected = 1) {
+  const opts = [
+    [0, 'بدون تکرار'],
+    [1, 'هر ۱ ماه'],
+    [2, 'هر ۲ ماه'],
+    [3, 'هر ۳ ماه'],
+    [6, 'هر ۶ ماه'],
+    [12, 'هر ۱۲ ماه'],
+    ['custom', 'دوره دلخواه'],
+  ];
+  const isCustom = selected !== 'custom' && ![0,1,2,3,6,12].includes(+selected);
+  return opts.map(([v, label]) => `<option value="${v}" ${(isCustom && v === 'custom') || String(selected) === String(v) ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+function _syncStaffReminderRepeatCustom(prefix = 'sr') {
+  const select = document.getElementById(prefix + '-repeat');
+  const wrap = document.getElementById(prefix + '-repeat-custom-wrap');
+  if (wrap) wrap.style.display = select?.value === 'custom' ? 'block' : 'none';
+}
+
+function _readStaffReminderRepeat(prefix = 'sr') {
+  const select = document.getElementById(prefix + '-repeat');
+  if (select?.value === 'custom') return Math.max(0, +(document.getElementById(prefix + '-repeat-custom')?.value || 0));
+  return +(select?.value || 0);
+}
+
+function _staffReminderDateRowHtml(idx, value) {
+  return `
+    <div class="staff-reminder-date-row" data-index="${idx}" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <div>${calendarDateFieldHtml('sr-date-' + idx, value || formatJalali(...todayJalali()), 'تاریخ سررسید')}</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_removeStaffReminderDateRow(this)" title="حذف تاریخ">×</button>
+    </div>`;
+}
+
+function _addStaffReminderDateRow(value) {
+  const box = document.getElementById('sr-dates');
+  if (!box) return;
+  const idx = ++_staffReminderDateRowSeq;
+  box.insertAdjacentHTML('beforeend', _staffReminderDateRowHtml(idx, value));
+  initDatePickers && initDatePickers();
+}
+
+function _removeStaffReminderDateRow(btn) {
+  const row = btn.closest('.staff-reminder-date-row');
+  const box = document.getElementById('sr-dates');
+  if (!row || !box) return;
+  if (box.querySelectorAll('.staff-reminder-date-row').length <= 1) {
+    showToast('حداقل یک تاریخ لازم است', 'error');
+    return;
+  }
+  row.remove();
+}
+
+function _syncStaffReminderAmountFromStaff() {
+  const staffId = +(document.getElementById('sr-staff')?.value || 0);
+  const staff = (window._staffReminderStaffList || []).find(s => s.id === staffId);
+  const amount = document.getElementById('sr-amount');
+  if (amount && staff && !amount.value) amount.value = staff.expectedMonthly || 0;
+}
+
+async function openAddStaffReminder() {
+  const staffList = await window.api.staff.getAll();
+  if (!staffList.length) {
+    showToast('اول یک همکار اضافه کنید', 'error');
+    return;
+  }
+  window._staffReminderStaffList = staffList;
+  _staffReminderDateRowSeq = 0;
+  const staffOptions = staffList.map((s, i) =>
+    `<option value="${s.id}" ${i === 0 ? 'selected' : ''}>${escapeHtml((s.name + ' ' + (s.lname || '')).trim())} — ${fmt(s.expectedMonthly || 0)} تومان</option>`
+  ).join('');
+  const defaultAmount = staffList[0]?.expectedMonthly || 0;
+  openModal('⏰ افزودن یادآوری پرداخت حقوق', `
+    <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">برای یک همکار، هر تعداد تاریخ لازم داری بساز.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">هر تاریخ به‌صورت یک یادآوری جدا ثبت می‌شود؛ اگر تکرار انتخاب شود، بعد از پرداخت، سررسید بعدی خودش ساخته می‌شود.</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">همکار</label>
+        <select class="form-select" id="sr-staff" onchange="_syncStaffReminderAmountFromStaff()">${staffOptions}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">عنوان</label>
+        <input class="form-input" id="sr-title" value="پرداخت حقوق">
+      </div>
+      <div class="form-group">
+        <label class="form-label">مبلغ مرجع (تومان)</label>
+        <input class="form-input amount-input" id="sr-amount" type="number" value="${defaultAmount}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">دوره تکرار</label>
+        <select class="form-select" id="sr-repeat" onchange="_syncStaffReminderRepeatCustom('sr')">${_staffReminderRepeatOptions(1)}</select>
+      </div>
+      <div class="form-group" id="sr-repeat-custom-wrap" style="display:none">
+        <label class="form-label">تکرار هر چند ماه؟</label>
+        <input class="form-input" id="sr-repeat-custom" type="number" min="0" value="1">
+      </div>
+    </div>
+    <div class="form-section">📅 تاریخ‌های یادآوری</div>
+    <div id="sr-dates"></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="_addStaffReminderDateRow()">+ افزودن تاریخ دیگر</button>
+  `, [
+    { label: 'ثبت یادآوری‌ها', cls: 'btn-primary', action: 'saveNewStaffReminders()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  _addStaffReminderDateRow(formatJalali(...todayJalali()));
+  initDatePickers && initDatePickers();
+}
+
+async function saveNewStaffReminders() {
+  const staffId = +(document.getElementById('sr-staff')?.value || 0);
+  const title = document.getElementById('sr-title')?.value.trim() || 'پرداخت حقوق';
+  const amount = +(document.getElementById('sr-amount')?.value || 0);
+  const repeat = _readStaffReminderRepeat('sr');
+  const rows = Array.from(document.querySelectorAll('#sr-dates .staff-reminder-date-row'));
+  const dates = rows.map(row => readCalendarDateField('sr-date-' + row.dataset.index)).filter(Boolean);
+  const uniqueDates = [...new Set(dates)];
+  if (!staffId) { showToast('همکار را انتخاب کنید', 'error'); return; }
+  if (!uniqueDates.length) { showToast('حداقل یک تاریخ سررسید انتخاب کنید', 'error'); return; }
+  for (const date of uniqueDates) {
+    await window.api.staffReminders.add({ staff_id: staffId, title, due_date: date, amount, repeat_months: repeat });
+  }
+  closeModal();
+  showToast(`${fa(uniqueDates.length)} یادآوری ثبت شد ✓`, 'success');
+  await renderStaff();
+}
+
 async function openEditStaffReminder(id) {
   const reminders = await window.api.staffReminders.getAll();
   const r = reminders.find(x => x.id === id);
@@ -8893,13 +9039,11 @@ async function openEditStaffReminder(id) {
       </div>
       <div class="form-group full">
         <label class="form-label">تکرار</label>
-        <select class="form-select" id="esr-repeat">
-          <option value="0" ${r.repeat_months===0?'selected':''}>بدون تکرار</option>
-          <option value="1" ${r.repeat_months===1?'selected':''}>هر ۱ ماه</option>
-          <option value="3" ${r.repeat_months===3?'selected':''}>هر ۳ ماه</option>
-          <option value="6" ${r.repeat_months===6?'selected':''}>هر ۶ ماه</option>
-          <option value="12" ${r.repeat_months===12?'selected':''}>هر ۱۲ ماه</option>
-        </select>
+        <select class="form-select" id="esr-repeat" onchange="_syncStaffReminderRepeatCustom('esr')">${_staffReminderRepeatOptions(r.repeat_months ?? 1)}</select>
+      </div>
+      <div class="form-group full" id="esr-repeat-custom-wrap" style="display:${[0,1,2,3,6,12].includes(+(r.repeat_months ?? 1)) ? 'none' : 'block'}">
+        <label class="form-label">تکرار هر چند ماه؟</label>
+        <input class="form-input" id="esr-repeat-custom" type="number" min="0" value="${[0,1,2,3,6,12].includes(+(r.repeat_months ?? 1)) ? 1 : +(r.repeat_months ?? 1)}">
       </div>
     </div>
   `, [
@@ -8913,7 +9057,7 @@ async function saveEditStaffReminder(id) {
     title: document.getElementById('esr-title')?.value,
     due_date_jalali: document.getElementById('esr-date')?.value,
     amount: +(document.getElementById('esr-amount')?.value||0),
-    repeat_months: +(document.getElementById('esr-repeat')?.value||0),
+    repeat_months: _readStaffReminderRepeat('esr'),
     notified_levels: [],
   }});
   closeModal();
