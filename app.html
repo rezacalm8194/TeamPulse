@@ -7257,7 +7257,7 @@ function _openFocusMode(textarea, noteId, field) {
   if (document.getElementById('focus-mode-overlay')) return;
   noteId = noteId || null; field = field || 'content';
 
-  // ── Focus Mode باید حس «نوشتن در یک ادیتور حرفه‌ای» بدهد (مثل Notion/Obsidian/Apple Notes)،
+  // ── حالت تمرکز باید حس «نوشتن در یک ویرایشگر حرفه‌ای» بدهد،
   // نه یک فرم تمام‌عرض. برای همین محتوا در یک ستون مرکزی با عرض محدود قرار می‌گیرد
   // و هدر/تولبار/فوتر همگی دقیقاً هم‌عرض همان ستون می‌شوند.
   const FOCUS_IS_MOBILE = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
@@ -7272,7 +7272,7 @@ function _openFocusMode(textarea, noteId, field) {
   overlay.id = 'focus-mode-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:stretch;justify-content:stretch;animation:fadeInFocus .2s ease';
 
-  // Focus Mode باید یک محیط ویرایش واقعیِ تمام‌صفحه باشد، نه یک فرم/مودال
+  // حالت تمرکز باید یک محیط ویرایش واقعیِ تمام‌صفحه باشد، نه یک فرم/مودال
   const box = document.createElement('div');
   box.style.cssText = `background:var(--bg2);border-radius:0;width:100vw;height:calc(100vh - ${FOCUS_TOP_GAP});height:calc(100dvh - ${FOCUS_TOP_GAP});margin-top:${FOCUS_TOP_GAP};display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden`;
 
@@ -7355,7 +7355,7 @@ function _openFocusMode(textarea, noteId, field) {
   textWrap.appendChild(focusTa);
   editInner.appendChild(textWrap);
   editPane.appendChild(editInner);
-  // ورودی صوتی دقیقا همان‌جایی که کاربر در Focus Mode بیشترین نیاز را دارد: Floating، پایین-چپ ستون متن
+  // ورودی صوتی دقیقا همان‌جایی که کاربر در حالت تمرکز بیشترین نیاز را دارد: شناور، پایین-چپ ستون متن
   // (نه چسبیده به دکمهٔ ذخیره در فوتر — بین آن‌ها فاصلهٔ عمودی کافی وجود دارد)
   _attachVoiceButton(focusTa);
 
@@ -18037,8 +18037,6 @@ function _goalMusicOptions(selected) {
 function _goalFormHtml(prefix, g) {
   g = g || {};
   const imageCount = _goalVisionItems(g).length;
-  const music = g.music_url || 'none';
-  const musicSelect = music && music.startsWith('preset:') ? music : (music && music !== 'none' ? 'custom' : 'none');
   return `
     <div style="background:linear-gradient(135deg,rgba(124,106,247,.18),rgba(62,207,142,.08));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:16px;margin-bottom:14px">
       <div style="font-size:28px;margin-bottom:6px">🎯</div>
@@ -18084,19 +18082,19 @@ function _goalFormHtml(prefix, g) {
     </details>
 
     <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 Vision Board</summary>
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 تابلو آرزو</summary>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0">
         <div style="min-width:0">
           <div style="font-size:12px;font-weight:700;color:var(--text)">تابلوی آرزوها را جداگانه مدیریت کن</div>
           <div id="${prefix}-vision-summary" style="font-size:11px;color:var(--text3);margin-top:4px">${imageCount ? imageCount + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده'}</div>
         </div>
-        <button type="button" onclick="openGoalVisionBoardManagerForForm('${prefix}')" style="font-size:12px;padding:8px 12px;border-radius:10px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800">✨ مدیریت Vision Board</button>
+        <button type="button" onclick="openGoalVisionBoardManagerForForm('${prefix}')" style="font-size:12px;padding:8px 12px;border-radius:10px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800">✨ مدیریت تابلو آرزو</button>
       </div>
       <div id="${prefix}-vision-preview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px;margin-top:10px"></div>
     </details>
 
     <details style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🎵 موسیقی و تنظیمات</summary>
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">📅 برنامه‌ریزی هدف</summary>
       <div class="form-grid" style="margin-top:10px">
         <div class="form-group">
           ${calendarDateFieldHtml(prefix + '-deadline', g.deadline||'', '📅 تاریخ پایان')}
@@ -18117,14 +18115,6 @@ function _goalFormHtml(prefix, g) {
             <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
           </select>
         </div>` : ''}
-        <div class="form-group">
-          <label class="form-label">انتخاب موسیقی</label>
-          <select class="form-select" id="${prefix}-music-choice" onchange="_toggleGoalCustomMusic('${prefix}')">${_goalMusicOptions(musicSelect)}</select>
-        </div>
-        <div class="form-group full" id="${prefix}-custom-music-wrap" style="display:${musicSelect==='custom'?'block':'none'}">
-          <label class="form-label">فایل/لینک اختصاصی</label>
-          <input class="form-input" id="${prefix}-music-url" value="${musicSelect==='custom'?escapeHtml(music):''}" placeholder="لینک mp3 یا فایل صوتی">
-        </div>
       </div>
     </details>`;
 }
@@ -18174,16 +18164,9 @@ function _refreshGoalFormCompletion(prefix) {
   if (label) label.textContent = fa(pct) + '٪';
 }
 
-function _toggleGoalCustomMusic(prefix) {
-  const choice = document.getElementById(prefix + '-music-choice')?.value || 'none';
-  const wrap = document.getElementById(prefix + '-custom-music-wrap');
-  if (wrap) wrap.style.display = choice === 'custom' ? 'block' : 'none';
-}
-
 function _readGoalMusic(prefix) {
-  const choice = document.getElementById(prefix + '-music-choice')?.value || 'none';
-  if (choice === 'custom') return document.getElementById(prefix + '-music-url')?.value || '';
-  return choice === 'none' ? '' : choice;
+  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
+  return window._goalFormVisionMusic[prefix] || '';
 }
 
 function _readGoalVisionAssets(prefix) {
@@ -18192,7 +18175,9 @@ function _readGoalVisionAssets(prefix) {
 
 function openGoalVisionBoardManagerForForm(prefix) {
   window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
   window._goalFormVisionAssets[prefix] = window._goalFormVisionAssets[prefix] || [];
+  if (typeof window._goalFormVisionMusic[prefix] === 'undefined') window._goalFormVisionMusic[prefix] = '';
   _openGoalVisionBoardManager({ prefix });
 }
 
@@ -18229,7 +18214,7 @@ function _openGoalVisionBoardManager(ctx) {
         style="border:1.5px dashed var(--border2);border-radius:14px;padding:18px;text-align:center;background:var(--bg3);margin-bottom:12px">
         <div style="font-size:32px;margin-bottom:8px">🖼</div>
         <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:5px">تصاویر را اینجا رها کن یا از دستگاه انتخاب کن</div>
-        <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">jpg, jpeg, png, webp, heic - حداکثر ۱۰MB برای هر تصویر</div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">تصویرهای رایج مثل جی‌پی‌جی، پی‌ان‌جی، وب‌پی و هیک - حداکثر ۱۰ مگابایت برای هر تصویر</div>
         <button type="button" onclick="document.getElementById('vision-image-picker').click()" class="btn btn-primary" style="padding:9px 14px">📷 افزودن تصاویر</button>
         <button type="button" onclick="_visionPromptUrl()" class="btn btn-ghost" style="padding:9px 12px">افزودن لینک</button>
         <input id="vision-image-picker" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple style="display:none" onchange="_visionHandleFiles(this.files)">
@@ -18237,7 +18222,7 @@ function _openGoalVisionBoardManager(ctx) {
       <div id="vision-manager-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-bottom:14px"></div>
 
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎵 موسیقی Vision Mode</div>
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎵 موسیقی نمایش رؤیا</div>
         <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
           <div>
             <label class="form-label">انتخاب موسیقی</label>
@@ -18245,11 +18230,11 @@ function _openGoalVisionBoardManager(ctx) {
               ${_goalMusicOptions(state.music && !state.music.startsWith('preset:') ? 'custom' : (state.music || 'none'))}
             </select>
           </div>
-          <button type="button" onclick="_visionPreviewMusic()" class="btn btn-ghost" style="height:38px">▶ Preview</button>
+          <button type="button" onclick="_visionPreviewMusic()" class="btn btn-ghost" style="height:38px">▶ پیش‌نمایش</button>
         </div>
         <div id="vision-music-upload-wrap" style="display:${state.music && !state.music.startsWith('preset:') ? 'block' : 'none'};margin-top:10px">
           <button type="button" onclick="document.getElementById('vision-music-picker').click()" class="btn btn-ghost">⬆ آپلود موسیقی</button>
-          <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'mp3, wav, m4a, aac, ogg - حداکثر ۲۰MB'}</span>
+          <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'فایل‌های صوتی رایج - حداکثر ۲۰ مگابایت'}</span>
           <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_visionHandleMusic(this.files && this.files[0])">
         </div>
       </div>
@@ -18259,12 +18244,12 @@ function _openGoalVisionBoardManager(ctx) {
     <div class="modal-overlay open" id="vision-manager-overlay" style="z-index:10050" onclick="if(event.target===this)closeVisionBoardManager()">
       <div class="modal" style="max-width:720px">
         <div class="modal-header">
-          <div class="modal-title">✨ مدیریت Vision Board</div>
+          <div class="modal-title">✨ مدیریت تابلو آرزو</div>
           <button class="modal-close" onclick="closeVisionBoardManager()">×</button>
         </div>
         <div class="modal-body">${body}</div>
         <div class="modal-actions">
-          <button class="btn btn-primary" onclick="_saveVisionBoardManager()">💾 ذخیره Vision Board</button>
+          <button class="btn btn-primary" onclick="_saveVisionBoardManager()">💾 ذخیره تابلو آرزو</button>
           <button class="btn btn-ghost" onclick="_previewVisionBoardManager()">پیش‌نمایش رؤیا</button>
           <button class="btn btn-ghost" onclick="closeVisionBoardManager()">بستن</button>
         </div>
@@ -18312,7 +18297,7 @@ function _visionHandleFiles(files) {
 function _visionAddImageFile(file) {
   const ok = /image\/(jpeg|png|webp|heic|heif)/i.test(file.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
   if (!ok) { showToast('این بخش فقط فایل تصویری را می‌پذیرد.', 'error'); return; }
-  if (file.size > 10 * 1024 * 1024) { showToast('حداکثر حجم هر تصویر ۱۰MB است.', 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { showToast('حداکثر حجم هر تصویر ۱۰ مگابایت است.', 'error'); return; }
   const reader = new FileReader();
   reader.onload = () => _visionCompressImage(reader.result, file.name, file.type).then(src => {
     window._visionManager.items.push({ id:'img-' + Date.now() + Math.random(), type:'image', src, name:file.name, category:'', source:'upload' });
@@ -18373,7 +18358,7 @@ function _visionHandleMusic(file) {
   if (!file) return;
   const ok = /audio\/(mpeg|wav|mp4|aac|ogg)/i.test(file.type) || /\.(mp3|wav|m4a|aac|ogg)$/i.test(file.name);
   if (!ok) { showToast('این بخش فقط فایل صوتی را می‌پذیرد.', 'error'); return; }
-  if (file.size > 20 * 1024 * 1024) { showToast('حداکثر حجم موسیقی ۲۰MB است.', 'error'); return; }
+  if (file.size > 20 * 1024 * 1024) { showToast('حداکثر حجم موسیقی ۲۰ مگابایت است.', 'error'); return; }
   const reader = new FileReader();
   reader.onload = () => {
     window._visionManager.music = reader.result;
@@ -18420,13 +18405,11 @@ function _saveVisionBoardManager() {
     closeVisionBoardManager(); openGoalDetail(vm.ctx.goalId);
   } else {
     window._goalFormVisionAssets[vm.ctx.prefix] = vm.items.map(x => ({...x}));
-    const choice = document.getElementById(vm.ctx.prefix + '-music-choice');
-    const custom = document.getElementById(vm.ctx.prefix + '-music-url');
-    if (music && music.startsWith('data:')) { if (choice) choice.value = 'custom'; if (custom) custom.value = music; }
-    else if (choice) choice.value = music || 'none';
+    window._goalFormVisionMusic = window._goalFormVisionMusic || {};
+    window._goalFormVisionMusic[vm.ctx.prefix] = music || '';
     closeVisionBoardManager(); _renderGoalVisionPreview(vm.ctx.prefix); _refreshGoalFormCompletion(vm.ctx.prefix);
   }
-  showToast('Vision Board ذخیره شد ✓', 'success');
+  showToast('تابلو آرزو ذخیره شد ✓', 'success');
 }
 
 function _previewVisionBoardManager() {
@@ -18460,7 +18443,9 @@ function _previewVisionBoardManager() {
 
 function openAddGoal() {
   window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
   window._goalFormVisionAssets.goal = [];
+  window._goalFormVisionMusic.goal = '';
   openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
     { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -18557,15 +18542,15 @@ function openGoalDetail(id) {
           <div style="display:flex;gap:6px">
             <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">مدیریت</button>
             <button onclick="openGoalVisionMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.13);color:var(--accent2);cursor:pointer;font-family:var(--font)">نمایش انگیزشی</button>
-            <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode</button>
+            <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز</button>
           </div>
         </div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
           ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="this.style.display='none'">`).join('')}
         </div>
       </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
-        <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت Vision Board</button>
-        <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode هدف</button>
+        <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت تابلو آرزو</button>
+        <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز هدف</button>
       </div>`}
 
       <div style="margin-bottom:14px">
@@ -18769,7 +18754,7 @@ function _openGoalExperience(id, mode) {
       <button onclick="closeGoalExperience()" style="width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-size:18px">✕</button>
       <div style="display:flex;align-items:center;gap:8px">
         ${g.music_url ? `<button id="goal-music-toggle" data-music="${escapeHtml(g.music_url)}" onclick="_toggleGoalExperienceMusic()" style="padding:10px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-family:var(--font);font-size:12px">🔇 موسیقی خاموش</button>` : ''}
-        <span style="font-size:12px;opacity:.65">${cinematic ? 'نمایش انگیزشی' : 'Focus Mode'}</span>
+        <span style="font-size:12px;opacity:.65">${cinematic ? 'نمایش انگیزشی' : 'حالت تمرکز'}</span>
       </div>
     </div>
     <div style="position:relative;z-index:1;flex:1;display:flex;align-items:${cinematic?'center':'stretch'};justify-content:center;padding:20px max(22px,env(safe-area-inset-right,0px)) max(28px,env(safe-area-inset-bottom,0px)) max(22px,env(safe-area-inset-left,0px));overflow:auto">
@@ -18882,7 +18867,9 @@ function openEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
   window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
   window._goalFormVisionAssets.eg = _goalVisionItems(g).map(x => ({...x}));
+  window._goalFormVisionMusic.eg = g.music_url || '';
   openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
     { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -19964,7 +19951,7 @@ function _voiceScanAndAttach(root) {
   const scope = root || document;
   const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-voice-ready]):not([data-no-voice])') : [];
   nodes.forEach(_attachVoiceButton);
-  // اگر خودِ root یک textarea باشد (مثلاً در حالت تمرکز/Focus Mode)
+  // اگر خودِ ریشه یک کادر متن باشد (مثلاً در حالت تمرکز)
   if (scope.matches && scope.matches('textarea.form-textarea:not([data-voice-ready]):not([data-no-voice])')) {
     _attachVoiceButton(scope);
   }
