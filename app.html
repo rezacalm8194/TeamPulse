@@ -7225,8 +7225,9 @@ function _openFocusMode(textarea, noteId, field) {
   const FOCUS_MAXW = FOCUS_IS_MOBILE ? '480px' : '1040px';
   const FOCUS_PAD = FOCUS_IS_MOBILE ? '16px' : '40px';
   const FOCUS_HEADER_H = FOCUS_IS_MOBILE ? '48px' : '60px';
-  const FOCUS_BTN_PAD = FOCUS_IS_MOBILE ? '4px 9px' : '4px 14px';
-  const FOCUS_BTN_FONT = FOCUS_IS_MOBILE ? '11px' : '12px';
+  const FOCUS_TOP_GAP = FOCUS_IS_MOBILE ? '36px' : '0px';
+  const FOCUS_BTN_PAD = '4px 14px';
+  const FOCUS_BTN_FONT = '12px';
 
   const overlay = document.createElement('div');
   overlay.id = 'focus-mode-overlay';
@@ -7234,7 +7235,7 @@ function _openFocusMode(textarea, noteId, field) {
 
   // Focus Mode باید یک محیط ویرایش واقعیِ تمام‌صفحه باشد، نه یک فرم/مودال
   const box = document.createElement('div');
-  box.style.cssText = 'background:var(--bg2);border-radius:0;width:100vw;height:100vh;height:100dvh;display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden';
+  box.style.cssText = `background:var(--bg2);border-radius:0;width:100vw;height:calc(100vh - ${FOCUS_TOP_GAP});height:calc(100dvh - ${FOCUS_TOP_GAP});margin-top:${FOCUS_TOP_GAP};display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden`;
 
   // header — کوتاه و محتوایش هم‌عرض ستون نوشتن، نه چسبیده به لبه‌های صفحه
   const header = document.createElement('div');
