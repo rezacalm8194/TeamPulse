@@ -614,6 +614,50 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   box-shadow: 0 0 0 3px rgba(124,58,237,.12);
 }
 .form-textarea::placeholder { color: var(--text3); opacity: .8; }
+
+/* ── Voice Input (تبدیل گفتار به متن) ───────────────────── */
+.voice-mic-btn {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+  opacity: .75;
+  transition: all .15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.15);
+}
+.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.voice-mic-btn.voice-recording {
+  background: var(--red); border-color: var(--red); color: #fff; opacity: 1;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+.voice-mic-btn.voice-error { background: var(--amber); border-color: var(--amber); color: #fff; opacity: 1; }
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,.45); }
+  50% { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
+}
+.voice-status-label {
+  position: absolute;
+  bottom: 8px;
+  left: 42px;
+  font-size: 10.5px;
+  color: var(--text2);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  z-index: 3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.voice-status-label.is-error { color: var(--amber); border-color: var(--amber); }
 /* ── Form ───────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -6754,6 +6798,28 @@ async function renderSettings() {
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:12px">
         <button class="btn btn-primary" onclick="saveLocaleSettings()">ذخیره تنظیمات منطقه</button>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>🎙️ ورودی صوتی (Voice to Text) <span class="help-ic" title="با کلیک روی آیکون میکروفون کنار هر کادر متنی، می‌توانی به‌جای تایپ، صحبت کنی و متن به‌طور خودکار نوشته شود.">؟</span></h3>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        زبان تشخیص گفتار را انتخاب کن. حالت پیش‌فرض «تشخیص خودکار» بر اساس زبان مرورگر تو کار می‌کند.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">زبان تشخیص گفتار</label>
+          <select class="form-input" id="set-voice-lang" onchange="saveVoiceLangSetting(this.value)">
+            <option value="auto" ${_getVoiceLangPref()==='auto'?'selected':''}>🌐 تشخیص خودکار</option>
+            <option value="fa" ${_getVoiceLangPref()==='fa'?'selected':''}>🇮🇷 فارسی</option>
+            <option value="en" ${_getVoiceLangPref()==='en'?'selected':''}>🇺🇸 English</option>
+            <option value="ar" ${_getVoiceLangPref()==='ar'?'selected':''}>🇸🇦 العربية</option>
+            <option value="tr" ${_getVoiceLangPref()==='tr'?'selected':''}>🇹🇷 Türkçe</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
+        ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? '✅ مرورگر شما از ورودی صوتی پشتیبانی می‌کند.' : '⚠️ مرورگر فعلی شما از ورودی صوتی پشتیبانی نمی‌کند — پیشنهاد می‌شود از Chrome استفاده کنی.'}
       </div>
     </div>
   </div>
@@ -18704,6 +18770,235 @@ function openHabitHistory(id) {
 
 // NOTE: goals/habits routing and titles are now handled natively inside
 // renderPage() and updatePageTitle() above — no monkey-patching needed.
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// VOICE TO TEXT — ورودی صوتی سراسری (useSpeechRecognition-style shared module)
+// ────────────────────────────────────────────────────────────────────────────
+// معماری: تمام منطق تبدیل گفتار پشت یک «موتور» (Engine) قرار دارد.
+// در حال حاضر تنها موتور Web Speech API پیاده‌سازی شده، اما هر موتور دیگری
+// (Google Speech, OpenAI Whisper و ...) کافی است همین سه متد را پیاده‌سازی کند:
+//   isSupported(), start({lang,onInterim,onFinal,onError,onEnd}), stop()
+// و بدون هیچ تغییری در UI/دکمه‌ها، جایگزین می‌شود (Feature Flag: VOICE_CONFIG.engine)
+// ════════════════════════════════════════════════════════════════════════════
+
+const VOICE_CONFIG = {
+  engine: 'webspeech' // برای آینده: 'google' | 'whisper'
+};
+
+class WebSpeechVoiceEngine {
+  constructor() {
+    this._recognition = null;
+  }
+  isSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+  start({ lang, onInterim, onFinal, onError, onEnd }) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { onError && onError('unsupported'); return; }
+    const rec = new SR();
+    rec.lang = lang || navigator.language || 'fa-IR';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (e) => {
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += transcript;
+        else interim += transcript;
+      }
+      if (final) onFinal && onFinal(final);
+      if (interim) onInterim && onInterim(interim);
+    };
+    rec.onerror = (e) => { onError && onError(e.error); };
+    rec.onend = () => { onEnd && onEnd(); };
+    try {
+      rec.start();
+      this._recognition = rec;
+    } catch (e) {
+      onError && onError('start-failed');
+    }
+  }
+  stop() {
+    if (this._recognition) {
+      try { this._recognition.stop(); } catch (e) {}
+      this._recognition = null;
+    }
+  }
+}
+
+// نقطه‌ی Feature Flag: هر موتور جدیدی اضافه شد، فقط همین‌جا سوییچ کن
+function _createVoiceEngine() {
+  switch (VOICE_CONFIG.engine) {
+    case 'webspeech':
+    default:
+      return new WebSpeechVoiceEngine();
+  }
+}
+
+function _getVoiceLangPref() {
+  return localStorage.getItem('tp_voice_lang') || 'auto';
+}
+function saveVoiceLangSetting(val) {
+  localStorage.setItem('tp_voice_lang', val);
+  showToast('زبان تشخیص گفتار ذخیره شد', 'success');
+}
+function _voiceLangCode() {
+  const pref = _getVoiceLangPref();
+  const map = { fa: 'fa-IR', en: 'en-US', ar: 'ar-SA', tr: 'tr-TR' };
+  if (pref === 'auto') return navigator.language || 'fa-IR';
+  return map[pref] || 'fa-IR';
+}
+
+// یک session فعال به‌ازای هر textarea (اجازه‌ی ضبط هم‌زمان چند فیلد را می‌دهد)
+const _voiceSessions = new WeakMap();
+
+function _setVoiceBtnState(btn, statusEl, state, label) {
+  btn.classList.remove('voice-recording', 'voice-error');
+  if (state === 'recording') { btn.classList.add('voice-recording'); btn.textContent = '🔴'; }
+  else if (state === 'error') { btn.classList.add('voice-error'); btn.textContent = '⚠️'; }
+  else { btn.textContent = '🎤'; }
+  if (statusEl) {
+    if (label) {
+      statusEl.textContent = label;
+      statusEl.style.display = 'inline-block';
+      statusEl.classList.toggle('is-error', state === 'error');
+    } else {
+      statusEl.style.display = 'none';
+    }
+  }
+}
+
+// درج زنده‌ی متن دقیقاً در محل مکان‌نما، بدون پاک کردن متن قبلی
+function _voiceLiveInsert(el, state, text, isFinal) {
+  const before = state.committedValue.slice(0, state.cursor);
+  const after = state.committedValue.slice(state.cursor);
+  const needsSpace = before && text && !/[\s\n]$/.test(before) && !/^[\s\n.,!?؛،]/.test(text);
+  const sep = needsSpace ? ' ' : '';
+  el.value = before + sep + text + after;
+  if (isFinal) {
+    state.committedValue = el.value;
+    state.cursor = (before + sep + text).length;
+  }
+  const caret = (before + sep + text).length;
+  el.selectionStart = el.selectionEnd = caret;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function _toggleVoiceInput(el, btn, statusEl) {
+  const existing = _voiceSessions.get(el);
+  if (existing) {
+    existing.engine.stop();
+    _voiceSessions.delete(el);
+    _setVoiceBtnState(btn, statusEl, 'idle', null);
+    return;
+  }
+
+  const engine = _createVoiceEngine();
+  if (!engine.isSupported()) {
+    _setVoiceBtnState(btn, statusEl, 'error', 'مرورگر شما از تشخیص گفتار پشتیبانی نمی‌کند');
+    setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 3500);
+    return;
+  }
+
+  // متن فعلی و محل مکان‌نما حفظ می‌شود؛ متن جدید دقیقاً همان‌جا اضافه می‌شود
+  const state = {
+    committedValue: el.value,
+    cursor: (typeof el.selectionStart === 'number') ? el.selectionStart : el.value.length
+  };
+  _voiceSessions.set(el, { engine, state });
+  _setVoiceBtnState(btn, statusEl, 'recording', 'در حال گوش دادن...');
+
+  engine.start({
+    lang: _voiceLangCode(),
+    onInterim: (t) => _voiceLiveInsert(el, state, t, false),
+    onFinal: (t) => _voiceLiveInsert(el, state, t, true),
+    onError: (err) => {
+      _voiceSessions.delete(el);
+      let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
+      if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
+        msg = 'دسترسی به میکروفون داده نشد';
+      } else if (err === 'unsupported') {
+        msg = 'مرورگر شما از این قابلیت پشتیبانی نمی‌کند';
+      } else if (err === 'no-speech') {
+        msg = 'صدایی شنیده نشد';
+      }
+      _setVoiceBtnState(btn, statusEl, 'error', msg);
+      setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 3500);
+    },
+    onEnd: () => {
+      _voiceSessions.delete(el);
+      _setVoiceBtnState(btn, statusEl, 'idle', null);
+    }
+  });
+}
+
+// ── اتصال خودکار دکمه‌ی میکروفون به هر TextArea موجود در برنامه ──────────────
+function _attachVoiceButton(el) {
+  if (!el || el.dataset.voiceReady) return;
+  el.dataset.voiceReady = '1';
+
+  const parent = el.parentElement;
+  if (!parent) return;
+  if (getComputedStyle(parent).position === 'static') {
+    parent.style.position = 'relative';
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'voice-mic-btn';
+  btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
+  btn.textContent = '🎤';
+
+  const statusEl = document.createElement('span');
+  statusEl.className = 'voice-status-label';
+  statusEl.style.display = 'none';
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    _toggleVoiceInput(el, btn, statusEl);
+  });
+
+  parent.appendChild(btn);
+  parent.appendChild(statusEl);
+
+  // اگر فیلد از صفحه حذف شد، ضبط در حال اجرا متوقف شود
+  el.addEventListener('DOMNodeRemovedFromDocument', () => {
+    const s = _voiceSessions.get(el);
+    if (s) { s.engine.stop(); _voiceSessions.delete(el); }
+  });
+}
+
+function _voiceScanAndAttach(root) {
+  const scope = root || document;
+  const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-voice-ready])') : [];
+  nodes.forEach(_attachVoiceButton);
+  // اگر خودِ root یک textarea باشد (مثلاً در حالت تمرکز/Focus Mode)
+  if (scope.matches && scope.matches('textarea.form-textarea:not([data-voice-ready])')) {
+    _attachVoiceButton(scope);
+  }
+}
+
+(function _initVoiceInput() {
+  const start = () => {
+    _voiceScanAndAttach(document);
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        m.addedNodes && m.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          _voiceScanAndAttach(node);
+        });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
 </script>
 </body>
 </html>
