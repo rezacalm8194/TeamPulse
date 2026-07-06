@@ -17672,8 +17672,21 @@ function _formatDaysLeft(daysLeft, fa) {
 }
 
 function _goalVisionImages(g) {
+  return _goalVisionItems(g).map(x => x.src).filter(Boolean);
+}
+
+function _goalVisionItems(g) {
+  if (!g) return [];
+  if (Array.isArray(g.vision_assets)) return g.vision_assets.filter(x => x && x.src);
   const raw = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
-  return raw.split(/\n+/).map(x => x.trim()).filter(Boolean);
+  return raw.split(/\n+/).map(x => x.trim()).filter(Boolean).map((src, i) => ({
+    id: 'url-' + i + '-' + Date.now(),
+    type: 'image',
+    src,
+    name: 'تصویر ' + (i + 1),
+    category: '',
+    source: 'url'
+  }));
 }
 
 function _goalLinkedStats(goalId) {
@@ -17998,12 +18011,14 @@ function _toggleGoalsView() {
 }
 
 function _goalFormCompletion(prefix) {
-  const ids = ['title','why','vision','vision-images','deadline'];
-  const done = ids.filter(k => {
-    if (k === 'deadline') return !!readCalendarDateField(prefix + '-deadline');
-    return !!document.getElementById(prefix + '-' + k)?.value.trim();
-  }).length;
-  return Math.round(done / ids.length * 100);
+  const checks = [
+    !!document.getElementById(prefix + '-title')?.value.trim(),
+    !!document.getElementById(prefix + '-why')?.value.trim(),
+    !!document.getElementById(prefix + '-vision')?.value.trim(),
+    !!readCalendarDateField(prefix + '-deadline'),
+    !!((window._goalFormVisionAssets && window._goalFormVisionAssets[prefix] || []).length)
+  ];
+  return Math.round(checks.filter(Boolean).length / checks.length * 100);
 }
 
 function _goalMusicOptions(selected) {
@@ -18013,6 +18028,7 @@ function _goalMusicOptions(selected) {
     ['preset:inspire','✨ انگیزشی'],
     ['preset:nature','🌊 طبیعت'],
     ['preset:rain','🌧 باران'],
+    ['preset:piano','🎹 پیانو'],
     ['custom','آپلود / لینک اختصاصی'],
   ];
   return opts.map(([v,l]) => `<option value="${v}" ${selected===v?'selected':''}>${l}</option>`).join('');
@@ -18020,7 +18036,7 @@ function _goalMusicOptions(selected) {
 
 function _goalFormHtml(prefix, g) {
   g = g || {};
-  const images = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
+  const imageCount = _goalVisionItems(g).length;
   const music = g.music_url || 'none';
   const musicSelect = music && music.startsWith('preset:') ? music : (music && music !== 'none' ? 'custom' : 'none');
   return `
@@ -18069,11 +18085,13 @@ function _goalFormHtml(prefix, g) {
 
     <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 Vision Board</summary>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0">
-        <div style="font-size:11px;color:var(--text3)">هر لینک تصویر را در یک خط بگذار؛ همان لحظه پیش‌نمایش ساخته می‌شود.</div>
-        <button type="button" onclick="_focusGoalImageBox('${prefix}')" style="font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font)">＋ افزودن تصاویر</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0">
+        <div style="min-width:0">
+          <div style="font-size:12px;font-weight:700;color:var(--text)">تابلوی آرزوها را جداگانه مدیریت کن</div>
+          <div id="${prefix}-vision-summary" style="font-size:11px;color:var(--text3);margin-top:4px">${imageCount ? imageCount + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده'}</div>
+        </div>
+        <button type="button" onclick="openGoalVisionBoardManagerForForm('${prefix}')" style="font-size:12px;padding:8px 12px;border-radius:10px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800">✨ مدیریت Vision Board</button>
       </div>
-      <textarea class="form-textarea" id="${prefix}-vision-images" rows="3" placeholder="https://..." style="font-size:12px">${escapeHtml(images)}</textarea>
       <div id="${prefix}-vision-preview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px;margin-top:10px"></div>
     </details>
 
@@ -18112,6 +18130,10 @@ function _goalFormHtml(prefix, g) {
 }
 
 function _initGoalFormUX(prefix) {
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  if (!window._goalFormVisionAssets[prefix]) {
+    window._goalFormVisionAssets[prefix] = [];
+  }
   const refresh = () => {
     const pct = _goalFormCompletion(prefix);
     const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
@@ -18121,7 +18143,7 @@ function _initGoalFormUX(prefix) {
     if (label) label.textContent = fa(pct) + '٪';
     _renderGoalVisionPreview(prefix);
   };
-  ['title','why','vision','vision-images'].forEach(k => {
+  ['title','why','vision'].forEach(k => {
     const el = document.getElementById(prefix + '-' + k);
     if (el) el.addEventListener('input', refresh);
   });
@@ -18130,21 +18152,26 @@ function _initGoalFormUX(prefix) {
 
 function _renderGoalVisionPreview(prefix) {
   const box = document.getElementById(prefix + '-vision-preview');
-  const ta = document.getElementById(prefix + '-vision-images');
-  if (!box || !ta) return;
-  const imgs = ta.value.split(/\n+/).map(x => x.trim()).filter(Boolean);
-  box.innerHTML = imgs.length ? imgs.map(src => `
+  if (!box) return;
+  const imgs = (window._goalFormVisionAssets && window._goalFormVisionAssets[prefix]) || [];
+  const summary = document.getElementById(prefix + '-vision-summary');
+  if (summary) summary.textContent = imgs.length ? imgs.length + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده';
+  box.innerHTML = imgs.length ? imgs.slice(0, 6).map(item => `
     <div style="aspect-ratio:1.15;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);overflow:hidden;position:relative">
-      <img src="${escapeHtml(src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div style=&quot;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px&quot;>📷</div>'">
+      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div style=&quot;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px&quot;>📷</div>'">
     </div>`).join('') : `
     <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:18px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg3)">
       📷 هنوز تصویری اضافه نشده
     </div>`;
 }
 
-function _focusGoalImageBox(prefix) {
-  const el = document.getElementById(prefix + '-vision-images');
-  if (el) { el.focus(); el.scrollIntoView({behavior:'smooth', block:'center'}); }
+function _refreshGoalFormCompletion(prefix) {
+  const pct = _goalFormCompletion(prefix);
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const bar = document.getElementById(prefix + '-completion-bar');
+  const label = document.getElementById(prefix + '-completion-label');
+  if (bar) bar.style.width = pct + '%';
+  if (label) label.textContent = fa(pct) + '٪';
 }
 
 function _toggleGoalCustomMusic(prefix) {
@@ -18159,7 +18186,281 @@ function _readGoalMusic(prefix) {
   return choice === 'none' ? '' : choice;
 }
 
+function _readGoalVisionAssets(prefix) {
+  return ((window._goalFormVisionAssets && window._goalFormVisionAssets[prefix]) || []).map(x => ({...x}));
+}
+
+function openGoalVisionBoardManagerForForm(prefix) {
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionAssets[prefix] = window._goalFormVisionAssets[prefix] || [];
+  _openGoalVisionBoardManager({ prefix });
+}
+
+function openGoalVisionBoardManager(goalId) {
+  const g = (_db.goals || []).find(x => x.id === goalId);
+  if (!g) return;
+  _openGoalVisionBoardManager({ goalId });
+}
+
+function _goalManagerState(ctx) {
+  if (ctx.goalId) {
+    const g = (_db.goals || []).find(x => x.id === ctx.goalId);
+    return {
+      items: _goalVisionItems(g).map(x => ({...x})),
+      music: g.music_url || '',
+      goal: g
+    };
+  }
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  return {
+    items: (window._goalFormVisionAssets[ctx.prefix] || []).map(x => ({...x})),
+    music: _readGoalMusic(ctx.prefix),
+    goal: null
+  };
+}
+
+function _openGoalVisionBoardManager(ctx) {
+  const state = _goalManagerState(ctx);
+  window._visionManager = { ctx, items: state.items, music: state.music };
+  document.getElementById('vision-manager-overlay')?.remove();
+  const body = `
+    <div>
+      <div id="vision-drop-zone" ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'" ondragleave="this.style.borderColor='var(--border2)'" ondrop="_visionDropFiles(event)"
+        style="border:1.5px dashed var(--border2);border-radius:14px;padding:18px;text-align:center;background:var(--bg3);margin-bottom:12px">
+        <div style="font-size:32px;margin-bottom:8px">🖼</div>
+        <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:5px">تصاویر را اینجا رها کن یا از دستگاه انتخاب کن</div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">jpg, jpeg, png, webp, heic - حداکثر ۱۰MB برای هر تصویر</div>
+        <button type="button" onclick="document.getElementById('vision-image-picker').click()" class="btn btn-primary" style="padding:9px 14px">📷 افزودن تصاویر</button>
+        <button type="button" onclick="_visionPromptUrl()" class="btn btn-ghost" style="padding:9px 12px">افزودن لینک</button>
+        <input id="vision-image-picker" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple style="display:none" onchange="_visionHandleFiles(this.files)">
+      </div>
+      <div id="vision-manager-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-bottom:14px"></div>
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎵 موسیقی Vision Mode</div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
+          <div>
+            <label class="form-label">انتخاب موسیقی</label>
+            <select class="form-select" id="vision-music-choice" onchange="_visionToggleMusicUpload()">
+              ${_goalMusicOptions(state.music && !state.music.startsWith('preset:') ? 'custom' : (state.music || 'none'))}
+            </select>
+          </div>
+          <button type="button" onclick="_visionPreviewMusic()" class="btn btn-ghost" style="height:38px">▶ Preview</button>
+        </div>
+        <div id="vision-music-upload-wrap" style="display:${state.music && !state.music.startsWith('preset:') ? 'block' : 'none'};margin-top:10px">
+          <button type="button" onclick="document.getElementById('vision-music-picker').click()" class="btn btn-ghost">⬆ آپلود موسیقی</button>
+          <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'mp3, wav, m4a, aac, ogg - حداکثر ۲۰MB'}</span>
+          <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_visionHandleMusic(this.files && this.files[0])">
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modals').insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay open" id="vision-manager-overlay" style="z-index:10050" onclick="if(event.target===this)closeVisionBoardManager()">
+      <div class="modal" style="max-width:720px">
+        <div class="modal-header">
+          <div class="modal-title">✨ مدیریت Vision Board</div>
+          <button class="modal-close" onclick="closeVisionBoardManager()">×</button>
+        </div>
+        <div class="modal-body">${body}</div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" onclick="_saveVisionBoardManager()">💾 ذخیره Vision Board</button>
+          <button class="btn btn-ghost" onclick="_previewVisionBoardManager()">پیش‌نمایش رؤیا</button>
+          <button class="btn btn-ghost" onclick="closeVisionBoardManager()">بستن</button>
+        </div>
+      </div>
+    </div>`);
+  setTimeout(_renderVisionManager, 20);
+}
+
+function closeVisionBoardManager() {
+  if (window._visionMusicPreview) {
+    try { window._visionMusicPreview.stop ? window._visionMusicPreview.stop() : window._visionMusicPreview.pause(); } catch(e) {}
+    window._visionMusicPreview = null;
+  }
+  document.getElementById('vision-manager-overlay')?.remove();
+}
+
+function _renderVisionManager() {
+  const box = document.getElementById('vision-manager-grid');
+  if (!box || !window._visionManager) return;
+  const items = window._visionManager.items || [];
+  box.innerHTML = items.length ? items.map((item, i) => `
+    <div draggable="true" ondragstart="_visionDragStart(event,${i})" ondragover="event.preventDefault()" ondrop="_visionDropReorder(event,${i})"
+      style="position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--border2);background:var(--bg3);cursor:grab">
+      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">
+      <button type="button" onclick="_visionRemove(${i})" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.62);color:white;cursor:pointer">×</button>
+      <div style="position:absolute;right:5px;bottom:5px;font-size:10px;color:white;background:rgba(0,0,0,.55);border-radius:999px;padding:2px 6px">${i+1}</div>
+    </div>`).join('') : `
+    <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:24px;text-align:center;color:var(--text3);background:var(--bg2)">
+      🖼 هیچ تصویری اضافه نشده است
+    </div>`;
+}
+
+function _visionDropFiles(e) {
+  e.preventDefault();
+  const dz = document.getElementById('vision-drop-zone');
+  if (dz) dz.style.borderColor = 'var(--border2)';
+  _visionHandleFiles(e.dataTransfer.files);
+}
+
+function _visionHandleFiles(files) {
+  const list = Array.from(files || []);
+  list.forEach(file => _visionAddImageFile(file));
+}
+
+function _visionAddImageFile(file) {
+  const ok = /image\/(jpeg|png|webp|heic|heif)/i.test(file.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+  if (!ok) { showToast('این بخش فقط فایل تصویری را می‌پذیرد.', 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { showToast('حداکثر حجم هر تصویر ۱۰MB است.', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = () => _visionCompressImage(reader.result, file.name, file.type).then(src => {
+    window._visionManager.items.push({ id:'img-' + Date.now() + Math.random(), type:'image', src, name:file.name, category:'', source:'upload' });
+    _renderVisionManager();
+  });
+  reader.readAsDataURL(file);
+}
+
+function _visionCompressImage(dataUrl, name, type) {
+  return new Promise(resolve => {
+    if (/heic|heif/i.test(type || name)) { resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = () => {
+      const max = 1600;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', .84));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function _visionPromptUrl() {
+  const url = prompt('لینک تصویر:');
+  if (!url) return;
+  window._visionManager.items.push({ id:'url-' + Date.now(), type:'image', src:url.trim(), name:'تصویر لینک', category:'', source:'url' });
+  _renderVisionManager();
+}
+
+function _visionRemove(i) {
+  window._visionManager.items.splice(i, 1);
+  _renderVisionManager();
+}
+
+function _visionDragStart(e, i) { e.dataTransfer.setData('text/plain', String(i)); }
+function _visionDropReorder(e, to) {
+  e.preventDefault();
+  const from = +e.dataTransfer.getData('text/plain');
+  if (Number.isNaN(from) || from === to) return;
+  const arr = window._visionManager.items;
+  const [item] = arr.splice(from, 1);
+  arr.splice(to, 0, item);
+  _renderVisionManager();
+}
+
+function _visionToggleMusicUpload() {
+  const choice = document.getElementById('vision-music-choice')?.value || 'none';
+  const wrap = document.getElementById('vision-music-upload-wrap');
+  if (wrap) wrap.style.display = choice === 'custom' ? 'block' : 'none';
+}
+
+function _visionHandleMusic(file) {
+  if (!file) return;
+  const ok = /audio\/(mpeg|wav|mp4|aac|ogg)/i.test(file.type) || /\.(mp3|wav|m4a|aac|ogg)$/i.test(file.name);
+  if (!ok) { showToast('این بخش فقط فایل صوتی را می‌پذیرد.', 'error'); return; }
+  if (file.size > 20 * 1024 * 1024) { showToast('حداکثر حجم موسیقی ۲۰MB است.', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    window._visionManager.music = reader.result;
+    const name = document.getElementById('vision-music-name');
+    if (name) name.textContent = '🎵 ' + file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+function _visionSelectedMusic() {
+  const choice = document.getElementById('vision-music-choice')?.value || 'none';
+  if (choice === 'custom') return window._visionManager.music || '';
+  return choice === 'none' ? '' : choice;
+}
+
+function _visionPreviewMusic() {
+  const music = _visionSelectedMusic();
+  if (!music) { showToast('موسیقی انتخاب نشده', 'error'); return; }
+  if (window._visionMusicPreview) {
+    try { window._visionMusicPreview.stop ? window._visionMusicPreview.stop() : window._visionMusicPreview.pause(); } catch(e) {}
+    window._visionMusicPreview = null;
+    return;
+  }
+  if (music.startsWith('preset:')) {
+    window._visionMusicPreview = _startGoalPresetMusic(music);
+    setTimeout(() => { if (window._visionMusicPreview?.stop) { window._visionMusicPreview.stop(); window._visionMusicPreview = null; } }, 5000);
+  } else if (music.startsWith('data:')) {
+    const audio = new Audio(music);
+    audio.volume = .45;
+    audio.play().then(() => {
+      window._visionMusicPreview = audio;
+      setTimeout(() => { try { audio.pause(); } catch(e) {} window._visionMusicPreview = null; }, 5000);
+    }).catch(() => showToast('مرورگر اجازه پخش نداد', 'error'));
+  }
+}
+
+function _saveVisionBoardManager() {
+  const vm = window._visionManager;
+  if (!vm) return;
+  const music = _visionSelectedMusic();
+  if (vm.ctx.goalId) {
+    const g = (_db.goals || []).find(x => x.id === vm.ctx.goalId);
+    if (g) { g.vision_assets = vm.items; g.vision_images = ''; g.music_url = music; _save(); }
+    closeVisionBoardManager(); openGoalDetail(vm.ctx.goalId);
+  } else {
+    window._goalFormVisionAssets[vm.ctx.prefix] = vm.items.map(x => ({...x}));
+    const choice = document.getElementById(vm.ctx.prefix + '-music-choice');
+    const custom = document.getElementById(vm.ctx.prefix + '-music-url');
+    if (music && music.startsWith('data:')) { if (choice) choice.value = 'custom'; if (custom) custom.value = music; }
+    else if (choice) choice.value = music || 'none';
+    closeVisionBoardManager(); _renderGoalVisionPreview(vm.ctx.prefix); _refreshGoalFormCompletion(vm.ctx.prefix);
+  }
+  showToast('Vision Board ذخیره شد ✓', 'success');
+}
+
+function _previewVisionBoardManager() {
+  const vm = window._visionManager;
+  if (!vm) return;
+  const items = vm.items.map(x => ({...x}));
+  const music = _visionSelectedMusic();
+  if (vm.ctx.goalId) {
+    _saveVisionBoardManager();
+    openGoalVisionMode(vm.ctx.goalId);
+    return;
+  }
+  const prefix = vm.ctx.prefix;
+  const tempId = -Date.now();
+  window._goalTempExperienceId = tempId;
+  _db.goals = _db.goals || [];
+  _db.goals.push({
+    id: tempId,
+    title: document.getElementById(prefix + '-title')?.value || 'هدف جدید',
+    icon: document.getElementById(prefix + '-icon')?.value || '🎯',
+    why: document.getElementById(prefix + '-why')?.value || '',
+    vision: document.getElementById(prefix + '-vision')?.value || '',
+    vision_assets: items,
+    music_url: music,
+    progress: 0,
+    milestones: []
+  });
+  _saveVisionBoardManager();
+  openGoalVisionMode(tempId);
+}
+
 function openAddGoal() {
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionAssets.goal = [];
   openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
     { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -18178,7 +18479,8 @@ function saveNewGoal() {
     category: document.getElementById('goal-category')?.value || '',
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
-    vision_images: document.getElementById('goal-vision-images')?.value || '',
+    vision_assets: _readGoalVisionAssets('goal'),
+    vision_images: '',
     music_url: _readGoalMusic('goal'),
     deadline: readCalendarDateField('goal-deadline') || '',
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
@@ -18253,6 +18555,7 @@ function openGoalDetail(id) {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-size:12px;font-weight:700;color:var(--text2)">🖼 تابلو آرزوها</span>
           <div style="display:flex;gap:6px">
+            <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">مدیریت</button>
             <button onclick="openGoalVisionMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.13);color:var(--accent2);cursor:pointer;font-family:var(--font)">نمایش انگیزشی</button>
             <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode</button>
           </div>
@@ -18261,6 +18564,7 @@ function openGoalDetail(id) {
           ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="this.style.display='none'">`).join('')}
         </div>
       </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
+        <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت Vision Board</button>
         <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode هدف</button>
       </div>`}
 
@@ -18422,6 +18726,10 @@ function closeGoalExperience() {
     try { window._goalExperienceCleanup(); } catch(e) {}
     window._goalExperienceCleanup = null;
   }
+  if (window._goalTempExperienceId) {
+    _db.goals = (_db.goals || []).filter(g => g.id !== window._goalTempExperienceId);
+    window._goalTempExperienceId = null;
+  }
   const el = document.getElementById('goal-experience-overlay');
   if (el) el.remove();
 }
@@ -18550,6 +18858,7 @@ function _startGoalPresetMusic(kind) {
     'preset:inspire': [261.63, 329.63, 392],
     'preset:nature': [174.61, 220, 293.66],
     'preset:rain': [130.81, 196, 261.63],
+    'preset:piano': [220, 277.18, 329.63],
   };
   const freqs = presets[kind] || presets['preset:calm'];
   const nodes = freqs.map((f, i) => {
@@ -18572,6 +18881,8 @@ function _startGoalPresetMusic(kind) {
 function openEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionAssets.eg = _goalVisionItems(g).map(x => ({...x}));
   openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
     { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -18588,7 +18899,8 @@ function saveEditGoal(id) {
   g.status = document.getElementById('eg-status')?.value || 'active';
   g.why = document.getElementById('eg-why')?.value || '';
   g.vision = document.getElementById('eg-vision')?.value || '';
-  g.vision_images = document.getElementById('eg-vision-images')?.value || '';
+  g.vision_assets = _readGoalVisionAssets('eg');
+  g.vision_images = '';
   g.music_url = _readGoalMusic('eg');
   g.difficulty = document.getElementById('eg-difficulty')?.value || g.difficulty || 'medium';
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
