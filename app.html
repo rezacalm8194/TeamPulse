@@ -20598,7 +20598,10 @@ function _setVoiceBtnState(btn, statusEl, state, label) {
   btn.classList.remove('voice-recording', 'voice-error');
   if (state === 'recording') { btn.classList.add('voice-recording'); btn.innerHTML = _VOICE_ICON_STOP; btn.title = 'پایان ضبط'; }
   else if (state === 'error') { btn.classList.add('voice-error'); btn.innerHTML = _VOICE_ICON_WARN; btn.title = 'خطا در ورودی صوتی'; }
-  else { btn.innerHTML = _VOICE_ICON_MIC; btn.title = 'ورودی صوتی (تبدیل گفتار به متن)'; }
+  else {
+    btn.innerHTML = _VOICE_ICON_MIC;
+    btn.title = _voiceIsIOS() ? 'باز کردن دیکته کیبورد آیفون' : 'ورودی صوتی (تبدیل گفتار به متن)';
+  }
   if (statusEl) {
     if (label) {
       statusEl.textContent = label;
@@ -20640,6 +20643,19 @@ function _voiceLiveInsert(el, state, text, isFinal) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function _startIOSKeyboardDictation(el, btn, statusEl) {
+  try {
+    el.focus({ preventScroll: false });
+    const pos = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
+    el.selectionStart = el.selectionEnd = pos;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch(e) {
+    try { el.focus(); } catch(e2) {}
+  }
+  _setVoiceBtnState(btn, statusEl, 'idle', 'از میکروفون کیبورد آیفون استفاده کن');
+  setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 6500);
+}
+
 function _toggleVoiceInput(el, btn, statusEl) {
   const existing = _voiceSessions.get(el);
   if (existing) {
@@ -20647,6 +20663,14 @@ function _toggleVoiceInput(el, btn, statusEl) {
     _stopVoiceTimer(existing);
     _voiceSessions.delete(el);
     _setVoiceBtnState(btn, statusEl, 'idle', null);
+    return;
+  }
+
+  // Web Speech در iPhone/Safari حتی با Allow بودن میکروفون هم زیاد not-allowed
+  // برمی‌گرداند. پایدارترین تجربه روی iOS دیکته‌ی خود کیبورد است که مستقیم
+  // داخل textarea متن می‌نویسد و به API ناپایدار SpeechRecognition وابسته نیست.
+  if (_voiceIsIOS()) {
+    _startIOSKeyboardDictation(el, btn, statusEl);
     return;
   }
 
@@ -20714,7 +20738,7 @@ function _attachVoiceButton(el) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'voice-mic-btn';
-  btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
+  btn.title = _voiceIsIOS() ? 'باز کردن دیکته کیبورد آیفون' : 'ورودی صوتی (تبدیل گفتار به متن)';
   btn.innerHTML = _VOICE_ICON_MIC;
 
   const statusEl = document.createElement('span');
