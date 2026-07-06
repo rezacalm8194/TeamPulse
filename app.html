@@ -1202,6 +1202,14 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   transition: all .12s; opacity: .85;
 }
 .rt-btn:hover { background: var(--accent); color: white; border-color: var(--accent); opacity: 1; }
+.rt-focus-btn {
+  background: rgba(124,106,247,.16); color: var(--accent2);
+  border-color: rgba(157,143,255,.38); opacity: 1; font-size: 15px;
+  box-shadow: 0 0 0 1px rgba(124,106,247,.08), 0 4px 12px rgba(124,106,247,.16);
+}
+.rt-focus-btn:hover { background: var(--accent2); border-color: var(--accent2); color: white; }
+.rt-list-icon { font-weight: 800; font-size: 11px; letter-spacing: 0; }
+.rt-hr-icon { width: 14px; height: 2px; border-radius: 999px; background: currentColor; display: block; }
 .rt-sep { width: 1px; height: 16px; background: var(--border2); margin: 0 2px; }
 .rich-toolbar + textarea,
 .rt-more + textarea { border-radius: 0 0 8px 8px; }
@@ -3821,6 +3829,7 @@ function renderRich(str, opts) {
   let s = escapeHtml(str);
   s = s.replace(/==(.+?)==/g, '<mark>$1</mark>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  s = s.replace(/^\s*---\s*$/gm, '<hr style="border:none;border-top:1px solid var(--border2);width:100%;margin:14px 0">');
   s = s.replace(/^(\d+)\. (.+)$/gm, '<span style="display:flex;gap:6px;margin:2px 0"><span style="color:var(--accent2);font-weight:600;flex-shrink:0">$1.</span><span>$2</span></span>');
   s = s.replace(/^\[ \] (.+)$/gm, function(_,t){ return _renderChecklist(t,false,interactive,noteId,field); });
   s = s.replace(/^\[x\] (.+)$/gm, function(_,t){ return _renderChecklist(t,true,interactive,noteId,field); });
@@ -7125,14 +7134,15 @@ function richToolbar(textareaId) {
     ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
     <button type="button" class="rt-btn" title="هایلایت" onclick="wrapSelection('${textareaId}','==','==')">🖍️</button>
     <span class="rt-sep"></span>
-    <button type="button" class="rt-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" style="font-size:13px">⛶</button>
+    <button type="button" class="rt-btn rt-focus-btn" title="حالت تمرکز" onclick="_focusTextarea('${textareaId}')" aria-label="حالت تمرکز">⛶</button>
     <span class="rt-sep"></span>
     <button type="button" class="rt-btn" title="ابزارهای بیشتر" onclick="_toggleToolbarMore('${moreId}')">+</button>
   </div>
   <div id="${moreId}" class="rt-more" style="display:none">
     <button type="button" class="rt-btn" title="پررنگ" onclick="wrapSelection('${textareaId}','**','**')"><b>B</b></button>
-    <button type="button" class="rt-btn" title="چک‌لیست" onclick="insertChecklistItem('${textareaId}')" style="font-size:13px">☑</button>
-    <button type="button" class="rt-btn" title="لیست شماره‌دار" onclick="insertNumberedItem('${textareaId}')" style="font-size:13px">№</button>
+    <button type="button" class="rt-btn" title="چک‌لیست" onclick="insertChecklistItem('${textareaId}')"><span class="rt-list-icon">✓</span></button>
+    <button type="button" class="rt-btn" title="لیست شماره‌دار" onclick="insertNumberedItem('${textareaId}')"><span class="rt-list-icon">1.</span></button>
+    <button type="button" class="rt-btn" title="خط افقی" onclick="insertHorizontalLine('${textareaId}')"><span class="rt-hr-icon"></span></button>
     <button type="button" class="rt-btn" title="جدول" onclick="insertTable('${textareaId}')" style="font-size:12px">⊞</button>
     <span class="rt-sep"></span>
     ${moreStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
@@ -7156,6 +7166,7 @@ function wrapSelection(textareaId, before, after) {
   el.selectionStart = start + before.length;
   el.selectionEnd = end + before.length;
   el.scrollTop = scrollTop;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function insertAtCursor(textareaId, text) {
@@ -7168,33 +7179,60 @@ function insertAtCursor(textareaId, text) {
   el.focus();
   el.selectionStart = el.selectionEnd = start + text.length;
   el.scrollTop = scrollTop;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function insertChecklistItem(textareaId) {
   const el = document.getElementById(textareaId);
   if (!el) return;
-  const start = el.selectionStart, val = el.value;
+  const start = el.selectionStart, end = el.selectionEnd, val = el.value;
   const scrollTop = el.scrollTop;
-  const prefix = (start === 0 || val[start-1] === '\n') ? '' : '\n';
-  const insert = prefix + '[ ] ';
-  el.value = val.slice(0, start) + insert + val.slice(start);
+  const selected = val.slice(start, end);
+  const prefix = (start === 0 || val[start - 1] === '\n') ? '' : '\n';
+  const lines = selected ? selected.split('\n') : [''];
+  const insert = prefix + lines.map(line => {
+    const clean = line.replace(/^(\[ \] |\[x\] |\d+\. )/, '');
+    return '[ ] ' + clean;
+  }).join('\n');
+  el.value = val.slice(0, start) + insert + val.slice(end);
   el.focus(); el.selectionStart = el.selectionEnd = start + insert.length;
   el.scrollTop = scrollTop;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function insertNumberedItem(textareaId) {
   const el = document.getElementById(textareaId);
   if (!el) return;
-  const start = el.selectionStart, val = el.value;
+  const start = el.selectionStart, end = el.selectionEnd, val = el.value;
   const scrollTop = el.scrollTop;
   const before = val.slice(0, start);
-  const lastNum = before.match(/(?:^|\n)(\d+)\. [^\n]*$/);
+  const lastNum = before.match(/(?:^|\n)(\d+)\. [^\n]*(?:\n)?$/);
   const nextNum = lastNum ? parseInt(lastNum[1]) + 1 : 1;
   const prefix = (start === 0 || val[start-1] === '\n') ? '' : '\n';
-  const insert = prefix + nextNum + '. ';
-  el.value = val.slice(0, start) + insert + val.slice(start);
+  const selected = val.slice(start, end);
+  const lines = selected ? selected.split('\n') : [''];
+  const insert = prefix + lines.map((line, i) => {
+    const clean = line.replace(/^(\[ \] |\[x\] |\d+\. )/, '');
+    return (nextNum + i) + '. ' + clean;
+  }).join('\n');
+  el.value = val.slice(0, start) + insert + val.slice(end);
   el.focus(); el.selectionStart = el.selectionEnd = start + insert.length;
   el.scrollTop = scrollTop;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function insertHorizontalLine(textareaId) {
+  const el = document.getElementById(textareaId);
+  if (!el) return;
+  const start = el.selectionStart, end = el.selectionEnd, val = el.value;
+  const scrollTop = el.scrollTop;
+  const beforeBreak = (start === 0 || val[start - 1] === '\n') ? '' : '\n';
+  const afterBreak = (end >= val.length || val[end] === '\n') ? '\n' : '\n';
+  const insert = beforeBreak + '---' + afterBreak;
+  el.value = val.slice(0, start) + insert + val.slice(end);
+  el.focus(); el.selectionStart = el.selectionEnd = start + insert.length;
+  el.scrollTop = scrollTop;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function insertTable(textareaId) {
@@ -7205,6 +7243,7 @@ function insertTable(textareaId) {
   const tbl = prefix + '| ستون ۱ | ستون ۲ | ستون ۳ |\n|--------|--------|--------|\n| داده ۱ | داده ۲ | داده ۳ |\n| داده ۴ | داده ۵ | داده ۶ |\n';
   el.value = val.slice(0, start) + tbl + val.slice(start);
   el.focus(); el.selectionStart = el.selectionEnd = start + tbl.length;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function _focusTextarea(textareaId) {
@@ -7225,7 +7264,7 @@ function _openFocusMode(textarea, noteId, field) {
   const FOCUS_MAXW = FOCUS_IS_MOBILE ? '480px' : '1040px';
   const FOCUS_PAD = FOCUS_IS_MOBILE ? 'max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))' : '40px';
   const FOCUS_HEADER_H = FOCUS_IS_MOBILE ? '48px' : '60px';
-  const FOCUS_TOP_GAP = FOCUS_IS_MOBILE ? 'max(48px, calc(env(safe-area-inset-top, 0px) + 8px))' : '0px';
+  const FOCUS_TOP_GAP = FOCUS_IS_MOBILE ? 'max(54px, calc(env(safe-area-inset-top, 0px) + 12px))' : '0px';
   const FOCUS_BTN_PAD = '4px 14px';
   const FOCUS_BTN_FONT = '12px';
 
@@ -7295,8 +7334,9 @@ function _openFocusMode(textarea, noteId, field) {
     function _sep() { const s=document.createElement('span'); s.className='rt-sep'; fmToolbar.appendChild(s); }
     _b('پررنگ','<b>B</b>',function(){ wrapSelection('fm-textarea','**','**'); });
     _b('هایلایت','🖍️',function(){ wrapSelection('fm-textarea','==','=='); });
-    _b('چک‌لیست','☑',function(){ insertChecklistItem('fm-textarea'); },'font-size:13px');
-    _b('لیست شماره‌دار','№',function(){ insertNumberedItem('fm-textarea'); },'font-size:13px');
+    _b('چک‌لیست','<span class="rt-list-icon">✓</span>',function(){ insertChecklistItem('fm-textarea'); });
+    _b('لیست شماره‌دار','<span class="rt-list-icon">1.</span>',function(){ insertNumberedItem('fm-textarea'); });
+    _b('خط افقی','<span class="rt-hr-icon"></span>',function(){ insertHorizontalLine('fm-textarea'); });
     _b('جدول','⊞',function(){ insertTable('fm-textarea'); },'font-size:12px');
     _sep();
     _fmStickers.forEach(function(s){ _b(s,s,function(){ insertAtCursor('fm-textarea',s); },'font-size:15px'); });
