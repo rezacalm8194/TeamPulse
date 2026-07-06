@@ -618,9 +618,9 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* ── Voice Input (تبدیل گفتار به متن) ───────────────────── */
 .voice-mic-btn {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
-  width: 32px; height: 32px;
+  bottom: 22px;
+  left: 14px;
+  width: 36px; height: 36px;
   border-radius: 50%;
   border: 1px solid var(--border2);
   background: var(--bg2);
@@ -629,11 +629,11 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   line-height: 1;
   cursor: pointer;
   z-index: 3;
-  opacity: .9;
+  opacity: .92;
   transition: all .15s;
-  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  box-shadow: 0 4px 14px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.15);
 }
-.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); transform: scale(1.06); }
+.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); transform: translateY(-2px) scale(1.06); box-shadow: 0 8px 20px rgba(0,0,0,.28); }
 .voice-mic-btn.voice-recording {
   background: var(--red); border-color: var(--red); color: #fff; opacity: 1;
   animation: voice-pulse 1.2s ease-in-out infinite;
@@ -645,8 +645,8 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .voice-status-label {
   position: absolute;
-  bottom: 8px;
-  left: 42px;
+  bottom: 22px;
+  left: 58px;
   font-size: 10.5px;
   color: var(--text2);
   background: var(--bg2);
@@ -656,6 +656,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   z-index: 3;
   white-space: nowrap;
   pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 .voice-status-label.is-error { color: var(--amber); border-color: var(--amber); }
 /* ── Form ───────────────────────────────────────────────── */
@@ -18799,29 +18800,62 @@ class WebSpeechVoiceEngine {
   start({ lang, onInterim, onFinal, onError, onEnd }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { onError && onError('unsupported'); return; }
-    const rec = new SR();
-    // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
-    // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
-    rec.lang = lang || 'fa-IR';
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.onresult = (e) => {
-      let interim = '', final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const transcript = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += transcript;
-        else interim += transcript;
+
+    const beginRecognition = () => {
+      const rec = new SR();
+      // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
+      // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
+      rec.lang = lang || 'fa-IR';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (e) => {
+        let interim = '', final = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const transcript = e.results[i][0].transcript;
+          if (e.results[i].isFinal) final += transcript;
+          else interim += transcript;
+        }
+        if (final) onFinal && onFinal(final);
+        if (interim) onInterim && onInterim(interim);
+      };
+      rec.onerror = (e) => { onError && onError(e.error); };
+      rec.onend = () => { onEnd && onEnd(); };
+      try {
+        rec.start();
+        this._recognition = rec;
+      } catch (e) {
+        onError && onError('start-failed');
       }
-      if (final) onFinal && onFinal(final);
-      if (interim) onInterim && onInterim(interim);
     };
-    rec.onerror = (e) => { onError && onError(e.error); };
-    rec.onend = () => { onEnd && onEnd(); };
-    try {
-      rec.start();
-      this._recognition = rec;
-    } catch (e) {
-      onError && onError('start-failed');
+
+    // نکته‌ی کلیدی رفع باگ موبایل: اگر مستقیم rec.start() صدا زده شود در حالی که
+    // Permission هنوز «prompt» است، بعضی مرورگرهای موبایل (به‌خصوص Android/WebView)
+    // به‌جای نمایش دیالوگ بومی درخواست دسترسی، بلافاصله خطای not-allowed برمی‌گردانند.
+    // راه‌حل: با همان تپ اول کاربر، صریحاً getUserMedia صدا زده می‌شود تا دیالوگ بومی
+    // مرورگر نمایش داده شود. اگر Allow شد، ضبط فوراً و بدون تپ دوم شروع می‌شود.
+    // اگر Deny شد، همان‌جا پیام مناسب نشان داده می‌شود، نه بعد از یک تلاش ناموفق دیگر.
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+          // این استریم فقط برای گرفتن مجوز بود؛ خودِ SpeechRecognition میکروفون را
+          // مستقل مدیریت می‌کند، پس بلافاصله آزادش می‌کنیم.
+          stream.getTracks().forEach((t) => t.stop());
+          beginRecognition();
+        })
+        .catch((err) => {
+          const name = err && err.name;
+          if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+            onError && onError('not-allowed');
+          } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            onError && onError('no-mic');
+          } else {
+            // مرورگرهایی که getUserMedia صریح را درست پیاده‌سازی نکرده‌اند؛
+            // بازگشت به رفتار قبلی و اجازه دادن به خودِ SpeechRecognition
+            beginRecognition();
+          }
+        });
+    } else {
+      beginRecognition();
     }
   }
   stop() {
@@ -18967,7 +19001,9 @@ function _toggleVoiceInput(el, btn, statusEl) {
       _voiceSessions.delete(el);
       let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
       if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
-        msg = 'دسترسی به میکروفون داده نشد';
+        msg = 'برای استفاده از ضبط صدا، دسترسی میکروفون را از تنظیمات مرورگر فعال کنید';
+      } else if (err === 'no-mic') {
+        msg = 'میکروفونی پیدا نشد';
       } else if (err === 'unsupported') {
         msg = 'مرورگر شما از این قابلیت پشتیبانی نمی‌کند';
       } else if (err === 'no-speech') {
@@ -19050,9 +19086,10 @@ function _autoGrowTextarea(el) {
 }
 function _autoGrowScanAndAttach(root) {
   const scope = root || document;
-  const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-autogrow-ready])') : [];
+  const sel = 'textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview)';
+  const nodes = scope.querySelectorAll ? scope.querySelectorAll(sel) : [];
   nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
-  if (scope.matches && scope.matches('textarea.form-textarea:not([data-autogrow-ready])')) {
+  if (scope.matches && scope.matches(sel)) {
     scope.dataset.autogrowReady = '1'; _autoGrowTextarea(scope);
   }
 }
