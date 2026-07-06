@@ -18049,31 +18049,23 @@ const GOAL_CATEGORY_PRESETS = [
 
 const GOAL_ICON_PRESETS = ['🎯','🚀','💪','❤️','👨‍👩‍👧','🌿','🧠','🏡','🤲','💼','💰','📚','✨','🏆','🔥','🧘','🌱','🛡️'];
 
-function _goalPresetBtn(active, body, onclick, title) {
-  return `<button type="button" onclick="${onclick}" title="${escapeHtml(title || '')}" data-active="${active ? '1' : '0'}"
-    style="border:1px solid ${active ? 'var(--accent)' : 'var(--border2)'};background:${active ? 'rgba(124,106,247,.18)' : 'var(--bg3)'};color:${active ? 'var(--accent2)' : 'var(--text2)'};border-radius:12px;padding:10px 12px;cursor:pointer;font-family:var(--font);font-weight:800;text-align:right;transition:.15s;min-height:44px">
-    ${body}
-  </button>`;
-}
-
 function _goalCategoryPickerHtml(prefix, value) {
   const current = value || '';
   const preset = GOAL_CATEGORY_PRESETS.some(c => c.label === current);
   const customOpen = current && !preset;
-  const items = GOAL_CATEGORY_PRESETS.map(c => _goalPresetBtn(current === c.label,
-    `<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${c.icon}</span><span>${c.label}</span></div><div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:4px">${c.hint}</div>`,
-    `_selectGoalCategory('${prefix}','${escapeHtml(c.label)}',this)`,
-    c.label
-  )).join('');
+  const options = GOAL_CATEGORY_PRESETS.map(c =>
+    `<option value="${escapeHtml(c.label)}" ${current === c.label ? 'selected' : ''}>${c.icon} ${c.label}</option>`
+  ).join('');
   return `
-    <div class="form-group full" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px">
+    <div class="form-group">
       <label class="form-label">دسته‌بندی</label>
       <input type="hidden" id="${prefix}-category" value="${escapeHtml(current)}">
-      <div id="${prefix}-category-preset-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px">
-        ${items}
-        ${_goalPresetBtn(customOpen, '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">✏️</span><span>دلخواه</span></div><div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:4px">برای دسته‌بندی اختصاصی</div>', `_showGoalCustomCategory('${prefix}',this)`, 'دلخواه')}
-      </div>
-      <input class="form-input" id="${prefix}-category-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="نام دسته‌بندی دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:10px" oninput="_syncGoalCustomCategory('${prefix}')">
+      <select class="form-select" id="${prefix}-category-select" onchange="_syncGoalCategorySelect('${prefix}')">
+        <option value="" ${current ? '' : 'selected'}>انتخاب دسته‌بندی</option>
+        ${options}
+        <option value="__custom__" ${customOpen ? 'selected' : ''}>✏️ دلخواه</option>
+      </select>
+      <input class="form-input" id="${prefix}-category-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="نام دسته‌بندی دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:8px" oninput="_syncGoalCustomCategory('${prefix}')">
     </div>`;
 }
 
@@ -18081,48 +18073,33 @@ function _goalIconPickerHtml(prefix, value) {
   const current = value || '🎯';
   const preset = GOAL_ICON_PRESETS.includes(current);
   const customOpen = current && !preset;
-  const items = GOAL_ICON_PRESETS.map(icon => _goalPresetBtn(current === icon,
-    `<span style="font-size:22px;display:block;text-align:center">${icon}</span>`,
-    `_selectGoalIcon('${prefix}','${escapeHtml(icon)}',this)`,
-    icon
-  )).join('');
+  const options = GOAL_ICON_PRESETS.map(icon =>
+    `<option value="${escapeHtml(icon)}" ${current === icon ? 'selected' : ''}>${icon}</option>`
+  ).join('');
   return `
-    <div class="form-group full" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px">
+    <div class="form-group">
       <label class="form-label">آیکون هدف</label>
       <input type="hidden" id="${prefix}-icon" value="${escapeHtml(current)}">
-      <div id="${prefix}-icon-preset-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:8px;margin-top:8px">
-        ${items}
-        ${_goalPresetBtn(customOpen, '<span style="font-size:20px;display:block;text-align:center">✏️</span>', `_showGoalCustomIcon('${prefix}',this)`, 'آیکون دلخواه')}
-      </div>
-      <input class="form-input" id="${prefix}-icon-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="آیکون دلخواه را وارد کن" style="display:${customOpen ? 'block' : 'none'};margin-top:10px;text-align:center;font-size:20px" oninput="_syncGoalCustomIcon('${prefix}')">
+      <select class="form-select" id="${prefix}-icon-select" onchange="_syncGoalIconSelect('${prefix}')" style="font-size:18px;text-align:center">
+        ${options}
+        <option value="__custom__" ${customOpen ? 'selected' : ''}>✏️ دلخواه</option>
+      </select>
+      <input class="form-input" id="${prefix}-icon-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="آیکون دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:8px;text-align:center;font-size:20px" oninput="_syncGoalCustomIcon('${prefix}')">
     </div>`;
 }
 
-function _markGoalPresetActive(gridId, btn) {
-  const grid = document.getElementById(gridId);
-  if (!grid) return;
-  grid.querySelectorAll('button').forEach(b => {
-    const on = b === btn;
-    b.dataset.active = on ? '1' : '0';
-    b.style.borderColor = on ? 'var(--accent)' : 'var(--border2)';
-    b.style.background = on ? 'rgba(124,106,247,.18)' : 'var(--bg3)';
-    b.style.color = on ? 'var(--accent2)' : 'var(--text2)';
-  });
-}
-
-function _selectGoalCategory(prefix, value, btn) {
+function _syncGoalCategorySelect(prefix) {
+  const select = document.getElementById(prefix + '-category-select');
   const input = document.getElementById(prefix + '-category');
   const custom = document.getElementById(prefix + '-category-custom');
-  if (input) input.value = value;
-  if (custom) { custom.value = ''; custom.style.display = 'none'; }
-  _markGoalPresetActive(prefix + '-category-preset-grid', btn);
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _showGoalCustomCategory(prefix, btn) {
-  const custom = document.getElementById(prefix + '-category-custom');
-  _markGoalPresetActive(prefix + '-category-preset-grid', btn);
-  if (custom) { custom.style.display = 'block'; custom.focus(); _syncGoalCustomCategory(prefix); }
+  const value = select?.value || '';
+  if (value === '__custom__') {
+    if (custom) { custom.style.display = 'block'; custom.focus(); }
+    if (input && custom) input.value = custom.value.trim();
+  } else {
+    if (input) input.value = value;
+    if (custom) { custom.value = ''; custom.style.display = 'none'; }
+  }
   _refreshGoalFormCompletion(prefix);
 }
 
@@ -18133,19 +18110,18 @@ function _syncGoalCustomCategory(prefix) {
   _refreshGoalFormCompletion(prefix);
 }
 
-function _selectGoalIcon(prefix, value, btn) {
+function _syncGoalIconSelect(prefix) {
+  const select = document.getElementById(prefix + '-icon-select');
   const input = document.getElementById(prefix + '-icon');
   const custom = document.getElementById(prefix + '-icon-custom');
-  if (input) input.value = value;
-  if (custom) { custom.value = ''; custom.style.display = 'none'; }
-  _markGoalPresetActive(prefix + '-icon-preset-grid', btn);
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _showGoalCustomIcon(prefix, btn) {
-  const custom = document.getElementById(prefix + '-icon-custom');
-  _markGoalPresetActive(prefix + '-icon-preset-grid', btn);
-  if (custom) { custom.style.display = 'block'; custom.focus(); _syncGoalCustomIcon(prefix); }
+  const value = select?.value || '🎯';
+  if (value === '__custom__') {
+    if (custom) { custom.style.display = 'block'; custom.focus(); }
+    if (input && custom) input.value = custom.value.trim() || '🎯';
+  } else {
+    if (input) input.value = value;
+    if (custom) { custom.value = ''; custom.style.display = 'none'; }
+  }
   _refreshGoalFormCompletion(prefix);
 }
 
