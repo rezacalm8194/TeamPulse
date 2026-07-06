@@ -20447,6 +20447,14 @@ const VOICE_CONFIG = {
   engine: 'webspeech' // برای آینده: 'google' | 'whisper'
 };
 
+function _voiceIsIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function _voiceIsMobile() {
+  return _voiceIsIOS() || /Android|Mobile/i.test(navigator.userAgent);
+}
+
 class WebSpeechVoiceEngine {
   constructor() {
     this._recognition = null;
@@ -20463,7 +20471,9 @@ class WebSpeechVoiceEngine {
       // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
       // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
       rec.lang = lang || 'fa-IR';
-      rec.continuous = true;
+      // در Safari/iOS حالت continuous گاهی باعث پایان یا خطای زودهنگام می‌شود.
+      // روی موبایل ضبط‌های کوتاه پایدارترند و کاربر می‌تواند دوباره بزند.
+      rec.continuous = !_voiceIsIOS();
       rec.interimResults = true;
       rec.onresult = (e) => {
         let interim = '', final = '';
@@ -20491,7 +20501,8 @@ class WebSpeechVoiceEngine {
     // راه‌حل: با همان تپ اول کاربر، صریحاً getUserMedia صدا زده می‌شود تا دیالوگ بومی
     // مرورگر نمایش داده شود. اگر Allow شد، ضبط فوراً و بدون تپ دوم شروع می‌شود.
     // اگر Deny شد، همان‌جا پیام مناسب نشان داده می‌شود، نه بعد از یک تلاش ناموفق دیگر.
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    const shouldPreflightMic = navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !_voiceIsIOS();
+    if (shouldPreflightMic) {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then((stream) => {
           // این استریم فقط برای گرفتن مجوز بود؛ خودِ SpeechRecognition میکروفون را
@@ -20502,7 +20513,11 @@ class WebSpeechVoiceEngine {
         .catch((err) => {
           const name = err && err.name;
           if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
-            onError && onError('not-allowed');
+            // بعضی مرورگرهای موبایل/وب‌ویو getUserMedia را رد می‌کنند اما
+            // Web Speech خودش می‌تواند prompt دسترسی را نشان دهد. یک بار
+            // مستقیم امتحان می‌کنیم و اگر واقعاً مسدود بود onerror خودش می‌آید.
+            if (_voiceIsMobile()) beginRecognition();
+            else onError && onError('not-allowed');
           } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
             onError && onError('no-mic');
           } else {
@@ -20640,6 +20655,9 @@ function _toggleVoiceInput(el, btn, statusEl) {
   }
 
   // متن فعلی و محل مکان‌نما حفظ می‌شود؛ متن جدید دقیقاً همان‌جا اضافه می‌شود
+  if (_voiceIsMobile() && document.activeElement && document.activeElement !== document.body) {
+    try { document.activeElement.blur(); } catch(e) {}
+  }
   const state = {
     committedValue: el.value,
     cursor: (typeof el.selectionStart === 'number') ? el.selectionStart : el.value.length
@@ -20658,7 +20676,9 @@ function _toggleVoiceInput(el, btn, statusEl) {
       _voiceSessions.delete(el);
       let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
       if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
-        msg = 'برای استفاده از ضبط صدا، دسترسی میکروفون را از تنظیمات مرورگر فعال کنید';
+        msg = _voiceIsMobile()
+          ? 'دسترسی میکروفون بسته است؛ از تنظیمات همین سایت، میکروفون را مجاز کن'
+          : 'برای استفاده از ضبط صدا، دسترسی میکروفون را از تنظیمات مرورگر فعال کنید';
       } else if (err === 'no-mic') {
         msg = 'میکروفونی پیدا نشد';
       } else if (err === 'unsupported') {
