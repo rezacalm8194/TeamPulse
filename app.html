@@ -678,22 +678,22 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* ── Voice Input (تبدیل گفتار به متن) ───────────────────── */
 .voice-mic-btn {
   position: absolute;
-  bottom: 22px;
-  left: 14px;
-  width: 36px; height: 36px;
+  bottom: 12px;
+  left: 10px;
+  width: 30px; height: 30px;
   border-radius: 50%;
   border: 1px solid var(--border2);
-  background: var(--bg2);
-  color: var(--text2);
+  background: rgba(24,28,39,.72);
+  color: var(--text3);
   display: flex; align-items: center; justify-content: center;
   line-height: 1;
   cursor: pointer;
   z-index: 3;
-  opacity: .92;
+  opacity: .62;
   transition: all .15s;
-  box-shadow: 0 4px 14px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.15);
+  box-shadow: 0 2px 8px rgba(0,0,0,.16);
 }
-.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); transform: translateY(-2px) scale(1.06); box-shadow: 0 8px 20px rgba(0,0,0,.28); }
+.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); transform: translateY(-1px) scale(1.04); box-shadow: 0 6px 16px rgba(0,0,0,.22); }
 .voice-mic-btn.voice-recording {
   background: var(--red); border-color: var(--red); color: #fff; opacity: 1;
   animation: voice-pulse 1.2s ease-in-out infinite;
@@ -17997,54 +17997,174 @@ function _toggleGoalsView() {
   if (label) label.textContent = _goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
 }
 
-function openAddGoal() {
-  openModal('🎯 هدف جدید', `
+function _goalFormCompletion(prefix) {
+  const ids = ['title','why','vision','vision-images','deadline'];
+  const done = ids.filter(k => {
+    if (k === 'deadline') return !!readCalendarDateField(prefix + '-deadline');
+    return !!document.getElementById(prefix + '-' + k)?.value.trim();
+  }).length;
+  return Math.round(done / ids.length * 100);
+}
+
+function _goalMusicOptions(selected) {
+  const opts = [
+    ['none','بدون موسیقی'],
+    ['preset:calm','🌿 آرامش'],
+    ['preset:inspire','✨ انگیزشی'],
+    ['preset:nature','🌊 طبیعت'],
+    ['preset:rain','🌧 باران'],
+    ['custom','آپلود / لینک اختصاصی'],
+  ];
+  return opts.map(([v,l]) => `<option value="${v}" ${selected===v?'selected':''}>${l}</option>`).join('');
+}
+
+function _goalFormHtml(prefix, g) {
+  g = g || {};
+  const images = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
+  const music = g.music_url || 'none';
+  const musicSelect = music && music.startsWith('preset:') ? music : (music && music !== 'none' ? 'custom' : 'none');
+  return `
+    <div style="background:linear-gradient(135deg,rgba(124,106,247,.18),rgba(62,207,142,.08));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:16px;margin-bottom:14px">
+      <div style="font-size:28px;margin-bottom:6px">🎯</div>
+      <div style="font-size:16px;font-weight:900;color:var(--text);line-height:1.5">این هدف زندگی تو را تغییر می‌دهد.</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">هر روز فقط یک قدم.</div>
+      <div style="margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--text3)">کامل بودن هدف</span>
+          <span id="${prefix}-completion-label" style="font-size:12px;font-weight:800;color:var(--accent2)">۰٪</span>
+        </div>
+        <div style="height:8px;border-radius:999px;background:var(--bg4);overflow:hidden">
+          <div id="${prefix}-completion-bar" style="height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width .2s"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="form-grid">
-      <div class="form-group full">
-        <label class="form-label">عنوان هدف *</label>
-        <input class="form-input" id="goal-title" placeholder="مثلاً: یادگیری زبان انگلیسی" autofocus>
+      <div class="form-group full" style="background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:12px">
+        <label class="form-label">هدف *</label>
+        <input class="form-input" id="${prefix}-title" value="${escapeHtml(g.title||'')}" placeholder="مثلاً: ساختن بدن سالم و قوی" autofocus>
       </div>
       <div class="form-group">
         <label class="form-label">آیکون</label>
-        <input class="form-input" id="goal-icon" value="🎯" placeholder="🎯">
+        <input class="form-input" id="${prefix}-icon" value="${escapeHtml(g.icon||'🎯')}" placeholder="🎯">
       </div>
       <div class="form-group">
         <label class="form-label">دسته‌بندی</label>
-        <input class="form-input" id="goal-category" placeholder="مثلاً: سلامت، مالی، یادگیری">
-      </div>
-      <div class="form-group full">
-        <label class="form-label">💡 چرا این هدف برایم مهم است؟</label>
-        <textarea class="form-textarea" id="goal-why" rows="2" placeholder="انگیزه اصلی‌ات را بنویس..."></textarea>
-      </div>
-      <div class="form-group">
-        ${calendarDateFieldHtml('goal-deadline', '', '📅 Deadline')}
-      </div>
-      <div class="form-group">
-        <label class="form-label">سختی</label>
-        <select class="form-select" id="goal-difficulty">
-          <option value="easy">آسان</option>
-          <option value="medium" selected>متوسط</option>
-          <option value="hard">سخت</option>
-        </select>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">تصویر ذهنی (وقتی به هدف رسیدم...)</label>
-        <textarea class="form-textarea" id="goal-vision" rows="2" placeholder="چه چیزی تغییر می‌کند؟"></textarea>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🖼 تصاویر Vision Board</label>
-        <textarea class="form-textarea" id="goal-vision-images" rows="3" placeholder="هر لینک تصویر را در یک خط وارد کن..."></textarea>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🎵 موسیقی انگیزشی اختیاری</label>
-        <input class="form-input" id="goal-music-url" placeholder="لینک فایل mp3 یا موسیقی آرام بدون کلام">
+        <input class="form-input" id="${prefix}-category" value="${escapeHtml(g.category||'')}" placeholder="سلامت، مالی، یادگیری">
       </div>
     </div>
-  `, [
-    { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewGoal()' },
+
+    <details open style="background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.2);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--green)">🧠 چرا این هدف برای من مهم است؟</summary>
+      <textarea class="form-textarea" id="${prefix}-why" rows="3" placeholder="دلیل واقعی‌ات را بنویس؛ همان چیزی که روزهای سخت نگهت می‌دارد..." style="margin-top:10px">${escapeHtml(g.why||'')}</textarea>
+    </details>
+
+    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">👁 تصویر ذهنی</summary>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0">
+        وقتی رسیدی چه می‌بینی؟ چه می‌شنوی؟ کنارت چه کسانی هستند؟ چه احساسی داری؟
+      </div>
+      <textarea class="form-textarea" id="${prefix}-vision" rows="3" placeholder="مثلاً صبح بیدار می‌شوم و..." >${escapeHtml(g.vision||'')}</textarea>
+    </details>
+
+    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 Vision Board</summary>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0">
+        <div style="font-size:11px;color:var(--text3)">هر لینک تصویر را در یک خط بگذار؛ همان لحظه پیش‌نمایش ساخته می‌شود.</div>
+        <button type="button" onclick="_focusGoalImageBox('${prefix}')" style="font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font)">＋ افزودن تصاویر</button>
+      </div>
+      <textarea class="form-textarea" id="${prefix}-vision-images" rows="3" placeholder="https://..." style="font-size:12px">${escapeHtml(images)}</textarea>
+      <div id="${prefix}-vision-preview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px;margin-top:10px"></div>
+    </details>
+
+    <details style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🎵 موسیقی و تنظیمات</summary>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="form-group">
+          ${calendarDateFieldHtml(prefix + '-deadline', g.deadline||'', '📅 تاریخ پایان')}
+        </div>
+        <div class="form-group">
+          <label class="form-label">سختی</label>
+          <select class="form-select" id="${prefix}-difficulty">
+            <option value="easy" ${(g.difficulty||'medium')==='easy'?'selected':''}>آسان</option>
+            <option value="medium" ${(g.difficulty||'medium')==='medium'?'selected':''}>متوسط</option>
+            <option value="hard" ${(g.difficulty||'medium')==='hard'?'selected':''}>سخت</option>
+          </select>
+        </div>
+        ${prefix === 'eg' ? `<div class="form-group">
+          <label class="form-label">وضعیت</label>
+          <select class="form-select" id="eg-status">
+            <option value="active" ${(g.status||'active')==='active'?'selected':''}>در جریان</option>
+            <option value="done" ${g.status==='done'?'selected':''}>تکمیل شده</option>
+            <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
+          </select>
+        </div>` : ''}
+        <div class="form-group">
+          <label class="form-label">انتخاب موسیقی</label>
+          <select class="form-select" id="${prefix}-music-choice" onchange="_toggleGoalCustomMusic('${prefix}')">${_goalMusicOptions(musicSelect)}</select>
+        </div>
+        <div class="form-group full" id="${prefix}-custom-music-wrap" style="display:${musicSelect==='custom'?'block':'none'}">
+          <label class="form-label">فایل/لینک اختصاصی</label>
+          <input class="form-input" id="${prefix}-music-url" value="${musicSelect==='custom'?escapeHtml(music):''}" placeholder="لینک mp3 یا فایل صوتی">
+        </div>
+      </div>
+    </details>`;
+}
+
+function _initGoalFormUX(prefix) {
+  const refresh = () => {
+    const pct = _goalFormCompletion(prefix);
+    const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+    const bar = document.getElementById(prefix + '-completion-bar');
+    const label = document.getElementById(prefix + '-completion-label');
+    if (bar) bar.style.width = pct + '%';
+    if (label) label.textContent = fa(pct) + '٪';
+    _renderGoalVisionPreview(prefix);
+  };
+  ['title','why','vision','vision-images'].forEach(k => {
+    const el = document.getElementById(prefix + '-' + k);
+    if (el) el.addEventListener('input', refresh);
+  });
+  refresh();
+}
+
+function _renderGoalVisionPreview(prefix) {
+  const box = document.getElementById(prefix + '-vision-preview');
+  const ta = document.getElementById(prefix + '-vision-images');
+  if (!box || !ta) return;
+  const imgs = ta.value.split(/\n+/).map(x => x.trim()).filter(Boolean);
+  box.innerHTML = imgs.length ? imgs.map(src => `
+    <div style="aspect-ratio:1.15;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);overflow:hidden;position:relative">
+      <img src="${escapeHtml(src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div style=&quot;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px&quot;>📷</div>'">
+    </div>`).join('') : `
+    <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:18px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg3)">
+      📷 هنوز تصویری اضافه نشده
+    </div>`;
+}
+
+function _focusGoalImageBox(prefix) {
+  const el = document.getElementById(prefix + '-vision-images');
+  if (el) { el.focus(); el.scrollIntoView({behavior:'smooth', block:'center'}); }
+}
+
+function _toggleGoalCustomMusic(prefix) {
+  const choice = document.getElementById(prefix + '-music-choice')?.value || 'none';
+  const wrap = document.getElementById(prefix + '-custom-music-wrap');
+  if (wrap) wrap.style.display = choice === 'custom' ? 'block' : 'none';
+}
+
+function _readGoalMusic(prefix) {
+  const choice = document.getElementById(prefix + '-music-choice')?.value || 'none';
+  if (choice === 'custom') return document.getElementById(prefix + '-music-url')?.value || '';
+  return choice === 'none' ? '' : choice;
+}
+
+function openAddGoal() {
+  openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
+    { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
-  setTimeout(() => initDatePickers && initDatePickers(), 50);
+  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('goal'); }, 50);
 }
 
 function saveNewGoal() {
@@ -18059,7 +18179,7 @@ function saveNewGoal() {
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
     vision_images: document.getElementById('goal-vision-images')?.value || '',
-    music_url: document.getElementById('goal-music-url')?.value || '',
+    music_url: _readGoalMusic('goal'),
     deadline: readCalendarDateField('goal-deadline') || '',
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
     status: 'active',
@@ -18180,6 +18300,12 @@ function openGoalDetail(id) {
           </div>
         </div>
       </div>
+
+      <div style="margin-top:14px;background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(124,106,247,.10));border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px 14px">
+        <div style="font-size:12px;font-weight:800;color:#60a5fa;margin-bottom:5px">🚀 اولین قدم امروز</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">امروز چه کاری انجام می‌دهی که این هدف یک میلی‌متر جلو برود؟</div>
+        <button onclick="closeModal();openAddTodoForGoal(${id})" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:800">➕ تبدیل اولین قدم به کار</button>
+      </div>
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditGoal(${id})` },
@@ -18242,6 +18368,16 @@ function openGoalLinkedItems(id) {
   ]);
 }
 
+function openAddTodoForGoal(goalId) {
+  openAddTodo();
+  setTimeout(() => {
+    const sel = document.getElementById('todo-goal');
+    if (sel) sel.value = String(goalId);
+    const title = document.getElementById('todo-title');
+    if (title) title.placeholder = 'اولین قدم امروز برای این هدف...';
+  }, 80);
+}
+
 function updateGoalProgress(id, val) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
@@ -18302,6 +18438,8 @@ function _openGoalExperience(id, mode) {
   const prediction = _goalPrediction(g);
   const motivation = _goalMotivationToday(g);
   const cinematic = mode === 'vision';
+  const hasPresetMusic = !!(g.music_url && String(g.music_url).startsWith('preset:'));
+  const hasAudioMusic = !!(g.music_url && !hasPresetMusic);
   let index = 0;
 
   const overlay = document.createElement('div');
@@ -18322,7 +18460,7 @@ function _openGoalExperience(id, mode) {
     <div style="position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top,0px) + 16px) max(20px,env(safe-area-inset-right,0px)) 12px max(20px,env(safe-area-inset-left,0px));flex-shrink:0">
       <button onclick="closeGoalExperience()" style="width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-size:18px">✕</button>
       <div style="display:flex;align-items:center;gap:8px">
-        ${g.music_url ? `<button id="goal-music-toggle" onclick="_toggleGoalExperienceMusic()" style="padding:10px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-family:var(--font);font-size:12px">🔇 موسیقی خاموش</button>` : ''}
+        ${g.music_url ? `<button id="goal-music-toggle" data-music="${escapeHtml(g.music_url)}" onclick="_toggleGoalExperienceMusic()" style="padding:10px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-family:var(--font);font-size:12px">🔇 موسیقی خاموش</button>` : ''}
         <span style="font-size:12px;opacity:.65">${cinematic ? 'نمایش انگیزشی' : 'Focus Mode'}</span>
       </div>
     </div>
@@ -18342,10 +18480,12 @@ function _openGoalExperience(id, mode) {
         </div>` : ''}
       </div>
     </div>
-    ${g.music_url ? `<audio id="goal-experience-audio" src="${escapeHtml(g.music_url)}" loop preload="none"></audio>` : ''}
+    ${hasAudioMusic ? `<audio id="goal-experience-audio" src="${escapeHtml(g.music_url)}" loop preload="none"></audio>` : ''}
   `;
 
   document.body.appendChild(overlay);
+  const escClose = function(e) { if (e.key === 'Escape') closeGoalExperience(); };
+  document.addEventListener('keydown', escClose);
   let timer = null;
   if (images.length > 1) {
     timer = setInterval(() => {
@@ -18359,9 +18499,14 @@ function _openGoalExperience(id, mode) {
     }, cinematic ? 5200 : 6200);
   }
   window._goalExperienceCleanup = function() {
+    document.removeEventListener('keydown', escClose);
     if (timer) clearInterval(timer);
     const audio = document.getElementById('goal-experience-audio');
     if (audio) { try { audio.pause(); } catch(e) {} }
+    if (window._goalPresetAudio) {
+      try { window._goalPresetAudio.stop(); } catch(e) {}
+      window._goalPresetAudio = null;
+    }
   };
 }
 
@@ -18371,7 +18516,20 @@ function openGoalFocusMode(id) { _openGoalExperience(id, 'focus'); }
 function _toggleGoalExperienceMusic() {
   const audio = document.getElementById('goal-experience-audio');
   const btn = document.getElementById('goal-music-toggle');
-  if (!audio || !btn) return;
+  if (!btn) return;
+  const music = btn.dataset.music || '';
+  if (music.startsWith('preset:')) {
+    if (window._goalPresetAudio) {
+      window._goalPresetAudio.stop();
+      window._goalPresetAudio = null;
+      btn.textContent = '🔇 موسیقی خاموش';
+    } else {
+      window._goalPresetAudio = _startGoalPresetMusic(music);
+      if (window._goalPresetAudio) btn.textContent = '🔉 موسیقی روشن';
+    }
+    return;
+  }
+  if (!audio) return;
   if (audio.paused) {
     audio.play().then(() => { btn.textContent = '🔉 موسیقی روشن'; }).catch(() => showToast('مرورگر اجازه پخش موسیقی نداد', 'error'));
   } else {
@@ -18380,56 +18538,45 @@ function _toggleGoalExperienceMusic() {
   }
 }
 
+function _startGoalPresetMusic(kind) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) { showToast('مرورگر از موسیقی داخلی پشتیبانی نمی‌کند', 'error'); return null; }
+  const ctx = new AudioCtx();
+  const master = ctx.createGain();
+  master.gain.value = 0.045;
+  master.connect(ctx.destination);
+  const presets = {
+    'preset:calm': [196, 246.94, 329.63],
+    'preset:inspire': [261.63, 329.63, 392],
+    'preset:nature': [174.61, 220, 293.66],
+    'preset:rain': [130.81, 196, 261.63],
+  };
+  const freqs = presets[kind] || presets['preset:calm'];
+  const nodes = freqs.map((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'sine' : 'triangle';
+    osc.frequency.value = f;
+    gain.gain.value = 0.18 / freqs.length;
+    osc.connect(gain); gain.connect(master); osc.start();
+    return { osc, gain };
+  });
+  return {
+    stop() {
+      nodes.forEach(n => { try { n.gain.gain.setTargetAtTime(0, ctx.currentTime, .08); n.osc.stop(ctx.currentTime + .25); } catch(e) {} });
+      setTimeout(() => { try { ctx.close(); } catch(e) {} }, 350);
+    }
+  };
+}
+
 function openEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
-  openModal('✏️ ویرایش هدف', `
-    <div class="form-grid">
-      <div class="form-group full">
-        <label class="form-label">عنوان *</label>
-        <input class="form-input" id="eg-title" value="${g.title||''}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">آیکون</label>
-        <input class="form-input" id="eg-icon" value="${g.icon||'🎯'}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">دسته‌بندی</label>
-        <input class="form-input" id="eg-category" value="${g.category||''}">
-      </div>
-      <div class="form-group">
-        ${calendarDateFieldHtml('eg-deadline', g.deadline||'', '📅 Deadline')}
-      </div>
-      <div class="form-group">
-        <label class="form-label">وضعیت</label>
-        <select class="form-select" id="eg-status">
-          <option value="active" ${g.status==='active'?'selected':''}>در جریان</option>
-          <option value="done" ${g.status==='done'?'selected':''}>تکمیل شده</option>
-          <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
-        </select>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">چرا مهم است؟</label>
-        <textarea class="form-textarea" id="eg-why" rows="2">${g.why||''}</textarea>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">تصویر ذهنی</label>
-        <textarea class="form-textarea" id="eg-vision" rows="2">${g.vision||''}</textarea>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🖼 تصاویر Vision Board</label>
-        <textarea class="form-textarea" id="eg-vision-images" rows="3">${Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images||'')}</textarea>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🎵 موسیقی انگیزشی اختیاری</label>
-        <input class="form-input" id="eg-music-url" value="${g.music_url||''}" placeholder="لینک فایل mp3">
-      </div>
-    </div>
-  `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditGoal(${id})` },
+  openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
+    { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
-  setTimeout(() => initDatePickers && initDatePickers(), 50);
+  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('eg'); }, 50);
 }
 function saveEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
@@ -18442,7 +18589,8 @@ function saveEditGoal(id) {
   g.why = document.getElementById('eg-why')?.value || '';
   g.vision = document.getElementById('eg-vision')?.value || '';
   g.vision_images = document.getElementById('eg-vision-images')?.value || '';
-  g.music_url = document.getElementById('eg-music-url')?.value || '';
+  g.music_url = _readGoalMusic('eg');
+  g.difficulty = document.getElementById('eg-difficulty')?.value || g.difficulty || 'medium';
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
   showToast('تغییرات هدف ذخیره شد ✓', 'success');
 }
