@@ -7221,8 +7221,12 @@ function _openFocusMode(textarea, noteId, field) {
   // ── Focus Mode باید حس «نوشتن در یک ادیتور حرفه‌ای» بدهد (مثل Notion/Obsidian/Apple Notes)،
   // نه یک فرم تمام‌عرض. برای همین محتوا در یک ستون مرکزی با عرض محدود قرار می‌گیرد
   // و هدر/تولبار/فوتر همگی دقیقاً هم‌عرض همان ستون می‌شوند.
-  const FOCUS_MAXW = '1040px';
-  const FOCUS_PAD = '40px';
+  const FOCUS_IS_MOBILE = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+  const FOCUS_MAXW = FOCUS_IS_MOBILE ? '480px' : '1040px';
+  const FOCUS_PAD = FOCUS_IS_MOBILE ? '16px' : '40px';
+  const FOCUS_HEADER_H = FOCUS_IS_MOBILE ? '48px' : '60px';
+  const FOCUS_BTN_PAD = FOCUS_IS_MOBILE ? '4px 9px' : '4px 14px';
+  const FOCUS_BTN_FONT = FOCUS_IS_MOBILE ? '11px' : '12px';
 
   const overlay = document.createElement('div');
   overlay.id = 'focus-mode-overlay';
@@ -7232,21 +7236,21 @@ function _openFocusMode(textarea, noteId, field) {
   const box = document.createElement('div');
   box.style.cssText = 'background:var(--bg2);border-radius:0;width:100vw;height:100vh;height:100dvh;display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden';
 
-  // header — کوتاه (۶۰px) و محتوایش هم‌عرض ستون نوشتن، نه چسبیده به لبه‌های صفحه
+  // header — کوتاه و محتوایش هم‌عرض ستون نوشتن، نه چسبیده به لبه‌های صفحه
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:center;height:60px;min-height:60px;border-bottom:1px solid var(--border);flex-shrink:0';
+  header.style.cssText = `display:flex;align-items:center;justify-content:center;height:${FOCUS_HEADER_H};min-height:${FOCUS_HEADER_H};border-bottom:1px solid var(--border);flex-shrink:0`;
   const headerInner = document.createElement('div');
   headerInner.style.cssText = `width:100%;max-width:${FOCUS_MAXW};margin:0 auto;padding:0 ${FOCUS_PAD};display:flex;align-items:center;justify-content:space-between;box-sizing:border-box`;
   const modeToggle = document.createElement('div');
-  modeToggle.style.cssText = 'display:flex;gap:4px;background:var(--bg3);border-radius:8px;padding:3px';
+  modeToggle.style.cssText = 'display:flex;gap:3px;background:var(--bg3);border-radius:8px;padding:3px;flex-shrink:0';
   const _btnEdit = document.createElement('button');
   _btnEdit.id = 'fm-edit-btn';
-  _btnEdit.style.cssText = 'padding:4px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:var(--font);background:var(--accent2);color:#fff';
+  _btnEdit.style.cssText = `padding:${FOCUS_BTN_PAD};border-radius:6px;border:none;cursor:pointer;font-size:${FOCUS_BTN_FONT};font-family:var(--font);background:var(--accent2);color:#fff;white-space:nowrap`;
   _btnEdit.innerHTML = '✏️ ویرایش';
   _btnEdit.onclick = function(){ window._fmSetMode('edit'); };
   const _btnPrev = document.createElement('button');
   _btnPrev.id = 'fm-preview-btn';
-  _btnPrev.style.cssText = 'padding:4px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:var(--font);background:transparent;color:var(--text2)';
+  _btnPrev.style.cssText = `padding:${FOCUS_BTN_PAD};border-radius:6px;border:none;cursor:pointer;font-size:${FOCUS_BTN_FONT};font-family:var(--font);background:transparent;color:var(--text2);white-space:nowrap`;
   _btnPrev.innerHTML = '👁 پیش‌نمایش';
   _btnPrev.onclick = function(){ window._fmSetMode('preview'); };
   modeToggle.appendChild(_btnEdit);
@@ -7254,7 +7258,7 @@ function _openFocusMode(textarea, noteId, field) {
   const rightSide = document.createElement('div');
   rightSide.style.cssText = 'display:flex;gap:8px;align-items:center';
   const _spanEsc = document.createElement('span');
-  _spanEsc.style.cssText = 'font-size:11px;color:var(--text3)';
+  _spanEsc.style.cssText = `font-size:11px;color:var(--text3);${FOCUS_IS_MOBILE ? 'display:none' : ''}`;
   _spanEsc.textContent = '📝 حالت تمرکز | ESC برای خروج';
   const _btnClose = document.createElement('button');
   _btnClose.className = 'x-close';
@@ -7277,7 +7281,7 @@ function _openFocusMode(textarea, noteId, field) {
   // toolbar — هم‌عرض ستون نوشتن، نزدیک به متن (نه چسبیده به گوشه‌ی بالای صفحه)
   const fmToolbar = document.createElement('div');
   fmToolbar.className = 'rich-toolbar';
-  fmToolbar.style.cssText = `flex-shrink:0;margin:20px ${FOCUS_PAD} 0;border-radius:10px;width:auto`;
+  fmToolbar.style.cssText = `flex-shrink:0;margin:${FOCUS_IS_MOBILE ? '12px' : '20px'} ${FOCUS_PAD} 0;border-radius:10px;width:auto`;
   const _fmStickers = ['⭐','✅','❗','💡','🔥','👍','📌','⚠️','❤️','🎯'];
   (function() {
     function _b(title, html, fn, st) {
@@ -7300,12 +7304,12 @@ function _openFocusMode(textarea, noteId, field) {
 
   // ستون متن: فاصله‌ی افقی ۴۰px از دو طرف، و کمی فاصله از پایین تا میکروفون به فوتر نچسبد
   const textWrap = document.createElement('div');
-  textWrap.style.cssText = `position:relative;flex:1;display:flex;flex-direction:column;padding:0 ${FOCUS_PAD};margin-bottom:40px;box-sizing:border-box`;
+  textWrap.style.cssText = `position:relative;flex:1;display:flex;flex-direction:column;padding:0 ${FOCUS_PAD};margin-bottom:${FOCUS_IS_MOBILE ? '24px' : '40px'};box-sizing:border-box`;
 
   const focusTa = document.createElement('textarea');
   focusTa.id = 'fm-textarea';
   focusTa.value = textarea.value;
-  focusTa.style.cssText = 'flex:1;width:100%;resize:none;background:transparent;border:none;padding:32px 0 20px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap;box-sizing:border-box';
+  focusTa.style.cssText = `flex:1;width:100%;resize:none;background:transparent;border:none;padding:${FOCUS_IS_MOBILE ? '22px' : '32px'} 0 20px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap;box-sizing:border-box`;
   focusTa.placeholder = textarea.placeholder || 'بنویس...';
   textWrap.appendChild(focusTa);
   editInner.appendChild(textWrap);
@@ -7320,7 +7324,7 @@ function _openFocusMode(textarea, noteId, field) {
   previewPane.style.cssText = 'flex:1;overflow-y:auto;display:none';
   const previewInner = document.createElement('div');
   previewInner.id = 'fm-preview-inner';
-  previewInner.style.cssText = `max-width:${FOCUS_MAXW};margin:0 auto;padding:32px ${FOCUS_PAD} 60px;font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;box-sizing:border-box`;
+  previewInner.style.cssText = `max-width:${FOCUS_MAXW};margin:0 auto;padding:${FOCUS_IS_MOBILE ? '22px' : '32px'} ${FOCUS_PAD} 60px;font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;box-sizing:border-box`;
   previewPane.appendChild(previewInner);
 
   // footer — هم‌عرض ستون نوشتن، نه تمام‌عرض صفحه
