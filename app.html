@@ -621,40 +621,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .x-close-invert { color: rgba(255,255,255,.7); }
 .x-close-invert:hover { background: rgba(255,255,255,.18); color: #fff; border-color: transparent; transform: rotate(90deg); }
 
-/* ── Desktop full-page modal (session registration form, etc.)
-   In mobile these rules live inside @media(max-width:768px) below.
-   Here we apply them for ALL screen sizes so the sticky footer works
-   on desktop too. The modal fills the viewport, body scrolls, and
-   modal-actions always stays pinned to the bottom. ── */
-.modal-overlay.modal-overlay-fullpage {
-  align-items: stretch;
-  justify-content: stretch;
-}
-.modal-overlay.modal-overlay-fullpage .modal {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  max-height: 100vh !important;
-  max-height: 100dvh !important;
-  border-radius: 0 !important;
-  margin: 0;
-}
-.modal-overlay.modal-overlay-fullpage .modal-header {
-  border-radius: 0;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-.modal-overlay.modal-overlay-fullpage .modal-body {
-  padding: 20px 24px;
-}
-.modal-overlay.modal-overlay-fullpage .modal-actions {
-  position: sticky;
-  bottom: 0;
-  background: var(--bg2);
-}
-
+/* ── Sticky footer برای modal-actions در همه سایزها ── */
 .modal-actions {
   display: flex; gap: 10px; align-items: center; justify-content: flex-start;
   padding: 14px 24px 18px;
@@ -663,7 +630,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   box-shadow: 0 -6px 16px rgba(0,0,0,.18);
   flex-shrink: 0;
   background: var(--bg2);
-  position: relative; z-index: 1;
+  position: sticky; bottom: 0; z-index: 1;
 }
 /* دکمهٔ اصلی (ذخیره/ثبت) باید در کمتر از نیم‌ثانیه به چشم بیاید:
    عریض‌تر، پررنگ‌تر و با کمی سایه‌ی رنگی؛ دکمهٔ انصراف در مقابل، کم‌رنگ و ساده. */
@@ -5701,7 +5668,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
 
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردها</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..."></textarea>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..." data-no-voice></textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
@@ -5963,7 +5930,7 @@ async function openEditSession(sessionId) {
 
       <div class="form-group full">
         <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت...">${escapeHtml(session.achievements || '')}</textarea>
+        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت..." data-no-voice>${escapeHtml(session.achievements || '')}</textarea>
         <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
         <div id="ses-ach-tags"></div>
       </div>
