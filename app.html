@@ -18013,6 +18013,8 @@ function _toggleGoalsView() {
 function _goalFormCompletion(prefix) {
   const checks = [
     !!document.getElementById(prefix + '-title')?.value.trim(),
+    !!document.getElementById(prefix + '-category')?.value.trim(),
+    !!document.getElementById(prefix + '-icon')?.value.trim(),
     !!document.getElementById(prefix + '-why')?.value.trim(),
     !!document.getElementById(prefix + '-vision')?.value.trim(),
     !!readCalendarDateField(prefix + '-deadline'),
@@ -18032,6 +18034,126 @@ function _goalMusicOptions(selected) {
     ['custom','آپلود / لینک اختصاصی'],
   ];
   return opts.map(([v,l]) => `<option value="${v}" ${selected===v?'selected':''}>${l}</option>`).join('');
+}
+
+const GOAL_CATEGORY_PRESETS = [
+  { label:'سلامتی', icon:'💪', hint:'بدن، انرژی، تغذیه' },
+  { label:'رابطه عاطفی', icon:'❤️', hint:'عشق، صمیمیت، همراهی' },
+  { label:'رابطه خانوادگی', icon:'👨‍👩‍👧', hint:'خانواده، والدین، فرزندان' },
+  { label:'آرامش', icon:'🌿', hint:'ذهن آرام، تنفس، تعادل' },
+  { label:'شخصیت', icon:'🧠', hint:'رشد فردی و هویت' },
+  { label:'سبک زندگی', icon:'🏡', hint:'خانه، سفر، کیفیت زندگی' },
+  { label:'ایمان', icon:'🤲', hint:'معنا، معنویت، باور' },
+  { label:'درآمد و کسب‌وکار', icon:'💼', hint:'پول، فروش، رشد شغلی' },
+];
+
+const GOAL_ICON_PRESETS = ['🎯','🚀','💪','❤️','👨‍👩‍👧','🌿','🧠','🏡','🤲','💼','💰','📚','✨','🏆','🔥','🧘','🌱','🛡️'];
+
+function _goalPresetBtn(active, body, onclick, title) {
+  return `<button type="button" onclick="${onclick}" title="${escapeHtml(title || '')}" data-active="${active ? '1' : '0'}"
+    style="border:1px solid ${active ? 'var(--accent)' : 'var(--border2)'};background:${active ? 'rgba(124,106,247,.18)' : 'var(--bg3)'};color:${active ? 'var(--accent2)' : 'var(--text2)'};border-radius:12px;padding:10px 12px;cursor:pointer;font-family:var(--font);font-weight:800;text-align:right;transition:.15s;min-height:44px">
+    ${body}
+  </button>`;
+}
+
+function _goalCategoryPickerHtml(prefix, value) {
+  const current = value || '';
+  const preset = GOAL_CATEGORY_PRESETS.some(c => c.label === current);
+  const customOpen = current && !preset;
+  const items = GOAL_CATEGORY_PRESETS.map(c => _goalPresetBtn(current === c.label,
+    `<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${c.icon}</span><span>${c.label}</span></div><div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:4px">${c.hint}</div>`,
+    `_selectGoalCategory('${prefix}','${escapeHtml(c.label)}',this)`,
+    c.label
+  )).join('');
+  return `
+    <div class="form-group full" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px">
+      <label class="form-label">دسته‌بندی</label>
+      <input type="hidden" id="${prefix}-category" value="${escapeHtml(current)}">
+      <div id="${prefix}-category-preset-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px">
+        ${items}
+        ${_goalPresetBtn(customOpen, '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">✏️</span><span>دلخواه</span></div><div style="font-size:10px;color:var(--text3);font-weight:600;margin-top:4px">برای دسته‌بندی اختصاصی</div>', `_showGoalCustomCategory('${prefix}',this)`, 'دلخواه')}
+      </div>
+      <input class="form-input" id="${prefix}-category-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="نام دسته‌بندی دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:10px" oninput="_syncGoalCustomCategory('${prefix}')">
+    </div>`;
+}
+
+function _goalIconPickerHtml(prefix, value) {
+  const current = value || '🎯';
+  const preset = GOAL_ICON_PRESETS.includes(current);
+  const customOpen = current && !preset;
+  const items = GOAL_ICON_PRESETS.map(icon => _goalPresetBtn(current === icon,
+    `<span style="font-size:22px;display:block;text-align:center">${icon}</span>`,
+    `_selectGoalIcon('${prefix}','${escapeHtml(icon)}',this)`,
+    icon
+  )).join('');
+  return `
+    <div class="form-group full" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px">
+      <label class="form-label">آیکون هدف</label>
+      <input type="hidden" id="${prefix}-icon" value="${escapeHtml(current)}">
+      <div id="${prefix}-icon-preset-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:8px;margin-top:8px">
+        ${items}
+        ${_goalPresetBtn(customOpen, '<span style="font-size:20px;display:block;text-align:center">✏️</span>', `_showGoalCustomIcon('${prefix}',this)`, 'آیکون دلخواه')}
+      </div>
+      <input class="form-input" id="${prefix}-icon-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="آیکون دلخواه را وارد کن" style="display:${customOpen ? 'block' : 'none'};margin-top:10px;text-align:center;font-size:20px" oninput="_syncGoalCustomIcon('${prefix}')">
+    </div>`;
+}
+
+function _markGoalPresetActive(gridId, btn) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  grid.querySelectorAll('button').forEach(b => {
+    const on = b === btn;
+    b.dataset.active = on ? '1' : '0';
+    b.style.borderColor = on ? 'var(--accent)' : 'var(--border2)';
+    b.style.background = on ? 'rgba(124,106,247,.18)' : 'var(--bg3)';
+    b.style.color = on ? 'var(--accent2)' : 'var(--text2)';
+  });
+}
+
+function _selectGoalCategory(prefix, value, btn) {
+  const input = document.getElementById(prefix + '-category');
+  const custom = document.getElementById(prefix + '-category-custom');
+  if (input) input.value = value;
+  if (custom) { custom.value = ''; custom.style.display = 'none'; }
+  _markGoalPresetActive(prefix + '-category-preset-grid', btn);
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _showGoalCustomCategory(prefix, btn) {
+  const custom = document.getElementById(prefix + '-category-custom');
+  _markGoalPresetActive(prefix + '-category-preset-grid', btn);
+  if (custom) { custom.style.display = 'block'; custom.focus(); _syncGoalCustomCategory(prefix); }
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _syncGoalCustomCategory(prefix) {
+  const input = document.getElementById(prefix + '-category');
+  const custom = document.getElementById(prefix + '-category-custom');
+  if (input && custom) input.value = custom.value.trim();
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _selectGoalIcon(prefix, value, btn) {
+  const input = document.getElementById(prefix + '-icon');
+  const custom = document.getElementById(prefix + '-icon-custom');
+  if (input) input.value = value;
+  if (custom) { custom.value = ''; custom.style.display = 'none'; }
+  _markGoalPresetActive(prefix + '-icon-preset-grid', btn);
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _showGoalCustomIcon(prefix, btn) {
+  const custom = document.getElementById(prefix + '-icon-custom');
+  _markGoalPresetActive(prefix + '-icon-preset-grid', btn);
+  if (custom) { custom.style.display = 'block'; custom.focus(); _syncGoalCustomIcon(prefix); }
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _syncGoalCustomIcon(prefix) {
+  const input = document.getElementById(prefix + '-icon');
+  const custom = document.getElementById(prefix + '-icon-custom');
+  if (input && custom) input.value = custom.value.trim() || '🎯';
+  _refreshGoalFormCompletion(prefix);
 }
 
 function _goalFormHtml(prefix, g) {
@@ -18058,14 +18180,8 @@ function _goalFormHtml(prefix, g) {
         <label class="form-label">هدف *</label>
         <input class="form-input" id="${prefix}-title" value="${escapeHtml(g.title||'')}" placeholder="مثلاً: ساختن بدن سالم و قوی" autofocus>
       </div>
-      <div class="form-group">
-        <label class="form-label">آیکون</label>
-        <input class="form-input" id="${prefix}-icon" value="${escapeHtml(g.icon||'🎯')}" placeholder="🎯">
-      </div>
-      <div class="form-group">
-        <label class="form-label">دسته‌بندی</label>
-        <input class="form-input" id="${prefix}-category" value="${escapeHtml(g.category||'')}" placeholder="سلامت، مالی، یادگیری">
-      </div>
+      ${_goalCategoryPickerHtml(prefix, g.category || '')}
+      ${_goalIconPickerHtml(prefix, g.icon || '🎯')}
     </div>
 
     <details open style="background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.2);border-radius:12px;padding:12px;margin-top:10px">
