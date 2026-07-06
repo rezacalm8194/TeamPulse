@@ -20504,15 +20504,14 @@ class WebSpeechVoiceEngine {
     // راه‌حل: با همان تپ اول کاربر، صریحاً getUserMedia صدا زده می‌شود تا دیالوگ بومی
     // مرورگر نمایش داده شود. اگر Allow شد، ضبط فوراً و بدون تپ دوم شروع می‌شود.
     // اگر Deny شد، همان‌جا پیام مناسب نشان داده می‌شود، نه بعد از یک تلاش ناموفق دیگر.
-    const shouldPreflightMic = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    const shouldPreflightMic = navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !_voiceIsIOS();
     if (shouldPreflightMic) {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then((stream) => {
           // این استریم فقط برای گرفتن مجوز بود؛ خودِ SpeechRecognition میکروفون را
           // مستقل مدیریت می‌کند، پس بلافاصله آزادش می‌کنیم.
           stream.getTracks().forEach((t) => t.stop());
-          if (_voiceIsIOS()) setTimeout(beginRecognition, 0);
-          else beginRecognition();
+          beginRecognition();
         })
         .catch((err) => {
           const name = err && err.name;
