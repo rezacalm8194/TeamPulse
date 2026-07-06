@@ -1479,14 +1479,17 @@ body.light mark { background: rgba(251,191,36,.5); }
   .sidebar{position:fixed;top:var(--_topbar-h, 52px);right:0;bottom:0;transform:translateX(110%);width:min(260px,82vw);max-width:260px;z-index:91;
     transition:transform .28s cubic-bezier(.22,.61,.36,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
     box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-  .sidebar .sidebar-logo{padding-top:14px;flex:0 0 auto;padding-right:8px}
+  .sidebar .sidebar-logo{padding-top:14px;flex:0 0 auto;padding-right:18px}
   .sidebar .sidebar-nav{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .sidebar .sidebar-bottom{flex:0 0 auto;padding-bottom:14px}
   .sidebar.open{transform:translateX(0)}
   .hamburger{display:flex}
-  /* دکمه × داخل سایدبار — فقط وقتی سایدبار باز است نمایش داده می‌شود */
-  .sidebar.open .sidebar-close-btn{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:17px;cursor:pointer;flex-shrink:0;margin-right:auto;order:-1}
+  /* دکمه × داخل سایدبار — فقط وقتی سایدبار باز است نمایش داده می‌شود؛
+     margin-left:auto بقیه‌ی محتوای هدر (لوگو/عنوان) را به چپ می‌راند تا
+     خود دکمه دقیقاً روی لبه‌ی راست (هم‌راستا با padding-right بالا) بماند */
+  .sidebar.open .sidebar-close-btn{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:19px;cursor:pointer;flex-shrink:0;margin-left:auto;order:-1}
   .sidebar-close-btn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+  .sidebar-close-btn:active{transform:scale(.92)}
   /* overlay تیره پشت سایدبار */
   .sidebar-backdrop{background:rgba(0,0,0,.55)}
 
@@ -1645,14 +1648,15 @@ body.light mark { background: rgba(251,191,36,.5); }
   .modal-overlay.modal-overlay-fullpage .modal-actions{
     position:sticky; bottom:0; background:var(--bg2);
   }
-  .modal-fullpage-back{
-    width:36px; height:36px; border-radius:10px;
-    background:var(--bg3); border:1px solid var(--border2);
-    color:var(--text2); font-size:18px; line-height:1; font-weight:700;
+  .modal-fullpage-close{
+    width:40px; height:40px; border-radius:12px;
+    background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.35);
+    color:var(--red); font-size:19px; line-height:1; font-weight:700;
     display:flex; align-items:center; justify-content:center;
-    cursor:pointer; flex-shrink:0; transition:all .15s;
+    cursor:pointer; flex-shrink:0; transition:background .15s, border-color .15s, transform .12s, box-shadow .15s;
   }
-  .modal-fullpage-back:hover{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .modal-fullpage-close:hover{background:var(--red); color:#fff; border-color:var(--red); box-shadow:0 2px 10px rgba(248,113,113,.35)}
+  .modal-fullpage-close:active{transform:scale(.92); box-shadow:0 1px 4px rgba(248,113,113,.3)}
 
   /* Session meta-bar: collapse student/date/importance into one compact scrollable row */
   .ses-meta-body.open{
@@ -2246,6 +2250,14 @@ function attachJalaliDatePicker(input) {
   input.parentNode.insertBefore(wrap, input);
   wrap.appendChild(input);
 
+  // اگر تنظیمات برنامه روی میلادی باشد، این ورودی (که همیشه با مقدار شمسی
+  // ساخته می‌شود) باید به‌جای تقویم شمسی، یک Date Picker میلادی نشان دهد؛
+  // مقدار داخلی همچنان شمسی باقی می‌ماند تا بقیه‌ی کد بدون تغییر کار کند.
+  if (META.calendarType === 'gregorian') {
+    _attachGregorianDatePicker(input, wrap);
+    return;
+  }
+
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'jdate-btn';
@@ -2256,6 +2268,34 @@ function attachJalaliDatePicker(input) {
     openDatePicker(input);
   });
   wrap.appendChild(btn);
+}
+
+// نمایش یک Date Picker میلادی بومی به‌جای ورودی شمسی، وقتی تنظیمات کاربر
+// روی «میلادی» است. ورودی اصلی مخفی می‌شود ولی مقدار شمسی آن هم‌زمان با
+// انتخاب کاربر به‌روزرسانی و رویدادهای input/change روی آن شبیه‌سازی می‌شود.
+function _attachGregorianDatePicker(input, wrap) {
+  input.type = 'hidden';
+
+  const gInput = document.createElement('input');
+  gInput.type = 'date';
+  gInput.className = 'form-input';
+
+  const p = parseJalali(input.value);
+  if (p) {
+    const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+    gInput.value = `${gy}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}`;
+  }
+
+  gInput.addEventListener('input', () => {
+    if (!gInput.value) return;
+    const [gy, gm, gd] = gInput.value.split('-').map(Number);
+    const [jy, jm, jd] = gregorianToJalali(gy, gm, gd);
+    input.value = formatJalali(jy, jm, jd);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  wrap.appendChild(gInput);
 }
 
 function openDatePicker(input) {
@@ -11243,7 +11283,7 @@ function openModal(title, body, actions = [], opts = {}) {
 
   const fullPage = !!opts.fullPage;
   const closeBtn = fullPage
-    ? `<button class="modal-fullpage-back" onclick="closeModal()" aria-label="بازگشت" title="بازگشت">→</button>`
+    ? `<button class="modal-fullpage-close" onclick="closeModal()" aria-label="بستن" title="بستن">✕</button>`
     : `<button class="modal-close" onclick="closeModal()">×</button>`;
 
   document.getElementById('modals').innerHTML = `
