@@ -2596,6 +2596,7 @@ function _freshData() {
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
+    team_members:[], team_invites:[],
     session_order:[],
     todos:[],
     staff_role_entries:[],
@@ -2620,7 +2621,7 @@ function _migrate(d) {
   d.package_types = d.package_types || [];
   ['families','students','packages','payments','sessions','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
-   'instructions','guide_categories','guide_items','todos','staff_role_entries'].forEach(k=>{if(!d[k])d[k]=[];});
+   'instructions','guide_categories','guide_items','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
   d.session_order = d.session_order||[];
   if (!d.eval_forms) d.eval_forms = {};
@@ -3751,6 +3752,97 @@ function _getInitialPage() {
 let currentPage = _getInitialPage();
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
+
+const TEAM_ACCESS_SESSION_KEY = 'tp_team_access_session';
+const TEAM_PENDING_INVITE_KEY = 'tp_pending_team_invite';
+const TEAM_ACCESS_SECTIONS = [
+  {key:'students', label:'شاگردان', icon:'👥', desc:'مشاهده و مدیریت پرونده شاگردان'},
+  {key:'sessions', label:'جلسات', icon:'📅', desc:'ثبت، مشاهده و پیگیری جلسات'},
+  {key:'goals', label:'اهداف', icon:'🎯', desc:'برنامه‌ریزی و پیگیری هدف‌ها'},
+  {key:'habits', label:'عادت‌ها', icon:'🔥', desc:'مدیریت عادت‌ها و گزارش انجام'},
+  {key:'todolist', label:'لیست کارها', icon:'✅', desc:'کارها، یادآوری‌ها و پیگیری روزانه'},
+  {key:'instructions', label:'مرکز دانش', icon:'🧠', desc:'یادداشت‌ها، پوشه‌ها و فایل‌های دانشی'},
+  {key:'staff', label:'مدیریت', icon:'💼', desc:'همکاران، نقش‌ها، حقوق و یادآوری‌ها'},
+  {key:'customerlist', label:'لیست شاگردان', icon:'📋', desc:'نمای جدولی شاگردان و اطلاعات تماس'},
+  {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
+  {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
+  {key:'payments', label:'پرداخت‌ها', icon:'🛒', desc:'تاریخچه خریدها و پرداخت‌ها'},
+  {key:'reminders', label:'یادآوری پرداخت', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
+  {key:'dashboard', label:'داشبورد مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
+];
+
+function _teamAccessSession() {
+  try { return JSON.parse(localStorage.getItem(TEAM_ACCESS_SESSION_KEY) || 'null'); }
+  catch(e) { return null; }
+}
+function _isTeamGuest() { return !!_teamAccessSession(); }
+function _teamCan(page) {
+  const s = _teamAccessSession();
+  if (!s) return true;
+  if (['settings','tutorial'].includes(page)) return true;
+  return Array.isArray(s.permissions) && s.permissions.includes(page);
+}
+function _teamDefaultPage() {
+  const s = _teamAccessSession();
+  const first = s?.permissions?.find(p => _SAFE_RESTORE_PAGES.includes(p));
+  return first || 'settings';
+}
+function _applyTeamAccessToNav() {
+  const s = _teamAccessSession();
+  document.querySelectorAll('.nav-item[data-page], .bn-item[data-page]').forEach(el => {
+    const page = el.dataset.page;
+    el.style.display = (!s || _teamCan(page)) ? '' : 'none';
+  });
+  const accountBtn = document.getElementById('account-btn');
+  if (accountBtn && s) {
+    const nameEl = document.getElementById('account-name-display');
+    if (nameEl) nameEl.textContent = 'هم‌تیمی';
+    accountBtn.title = 'دسترسی هم‌تیمی';
+  }
+}
+function _teamAccessDeniedHtml(page) {
+  const label = TEAM_ACCESS_SECTIONS.find(x => x.key === page)?.label || 'این بخش';
+  return `<div class="detail-section" style="max-width:560px;margin:40px auto;text-align:center">
+    <div style="font-size:34px;margin-bottom:10px">🔒</div>
+    <h3 style="margin-bottom:8px">به ${label} دسترسی نداری</h3>
+    <p style="font-size:13px;color:var(--text2);line-height:1.9">صاحب حساب برای ایمیل شما دسترسی این بخش را فعال نکرده است.</p>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="currentPage=_teamDefaultPage();renderPage()">رفتن به بخش‌های مجاز</button>
+  </div>`;
+}
+function _teamEncodeInvite(data) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+}
+function _teamDecodeInvite(token) {
+  return JSON.parse(decodeURIComponent(escape(atob(token))));
+}
+function _acceptTeamInviteToken(token) {
+  const payload = _teamDecodeInvite(token);
+  if (!payload || !payload.email || !Array.isArray(payload.permissions)) throw new Error('دعوت‌نامه معتبر نیست');
+  localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify({
+    inviteId: payload.inviteId,
+    email: payload.email,
+    ownerName: payload.ownerName || '',
+    ownerEmail: payload.ownerEmail || '',
+    accountId: payload.accountId || '',
+    ownerDbKey: payload.ownerDbKey || '',
+    permissions: payload.permissions,
+    acceptedAt: new Date().toISOString(),
+  }));
+  if (payload.accountId) localStorage.setItem('teampulse_current_account', payload.accountId);
+  if (payload.ownerDbKey) window._activeDBKey = payload.ownerDbKey;
+  localStorage.removeItem(TEAM_PENDING_INVITE_KEY);
+  currentPage = payload.permissions[0] || 'settings';
+  location.hash = currentPage;
+}
+function _leaveTeamAccess() {
+  localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
+  showToast('دسترسی هم‌تیمی خارج شد ✓', 'success');
+  setTimeout(() => location.reload(), 600);
+}
+function _teamActiveDBKey() {
+  const s = _teamAccessSession();
+  return s?.ownerDbKey || _userDBKey();
+}
 // Apply the correct sidebar/bottom-nav highlight IMMEDIATELY, synchronously,
 // right as the script parses — before any auth/network/init() work runs.
 // This is what prevents the "flash of wrong menu item" on refresh: we never
@@ -4051,9 +4143,24 @@ function applyMetaToUI() {
   document.getElementById('nav-label-archive').textContent = `بایگانی ${META.entityPlural || 'شاگردان'}`;
   document.title = (META.appTitle || 'TeamPulse');
   updatePageTitle();
+  _applyTeamAccessToNav();
 }
 
 async function renderPage() {
+  _applyTeamAccessToNav();
+  if (!_teamCan(currentPage)) {
+    const fallback = _teamDefaultPage();
+    if (fallback && fallback !== currentPage && _teamCan(fallback)) {
+      currentPage = fallback;
+      updatePageTitle();
+      setActiveMenu(currentPage);
+      if (_SAFE_RESTORE_PAGES.includes(currentPage)) history.replaceState(null, '', '#' + currentPage);
+    } else {
+      updateTopbarActions('');
+      setContent(_teamAccessDeniedHtml(currentPage));
+      return;
+    }
+  }
   // Reset topbar hamburger to its default state; the knowledge-center page
   // will swap it back to a back-arrow if we're still inside a folder there.
   if (typeof _instrSetHeaderNav === 'function' && currentPage !== 'instructions') {
@@ -6714,9 +6821,193 @@ async function addSamplePkgTypes() {
   switchSettingsTab('services');
 }
 
+function _teamSectionLabel(key) {
+  return TEAM_ACCESS_SECTIONS.find(s => s.key === key)?.label || key;
+}
+
+function _teamInviteLink(member) {
+  const payload = {
+    inviteId: member.id,
+    email: member.email,
+    ownerName: _sbUser?.name || _db?.meta?.appTitle || '',
+    ownerEmail: _sbUser?.email || '',
+    ownerUserId: _sbUser?.id || '',
+    accountId: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
+    ownerDbKey: window._activeDBKey || _userDBKey(),
+    permissions: member.permissions || [],
+    createdAt: member.created_at || new Date().toISOString(),
+  };
+  const token = _teamEncodeInvite(payload);
+  return `${location.origin}${location.pathname}?team_invite=${encodeURIComponent(token)}`;
+}
+
+function _teamPermCards(prefix, selected) {
+  const picked = new Set(selected || []);
+  return TEAM_ACCESS_SECTIONS.map(s => `
+    <label style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);cursor:pointer">
+      <input type="checkbox" class="${prefix}-team-perm" value="${s.key}" ${picked.has(s.key)?'checked':''} style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px">
+      <span style="display:flex;gap:9px;align-items:flex-start;flex:1">
+        <span style="font-size:18px;line-height:1">${s.icon}</span>
+        <span style="min-width:0">
+          <b style="display:block;font-size:13px;color:var(--text)">${s.label}</b>
+          <small style="display:block;font-size:11px;color:var(--text3);line-height:1.7">${s.desc}</small>
+        </span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function _teamSelectedPerms(prefix) {
+  return [...document.querySelectorAll(`.${prefix}-team-perm:checked`)].map(x => x.value);
+}
+
+function _teamSelectAll(prefix, checked) {
+  document.querySelectorAll(`.${prefix}-team-perm`).forEach(x => x.checked = checked);
+}
+
+function _createTeamInvite() {
+  if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
+  const email = (document.getElementById('team-email')?.value || '').trim().toLowerCase();
+  const permissions = _teamSelectedPerms('new');
+  if (!email || !email.includes('@')) { showToast('ایمیل معتبر وارد کن', 'error'); return; }
+  if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
+  const existing = (_db.team_members || []).find(m => (m.email || '').toLowerCase() === email);
+  const member = existing || { id:'tm_' + Date.now(), email, created_at:new Date().toISOString(), status:'دعوت‌شده' };
+  member.permissions = permissions;
+  member.updated_at = new Date().toISOString();
+  member.invite_link = _teamInviteLink(member);
+  if (!existing) _db.team_members.unshift(member);
+  _db.team_invites = _db.team_invites || [];
+  _db.team_invites.unshift({ id:member.id, email, permissions, created_at:member.created_at, status:member.status });
+  _save();
+  copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
+  renderSettings().then(() => switchSettingsTab('team'));
+}
+
+function _copyTeamInvite(id) {
+  const member = (_db.team_members || []).find(m => m.id === id);
+  if (!member) return;
+  member.invite_link = _teamInviteLink(member);
+  _save();
+  copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
+}
+
+function _deleteTeamMember(id) {
+  const member = (_db.team_members || []).find(m => m.id === id);
+  if (!member) return;
+  if (!confirm(`دسترسی ${member.email} حذف شود؟`)) return;
+  _db.team_members = (_db.team_members || []).filter(m => m.id !== id);
+  _db.team_invites = (_db.team_invites || []).filter(m => m.id !== id);
+  _save();
+  renderSettings().then(() => switchSettingsTab('team'));
+  showToast('دسترسی حذف شد', 'error');
+}
+
+function _openEditTeamMember(id) {
+  const member = (_db.team_members || []).find(m => m.id === id);
+  if (!member) return;
+  openModal(`ویرایش دسترسی — ${escapeHtml(member.email)}`, `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--text2)">بخش‌هایی را که این هم‌تیمی می‌تواند ببیند انتخاب کن.</div>
+      <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('edit', true)">انتخاب همه</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">
+      ${_teamPermCards('edit', member.permissions)}
+    </div>
+  `, [
+    {label:'ذخیره دسترسی', cls:'btn-primary', action:`_saveTeamMemberEdit('${id}')`},
+    {label:'انصراف', cls:'btn-ghost', action:'closeModal()'},
+  ]);
+}
+
+function _saveTeamMemberEdit(id) {
+  const member = (_db.team_members || []).find(m => m.id === id);
+  if (!member) return;
+  const permissions = _teamSelectedPerms('edit');
+  if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
+  member.permissions = permissions;
+  member.updated_at = new Date().toISOString();
+  member.invite_link = _teamInviteLink(member);
+  _save();
+  closeModal();
+  renderSettings().then(() => switchSettingsTab('team'));
+  showToast('دسترسی ذخیره شد ✓', 'success');
+}
+
+function _teamSettingsHtml() {
+  const session = _teamAccessSession();
+  if (session) {
+    const perms = (session.permissions || []).map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
+    return `
+      <div class="detail-section" style="border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.05)">
+        <h3>👥 دسترسی هم‌تیمی</h3>
+        <p style="font-size:13px;color:var(--text2);line-height:1.9">شما با ایمیل <b>${escapeHtml(session.email)}</b> به حساب <b>${escapeHtml(session.ownerName || session.ownerEmail || 'صاحب حساب')}</b> وصل شده‌اید.</p>
+        <div class="detail-row"><span class="detail-key">بخش‌های مجاز</span><span class="detail-val">${escapeHtml(perms)}</span></div>
+        <button class="btn btn-danger" style="margin-top:12px" onclick="_leaveTeamAccess()">خروج از دسترسی هم‌تیمی</button>
+      </div>`;
+  }
+
+  const members = _db.team_members || [];
+  const memberRows = members.length ? members.map(m => {
+    const count = (m.permissions || []).length;
+    const labels = (m.permissions || []).slice(0, 4).map(_teamSectionLabel).join('، ');
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);flex-wrap:wrap">
+        <div style="min-width:220px;flex:1">
+          <div style="font-size:13px;font-weight:800;color:var(--text);direction:ltr;text-align:right">${escapeHtml(m.email)}</div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.8">${fa(count)} بخش فعال${labels ? ` — ${escapeHtml(labels)}${count>4?' ...':''}` : ''}</div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="_copyTeamInvite('${m.id}')">کپی لینک</button>
+          <button class="btn btn-ghost btn-sm" onclick="_openEditTeamMember('${m.id}')">ویرایش</button>
+          <button class="btn btn-danger btn-sm" onclick="_deleteTeamMember('${m.id}')">حذف</button>
+        </div>
+      </div>`;
+  }).join('') : `<div style="padding:18px;border:1px dashed var(--border2);border-radius:10px;text-align:center;color:var(--text3);font-size:12px">هنوز هم‌تیمی دعوت نشده است.</div>`;
+
+  return `
+    <div class="detail-section" style="border-color:rgba(124,106,247,.35)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <h3 style="margin-bottom:4px">👥 دعوت هم‌تیمی با ایمیل</h3>
+          <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">ایمیل فرد را وارد کن، بخش‌های مجاز را انتخاب کن و لینک دعوت را برایش بفرست.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('new', true)">انتخاب همه بخش‌ها</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ایمیل هم‌تیمی</label>
+        <input class="form-input" id="team-email" type="email" placeholder="name@example.com" style="direction:ltr;text-align:left">
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:12px">
+        ${_teamPermCards('new', ['students','sessions','goals','todolist'])}
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">
+        <button class="btn btn-primary" onclick="_createTeamInvite()">ساخت و کپی لینک دعوت</button>
+        <button class="btn btn-ghost" onclick="_teamSelectAll('new', false)">پاک کردن انتخاب‌ها</button>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>اعضای دعوت‌شده</h3>
+      <div style="display:flex;flex-direction:column;gap:8px">${memberRows}</div>
+    </div>`;
+}
+
 async function renderSettings() {
   updateTopbarActions('');
   PKG_TYPES = await window.api.packageTypes.getAll();
+  if (_isTeamGuest()) {
+    _settingsActiveTab = 'team';
+    setContent(`
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="team" onclick="switchSettingsTab('team')">👥 دسترسی من</button>
+      </div>
+      <div class="settings-pane active" id="pane-team">
+        ${_teamSettingsHtml()}
+      </div>
+    `);
+    return;
+  }
 
   const setupItems = _settingsSetupState();
   const allDone = setupItems.every(i => i.done);
@@ -6787,6 +7078,7 @@ async function renderSettings() {
 
   <div class="settings-tabs">
     <button class="settings-tab ${_settingsActiveTab==='general'?'active':''}" data-tab="general" onclick="switchSettingsTab('general')">⚙️ عمومی</button>
+    <button class="settings-tab ${_settingsActiveTab==='team'?'active':''}" data-tab="team" onclick="switchSettingsTab('team')">👥 هم‌تیمی‌ها</button>
     <button class="settings-tab ${_settingsActiveTab==='services'?'active':''}" data-tab="services" onclick="switchSettingsTab('services')">🧰 خدمات</button>
     <button class="settings-tab ${_settingsActiveTab==='data'?'active':''}" data-tab="data" onclick="switchSettingsTab('data')">💾 داده و پشتیبان</button>
     <button class="settings-tab ${_settingsActiveTab==='personal'?'active':''}" data-tab="personal" onclick="switchSettingsTab('personal')">🎨 شخصی‌سازی</button>
@@ -6901,6 +7193,10 @@ async function renderSettings() {
         ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? '✅ مرورگر شما از ورودی صوتی پشتیبانی می‌کند.' : '⚠️ مرورگر فعلی شما از ورودی صوتی پشتیبانی نمی‌کند — پیشنهاد می‌شود از Chrome استفاده کنی.'}
       </div>
     </div>
+  </div>
+
+  <div class="settings-pane ${_settingsActiveTab==='team'?'active':''}" id="pane-team">
+    ${_teamSettingsHtml()}
   </div>
 
   <div class="settings-pane ${_settingsActiveTab==='services'?'active':''}" id="pane-services">
@@ -13555,7 +13851,8 @@ async function _syncToServer() {
   // block sync اگه impersonating هستیم و هنوز داده load نشده
   if (window._impersonateLoadPending) return;
   try {
-    const accId = _sbUser.id;
+    const teamSession = _teamAccessSession();
+    const accId = teamSession?.ownerUserId || _sbUser.id;
     if (!accId) return;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
@@ -13572,7 +13869,8 @@ async function _loadFromServer() {
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   try {
-    const accId = _sbUser.id;
+    const teamSession = _teamAccessSession();
+    const accId = teamSession?.ownerUserId || _sbUser.id;
     if (!accId) return false;
     const res = await _apiFetch('/api/data/' + accId);
     if (res.status === 429) {
@@ -13850,7 +14148,12 @@ async function _doReset() {
 }
 
 async function _authOnSuccess() {
-  window._activeDBKey = _userDBKey();
+  const pendingInvite = localStorage.getItem(TEAM_PENDING_INVITE_KEY);
+  if (pendingInvite) {
+    try { _acceptTeamInviteToken(pendingInvite); }
+    catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
+  }
+  window._activeDBKey = _teamActiveDBKey();
   _load(); // load از localStorage (ممکنه خالی باشه)
 
   // همیشه از سرور load کن — مهم‌ترین قدم برای sync چند دستگاه
@@ -13938,7 +14241,9 @@ async function _authOnSuccess() {
     clearTimeout(window._serverSyncTimer);
     // sync synchronous با sendBeacon
     if (_sbUser?.id && _sbSession?.token) {
-      const url = (window.location.origin || '') + '/api/data/' + _sbUser.id;
+      const teamSession = _teamAccessSession();
+      const accId = teamSession?.ownerUserId || _sbUser.id;
+      const url = (window.location.origin || '') + '/api/data/' + accId;
       const data = JSON.stringify({ data: _db });
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
@@ -14413,6 +14718,10 @@ async function _initAuth() {
   const actionLogin = urlParams.get('action') === 'login';
   const actionLogout = urlParams.get('action') === 'logout';
   const actionRegister = urlParams.get('action') === 'register';
+  const teamInviteToken = urlParams.get('team_invite');
+  if (teamInviteToken) {
+    localStorage.setItem(TEAM_PENDING_INVITE_KEY, teamInviteToken);
+  }
 
   // پاک کردن URL param بدون reload
   history.replaceState({}, '', window.location.pathname);
@@ -14421,6 +14730,7 @@ async function _initAuth() {
   if (actionLogout) {
     try { localStorage.removeItem('tp_session'); } catch(e) {}
     try { sessionStorage.removeItem('tp_session'); } catch(e) {}
+    localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
     _sbSession = null; _sbUser = null;
   }
 
@@ -14491,7 +14801,7 @@ async function _initAuth() {
     // از لندینگ اومده با دکمه ورود — session داره، مستقیم load
     _sbSession = { token: saved.token };
     _sbUser = saved.user;
-    window._activeDBKey = _userDBKey();
+    window._activeDBKey = _teamActiveDBKey();
     await _authOnSuccess();
     return true;
   }
@@ -14500,7 +14810,12 @@ async function _initAuth() {
   if (saved.token) {
     _sbSession = { token: saved.token };
     _sbUser = saved.user;
-    window._activeDBKey = _userDBKey();
+    const pendingInvite = localStorage.getItem(TEAM_PENDING_INVITE_KEY);
+    if (pendingInvite) {
+      try { _acceptTeamInviteToken(pendingInvite); }
+      catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
+    }
+    window._activeDBKey = _teamActiveDBKey();
     _load();
     _hideAuthScreen();
     _updateAuthUI();
