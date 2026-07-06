@@ -17671,6 +17671,79 @@ function _formatDaysLeft(daysLeft, fa) {
   return days > 0 ? `${fa(months)} ماه و ${fa(days)} روز مانده` : `${fa(months)} ماه مانده`;
 }
 
+function _goalVisionImages(g) {
+  const raw = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
+  return raw.split(/\n+/).map(x => x.trim()).filter(Boolean);
+}
+
+function _goalLinkedStats(goalId) {
+  if (typeof _todosInit === 'function') _todosInit();
+  if (typeof _habitsInit === 'function') _habitsInit();
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const tasks = (_db.todos || []).filter(t => t.goal_id === goalId && !t.archived);
+  const habits = (_db.habits || []).filter(h => h.goal_id === goalId && !h.archived);
+  const doneTasks = tasks.filter(t => t.done).length;
+  const doneHabitsToday = habits.filter(h => (_db.habit_logs || []).some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
+  return { tasks, habits, doneTasks, doneHabitsToday };
+}
+
+function _goalHealth(g) {
+  const progress = +(g.progress || 0);
+  const milestones = g.milestones || [];
+  const doneMilestones = milestones.filter(m => m.done).length;
+  const linked = _goalLinkedStats(g.id);
+  const taskScore = linked.tasks.length ? (linked.doneTasks / linked.tasks.length) * 100 : progress;
+  const habitScore = linked.habits.length ? (linked.doneHabitsToday / linked.habits.length) * 100 : progress;
+  const milestoneScore = milestones.length ? (doneMilestones / milestones.length) * 100 : progress;
+  const deadline = _goalDaysLeft(g.deadline);
+  let score = Math.round((progress * .4) + (taskScore * .2) + (habitScore * .2) + (milestoneScore * .2));
+  if (deadline !== null && deadline < 0 && progress < 100) score -= 25;
+  if (deadline !== null && deadline <= 7 && progress < 70) score -= 10;
+  score = Math.max(0, Math.min(100, score));
+  if (score >= 75) return { score, icon:'🟢', label:'عالی', color:'var(--green)' };
+  if (score >= 45) return { score, icon:'🟡', label:'متوسط', color:'var(--amber)' };
+  return { score, icon:'🔴', label:'در خطر', color:'var(--red)' };
+}
+
+function _goalPrediction(g) {
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const daysLeft = _goalDaysLeft(g.deadline);
+  const progress = +(g.progress || 0);
+  const health = _goalHealth(g);
+  const probability = Math.max(8, Math.min(96, Math.round((progress * .55) + (health.score * .45))));
+  if (progress >= 100) return { value:'۱۰۰٪', text:'هدف تکمیل شده؛ حالا وقت ثبت خاطرات مسیر است.' };
+  if (daysLeft === null) return { value: fa(probability) + '٪', text:'ددلاین نداری؛ برای پیش‌بینی دقیق‌تر یک تاریخ پایان بگذار.' };
+  if (daysLeft < 0) return { value: fa(probability) + '٪', text:`با روند فعلی ${fa(Math.abs(daysLeft))} روز از زمان هدف گذشته‌ای.` };
+  const neededPerDay = daysLeft > 0 ? Math.ceil((100 - progress) / daysLeft) : 100 - progress;
+  if (neededPerDay > 4) return { value: fa(probability) + '٪', text:`برای رسیدن به‌موقع، هر روز حدود ${fa(neededPerDay)}٪ حرکت لازم داری.` };
+  return { value: fa(probability) + '٪', text:'با روند فعلی در مسیر قابل قبولی هستی؛ قدم امروز را کوچک اما واقعی نگه دار.' };
+}
+
+function _goalMotivationToday(g) {
+  const chunks = String(g.why || g.vision || '').split(/[.\n،؛]+/).map(x => x.trim()).filter(x => x.length > 8);
+  if (!chunks.length) return '';
+  const day = new Date().getDate();
+  return chunks[day % chunks.length];
+}
+
+function _goalTimelineHtml(g) {
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const progress = Math.max(0, Math.min(100, +(g.progress || 0)));
+  const daysLeft = _goalDaysLeft(g.deadline);
+  const deadlineLabel = g.deadline ? DateService.disp(g.deadline) : 'پایان باز';
+  return `
+    <div style="background:var(--bg3);border-radius:10px;padding:12px;margin:12px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:10px">
+        <span>شروع</span><span>امروز</span><span>${deadlineLabel}</span>
+      </div>
+      <div style="height:4px;background:var(--bg4);border-radius:999px;position:relative">
+        <div style="position:absolute;inset:0 auto 0 0;width:${progress}%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:999px"></div>
+        <div style="position:absolute;top:50%;left:${progress}%;width:14px;height:14px;border-radius:50%;background:var(--accent2);box-shadow:0 0 0 4px rgba(124,106,247,.18);transform:translate(-50%,-50%)"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:10px">${daysLeft === null ? 'برای تایم‌لاین دقیق‌تر ددلاین تعیین کن.' : _formatDaysLeft(daysLeft, fa)}</div>
+    </div>`;
+}
+
 function renderGoals() {
   _goalsInit();
   updateTopbarActions(`
@@ -17731,6 +17804,21 @@ function renderGoals() {
       ${statItem('📈','میانگین پیشرفت', fa(avgProgress)+'٪', 'var(--accent2)')}
     </div>`;
 
+  const todayGoal = goals.filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
+    .sort((a,b) => (a.progress || 0) - (b.progress || 0))[0];
+  const todayMotivation = todayGoal ? _goalMotivationToday(todayGoal) : '';
+  const todayWidgetHTML = todayGoal ? `
+    <div onclick="openGoalDetail(${todayGoal.id})" style="cursor:pointer;background:linear-gradient(135deg,rgba(124,106,247,.16),rgba(62,207,142,.10));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="min-width:0">
+          <div style="font-size:11px;color:var(--accent2);font-weight:800;margin-bottom:4px">امروز فقط برای این هدف یک قدم بردار</div>
+          <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.5">${todayGoal.icon || '🎯'} ${escapeHtml(todayGoal.title)}</div>
+          ${todayMotivation ? `<div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:5px">چون: «${escapeHtml(todayMotivation)}»</div>` : ''}
+        </div>
+        <span style="font-size:22px;color:var(--green)">›</span>
+      </div>
+    </div>` : '';
+
   const html = goals.map(g => {
     const sc = statusColors[g.status || 'active'] || statusColors.active;
     const progress = g.progress || 0;
@@ -17740,6 +17828,7 @@ function renderGoals() {
     const daysLeft = _goalDaysLeft(g.deadline);
     const linkedTaskCount = (_db.todos||[]).filter(t => t.goal_id === g.id && !t.archived).length;
     const linkedHabitCount = (_db.habits||[]).filter(h => h.goal_id === g.id).length;
+    const health = _goalHealth(g);
 
     // رنگ‌بندی کارت بر اساس فوریت ددلاین
     let urgencyColor = 'var(--border)';
@@ -17793,6 +17882,7 @@ function renderGoals() {
           ⏳ ${_formatDaysLeft(daysLeft, fa)}
         </span>` : ''}
         ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
+        <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${health.icon} سلامت ${health.label}</span>
         ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
         ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
       </div>
@@ -17824,6 +17914,7 @@ function renderGoals() {
         </button>
       </div>
       ${statsHTML}
+      ${todayWidgetHTML}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
         <div style="display:flex;align-items:center;gap:8px">
@@ -17940,6 +18031,14 @@ function openAddGoal() {
         <label class="form-label">تصویر ذهنی (وقتی به هدف رسیدم...)</label>
         <textarea class="form-textarea" id="goal-vision" rows="2" placeholder="چه چیزی تغییر می‌کند؟"></textarea>
       </div>
+      <div class="form-group full">
+        <label class="form-label">🖼 تصاویر Vision Board</label>
+        <textarea class="form-textarea" id="goal-vision-images" rows="3" placeholder="هر لینک تصویر را در یک خط وارد کن..."></textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">🎵 موسیقی انگیزشی اختیاری</label>
+        <input class="form-input" id="goal-music-url" placeholder="لینک فایل mp3 یا موسیقی آرام بدون کلام">
+      </div>
     </div>
   `, [
     { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewGoal()' },
@@ -17959,6 +18058,8 @@ function saveNewGoal() {
     category: document.getElementById('goal-category')?.value || '',
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
+    vision_images: document.getElementById('goal-vision-images')?.value || '',
+    music_url: document.getElementById('goal-music-url')?.value || '',
     deadline: readCalendarDateField('goal-deadline') || '',
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
     status: 'active',
@@ -17980,6 +18081,11 @@ function openGoalDetail(id) {
   if (!g) return;
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
   const milestones = g.milestones || [];
+  const linked = _goalLinkedStats(id);
+  const health = _goalHealth(g);
+  const prediction = _goalPrediction(g);
+  const visionImages = _goalVisionImages(g);
+  const motivationToday = _goalMotivationToday(g);
   const msHTML = milestones.map((m, i) => `
     <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
       <div onclick="toggleMilestone(${id},${i})" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -17992,10 +18098,51 @@ function openGoalDetail(id) {
 
   openModal(`${g.icon || '🎯'} ${g.title}`, `
     <div>
-      ${g.why ? `<div style="background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-        <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px">💡 چرا مهم است</div>
-        <div style="font-size:13px;color:var(--text);line-height:1.8">${g.why}</div>
+      ${g.why ? `<div style="background:rgba(62,207,142,.09);border:1px solid rgba(62,207,142,.25);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--green);font-weight:800;margin-bottom:6px">💡 چرا؟</div>
+        <div style="font-size:14px;color:var(--text);line-height:1.9;font-weight:600">${escapeHtml(g.why)}</div>
       </div>` : ''}
+
+      ${motivationToday ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:10px;padding:11px 14px;margin-bottom:14px">
+        <div style="font-size:10px;color:var(--accent2);font-weight:800;margin-bottom:4px">انگیزه امروز از متن خودت</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.8">«${escapeHtml(motivationToday)}»</div>
+      </div>` : ''}
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:16px;font-weight:800;color:${health.color}">${health.icon} ${health.label}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:3px">سلامت هدف ${fa(health.score)}٪</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:16px;font-weight:800;color:var(--accent2)">${prediction.value}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:3px">احتمال موفقیت</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:16px;font-weight:800;color:#60a5fa">${fa(linked.doneTasks)}/${fa(linked.tasks.length)}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:3px">کارهای مرتبط</div>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--text2);line-height:1.8;background:rgba(96,165,250,.07);border-radius:10px;padding:10px 12px;margin-bottom:14px">
+        ${prediction.text}
+      </div>
+
+      ${_goalTimelineHtml(g)}
+
+      ${visionImages.length ? `<div style="margin:14px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text2)">🖼 تابلو آرزوها</span>
+          <div style="display:flex;gap:6px">
+            <button onclick="openGoalVisionMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.13);color:var(--accent2);cursor:pointer;font-family:var(--font)">نمایش انگیزشی</button>
+            <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+          ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="this.style.display='none'">`).join('')}
+        </div>
+      </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
+        <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">Focus Mode هدف</button>
+      </div>`}
 
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -18024,11 +18171,11 @@ function openGoalDetail(id) {
         </div>
         <div style="display:flex;gap:8px">
           <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:#60a5fa">✅ ${fa((_db.todos||[]).filter(t=>t.goal_id===id && !t.archived).length)}</div>
+            <div style="font-size:15px;font-weight:700;color:#60a5fa">✅ ${fa(linked.tasks.length)}</div>
             <div style="font-size:9px;color:var(--text3)">کار مرتبط</div>
           </div>
           <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:var(--amber)">🔥 ${fa((_db.habits||[]).filter(h=>h.goal_id===id).length)}</div>
+            <div style="font-size:15px;font-weight:700;color:var(--amber)">🔥 ${fa(linked.habits.length)}</div>
             <div style="font-size:9px;color:var(--text3)">عادت مرتبط</div>
           </div>
         </div>
@@ -18133,6 +18280,106 @@ function addMilestone(goalId) {
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
 }
+
+function closeGoalExperience() {
+  if (window._goalExperienceCleanup) {
+    try { window._goalExperienceCleanup(); } catch(e) {}
+    window._goalExperienceCleanup = null;
+  }
+  const el = document.getElementById('goal-experience-overlay');
+  if (el) el.remove();
+}
+
+function _openGoalExperience(id, mode) {
+  _goalsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g) return;
+  closeGoalExperience();
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const images = _goalVisionImages(g);
+  const milestones = g.milestones || [];
+  const health = _goalHealth(g);
+  const prediction = _goalPrediction(g);
+  const motivation = _goalMotivationToday(g);
+  const cinematic = mode === 'vision';
+  let index = 0;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'goal-experience-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#05060a;color:white;display:flex;flex-direction:column;overflow:hidden;direction:rtl';
+
+  const slideHtml = images.length
+    ? images.map((src, i) => `<img class="gv-slide" src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:${i===0?'1':'0'};transform:scale(${i===0?'1.02':'1'});transition:opacity 1.2s ease,transform 6s ease" onerror="this.style.display='none'">`).join('')
+    : `<div style="position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(124,106,247,.35),transparent 34%),radial-gradient(circle at 80% 40%,rgba(62,207,142,.18),transparent 30%),#0f1117"></div>`;
+
+  const milestoneHtml = milestones.length
+    ? milestones.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)"><span>${m.done?'✅':'⭕'}</span><span style="${m.done?'opacity:.65;text-decoration:line-through':''}">${escapeHtml(m.title)}</span></div>`).join('')
+    : '<div style="opacity:.65;font-size:13px">هنوز مرحله‌ای تعریف نشده.</div>';
+
+  overlay.innerHTML = `
+    <div style="position:absolute;inset:0">${slideHtml}</div>
+    <div style="position:absolute;inset:0;background:${cinematic?'linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.78))':'rgba(5,6,10,.84)'}"></div>
+    <div style="position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top,0px) + 16px) max(20px,env(safe-area-inset-right,0px)) 12px max(20px,env(safe-area-inset-left,0px));flex-shrink:0">
+      <button onclick="closeGoalExperience()" style="width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-size:18px">✕</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${g.music_url ? `<button id="goal-music-toggle" onclick="_toggleGoalExperienceMusic()" style="padding:10px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-family:var(--font);font-size:12px">🔇 موسیقی خاموش</button>` : ''}
+        <span style="font-size:12px;opacity:.65">${cinematic ? 'نمایش انگیزشی' : 'Focus Mode'}</span>
+      </div>
+    </div>
+    <div style="position:relative;z-index:1;flex:1;display:flex;align-items:${cinematic?'center':'stretch'};justify-content:center;padding:20px max(22px,env(safe-area-inset-right,0px)) max(28px,env(safe-area-inset-bottom,0px)) max(22px,env(safe-area-inset-left,0px));overflow:auto">
+      <div style="width:100%;max-width:${cinematic?'760px':'860px'};text-align:${cinematic?'center':'right'};display:flex;flex-direction:column;gap:16px;justify-content:${cinematic?'center':'flex-start'}">
+        <div style="font-size:${cinematic?'46px':'34px'};line-height:1">${g.icon || '🎯'}</div>
+        <h1 style="font-size:${cinematic?'clamp(28px,6vw,56px)':'clamp(24px,5vw,42px)'};line-height:1.45;margin:0;font-weight:900">${escapeHtml(g.title)}</h1>
+        ${g.why ? `<div style="font-size:${cinematic?'clamp(18px,3vw,28px)':'clamp(16px,2.4vw,22px)'};line-height:1.9;font-weight:700;color:#e8eaf0;background:${cinematic?'transparent':'rgba(255,255,255,.06)'};border:${cinematic?'none':'1px solid rgba(255,255,255,.10)'};border-radius:16px;padding:${cinematic?'0':'16px'}">چرا؟<br>${escapeHtml(g.why)}</div>` : ''}
+        ${motivation ? `<div style="font-size:15px;line-height:1.9;color:#c8cce0;opacity:.95">امروز یادت باشد: «${escapeHtml(motivation)}»</div>` : ''}
+        ${!cinematic && g.vision ? `<div style="background:rgba(124,106,247,.12);border:1px solid rgba(124,106,247,.18);border-radius:16px;padding:16px;font-size:14px;line-height:1.9;color:#dfe2ff">${escapeHtml(g.vision)}</div>` : ''}
+        ${!cinematic ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:${health.color}">${health.icon} ${health.label}</b><div style="font-size:11px;opacity:.7;margin-top:4px">سلامت ${fa(health.score)}٪</div></div>
+          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:#b8adff">${prediction.value}</b><div style="font-size:11px;opacity:.7;margin-top:4px">${prediction.text}</div></div>
+        </div>
+        <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:16px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:8px">مراحل</div>${milestoneHtml}
+        </div>` : ''}
+      </div>
+    </div>
+    ${g.music_url ? `<audio id="goal-experience-audio" src="${escapeHtml(g.music_url)}" loop preload="none"></audio>` : ''}
+  `;
+
+  document.body.appendChild(overlay);
+  let timer = null;
+  if (images.length > 1) {
+    timer = setInterval(() => {
+      const slides = overlay.querySelectorAll('.gv-slide');
+      if (!slides.length) return;
+      slides[index].style.opacity = '0';
+      slides[index].style.transform = 'scale(1)';
+      index = (index + 1) % slides.length;
+      slides[index].style.opacity = '1';
+      slides[index].style.transform = 'scale(1.05)';
+    }, cinematic ? 5200 : 6200);
+  }
+  window._goalExperienceCleanup = function() {
+    if (timer) clearInterval(timer);
+    const audio = document.getElementById('goal-experience-audio');
+    if (audio) { try { audio.pause(); } catch(e) {} }
+  };
+}
+
+function openGoalVisionMode(id) { _openGoalExperience(id, 'vision'); }
+function openGoalFocusMode(id) { _openGoalExperience(id, 'focus'); }
+
+function _toggleGoalExperienceMusic() {
+  const audio = document.getElementById('goal-experience-audio');
+  const btn = document.getElementById('goal-music-toggle');
+  if (!audio || !btn) return;
+  if (audio.paused) {
+    audio.play().then(() => { btn.textContent = '🔉 موسیقی روشن'; }).catch(() => showToast('مرورگر اجازه پخش موسیقی نداد', 'error'));
+  } else {
+    audio.pause();
+    btn.textContent = '🔇 موسیقی خاموش';
+  }
+}
+
 function openEditGoal(id) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
@@ -18165,6 +18412,18 @@ function openEditGoal(id) {
         <label class="form-label">چرا مهم است؟</label>
         <textarea class="form-textarea" id="eg-why" rows="2">${g.why||''}</textarea>
       </div>
+      <div class="form-group full">
+        <label class="form-label">تصویر ذهنی</label>
+        <textarea class="form-textarea" id="eg-vision" rows="2">${g.vision||''}</textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">🖼 تصاویر Vision Board</label>
+        <textarea class="form-textarea" id="eg-vision-images" rows="3">${Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images||'')}</textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">🎵 موسیقی انگیزشی اختیاری</label>
+        <input class="form-input" id="eg-music-url" value="${g.music_url||''}" placeholder="لینک فایل mp3">
+      </div>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditGoal(${id})` },
@@ -18181,6 +18440,9 @@ function saveEditGoal(id) {
   g.deadline = readCalendarDateField('eg-deadline') || '';
   g.status = document.getElementById('eg-status')?.value || 'active';
   g.why = document.getElementById('eg-why')?.value || '';
+  g.vision = document.getElementById('eg-vision')?.value || '';
+  g.vision_images = document.getElementById('eg-vision-images')?.value || '';
+  g.music_url = document.getElementById('eg-music-url')?.value || '';
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
   showToast('تغییرات هدف ذخیره شد ✓', 'success');
 }
