@@ -6804,7 +6804,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>🎙️ ورودی صوتی (Voice to Text) <span class="help-ic" title="با کلیک روی آیکون میکروفون کنار هر کادر متنی، می‌توانی به‌جای تایپ، صحبت کنی و متن به‌طور خودکار نوشته شود.">؟</span></h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        زبان تشخیص گفتار را انتخاب کن. حالت پیش‌فرض «تشخیص خودکار» بر اساس زبان مرورگر تو کار می‌کند.
+        زبان تشخیص گفتار را انتخاب کن. حالت «تشخیص خودکار» بر اساس تنظیمِ «زبان نمایش اعداد» در همین صفحه کار می‌کند (نه زبان مرورگر)؛ یعنی اگر برنامه‌ات فارسی است، تشخیص گفتار هم فارسی می‌ماند.
       </p>
       <div class="form-grid">
         <div class="form-group">
@@ -18797,7 +18797,9 @@ class WebSpeechVoiceEngine {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { onError && onError('unsupported'); return; }
     const rec = new SR();
-    rec.lang = lang || navigator.language || 'fa-IR';
+    // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
+    // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
+    rec.lang = lang || 'fa-IR';
     rec.continuous = true;
     rec.interimResults = true;
     rec.onresult = (e) => {
@@ -18836,6 +18838,24 @@ function _createVoiceEngine() {
   }
 }
 
+// ── Single Source of Truth برای «زبان برنامه» ───────────────────────────────
+// این تابع تنها مرجع تشخیص زبان برنامه است. UI (فارسی، ثابت)، فرمت اعداد/تاریخ
+// (تنظیم «زبان نمایش اعداد» در Settings → عمومی) و موتور تشخیص گفتار همگی باید
+// از همین‌جا زبان را بخوانند تا هیچ‌وقت با هم ناهماهنگ نشوند. هرگز نباید مستقیم
+// از navigator.language (زبان مرورگر/سیستم‌عامل کاربر) به‌عنوان زبان برنامه
+// استفاده شود، چون ممکن است با زبان واقعی برنامه یکی نباشد — دقیقاً همان باگی
+// که باعث می‌شد تشخیص گفتار روی انگلیسی بیفتد درحالی‌که برنامه فارسی است.
+function _getAppLanguage() {
+  // در حال حاضر تنها تنظیمِ زبانِ قابل‌تغییر توسط کاربر در برنامه، «زبان نمایش
+  // اعداد» (META.numberLang: 'fa' | 'en') در تنظیمات → عمومی است. چون رابط
+  // کاربری این پروژه ثابت و فارسی است، همین مقدار به‌عنوان مرجع زبان کل برنامه
+  // در نظر گرفته می‌شود. اگر بعداً یک انتخابگر «زبان برنامه» واقعی اضافه شد،
+  // فقط کافی‌ست همین تابع را به آن وصل کنی — بقیه‌ی سیستم (از جمله Voice)
+  // خودکار هماهنگ می‌شود.
+  if (typeof META !== 'undefined' && META && META.numberLang) return META.numberLang;
+  return 'fa';
+}
+
 function _getVoiceLangPref() {
   return localStorage.getItem('tp_voice_lang') || 'auto';
 }
@@ -18846,7 +18866,12 @@ function saveVoiceLangSetting(val) {
 function _voiceLangCode() {
   const pref = _getVoiceLangPref();
   const map = { fa: 'fa-IR', en: 'en-US', ar: 'ar-SA', tr: 'tr-TR' };
-  if (pref === 'auto') return navigator.language || 'fa-IR';
+  if (pref === 'auto') {
+    // «تشخیص خودکار» یعنی: از زبان برنامه (Single Source of Truth) پیروی کن،
+    // نه از زبان مرورگر. این خط دقیقاً محل رفع باگ گزارش‌شده است.
+    const appLang = _getAppLanguage();
+    return map[appLang] || 'fa-IR';
+  }
   return map[pref] || 'fa-IR';
 }
 
