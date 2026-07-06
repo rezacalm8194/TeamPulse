@@ -618,22 +618,22 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* ── Voice Input (تبدیل گفتار به متن) ───────────────────── */
 .voice-mic-btn {
   position: absolute;
-  bottom: 8px;
-  left: 8px;
-  width: 28px; height: 28px;
+  bottom: 10px;
+  left: 10px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   border: 1px solid var(--border2);
   background: var(--bg2);
   color: var(--text2);
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; line-height: 1;
+  line-height: 1;
   cursor: pointer;
   z-index: 3;
-  opacity: .75;
+  opacity: .9;
   transition: all .15s;
-  box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
 }
-.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.voice-mic-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); transform: scale(1.06); }
 .voice-mic-btn.voice-recording {
   background: var(--red); border-color: var(--red); color: #fff; opacity: 1;
   animation: voice-pulse 1.2s ease-in-out infinite;
@@ -7165,14 +7165,15 @@ function _openFocusMode(textarea, noteId, field) {
 
   const overlay = document.createElement('div');
   overlay.id = 'focus-mode-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;animation:fadeInFocus .2s ease';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:stretch;justify-content:stretch;animation:fadeInFocus .2s ease';
 
+  // Focus Mode باید یک محیط ویرایش واقعیِ تمام‌صفحه باشد، نه یک فرم/مودال
   const box = document.createElement('div');
-  box.style.cssText = 'background:var(--bg2);border-radius:16px;width:min(900px,97vw);height:88vh;display:flex;flex-direction:column;border:1px solid var(--border2);box-shadow:0 24px 64px rgba(0,0,0,.6);animation:scaleInFocus .2s ease;overflow:hidden';
+  box.style.cssText = 'background:var(--bg2);border-radius:0;width:100vw;height:100vh;height:100dvh;display:flex;flex-direction:column;border:none;box-shadow:none;animation:fadeInFocus .2s ease;overflow:hidden';
 
   // header
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0';
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:40px';
   const modeToggle = document.createElement('div');
   modeToggle.style.cssText = 'display:flex;gap:4px;background:var(--bg3);border-radius:8px;padding:3px';
   const _btnEdit = document.createElement('button');
@@ -7235,6 +7236,8 @@ function _openFocusMode(textarea, noteId, field) {
   focusTa.style.cssText = 'flex:1;width:100%;resize:none;background:transparent;border:none;padding:20px 24px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap';
   focusTa.placeholder = textarea.placeholder || 'بنویس...';
   editPane.appendChild(focusTa);
+  // ورودی صوتی دقیقا همان‌جایی که کاربر در Focus Mode بیشترین نیاز را دارد: Floating، پایین-چپ متن
+  _attachVoiceButton(focusTa);
 
   // preview pane
   const previewPane = document.createElement('div');
@@ -18878,11 +18881,15 @@ function _voiceLangCode() {
 // یک session فعال به‌ازای هر textarea (اجازه‌ی ضبط هم‌زمان چند فیلد را می‌دهد)
 const _voiceSessions = new WeakMap();
 
+const _VOICE_ICON_MIC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+const _VOICE_ICON_STOP = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
+const _VOICE_ICON_WARN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
 function _setVoiceBtnState(btn, statusEl, state, label) {
   btn.classList.remove('voice-recording', 'voice-error');
-  if (state === 'recording') { btn.classList.add('voice-recording'); btn.textContent = '🔴'; }
-  else if (state === 'error') { btn.classList.add('voice-error'); btn.textContent = '⚠️'; }
-  else { btn.textContent = '🎤'; }
+  if (state === 'recording') { btn.classList.add('voice-recording'); btn.innerHTML = _VOICE_ICON_STOP; btn.title = 'پایان ضبط'; }
+  else if (state === 'error') { btn.classList.add('voice-error'); btn.innerHTML = _VOICE_ICON_WARN; btn.title = 'خطا در ورودی صوتی'; }
+  else { btn.innerHTML = _VOICE_ICON_MIC; btn.title = 'ورودی صوتی (تبدیل گفتار به متن)'; }
   if (statusEl) {
     if (label) {
       statusEl.textContent = label;
@@ -18892,6 +18899,20 @@ function _setVoiceBtnState(btn, statusEl, state, label) {
       statusEl.style.display = 'none';
     }
   }
+}
+
+// نمایش زنده‌ی مدت‌زمان ضبط، مثل «۰۰:۱۸» — تجربه‌ای شبیه ChatGPT/Notion AI
+function _startVoiceTimer(session, statusEl) {
+  session.startedAt = Date.now();
+  session.timerId = setInterval(() => {
+    const sec = Math.floor((Date.now() - session.startedAt) / 1000);
+    const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+    const ss = String(sec % 60).padStart(2, '0');
+    if (statusEl) { statusEl.textContent = `🔴 ${mm}:${ss}`; statusEl.style.display = 'inline-block'; statusEl.classList.remove('is-error'); }
+  }, 500);
+}
+function _stopVoiceTimer(session) {
+  if (session && session.timerId) { clearInterval(session.timerId); session.timerId = null; }
 }
 
 // درج زنده‌ی متن دقیقاً در محل مکان‌نما، بدون پاک کردن متن قبلی
@@ -18914,6 +18935,7 @@ function _toggleVoiceInput(el, btn, statusEl) {
   const existing = _voiceSessions.get(el);
   if (existing) {
     existing.engine.stop();
+    _stopVoiceTimer(existing);
     _voiceSessions.delete(el);
     _setVoiceBtnState(btn, statusEl, 'idle', null);
     return;
@@ -18931,14 +18953,17 @@ function _toggleVoiceInput(el, btn, statusEl) {
     committedValue: el.value,
     cursor: (typeof el.selectionStart === 'number') ? el.selectionStart : el.value.length
   };
-  _voiceSessions.set(el, { engine, state });
-  _setVoiceBtnState(btn, statusEl, 'recording', 'در حال گوش دادن...');
+  const session = { engine, state, timerId: null };
+  _voiceSessions.set(el, session);
+  _setVoiceBtnState(btn, statusEl, 'recording', '🔴 00:00');
+  _startVoiceTimer(session, statusEl);
 
   engine.start({
     lang: _voiceLangCode(),
     onInterim: (t) => _voiceLiveInsert(el, state, t, false),
     onFinal: (t) => _voiceLiveInsert(el, state, t, true),
     onError: (err) => {
+      _stopVoiceTimer(_voiceSessions.get(el));
       _voiceSessions.delete(el);
       let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
       if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
@@ -18952,6 +18977,7 @@ function _toggleVoiceInput(el, btn, statusEl) {
       setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 3500);
     },
     onEnd: () => {
+      _stopVoiceTimer(_voiceSessions.get(el));
       _voiceSessions.delete(el);
       _setVoiceBtnState(btn, statusEl, 'idle', null);
     }
@@ -18973,7 +18999,7 @@ function _attachVoiceButton(el) {
   btn.type = 'button';
   btn.className = 'voice-mic-btn';
   btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
-  btn.textContent = '🎤';
+  btn.innerHTML = _VOICE_ICON_MIC;
 
   const statusEl = document.createElement('span');
   statusEl.className = 'voice-status-label';
@@ -19005,14 +19031,42 @@ function _voiceScanAndAttach(root) {
   }
 }
 
+// ── Auto-Grow Textarea ──────────────────────────────────────────────────────
+// رفع «اسکرول تو در تو»: به‌جای اینکه خودِ Textarea اسکرول داخلی داشته باشد و
+// Modal هم دور آن اسکرول کند، ارتفاع Textarea با محتوا رشد می‌کند و فقط یک
+// اسکرول (همان محفظهٔ بیرونی) باقی می‌ماند.
+function _autoGrowTextarea(el) {
+  el.style.overflowY = 'hidden';
+  el.style.resize = 'none';
+  const resize = () => {
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 2) + 'px';
+  };
+  el.addEventListener('input', resize);
+  // اگر Textarea داخل بخشی است که ابتدا بسته/مخفی است (مثل «یادداشت خصوصی» یا Accordionها)،
+  // scrollHeight هنگام ساخت صفر است؛ با focus دوباره محاسبه می‌شود.
+  el.addEventListener('focus', resize);
+  resize();
+}
+function _autoGrowScanAndAttach(root) {
+  const scope = root || document;
+  const nodes = scope.querySelectorAll ? scope.querySelectorAll('textarea.form-textarea:not([data-autogrow-ready])') : [];
+  nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
+  if (scope.matches && scope.matches('textarea.form-textarea:not([data-autogrow-ready])')) {
+    scope.dataset.autogrowReady = '1'; _autoGrowTextarea(scope);
+  }
+}
+
 (function _initVoiceInput() {
   const start = () => {
     _voiceScanAndAttach(document);
+    _autoGrowScanAndAttach(document);
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
         m.addedNodes && m.addedNodes.forEach((node) => {
           if (node.nodeType !== 1) return;
           _voiceScanAndAttach(node);
+          _autoGrowScanAndAttach(node);
         });
       }
     });
