@@ -12379,9 +12379,9 @@ function openNoteDetail(id) {
       <div style="display:flex;flex-wrap:wrap;gap:4px">${stickerBtns}</div>
     </div>
   `, [
-    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditInstruction(${id})` },
+    { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})` },
-    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
 }
 
