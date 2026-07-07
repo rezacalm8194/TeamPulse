@@ -7325,7 +7325,9 @@ async function renderSettings() {
         </div>
       </div>
       <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
-        ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? '✅ مرورگر شما از ورودی صوتی پشتیبانی می‌کند.' : '⚠️ مرورگر فعلی شما از ورودی صوتی پشتیبانی نمی‌کند — پیشنهاد می‌شود از Chrome استفاده کنی.'}
+        ${(window.SpeechRecognition || window.webkitSpeechRecognition || window.MediaRecorder)
+          ? '✅ ورودی صوتی روی این دستگاه پشتیبانی می‌شود. اگر تشخیص داخلی مرورگر پایدار نباشد، ضبط صدا برای تبدیل روی سرور استفاده می‌شود.'
+          : '⚠️ مرورگر فعلی شما نه تشخیص گفتار داخلی دارد و نه ضبط صدا را پشتیبانی می‌کند.'}
       </div>
     </div>
   </div>
@@ -13901,8 +13903,9 @@ let _sbUser = null;
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
   const url = _API_URL + path;
+  const isFormData = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(opts.headers || {}),
   };
   if (_sbSession?.token) {
@@ -20444,7 +20447,7 @@ function openHabitHistory(id) {
 // ════════════════════════════════════════════════════════════════════════════
 
 const VOICE_CONFIG = {
-  engine: 'webspeech' // برای آینده: 'google' | 'whisper'
+  engine: 'auto' // 'auto' | 'webspeech' | 'media'
 };
 
 function _voiceIsIOS() {
@@ -20460,6 +20463,7 @@ function _voiceIsAndroid() {
 
 class WebSpeechVoiceEngine {
   constructor() {
+    this.kind = 'webspeech';
     this._recognition = null;
   }
   isSupported() {
@@ -20541,8 +20545,115 @@ class WebSpeechVoiceEngine {
   }
 }
 
+class MediaRecorderVoiceEngine {
+  constructor() {
+    this.kind = 'media';
+    this._recorder = null;
+    this._stream = null;
+    this._chunks = [];
+  }
+  isSupported() {
+    return !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+  }
+  _mimeType() {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/mpeg',
+    ];
+    return types.find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  }
+  async start({ lang, onFinal, onError, onEnd, onStatus }) {
+    if (!window.isSecureContext && location.hostname !== 'localhost') {
+      onError && onError('insecure-context');
+      return;
+    }
+    if (!this.isSupported()) {
+      onError && onError('media-unsupported');
+      return;
+    }
+    try {
+      if (navigator.permissions?.query) {
+        try {
+          const p = await navigator.permissions.query({ name: 'microphone' });
+          if (p.state === 'denied') {
+            onError && onError('permission-denied');
+            return;
+          }
+        } catch(e) {}
+      }
+
+      this._stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      this._chunks = [];
+      const mimeType = this._mimeType();
+      this._recorder = new MediaRecorder(this._stream, mimeType ? { mimeType } : undefined);
+      this._recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) this._chunks.push(e.data);
+      };
+      this._recorder.onerror = () => { onError && onError('recording-failed'); };
+      this._recorder.onstop = async () => {
+        try {
+          this._stream?.getTracks().forEach(t => t.stop());
+          this._stream = null;
+          const blobType = mimeType || this._chunks[0]?.type || 'audio/webm';
+          const blob = new Blob(this._chunks, { type: blobType });
+          if (!blob.size || blob.size < 800) {
+            onError && onError('no-speech');
+            return;
+          }
+          onStatus && onStatus('در حال تبدیل صدا...');
+          const fd = new FormData();
+          const ext = blobType.includes('mp4') ? 'mp4' : blobType.includes('mpeg') ? 'mp3' : 'webm';
+          fd.append('audio', blob, `voice.${ext}`);
+          fd.append('language', (lang || 'fa-IR').split('-')[0]);
+          const res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const code = data.error || '';
+            if (code === 'speech_service_not_configured') onError && onError('server-not-configured');
+            else onError && onError(data.message || 'transcription-failed');
+            return;
+          }
+          const text = (data.text || '').trim();
+          if (text) onFinal && onFinal(text);
+          else onError && onError('no-speech');
+        } catch(e) {
+          onError && onError(e.message || 'transcription-failed');
+        } finally {
+          onEnd && onEnd();
+        }
+      };
+      this._recorder.start();
+      onStatus && onStatus('در حال ضبط...');
+    } catch(e) {
+      const name = e && e.name;
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') onError && onError('permission-denied');
+      else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') onError && onError('no-mic');
+      else onError && onError(e.message || 'recording-failed');
+    }
+  }
+  stop() {
+    if (this._recorder && this._recorder.state !== 'inactive') {
+      try { this._recorder.stop(); } catch(e) {}
+    } else {
+      this._stream?.getTracks().forEach(t => t.stop());
+    }
+  }
+}
+
 // نقطه‌ی Feature Flag: هر موتور جدیدی اضافه شد، فقط همین‌جا سوییچ کن
 function _createVoiceEngine() {
+  if (VOICE_CONFIG.engine === 'media') return new MediaRecorderVoiceEngine();
+  if (VOICE_CONFIG.engine === 'webspeech') return new WebSpeechVoiceEngine();
+  if (!_voiceIsIOS()) {
+    const web = new WebSpeechVoiceEngine();
+    if (web.isSupported()) return web;
+  }
+  const media = new MediaRecorderVoiceEngine();
+  if (media.isSupported()) return media;
   switch (VOICE_CONFIG.engine) {
     case 'webspeech':
     default:
@@ -20660,23 +20771,24 @@ function _toggleVoiceInput(el, btn, statusEl) {
   const existing = _voiceSessions.get(el);
   if (existing) {
     existing.engine.stop();
+    if (existing.engine.kind === 'media') {
+      _stopVoiceTimer(existing);
+      _setVoiceBtnState(btn, statusEl, 'recording', 'در حال تبدیل صدا...');
+      return;
+    }
     _stopVoiceTimer(existing);
     _voiceSessions.delete(el);
     _setVoiceBtnState(btn, statusEl, 'idle', null);
     return;
   }
 
-  // Web Speech در iPhone/Safari حتی با Allow بودن میکروفون هم زیاد not-allowed
-  // برمی‌گرداند. پایدارترین تجربه روی iOS دیکته‌ی خود کیبورد است که مستقیم
-  // داخل textarea متن می‌نویسد و به API ناپایدار SpeechRecognition وابسته نیست.
-  if (_voiceIsIOS()) {
-    _startIOSKeyboardDictation(el, btn, statusEl);
-    return;
-  }
-
   const engine = _createVoiceEngine();
   if (!engine.isSupported()) {
-    _setVoiceBtnState(btn, statusEl, 'error', 'مرورگر شما از تشخیص گفتار پشتیبانی نمی‌کند');
+    const msg = _voiceIsIOS()
+      ? 'این مرورگر ضبط داخلی را پشتیبانی نمی‌کند؛ از دیکته کیبورد آیفون استفاده کن'
+      : 'مرورگر شما از ضبط یا تشخیص گفتار پشتیبانی نمی‌کند';
+    if (_voiceIsIOS()) _startIOSKeyboardDictation(el, btn, statusEl);
+    else _setVoiceBtnState(btn, statusEl, 'error', msg);
     setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 3500);
     return;
   }
@@ -20698,27 +20810,35 @@ function _toggleVoiceInput(el, btn, statusEl) {
     lang: _voiceLangCode(),
     onInterim: (t) => _voiceLiveInsert(el, state, t, false),
     onFinal: (t) => _voiceLiveInsert(el, state, t, true),
+    onStatus: (label) => _setVoiceBtnState(btn, statusEl, 'recording', label),
     onError: (err) => {
-      _stopVoiceTimer(_voiceSessions.get(el));
-      _voiceSessions.delete(el);
+      const activeSession = _voiceSessions.get(el);
+      if (activeSession) activeSession.hadError = true;
+      _stopVoiceTimer(activeSession);
       let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
       if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
-        msg = _voiceIsMobile()
-          ? 'دسترسی میکروفون بسته است؛ از تنظیمات همین سایت، میکروفون را مجاز کن'
-          : 'برای استفاده از ضبط صدا، دسترسی میکروفون را از تنظیمات مرورگر فعال کنید';
+        msg = 'دسترسی میکروفون رد شده است';
       } else if (err === 'no-mic') {
         msg = 'میکروفونی پیدا نشد';
       } else if (err === 'unsupported') {
-        msg = 'مرورگر شما از این قابلیت پشتیبانی نمی‌کند';
+        msg = 'تشخیص گفتار داخلی این مرورگر پشتیبانی نمی‌شود';
+      } else if (err === 'media-unsupported') {
+        msg = 'ضبط صدا در این مرورگر پشتیبانی نمی‌شود';
+      } else if (err === 'insecure-context') {
+        msg = 'برای ضبط صدا باید سایت با HTTPS باز شود';
+      } else if (err === 'server-not-configured') {
+        msg = 'سرویس تبدیل صدا روی سرور هنوز تنظیم نشده است';
       } else if (err === 'no-speech') {
         msg = 'صدایی شنیده نشد';
       }
       _setVoiceBtnState(btn, statusEl, 'error', msg);
-      setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 3500);
+      setTimeout(() => { _voiceSessions.delete(el); _setVoiceBtnState(btn, statusEl, 'idle', null); }, 3500);
     },
     onEnd: () => {
-      _stopVoiceTimer(_voiceSessions.get(el));
+      const activeSession = _voiceSessions.get(el);
+      _stopVoiceTimer(activeSession);
       _voiceSessions.delete(el);
+      if (activeSession?.hadError) return;
       _setVoiceBtnState(btn, statusEl, 'idle', null);
     }
   });
