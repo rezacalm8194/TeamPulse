@@ -708,24 +708,6 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   animation: voice-pulse 1.2s ease-in-out infinite;
 }
 .voice-mic-btn.voice-error { background: var(--amber); border-color: var(--amber); color: #fff; opacity: 1; }
-.voice-api-test-btn {
-  position: absolute;
-  bottom: 12px;
-  left: 46px;
-  min-height: 30px;
-  border-radius: 16px;
-  border: 1px solid var(--border2);
-  background: rgba(24,28,39,.72);
-  color: var(--text3);
-  font-family: var(--font);
-  font-size: 10px;
-  font-weight: 800;
-  padding: 0 9px;
-  cursor: pointer;
-  z-index: 3;
-  opacity: .62;
-}
-.voice-api-test-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent2); }
 @keyframes voice-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,.45); }
   50% { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
@@ -733,7 +715,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .voice-status-label {
   position: absolute;
   bottom: 22px;
-  left: 126px;
+  left: 48px;
   font-size: 10.5px;
   color: var(--text2);
   background: var(--bg2);
@@ -773,8 +755,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .voice-debug-btn:hover { border-color: var(--accent); color: var(--accent2); }
 @media(max-width:480px){ .voice-debug-grid{ grid-template-columns:1fr; } }
 @media(max-width:480px){
-  .voice-api-test-btn{ left:44px; font-size:9px; padding:0 7px; }
-  .voice-status-label{ left:102px; max-width:calc(100% - 112px); overflow:hidden; text-overflow:ellipsis; }
+  .voice-status-label{ left:52px; max-width:calc(100% - 62px); overflow:hidden; text-overflow:ellipsis; }
 }
 /* ── Form ───────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
@@ -20606,6 +20587,49 @@ function _voiceIsAndroid() {
   return /Android/i.test(navigator.userAgent);
 }
 
+let _iosVoiceStream = null;
+let _iosVoiceStreamReleaseTimer = null;
+
+function _voiceStopStream(stream) {
+  try { stream?.getTracks?.().forEach(t => t.stop()); } catch(e) {}
+}
+
+function _voiceStreamIsLive(stream) {
+  return !!(stream && stream.getAudioTracks && stream.getAudioTracks().some(t => t.readyState === 'live'));
+}
+
+async function _getReusableIOSVoiceStream() {
+  if (!_voiceIsIOS()) return null;
+  if (_iosVoiceStreamReleaseTimer) {
+    clearTimeout(_iosVoiceStreamReleaseTimer);
+    _iosVoiceStreamReleaseTimer = null;
+  }
+  if (_voiceStreamIsLive(_iosVoiceStream)) {
+    _iosVoiceStream.getAudioTracks().forEach(t => { t.enabled = true; });
+    return _iosVoiceStream;
+  }
+  _iosVoiceStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  return _iosVoiceStream;
+}
+
+function _releaseReusableIOSVoiceStreamSoon() {
+  if (!_voiceIsIOS() || !_iosVoiceStream) return;
+  _iosVoiceStream.getAudioTracks().forEach(t => { t.enabled = false; });
+  clearTimeout(_iosVoiceStreamReleaseTimer);
+  _iosVoiceStreamReleaseTimer = setTimeout(() => {
+    _voiceStopStream(_iosVoiceStream);
+    _iosVoiceStream = null;
+    _iosVoiceStreamReleaseTimer = null;
+  }, 120000);
+}
+
+window.addEventListener('pagehide', () => {
+  _voiceStopStream(_iosVoiceStream);
+  _iosVoiceStream = null;
+});
+
 class WebSpeechVoiceEngine {
   constructor() {
     this.kind = 'webspeech';
@@ -20813,19 +20837,28 @@ class MediaRecorderVoiceEngine {
         } catch(e) {}
       }
 
-      this._stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      this._stream = _voiceIsIOS()
+        ? await _getReusableIOSVoiceStream()
+        : await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
       this._chunks = [];
       const mimeType = this._mimeType();
       this._recorder = new MediaRecorder(this._stream, mimeType ? { mimeType } : undefined);
       this._recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) this._chunks.push(e.data);
       };
-      this._recorder.onerror = () => { onError && onError('recording-failed'); };
+      this._recorder.onerror = () => {
+        if (_voiceIsIOS()) {
+          _voiceStopStream(_iosVoiceStream);
+          _iosVoiceStream = null;
+        }
+        onError && onError('recording-failed');
+      };
       this._recorder.onstop = async () => {
         try {
-          this._stream?.getTracks().forEach(t => t.stop());
+          if (_voiceIsIOS()) _releaseReusableIOSVoiceStreamSoon();
+          else _voiceStopStream(this._stream);
           this._stream = null;
           const blobType = mimeType || this._chunks[0]?.type || 'audio/webm';
           const blob = new Blob(this._chunks, { type: blobType });
@@ -20942,6 +20975,10 @@ class MediaRecorderVoiceEngine {
       onStatus && onStatus('در حال ضبط... صحبت کنید');
     } catch(e) {
       const name = e && e.name;
+      if (_voiceIsIOS() && (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError')) {
+        _voiceStopStream(_iosVoiceStream);
+        _iosVoiceStream = null;
+      }
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') onError && onError('permission-denied');
       else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') onError && onError('no-mic');
       else onError && onError(e.message || 'recording-failed');
@@ -20951,7 +20988,9 @@ class MediaRecorderVoiceEngine {
     if (this._recorder && this._recorder.state !== 'inactive') {
       try { this._recorder.stop(); } catch(e) {}
     } else {
-      this._stream?.getTracks().forEach(t => t.stop());
+      if (_voiceIsIOS()) _releaseReusableIOSVoiceStreamSoon();
+      else _voiceStopStream(this._stream);
+      this._stream = null;
     }
   }
 }
@@ -21155,7 +21194,6 @@ function _voiceShowDebugPanel(debugEl, debug) {
       ${rows.map(([k, v]) => `<div>${k}</div><div>${escapeHtml(_voiceDebugVal(v))}</div>`).join('')}
     </div>
     <div class="voice-debug-actions">
-      <button type="button" class="voice-debug-btn" data-voice-debug-ping="1">تست اتصال API صدا</button>
       <button type="button" class="voice-debug-btn" data-voice-debug-health="1">سلامت موتور صدا</button>
       <button type="button" class="voice-debug-btn" data-voice-debug-play="raw">پخش فایل ضبط‌شده</button>
       <button type="button" class="voice-debug-btn" data-voice-debug-play="converted">پخش فایل تبدیل‌شده</button>
@@ -21366,12 +21404,6 @@ function _attachVoiceButton(el) {
   btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
   btn.innerHTML = _VOICE_ICON_MIC;
 
-  const pingBtn = document.createElement('button');
-  pingBtn.type = 'button';
-  pingBtn.className = 'voice-api-test-btn';
-  pingBtn.title = 'تست اتصال API صدا';
-  pingBtn.textContent = 'API';
-
   const statusEl = document.createElement('span');
   statusEl.className = 'voice-status-label';
   statusEl.style.display = 'none';
@@ -21405,14 +21437,7 @@ function _attachVoiceButton(el) {
     _toggleVoiceInput(el, btn, statusEl, debugEl);
   });
 
-  pingBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    _voiceTestSpeechApi(debugEl);
-  });
-
   parent.appendChild(btn);
-  parent.appendChild(pingBtn);
   parent.appendChild(statusEl);
   parent.appendChild(debugEl);
 
