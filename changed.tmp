@@ -1,2 +1,5 @@
 app.html
 backend/routes/speech.js
+backend/server.js
+backend/speech-models/fa/README.md
+changed.tmp

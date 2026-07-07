@@ -20636,10 +20636,14 @@ class MediaRecorderVoiceEngine {
         fileName: fileName || null,
       },
       authTokenPresent: !!data?._authTokenPresent,
+      speechProvider: data?.debug?.speechProvider || null,
+      voskModelLoaded: data?.debug?.voskModelLoaded ?? data?.debug?.vosk?.modelLoaded ?? null,
+      transcriptionEngine: data?.debug?.transcriptionEngine || null,
       backend: data?.debug?.backend || null,
       probe: data?.debug?.probe || null,
       converted: data?.debug?.converted || null,
       transcription: data?.debug?.transcription || null,
+      openai: data?.debug?.openai || null,
       response: {
         ok: !!res?.ok,
         status: res?.status || null,
@@ -20769,6 +20773,15 @@ class MediaRecorderVoiceEngine {
             else if (code === 'audio_tool_missing') onError && onError({ code: 'audio-tool-missing', debug: debugPayload });
             else if (code === 'audio_too_large') onError && onError({ code: 'audio-too-large', debug: debugPayload });
             else if (code === 'audio_upload_failed') onError && onError({ code: 'audio-upload-failed', debug: debugPayload });
+            else if (code === 'openai_rate_limit_or_quota') onError && onError({ code: 'openai-rate-limit-or-quota', debug: debugPayload });
+            else if (code === 'openai_auth_failed') onError && onError({ code: 'openai-auth-failed', debug: debugPayload });
+            else if (code === 'openai_permission_denied') onError && onError({ code: 'openai-permission-denied', debug: debugPayload });
+            else if (code === 'openai_server_error') onError && onError({ code: 'openai-server-error', debug: debugPayload });
+            else if (code === 'vosk_model_missing') onError && onError({ code: 'vosk-model-missing', debug: debugPayload });
+            else if (code === 'vosk_engine_missing') onError && onError({ code: 'vosk-engine-missing', debug: debugPayload });
+            else if (code === 'empty_transcription') onError && onError({ code: 'empty-transcription', debug: debugPayload });
+            else if (code === 'speech_provider_not_implemented') onError && onError({ code: 'speech-provider-not-implemented', debug: debugPayload });
+            else if (code === 'speech_provider_invalid') onError && onError({ code: 'speech-provider-invalid', debug: debugPayload });
             else if (code === 'api_html_response') onError && onError({ code: 'api-html-response', debug: debugPayload });
             else if (code === 'non_json_response') onError && onError({ code: 'non-json-response', debug: debugPayload });
             else onError && onError({ code: data.message || 'transcription-failed', debug: debugPayload });
@@ -20891,6 +20904,9 @@ function _voiceDebugRows(debug) {
   return [
     ['voice version', VOICE_VERSION],
     ['authTokenPresent', debug?.authTokenPresent],
+    ['speechProvider', debug?.speechProvider],
+    ['voskModelLoaded', debug?.voskModelLoaded],
+    ['transcriptionEngine', debug?.transcriptionEngine],
     ['frontend audioBlobSize', debug?.frontend?.audioBlobSize],
     ['frontend audioBlobType', debug?.frontend?.audioBlobType],
     ['backend file size', debug?.backend?.size],
@@ -20899,6 +20915,10 @@ function _voiceDebugRows(debug) {
     ['ffprobe codec', debug?.probe?.codec],
     ['converted file size', debug?.converted?.size],
     ['OpenAI response textLength', debug?.transcription?.textLength],
+    ['OpenAI status', debug?.openai?.status],
+    ['OpenAI type', debug?.openai?.type],
+    ['OpenAI code', debug?.openai?.code],
+    ['OpenAI message', debug?.openai?.message],
     ['page protocol', debug?.ping?.pageProtocol],
     ['page origin', debug?.ping?.pageOrigin],
     ['api ping status', debug?.ping?.status],
@@ -21090,6 +21110,24 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'حجم فایل صوتی بیشتر از حد مجاز سرور است';
       } else if (errCode === 'audio-upload-failed') {
         msg = 'آپلود فایل صوتی در سرور ناموفق بود';
+      } else if (errCode === 'openai-rate-limit-or-quota') {
+        msg = 'محدودیت مصرف یا اعتبار OpenAI API فعال شده است.';
+      } else if (errCode === 'openai-auth-failed') {
+        msg = 'کلید OpenAI API نامعتبر است یا احراز هویت انجام نشد';
+      } else if (errCode === 'openai-permission-denied') {
+        msg = 'دسترسی OpenAI API برای این عملیات مجاز نیست';
+      } else if (errCode === 'openai-server-error') {
+        msg = 'سرویس OpenAI موقتاً خطا داده است';
+      } else if (errCode === 'vosk-model-missing') {
+        msg = 'مدل تبدیل صدای فارسی روی سرور نصب نشده';
+      } else if (errCode === 'vosk-engine-missing') {
+        msg = 'موتور Vosk روی سرور نصب نشده است';
+      } else if (errCode === 'empty-transcription') {
+        msg = 'صدای کافی تشخیص داده نشد';
+      } else if (errCode === 'speech-provider-not-implemented') {
+        msg = 'موتور انتخاب‌شده برای تبدیل صدا هنوز فعال نشده است';
+      } else if (errCode === 'speech-provider-invalid') {
+        msg = 'تنظیمات موتور تبدیل صدا معتبر نیست';
       } else if (errCode === 'api-html-response') {
         msg = 'API اشتباه پیکربندی شده و به جای پاسخ JSON، صفحه HTML برگردانده است.';
       } else if (errCode === 'non-json-response') {

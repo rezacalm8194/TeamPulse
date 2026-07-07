@@ -8,7 +8,10 @@ const { randomUUID } = require('crypto');
 const auth = require('../middleware/auth');
 
 const DEBUG_AUDIO_DIR = path.join(__dirname, '..', '.speech-debug');
+const VOSK_MODEL_DIR = path.join(__dirname, '..', 'speech-models', 'fa');
 let lastDebugAudio = null;
+let cachedVoskModel = null;
+let cachedVosk = null;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -85,6 +88,155 @@ async function convertToWav(inputPath, outputPath) {
   ]);
 }
 
+function speechProvider() {
+  return (process.env.SPEECH_PROVIDER || 'vosk').trim().toLowerCase();
+}
+
+function isVoskModelDirectory(dir) {
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return false;
+    const hasConf = fs.existsSync(path.join(dir, 'conf'));
+    const hasGraph = fs.existsSync(path.join(dir, 'graph'));
+    const hasAm = fs.existsSync(path.join(dir, 'am'));
+    return hasConf && (hasGraph || hasAm);
+  } catch {
+    return false;
+  }
+}
+
+function extractPcmFromWav(buffer) {
+  if (!buffer || buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('invalid wav file');
+  }
+  let offset = 12;
+  let audioFormat = null;
+  let sampleRate = null;
+  let channels = null;
+  let bitsPerSample = null;
+  let dataStart = null;
+  let dataSize = null;
+  while (offset + 8 <= buffer.length) {
+    const chunkId = buffer.toString('ascii', offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    if (chunkId === 'fmt ') {
+      audioFormat = buffer.readUInt16LE(chunkStart);
+      channels = buffer.readUInt16LE(chunkStart + 2);
+      sampleRate = buffer.readUInt32LE(chunkStart + 4);
+      bitsPerSample = buffer.readUInt16LE(chunkStart + 14);
+    } else if (chunkId === 'data') {
+      dataStart = chunkStart;
+      dataSize = chunkSize;
+      break;
+    }
+    offset = chunkStart + chunkSize + (chunkSize % 2);
+  }
+  if (dataStart == null || !dataSize) throw new Error('wav data chunk missing');
+  return {
+    pcm: buffer.subarray(dataStart, Math.min(dataStart + dataSize, buffer.length)),
+    format: { audioFormat, channels, sampleRate, bitsPerSample },
+  };
+}
+
+function loadVoskModel(debug) {
+  debug.vosk = debug.vosk || {};
+  debug.vosk.modelPath = VOSK_MODEL_DIR;
+  debug.vosk.modelExists = isVoskModelDirectory(VOSK_MODEL_DIR);
+  debug.voskModelLoaded = false;
+  if (!debug.vosk.modelExists) {
+    const err = new Error('Vosk Persian model is not installed');
+    err.code = 'vosk_model_missing';
+    throw err;
+  }
+  if (!cachedVosk) {
+    try {
+      cachedVosk = require('vosk');
+      if (typeof cachedVosk.setLogLevel === 'function') cachedVosk.setLogLevel(0);
+      debug.vosk.packageLoaded = true;
+    } catch (e) {
+      debug.vosk.packageLoaded = false;
+      const err = new Error('Vosk package is not installed');
+      err.code = 'vosk_engine_missing';
+      throw err;
+    }
+  } else {
+    debug.vosk.packageLoaded = true;
+  }
+  if (!cachedVoskModel) cachedVoskModel = new cachedVosk.Model(VOSK_MODEL_DIR);
+  debug.vosk.modelLoaded = true;
+  debug.voskModelLoaded = true;
+  return { vosk: cachedVosk, model: cachedVoskModel };
+}
+
+async function transcribeWithVosk(convertedPath, debug) {
+  debug.speechProvider = 'vosk';
+  debug.transcriptionEngine = 'vosk';
+  const { vosk, model } = loadVoskModel(debug);
+  const wavBuffer = await fsp.readFile(convertedPath);
+  const wav = extractPcmFromWav(wavBuffer);
+  debug.vosk.wav = wav.format;
+  if (wav.format.sampleRate !== 16000 || wav.format.channels !== 1 || wav.format.bitsPerSample !== 16) {
+    const err = new Error('Converted wav must be 16kHz mono 16-bit PCM');
+    err.code = 'audio_unprocessable';
+    throw err;
+  }
+  const recognizer = new vosk.Recognizer({ model, sampleRate: 16000 });
+  try {
+    recognizer.acceptWaveform(wav.pcm);
+    const rawResult = recognizer.finalResult() || {};
+    const result = typeof rawResult === 'string' ? JSON.parse(rawResult || '{}') : rawResult;
+    const text = (result.text || '').trim();
+    debug.vosk.result = result;
+    return text;
+  } finally {
+    if (typeof recognizer.free === 'function') recognizer.free();
+  }
+}
+
+async function transcribeWithOpenAI(convertedBuffer, model, debug) {
+  debug.speechProvider = 'openai';
+  debug.transcriptionEngine = 'openai';
+  if (typeof fetch !== 'function' || typeof FormData === 'undefined' || typeof Blob === 'undefined') {
+    const err = new Error('Server runtime must support fetch, FormData and Blob');
+    err.code = 'node_fetch_not_available';
+    throw err;
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    const err = new Error('OPENAI_API_KEY is not configured on the server');
+    err.code = 'speech_service_not_configured';
+    throw err;
+  }
+  const form = new FormData();
+  form.append('model', model);
+  form.append('language', 'fa');
+  form.append('prompt', 'این فایل شامل گفتار فارسی است. متن را دقیق و روان به فارسی پیاده‌سازی کن.');
+  form.append('file', new Blob([convertedBuffer], { type: 'audio/wav' }), 'converted.wav');
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: form,
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const openAiError = payload.error || {};
+    const openAiMessage = openAiError.message || 'Speech transcription failed';
+    debug.openai = {
+      status: response.status,
+      type: openAiError.type || null,
+      code: openAiError.code || null,
+      message: openAiMessage,
+    };
+    const err = new Error(openAiMessage);
+    err.provider = 'openai';
+    err.status = response.status;
+    err.payload = payload;
+    throw err;
+  }
+  return (payload.text || '').trim();
+}
+
 router.get('/debug-last-audio', async (req, res) => {
   if (!isDevelopment()) {
     return res.status(404).json({ error: 'not_found' });
@@ -140,14 +292,9 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
     if (!req.file) {
       return res.status(400).json({ error: 'audio_required', message: 'audio file required' });
     }
-    if (typeof fetch !== 'function' || typeof FormData === 'undefined' || typeof Blob === 'undefined') {
-      return res.status(500).json({
-        error: 'node_fetch_not_available',
-        message: 'Server runtime must support fetch, FormData and Blob',
-      });
-    }
 
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
+    const provider = speechProvider();
     await fsp.mkdir(DEBUG_AUDIO_DIR, { recursive: true });
     const id = randomUUID();
     const rawExt = audioExtension(req.file.originalname, req.file.mimetype);
@@ -158,6 +305,9 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
     await fsp.writeFile(rawPath, req.file.buffer);
 
     const debug = {
+      speechProvider: provider,
+      transcriptionEngine: null,
+      voskModelLoaded: false,
       backend: {
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
@@ -237,51 +387,103 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
     }
 
     const convertedBuffer = await fsp.readFile(convertedPath);
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(503).json({
-        error: 'speech_service_not_configured',
-        message: 'OPENAI_API_KEY is not configured on the server',
+    let text = '';
+    try {
+      if (provider === 'openai') {
+        text = await transcribeWithOpenAI(convertedBuffer, model, debug);
+      } else if (provider === 'vosk' || provider === 'webspeech') {
+        text = await transcribeWithVosk(convertedPath, debug);
+      } else if (provider === 'deepgram') {
+        return res.status(501).json({
+          error: 'speech_provider_not_implemented',
+          message: 'این provider هنوز پیاده‌سازی نشده است.',
+          debug,
+        });
+      } else {
+        return res.status(400).json({
+          error: 'speech_provider_invalid',
+          message: 'SPEECH_PROVIDER معتبر نیست.',
+          debug,
+        });
+      }
+    } catch (e) {
+      if (e.provider === 'openai') {
+        console.error('[speech] OpenAI transcription failed', {
+          status: e.status,
+          payload: e.payload,
+          openai: debug.openai,
+          file: {
+            originalname: debug.backend.originalname,
+            mimetype: debug.backend.mimetype,
+            size: debug.backend.size,
+            path: debug.backend.path,
+            converted: debug.converted || null,
+          },
+        });
+        let errorCode = 'transcription_failed';
+        let message = process.env.NODE_ENV === 'production' ? 'Speech transcription failed' : e.message;
+        if (e.status === 429) {
+          errorCode = 'openai_rate_limit_or_quota';
+          message = 'محدودیت مصرف یا اعتبار OpenAI API فعال شده است.';
+        } else if (e.status === 401) {
+          errorCode = 'openai_auth_failed';
+        } else if (e.status === 403) {
+          errorCode = 'openai_permission_denied';
+        } else if (e.status >= 500) {
+          errorCode = 'openai_server_error';
+        } else if (e.status === 400 && /format|codec|mime|unsupported|invalid file/i.test(e.message || '')) {
+          errorCode = 'unsupported_audio_format';
+        }
+        return res.status(e.status || 500).json({
+          error: errorCode,
+          message,
+          details: process.env.NODE_ENV === 'production' ? undefined : (e.payload?.error || null),
+          debug,
+        });
+      }
+      if (e.code === 'node_fetch_not_available') {
+        return res.status(500).json({
+          error: 'node_fetch_not_available',
+          message: 'Server runtime must support fetch, FormData and Blob',
+          debug,
+        });
+      }
+      if (e.code === 'vosk_model_missing') {
+        return res.status(503).json({
+          error: 'vosk_model_missing',
+          message: 'مدل تبدیل صدای فارسی روی سرور نصب نشده',
+          debug,
+        });
+      }
+      if (e.code === 'vosk_engine_missing') {
+        return res.status(503).json({
+          error: 'vosk_engine_missing',
+          message: 'موتور Vosk روی سرور نصب نشده است.',
+          debug,
+        });
+      }
+      if (e.code === 'audio_unprocessable') {
+        return res.status(422).json({
+          error: 'audio_unprocessable',
+          message: 'فایل صوتی قابل پردازش نیست.',
+          debug,
+        });
+      }
+      throw e;
+    }
+
+    if (!text) {
+      debug.transcription = { textLength: 0 };
+      return res.status(422).json({
+        error: 'empty_transcription',
+        message: 'صدای کافی تشخیص داده نشد',
         debug,
       });
     }
-    const form = new FormData();
-    form.append('model', model);
-    form.append('language', 'fa');
-    form.append('prompt', 'این فایل شامل گفتار فارسی است. متن را دقیق و روان به فارسی پیاده‌سازی کن.');
-    form.append('file', new Blob([convertedBuffer], { type: 'audio/wav' }), 'converted.wav');
 
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: form,
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error('[speech] OpenAI transcription failed', {
-        status: response.status,
-        payload,
-        file: {
-          originalname: debug.backend.originalname,
-          mimetype: debug.backend.mimetype,
-          size: debug.backend.size,
-          path: debug.backend.path,
-          converted: debug.converted || null,
-        },
-      });
-      const openAiMessage = payload.error?.message || 'Speech transcription failed';
-      const isFormatError = /format|codec|mime|unsupported|invalid file/i.test(openAiMessage);
-      return res.status(response.status).json({
-        error: isFormatError ? 'unsupported_audio_format' : 'transcription_failed',
-        message: process.env.NODE_ENV === 'production' ? 'Speech transcription failed' : openAiMessage,
-        details: process.env.NODE_ENV === 'production' ? undefined : payload.error,
-        debug,
-      });
-    }
-
-    debug.transcription = { textLength: (payload.text || '').length };
+    debug.transcription = { textLength: text.length };
     console.log('[speech] transcription completed', debug.transcription);
-    res.json({ text: payload.text || '', debug });
+    res.json({ text, debug });
   } catch (e) {
     const msg = e && e.message ? e.message : 'speech transcription error';
     console.error('[speech] transcription route error', e);
