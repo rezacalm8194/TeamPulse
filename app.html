@@ -21086,17 +21086,20 @@ class WebSpeechVoiceEngine {
     this._finalTranscript = '';
     this._interimTranscript = '';
     this._recognitionBaseTranscript = '';
+    this._restartTimer = null;
   }
   isSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
-  start({ lang, onInterim, onFinal, onReplace, onError, onEnd }) {
+  start({ lang, onInterim, onFinal, onReplace, onError, onEnd, onStatus }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { onError && onError('unsupported'); return; }
     this._userListening = true;
     this._finalTranscript = '';
     this._interimTranscript = '';
     this._recognitionBaseTranscript = '';
+    clearTimeout(this._restartTimer);
+    this._restartTimer = null;
 
     const mergeSpeech = (base, addition) => {
       base = (base || '').trim();
@@ -21130,15 +21133,19 @@ class WebSpeechVoiceEngine {
     };
 
     const beginRecognition = () => {
+      if (!this._userListening) return;
       this._recognitionBaseTranscript = this._finalTranscript;
       const rec = new SR();
       // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
       // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
       rec.lang = lang || 'fa-IR';
-      // در Safari/iOS حالت continuous گاهی باعث پایان یا خطای زودهنگام می‌شود.
-      // روی موبایل ضبط‌های کوتاه پایدارترند و کاربر می‌تواند دوباره بزند.
+      // iOS با continuous ناپایدار است؛ Android/desktop تا جای ممکن یک جلسه‌ی
+      // پیوسته می‌گیرند، و اگر مرورگر خودش onend داد با instance تازه ادامه می‌دهیم.
       rec.continuous = !_voiceIsIOS();
       rec.interimResults = true;
+      rec.onstart = () => {
+        onStatus && onStatus('در حال ضبط... صحبت کنید');
+      };
       rec.onresult = (e) => {
         const finalParts = [];
         const interimParts = [];
@@ -21160,12 +21167,22 @@ class WebSpeechVoiceEngine {
         emitReplace(false);
       };
       rec.onerror = (e) => {
+        if (!this._userListening && e.error === 'aborted') return;
+        if (this._userListening && _voiceIsAndroid() && (e.error === 'no-speech' || e.error === 'aborted')) {
+          return;
+        }
         this._userListening = false;
         onError && onError(e.error);
       };
       rec.onend = () => {
-        if (this._userListening && rec.continuous) {
-          try { rec.start(); return; } catch(e) {}
+        if (this._recognition === rec) this._recognition = null;
+        if (this._userListening) {
+          emitReplace(true);
+          clearTimeout(this._restartTimer);
+          this._restartTimer = setTimeout(() => {
+            if (this._userListening) beginRecognition();
+          }, _voiceIsAndroid() ? 260 : 120);
+          return;
         }
         emitReplace(true);
         onEnd && onEnd();
@@ -21215,6 +21232,8 @@ class WebSpeechVoiceEngine {
   }
   stop() {
     this._userListening = false;
+    clearTimeout(this._restartTimer);
+    this._restartTimer = null;
     if (this._recognition) {
       try { this._recognition.stop(); } catch (e) {}
       this._recognition = null;
