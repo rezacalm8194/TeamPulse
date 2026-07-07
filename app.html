@@ -21833,14 +21833,14 @@ function _autoGrowScanAndAttach(root) {
 
     // در iOS Safari، focus روی input باعث می‌شود مرورگر صفحه را اسکرول کند.
     // با یک rAF کوچک این scroll را خنثی می‌کنیم.
-    // نکته: عمداً از window.scrollTo/scrollIntoView استفاده نمی‌کنیم — چون body
-    // در حالت modal-open با position:fixed قفل شده و هرگونه scrollTo روی window
-    // بی‌فایده یا حتی مضر است (ممکن است با مکانیزم قفل تداخل کند). تنها کاری که
-    // لازم است این است که اگر خودِ modal-body کمی جابه‌جا شد، آن را برگردانیم.
     requestAnimationFrame(() => {
       // اگر modal-body بیشتر از ۵px جابه‌جا شده، برگردانش
       if (Math.abs(modalBody.scrollTop - savedTop) > 5) {
         modalBody.scrollTop = savedTop;
+      }
+      // همچنین از scroll کل window/body جلوگیری می‌کنیم
+      if (window._modalScrollLocked || document.body.classList.contains('modal-open')) {
+        try { window.scrollTo(0, 0); } catch(e) {}
       }
     });
   }, true); // capture phase
