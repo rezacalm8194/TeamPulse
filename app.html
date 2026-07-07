@@ -528,7 +528,8 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* ── Modal ──────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
-  height: 100dvh;
+  /* iOS fix: inset:0 را داریم اما height را هم صریح با --modal-vh می‌گذاریم
+     تا وقتی کیبورد باز می‌شود و JS مقدار --modal-vh را آپدیت می‌کند، overlay هم resize شود */
   height: var(--modal-vh, 100dvh);
   background: rgba(0,0,0,.65);
   display: flex; align-items: center; justify-content: center;
@@ -536,7 +537,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   transition: opacity .2s;
   overflow: hidden;
   overscroll-behavior: contain;
-  transform: translate3d(0, var(--vv-offset-top, 0px), 0);
+  /* iOS fix: هرگز transform/translate استفاده نمی‌کنیم چون باعث پرش modal هنگام باز شدن کیبورد می‌شود */
 }
 
 .modal-overlay.open { opacity: 1; pointer-events: all; }
@@ -1648,7 +1649,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   .topbar{padding:0 10px;gap:6px;height:52px;padding-top:max(24px, env(safe-area-inset-top,0px));height:calc(52px + max(24px, env(safe-area-inset-top,0px)))}
   .topbar-actions{gap:4px}
   .topbar-actions .btn{padding:5px 8px;font-size:11px}
-  .page-title{font-size:13px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .page-title{font-size:13px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* Content area */
   .content{padding:12px 10px}
@@ -1755,11 +1756,11 @@ body.light mark { background: rgba(251,191,36,.5); }
     width:0; padding:0; opacity:0; pointer-events:none;
   }
   .topbar-actions .table-search.tb-search-open{
-    max-width:220px; width:auto;
+    max-width:160px; width:auto;
     background:var(--bg3); border-color:var(--border2);
   }
   .topbar-actions .table-search.tb-search-open input{
-    width:160px; opacity:1; pointer-events:auto;
+    width:110px; opacity:1; pointer-events:auto;
   }
 
   /* Forms */
@@ -1768,7 +1769,8 @@ body.light mark { background: rgba(251,191,36,.5); }
   .form-grid-2{grid-template-columns:1fr!important}
 
   /* Modal: bottom sheet on mobile */
-  .modal-overlay{align-items:flex-end}
+  /* iOS fix: از height:var(--modal-vh) برای overlay استفاده می‌کنیم نه 100dvh ثابت */
+  .modal-overlay{align-items:flex-end;height:var(--modal-vh,100dvh)!important}
   .modal{width:100vw!important;max-width:100vw!important;max-height:calc(var(--modal-vh, 100dvh) * .92);
     border-radius:20px 20px 0 0;margin:0;}
   .modal-header{border-radius:20px 20px 0 0;padding:14px 16px 12px}
@@ -1942,7 +1944,7 @@ body.light mark { background: rgba(251,191,36,.5); }
 @media(max-width:480px){
   .content{padding:8px}
   .stat-value{font-size:14px!important}
-  .page-title{font-size:12px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .page-title{font-size:12px;max-width:100px}
 
   /* Stack topbar buttons */
   .topbar-actions .btn span:not(.btn-icon){display:none}
@@ -2053,14 +2055,19 @@ body.modal-open .modal {
   touch-action: pan-y;
 }
 body.modal-keyboard-open .modal {
+  /* وقتی کیبورد باز است ارتفاع modal را به ارتفاع واقعی viewport (بدون کیبورد) محدود می‌کنیم */
   max-height: var(--modal-vh, 100dvh) !important;
 }
 body.modal-keyboard-open .modal-body {
-  overflow: hidden;
+  /* modal-body باید اسکرول شود — نه overflow:hidden! */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 body.modal-keyboard-open .modal-body textarea,
 body.modal-keyboard-open .modal-body .form-textarea {
   overflow: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 body.modal-keyboard-open .modal-body .rich-toolbar,
@@ -12466,9 +12473,19 @@ async function renderInstructions(instrSearch) {
      already covers create actions there, and there's no room for a toolbar row too. ── */
   const toolbar = _instrToolbarHtml();
 
-  /* ── View toggle + filter bar — built after items are known so counts are accurate ── */
-  /* viewBar is built below after items are filtered */
-  const viewBar = '__VIEWBAR_PLACEHOLDER__'; // overwritten below
+  /* ── View toggle + filter bar ── */
+  const viewBar = `
+    <div id="instr-filterview-row" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div id="instr-filter-group" style="display:flex;gap:6px;flex-wrap:wrap">
+        ${_filterBtn('all','همه')}
+        ${_filterBtn('pinned','📌 پین‌شده')}
+      </div>
+      <div id="instr-view-group" style="display:flex;gap:4px">
+        ${_viewBtn('gallery','◻ گالری')}
+        ${_viewBtn('list','☰ فهرست')}
+        ${_viewBtn('compact','▤ فشرده')}
+      </div>
+    </div>`;
 
   /* ── Get items for current folder ── */
   let items = flat.filter(n => (n.parent_id||null) === (_instrParentId ? +_instrParentId : null));
@@ -12539,30 +12556,10 @@ async function renderInstructions(instrSearch) {
     }
   }
 
-  /* ── Build real viewBar now that items are filtered and we know counts ── */
-  const _vbFolderCount = items.filter(x => x.type === 'category').length;
-  const _vbNoteCount   = items.filter(x => x.type !== 'category').length;
-  const _realViewBar = `
-    <div id="instr-filterview-row" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div id="instr-filter-group" style="display:flex;gap:5px;flex-wrap:wrap">
-          ${_filterBtn('all', `همه${items.length ? ` (${fa(items.length)})` : ''}`)}
-          ${_filterBtn('pinned','📌 پین‌شده')}
-          ${_vbFolderCount > 0 ? _filterBtn('folder', `📁 پوشه‌ها (${fa(_vbFolderCount)})`) : ''}
-          ${_vbNoteCount > 0   ? _filterBtn('note',   `📝 یادداشت‌ها (${fa(_vbNoteCount)})`) : ''}
-        </div>
-        <div id="instr-view-group" style="display:flex;gap:2px;background:var(--bg3);border-radius:9px;padding:3px;flex-shrink:0">
-          ${_viewBtn('gallery','◻')}
-          ${_viewBtn('list','☰')}
-          ${_viewBtn('compact','▤')}
-        </div>
-      </div>
-    </div>`;
-
   /* ── Empty state ── */
   if (items.length === 0) {
     const canCreateHere = _teamCanCreateInstruction(_instrParentId);
-    setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + _realViewBar + `
+    setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
@@ -12597,7 +12594,7 @@ async function renderInstructions(instrSearch) {
     return [...arr.filter(x=>x.pinned).sort(byMode), ...arr.filter(x=>!x.pinned).sort(byMode)];
   };
 
-  let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar + _realViewBar;
+  let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar;
 
   /* ── FOLDERS ── */
   if (folders.length > 0) {
@@ -12661,7 +12658,7 @@ async function renderInstructions(instrSearch) {
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
-          <div class="_ifcard" data-id="${item.id}"
+          <div class="_ifcard"
             style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:background .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
@@ -12696,7 +12693,7 @@ async function renderInstructions(instrSearch) {
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
-          <div class="_ifcard" data-id="${item.id}"
+          <div class="_ifcard"
             style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
@@ -12733,7 +12730,7 @@ async function renderInstructions(instrSearch) {
         const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         html += `
-          <div class="_ifcard _ifcard-gallery" data-id="${item.id}"
+          <div class="_ifcard _ifcard-gallery"
             style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:18px 16px 14px;cursor:pointer;transition:all .2s;position:relative;min-height:140px;display:flex;flex-direction:column"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="_instrHoverCard(this,'${color}')"
@@ -12764,7 +12761,7 @@ async function renderInstructions(instrSearch) {
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const isLast = idx === arr.length - 1;
         html += `
-          <div class="_ifcard" data-id="${item.id}"
+          <div class="_ifcard"
             style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
@@ -12797,7 +12794,7 @@ async function renderInstructions(instrSearch) {
         const isKey = item.importance === 'key';
         const isLast = idx === arr.length - 1;
         html += `
-          <div class="_ifcard" data-id="${item.id}"
+          <div class="_ifcard"
             style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
@@ -12821,15 +12818,9 @@ async function renderInstructions(instrSearch) {
 
   /* ── Bottom add buttons when inside folder ── */
   if (_instrParentId && _teamCanCreateInstruction(_instrParentId)) {
-    const _noteCountInFolder = notes.length;
-    const _folderCountInFolder = folders.length;
-    html += `<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')" style="flex:1;min-width:140px;justify-content:center">
-        📝 یادداشت جدید${_noteCountInFolder > 0 ? ` <span style="font-size:10px;opacity:.7;margin-right:4px">(${fa(_noteCountInFolder)} یادداشت)</span>` : ''}
-      </button>
-      <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')" style="flex:1;min-width:120px;justify-content:center">
-        📁 زیرپوشه جدید${_folderCountInFolder > 0 ? ` <span style="font-size:10px;opacity:.7;margin-right:4px">(${fa(_folderCountInFolder)} پوشه)</span>` : ''}
-      </button>
+    html += `<div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت داخل این پوشه</button>
+      <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
     </div>`;
   }
 
@@ -12855,21 +12846,6 @@ async function renderInstructions(instrSearch) {
         ._ifcard.show-actions ._ifcard-actions,
         ._ifcard.show-actions ._ifcard-qa { opacity:1 !important; pointer-events:auto !important; }
         ._ifcard.show-actions ._ifcard-more-btn{ display:none; }
-      }
-      /* حالت انتخاب چندتایی */
-      ._ifcard.selected {
-        outline: 2px solid var(--accent) !important;
-        background: rgba(124,106,247,.12) !important;
-        position: relative;
-      }
-      ._ifcard.selected::before {
-        content: '✓';
-        position: absolute; top: 6px; right: 6px; z-index: 5;
-        width: 20px; height: 20px; border-radius: 50%;
-        background: var(--accent); color: white;
-        font-size: 11px; font-weight: 700;
-        display: flex; align-items: center; justify-content: center;
-        pointer-events: none;
       }
     `;
     document.head.appendChild(s);
@@ -12905,12 +12881,10 @@ function _filterBtn(key, label) {
 
 function _viewBtn(key, label) {
   const active = _instrView === key;
-  const titles = { gallery:'گالری', list:'فهرست', compact:'فشرده' };
-  return `<button onclick="_instrView='${key}';renderInstructions()" title="${titles[key]||label}"
-    style="padding:5px 11px;border-radius:7px;border:none;
-    background:${active?'var(--bg2)':'transparent'};color:${active?'var(--accent2)':'var(--text3)'};
-    font-size:12px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s;
-    ${active?'box-shadow:0 1px 4px rgba(0,0,0,.18)':''}">${label}</button>`;
+  return `<button onclick="_instrView='${key}';renderInstructions()"
+    style="padding:5px 11px;border-radius:8px;border:1px solid ${active?'var(--accent)':'var(--border)'};
+    background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
+    font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
 }
 
 /* ── تولبار اختصاصی ویندوز/دسکتاپ ── جایگزین دکمه‌های پراکنده‌ی قبلی و ردیف فیلتر
@@ -13056,156 +13030,7 @@ if (!window._ifActionsOutsideClickBound) {
   });
 }
 
-function _ifToggleActions(btn) {
-  if (window.event) window.event.stopPropagation();
-  const card = btn.closest('._ifcard');
-  if (!card) return;
-  const wasOpen = card.classList.contains('show-actions');
-  document.querySelectorAll('._ifcard.show-actions').forEach(c => c.classList.remove('show-actions'));
-  if (!wasOpen) card.classList.add('show-actions');
-}
-if (!window._ifActionsOutsideClickBound) {
-  window._ifActionsOutsideClickBound = true;
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('._ifcard-more-btn')) {
-      document.querySelectorAll('._ifcard.show-actions').forEach(c => c.classList.remove('show-actions'));
-    }
-  });
-}
-
-/* ── انتخاب چندتایی (Multi-select) — نگه‌داشتن انگشت روی کارت ── */
-let _instrSelectMode = false;
-let _instrSelectedIds = new Set();
-
-function _instrEnterSelectMode(cardEl, id) {
-  _instrSelectMode = true;
-  _instrSelectedIds.clear();
-  _instrSelectedIds.add(+id);
-  _instrUpdateSelectUI();
-  _instrToggleCardSelected(cardEl, true);
-  // لرزش خفیف روی iOS
-  if (navigator.vibrate) navigator.vibrate(30);
-}
-
-function _instrExitSelectMode() {
-  _instrSelectMode = false;
-  _instrSelectedIds.clear();
-  document.querySelectorAll('._ifcard.selected').forEach(c => c.classList.remove('selected'));
-  _instrUpdateSelectUI();
-}
-
-function _instrToggleCardSelected(cardEl, force) {
-  const id = +cardEl.dataset.id;
-  if (force === true || !_instrSelectedIds.has(id)) {
-    _instrSelectedIds.add(id);
-    cardEl.classList.add('selected');
-  } else {
-    _instrSelectedIds.delete(id);
-    cardEl.classList.remove('selected');
-  }
-  if (_instrSelectedIds.size === 0) _instrExitSelectMode();
-  else _instrUpdateSelectUI();
-}
-
-function _instrUpdateSelectUI() {
-  let bar = document.getElementById('_instr-select-bar');
-  if (!_instrSelectMode) {
-    if (bar) bar.remove();
-    return;
-  }
-  const count = _instrSelectedIds.size;
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = '_instr-select-bar';
-    bar.style.cssText = 'position:fixed;bottom:72px;right:0;left:0;z-index:200;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;background:var(--bg2);border-top:1px solid var(--border2);box-shadow:0 -4px 20px rgba(0,0,0,.3);flex-wrap:wrap';
-    document.body.appendChild(bar);
-  }
-  bar.innerHTML = `
-    <span style="font-size:13px;font-weight:700;color:var(--accent2)">${fa(count)} آیتم انتخاب شد</span>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="_instrBulkPin()" title="پین/حذف پین">📌 پین</button>
-      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="_instrBulkDelete()" title="حذف همه انتخاب‌شده‌ها" style="color:var(--red)">🗑 حذف</button>
-      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="_instrExitSelectMode()">✕ لغو</button>
-    </div>`;
-}
-
-function _instrBulkPin() {
-  const ids = [..._instrSelectedIds];
-  const allPinned = ids.every(id => (_db.instructions||[]).find(n=>n.id===id)?.pinned);
-  ids.forEach(id => {
-    const n = (_db.instructions||[]).find(n=>n.id===id);
-    if (n) n.pinned = !allPinned;
-  });
-  _save();
-  showToast(allPinned ? 'پین برداشته شد' : `📌 ${fa(ids.length)} آیتم پین شد`, 'success');
-  _instrExitSelectMode();
-  renderInstructions();
-}
-
-function _instrBulkDelete() {
-  const ids = [..._instrSelectedIds];
-  if (!confirm(`${fa(ids.length)} آیتم انتخاب‌شده حذف شوند؟`)) return;
-  ids.forEach(id => {
-    _db.instructions = (_db.instructions||[]).filter(n => n.id !== +id);
-  });
-  _save();
-  showToast(`🗑 ${fa(ids.length)} آیتم حذف شد`, 'success');
-  _instrExitSelectMode();
-  renderInstructions();
-}
-
-/* ── Long-press detection: attach to every ._ifcard ── */
-if (!window._instrLongPressBound) {
-  window._instrLongPressBound = true;
-  let _lpTimer = null;
-  let _lpCard = null;
-  let _lpMoved = false;
-
-  document.addEventListener('click', function(e) {
-    if (!_instrSelectMode) return;
-    const card = e.target.closest('._ifcard[data-id]');
-    if (card) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      _instrToggleCardSelected(card);
-    }
-  }, true); // capture
-
-  document.addEventListener('pointerdown', function(e) {
-    const card = e.target.closest('._ifcard[data-id]');
-    if (!card) return;
-    // در حالت انتخاب، کلیک ساده کارد را toggle می‌کند
-    if (_instrSelectMode) return;
-    _lpMoved = false;
-    _lpCard = card;
-    _lpTimer = setTimeout(() => {
-      if (!_lpMoved && _lpCard) {
-        _instrEnterSelectMode(_lpCard, _lpCard.dataset.id);
-      }
-    }, 500);
-  }, { passive: true });
-
-  document.addEventListener('pointermove', function(e) {
-    if (_lpTimer) { _lpMoved = true; clearTimeout(_lpTimer); _lpTimer = null; }
-  }, { passive: true });
-
-  document.addEventListener('pointerup', function(e) {
-    if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-    if (_instrSelectMode) {
-      const card = e.target.closest('._ifcard[data-id]');
-      if (card) {
-        e.preventDefault();
-        _instrToggleCardSelected(card);
-      }
-    }
-  });
-
-  document.addEventListener('pointercancel', function() {
-    if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-  });
-}
-
-
+function _instrOpenFolder(id, icon, title) {
   if (!_teamCanInstructionNode(id)) { showToast('به این پوشه دسترسی نداری', 'error'); return; }
   const contentEl = document.querySelector('.content');
   if (contentEl && history.state && history.state.instrNav) {
@@ -18293,15 +18118,35 @@ function _getRealViewportHeight() {
 
 function _setRealAppHeight() {
   const h = _getRealViewportHeight();
-  const vv = window.visualViewport;
-  const offsetTop = vv ? Math.max(0, vv.offsetTop || 0) : 0;
   document.documentElement.style.setProperty('--app-vh', h + 'px');
   document.documentElement.style.setProperty('--modal-vh', h + 'px');
-  document.documentElement.style.setProperty('--vv-offset-top', offsetTop + 'px');
+  // --vv-offset-top دیگر استفاده نمی‌شود (حذف transform از modal-overlay)
 
   // تشخیص کیبورد مجازی: اگه ارتفاع بیش از ۱۵۰px نسبت به مقدار پایه کم شده باشه یعنی کیبورد بازه
+  const keyboardWasOpen = window._mobileKeyboardOpen;
   window._mobileKeyboardOpen = (h < _vvBaseHeight - 150);
-  document.body.classList.toggle('modal-keyboard-open', !!(window._mobileKeyboardOpen && document.querySelector('.modal-overlay.open')));
+  const hasOpenModal = !!document.querySelector('.modal-overlay.open');
+  document.body.classList.toggle('modal-keyboard-open', !!(window._mobileKeyboardOpen && hasOpenModal));
+
+  // ── حفظ موقعیت اسکرول modal-body هنگام باز/بسته‌شدن کیبورد ──
+  // وقتی کیبورد باز می‌شود یا بسته می‌شود، scrollTop modal-body را ذخیره و بازیابی می‌کنیم
+  // تا هیچ پرشی در محتوا اتفاق نیفتد.
+  if (hasOpenModal && keyboardWasOpen !== window._mobileKeyboardOpen) {
+    const modalBody = document.querySelector('.modal-overlay.open .modal-body');
+    if (modalBody) {
+      if (window._mobileKeyboardOpen) {
+        // کیبورد باز شد — scrollTop فعلی را ذخیره کن
+        modalBody._savedScrollTop = modalBody.scrollTop;
+      } else {
+        // کیبورد بسته شد — scrollTop ذخیره‌شده را بازگردان
+        requestAnimationFrame(() => {
+          if (modalBody._savedScrollTop != null) {
+            modalBody.scrollTop = modalBody._savedScrollTop;
+          }
+        });
+      }
+    }
+  }
 }
 _setRealAppHeight();
 
@@ -21666,6 +21511,54 @@ function _autoGrowScanAndAttach(root) {
     scope.dataset.autogrowReady = '1'; _autoGrowTextarea(scope);
   }
 }
+
+// ── هوک سراسری مدیریت کیبورد iOS برای تمام مودال‌های برنامه ─────────────────
+// این کد یک‌بار اجرا می‌شود و روی همه‌ی فیلدهای متنی داخل مودال‌ها اثر می‌گذارد.
+// هدف: جلوگیری از پرش صفحه هنگام فوکوس روی textarea یا input داخل modal در iOS Safari.
+(function _initIOSModalKeyboardHook() {
+  if (typeof window === 'undefined') return;
+
+  // هنگام focus روی هر input/textarea داخل modal:
+  // - از scroll خودکار Safari جلوگیری می‌کنیم
+  // - scrollTop modal-body را حفظ می‌کنیم
+  document.addEventListener('focus', function(e) {
+    const target = e.target;
+    if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')) return;
+    const modalBody = target.closest('.modal-body');
+    if (!modalBody) return;
+
+    // scrollTop فعلی را ذخیره کن تا بعد از focus بازگردانیم
+    const savedTop = modalBody.scrollTop;
+
+    // در iOS Safari، focus روی input باعث می‌شود مرورگر صفحه را اسکرول کند.
+    // با یک rAF کوچک این scroll را خنثی می‌کنیم.
+    requestAnimationFrame(() => {
+      // اگر modal-body بیشتر از ۵px جابه‌جا شده، برگردانش
+      if (Math.abs(modalBody.scrollTop - savedTop) > 5) {
+        modalBody.scrollTop = savedTop;
+      }
+      // همچنین از scroll کل window/body جلوگیری می‌کنیم
+      if (window._modalScrollLocked || document.body.classList.contains('modal-open')) {
+        try { window.scrollTo(0, 0); } catch(e) {}
+      }
+    });
+  }, true); // capture phase
+
+  // وقتی کاربر blur می‌کند (کیبورد بسته می‌شود)، scrollTop را بازمی‌گردانیم
+  document.addEventListener('blur', function(e) {
+    const target = e.target;
+    if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')) return;
+    const modalBody = target.closest('.modal-body');
+    if (!modalBody) return;
+
+    // کمی صبر می‌کنیم تا کیبورد واقعاً بسته شود و --modal-vh آپدیت شود
+    setTimeout(() => {
+      if (modalBody._savedScrollTop != null) {
+        modalBody.scrollTop = modalBody._savedScrollTop;
+      }
+    }, 100);
+  }, true);
+})();
 
 (function _initVoiceInput() {
   const start = () => {
