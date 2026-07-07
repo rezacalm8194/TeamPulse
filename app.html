@@ -13963,6 +13963,12 @@ async function _apiFetch(path, opts = {}) {
   return res;
 }
 
+function _getApiAuthToken() {
+  if (_sbSession?.token) return _sbSession.token;
+  const saved = (typeof _authLoadSession === 'function') ? _authLoadSession() : null;
+  return saved?.token || saved?.access_token || null;
+}
+
 const _auth = {
   async signUp(email, password, name) {
     const res = await _apiFetch('/api/auth/register', {
@@ -20629,6 +20635,7 @@ class MediaRecorderVoiceEngine {
         audioBlobType: blob?.type || null,
         fileName: fileName || null,
       },
+      authTokenPresent: !!data?._authTokenPresent,
       backend: data?.debug?.backend || null,
       probe: data?.debug?.probe || null,
       converted: data?.debug?.converted || null,
@@ -20690,6 +20697,22 @@ class MediaRecorderVoiceEngine {
           const fileName = this._fileNameFor(blobType);
           fd.append('audio', blob, fileName);
           fd.append('language', 'fa');
+          const authToken = _getApiAuthToken();
+          if (!authToken) {
+            const debugPayload = this._debugPayload({
+              blob,
+              fileName,
+              data: {
+                error: 'auth_token_missing',
+                message: 'برای استفاده از تبدیل صدا باید وارد حساب شوید.',
+                _authTokenPresent: false,
+              },
+              res: { ok: false, status: 0, url: '/api/speech/transcribe' },
+            });
+            console.warn('[voice-debug] auth token missing', debugPayload);
+            onError && onError({ code: 'auth-token-missing', debug: debugPayload });
+            return;
+          }
           console.log('[voice-upload]', {
             url: '/api/speech/transcribe',
             method: 'POST',
@@ -20697,16 +20720,21 @@ class MediaRecorderVoiceEngine {
             fileName,
             blobSize: blob.size,
             blobType: blob.type,
+            authTokenPresent: true,
             manualContentType: false,
           });
           let res;
           try {
-            res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
+            res = await _apiFetch('/api/speech/transcribe', {
+              method: 'POST',
+              body: fd,
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
           } catch (fetchErr) {
             const debugPayload = this._debugPayload({
               blob,
               fileName,
-              data: { error: 'fetch_failed', message: fetchErr?.message || String(fetchErr) },
+              data: { error: 'fetch_failed', message: fetchErr?.message || String(fetchErr), _authTokenPresent: true },
               res: { ok: false, status: 0, url: '/api/speech/transcribe' },
             });
             console.error('[voice-debug] fetch failed', debugPayload);
@@ -20729,6 +20757,7 @@ class MediaRecorderVoiceEngine {
               _jsonParseError: jsonErr?.message || String(jsonErr),
             };
           }
+          data._authTokenPresent = true;
           data._responseText = responseText;
           const debugPayload = this._debugPayload({ blob, fileName, data, res });
           console.log('[voice-debug]', debugPayload);
@@ -20861,6 +20890,7 @@ function _voiceDebugVal(v) {
 function _voiceDebugRows(debug) {
   return [
     ['voice version', VOICE_VERSION],
+    ['authTokenPresent', debug?.authTokenPresent],
     ['frontend audioBlobSize', debug?.frontend?.audioBlobSize],
     ['frontend audioBlobType', debug?.frontend?.audioBlobType],
     ['backend file size', debug?.backend?.size],
@@ -21054,6 +21084,8 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'ابزار پردازش صدا روی سرور نصب نیست';
       } else if (errCode === 'fetch-failed') {
         msg = 'ارسال صدا به سرور انجام نشد؛ اتصال، HTTPS یا CORS را بررسی کن';
+      } else if (errCode === 'auth-token-missing') {
+        msg = 'برای استفاده از تبدیل صدا باید وارد حساب شوید.';
       } else if (errCode === 'audio-too-large') {
         msg = 'حجم فایل صوتی بیشتر از حد مجاز سرور است';
       } else if (errCode === 'audio-upload-failed') {

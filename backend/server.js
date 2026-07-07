@@ -25,9 +25,15 @@ app.use('/api/sync', require('./routes/sync'));
 app.use('/api/share', require('./routes/share'));
 app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/speech', require('./routes/speech'));
+console.log('Speech API loaded');
 app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
 app.get('/share/:token', require('./routes/share').serveShare);
 app.get('/app', (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
+app.use('/api', (req, res) => res.status(404).json({
+  error: 'api_route_not_found',
+  path: req.originalUrl,
+  message: 'API route was not found on this server',
+}));
 app.use(express.static(path.join(__dirname, '../')));
 app.use((req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 app.listen(PORT, () => console.log('TeamPulse API on port ' + PORT));
