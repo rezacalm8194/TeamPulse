@@ -2125,6 +2125,51 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
   resize: none;
   max-height: max(180px, calc(var(--modal-vh, 100dvh) - 260px));
 }
+/* ── Note editor modal: ارتفاع ثابت + اسکرول داخلی textarea (بدون auto-grow) ──
+   هدف: وقتی کیبورد iOS باز می‌شود، مودال جابه‌جا نشود و footer روی متن نیفتد؛
+   فقط خودِ textarea اسکرول داخلی داشته باشد. */
+.note-editor-modal .modal {
+  height: calc(var(--modal-vh, 100dvh) - 16px);
+  max-height: calc(var(--modal-vh, 100dvh) - 16px);
+}
+.note-editor-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.note-editor-modal .modal-body > .form-grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.note-editor-modal .note-content-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.note-editor-modal textarea.form-textarea {
+  flex: 1;
+  min-height: 180px;
+  height: auto !important;
+  max-height: none;
+  overflow-y: auto !important;
+  resize: none !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.note-editor-modal .modal-actions {
+  flex: 0 0 auto;
+  position: relative;
+  bottom: auto;
+  z-index: 5;
+}
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
 /* Fix 100vh on mobile browsers with address bar */
@@ -12240,8 +12285,9 @@ function openModal(title, body, actions = [], opts = {}) {
     ? `<button class="modal-fullpage-close" onclick="confirmFullpageClose()" aria-label="بستن" title="بستن">✕</button>`
     : `<button class="modal-close" onclick="closeModal()">×</button>`;
 
+  const overlayClass = opts.overlayClass ? (' ' + opts.overlayClass) : '';
   document.getElementById('modals').innerHTML = `
-    <div class="modal-overlay open${fullPage ? ' modal-overlay-fullpage' : ''}" id="modal-overlay" onclick="handleOverlayClick(event)">
+    <div class="modal-overlay open${fullPage ? ' modal-overlay-fullpage' : ''}${overlayClass}" id="modal-overlay" onclick="handleOverlayClick(event)">
       <div class="modal">
         <div class="modal-header">
           <div class="modal-title">${title}</div>
@@ -13558,10 +13604,10 @@ function openAddInstruction(parentId, type) {
         <label class="form-label">عنوان *</label>
         <input class="form-input" id="instr-title" placeholder="${pholder}" autofocus>
       </div>
-      <div class="form-group full">
+      <div class="form-group full note-content-wrap">
         <label class="form-label">${isChecklist ? '✅ آیتم‌های چک‌لیست' : '📄 محتوا'}</label>
         ${richToolbar('instr-content')}
-        <textarea class="form-textarea" id="instr-content" rows="6" placeholder="${isChecklist ? 'هر خط یک آیتم — مثلاً: خرید بلیط' : 'محتوای یادداشت...'}">${isChecklist ? '[ ] \n[ ] \n[ ] ' : ''}</textarea>
+        <textarea class="form-textarea note-content-textarea" id="instr-content" rows="6" placeholder="${isChecklist ? 'هر خط یک آیتم — مثلاً: خرید بلیط' : 'محتوای یادداشت...'}">${isChecklist ? '[ ] \n[ ] \n[ ] ' : ''}</textarea>
       </div>
       <div class="form-group full">
         <button type="button" id="instr-adv-toggle" onclick="_toggleAdvanced('instr-advanced','instr-adv-toggle')"
@@ -13592,7 +13638,7 @@ function openAddInstruction(parentId, type) {
   openModal(modalTitle, `<div class="form-grid">${bodyHtml}</div>`, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveAddInstruction(${_pId||'null'},'${type === 'checklist' ? 'note' : type}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
+  ], type !== 'category' ? { overlayClass: 'note-editor-modal' } : {});
   if (type !== 'category') initDatePickers();
   setTimeout(() => {
     const first = document.querySelector('.icon-pick-btn');
@@ -13672,10 +13718,10 @@ function openEditInstruction(id) {
         <label class="form-label">عنوان</label>
         <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
       </div>
-      <div class="form-group full">
+      <div class="form-group full note-content-wrap">
         <label class="form-label">📄 محتوا</label>
         ${richToolbar('ei-content')}
-        <textarea class="form-textarea" id="ei-content" rows="6">${escapeHtml(node.content||'')}</textarea>
+        <textarea class="form-textarea note-content-textarea" id="ei-content" rows="6">${escapeHtml(node.content||'')}</textarea>
       </div>
       <div class="form-group full">
         <button type="button" id="ei-adv-toggle" onclick="_toggleAdvanced('ei-advanced','ei-adv-toggle')"
@@ -13715,7 +13761,7 @@ function openEditInstruction(id) {
   openModal(`✏️ ویرایش — ${escapeHtml(node.title)}`, `<div class="form-grid">${bodyHtml}</div>`, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveEditInstruction(${id},'${node.type}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
+  ], node.type === 'note' ? { overlayClass: 'note-editor-modal' } : {});
   if (node.type === 'note') {
     initDatePickers();
     setTimeout(function() {
@@ -21805,7 +21851,10 @@ function _autoGrowTextarea(el) {
 }
 function _autoGrowScanAndAttach(root) {
   const scope = root || document;
-  const sel = 'textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview)';
+  // توجه: textarea.note-content-textarea (محتوای یادداشت داخل مودال یادداشت) عمداً از
+  // Auto-Grow کنار گذاشته شده؛ این textarea باید ارتفاع ثابت با اسکرول داخلی داشته باشد
+  // نه اینکه با تایپ/فوکوس بزرگ شود و modal-body/footer را جابه‌جا کند (باعث jump کیبورد iOS می‌شد).
+  const sel = 'textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview):not(.note-content-textarea)';
   const nodes = scope.querySelectorAll ? scope.querySelectorAll(sel) : [];
   nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
   if (scope.matches && scope.matches(sel)) {
@@ -21833,14 +21882,13 @@ function _autoGrowScanAndAttach(root) {
 
     // در iOS Safari، focus روی input باعث می‌شود مرورگر صفحه را اسکرول کند.
     // با یک rAF کوچک این scroll را خنثی می‌کنیم.
+    // نکته مهم: اینجا دیگر window.scrollTo(0,0) صدا زده نمی‌شود — آن خط خودش
+    // در iPhone Safari باعث jump می‌شد. فقط scrollTop خودِ modal-body حفظ می‌شود،
+    // نه اسکرول کل window/body.
     requestAnimationFrame(() => {
       // اگر modal-body بیشتر از ۵px جابه‌جا شده، برگردانش
       if (Math.abs(modalBody.scrollTop - savedTop) > 5) {
         modalBody.scrollTop = savedTop;
-      }
-      // همچنین از scroll کل window/body جلوگیری می‌کنیم
-      if (window._modalScrollLocked || document.body.classList.contains('modal-open')) {
-        try { window.scrollTo(0, 0); } catch(e) {}
       }
     });
   }, true); // capture phase
