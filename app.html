@@ -149,7 +149,29 @@ button { cursor: pointer; font-family: var(--font); }
   min-height: 0;
   position: relative;
   overflow: hidden;
+  --sidebar-thumb-top: 8px;
+  --sidebar-thumb-height: 38px;
 }
+.sidebar-scroll::before {
+  content: '';
+  position: absolute;
+  top: var(--sidebar-thumb-top);
+  left: 4px;
+  width: 2px;
+  height: var(--sidebar-thumb-height);
+  border-radius: 999px;
+  background: rgba(148,163,184,.3);
+  opacity: .3;
+  pointer-events: none;
+  z-index: 3;
+  transition: opacity .16s ease, background .16s ease;
+}
+.sidebar-scroll.is-scrolling::before,
+.sidebar-scroll:hover::before {
+  opacity: .8;
+  background: rgba(148,163,184,.8);
+}
+.sidebar-scroll.no-scrollbar::before { display: none; }
 .sidebar-scroll::after {
   content: '';
   position: absolute;
@@ -168,20 +190,10 @@ button { cursor: pointer; font-family: var(--font); }
   min-height: 0;
   padding: 6px 8px 24px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148,163,184,.22) transparent;
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
-.sidebar-nav::-webkit-scrollbar { width: 3px; }
-.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-.sidebar-nav::-webkit-scrollbar-thumb {
-  background: rgba(148,163,184,.22);
-  border-radius: 999px;
-}
-.sidebar-nav.is-scrolling,
-.sidebar-nav:hover { scrollbar-color: rgba(148,163,184,.55) transparent; }
-.sidebar-nav.is-scrolling::-webkit-scrollbar-thumb,
-.sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(148,163,184,.55); }
+.sidebar-nav::-webkit-scrollbar { display: none; }
 @keyframes sidebarScrollHint {
   0% { transform: translateY(0); }
   42% { transform: translateY(-18px); }
@@ -18364,17 +18376,29 @@ function _updateSidebarScrollState() {
   const wrap = document.getElementById('sidebar-scroll') || document.querySelector('.sidebar-scroll');
   if (!nav || !wrap) return;
   const max = nav.scrollHeight - nav.clientHeight;
-  wrap.classList.toggle('at-bottom', max <= 2 || nav.scrollTop >= max - 8);
+  const hasScroll = max > 2;
+  wrap.classList.toggle('no-scrollbar', !hasScroll);
+  wrap.classList.toggle('at-bottom', !hasScroll || nav.scrollTop >= max - 8);
+  if (hasScroll) {
+    const trackTop = 8;
+    const trackPadding = 16;
+    const trackHeight = Math.max(24, nav.clientHeight - trackPadding);
+    const thumbHeight = Math.max(28, Math.round((nav.clientHeight / nav.scrollHeight) * trackHeight));
+    const thumbTop = trackTop + Math.round((nav.scrollTop / max) * Math.max(0, trackHeight - thumbHeight));
+    wrap.style.setProperty('--sidebar-thumb-height', thumbHeight + 'px');
+    wrap.style.setProperty('--sidebar-thumb-top', thumbTop + 'px');
+  }
 }
 function _bindSidebarScrollUX() {
   const nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
+  const wrap = document.getElementById('sidebar-scroll') || document.querySelector('.sidebar-scroll');
   if (!nav || nav.dataset.scrollUxReady) return;
   nav.dataset.scrollUxReady = '1';
   nav.addEventListener('scroll', () => {
-    nav.classList.add('is-scrolling');
+    wrap && wrap.classList.add('is-scrolling');
     _updateSidebarScrollState();
     clearTimeout(_sidebarScrollFadeTimer);
-    _sidebarScrollFadeTimer = setTimeout(() => nav.classList.remove('is-scrolling'), 650);
+    _sidebarScrollFadeTimer = setTimeout(() => wrap && wrap.classList.remove('is-scrolling'), 650);
   }, { passive: true });
 }
 function _playSidebarScrollHint() {
