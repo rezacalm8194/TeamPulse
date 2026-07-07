@@ -1920,8 +1920,7 @@ body.light mark { background: rgba(251,191,36,.5); }
    یک مربع تیک‌خور بالای هر کارت نشون داده می‌شه؛ لمس/کلیک روی کارت به‌جای باز
    کردن، فقط انتخاب/عدم‌انتخاب را toggle می‌کنه. */
 body.instr-select-mode ._ifcard-more-btn,
-body.instr-select-mode ._ifcard-actions,
-body.instr-select-mode ._ifcard-qa { display:none!important; }
+body.instr-select-mode ._ifcard-actions { display:none!important; }
 body.instr-select-mode ._ifcard { user-select:none; -webkit-user-select:none; }
 body.instr-select-mode ._ifcard::after {
   content:'';
@@ -12719,10 +12718,6 @@ async function renderInstructions(instrSearch) {
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>
             <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
-          </div>` : !instrSearch && canCreateHere ? `
-          <div style="display:flex;gap:8px;justify-content:center">
-            <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>
-            <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
           </div>` : ''}
       </div>` + _instrFabHtml());
     return;
@@ -12786,10 +12781,6 @@ async function renderInstructions(instrSearch) {
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین کردن'}">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
-            </div>
-            <div class="_ifcard-qa" style="position:absolute;bottom:0;left:0;right:0;display:flex;gap:0;opacity:0;transition:opacity .15s;pointer-events:none;border-top:1px solid var(--border)">
-              <button onclick="event.stopPropagation();openAddInstruction(${item.id},'note')" style="flex:1;padding:8px 4px;border:none;background:var(--bg3);color:var(--accent2);cursor:pointer;font-size:11px;font-family:var(--font);font-weight:600;border-radius:0 0 0 14px">📝 یادداشت</button>
-              <button onclick="event.stopPropagation();openAddInstruction(${item.id},'category')" style="flex:1;padding:8px 4px;border:none;border-right:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px;font-family:var(--font);font-weight:600;border-radius:0 0 14px 0">📁 زیرپوشه</button>
             </div>
           </div>`;
       });
@@ -12964,14 +12955,6 @@ async function renderInstructions(instrSearch) {
     html += `</div>`;
   }
 
-  /* ── Bottom add buttons when inside folder ── */
-  if (_instrParentId && _teamCanCreateInstruction(_instrParentId)) {
-    html += `<div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت داخل این پوشه</button>
-      <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 زیرپوشه</button>
-    </div>`;
-  }
-
   /* ── Floating action button (mobile create shortcut) ── */
   html += _instrFabHtml();
 
@@ -12982,7 +12965,6 @@ async function renderInstructions(instrSearch) {
     s.textContent = `
       @media (hover:hover) and (pointer:fine) {
         ._ifcard:hover ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
-        ._ifcard:hover ._ifcard-qa      { opacity:1 !important; pointer-events:auto !important; }
       }
       ._ifcard-more-btn{
         display:none; width:26px;height:26px;border-radius:7px;flex-shrink:0;
@@ -12991,8 +12973,7 @@ async function renderInstructions(instrSearch) {
       }
       @media (hover:none), (pointer:coarse) {
         ._ifcard-more-btn{ display:flex; }
-        ._ifcard.show-actions ._ifcard-actions,
-        ._ifcard.show-actions ._ifcard-qa { opacity:1 !important; pointer-events:auto !important; }
+        ._ifcard.show-actions ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
         ._ifcard.show-actions ._ifcard-more-btn{ display:none; }
       }
     `;
@@ -13041,7 +13022,7 @@ function _viewBtn(key, label) {
    فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
   const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
-  const canCreate = _teamCanCreateInstruction(_instrParentId);
+  const canCreate = !_instrParentId && _teamCanCreateInstruction(_instrParentId);
   return `
     <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
       ${canCreate ? `
@@ -13204,7 +13185,7 @@ function _instrCardLPStart(e) {
   if (_instrSelectMode) return; // در حالت انتخاب، کلیک‌ها را handler دیگری مدیریت می‌کنه
   const card = e.target.closest && e.target.closest('._ifcard');
   if (!card || !card.dataset.id) return;
-  if (e.target.closest('._ifcard-more-btn, ._ifcard-actions, ._ifcard-qa')) return;
+  if (e.target.closest('._ifcard-more-btn, ._ifcard-actions')) return;
   const pt = e.touches ? e.touches[0] : e;
   _instrLPStartX = pt.clientX; _instrLPStartY = pt.clientY;
   _instrLPCard = card;
