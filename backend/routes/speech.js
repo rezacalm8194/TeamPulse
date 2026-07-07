@@ -8,10 +8,28 @@ const { randomUUID } = require('crypto');
 const auth = require('../middleware/auth');
 
 const DEBUG_AUDIO_DIR = path.join(__dirname, '..', '.speech-debug');
-const VOSK_MODEL_DIR = path.join(__dirname, '..', 'speech-models', 'fa');
+const VOSK_MODEL_DIR = process.env.VOSK_MODEL_PATH || path.join(__dirname, '..', 'speech-models', 'fa');
+const VOSK_WORKER_PATH = path.join(__dirname, '..', 'vosk_worker.py');
+const VOSK_PYTHON = process.env.VOSK_PYTHON || path.join(__dirname, '..', '.venv-speech', 'bin', 'python');
 let lastDebugAudio = null;
-let cachedVoskModel = null;
-let cachedVosk = null;
+let voskWorker = null;
+let voskWorkerSeq = 0;
+const voskWorkerState = {
+  started: false,
+  ready: false,
+  initializing: false,
+  pendingReady: null,
+  errorCode: null,
+  errorMessage: null,
+  voskInstalled: false,
+  voskVersion: null,
+  modelLoaded: false,
+  modelPath: VOSK_MODEL_DIR,
+  modelLoadTime: null,
+  language: 'fa',
+  pending: new Map(),
+  stdoutBuffer: '',
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -88,8 +106,22 @@ async function convertToWav(inputPath, outputPath) {
   ]);
 }
 
+async function toolAvailable(command) {
+  try {
+    await runTool(command, ['-version']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function speechProvider() {
   return (process.env.SPEECH_PROVIDER || 'vosk').trim().toLowerCase();
+}
+
+function pythonCommand() {
+  if (fs.existsSync(VOSK_PYTHON)) return VOSK_PYTHON;
+  return process.env.PYTHON || 'python3';
 }
 
 function isVoskModelDirectory(dir) {
@@ -104,93 +136,186 @@ function isVoskModelDirectory(dir) {
   }
 }
 
-function extractPcmFromWav(buffer) {
-  if (!buffer || buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
-    throw new Error('invalid wav file');
-  }
-  let offset = 12;
-  let audioFormat = null;
-  let sampleRate = null;
-  let channels = null;
-  let bitsPerSample = null;
-  let dataStart = null;
-  let dataSize = null;
-  while (offset + 8 <= buffer.length) {
-    const chunkId = buffer.toString('ascii', offset, offset + 4);
-    const chunkSize = buffer.readUInt32LE(offset + 4);
-    const chunkStart = offset + 8;
-    if (chunkId === 'fmt ') {
-      audioFormat = buffer.readUInt16LE(chunkStart);
-      channels = buffer.readUInt16LE(chunkStart + 2);
-      sampleRate = buffer.readUInt32LE(chunkStart + 4);
-      bitsPerSample = buffer.readUInt16LE(chunkStart + 14);
-    } else if (chunkId === 'data') {
-      dataStart = chunkStart;
-      dataSize = chunkSize;
-      break;
-    }
-    offset = chunkStart + chunkSize + (chunkSize % 2);
-  }
-  if (dataStart == null || !dataSize) throw new Error('wav data chunk missing');
-  return {
-    pcm: buffer.subarray(dataStart, Math.min(dataStart + dataSize, buffer.length)),
-    format: { audioFormat, channels, sampleRate, bitsPerSample },
-  };
+function applyVoskWorkerInfo(info) {
+  if (!info) return;
+  voskWorkerState.errorCode = info.errorCode || null;
+  voskWorkerState.errorMessage = info.message || null;
+  voskWorkerState.voskInstalled = !!info.voskInstalled;
+  voskWorkerState.voskVersion = info.voskVersion || null;
+  voskWorkerState.modelLoaded = !!info.modelLoaded;
+  voskWorkerState.modelPath = info.modelPath || VOSK_MODEL_DIR;
+  voskWorkerState.modelLoadTime = info.modelLoadTime || null;
+  voskWorkerState.language = info.language || 'fa';
+  voskWorkerState.ready = !!info.ready;
 }
 
-function loadVoskModel(debug) {
-  debug.vosk = debug.vosk || {};
-  debug.vosk.modelPath = VOSK_MODEL_DIR;
-  debug.vosk.modelExists = isVoskModelDirectory(VOSK_MODEL_DIR);
-  debug.voskModelLoaded = false;
-  if (!debug.vosk.modelExists) {
-    const err = new Error('Vosk Persian model is not installed');
-    err.code = 'vosk_model_missing';
-    throw err;
+function rejectPendingVoskRequests(err) {
+  for (const item of voskWorkerState.pending.values()) {
+    item.reject(err);
   }
-  if (!cachedVosk) {
-    try {
-      cachedVosk = require('vosk');
-      if (typeof cachedVosk.setLogLevel === 'function') cachedVosk.setLogLevel(0);
-      debug.vosk.packageLoaded = true;
-    } catch (e) {
-      debug.vosk.packageLoaded = false;
-      const err = new Error('Vosk package is not installed');
-      err.code = 'vosk_engine_missing';
-      throw err;
+  voskWorkerState.pending.clear();
+}
+
+function handleVoskWorkerLine(line) {
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch (e) {
+    console.warn('[speech-vosk-worker] non-json output', line);
+    return;
+  }
+  if (msg.event === 'ready') {
+    applyVoskWorkerInfo(msg);
+    voskWorkerState.started = true;
+    voskWorkerState.initializing = false;
+    if (voskWorkerState.pendingReady) {
+      voskWorkerState.pendingReady.resolve(voskHealthSnapshot());
+      voskWorkerState.pendingReady = null;
     }
-  } else {
-    debug.vosk.packageLoaded = true;
+    return;
   }
-  if (!cachedVoskModel) cachedVoskModel = new cachedVosk.Model(VOSK_MODEL_DIR);
-  debug.vosk.modelLoaded = true;
-  debug.voskModelLoaded = true;
-  return { vosk: cachedVosk, model: cachedVoskModel };
+  if (msg.event === 'error') {
+    applyVoskWorkerInfo(msg);
+    voskWorkerState.initializing = false;
+    const err = new Error(msg.message || 'Vosk worker failed');
+    err.code = msg.errorCode || 'vosk_engine_missing';
+    if (voskWorkerState.pendingReady) {
+      voskWorkerState.pendingReady.reject(err);
+      voskWorkerState.pendingReady = null;
+    }
+    rejectPendingVoskRequests(err);
+    return;
+  }
+  if (msg.id && voskWorkerState.pending.has(msg.id)) {
+    const item = voskWorkerState.pending.get(msg.id);
+    voskWorkerState.pending.delete(msg.id);
+    if (msg.ok) item.resolve(msg);
+    else {
+      const err = new Error(msg.message || 'Vosk transcription failed');
+      err.code = msg.errorCode || 'transcription_failed';
+      item.reject(err);
+    }
+  }
+}
+
+function startVoskWorker() {
+  if (voskWorker && !voskWorker.killed && voskWorkerState.ready) {
+    return Promise.resolve(voskHealthSnapshot());
+  }
+  if (voskWorkerState.initializing && voskWorkerState.pendingReady) {
+    return voskWorkerState.pendingReady.promise;
+  }
+  if (!isVoskModelDirectory(VOSK_MODEL_DIR)) {
+    voskWorkerState.ready = false;
+    voskWorkerState.modelLoaded = false;
+    voskWorkerState.modelPath = VOSK_MODEL_DIR;
+    voskWorkerState.errorCode = 'vosk_model_missing';
+    voskWorkerState.errorMessage = 'Vosk Persian model is not installed';
+    const err = new Error(voskWorkerState.errorMessage);
+    err.code = 'vosk_model_missing';
+    return Promise.reject(err);
+  }
+  const py = pythonCommand();
+  voskWorkerState.initializing = true;
+  voskWorkerState.ready = false;
+  voskWorkerState.errorCode = null;
+  voskWorkerState.errorMessage = null;
+  voskWorkerState.stdoutBuffer = '';
+  const pendingReady = {};
+  pendingReady.promise = new Promise((resolve, reject) => {
+    pendingReady.resolve = resolve;
+    pendingReady.reject = reject;
+  });
+  voskWorkerState.pendingReady = pendingReady;
+  voskWorker = spawn(py, [VOSK_WORKER_PATH], {
+    cwd: path.join(__dirname, '..'),
+    windowsHide: true,
+    env: {
+      ...process.env,
+      VOSK_MODEL_PATH: VOSK_MODEL_DIR,
+      PYTHONUNBUFFERED: '1',
+    },
+  });
+  voskWorker.stdout.on('data', chunk => {
+    voskWorkerState.stdoutBuffer += chunk.toString();
+    const lines = voskWorkerState.stdoutBuffer.split(/\r?\n/);
+    voskWorkerState.stdoutBuffer = lines.pop() || '';
+    lines.filter(Boolean).forEach(handleVoskWorkerLine);
+  });
+  voskWorker.stderr.on('data', chunk => {
+    console.error('[speech-vosk-worker]', chunk.toString().trim());
+  });
+  voskWorker.on('error', err => {
+    voskWorkerState.initializing = false;
+    voskWorkerState.ready = false;
+    voskWorkerState.voskInstalled = false;
+    voskWorkerState.errorCode = err.code === 'ENOENT' ? 'vosk_engine_missing' : 'vosk_worker_error';
+    voskWorkerState.errorMessage = err.message;
+    err.code = voskWorkerState.errorCode;
+    if (voskWorkerState.pendingReady) {
+      voskWorkerState.pendingReady.reject(err);
+      voskWorkerState.pendingReady = null;
+    }
+    rejectPendingVoskRequests(err);
+  });
+  voskWorker.on('exit', code => {
+    voskWorkerState.started = false;
+    voskWorkerState.initializing = false;
+    voskWorkerState.ready = false;
+    voskWorkerState.errorCode = voskWorkerState.errorCode || 'vosk_worker_exited';
+    voskWorkerState.errorMessage = voskWorkerState.errorMessage || `Vosk worker exited with code ${code}`;
+    const err = new Error(voskWorkerState.errorMessage);
+    err.code = voskWorkerState.errorCode;
+    if (voskWorkerState.pendingReady) {
+      voskWorkerState.pendingReady.reject(err);
+      voskWorkerState.pendingReady = null;
+    }
+    rejectPendingVoskRequests(err);
+  });
+  return pendingReady.promise;
+}
+
+async function ensureVoskReady() {
+  if (voskWorkerState.ready && voskWorker && !voskWorker.killed) return voskHealthSnapshot();
+  return startVoskWorker();
+}
+
+function voskHealthSnapshot() {
+  return {
+    voskInstalled: voskWorkerState.voskInstalled,
+    voskVersion: voskWorkerState.voskVersion,
+    modelLoaded: voskWorkerState.modelLoaded,
+    modelPath: voskWorkerState.modelPath,
+    modelLoadTime: voskWorkerState.modelLoadTime,
+    language: voskWorkerState.language,
+    errorCode: voskWorkerState.errorCode,
+    errorMessage: voskWorkerState.errorMessage,
+  };
 }
 
 async function transcribeWithVosk(convertedPath, debug) {
   debug.speechProvider = 'vosk';
-  debug.transcriptionEngine = 'vosk';
-  const { vosk, model } = loadVoskModel(debug);
-  const wavBuffer = await fsp.readFile(convertedPath);
-  const wav = extractPcmFromWav(wavBuffer);
-  debug.vosk.wav = wav.format;
-  if (wav.format.sampleRate !== 16000 || wav.format.channels !== 1 || wav.format.bitsPerSample !== 16) {
-    const err = new Error('Converted wav must be 16kHz mono 16-bit PCM');
-    err.code = 'audio_unprocessable';
-    throw err;
-  }
-  const recognizer = new vosk.Recognizer({ model, sampleRate: 16000 });
-  try {
-    recognizer.acceptWaveform(wav.pcm);
-    const rawResult = recognizer.finalResult() || {};
-    const result = typeof rawResult === 'string' ? JSON.parse(rawResult || '{}') : rawResult;
-    const text = (result.text || '').trim();
-    debug.vosk.result = result;
-    return text;
-  } finally {
-    if (typeof recognizer.free === 'function') recognizer.free();
-  }
+  debug.transcriptionEngine = 'python-vosk-worker';
+  const health = await ensureVoskReady();
+  debug.vosk = { ...health };
+  debug.voskVersion = health.voskVersion;
+  debug.modelLoaded = health.modelLoaded;
+  debug.modelPath = health.modelPath;
+  debug.modelLoadTime = health.modelLoadTime;
+  debug.voskModelLoaded = health.modelLoaded;
+  const id = `req-${++voskWorkerSeq}`;
+  const response = await new Promise((resolve, reject) => {
+    voskWorkerState.pending.set(id, { resolve, reject });
+    voskWorker.stdin.write(JSON.stringify({ id, action: 'transcribe', path: convertedPath }) + '\n', err => {
+      if (err) {
+        voskWorkerState.pending.delete(id);
+        err.code = 'vosk_worker_write_failed';
+        reject(err);
+      }
+    });
+  });
+  debug.vosk.result = response.result || null;
+  return (response.text || '').trim();
 }
 
 async function transcribeWithOpenAI(convertedBuffer, model, debug) {
@@ -228,6 +353,7 @@ async function transcribeWithOpenAI(convertedBuffer, model, debug) {
       code: openAiError.code || null,
       message: openAiMessage,
     };
+    debug.openaiStatus = response.status;
     const err = new Error(openAiMessage);
     err.provider = 'openai';
     err.status = response.status;
@@ -255,6 +381,38 @@ router.get('/ping', (req, res) => {
     url: req.originalUrl,
   });
   res.json({ ok: true, route: 'speech', time: new Date().toISOString() });
+});
+
+router.get('/health', async (req, res) => {
+  const provider = speechProvider();
+  if (provider === 'vosk' && !voskWorkerState.ready && !voskWorkerState.initializing) {
+    startVoskWorker().catch(err => {
+      console.warn('[speech-health] vosk warmup failed', err.code || err.message);
+    });
+  }
+  const [ffmpeg, ffprobe] = await Promise.all([
+    toolAvailable('ffmpeg'),
+    toolAvailable('ffprobe'),
+  ]);
+  const modelExists = isVoskModelDirectory(VOSK_MODEL_DIR);
+  const ready = provider === 'vosk'
+    ? !!(ffmpeg && ffprobe && voskWorkerState.voskInstalled && voskWorkerState.modelLoaded && voskWorkerState.ready)
+    : true;
+  res.json({
+    provider,
+    ffmpeg,
+    ffprobe,
+    voskInstalled: voskWorkerState.voskInstalled,
+    voskVersion: voskWorkerState.voskVersion,
+    modelLoaded: voskWorkerState.modelLoaded,
+    modelExists,
+    modelPath: voskWorkerState.modelPath || VOSK_MODEL_DIR,
+    modelLoadTime: voskWorkerState.modelLoadTime,
+    language: voskWorkerState.language || 'fa',
+    errorCode: voskWorkerState.errorCode,
+    errorMessage: voskWorkerState.errorMessage,
+    ready,
+  });
 });
 
 function speechRouteHit(req, res, next) {
@@ -391,9 +549,9 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
     try {
       if (provider === 'openai') {
         text = await transcribeWithOpenAI(convertedBuffer, model, debug);
-      } else if (provider === 'vosk' || provider === 'webspeech') {
+      } else if (provider === 'vosk') {
         text = await transcribeWithVosk(convertedPath, debug);
-      } else if (provider === 'deepgram') {
+      } else if (provider === 'webspeech' || provider === 'deepgram') {
         return res.status(501).json({
           error: 'speech_provider_not_implemented',
           message: 'این provider هنوز پیاده‌سازی نشده است.',
@@ -462,6 +620,13 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
           debug,
         });
       }
+      if (e.code === 'vosk_worker_error' || e.code === 'vosk_worker_exited' || e.code === 'vosk_worker_write_failed') {
+        return res.status(503).json({
+          error: 'vosk_engine_missing',
+          message: 'موتور Vosk روی سرور آماده نیست.',
+          debug,
+        });
+      }
       if (e.code === 'audio_unprocessable') {
         return res.status(422).json({
           error: 'audio_unprocessable',
@@ -493,5 +658,13 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
     res.status(500).json({ error: 'speech_error', message: msg });
   }
 });
+
+if (speechProvider() === 'vosk') {
+  setImmediate(() => {
+    startVoskWorker()
+      .then(info => console.log('[speech] Vosk worker ready', info))
+      .catch(err => console.warn('[speech] Vosk worker not ready', err.code || err.message));
+  });
+}
 
 module.exports = router;

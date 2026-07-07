@@ -1,36 +1,43 @@
-# Vosk Persian speech model
+# Vosk Persian Model
 
-Place the extracted Persian Vosk model files in this directory.
+This directory is the runtime location for the Persian Vosk model.
 
-Expected path:
+Expected layout:
 
 ```text
 backend/speech-models/fa/
+  conf/
+  graph/ or am/
+  ...
 ```
 
-This folder must contain the model files directly, not another nested wrapper folder.
-For example, files and folders such as `am`, `conf`, `graph`, and `ivector` should be inside `fa`.
+Do not keep the downloaded model inside an extra nested folder. The installer handles this automatically.
 
-Suggested setup on the server:
+Recommended setup on Ubuntu 24.04:
 
 ```bash
-cd backend
-npm install
-npm install vosk
-# Download a Persian model from https://alphacephei.com/vosk/models
-# Extract it into backend/speech-models/fa
+cd /home/pachim/TeamPulse.ir
+bash scripts/install-vosk.sh
 ```
 
-Runtime requirements:
+The installer downloads the official Persian model from the Vosk model list, extracts it here, installs the Python Vosk worker dependencies, and writes these values into `backend/.env`:
 
-```bash
-ffmpeg
-ffprobe
+```env
 SPEECH_PROVIDER=vosk
+VOSK_MODEL_PATH=/home/pachim/TeamPulse.ir/backend/speech-models/fa
+VOSK_PYTHON=/home/pachim/TeamPulse.ir/backend/.venv-speech/bin/python
 ```
 
-If the model is missing, the API returns:
+Health check:
+
+```bash
+curl https://teampulse.ir/api/speech/health
+```
+
+Expected errors:
 
 ```json
 { "error": "vosk_model_missing" }
+{ "error": "vosk_engine_missing" }
+{ "error": "audio_tool_missing" }
 ```
