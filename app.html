@@ -699,6 +699,24 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   animation: voice-pulse 1.2s ease-in-out infinite;
 }
 .voice-mic-btn.voice-error { background: var(--amber); border-color: var(--amber); color: #fff; opacity: 1; }
+.voice-api-test-btn {
+  position: absolute;
+  bottom: 12px;
+  left: 46px;
+  min-height: 30px;
+  border-radius: 16px;
+  border: 1px solid var(--border2);
+  background: rgba(24,28,39,.72);
+  color: var(--text3);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 0 9px;
+  cursor: pointer;
+  z-index: 3;
+  opacity: .62;
+}
+.voice-api-test-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent2); }
 @keyframes voice-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,.45); }
   50% { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
@@ -706,7 +724,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .voice-status-label {
   position: absolute;
   bottom: 22px;
-  left: 58px;
+  left: 126px;
   font-size: 10.5px;
   color: var(--text2);
   background: var(--bg2);
@@ -745,6 +763,10 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .voice-debug-btn:hover { border-color: var(--accent); color: var(--accent2); }
 @media(max-width:480px){ .voice-debug-grid{ grid-template-columns:1fr; } }
+@media(max-width:480px){
+  .voice-api-test-btn{ left:44px; font-size:9px; padding:0 7px; }
+  .voice-status-label{ left:102px; max-width:calc(100% - 112px); overflow:hidden; text-overflow:ellipsis; }
+}
 /* ── Form ───────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -20839,10 +20861,39 @@ function _voiceDebugRows(debug) {
     ['ffprobe codec', debug?.probe?.codec],
     ['converted file size', debug?.converted?.size],
     ['OpenAI response textLength', debug?.transcription?.textLength],
+    ['page protocol', debug?.ping?.pageProtocol],
+    ['page origin', debug?.ping?.pageOrigin],
+    ['api ping status', debug?.ping?.status],
+    ['api ping responseText', debug?.ping?.responseText],
     ['response status', debug?.response?.status],
     ['errorCode', debug?.response?.errorCode],
     ['responseText', debug?.response?.responseText],
   ];
+}
+async function _voiceTestSpeechApi(debugEl) {
+  const debug = {
+    ping: { status: null, responseText: null, error: null, pageOrigin: location.origin, pageProtocol: location.protocol },
+    response: { errorCode: null, status: null, responseText: null },
+  };
+  try {
+    const res = await fetch('/api/speech/ping', { method: 'GET', cache: 'no-store' });
+    const text = await res.text().catch(e => `__READ_RESPONSE_TEXT_FAILED__: ${e?.message || e}`);
+    debug.ping.status = res.status;
+    debug.ping.responseText = text;
+    debug.response.status = res.status;
+    debug.response.responseText = text;
+    debug.response.errorCode = res.ok ? null : 'speech_ping_failed';
+  } catch (e) {
+    debug.ping.status = 0;
+    debug.ping.error = e?.message || String(e);
+    debug.ping.responseText = debug.ping.error;
+    debug.response.status = 0;
+    debug.response.errorCode = 'speech_ping_fetch_failed';
+    debug.response.responseText = debug.ping.error;
+  }
+  console.log('[voice-api-ping]', debug);
+  _voiceShowDebugPanel(debugEl, debug);
+  return debug;
 }
 function _voicePlayDebugAudio(type) {
   const url = type === 'converted'
@@ -20864,6 +20915,7 @@ function _voiceShowDebugPanel(debugEl, debug) {
       ${rows.map(([k, v]) => `<div>${k}</div><div>${escapeHtml(_voiceDebugVal(v))}</div>`).join('')}
     </div>
     <div class="voice-debug-actions">
+      <button type="button" class="voice-debug-btn" data-voice-debug-ping="1">تست اتصال API صدا</button>
       <button type="button" class="voice-debug-btn" data-voice-debug-play="raw">پخش فایل ضبط‌شده</button>
       <button type="button" class="voice-debug-btn" data-voice-debug-play="converted">پخش فایل تبدیل‌شده</button>
     </div>
@@ -21033,6 +21085,12 @@ function _attachVoiceButton(el) {
   btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
   btn.innerHTML = _VOICE_ICON_MIC;
 
+  const pingBtn = document.createElement('button');
+  pingBtn.type = 'button';
+  pingBtn.className = 'voice-api-test-btn';
+  pingBtn.title = 'تست اتصال API صدا';
+  pingBtn.textContent = 'API';
+
   const statusEl = document.createElement('span');
   statusEl.className = 'voice-status-label';
   statusEl.style.display = 'none';
@@ -21041,6 +21099,12 @@ function _attachVoiceButton(el) {
   debugEl.className = 'voice-debug-panel';
   debugEl.style.display = 'none';
   debugEl.addEventListener('click', (e) => {
+    if (e.target?.dataset?.voiceDebugPing) {
+      e.preventDefault();
+      e.stopPropagation();
+      _voiceTestSpeechApi(debugEl);
+      return;
+    }
     const playType = e.target?.dataset?.voiceDebugPlay;
     if (!playType) return;
     e.preventDefault();
@@ -21054,7 +21118,14 @@ function _attachVoiceButton(el) {
     _toggleVoiceInput(el, btn, statusEl, debugEl);
   });
 
+  pingBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    _voiceTestSpeechApi(debugEl);
+  });
+
   parent.appendChild(btn);
+  parent.appendChild(pingBtn);
   parent.appendChild(statusEl);
   parent.appendChild(debugEl);
 
