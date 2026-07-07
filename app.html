@@ -20828,6 +20828,7 @@ class MediaRecorderVoiceEngine {
             else if (code === 'openai_auth_failed') onError && onError({ code: 'openai-auth-failed', debug: debugPayload });
             else if (code === 'openai_permission_denied') onError && onError({ code: 'openai-permission-denied', debug: debugPayload });
             else if (code === 'openai_server_error') onError && onError({ code: 'openai-server-error', debug: debugPayload });
+            else if (code === 'vosk_venv_missing') onError && onError({ code: 'vosk-venv-missing', debug: debugPayload });
             else if (code === 'vosk_model_missing') onError && onError({ code: 'vosk-model-missing', debug: debugPayload });
             else if (code === 'vosk_engine_missing') onError && onError({ code: 'vosk-engine-missing', debug: debugPayload });
             else if (code === 'empty_transcription') onError && onError({ code: 'empty-transcription', debug: debugPayload });
@@ -20964,6 +20965,8 @@ function _voiceDebugRows(debug) {
     ['modelPath', debug?.modelPath || debug?.health?.modelPath],
     ['modelLoadTime', debug?.modelLoadTime ?? debug?.health?.modelLoadTime],
     ['health ready', debug?.health?.ready],
+    ['venvExists', debug?.health?.venvExists],
+    ['pythonPath', debug?.health?.pythonPath],
     ['health ffmpeg', debug?.health?.ffmpeg],
     ['health ffprobe', debug?.health?.ffprobe],
     ['frontend audioBlobSize', debug?.frontend?.audioBlobSize],
@@ -21228,6 +21231,8 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'دسترسی OpenAI API برای این عملیات مجاز نیست';
       } else if (errCode === 'openai-server-error') {
         msg = 'سرویس OpenAI موقتاً خطا داده است';
+      } else if (errCode === 'vosk-venv-missing') {
+        msg = 'محیط مجازی Python برای تبدیل صدا روی سرور ساخته نشده است';
       } else if (errCode === 'vosk-model-missing') {
         msg = 'مدل تبدیل صدای فارسی روی سرور نصب نشده';
       } else if (errCode === 'vosk-engine-missing') {
