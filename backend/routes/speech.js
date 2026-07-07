@@ -33,9 +33,16 @@ router.post('/transcribe', auth, upload.single('audio'), async (req, res) => {
 
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
     const filename = req.file.originalname || 'voice.webm';
+    console.log('[speech] received audio', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path || null,
+    });
     const form = new FormData();
     form.append('model', model);
-    form.append('language', req.body.language || 'fa');
+    form.append('language', 'fa');
+    form.append('prompt', 'این فایل شامل گفتار فارسی است. متن را دقیق و روان به فارسی پیاده‌سازی کن.');
     form.append('file', new Blob([req.file.buffer], { type: req.file.mimetype || 'audio/webm' }), filename);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -46,15 +53,30 @@ router.post('/transcribe', auth, upload.single('audio'), async (req, res) => {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      console.error('[speech] OpenAI transcription failed', {
+        status: response.status,
+        payload,
+        file: {
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+          path: req.file.path || null,
+        },
+      });
+      const openAiMessage = payload.error?.message || 'Speech transcription failed';
+      const isFormatError = /format|codec|mime|unsupported|invalid file/i.test(openAiMessage);
       return res.status(response.status).json({
-        error: 'transcription_failed',
-        message: payload.error?.message || 'Speech transcription failed',
+        error: isFormatError ? 'unsupported_audio_format' : 'transcription_failed',
+        message: process.env.NODE_ENV === 'production' ? 'Speech transcription failed' : openAiMessage,
+        details: process.env.NODE_ENV === 'production' ? undefined : payload.error,
       });
     }
 
+    console.log('[speech] transcription completed', { textLength: (payload.text || '').length });
     res.json({ text: payload.text || '' });
   } catch (e) {
     const msg = e && e.message ? e.message : 'speech transcription error';
+    console.error('[speech] transcription route error', e);
     if (msg.includes('audio file required')) {
       return res.status(400).json({ error: 'audio_required', message: 'audio file required' });
     }

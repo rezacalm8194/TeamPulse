@@ -20557,12 +20557,18 @@ class MediaRecorderVoiceEngine {
   }
   _mimeType() {
     const types = [
+      'audio/mp4',
       'audio/webm;codecs=opus',
       'audio/webm',
-      'audio/mp4',
-      'audio/mpeg',
+      'audio/wav',
     ];
     return types.find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  }
+  _fileNameFor(type) {
+    if ((type || '').includes('mp4')) return 'audio.mp4';
+    if ((type || '').includes('webm')) return 'audio.webm';
+    if ((type || '').includes('wav')) return 'audio.wav';
+    return 'audio.webm';
   }
   async start({ lang, onFinal, onError, onEnd, onStatus }) {
     if (!window.isSecureContext && location.hostname !== 'localhost') {
@@ -20600,20 +20606,22 @@ class MediaRecorderVoiceEngine {
           this._stream = null;
           const blobType = mimeType || this._chunks[0]?.type || 'audio/webm';
           const blob = new Blob(this._chunks, { type: blobType });
-          if (!blob.size || blob.size < 800) {
-            onError && onError('no-speech');
+          console.log('[voice] audioBlob.size:', blob.size, 'audioBlob.type:', blob.type, 'chunks:', this._chunks.length);
+          if (!blob.size || blob.size < 5000) {
+            onError && onError('audio-too-small');
             return;
           }
-          onStatus && onStatus('در حال تبدیل صدا...');
+          onStatus && onStatus('در حال تبدیل صدا به متن...');
           const fd = new FormData();
-          const ext = blobType.includes('mp4') ? 'mp4' : blobType.includes('mpeg') ? 'mp3' : 'webm';
-          fd.append('audio', blob, `voice.${ext}`);
-          fd.append('language', (lang || 'fa-IR').split('-')[0]);
+          const fileName = this._fileNameFor(blobType);
+          fd.append('audio', blob, fileName);
+          fd.append('language', 'fa');
           const res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) {
             const code = data.error || '';
             if (code === 'speech_service_not_configured') onError && onError('server-not-configured');
+            else if (code === 'unsupported_audio_format') onError && onError('unsupported-audio-format');
             else onError && onError(data.message || 'transcription-failed');
             return;
           }
@@ -20627,7 +20635,7 @@ class MediaRecorderVoiceEngine {
         }
       };
       this._recorder.start();
-      onStatus && onStatus('در حال ضبط...');
+      onStatus && onStatus('در حال ضبط... صحبت کنید');
     } catch(e) {
       const name = e && e.name;
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') onError && onError('permission-denied');
@@ -20711,7 +20719,7 @@ function _setVoiceBtnState(btn, statusEl, state, label) {
   else if (state === 'error') { btn.classList.add('voice-error'); btn.innerHTML = _VOICE_ICON_WARN; btn.title = 'خطا در ورودی صوتی'; }
   else {
     btn.innerHTML = _VOICE_ICON_MIC;
-    btn.title = _voiceIsIOS() ? 'باز کردن دیکته کیبورد آیفون' : 'ورودی صوتی (تبدیل گفتار به متن)';
+    btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
   }
   if (statusEl) {
     if (label) {
@@ -20773,7 +20781,7 @@ function _toggleVoiceInput(el, btn, statusEl) {
     existing.engine.stop();
     if (existing.engine.kind === 'media') {
       _stopVoiceTimer(existing);
-      _setVoiceBtnState(btn, statusEl, 'recording', 'در حال تبدیل صدا...');
+      _setVoiceBtnState(btn, statusEl, 'recording', 'در حال تبدیل صدا به متن...');
       return;
     }
     _stopVoiceTimer(existing);
@@ -20828,6 +20836,10 @@ function _toggleVoiceInput(el, btn, statusEl) {
         msg = 'برای ضبط صدا باید سایت با HTTPS باز شود';
       } else if (err === 'server-not-configured') {
         msg = 'سرویس تبدیل صدا روی سرور هنوز تنظیم نشده است';
+      } else if (err === 'audio-too-small') {
+        msg = 'صدای کافی ضبط نشد. دوباره نزدیک‌تر به میکروفون صحبت کنید.';
+      } else if (err === 'unsupported-audio-format') {
+        msg = 'فرمت صدای ضبط‌شده پشتیبانی نشد';
       } else if (err === 'no-speech') {
         msg = 'صدایی شنیده نشد';
       }
