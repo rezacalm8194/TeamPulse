@@ -15690,8 +15690,7 @@ function renderTodoList() {
   if (_archiveChanged) _save(false);
 
   updateTopbarActions(`
-    <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
-    <button class="btn btn-ghost" onclick="openTodoArchive()" style="margin-right:6px">📦 بایگانی</button>
+    <button class="btn btn-ghost btn-sm" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها" style="width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center">📦</button>
   `);
 
   const todayKey = _jalaliToday();
@@ -15778,6 +15777,7 @@ function renderTodoList() {
   const pending = todayTodos.filter(t=>!t.done).length;
   const doneCnt = todayTodos.filter(t=>t.done).length;
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
+  const activeCount = todos.filter(t => !t.done).length;
 
   const renderTodo = (t) => {
     const isOverdue = _isTodoOverdue(t);
@@ -15863,9 +15863,15 @@ function renderTodoList() {
     </div>`;
 
   let html = `
-    <div style="margin-bottom:16px">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.12)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <div>
+          <div style="font-size:18px;font-weight:900;color:var(--text);line-height:1.4">لیست کارها</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${fa(activeCount)} کار فعال · ${fa(todayTodos.length)} امروز${overdueTodos.length ? ` · ${fa(overdueTodos.length)} عقب‌افتاده` : ''}</div>
+        </div>
+      </div>
       <button onclick="openAddTodo()"
-        style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
+        style="width:100%;padding:12px 18px;border-radius:12px;border:none;cursor:pointer;
           font-family:var(--font);font-size:15px;font-weight:700;
           background:linear-gradient(135deg,#7c6af7,#5b4de0);
           color:white;letter-spacing:.01em;
@@ -15878,21 +15884,20 @@ function renderTodoList() {
         <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
           display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
       </button>
-    </div>
-    <!-- Progress bar -->
-    ${todayTodos.length > 0 ? `
-    <div style="background:var(--bg2);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
-      <div style="flex:1">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
+      ${todayTodos.length > 0 ? `
+      <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
           <span>پیشرفت امروز</span>
           <span>${fa(doneCnt)}/${fa(todayTodos.length)} کار</span>
+          </div>
+          <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${progress}%;background:${progress===100?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .4s"></div>
+          </div>
         </div>
-        <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${progress}%;background:${progress===100?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .4s"></div>
-        </div>
-      </div>
-      <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
-    </div>` : ''}`;
+        <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
+      </div>` : ''}
+    </div>`;
 
   // ── عقب‌افتاده ──
   if (overdueTodos.length > 0) {
