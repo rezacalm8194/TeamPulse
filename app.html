@@ -20628,6 +20628,8 @@ class MediaRecorderVoiceEngine {
             const code = data.error || '';
             if (code === 'speech_service_not_configured') onError && onError('server-not-configured');
             else if (code === 'unsupported_audio_format') onError && onError('unsupported-audio-format');
+            else if (code === 'audio_unprocessable') onError && onError('audio-unprocessable');
+            else if (code === 'audio_tool_missing') onError && onError('audio-tool-missing');
             else onError && onError(data.message || 'transcription-failed');
             return;
           }
@@ -20853,6 +20855,10 @@ function _toggleVoiceInput(el, btn, statusEl) {
         msg = 'صدای کافی ضبط نشد. دوباره نزدیک‌تر به میکروفون صحبت کنید.';
       } else if (err === 'unsupported-audio-format') {
         msg = 'فرمت صدای ضبط‌شده پشتیبانی نشد';
+      } else if (err === 'audio-unprocessable') {
+        msg = 'فایل صوتی قابل پردازش نیست.';
+      } else if (err === 'audio-tool-missing') {
+        msg = 'ابزار پردازش صدا روی سرور نصب نیست';
       } else if (err === 'no-speech') {
         msg = 'صدایی شنیده نشد';
       }
