@@ -24,6 +24,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/share', require('./routes/share'));   // ← خط جدید
+app.use('/api/wallet', require('./backend/routes/wallet'));
 app.use('/api/speech', require('./backend/routes/speech'));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
 app.use('/api', (req, res) => res.status(404).json({

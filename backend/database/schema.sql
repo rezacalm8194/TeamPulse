@@ -163,6 +163,39 @@ CREATE TABLE IF NOT EXISTS sync_events (
   synced_at TEXT
 );
 
+-- کیف پول حساب کاربری
+CREATE TABLE IF NOT EXISTS user_wallets (
+  account_id TEXT PRIMARY KEY,
+  balance REAL DEFAULT 0,
+  daily_cost REAL DEFAULT 1000,
+  gift_given INTEGER DEFAULT 0,
+  last_charge_check INTEGER,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  updated_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  description TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_charge_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id TEXT NOT NULL,
+  amount REAL NOT NULL,
+  receipt_text TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  updated_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
 -- ایندکس‌ها برای سرعت
 CREATE INDEX IF NOT EXISTS idx_clients_account ON clients(account_id);
 CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id);
@@ -170,3 +203,5 @@ CREATE INDEX IF NOT EXISTS idx_payments_client ON payments(client_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_account ON tasks(account_id);
 CREATE INDEX IF NOT EXISTS idx_sync_account ON sync_events(account_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_account ON wallet_transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_charge_account ON wallet_charge_requests(account_id);

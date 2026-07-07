@@ -25,6 +25,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/share', require('./routes/share'));
 app.use('/api/reminders', require('./routes/reminders'));
+app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/speech', require('./routes/speech'));
 console.log('Speech API loaded');
 app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
