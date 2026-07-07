@@ -144,10 +144,52 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .sg-chip b { color: var(--accent2); font-weight: 700; }
 
+.sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.sidebar-scroll::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(24,28,39,0), var(--bg2));
+  opacity: .95;
+  transition: opacity .18s ease;
+}
+.sidebar-scroll.at-bottom::after { opacity: 0; }
 .sidebar-nav {
-  flex: 1 1 auto; min-height: 0; padding: 6px 8px; overflow-y: auto;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  height: 100%;
+  min-height: 0;
+  padding: 6px 8px 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148,163,184,.22) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(148,163,184,.22);
+  border-radius: 999px;
+}
+.sidebar-nav.is-scrolling,
+.sidebar-nav:hover { scrollbar-color: rgba(148,163,184,.55) transparent; }
+.sidebar-nav.is-scrolling::-webkit-scrollbar-thumb,
+.sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(148,163,184,.55); }
+@keyframes sidebarScrollHint {
+  0% { transform: translateY(0); }
+  42% { transform: translateY(-18px); }
+  72% { transform: translateY(7px); }
+  100% { transform: translateY(0); }
+}
+.sidebar-scroll.scroll-hint .sidebar-nav {
+  animation: sidebarScrollHint .52s cubic-bezier(.22,.61,.36,1);
 }
 .nav-section {
   font-size: 11px; font-weight: 600; color: var(--text2);
@@ -1632,7 +1674,9 @@ body.light mark { background: rgba(251,191,36,.5); }
     transition:transform .28s cubic-bezier(.22,.61,.36,1);box-shadow:-8px 0 32px rgba(0,0,0,.4);
     box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;min-height:0}
   .sidebar .sidebar-logo{padding-top:14px;flex:0 0 auto;padding-right:18px}
-  .sidebar .sidebar-nav{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .sidebar .sidebar-greeting{flex:0 0 auto}
+  .sidebar .sidebar-scroll{flex:1 1 auto;min-height:0}
+  .sidebar .sidebar-nav{height:100%;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .sidebar .sidebar-bottom{flex:0 0 auto;padding-bottom:14px}
   .sidebar.open{transform:translateX(0)}
   .hamburger{display:flex}
@@ -2384,7 +2428,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <div class="sg-hello" id="sg-hello">سلام 👋</div>
       <div class="sg-stats" id="sg-stats"></div>
     </div>
-    <nav class="sidebar-nav">
+    <div class="sidebar-scroll" id="sidebar-scroll">
+    <nav class="sidebar-nav" id="sidebar-nav">
       <div class="nav-section">اصلی</div>
       <a class="nav-item" data-page="students" title="شاگردان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="14.5" cy="7" r="2"/><path d="M13 11.6c2 .2 3.5 1.8 3.5 4.1"/></svg></span><span id="nav-label-students">شاگردان</span><span class="badge" id="student-badge">0</span></a>
       <a class="nav-item" data-page="sessions" title="جلسات"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="13" rx="2"/><path d="M2.5 8h15M6.5 2v3.5M13.5 2v3.5"/></svg></span><span id="nav-label-sessions">جلسات</span></a>
@@ -2415,6 +2460,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <a class="nav-item" data-page="settings" title="تنظیمات"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.7v2M10 15.3v2M17.3 10h-2M4.7 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8"/></svg></span><span>تنظیمات</span></a>
       <a class="nav-item" data-page="tutorial" title="آموزش‌ها"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.2C8.7 4 6.7 3.5 3.5 3.5v11c3.2 0 5.2.5 6.5 1.7 1.3-1.2 3.3-1.7 6.5-1.7v-11c-3.2 0-5.2.5-6.5 1.7z"/><path d="M10 5.2v11"/></svg></span><span>آموزش‌ها</span></a>
     </nav>
+    </div>
 
 
     <div class="sidebar-bottom">
@@ -14120,6 +14166,8 @@ function applyNavOrder() {
       closeSidebar();
     });
   });
+  _bindSidebarScrollUX();
+  requestAnimationFrame(_updateSidebarScrollState);
 }
 
 
@@ -18309,7 +18357,48 @@ async function _submitChargeRequest() {
 // ── Web-specific additions ────────────────────────────────────────────────────
 // Mobile sidebar
 function _updateTopbarHeight(){const tb=document.querySelector('.topbar');if(tb){document.documentElement.style.setProperty('--_topbar-h',tb.offsetHeight+'px');}}
-function openSidebar(){_updateTopbarHeight();document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-backdrop').classList.add('open');document.body.style.overflow='hidden';}
+let _sidebarHintPlayed = false;
+let _sidebarScrollFadeTimer = null;
+function _updateSidebarScrollState() {
+  const nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
+  const wrap = document.getElementById('sidebar-scroll') || document.querySelector('.sidebar-scroll');
+  if (!nav || !wrap) return;
+  const max = nav.scrollHeight - nav.clientHeight;
+  wrap.classList.toggle('at-bottom', max <= 2 || nav.scrollTop >= max - 8);
+}
+function _bindSidebarScrollUX() {
+  const nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
+  if (!nav || nav.dataset.scrollUxReady) return;
+  nav.dataset.scrollUxReady = '1';
+  nav.addEventListener('scroll', () => {
+    nav.classList.add('is-scrolling');
+    _updateSidebarScrollState();
+    clearTimeout(_sidebarScrollFadeTimer);
+    _sidebarScrollFadeTimer = setTimeout(() => nav.classList.remove('is-scrolling'), 650);
+  }, { passive: true });
+}
+function _playSidebarScrollHint() {
+  if (_sidebarHintPlayed) return;
+  _sidebarHintPlayed = true;
+  const wrap = document.getElementById('sidebar-scroll') || document.querySelector('.sidebar-scroll');
+  const nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
+  if (!wrap || !nav || nav.scrollHeight <= nav.clientHeight + 24) return;
+  wrap.classList.remove('scroll-hint');
+  void wrap.offsetWidth;
+  wrap.classList.add('scroll-hint');
+  setTimeout(() => wrap.classList.remove('scroll-hint'), 650);
+}
+function openSidebar(){
+  _updateTopbarHeight();
+  _bindSidebarScrollUX();
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('open');
+  document.body.style.overflow='hidden';
+  requestAnimationFrame(() => {
+    _updateSidebarScrollState();
+    setTimeout(_playSidebarScrollHint, 180);
+  });
+}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');document.body.style.overflow='';}
 function toggleSidebar(){const sb=document.getElementById('sidebar');if(sb&&sb.classList.contains('open')){closeSidebar();}else{openSidebar();}}
 
