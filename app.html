@@ -719,6 +719,32 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 .voice-status-label.is-error { color: var(--amber); border-color: var(--amber); }
+.voice-debug-panel {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed var(--border2);
+  border-radius: 10px;
+  background: rgba(24,28,39,.72);
+  color: var(--text2);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.voice-debug-panel strong { color: var(--text); font-weight: 800; }
+.voice-debug-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 10px; margin: 6px 0 10px; direction: ltr; text-align: left; }
+.voice-debug-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.voice-debug-btn {
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.voice-debug-btn:hover { border-color: var(--accent); color: var(--accent2); }
+@media(max-width:480px){ .voice-debug-grid{ grid-template-columns:1fr; } }
 /* ── Form ───────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -20570,6 +20596,25 @@ class MediaRecorderVoiceEngine {
     if ((type || '').includes('wav')) return 'audio.wav';
     return 'audio.webm';
   }
+  _debugPayload({ blob, fileName, data, res }) {
+    return {
+      frontend: {
+        audioBlobSize: blob?.size ?? null,
+        audioBlobType: blob?.type || null,
+        fileName: fileName || null,
+      },
+      backend: data?.debug?.backend || null,
+      probe: data?.debug?.probe || null,
+      converted: data?.debug?.converted || null,
+      transcription: data?.debug?.transcription || null,
+      response: {
+        ok: !!res?.ok,
+        status: res?.status || null,
+        errorCode: data?.error || null,
+        message: data?.message || null,
+      },
+    };
+  }
   async start({ lang, onFinal, onError, onEnd, onStatus }) {
     if (!window.isSecureContext && location.hostname !== 'localhost') {
       onError && onError('insecure-context');
@@ -20618,30 +20663,22 @@ class MediaRecorderVoiceEngine {
           fd.append('language', 'fa');
           const res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
           const data = await res.json().catch(() => ({}));
-          console.log('[voice-debug]', {
-            frontend: { audioBlobSize: blob.size, audioBlobType: blob.type, fileName },
-            backend: data.debug?.backend || null,
-            transcription: data.debug?.transcription || null,
-            response: { ok: res.ok, status: res.status, error: data.error || null },
-          });
+          const debugPayload = this._debugPayload({ blob, fileName, data, res });
+          console.log('[voice-debug]', debugPayload);
           if (!res.ok) {
             const code = data.error || '';
-            if (code === 'speech_service_not_configured') onError && onError('server-not-configured');
-            else if (code === 'unsupported_audio_format') onError && onError('unsupported-audio-format');
-            else if (code === 'audio_unprocessable') onError && onError('audio-unprocessable');
-            else if (code === 'audio_tool_missing') onError && onError('audio-tool-missing');
-            else onError && onError(data.message || 'transcription-failed');
+            if (code === 'speech_service_not_configured') onError && onError({ code: 'server-not-configured', debug: debugPayload });
+            else if (code === 'unsupported_audio_format') onError && onError({ code: 'unsupported-audio-format', debug: debugPayload });
+            else if (code === 'audio_unprocessable') onError && onError({ code: 'audio-unprocessable', debug: debugPayload });
+            else if (code === 'audio_tool_missing') onError && onError({ code: 'audio-tool-missing', debug: debugPayload });
+            else onError && onError({ code: data.message || 'transcription-failed', debug: debugPayload });
             return;
           }
           const text = (data.text || '').trim();
           if (text) onFinal && onFinal(text);
           else {
-            console.warn('[voice-debug] empty transcription', {
-              frontend: { audioBlobSize: blob.size, audioBlobType: blob.type, fileName },
-              backend: data.debug?.backend || null,
-              transcription: data.debug?.transcription || null,
-            });
-            onError && onError('no-speech');
+            console.warn('[voice-debug] empty transcription', debugPayload);
+            onError && onError({ code: 'debug-report', debug: debugPayload });
           }
         } catch(e) {
           onError && onError(e.message || 'transcription-failed');
@@ -20747,6 +20784,54 @@ function _setVoiceBtnState(btn, statusEl, state, label) {
   }
 }
 
+function _voiceDebugVal(v) {
+  return (v === undefined || v === null || v === '') ? '—' : String(v);
+}
+function _voiceDebugRows(debug) {
+  return [
+    ['frontend audioBlobSize', debug?.frontend?.audioBlobSize],
+    ['frontend audioBlobType', debug?.frontend?.audioBlobType],
+    ['backend file size', debug?.backend?.size],
+    ['backend mimetype', debug?.backend?.mimetype],
+    ['ffprobe duration', debug?.probe?.duration],
+    ['ffprobe codec', debug?.probe?.codec],
+    ['converted file size', debug?.converted?.size],
+    ['OpenAI response textLength', debug?.transcription?.textLength],
+    ['errorCode', debug?.response?.errorCode],
+  ];
+}
+function _voicePlayDebugAudio(type) {
+  const url = type === 'converted'
+    ? '/api/speech/debug-last-audio?type=converted'
+    : '/api/speech/debug-last-audio';
+  const audio = new Audio(url + (url.includes('?') ? '&' : '?') + '_=' + Date.now());
+  audio.play().catch(err => {
+    console.warn('[voice-debug] audio playback failed', { type, error: err?.message || err });
+    showToast('پخش فایل Debug انجام نشد؛ Console را بررسی کن', 'warning');
+  });
+}
+function _voiceShowDebugPanel(debugEl, debug) {
+  if (!debugEl) return;
+  const rows = _voiceDebugRows(debug);
+  console.table(Object.fromEntries(rows));
+  debugEl.innerHTML = `
+    <strong>گزارش Debug تبدیل صدا</strong>
+    <div class="voice-debug-grid">
+      ${rows.map(([k, v]) => `<div>${k}</div><div>${escapeHtml(_voiceDebugVal(v))}</div>`).join('')}
+    </div>
+    <div class="voice-debug-actions">
+      <button type="button" class="voice-debug-btn" data-voice-debug-play="raw">پخش فایل ضبط‌شده</button>
+      <button type="button" class="voice-debug-btn" data-voice-debug-play="converted">پخش فایل تبدیل‌شده</button>
+    </div>
+  `;
+  debugEl.style.display = 'block';
+}
+function _voiceHideDebugPanel(debugEl) {
+  if (!debugEl) return;
+  debugEl.style.display = 'none';
+  debugEl.innerHTML = '';
+}
+
 // نمایش زنده‌ی مدت‌زمان ضبط، مثل «۰۰:۱۸» — تجربه‌ای شبیه ChatGPT/Notion AI
 function _startVoiceTimer(session, statusEl) {
   session.startedAt = Date.now();
@@ -20790,7 +20875,7 @@ function _startIOSKeyboardDictation(el, btn, statusEl) {
   setTimeout(() => _setVoiceBtnState(btn, statusEl, 'idle', null), 6500);
 }
 
-function _toggleVoiceInput(el, btn, statusEl) {
+function _toggleVoiceInput(el, btn, statusEl, debugEl) {
   const existing = _voiceSessions.get(el);
   if (existing) {
     existing.engine.stop();
@@ -20824,7 +20909,8 @@ function _toggleVoiceInput(el, btn, statusEl) {
     committedValue: el.value,
     cursor: (typeof el.selectionStart === 'number') ? el.selectionStart : el.value.length
   };
-  const session = { engine, state, timerId: null };
+  _voiceHideDebugPanel(debugEl);
+  const session = { engine, state, timerId: null, debugEl };
   _voiceSessions.set(el, session);
   _setVoiceBtnState(btn, statusEl, 'recording', '🔴 00:00');
   _startVoiceTimer(session, statusEl);
@@ -20835,35 +20921,38 @@ function _toggleVoiceInput(el, btn, statusEl) {
     onFinal: (t) => _voiceLiveInsert(el, state, t, true),
     onStatus: (label) => _setVoiceBtnState(btn, statusEl, 'recording', label),
     onError: (err) => {
+      const errCode = (err && typeof err === 'object') ? err.code : err;
+      const errDebug = (err && typeof err === 'object') ? err.debug : null;
       const activeSession = _voiceSessions.get(el);
       if (activeSession) activeSession.hadError = true;
       _stopVoiceTimer(activeSession);
       let msg = 'خطا در تشخیص گفتار، دوباره تلاش کن';
-      if (err === 'not-allowed' || err === 'permission-denied' || err === 'service-not-allowed') {
+      if (errDebug) _voiceShowDebugPanel(activeSession?.debugEl || debugEl, errDebug);
+      if (errCode === 'not-allowed' || errCode === 'permission-denied' || errCode === 'service-not-allowed') {
         msg = 'دسترسی میکروفون رد شده است';
-      } else if (err === 'no-mic') {
+      } else if (errCode === 'no-mic') {
         msg = 'میکروفونی پیدا نشد';
-      } else if (err === 'unsupported') {
+      } else if (errCode === 'unsupported') {
         msg = 'تشخیص گفتار داخلی این مرورگر پشتیبانی نمی‌شود';
-      } else if (err === 'media-unsupported') {
+      } else if (errCode === 'media-unsupported') {
         msg = 'ضبط صدا در این مرورگر پشتیبانی نمی‌شود';
-      } else if (err === 'insecure-context') {
+      } else if (errCode === 'insecure-context') {
         msg = 'برای ضبط صدا باید سایت با HTTPS باز شود';
-      } else if (err === 'server-not-configured') {
+      } else if (errCode === 'server-not-configured') {
         msg = 'سرویس تبدیل صدا روی سرور هنوز تنظیم نشده است';
-      } else if (err === 'audio-too-small') {
+      } else if (errCode === 'audio-too-small') {
         msg = 'صدای کافی ضبط نشد. دوباره نزدیک‌تر به میکروفون صحبت کنید.';
-      } else if (err === 'unsupported-audio-format') {
+      } else if (errCode === 'unsupported-audio-format') {
         msg = 'فرمت صدای ضبط‌شده پشتیبانی نشد';
-      } else if (err === 'audio-unprocessable') {
+      } else if (errCode === 'audio-unprocessable') {
         msg = 'فایل صوتی قابل پردازش نیست.';
-      } else if (err === 'audio-tool-missing') {
+      } else if (errCode === 'audio-tool-missing') {
         msg = 'ابزار پردازش صدا روی سرور نصب نیست';
-      } else if (err === 'no-speech') {
-        msg = 'صدایی شنیده نشد';
+      } else if (errCode === 'debug-report' || errCode === 'no-speech') {
+        msg = 'گزارش Debug آماده شد؛ فایل‌های صدا را پخش کن';
       }
       _setVoiceBtnState(btn, statusEl, 'error', msg);
-      setTimeout(() => { _voiceSessions.delete(el); _setVoiceBtnState(btn, statusEl, 'idle', null); }, 3500);
+      setTimeout(() => { _voiceSessions.delete(el); _setVoiceBtnState(btn, statusEl, 'idle', null); }, errDebug ? 8000 : 3500);
     },
     onEnd: () => {
       const activeSession = _voiceSessions.get(el);
@@ -20889,21 +20978,33 @@ function _attachVoiceButton(el) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'voice-mic-btn';
-  btn.title = _voiceIsIOS() ? 'باز کردن دیکته کیبورد آیفون' : 'ورودی صوتی (تبدیل گفتار به متن)';
+  btn.title = 'ورودی صوتی (تبدیل گفتار به متن)';
   btn.innerHTML = _VOICE_ICON_MIC;
 
   const statusEl = document.createElement('span');
   statusEl.className = 'voice-status-label';
   statusEl.style.display = 'none';
 
+  const debugEl = document.createElement('div');
+  debugEl.className = 'voice-debug-panel';
+  debugEl.style.display = 'none';
+  debugEl.addEventListener('click', (e) => {
+    const playType = e.target?.dataset?.voiceDebugPlay;
+    if (!playType) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _voicePlayDebugAudio(playType);
+  });
+
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    _toggleVoiceInput(el, btn, statusEl);
+    _toggleVoiceInput(el, btn, statusEl, debugEl);
   });
 
   parent.appendChild(btn);
   parent.appendChild(statusEl);
+  parent.appendChild(debugEl);
 
   // اگر فیلد از صفحه حذف شد، ضبط در حال اجرا متوقف شود
   el.addEventListener('DOMNodeRemovedFromDocument', () => {
