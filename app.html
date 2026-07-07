@@ -21075,8 +21075,7 @@ class WebSpeechVoiceEngine {
     this._userListening = false;
     this._finalTranscript = '';
     this._interimTranscript = '';
-    this._lastFinalTranscript = '';
-    this._seenFinals = new Set();
+    this._recognitionBaseTranscript = '';
   }
   isSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -21087,26 +21086,41 @@ class WebSpeechVoiceEngine {
     this._userListening = true;
     this._finalTranscript = '';
     this._interimTranscript = '';
-    this._lastFinalTranscript = '';
-    this._seenFinals = new Set();
+    this._recognitionBaseTranscript = '';
 
-    const joinSpeech = (a, b) => {
-      a = (a || '').trim();
-      b = (b || '').trim();
-      if (!a) return b;
-      if (!b) return a;
-      return `${a} ${b}`;
+    const mergeSpeech = (base, addition) => {
+      base = (base || '').trim();
+      addition = (addition || '').trim();
+      if (!base) return addition;
+      if (!addition) return base;
+      if (base === addition || base.endsWith(addition)) return base;
+      if (addition.startsWith(base)) return addition;
+
+      const baseWords = base.split(/\s+/).filter(Boolean);
+      const addWords = addition.split(/\s+/).filter(Boolean);
+      let overlap = 0;
+      const max = Math.min(baseWords.length, addWords.length);
+      for (let size = max; size > 0; size--) {
+        const baseTail = baseWords.slice(baseWords.length - size).join(' ');
+        const addHead = addWords.slice(0, size).join(' ');
+        if (baseTail === addHead) {
+          overlap = size;
+          break;
+        }
+      }
+      return [...baseWords, ...addWords.slice(overlap)].join(' ').trim();
     };
     const emitReplace = (commitFinalOnly = false) => {
       const text = commitFinalOnly
         ? this._finalTranscript
-        : joinSpeech(this._finalTranscript, this._interimTranscript);
+        : mergeSpeech(this._finalTranscript, this._interimTranscript);
       if (onReplace) onReplace(text, commitFinalOnly);
       else if (commitFinalOnly && text) onFinal && onFinal(text);
       else if (!commitFinalOnly && this._interimTranscript) onInterim && onInterim(this._interimTranscript);
     };
 
     const beginRecognition = () => {
+      this._recognitionBaseTranscript = this._finalTranscript;
       const rec = new SR();
       // مهم: rec.lang همیشه باید از تنظیمات برنامه (پارامتر lang) بیاید، نه از
       // navigator.language مرورگر — و باید پیش از rec.start() مقداردهی شده باشد.
@@ -21116,22 +21130,23 @@ class WebSpeechVoiceEngine {
       rec.continuous = !_voiceIsIOS();
       rec.interimResults = true;
       rec.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
+        const finalParts = [];
+        const interimParts = [];
+        for (let i = 0; i < e.results.length; i++) {
           const result = e.results[i];
           const transcript = (result[0]?.transcript || '').trim();
           if (!transcript) continue;
           if (result.isFinal) {
-            if (transcript === this._lastFinalTranscript || this._seenFinals.has(transcript)) continue;
-            this._lastFinalTranscript = transcript;
-            this._seenFinals.add(transcript);
-            this._finalTranscript = joinSpeech(this._finalTranscript, transcript);
-            this._interimTranscript = '';
+            finalParts.push(transcript);
           } else {
-            interim = joinSpeech(interim, transcript);
+            interimParts.push(transcript);
           }
         }
-        this._interimTranscript = interim;
+
+        const currentFinal = finalParts.reduce((acc, part) => mergeSpeech(acc, part), '');
+        const currentInterim = interimParts.reduce((acc, part) => mergeSpeech(acc, part), '');
+        this._finalTranscript = mergeSpeech(this._recognitionBaseTranscript, currentFinal);
+        this._interimTranscript = currentInterim;
         emitReplace(false);
       };
       rec.onerror = (e) => {
