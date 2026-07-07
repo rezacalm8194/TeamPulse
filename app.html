@@ -20720,7 +20720,14 @@ class MediaRecorderVoiceEngine {
           try {
             data = responseText ? JSON.parse(responseText) : {};
           } catch (jsonErr) {
-            data = { error: 'non_json_response', message: 'Server returned non-JSON response', _jsonParseError: jsonErr?.message || String(jsonErr) };
+            const isHtmlResponse = /^\s*<!doctype html/i.test(responseText || '') || /^\s*<html[\s>]/i.test(responseText || '');
+            data = {
+              error: isHtmlResponse ? 'api_html_response' : 'non_json_response',
+              message: isHtmlResponse
+                ? 'API اشتباه پیکربندی شده و به جای پاسخ JSON، صفحه HTML برگردانده است.'
+                : 'Server returned non-JSON response',
+              _jsonParseError: jsonErr?.message || String(jsonErr),
+            };
           }
           data._responseText = responseText;
           const debugPayload = this._debugPayload({ blob, fileName, data, res });
@@ -20733,6 +20740,7 @@ class MediaRecorderVoiceEngine {
             else if (code === 'audio_tool_missing') onError && onError({ code: 'audio-tool-missing', debug: debugPayload });
             else if (code === 'audio_too_large') onError && onError({ code: 'audio-too-large', debug: debugPayload });
             else if (code === 'audio_upload_failed') onError && onError({ code: 'audio-upload-failed', debug: debugPayload });
+            else if (code === 'api_html_response') onError && onError({ code: 'api-html-response', debug: debugPayload });
             else if (code === 'non_json_response') onError && onError({ code: 'non-json-response', debug: debugPayload });
             else onError && onError({ code: data.message || 'transcription-failed', debug: debugPayload });
             return;
@@ -21050,6 +21058,8 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'حجم فایل صوتی بیشتر از حد مجاز سرور است';
       } else if (errCode === 'audio-upload-failed') {
         msg = 'آپلود فایل صوتی در سرور ناموفق بود';
+      } else if (errCode === 'api-html-response') {
+        msg = 'API اشتباه پیکربندی شده و به جای پاسخ JSON، صفحه HTML برگردانده است.';
       } else if (errCode === 'non-json-response') {
         msg = 'پاسخ سرور قابل خواندن نبود؛ status و responseText را در Debug ببین';
       } else if (errCode === 'debug-report') {
