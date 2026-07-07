@@ -20565,7 +20565,7 @@ class MediaRecorderVoiceEngine {
     return types.find(t => MediaRecorder.isTypeSupported?.(t)) || '';
   }
   _fileNameFor(type) {
-    if ((type || '').includes('mp4')) return 'audio.mp4';
+    if ((type || '').includes('mp4')) return 'audio.m4a';
     if ((type || '').includes('webm')) return 'audio.webm';
     if ((type || '').includes('wav')) return 'audio.wav';
     return 'audio.webm';
@@ -20618,6 +20618,12 @@ class MediaRecorderVoiceEngine {
           fd.append('language', 'fa');
           const res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
           const data = await res.json().catch(() => ({}));
+          console.log('[voice-debug]', {
+            frontend: { audioBlobSize: blob.size, audioBlobType: blob.type, fileName },
+            backend: data.debug?.backend || null,
+            transcription: data.debug?.transcription || null,
+            response: { ok: res.ok, status: res.status, error: data.error || null },
+          });
           if (!res.ok) {
             const code = data.error || '';
             if (code === 'speech_service_not_configured') onError && onError('server-not-configured');
@@ -20627,7 +20633,14 @@ class MediaRecorderVoiceEngine {
           }
           const text = (data.text || '').trim();
           if (text) onFinal && onFinal(text);
-          else onError && onError('no-speech');
+          else {
+            console.warn('[voice-debug] empty transcription', {
+              frontend: { audioBlobSize: blob.size, audioBlobType: blob.type, fileName },
+              backend: data.debug?.backend || null,
+              transcription: data.debug?.transcription || null,
+            });
+            onError && onError('no-speech');
+          }
         } catch(e) {
           onError && onError(e.message || 'transcription-failed');
         } finally {
