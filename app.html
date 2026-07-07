@@ -18041,7 +18041,7 @@ async function _installPWA() {
 
 // Register Service Worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.register('/sw.js?v=voice-debug-v4').catch(() => {});
 }
 
 
@@ -18303,7 +18303,7 @@ if (document.readyState === 'complete') {
 <script>
 // Service Worker for PWA
 if (false && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.register('sw.js?v=voice-debug-v4').catch(()=>{});
 }
 </script>
 
@@ -20466,11 +20466,15 @@ function openHabitHistory(id) {
 // VOICE TO TEXT — ورودی صوتی سراسری (useSpeechRecognition-style shared module)
 // ────────────────────────────────────────────────────────────────────────────
 // معماری: تمام منطق تبدیل گفتار پشت یک «موتور» (Engine) قرار دارد.
-// در حال حاضر تنها موتور Web Speech API پیاده‌سازی شده، اما هر موتور دیگری
-// (Google Speech, OpenAI Whisper و ...) کافی است همین سه متد را پیاده‌سازی کند:
+// موتور Web Speech برای مرورگرهای پشتیبان و موتور MediaRecorder + سرور Whisper
+// برای iPhone/Safari و مرورگرهای بدون SpeechRecognition پیاده‌سازی شده است.
+// هر موتور دیگری کافی است همین سه متد را پیاده‌سازی کند:
 //   isSupported(), start({lang,onInterim,onFinal,onError,onEnd}), stop()
 // و بدون هیچ تغییری در UI/دکمه‌ها، جایگزین می‌شود (Feature Flag: VOICE_CONFIG.engine)
 // ════════════════════════════════════════════════════════════════════════════
+
+const VOICE_VERSION = '2026-07-voice-debug-v4';
+console.log('[voice-version]', VOICE_VERSION);
 
 const VOICE_CONFIG = {
   engine: 'auto' // 'auto' | 'webspeech' | 'media'
@@ -20610,8 +20614,11 @@ class MediaRecorderVoiceEngine {
       response: {
         ok: !!res?.ok,
         status: res?.status || null,
+        url: res?.url || null,
         errorCode: data?.error || null,
         message: data?.message || null,
+        responseText: data?._responseText || null,
+        jsonParseError: data?._jsonParseError || null,
       },
     };
   }
@@ -20661,8 +20668,39 @@ class MediaRecorderVoiceEngine {
           const fileName = this._fileNameFor(blobType);
           fd.append('audio', blob, fileName);
           fd.append('language', 'fa');
-          const res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
-          const data = await res.json().catch(() => ({}));
+          console.log('[voice-upload]', {
+            url: '/api/speech/transcribe',
+            method: 'POST',
+            formField: 'audio',
+            fileName,
+            blobSize: blob.size,
+            blobType: blob.type,
+            manualContentType: false,
+          });
+          let res;
+          try {
+            res = await _apiFetch('/api/speech/transcribe', { method: 'POST', body: fd });
+          } catch (fetchErr) {
+            const debugPayload = this._debugPayload({
+              blob,
+              fileName,
+              data: { error: 'fetch_failed', message: fetchErr?.message || String(fetchErr) },
+              res: { ok: false, status: 0, url: '/api/speech/transcribe' },
+            });
+            console.error('[voice-debug] fetch failed', debugPayload);
+            onError && onError({ code: 'fetch-failed', debug: debugPayload });
+            return;
+          }
+          const responseText = await res.text().catch(e => {
+            return `__READ_RESPONSE_TEXT_FAILED__: ${e?.message || e}`;
+          });
+          let data = {};
+          try {
+            data = responseText ? JSON.parse(responseText) : {};
+          } catch (jsonErr) {
+            data = { error: 'non_json_response', message: 'Server returned non-JSON response', _jsonParseError: jsonErr?.message || String(jsonErr) };
+          }
+          data._responseText = responseText;
           const debugPayload = this._debugPayload({ blob, fileName, data, res });
           console.log('[voice-debug]', debugPayload);
           if (!res.ok) {
@@ -20671,13 +20709,16 @@ class MediaRecorderVoiceEngine {
             else if (code === 'unsupported_audio_format') onError && onError({ code: 'unsupported-audio-format', debug: debugPayload });
             else if (code === 'audio_unprocessable') onError && onError({ code: 'audio-unprocessable', debug: debugPayload });
             else if (code === 'audio_tool_missing') onError && onError({ code: 'audio-tool-missing', debug: debugPayload });
+            else if (code === 'audio_too_large') onError && onError({ code: 'audio-too-large', debug: debugPayload });
+            else if (code === 'audio_upload_failed') onError && onError({ code: 'audio-upload-failed', debug: debugPayload });
+            else if (code === 'non_json_response') onError && onError({ code: 'non-json-response', debug: debugPayload });
             else onError && onError({ code: data.message || 'transcription-failed', debug: debugPayload });
             return;
           }
           const text = (data.text || '').trim();
           if (text) onFinal && onFinal(text);
           else {
-            console.warn('[voice-debug] empty transcription', debugPayload);
+            console.warn('[voice-debug] debug report', debugPayload);
             onError && onError({ code: 'debug-report', debug: debugPayload });
           }
         } catch(e) {
@@ -20789,6 +20830,7 @@ function _voiceDebugVal(v) {
 }
 function _voiceDebugRows(debug) {
   return [
+    ['voice version', VOICE_VERSION],
     ['frontend audioBlobSize', debug?.frontend?.audioBlobSize],
     ['frontend audioBlobType', debug?.frontend?.audioBlobType],
     ['backend file size', debug?.backend?.size],
@@ -20797,7 +20839,9 @@ function _voiceDebugRows(debug) {
     ['ffprobe codec', debug?.probe?.codec],
     ['converted file size', debug?.converted?.size],
     ['OpenAI response textLength', debug?.transcription?.textLength],
+    ['response status', debug?.response?.status],
     ['errorCode', debug?.response?.errorCode],
+    ['responseText', debug?.response?.responseText],
   ];
 }
 function _voicePlayDebugAudio(type) {
@@ -20815,7 +20859,7 @@ function _voiceShowDebugPanel(debugEl, debug) {
   const rows = _voiceDebugRows(debug);
   console.table(Object.fromEntries(rows));
   debugEl.innerHTML = `
-    <strong>گزارش Debug تبدیل صدا</strong>
+    <strong>گزارش Debug تبدیل صدا — نسخه ${escapeHtml(VOICE_VERSION)}</strong>
     <div class="voice-debug-grid">
       ${rows.map(([k, v]) => `<div>${k}</div><div>${escapeHtml(_voiceDebugVal(v))}</div>`).join('')}
     </div>
@@ -20948,7 +20992,15 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'فایل صوتی قابل پردازش نیست.';
       } else if (errCode === 'audio-tool-missing') {
         msg = 'ابزار پردازش صدا روی سرور نصب نیست';
-      } else if (errCode === 'debug-report' || errCode === 'no-speech') {
+      } else if (errCode === 'fetch-failed') {
+        msg = 'ارسال صدا به سرور انجام نشد؛ اتصال، HTTPS یا CORS را بررسی کن';
+      } else if (errCode === 'audio-too-large') {
+        msg = 'حجم فایل صوتی بیشتر از حد مجاز سرور است';
+      } else if (errCode === 'audio-upload-failed') {
+        msg = 'آپلود فایل صوتی در سرور ناموفق بود';
+      } else if (errCode === 'non-json-response') {
+        msg = 'پاسخ سرور قابل خواندن نبود؛ status و responseText را در Debug ببین';
+      } else if (errCode === 'debug-report') {
         msg = 'گزارش Debug آماده شد؛ فایل‌های صدا را پخش کن';
       }
       _setVoiceBtnState(btn, statusEl, 'error', msg);
