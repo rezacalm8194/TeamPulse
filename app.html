@@ -2108,6 +2108,12 @@ body.modal-keyboard-open .modal-body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+body.modal-keyboard-open .modal-actions {
+  /* وقتی کیبورد باز است، safe-area پایین دیگر لازم نیست؛ کم‌کردن این فاصله
+     باعث می‌شود دکمه‌های ذخیره/انصراف به کیبورد نزدیک‌تر شوند و محتوا فضای بیشتری بگیرد. */
+  padding-top: 8px !important;
+  padding-bottom: 6px !important;
+}
 body.modal-keyboard-open .modal-body textarea,
 body.modal-keyboard-open .modal-body .form-textarea {
   overflow: auto;
@@ -2202,7 +2208,11 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
   position: relative !important;
   bottom: auto !important;
   z-index: 10 !important;
-  padding-bottom: max(16px, env(safe-area-inset-bottom)) !important;
+  padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+}
+body.modal-keyboard-open .note-editor-modal .modal-actions {
+  padding-top: 8px !important;
+  padding-bottom: 6px !important;
 }
 /* وقتی کیبورد باز است، modal-body باید همیشه overflow:hidden بماند —
    قانون عمومی body.modal-keyboard-open .modal-body{overflow-y:auto} برای
