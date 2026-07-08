@@ -2630,7 +2630,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <a class="nav-item" data-page="dashboard" title="داشبورد مالی"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
 
       <div class="nav-section">سیستم</div>
-      <a class="nav-item" id="admin-nav-item" data-page="admin_panel" title="پنل مدیریت" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5l6 2.3v4.7c0 4.3-2.6 7-6 8-3.4-1-6-3.7-6-8V4.8l6-2.3z"/><path d="M7.3 10l1.9 1.9 3.5-3.8"/></svg></span><span>پنل مدیریت</span></a>
+      <a class="nav-item" onclick="_sbUser?openWalletPanel():_showAuthScreen('login')" title="کیف پول"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h10.5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6a2 2 0 012-2z"/><path d="M4.8 6.5V5.2c0-.9.6-1.6 1.5-1.8l6.5-1.1c1-.2 1.9.6 1.9 1.6v2.6"/><path d="M13.4 11.5h3.1"/><circle cx="13.2" cy="11.5" r=".7" fill="currentColor" stroke="none"/></svg></span><span>کیف پول</span></a>
       <a class="nav-item" data-page="settings" title="تنظیمات"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.7v2M10 15.3v2M17.3 10h-2M4.7 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8"/></svg></span><span>تنظیمات</span></a>
       <a class="nav-item" data-page="tutorial" title="آموزش‌ها"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.2C8.7 4 6.7 3.5 3.5 3.5v11c3.2 0 5.2.5 6.5 1.7 1.3-1.2 3.3-1.7 6.5-1.7v-11c-3.2 0-5.2.5-6.5 1.7z"/><path d="M10 5.2v11"/></svg></span><span>آموزش‌ها</span></a>
     </nav>
@@ -2638,8 +2638,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
 
     <div class="sidebar-bottom">
-      <button class="btn-sidebar" onclick="_sbUser?openWalletPanel():_showAuthScreen('login')" style="width:100%;padding:8px;font-size:12.5px;text-align:center">💰 کیف پول</button>
-      <div class="sidebar-divider"></div>
+      <button id="admin-panel-btn" class="btn-sidebar" onclick="currentPage='admin_panel'; location.hash='#admin_panel'; renderPage(); closeSidebar();" style="display:none;width:100%;padding:8px;font-size:12.5px;text-align:center">👑 پنل مدیریت</button>
+      <div id="admin-panel-divider" class="sidebar-divider" style="display:none"></div>
       <div style="display:flex;gap:6px">
         <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(manualBackup)" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
         <button class="btn-sidebar btn-sidebar-muted" onclick="_checkAuthThen(importBackup)" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
@@ -15715,6 +15715,8 @@ function _updateAuthUI() {
   // sidebar admin button
   const adminBtn = document.getElementById('admin-panel-btn');
   if (adminBtn) adminBtn.style.display = isAdmin ? '' : 'none';
+  const adminDivider = document.getElementById('admin-panel-divider');
+  if (adminDivider) adminDivider.style.display = isAdmin ? '' : 'none';
   // nav admin item
   const adminNav = document.getElementById('admin-nav-item');
   if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
