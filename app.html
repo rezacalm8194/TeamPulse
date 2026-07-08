@@ -204,19 +204,28 @@ button { cursor: pointer; font-family: var(--font); }
   animation: sidebarScrollHint .52s cubic-bezier(.22,.61,.36,1);
 }
 .nav-section {
-  font-size: 11px; font-weight: 600; color: var(--text2);
-  padding: 8px 10px 3px; letter-spacing: .04em;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: rgba(226,232,240,.72);
+  margin: 11px 0 5px;
+  padding: 0 12px;
+  line-height: 1.35;
+  letter-spacing: .035em;
 }
-.sidebar-nav > .nav-section:first-child { padding-top: 3px; }
+.sidebar-nav > .nav-section:first-child { margin-top: 3px; }
 .nav-group-core {
   /* گروه برنامه‌ریزی: کمی خاص‌تر از بقیه — قاب و پس‌زمینه‌ی ملایم */
-  margin: 5px 0 8px;
+  margin: 3px 0 8px;
   padding: 4px 4px 6px;
   background: rgba(124,106,247,.07);
   border: 1px solid rgba(124,106,247,.14);
   border-radius: 14px;
 }
-.nav-group-core .nav-section { color: var(--accent2); padding-top: 4px; }
+.nav-group-core .nav-section {
+  color: rgba(167,139,250,.9);
+  margin: 2px 0 5px;
+  padding: 0 10px;
+}
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   height: 40px; padding-inline: 12px; border-radius: 10px;
