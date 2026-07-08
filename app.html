@@ -8429,7 +8429,7 @@ async function renderArchive() {
 let STAFF_ROLES = [];
 
 async function renderStaff() {
-  updateTopbarActions(`<button class="btn btn-ghost" onclick="renderStaff()">🔄 به‌روز</button><button class="btn btn-primary" onclick="openQuickStaffModal()">⚡ افزودن سریع همکار</button><button class="btn btn-ghost" onclick="openStaffModal()">+ افزودن کامل</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
+  updateTopbarActions(`<button class="btn btn-primary" onclick="openStaffModal()">+ افزودن همکار</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
   STAFF_ROLES = await window.api.staffRoles.getAll();
   const staffList = await window.api.staff.getAll();
   const dash = await window.api.staff.getDashboard();
@@ -8992,7 +8992,11 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
     </div>`;
   }).join('');
 
-  openModal(editing ? 'ویرایش همکار' : 'افزودن همکار جدید', `
+  openModal(editing ? 'ویرایش همکار' : 'افزودن همکار', `
+    ${!editing ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">ثبت سریع یا کامل، هر دو از همین فرم انجام می‌شود.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">برای افزودن فوری فقط نام را وارد کن و ذخیره بزن. اگر خواستی، همین حالا شماره تماس، کارت، حقوق، نقش‌ها و یادآوری حقوق را هم تکمیل کن.</div>
+    </div>` : ''}
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">نام *</label>
@@ -9940,20 +9944,36 @@ function _syncStaffReminderAmountFromStaff() {
 
 async function openAddStaffReminder() {
   const staffList = await window.api.staff.getAll();
-  if (!staffList.length) {
-    showToast('اول یک همکار اضافه کنید', 'error');
-    return;
-  }
   window._staffReminderStaffList = staffList;
   _staffReminderDateRowSeq = 0;
   const staffOptions = staffList.map((s, i) =>
     `<option value="${s.id}" ${i === 0 ? 'selected' : ''}>${escapeHtml((s.name + ' ' + (s.lname || '')).trim())} — ${fmt(s.expectedMonthly || 0)} تومان</option>`
-  ).join('');
+  ).join('') || '<option value="">هنوز همکاری ثبت نشده</option>';
   const defaultAmount = staffList[0]?.expectedMonthly || 0;
   openModal('⏰ افزودن یادآوری پرداخت حقوق', `
     <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">برای یک همکار، هر تعداد تاریخ لازم داری بساز.</div>
       <div style="font-size:11px;color:var(--text3);line-height:1.8">هر تاریخ به‌صورت یک یادآوری جدا ثبت می‌شود؛ اگر تکرار انتخاب شود، بعد از پرداخت، سررسید بعدی خودش ساخته می‌شود.</div>
+    </div>
+    <div style="border:1px dashed var(--border2);border-radius:12px;padding:10px;margin-bottom:12px;background:rgba(31,37,56,.42)">
+      <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;font-weight:800;color:var(--text)">همکار موردنظرت در لیست نیست؟</div>
+          <div style="font-size:10.5px;color:var(--text3);margin-top:3px">همین‌جا سریع اضافه کن یا فرم کامل همکار را باز کن.</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal();openStaffModal()">+ افزودن کامل همکار</button>
+      </div>
+      <div class="form-grid" style="gap:8px;margin:0">
+        <div class="form-group">
+          <label class="form-label">نام همکار جدید</label>
+          <input class="form-input" id="sr-quick-name" placeholder="نام">
+        </div>
+        <div class="form-group">
+          <label class="form-label">نام خانوادگی</label>
+          <input class="form-input" id="sr-quick-lname" placeholder="نام خانوادگی">
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" style="margin-top:8px" onclick="_quickAddStaffFromReminder()">+ افزودن سریع و انتخاب</button>
     </div>
     <div class="form-grid">
       <div class="form-group full">
@@ -9986,6 +10006,45 @@ async function openAddStaffReminder() {
   ]);
   _addStaffReminderDateRow(formatJalali(...todayJalali()));
   initDatePickers && initDatePickers();
+}
+
+async function _quickAddStaffFromReminder() {
+  const name = document.getElementById('sr-quick-name')?.value.trim();
+  const lname = document.getElementById('sr-quick-lname')?.value.trim() || '';
+  if (!name) { showToast('نام همکار را وارد کنید', 'error'); return; }
+  if (!STAFF_ROLES.length) {
+    try { STAFF_ROLES = await window.api.staffRoles.getAll(); } catch(e) {}
+  }
+  await window.api.staff.add({
+    name,
+    lname,
+    phone: '',
+    card_number: '',
+    role_id: STAFF_ROLES[0]?.id,
+    roles: [],
+    salary: 0,
+    start_date: '',
+    repeat_months: 0,
+    note: 'ثبت سریع از یادآوری حقوق',
+  });
+  const staffList = await window.api.staff.getAll();
+  window._staffReminderStaffList = staffList;
+  const added = [...staffList].reverse().find(s =>
+    (s.name || '') === name && ((s.lname || '') === lname)
+  ) || staffList[staffList.length - 1];
+  const select = document.getElementById('sr-staff');
+  if (select) {
+    select.innerHTML = staffList.map(s =>
+      `<option value="${s.id}" ${added && s.id === added.id ? 'selected' : ''}>${escapeHtml((s.name + ' ' + (s.lname || '')).trim())} — ${fmt(s.expectedMonthly || 0)} تومان</option>`
+    ).join('');
+  }
+  const amountInput = document.getElementById('sr-amount');
+  if (amountInput && added) amountInput.value = added.expectedMonthly || 0;
+  const nameInput = document.getElementById('sr-quick-name');
+  const lnameInput = document.getElementById('sr-quick-lname');
+  if (nameInput) nameInput.value = '';
+  if (lnameInput) lnameInput.value = '';
+  showToast(`${name} به همکاران اضافه و انتخاب شد ✓`, 'success');
 }
 
 async function saveNewStaffReminders() {
