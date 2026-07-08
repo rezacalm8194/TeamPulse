@@ -14328,8 +14328,9 @@ function _instrCanPlaceInTarget(item, targetId) {
   if (!_instrIsContainerNode(target)) return false;
   if (!_teamCanCreateInstruction(+targetId)) return false;
   if (item.type === 'kcategory') return false;
-  if (target.type === 'kcategory') return item.type === 'category';
-  return item.type !== 'kcategory';
+  // یادداشت‌ها و پوشه‌ها می‌توانند مستقیماً داخل یک دسته‌بندی (kcategory) هم قرار بگیرند؛
+  // دیگر لازم نیست از قبل حتماً پوشه‌ای داخل آن دسته‌بندی ساخته شده باشد.
+  return true;
 }
 function _instrTransferDestinationOptions(rootIds) {
   const roots = (rootIds || []).map(id => (_db.instructions || []).find(x => +x.id === +id)).filter(Boolean);
@@ -14406,17 +14407,25 @@ function _instrOpenTransferModal(ids, mode) {
   }).join('');
   const optionsHtml = options.map(opt => {
     const idArg = opt.id == null ? 'null' : opt.id;
+    // ساخت پوشهٔ جدید فقط داخل یک دسته‌بندی/پوشهٔ واقعی معنا دارد، نه در ریشهٔ مرکز دانش
+    const canMakeFolderHere = opt.id != null;
     return `
-      <button type="button" onclick="_instrConfirmTransfer('${op}', ${idArg})"
-        style="width:100%;display:flex;align-items:center;gap:10px;text-align:right;padding:11px 12px;margin-bottom:7px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer"
-        onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
-        <span style="width:26px;height:26px;border-radius:8px;background:rgba(124,106,247,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0">${opt.icon}</span>
-        <span style="flex:1;min-width:0;padding-right:${opt.depth * 12}px">
-          <strong style="display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(opt.title)}</strong>
-          <small style="display:block;color:var(--text3);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${escapeHtml(opt.path)}</small>
-        </span>
-        <span style="color:var(--purple);font-size:15px">‹</span>
-      </button>`;
+      <div style="display:flex;align-items:stretch;gap:6px;margin-bottom:7px">
+        <button type="button" onclick="_instrConfirmTransfer('${op}', ${idArg})"
+          style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:right;padding:11px 12px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer"
+          onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+          <span style="width:26px;height:26px;border-radius:8px;background:rgba(124,106,247,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0">${opt.icon}</span>
+          <span style="flex:1;min-width:0;padding-right:${opt.depth * 12}px">
+            <strong style="display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(opt.title)}</strong>
+            <small style="display:block;color:var(--text3);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${escapeHtml(opt.path)}</small>
+          </span>
+          <span style="color:var(--purple);font-size:15px">‹</span>
+        </button>
+        ${canMakeFolderHere ? `
+        <button type="button" title="ساخت پوشهٔ جدید داخل «${escapeHtml(opt.title)}» و ${verb} به آن" onclick="_instrCreateFolderAndTransfer(${idArg})"
+          style="flex-shrink:0;width:42px;border-radius:10px;border:1px dashed var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;font-size:16px"
+          onmouseover="this.style.background='var(--bg3)';this.style.color='var(--text)'" onmouseout="this.style.background='var(--bg2)';this.style.color='var(--text2)'">📁+</button>` : ''}
+      </div>`;
   }).join('');
   window._instrPendingTransfer = { ids: rootIds, mode: op };
   openModal(title, `
@@ -14425,13 +14434,36 @@ function _instrOpenTransferModal(ids, mode) {
         <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${verb} ${fa(rootIds.length)} مورد انتخاب‌شده</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${selectedPreview}</div>
       </div>
-      <div style="font-size:12px;color:var(--text3)">مقصد را انتخاب کن. پوشه‌ها همراه با تمام زیرپوشه‌ها و یادداشت‌های داخلشان ${op === 'copy' ? 'کپی می‌شوند' : 'منتقل می‌شوند'}.</div>
+      <div style="font-size:12px;color:var(--text3)">مقصد را انتخاب کن؛ نیازی نیست از قبل پوشه‌ای در آن ساخته شده باشد. پوشه‌ها همراه با تمام زیرپوشه‌ها و یادداشت‌های داخلشان ${op === 'copy' ? 'کپی می‌شوند' : 'منتقل می‌شوند'}. با دکمهٔ 📁+ هم می‌توانید همین‌جا یک پوشهٔ جدید بسازید و مستقیماً داخل آن ${verb} کنید.</div>
       <div style="max-height:min(420px,55vh);overflow:auto;padding-left:3px">
         ${optionsHtml || '<p style="font-size:12px;color:var(--text3);text-align:center;padding:18px 0;border:1px dashed var(--border2);border-radius:12px">مقصد معتبری برای این انتخاب وجود ندارد.</p>'}
       </div>
     </div>`, [
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+}
+function _instrCreateFolderAndTransfer(parentId) {
+  const pending = window._instrPendingTransfer;
+  if (!pending) return;
+  const pId = (parentId === null || parentId === undefined || parentId === 'null' || parentId === '') ? null : +parentId;
+  if (pId == null) return; // ساخت پوشه در ریشهٔ مرکز دانش معنا ندارد
+  if (!_teamCanCreateInstruction(pId)) { showToast('برای ساختن پوشه در این مقصد دسترسی نداری', 'error'); return; }
+  const title = (window.prompt('نام پوشهٔ جدید:') || '').trim();
+  if (!title) return;
+  const now = new Date().toISOString();
+  const folder = {
+    id: _instrNextLocalId(),
+    parent_id: pId,
+    type: 'category',
+    title,
+    icon: '📁',
+    color: '#7c6af7',
+    created_at: now,
+    updated_at: now,
+  };
+  if (!_db.instructions) _db.instructions = [];
+  _db.instructions.push(folder);
+  _instrConfirmTransfer(pending.mode, folder.id);
 }
 function _instrConfirmTransfer(mode, targetId) {
   const pending = window._instrPendingTransfer || {};
