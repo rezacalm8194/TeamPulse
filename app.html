@@ -2582,12 +2582,91 @@ body.modal-keyboard-open .note-editor-modal .modal-actions {
    note-editor-modal خاموش می‌شود (specificity این selector هم بالاتر است
    چون یک کلاس بیشتر دارد، و !important هم برای اطمینان اضافه شده) */
 body.modal-keyboard-open .note-editor-modal .modal-body {
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   display: flex !important;
   flex-direction: column !important;
 }
 body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
-  overflow: hidden !important;
+  overflow: visible !important;
+  padding-bottom: 10px !important;
+}
+@media(max-width:768px) {
+  /* Mobile keyboard final layer:
+     Desktop stays untouched. On iOS/Android the footer must sit on top of the
+     keyboard and the form body must remain scrollable so "تنظیمات بیشتر" never
+     disappears below the keyboard. */
+  .modal-overlay.open {
+    height: var(--modal-vh, 100dvh) !important;
+  }
+  .modal-overlay.open .modal {
+    max-height: var(--modal-vh, 100dvh) !important;
+  }
+  .modal-overlay.open .modal-body {
+    padding-bottom: calc(var(--modal-keyboard-footer-h, 56px) + 12px) !important;
+  }
+  .note-editor-modal.modal-overlay,
+  body.modal-keyboard-open .note-editor-modal.modal-overlay {
+    height: var(--modal-vh, 100dvh) !important;
+    min-height: var(--modal-vh, 100dvh) !important;
+  }
+  .note-editor-modal .modal,
+  body.modal-keyboard-open .note-editor-modal .modal {
+    height: var(--modal-vh, 100dvh) !important;
+    max-height: var(--modal-vh, 100dvh) !important;
+    padding-bottom: var(--modal-keyboard-footer-h, 56px) !important;
+  }
+  .note-editor-modal .modal-header,
+  body.modal-keyboard-open .note-editor-modal .modal-header,
+  body.modal-keyboard-open .modal-header {
+    padding-top: max(34px, calc(env(safe-area-inset-top, 0px) + 12px)) !important;
+    padding-bottom: 8px !important;
+  }
+  .note-editor-modal .modal-close,
+  body.modal-keyboard-open .note-editor-modal .modal-close,
+  body.modal-keyboard-open .modal-close {
+    width: 34px !important;
+    height: 34px !important;
+    margin-top: 0 !important;
+    align-self: center !important;
+  }
+  .note-editor-modal .modal-body,
+  body.modal-keyboard-open .note-editor-modal .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 8px 14px calc(var(--modal-keyboard-footer-h, 56px) + 12px) !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .note-editor-modal .modal-body > .form-grid,
+  body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
+    overflow: visible !important;
+    padding-bottom: 12px !important;
+  }
+  .note-editor-modal textarea.note-content-textarea,
+  body.modal-keyboard-open .note-editor-modal textarea.note-content-textarea {
+    min-height: 180px !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    resize: none !important;
+  }
+  .modal-overlay.open .modal-actions,
+  body.modal-keyboard-open .modal-actions,
+  .note-editor-modal .modal-actions,
+  body.modal-keyboard-open .note-editor-modal .modal-actions {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--vv-bottom-gap, 0px) !important;
+    z-index: 1005 !important;
+    min-height: var(--modal-keyboard-footer-h, 56px) !important;
+    padding: 7px 14px 6px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    background: var(--bg2) !important;
+    transition: bottom .18s ease, transform .18s ease, padding .18s ease !important;
+  }
 }
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
@@ -12877,6 +12956,7 @@ function openModal(title, body, actions = [], opts = {}) {
         ${btns ? '<div class="modal-actions">' + btns + '</div>' : ''}
       </div>
     </div>`;
+  _syncOpenModalMetrics();
   initAmountHints();
 
   // ── ردیابی تغییرات ذخیره‌نشده، فقط برای صفحات تمام‌صفحه (فرم ثبت/ویرایش جلسه) ──
@@ -12890,6 +12970,15 @@ function openModal(title, body, actions = [], opts = {}) {
       modalBody.addEventListener('change', markDirty);
     }
   }
+}
+
+function _syncOpenModalMetrics() {
+  requestAnimationFrame(() => {
+    const actions = document.querySelector('#modal-overlay.open .modal-actions');
+    const footerH = actions ? Math.ceil(actions.getBoundingClientRect().height) : 56;
+    document.documentElement.style.setProperty('--modal-keyboard-footer-h', Math.max(52, footerH) + 'px');
+    _setRealAppHeight();
+  });
 }
 
 // اگر تغییری ذخیره‌نشده باشد، قبل از بستن یک تأییدیه نشان می‌دهد؛
