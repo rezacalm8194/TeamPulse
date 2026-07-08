@@ -2074,6 +2074,31 @@ body.light mark { background: rgba(251,191,36,.5); }
    فهرست/فشرده) still uses that row. */
 #instr-filter-group{ display:none!important; }
 #instr-filterview-row{ justify-content:flex-end; }
+.instr-control-label{
+  font-size:10.5px;
+  color:var(--text3);
+  font-weight:800;
+  padding:0 4px;
+  align-self:center;
+}
+.instr-toolbar-segment{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+}
+._ifcard-preview{
+  max-height:0;
+  opacity:0;
+  overflow:hidden;
+  transition:max-height .18s ease, opacity .18s ease;
+}
+@media (hover:hover) and (pointer:fine) {
+  ._ifcard-gallery:hover ._ifcard-preview{
+    max-height:98px;
+    opacity:1;
+  }
+}
 
 @media(max-width:768px){
   /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
@@ -13000,11 +13025,15 @@ let _instrParentId = null; // current folder
 /* ── Instructions page state ──────────────────────────────────────────────── */
 let _instrView = 'gallery'; // 'gallery' | 'list' | 'compact'
 let _instrFilter = 'all';   // 'all' | 'pinned' | 'folder' | 'note'
-let _instrSort = 'default'; // 'default' (pinned first) | 'name' | 'recent'
+let _instrSort = 'default'; // 'default' | 'name' | 'recent' | 'oldest'
 let _instrRecentIds = [];   // last 5 opened node ids
 
 function _instrRecordOpen(id) {
   _instrRecentIds = [id, ..._instrRecentIds.filter(x => x !== id)].slice(0, 5);
+}
+function _instrAccent(item) {
+  const strong = item?.pinned || item?.importance === 'key';
+  return strong ? (item.color || '#7c6af7') : 'rgba(148,163,184,.28)';
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -13014,7 +13043,7 @@ async function renderInstructions(instrSearch) {
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها... (Ctrl+K)" oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
+      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها... (کنترل + K)" oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
   `);
 
@@ -13074,6 +13103,7 @@ async function renderInstructions(instrSearch) {
         ${_filterBtn('pinned','📌 پین‌شده')}
       </div>
       <div id="instr-view-group" style="display:flex;gap:4px">
+        <span class="instr-control-label">نمایش</span>
         ${_viewBtn('gallery','◻ گالری')}
         ${_viewBtn('list','☰ فهرست')}
         ${_viewBtn('compact','▤ فشرده')}
@@ -13111,7 +13141,7 @@ async function renderInstructions(instrSearch) {
 
   /* ── Pinned section (root only) ── */
   let pinnedBar = '';
-  if (!_instrParentId && !instrSearch && _instrFilter === 'all') {
+  if (false && !_instrParentId && !instrSearch && _instrFilter === 'all') {
     const pinned = flat.filter(x => x.pinned);
     if (pinned.length) {
       pinnedBar = `<div class="instr-pinned-section" style="margin-bottom:20px">
@@ -13178,9 +13208,10 @@ async function renderInstructions(instrSearch) {
     const byMode = (a, b) => {
       if (_instrSort === 'name') return a.title.localeCompare(b.title, 'fa');
       if (_instrSort === 'recent') return new Date(b.updated_at||0) - new Date(a.updated_at||0);
+      if (_instrSort === 'oldest') return new Date(a.updated_at||0) - new Date(b.updated_at||0);
       return 0; // 'default' — keep original/creation order
     };
-    return [...arr.filter(x=>x.pinned).sort(byMode), ...arr.filter(x=>!x.pinned).sort(byMode)];
+    return [...arr].sort(byMode);
   };
 
   let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar;
@@ -13192,14 +13223,14 @@ async function renderInstructions(instrSearch) {
 
     if (_instrView === 'gallery') {
       /* ── GALLERY: tall cards, big icon, preview of 3 notes, color bar ── */
-      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px">`;
+      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px">`;
       sortItems(folders).forEach(item => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').slice(0,3);
         const previewHtml = preview.length ? `
-          <div style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px">
+          <div class="_ifcard-preview" style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px">
             ${preview.map(n=>`<div style="font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✓ ${escapeHtml(n.title)}</div>`).join('')}
           </div>` : '';
 
@@ -13213,9 +13244,9 @@ async function renderInstructions(instrSearch) {
             onmouseover="_instrHoverCard(this,'${color}')"
             onmouseout="_instrUnhoverCard(this)">
             <div style="height:3px;background:${color}"></div>
-            <div class="_ifcard-body" style="padding:16px 14px 12px">
+            <div class="_ifcard-body" style="padding:13px 14px 11px">
               ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
-              <div class="_ifcard-icon" style="font-size:32px;margin-bottom:8px">${item.icon||'📁'}</div>
+              <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${item.icon||'📁'}</div>
               <div style="font-weight:700;font-size:14px;margin-bottom:6px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
               <span style="font-size:11px;color:var(--text3)">${fa(childCount)} آیتم</span>
@@ -13237,14 +13268,14 @@ async function renderInstructions(instrSearch) {
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">`;
       sortItems(folders).forEach((item, idx, arr) => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const isLast = idx === arr.length - 1;
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="folder"
-            style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:background .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:background .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
@@ -13254,7 +13285,7 @@ async function renderInstructions(instrSearch) {
                 <span style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px">${fa(childCount)} آیتم</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:1px">${fa(childCount)} آیتم</div>
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
             <span style="color:var(--text3);flex-shrink:0;font-size:14px">‹</span>
@@ -13273,13 +13304,13 @@ async function renderInstructions(instrSearch) {
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">`;
       sortItems(folders).forEach((item, idx, arr) => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const isLast = idx === arr.length - 1;
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="folder"
-            style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
@@ -13308,23 +13339,23 @@ async function renderInstructions(instrSearch) {
 
     if (_instrView === 'gallery') {
       /* ── GALLERY: tall cards, big icon, full excerpt, color top bar ── */
-      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px">`;
+      html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">`;
       sortItems(notes).forEach(item => {
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const isKey = item.importance === 'key';
-        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,120);
+        const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,90);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         html += `
           <div class="_ifcard _ifcard-gallery" data-id="${item.id}" data-type="note"
-            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:18px 16px 14px;cursor:pointer;transition:all .2s;position:relative;min-height:140px;display:flex;flex-direction:column"
+            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;transition:all .2s;position:relative;min-height:112px;display:flex;flex-direction:column"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="_instrHoverCard(this,'${color}')"
             onmouseout="_instrUnhoverCard(this)">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
-            <div class="_ifcard-icon" style="font-size:30px;margin-bottom:10px">${item.icon||'📝'}</div>
+            <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${item.icon||'📝'}</div>
             <div style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;margin-bottom:6px">${escapeHtml(item.title)}</div>
             ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
-            ${excerptText ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>120?'…':''}</div>` : '<div style="flex:1"></div>'}
+            ${excerptText ? `<div class="_ifcard-preview" style="font-size:12px;color:var(--text2);line-height:1.65;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>90?'…':''}</div>` : '<div style="flex:1"></div>'}
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">✏️ ${lastEdit}</div>` : ''}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
@@ -13340,14 +13371,14 @@ async function renderInstructions(instrSearch) {
       /* ── LIST: horizontal rows — icon | title + excerpt | meta | actions ── */
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">`;
       sortItems(notes).forEach((item, idx, arr) => {
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const isKey = item.importance === 'key';
         const excerptText = (item.content||'').replace(/\*\*|==|`/g,'').slice(0,80);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const isLast = idx === arr.length - 1;
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="note"
-            style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
@@ -13375,12 +13406,12 @@ async function renderInstructions(instrSearch) {
       /* ── COMPACT: pure density — just icon + title, no excerpt, no meta ── */
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">`;
       sortItems(notes).forEach((item, idx, arr) => {
-        const color = item.color || '#7c6af7';
+        const color = _instrAccent(item);
         const isKey = item.importance === 'key';
         const isLast = idx === arr.length - 1;
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="note"
-            style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
@@ -13467,7 +13498,7 @@ function _viewBtn(key, label) {
    File Explorer، Notion و Google Drive می‌شناسند. (فقط دسکتاپ؛ در موبایل ردیف
    فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
-  const sortLabel = { default:'⇅ پیش‌فرض', name:'⇅ نام', recent:'⇅ اخیر' }[_instrSort];
+  const sortLabel = { default:'پیش‌فرض', name:'نام', recent:'آخرین ویرایش', oldest:'قدیمی‌ترین' }[_instrSort];
   const canCreate = !_instrParentId && _teamCanCreateInstruction(_instrParentId);
   return `
     <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
@@ -13479,16 +13510,22 @@ function _instrToolbarHtml() {
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>
       <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>` : ''}
-      ${_filterBtn('all','همه')}
-      ${_filterBtn('pinned','📌 پین‌شده')}
+      <div class="instr-toolbar-segment">
+        <span class="instr-control-label">فیلتر</span>
+        ${_filterBtn('all','همه')}
+        ${_filterBtn('pinned','📌 پین‌شده‌ها')}
+      </div>
       <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
-      <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
-        <span>${sortLabel}</span>
-      </button>
+      <div class="instr-toolbar-segment">
+        <span class="instr-control-label">مرتب‌سازی</span>
+        <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
+          <span>⇅ ${sortLabel}</span>
+        </button>
+      </div>
     </div>`;
 }
 function _instrCycleSort() {
-  _instrSort = _instrSort === 'default' ? 'name' : _instrSort === 'name' ? 'recent' : 'default';
+  _instrSort = _instrSort === 'default' ? 'name' : _instrSort === 'name' ? 'recent' : _instrSort === 'recent' ? 'oldest' : 'default';
   renderInstructions();
 }
 function _instrFocusSearch() {
