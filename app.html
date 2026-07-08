@@ -819,15 +819,6 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .modal-actions .btn-ghost:hover { background: var(--bg3); color: var(--text2); }
 
-/* فرم‌های تمام‌صفحه مثل ثبت/ویرایش جلسه فوتر sticky دارند؛
-   این فاصله امن اجازه می‌دهد آخر متن پشت دکمه‌های ذخیره/انصراف نرود. */
-.modal-overlay-fullpage .modal-body {
-  padding-bottom: calc(var(--modal-actions-h, 72px) + 24px) !important;
-  scroll-padding-bottom: calc(var(--modal-actions-h, 72px) + 24px) !important;
-}
-.modal-overlay-fullpage textarea.form-textarea {
-  scroll-margin-bottom: calc(var(--modal-actions-h, 72px) + 24px);
-}
 
 /* ── Textarea حرفه‌ای ─────────────────────────────────────────── */
 .form-textarea {
@@ -2667,29 +2658,15 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   }
   .note-editor-modal .modal-body > .form-grid,
   body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 12px !important;
   }
-  .note-editor-modal .form-group.full.note-content-wrap,
-  body.modal-keyboard-open .note-editor-modal .form-group.full.note-content-wrap {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-  }
   .note-editor-modal textarea.note-content-textarea,
   body.modal-keyboard-open .note-editor-modal textarea.note-content-textarea {
-    flex: 1 1 auto !important;
     min-height: 180px !important;
-    height: auto !important;
     max-height: none !important;
     overflow-y: auto !important;
     resize: none !important;
-    box-sizing: border-box !important;
-    padding-bottom: calc(var(--modal-keyboard-footer-h, 56px) + 18px) !important;
-    scroll-padding-bottom: calc(var(--modal-keyboard-footer-h, 56px) + 18px) !important;
   }
   .modal-overlay.open .modal-actions,
   body.modal-keyboard-open .modal-actions,
@@ -2734,7 +2711,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     flex: 1 1 auto !important;
     min-height: 0 !important;
     overflow-y: auto !important;
-    padding: 8px 14px 0 !important;
+    padding: 8px 14px 8px !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-actions {
     position: sticky !important;
@@ -13058,9 +13035,7 @@ function _syncOpenModalMetrics() {
   requestAnimationFrame(() => {
     const actions = document.querySelector('#modal-overlay.open .modal-actions');
     const footerH = actions ? Math.ceil(actions.getBoundingClientRect().height) : 56;
-    const safeFooterH = Math.max(52, footerH);
-    document.documentElement.style.setProperty('--modal-actions-h', safeFooterH + 'px');
-    document.documentElement.style.setProperty('--modal-keyboard-footer-h', safeFooterH + 'px');
+    document.documentElement.style.setProperty('--modal-keyboard-footer-h', Math.max(52, footerH) + 'px');
     _setRealAppHeight();
   });
 }
@@ -14634,26 +14609,6 @@ function _toggleAdvanced(sectionId, btnId) {
     ? 'تنظیمات کمتر ▴'
     : 'تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾';
 }
-function _bindNoteContentVisibilityGuard(ta) {
-  if (!ta || ta.dataset.noteVisibilityGuard === '1') return;
-  ta.dataset.noteVisibilityGuard = '1';
-  const keepCaretVisible = function () {
-    if (!document.body.classList.contains('modal-keyboard-open')) return;
-    const valueLen = ta.value.length;
-    const cursor = typeof ta.selectionStart === 'number' ? ta.selectionStart : valueLen;
-    if (cursor < valueLen - 3) return;
-    requestAnimationFrame(function () {
-      const footerH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--modal-keyboard-footer-h'), 10) || 56;
-      const safeGap = footerH + 18;
-      const bottomHidden = ta.scrollHeight - ta.clientHeight - ta.scrollTop;
-      if (bottomHidden < safeGap) ta.scrollTop = Math.max(0, ta.scrollHeight - ta.clientHeight);
-    });
-  };
-  ta.addEventListener('input', keepCaretVisible);
-  ta.addEventListener('keyup', keepCaretVisible);
-  ta.addEventListener('click', keepCaretVisible);
-  ta.addEventListener('focus', keepCaretVisible);
-}
 function _setImportanceChip(inputId, value, btn) {
   const input = document.getElementById(inputId);
   if (input) input.value = value;
@@ -14785,7 +14740,6 @@ function openAddInstruction(parentId, type) {
     delete ta.dataset.autogrowReady;
     ta.style.height = '';
     ta.style.overflowY = '';
-    _bindNoteContentVisibilityGuard(ta);
   })();
   setTimeout(() => {
     const first = document.querySelector('.icon-pick-btn');
@@ -14932,7 +14886,6 @@ function openEditInstruction(id) {
       delete ta.dataset.autogrowReady;
       ta.style.height = '';
       ta.style.overflowY = '';
-      _bindNoteContentVisibilityGuard(ta);
     })();
     setTimeout(function() {
       ['ei-content','ei-extra'].forEach(function(fid) {
@@ -15502,7 +15455,6 @@ let _sbUser = null;
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
   const url = _API_URL + path;
-  const timeoutMs = Number.isFinite(+opts.timeoutMs) ? +opts.timeoutMs : 12000;
   const isFormData = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
   const headers = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -15511,23 +15463,8 @@ async function _apiFetch(path, opts = {}) {
   if (_sbSession?.token) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
-  const fetchOpts = { ...opts, headers };
-  delete fetchOpts.timeoutMs;
-  let timer = null;
-  let controller = null;
-  if (!fetchOpts.signal && typeof AbortController !== 'undefined' && timeoutMs > 0) {
-    controller = new AbortController();
-    fetchOpts.signal = controller.signal;
-    timer = setTimeout(() => controller.abort(), timeoutMs);
-  }
-  try {
-    return await fetch(url, fetchOpts);
-  } catch (e) {
-    if (e && e.name === 'AbortError') throw new Error('api_timeout');
-    throw e;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  const res = await fetch(url, { ...opts, headers });
+  return res;
 }
 
 function _getApiAuthToken() {
@@ -15589,14 +15526,7 @@ const _auth = {
       _sbSession = { token: saved.token };
       _authSaveSession({ token: saved.token, user });
       return { token: saved.token, user };
-    } catch(e) {
-      if (e && e.message === 'api_timeout') {
-        _sbUser = saved.user;
-        _sbSession = { token: saved.token };
-        return { token: saved.token, user: saved.user, offline: true };
-      }
-      return null;
-    }
+    } catch(e) { return null; }
   },
 
   isAdmin() {
@@ -15646,8 +15576,7 @@ async function _syncToServer() {
     if (!accId) return;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: _db }),
-      timeoutMs: 8000
+      body: JSON.stringify({ data: _db })
     });
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
@@ -15663,7 +15592,7 @@ async function _loadFromServer() {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
     if (!accId) return false;
-    const res = await _apiFetch('/api/data/' + accId, { timeoutMs: 7000 });
+    const res = await _apiFetch('/api/data/' + accId);
     if (res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
       return false;
@@ -15987,7 +15916,7 @@ async function _authOnSuccess() {
 
   // آپدیت wallet از سرور
   try {
-    const wRes = await _apiFetch('/api/wallet', { timeoutMs: 6000 });
+    const wRes = await _apiFetch('/api/wallet');
     if (wRes.ok) {
       const ct = wRes.headers.get('content-type') || '';
       if (!ct.includes('application/json')) throw new Error('not json');
@@ -19900,31 +19829,22 @@ if (document.readyState === 'loading') {
   _initResponsiveTableObserver();
 }
 
-let _teamPulseStarted = false;
 function _startApp() {
-  if (_teamPulseStarted) return;
-  _teamPulseStarted = true;
   _initAuth().then(authed => {
     if (authed) {
       updateAccountDisplay();
     }
-  }).catch(e => {
-    console.error('[TeamPulse] startup failed:', e);
-    const content = document.getElementById('content');
-    if (content) {
-      content.innerHTML = '<div style="text-align:center;padding:40px;color:#f87171"><h2>خطا در شروع برنامه</h2><p style="color:#9399ab;margin:10px 0">اتصال یا کش مرورگر کامل پاسخ نداد. دوباره تلاش کن.</p><button onclick="location.reload()" style="padding:10px 24px;background:#7c6af7;color:white;border:none;border-radius:8px;cursor:pointer">تلاش مجدد</button></div>';
-    }
   });
 }
-// شروع برنامه نباید منتظر window.load بماند؛ یک asset یا request کند می‌تواند
-// رویداد load را نگه دارد و صفحه روی «در حال بارگذاری» گیر کند.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => setTimeout(_startApp, 0), { once: true });
+// چون فایل چند تگ <script> جدا داره (renderHabits و بقیه‌ی توابع صفحات آخر فایل
+// در یک <script> بعدی تعریف می‌شن)، باید صبر کنیم همه‌ی اسکریپت‌ها اجرا بشن،
+// وگرنه اگه _initAuth سریع resolve بشه و صفحه‌ی ذخیره‌شده «عادت‌ها» باشه،
+// renderHabits هنوز تعریف نشده و خطای ReferenceError می‌ده.
+if (document.readyState === 'complete') {
+  _startApp();
 } else {
-  setTimeout(_startApp, 0);
+  window.addEventListener('load', _startApp, { once: true });
 }
-// fallback دفاعی برای مرورگرهایی که در restore/cache رفتار غیرمنتظره دارند.
-setTimeout(_startApp, 2500);
 
 // ── MagicBento effect for .stat-card (global, event-delegated) ──────────────
 (function() {
