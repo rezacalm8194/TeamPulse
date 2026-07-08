@@ -14739,8 +14739,6 @@ function openNoteDetail(id) {
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})` },
-    { label: '📁 انتقال', cls: 'btn-ghost', action: `closeModal();_instrOpenTransferModal([${id}], 'move')` },
-    { label: '📋 کپی', cls: 'btn-ghost', action: `closeModal();_instrOpenTransferModal([${id}], 'copy')` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
