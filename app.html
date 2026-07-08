@@ -243,8 +243,8 @@ button { cursor: pointer; font-family: var(--font); }
   justify-content: center;
   flex-shrink: 0;
   filter:
-    drop-shadow(0 0 3px rgba(251, 191, 36, 0.45))
-    drop-shadow(0 0 7px rgba(251, 191, 36, 0.22));
+    drop-shadow(0 0 3.6px rgba(251, 191, 36, 0.54))
+    drop-shadow(0 0 8.4px rgba(251, 191, 36, 0.26));
   animation: knowledgeLampPulse 3.6s ease-in-out infinite;
 }
 
@@ -255,19 +255,19 @@ button { cursor: pointer; font-family: var(--font); }
 
 .knowledge-lamp-icon path {
   stroke: currentColor;
-  stroke-width: 1.65;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .knowledge-lamp-icon .lamp-glow-core {
-  fill: rgba(251, 191, 36, 0.18);
+  fill: rgba(251, 191, 36, 0.22);
   stroke: none;
 }
 
 .knowledge-lamp-icon .lamp-ray {
-  opacity: 0.42;
-  stroke-width: 1.35;
+  opacity: 0.48;
+  stroke-width: 1.55;
 }
 
 @keyframes knowledgeLampPulse {
@@ -275,16 +275,16 @@ button { cursor: pointer; font-family: var(--font); }
     transform: scale(1);
     opacity: 0.9;
     filter:
-      drop-shadow(0 0 3px rgba(251, 191, 36, 0.42))
-      drop-shadow(0 0 7px rgba(251, 191, 36, 0.2));
+      drop-shadow(0 0 3.6px rgba(251, 191, 36, 0.5))
+      drop-shadow(0 0 8.4px rgba(251, 191, 36, 0.24));
   }
 
   50% {
     transform: scale(1.03);
     opacity: 1;
     filter:
-      drop-shadow(0 0 4px rgba(251, 191, 36, 0.58))
-      drop-shadow(0 0 10px rgba(251, 191, 36, 0.3));
+      drop-shadow(0 0 4.8px rgba(251, 191, 36, 0.7))
+      drop-shadow(0 0 12px rgba(251, 191, 36, 0.36));
   }
 }
 .badge {
