@@ -692,6 +692,12 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   position: fixed; inset: 0;
   /* iOS fix: inset:0 را داریم اما height را هم صریح با --modal-vh می‌گذاریم
      تا وقتی کیبورد باز می‌شود و JS مقدار --modal-vh را آپدیت می‌کند، overlay هم resize شود */
+  /* iOS fix ۲: وقتی فوکوس روی input باعث می‌شه Safari صفحه رو اسکرول کنه تا
+     المان بالای کیبورد بیاد، visual viewport نسبت به layout viewport آفست می‌گیره
+     (--vv-offset-top). چون overlay با inset:0 به بالای layout viewport پین شده،
+     بدون این top، overlay از دید اسکرول‌شده جا می‌مونه و یک فاصله‌ی سیاه بین
+     محتوا و کیبورد ایجاد می‌شه. */
+  top: var(--vv-offset-top, 0px);
   height: var(--modal-vh, 100dvh);
   background: rgba(0,0,0,.65);
   display: flex; align-items: center; justify-content: center;
