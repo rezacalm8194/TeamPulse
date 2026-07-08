@@ -495,6 +495,53 @@ button { cursor: pointer; font-family: var(--font); }
 .table-header .title { font-size: 13px; font-weight: 600; }
 .table-header .title-wrap { display: flex; flex-direction: column; gap: 2px; }
 .table-header .subtitle { font-size: 11px; color: var(--text3); font-weight: 400; }
+.payments-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.payments-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 3px;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: rgba(31, 37, 56, .82);
+  overflow: hidden;
+}
+.payments-segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--text3);
+  padding: 7px 12px;
+  min-height: 30px;
+  border-radius: 9px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.payments-segmented button.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(124, 106, 247, .26);
+}
+.payment-header-add {
+  margin-right: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 900;
+}
 
 /* ── Row kebab menu ─────────────────────────────────────── */
 .row-menu { position: relative; display: inline-flex; }
@@ -1851,6 +1898,29 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
   .table-header .table-search{width:100%;max-width:none!important}
   .table-header .table-search input{width:100%}
+  .payments-toolbar{
+    gap:6px;
+    flex-wrap:nowrap;
+    align-items:center;
+  }
+  .payments-segmented{
+    padding:2px;
+    border-radius:10px;
+    background:rgba(31,37,56,.9);
+  }
+  .payments-segmented button{
+    min-height:28px;
+    padding:6px 10px;
+    border-radius:8px;
+    font-size:11.5px;
+    white-space:nowrap;
+  }
+  .payment-header-add{
+    width:30px;
+    height:30px;
+    border-radius:9px;
+    font-size:17px;
+  }
 
   /* سرچ داخل topbar روی موبایل: فقط آیکون ذره‌بین بدون باکس — با کلیک باز می‌شه */
   .topbar-actions .table-search{
@@ -5813,11 +5883,11 @@ async function renderPayments(search = '') {
   const tab = _paymentsTab;
 
   updateTopbarActions(`
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <button class="btn ${tab==='purchases'?'btn-primary':'btn-ghost'}" onclick="_paymentsTab='purchases';renderPayments()">🛒 خریدها</button>
-      <button class="btn ${tab==='payments'?'btn-primary':'btn-ghost'}" onclick="_paymentsTab='payments';renderPayments()">💳 پرداخت‌ها</button>
-      ${tab==='purchases'?`<button class="btn btn-ghost" onclick="openGeneralPurchaseModal()">+ افزودن خرید</button>`:''}
-      ${tab==='payments'?`<button class="btn btn-ghost" onclick="openGeneralPaymentModal()">+ افزودن پرداختی</button>`:''}
+    <div class="payments-toolbar">
+      <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
+        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';renderPayments()">🛒 خریدها</button>
+        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';renderPayments()">💳 پرداخت‌ها</button>
+      </div>
       <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input placeholder="جستجو با نام..." oninput="renderPayments(this.value)" value="${search}">
       </div>
@@ -5831,7 +5901,7 @@ async function renderPayments(search = '') {
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
     let html = `<div class="table-card">
-      <div class="table-header"><span class="title">🛒 تاریخچه کل خریدها (${fa(packages.length)} مورد)</span></div>
+      <div class="table-header"><span class="title">🛒 تاریخچه کل خریدها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
@@ -5864,7 +5934,7 @@ async function renderPayments(search = '') {
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
     let html = `<div class="table-card">
-      <div class="table-header"><span class="title">💳 تاریخچه پرداخت‌ها (${fa(payments.length)} مورد)</span></div>
+      <div class="table-header"><span class="title">💳 تاریخچه پرداخت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن پرداختی" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
         <tbody>`;
