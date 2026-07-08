@@ -2411,18 +2411,24 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
    .modal-overlay/.modal-body/.form-grid/.modal-actions موبایل را override
    می‌کند — با !important چون قوانین عمومی خودشان !important یا
    specificity بالا (body.modal-keyboard-open ...) دارند. */
-/* ── Note Editor Modal — Mobile (full-screen, same as before) ── */
+/* ══════════════════════════════════════════════════════════════════
+   NOTE EDITOR MODAL — Apple Notes style
+   موبایل: full-screen با safe-area صحیح + footer ثابت بالای کیبورد
+   دسکتاپ: centered card با max-width: 770px
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── پایه (همه سایزها) ── */
 .note-editor-modal.modal-overlay {
   align-items: stretch !important;
   justify-content: flex-start !important;
-  height: var(--modal-vh, 100dvh) !important;
+  height: 100% !important;
   padding: 0 !important;
 }
 .note-editor-modal .modal {
   width: 100vw !important;
   max-width: 100vw !important;
-  height: var(--modal-vh, 100dvh) !important;
-  max-height: var(--modal-vh, 100dvh) !important;
+  height: 100% !important;
+  max-height: 100% !important;
   margin: 0 !important;
   border-radius: 0 !important;
   transform: none !important;
@@ -2430,18 +2436,40 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+  /* iOS: modal روی کل صفحه ثابت می‌ماند — کیبورد آن را جابجا نمی‌کند */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
+
+/* ── Header: همیشه از Dynamic Island/Notch فاصله دارد ── */
 .note-editor-modal .modal-header {
   flex: 0 0 auto !important;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
+  padding-right: 16px !important;
+  padding-bottom: 12px !important;
+  padding-left: 16px !important;
+  /* header ثابت بماند */
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+  background: var(--bg2) !important;
+  border-bottom: 1px solid var(--border) !important;
 }
+
+/* ── Body: اسکرول بین header و footer ── */
 .note-editor-modal .modal-body {
   flex: 1 1 auto !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
   display: flex !important;
   flex-direction: column !important;
-  padding: 12px 16px !important;
+  padding: 14px 16px 8px !important;
 }
 .note-editor-modal .modal-body > .form-grid {
   flex: 0 0 auto !important;
@@ -2461,107 +2489,64 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
 .note-editor-modal .note-content-wrap > .rt-more {
   flex: 0 0 auto !important;
 }
+
+/* ── Textarea: با تایپ رشد می‌کند (auto-grow) ── */
 .note-editor-modal textarea.note-content-textarea {
   flex: 0 0 auto !important;
-  min-height: 200px !important;
+  min-height: 180px !important;
   height: auto !important;
   max-height: none !important;
   overflow-y: hidden !important;
-  resize: vertical !important;
+  resize: none !important;
   -webkit-overflow-scrolling: touch !important;
   overscroll-behavior: contain !important;
 }
+
+/* ── Footer: همیشه پایین صفحه، بالای safe-area ── */
 .note-editor-modal .modal-actions {
   flex: 0 0 auto !important;
   position: relative !important;
-  bottom: auto !important;
-  z-index: 10 !important;
-  padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
-  margin-top: 4px !important;
-}
-body.modal-keyboard-open .note-editor-modal .modal-actions {
-  padding-top: 8px !important;
-  padding-bottom: 6px !important;
-}
-/* موبایل آیفون: دکمه‌های ذخیره/انصراف ۳۰px بالاتر از safe-area */
-@media (max-width: 768px) {
-  .note-editor-modal .modal-actions {
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - 30px)) !important;
-    margin-bottom: 0 !important;
-  }
+  z-index: 20 !important;
+  padding: 10px 16px !important;
+  padding-bottom: max(14px, env(safe-area-inset-bottom, 14px)) !important;
+  background: var(--bg2) !important;
+  border-top: 1px solid var(--border) !important;
+  margin-top: auto !important;
 }
 
-/* ── Note Editor Modal — Desktop: centered, Notion-style ── */
-@media (min-width: 769px) {
-  .note-editor-modal.modal-overlay {
-    align-items: flex-start !important;
-    justify-content: center !important;
-    padding: 32px 24px 40px !important;
-    background: rgba(0,0,0,0.65) !important;
-    backdrop-filter: blur(4px) !important;
-    overflow-y: auto !important;
+/* ══ موبایل (≤768px): کیبورد باز است — Apple Notes mode ══ */
+@media (max-width: 768px) {
+  /* کیبورد بسته: normal state */
+  .note-editor-modal .modal-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
   }
-  .note-editor-modal .modal {
-    width: 100% !important;
-    max-width: 770px !important;
-    height: auto !important;
-    max-height: none !important;
-    min-height: 0 !important;
-    border-radius: 16px !important;
-    margin: 0 auto !important;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px var(--border2) !important;
-    overflow: visible !important;
-  }
-  .note-editor-modal .modal-body {
-    overflow: visible !important;
-    padding: 20px 28px !important;
-  }
-  .note-editor-modal .modal-body > .form-grid {
-    overflow: visible !important;
-  }
-  .note-editor-modal .form-group.full.note-content-wrap {
-    overflow: visible !important;
-  }
-  .note-editor-modal textarea.note-content-textarea {
-    min-height: 270px !important;
-    height: 270px !important;
-    overflow-y: hidden !important;
-    resize: vertical !important;
-  }
-  .note-editor-modal .modal-actions {
-    padding-bottom: 6px !important;
-    margin-top: 8px !important;
-  }
-}
-@media(max-width:768px) {
-  body.modal-keyboard-open .note-editor-modal .modal {
-    padding-bottom: calc(var(--modal-keyboard-footer-h, 58px) + var(--vv-bottom-gap, 0px)) !important;
-  }
+
+  /* کیبورد باز: footer را fixed کن، بالای کیبورد */
   body.modal-keyboard-open .note-editor-modal .modal-header {
-    padding: calc(env(safe-area-inset-top, 0px) + 6px) 14px 7px !important;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+    padding-bottom: 7px !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-title {
+    font-size: 13px !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-close,
+  body.modal-keyboard-open .note-editor-modal .modal-fullpage-close {
+    width: 32px !important;
+    height: 32px !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-body {
-    padding: 6px 14px 4px !important;
+    padding: 8px 14px 4px !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
-    gap: 7px !important;
-    margin-bottom: 0 !important;
-  }
-  body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid > .form-group.full:first-child {
-    gap: 3px !important;
+    gap: 6px !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid > .form-group.full:first-child .form-label {
     font-size: 10px !important;
-    line-height: 1.2 !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid > .form-group.full:first-child .form-input {
     padding: 7px 10px !important;
     min-height: 34px !important;
     font-size: 12px !important;
-  }
-  body.modal-keyboard-open .note-editor-modal .note-content-wrap > .form-label {
-    font-size: 10px !important;
-    line-height: 1.2 !important;
   }
   body.modal-keyboard-open .note-editor-modal .note-content-wrap > .rich-toolbar {
     padding: 5px 7px !important;
@@ -2576,18 +2561,89 @@ body.modal-keyboard-open .note-editor-modal .modal-actions {
     padding: 6px !important;
     font-size: 10.5px !important;
   }
+  /* Footer ثابت: دقیقاً بالای کیبورد — مثل Apple Notes */
+  body.modal-keyboard-open .note-editor-modal .modal-actions {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--vv-bottom-gap, 0px) !important;
+    z-index: 1005 !important;
+    margin: 0 !important;
+    padding: 8px 14px 10px !important;
+    min-height: 56px !important;
+    max-height: 60px !important;
+    background: var(--bg2) !important;
+    border-top: 1px solid var(--border) !important;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.18) !important;
+    transition: bottom 0.05s linear !important;
+  }
+  /* modal-body فضای کافی برای footer fixed بگذارد */
+  body.modal-keyboard-open .note-editor-modal .modal-body {
+    padding-bottom: 70px !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
 }
-/* وقتی کیبورد باز است، modal-body باید همیشه overflow:hidden بماند —
-   قانون عمومی body.modal-keyboard-open .modal-body{overflow-y:auto} برای
-   note-editor-modal خاموش می‌شود (specificity این selector هم بالاتر است
-   چون یک کلاس بیشتر دارد، و !important هم برای اطمینان اضافه شده) */
-body.modal-keyboard-open .note-editor-modal .modal-body {
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
-  overflow: hidden !important;
+
+/* ══ دسکتاپ (≥769px): Notion / Apple Notes — centered card ══ */
+@media (min-width: 769px) {
+  .note-editor-modal.modal-overlay {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 32px 24px 40px !important;
+    background: rgba(0,0,0,0.65) !important;
+    backdrop-filter: blur(4px) !important;
+    overflow-y: auto !important;
+    height: 100dvh !important;
+    position: fixed !important;
+  }
+  .note-editor-modal .modal {
+    position: relative !important;
+    width: 100% !important;
+    max-width: 770px !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    border-radius: 16px !important;
+    margin: 0 auto !important;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px var(--border2) !important;
+    overflow: visible !important;
+    /* override fixed از موبایل */
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+  }
+  .note-editor-modal .modal-header {
+    position: relative !important;
+    padding-top: 16px !important;
+    padding-right: 20px !important;
+    padding-bottom: 14px !important;
+    padding-left: 20px !important;
+    border-radius: 16px 16px 0 0 !important;
+    background: var(--bg2) !important;
+  }
+  .note-editor-modal .modal-body {
+    overflow: visible !important;
+    padding: 20px 28px !important;
+    padding-bottom: 4px !important;
+  }
+  .note-editor-modal textarea.note-content-textarea {
+    min-height: 270px !important;
+    height: 270px !important;
+    overflow-y: hidden !important;
+    resize: vertical !important;
+  }
+  .note-editor-modal .modal-actions {
+    position: relative !important;
+    margin-top: 0 !important;
+    padding: 12px 20px !important;
+    padding-bottom: 16px !important;
+    border-radius: 0 0 16px 16px !important;
+    border-top: 1px solid var(--border) !important;
+    background: var(--bg2) !important;
+    box-shadow: none !important;
+  }
 }
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
