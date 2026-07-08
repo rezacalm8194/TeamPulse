@@ -2411,6 +2411,7 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
    .modal-overlay/.modal-body/.form-grid/.modal-actions موبایل را override
    می‌کند — با !important چون قوانین عمومی خودشان !important یا
    specificity بالا (body.modal-keyboard-open ...) دارند. */
+/* ── Note Editor Modal — Mobile (full-screen, same as before) ── */
 .note-editor-modal.modal-overlay {
   align-items: stretch !important;
   justify-content: flex-start !important;
@@ -2436,30 +2437,24 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
 .note-editor-modal .modal-body {
   flex: 1 1 auto !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   display: flex !important;
   flex-direction: column !important;
   padding: 12px 16px !important;
 }
-/* form-grid: فقط فرزند مستقیم modal-body، نه form-grid تودرتوی بخش «تنظیمات بیشتر» */
 .note-editor-modal .modal-body > .form-grid {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
+  flex: 0 0 auto !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: hidden !important;
 }
-/* گروه‌های دیگر (عنوان، دکمهٔ «تنظیمات بیشتر»، پنل تنظیمات پیشرفته) اندازهٔ ثابت
-   با محتوای خودشان می‌گیرند و رشد نمی‌کنند — فقط note-content-wrap فضای باقی‌مانده را می‌گیرد */
 .note-editor-modal .modal-body > .form-grid > .form-group.full {
   flex: 0 0 auto !important;
 }
 .note-editor-modal .form-group.full.note-content-wrap {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
+  flex: 0 0 auto !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: hidden !important;
 }
 .note-editor-modal .note-content-wrap > .form-label,
 .note-editor-modal .note-content-wrap > .rich-toolbar,
@@ -2467,12 +2462,12 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
   flex: 0 0 auto !important;
 }
 .note-editor-modal textarea.note-content-textarea {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  height: 100% !important;
+  flex: 0 0 auto !important;
+  min-height: 200px !important;
+  height: auto !important;
   max-height: none !important;
-  overflow-y: auto !important;
-  resize: none !important;
+  overflow-y: hidden !important;
+  resize: vertical !important;
   -webkit-overflow-scrolling: touch !important;
   overscroll-behavior: contain !important;
 }
@@ -2482,10 +2477,54 @@ body.modal-keyboard-open .modal-body .rt-more + textarea {
   bottom: auto !important;
   z-index: 10 !important;
   padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+  margin-top: 4px !important;
 }
 body.modal-keyboard-open .note-editor-modal .modal-actions {
   padding-top: 8px !important;
   padding-bottom: 6px !important;
+}
+
+/* ── Note Editor Modal — Desktop: centered, Notion-style ── */
+@media (min-width: 769px) {
+  .note-editor-modal.modal-overlay {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 32px 24px 40px !important;
+    background: rgba(0,0,0,0.65) !important;
+    backdrop-filter: blur(4px) !important;
+    overflow-y: auto !important;
+  }
+  .note-editor-modal .modal {
+    width: 100% !important;
+    max-width: 1100px !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    border-radius: 16px !important;
+    margin: 0 auto !important;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px var(--border2) !important;
+    overflow: visible !important;
+  }
+  .note-editor-modal .modal-body {
+    overflow: visible !important;
+    padding: 20px 28px !important;
+  }
+  .note-editor-modal .modal-body > .form-grid {
+    overflow: visible !important;
+  }
+  .note-editor-modal .form-group.full.note-content-wrap {
+    overflow: visible !important;
+  }
+  .note-editor-modal textarea.note-content-textarea {
+    min-height: 200px !important;
+    height: auto !important;
+    overflow-y: hidden !important;
+    resize: vertical !important;
+  }
+  .note-editor-modal .modal-actions {
+    padding-bottom: 6px !important;
+    margin-top: 8px !important;
+  }
 }
 @media(max-width:768px) {
   body.modal-keyboard-open .note-editor-modal .modal {
@@ -22665,14 +22704,21 @@ function _autoGrowTextarea(el) {
 }
 function _autoGrowScanAndAttach(root) {
   const scope = root || document;
-  // توجه: textarea.note-content-textarea (محتوای یادداشت داخل مودال یادداشت) عمداً از
-  // Auto-Grow کنار گذاشته شده؛ این textarea باید ارتفاع ثابت با اسکرول داخلی داشته باشد
-  // نه اینکه با تایپ/فوکوس بزرگ شود و modal-body/footer را جابه‌جا کند (باعث jump کیبورد iOS می‌شد).
-  const sel = 'textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview):not(.note-content-textarea)';
+  // توجه: textarea.note-content-textarea در موبایل از Auto-Grow کنار گذاشته شده
+  // (باعث jump کیبورد iOS می‌شد). در دسکتاپ (min-width:769px) auto-grow فعال است.
+  const isDesktop = window.matchMedia && window.matchMedia('(min-width:769px)').matches;
+  const noteContentSel = isDesktop ? '' : ':not(.note-content-textarea)';
+  const sel = `textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview)${noteContentSel}`;
   const nodes = scope.querySelectorAll ? scope.querySelectorAll(sel) : [];
   nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
   if (scope.matches && scope.matches(sel)) {
     scope.dataset.autogrowReady = '1'; _autoGrowTextarea(scope);
+  }
+  // در دسکتاپ: auto-grow را مستقیماً به note-content-textarea متصل می‌کنیم اگر هنوز نشده
+  if (isDesktop && scope.querySelectorAll) {
+    scope.querySelectorAll('textarea.note-content-textarea:not([data-autogrow-ready])').forEach((el) => {
+      el.dataset.autogrowReady = '1'; _autoGrowTextarea(el);
+    });
   }
 }
 
