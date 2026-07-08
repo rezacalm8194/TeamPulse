@@ -2667,6 +2667,48 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     background: var(--bg2) !important;
     transition: bottom .18s ease, transform .18s ease, padding .18s ease !important;
   }
+
+  /* iPhone/Android note editor: keep action buttons inside the modal flow.
+     fixed positioning fights Safari's keyboard viewport and can push buttons
+     behind the keyboard. Sticky keeps them directly below the content area and
+     always visible at the bottom of the visible modal. */
+  body.modal-keyboard-open .note-editor-modal .modal {
+    height: var(--modal-vh, 100dvh) !important;
+    max-height: var(--modal-vh, 100dvh) !important;
+    padding-bottom: 0 !important;
+    overflow: hidden !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 20 !important;
+    padding-top: max(66px, calc(env(safe-area-inset-top, 0px) + 24px)) !important;
+    padding-bottom: 8px !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-close {
+    width: 36px !important;
+    height: 36px !important;
+    align-self: center !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding: 8px 14px 8px !important;
+  }
+  body.modal-keyboard-open .note-editor-modal .modal-actions {
+    position: sticky !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: 0 !important;
+    z-index: 25 !important;
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+    padding: 7px 14px 8px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: 0 -8px 18px rgba(0,0,0,.25) !important;
+  }
 }
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
