@@ -3828,6 +3828,9 @@ window.api = {
         extra_note: p.extra_note||'',
         importance: p.importance||'normal',
         date_jalali: p.date_jalali||'',
+        status: p.status||'active',
+        tags: Array.isArray(p.tags) ? p.tags : [],
+        author: p.author||(_sbUser?.name||_sbUser?.email||''),
         stickers: [],
         attachments: [],
         created_at: new Date().toISOString(),
@@ -3846,10 +3849,15 @@ window.api = {
         if (p.title !== undefined) item.title = p.title;
         if (p.icon !== undefined) item.icon = p.icon;
         if (p.color !== undefined) item.color = p.color;
+        if (p.parent_id !== undefined) item.parent_id = p.parent_id || null;
+        if (p.type !== undefined) item.type = p.type;
         if (p.content !== undefined) item.content = p.content;
         if (p.extra_note !== undefined) item.extra_note = p.extra_note;
         if (p.importance !== undefined) item.importance = p.importance;
         if (p.date_jalali !== undefined) item.date_jalali = p.date_jalali;
+        if (p.status !== undefined) item.status = p.status;
+        if (p.tags !== undefined) item.tags = Array.isArray(p.tags) ? p.tags : [];
+        if (p.author !== undefined) item.author = p.author;
         if (p.stickers !== undefined) item.stickers = p.stickers;
         item.updated_at = new Date().toISOString();
       }
@@ -4480,7 +4488,7 @@ function _instrDescendants(id) {
   const walk = (pid) => {
     flat.filter(n => +n.parent_id === +pid).forEach(n => {
       out.push(n.id);
-      if (n.type === 'category') walk(n.id);
+      if (n.type === 'category' || n.type === 'kcategory') walk(n.id);
     });
   };
   walk(+id);
@@ -4496,7 +4504,7 @@ function _teamCanInstructionNode(id) {
   if (!node) return false;
   const ancestors = _instrAncestors(id);
   if (allowed.includes(+id) || ancestors.some(a => allowed.includes(+a))) return true;
-  if (node.type === 'category') {
+  if (node.type === 'category' || node.type === 'kcategory') {
     const descendants = _instrDescendants(id);
     return descendants.some(d => allowed.includes(+d));
   }
@@ -7571,7 +7579,7 @@ function _teamSelectAll(prefix, checked) {
 function _teamInstructionFolderPicker(prefix, selected) {
   const selectedIds = new Set((selected || []).map(Number));
   const allChecked = selectedIds.size === 0;
-  const folders = (_db.instructions || []).filter(n => n.type === 'category');
+  const folders = (_db.instructions || []).filter(n => n.type === 'category' || n.type === 'kcategory');
   const depthOf = (node) => _instrAncestors(node.id).length;
   const rows = folders.length ? folders
     .slice()
@@ -13035,6 +13043,109 @@ function _instrAccent(item) {
   const strong = item?.pinned || item?.importance === 'key';
   return strong ? (item.color || '#7c6af7') : 'rgba(148,163,184,.28)';
 }
+const INSTR_DEFAULT_CATEGORIES = [
+  { key:'personal', icon:'🏠', title:'شخصی', folders:['قوانین زندگی','اهداف و برنامه‌ها','سلامت','ارتباطات'] },
+  { key:'projects', icon:'🚀', title:'پروژه‌ها', folders:['TeamPulse','RezaSafari','FatemehHasantabar'] },
+  { key:'students', icon:'👨‍🎓', title:'شاگردان', folders:[] },
+  { key:'staff', icon:'👥', title:'همکاران', folders:[] },
+  { key:'business', icon:'💼', title:'کسب‌وکار', folders:[] },
+  { key:'education', icon:'📚', title:'آموزش', folders:['آموزش فروش','آموزش کوچینگ','آموزش برنامه‌نویسی'] },
+  { key:'public', icon:'🌍', title:'عمومی', folders:[] },
+];
+function _instrNextLocalId() {
+  if (!_db._nextId) _db._nextId = {};
+  if (!_db._nextId.instructions) {
+    _db._nextId.instructions = ((_db.instructions||[]).reduce((m,n)=>Math.max(m,+n.id||0),0) || 0) + 1;
+  }
+  return _db._nextId.instructions++;
+}
+function _instrEnsureKnowledgeStructure() {
+  if (!_db.instructions) _db.instructions = [];
+  if (_db._knowledgeSchemaVersion >= 2) return;
+  const items = _db.instructions;
+  const hadUserItems = items.length > 0;
+  const catByKey = {};
+  INSTR_DEFAULT_CATEGORIES.forEach((cat, idx) => {
+    let node = items.find(n => n.type === 'kcategory' && n.kcat_key === cat.key);
+    if (!node) {
+      node = {
+        id:_instrNextLocalId(), parent_id:null, type:'kcategory',
+        kcat_key:cat.key, title:cat.title, icon:cat.icon, color:'#7c6af7',
+        content:'', extra_note:'', importance:'normal', status:'active',
+        tags:[], stickers:[], attachments:[],
+        created_at:new Date(Date.now() + idx).toISOString(),
+        updated_at:new Date().toISOString(),
+      };
+      items.push(node);
+    }
+    catByKey[cat.key] = node;
+  });
+  const publicCat = catByKey.public;
+  let publicNotesFolder = null;
+  const roots = items.filter(n => !n.parent_id && n.type !== 'kcategory');
+  roots.forEach(n => {
+    if (n.type === 'category') {
+      n.parent_id = publicCat.id;
+    } else {
+      if (!publicNotesFolder) {
+        publicNotesFolder = items.find(x => x.type === 'category' && +x.parent_id === +publicCat.id && x.title === 'یادداشت‌های عمومی');
+        if (!publicNotesFolder) {
+          publicNotesFolder = {
+            id:_instrNextLocalId(), parent_id:publicCat.id, type:'category',
+            title:'یادداشت‌های عمومی', icon:'📝', color:'#64748b',
+            content:'', extra_note:'', importance:'normal', status:'active',
+            tags:[], stickers:[], attachments:[],
+            created_at:new Date().toISOString(), updated_at:new Date().toISOString(),
+          };
+          items.push(publicNotesFolder);
+        }
+      }
+      n.parent_id = publicNotesFolder.id;
+    }
+  });
+  if (!hadUserItems) {
+    INSTR_DEFAULT_CATEGORIES.forEach(cat => {
+      const parent = catByKey[cat.key];
+      cat.folders.forEach((title, i) => {
+        const exists = items.some(n => n.type === 'category' && +n.parent_id === +parent.id && n.title === title);
+        if (!exists) {
+          items.push({
+            id:_instrNextLocalId(), parent_id:parent.id, type:'category',
+            title, icon:'📁', color:'#64748b',
+            content:'', extra_note:'', importance:'normal', status:'active',
+            tags:[], stickers:[], attachments:[],
+            created_at:new Date(Date.now() + i).toISOString(), updated_at:new Date().toISOString(),
+          });
+        }
+      });
+    });
+  }
+  items.forEach(n => {
+    if (!Array.isArray(n.tags)) n.tags = [];
+    if (!n.status) n.status = 'active';
+  });
+  _db._knowledgeSchemaVersion = 2;
+  _save();
+}
+function _instrCurrentNode() {
+  return _instrParentId ? (_db.instructions||[]).find(n => +n.id === +_instrParentId) : null;
+}
+function _instrCurrentLevel() {
+  const node = _instrCurrentNode();
+  if (!node) return 'root';
+  if (node.type === 'kcategory') return 'category';
+  return 'folder';
+}
+function _parseTags(value) {
+  return String(value||'').split(/[،,\n#]+/).map(t => t.trim()).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
+}
+function _instrTagsHtml(tags, dense) {
+  tags = Array.isArray(tags) ? tags : [];
+  if (!tags.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:${dense?'3':'5'}px;margin-top:${dense?'4':'8'}px">
+    ${tags.slice(0, dense ? 3 : 8).map(t => `<span style="font-size:${dense?'9':'10'}px;padding:${dense?'1px 5px':'2px 7px'};border-radius:999px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:700">#${escapeHtml(t)}</span>`).join('')}
+  </div>`;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 async function renderInstructions(instrSearch) {
@@ -13043,13 +13154,14 @@ async function renderInstructions(instrSearch) {
   updateTopbarActions(`
     <div class="table-search" style="margin-left:8px">
       <span style="color:var(--text3)">🔍</span>
-      <input id="instr-search-input" placeholder="جستجو در عنوان، متن و پوشه‌ها... (کنترل + K)" oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
+      <input id="instr-search-input" placeholder="جستجو در دسته‌بندی، پوشه، یادداشت و برچسب... (کنترل + K)" oninput="renderInstructions(this.value)" value="${escapeHtml(instrSearch)}">
     </div>
   `);
 
   if (!_db) { _load(); }
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
+  _instrEnsureKnowledgeStructure();
 
   const rawFlat = _db.instructions || [];
   if (_instrParentId && !_teamCanInstructionNode(_instrParentId)) {
@@ -13112,6 +13224,12 @@ async function renderInstructions(instrSearch) {
 
   /* ── Get items for current folder ── */
   let items = flat.filter(n => (n.parent_id||null) === (_instrParentId ? +_instrParentId : null));
+  const currentLevel = _instrCurrentLevel();
+  if (!instrSearch) {
+    if (currentLevel === 'root') items = items.filter(n => n.type === 'kcategory');
+    else if (currentLevel === 'category') items = items.filter(n => n.type === 'category');
+    else items = items.filter(n => n.type !== 'category' && n.type !== 'kcategory');
+  }
 
   /* ── Search: full-text across ALL items ── */
   if (instrSearch) {
@@ -13120,7 +13238,7 @@ async function renderInstructions(instrSearch) {
       const res = [];
       flat.filter(function(n){ return (n.parent_id||null)===(pid?+pid:null); }).forEach(function(c){
         res.push(c);
-        if (c.type==='category') res.push.apply(res, _getAllDesc(c.id));
+        if (c.type==='category' || c.type==='kcategory') res.push.apply(res, _getAllDesc(c.id));
       });
       return res;
     }
@@ -13128,15 +13246,16 @@ async function renderInstructions(instrSearch) {
     items = scope.filter(function(n){
       return n.title.toLowerCase().includes(q) ||
         (n.content||'').toLowerCase().includes(q) ||
-        (n.extra_note||'').toLowerCase().includes(q);
+        (n.extra_note||'').toLowerCase().includes(q) ||
+        (Array.isArray(n.tags) && n.tags.some(t => String(t).toLowerCase().includes(q)));
     });
   }
 
   /* ── Filter ── */
   if (!instrSearch) {
     if (_instrFilter === 'pinned') items = items.filter(x => x.pinned);
-    else if (_instrFilter === 'folder') items = items.filter(x => x.type === 'category');
-    else if (_instrFilter === 'note') items = items.filter(x => x.type !== 'category');
+    else if (_instrFilter === 'folder') items = items.filter(x => x.type === 'category' || x.type === 'kcategory');
+    else if (_instrFilter === 'note') items = items.filter(x => x.type !== 'category' && x.type !== 'kcategory');
   }
 
   /* ── Pinned section (root only) ── */
@@ -13149,7 +13268,7 @@ async function renderInstructions(instrSearch) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">`;
       pinned.forEach(item => {
         const c = item.color || '#7c6af7';
-        pinnedBar += `<div onclick="${item.type==='category'?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${item.type!=='category'?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
+        pinnedBar += `<div onclick="${(item.type==='category'||item.type==='kcategory')?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${(item.type!=='category'&&item.type!=='kcategory')?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
           style="display:flex;align-items:center;gap:7px;padding:7px 12px;background:var(--bg2);border:1px solid var(--border);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
           onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
           <span>${item.icon||'📁'}</span><span>${escapeHtml(item.title)}</span>
@@ -13169,7 +13288,7 @@ async function renderInstructions(instrSearch) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">`;
       recentNodes.forEach(item => {
         const c = item.color || '#7c6af7';
-        recentBar += `<div onclick="${item.type==='category'?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${item.type!=='category'?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
+        recentBar += `<div onclick="${(item.type==='category'||item.type==='kcategory')?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${(item.type!=='category'&&item.type!=='kcategory')?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
           style="display:flex;align-items:center;gap:7px;padding:7px 14px;background:var(--bg3);border:1px solid var(--border2);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
           onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
           <span>${item.icon||'📝'}</span><span>${escapeHtml(item.title)}</span>
@@ -13182,26 +13301,35 @@ async function renderInstructions(instrSearch) {
   /* ── Empty state ── */
   if (items.length === 0) {
     const canCreateHere = _teamCanCreateInstruction(_instrParentId);
+    const emptyIcon = instrSearch ? '🔍' : (currentLevel === 'root' ? '🗂' : (currentLevel === 'category' ? '📁' : '📝'));
+    const emptyHint = currentLevel === 'root'
+      ? 'برای شروع، دانش‌ها را در دسته‌بندی‌های اصلی مرتب کن.'
+      : currentLevel === 'category'
+        ? 'داخل این دسته‌بندی چند پوشه بساز تا یادداشت‌ها منظم بمانند.'
+        : 'یادداشت‌های این پوشه هنوز ثبت نشده‌اند.';
+    const emptyCreate = currentLevel === 'root'
+      ? `<button class="btn btn-primary" onclick="openAddInstruction(null,'kcategory')">🗂 دسته‌بندی جدید</button>`
+      : currentLevel === 'category'
+        ? `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>`
+        : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>`;
     setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
-        <span style="font-size:52px">${instrSearch ? '🔍' : (_instrParentId ? '📂' : '📋')}</span>
+        <span style="font-size:52px">${emptyIcon}</span>
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
-        ${!instrSearch && !_instrParentId && canCreateHere ? `
+        ${!instrSearch && canCreateHere ? `
           <p style="font-size:12px;color:var(--text3);line-height:1.8;max-width:300px;margin:0 auto 16px">
-            دانش، فرایندها و قوانین زندگیت را اینجا ذخیره کن.<br>
-            هر چیزی که باید بعداً بهش رجوع کنی — SOP، ایده، قوانین کسب‌وکار.
+            ${emptyHint}
           </p>
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-            <button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>
-            <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
+            ${emptyCreate}
           </div>` : ''}
       </div>` + _instrFabHtml());
     return;
   }
 
   /* ── Separate folders / notes ── */
-  const folders = items.filter(x => x.type === 'category');
-  const notes   = items.filter(x => x.type !== 'category');
+  const folders = items.filter(x => x.type === 'category' || x.type === 'kcategory');
+  const notes   = items.filter(x => x.type !== 'category' && x.type !== 'kcategory');
 
   /* ── Sort: pinned always float first; within each group, order depends on _instrSort ── */
   const sortItems = arr => {
@@ -13218,17 +13346,19 @@ async function renderInstructions(instrSearch) {
 
   /* ── FOLDERS ── */
   if (folders.length > 0) {
+    const folderTitle = currentLevel === 'root' && !instrSearch ? 'دسته‌بندی‌ها' : 'پوشه‌ها';
     html += `<div class="instr-folders-section" style="margin-bottom:24px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;text-transform:uppercase">📁 پوشه‌ها (${fa(folders.length)})</div>`;
+      <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;margin-bottom:10px">${currentLevel === 'root' && !instrSearch ? '🗂' : '📁'} ${folderTitle} (${fa(folders.length)})</div>`;
 
     if (_instrView === 'gallery') {
       /* ── GALLERY: tall cards, big icon, preview of 3 notes, color bar ── */
       html += `<div class="_ifgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px">`;
       sortItems(folders).forEach(item => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
+        const countLabel = item.type === 'kcategory' ? 'پوشه' : 'آیتم';
         const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
-        const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category').slice(0,3);
+        const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category' && x.type !== 'kcategory').slice(0,3);
         const previewHtml = preview.length ? `
           <div class="_ifcard-preview" style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px">
             ${preview.map(n=>`<div style="font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">✓ ${escapeHtml(n.title)}</div>`).join('')}
@@ -13249,7 +13379,7 @@ async function renderInstructions(instrSearch) {
               <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${item.icon||'📁'}</div>
               <div style="font-weight:700;font-size:14px;margin-bottom:6px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
-              <span style="font-size:11px;color:var(--text3)">${fa(childCount)} آیتم</span>
+              <span style="font-size:11px;color:var(--text3)">${fa(childCount)} ${countLabel}</span>
               ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
             </div>
             ${previewHtml}
@@ -13268,6 +13398,7 @@ async function renderInstructions(instrSearch) {
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">`;
       sortItems(folders).forEach((item, idx, arr) => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
+        const countLabel = item.type === 'kcategory' ? 'پوشه' : 'آیتم';
         const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const isLast = idx === arr.length - 1;
@@ -13285,7 +13416,7 @@ async function renderInstructions(instrSearch) {
                 <span style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
-              <div style="font-size:11px;color:var(--text3);margin-top:1px">${fa(childCount)} آیتم</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:1px">${fa(childCount)} ${countLabel}</div>
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
             <span style="color:var(--text3);flex-shrink:0;font-size:14px">‹</span>
@@ -13304,6 +13435,7 @@ async function renderInstructions(instrSearch) {
       html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">`;
       sortItems(folders).forEach((item, idx, arr) => {
         const childCount = flat.filter(x => x.parent_id && +x.parent_id === +item.id).length;
+        const countLabel = item.type === 'kcategory' ? 'پوشه' : 'آیتم';
         const color = _instrAccent(item);
         const isLast = idx === arr.length - 1;
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
@@ -13317,7 +13449,7 @@ async function renderInstructions(instrSearch) {
             <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📁'}</span>
             <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
-            <span style="font-size:10px;color:var(--text3);flex-shrink:0">${fa(childCount)}</span>
+            <span style="font-size:10px;color:var(--text3);flex-shrink:0">${fa(childCount)} ${countLabel}</span>
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
@@ -13355,6 +13487,7 @@ async function renderInstructions(instrSearch) {
             <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${item.icon||'📝'}</div>
             <div style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;margin-bottom:6px">${escapeHtml(item.title)}</div>
             ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
+            ${_instrTagsHtml(item.tags||[], true)}
             ${excerptText ? `<div class="_ifcard-preview" style="font-size:12px;color:var(--text2);line-height:1.65;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>90?'…':''}</div>` : '<div style="flex:1"></div>'}
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">✏️ ${lastEdit}</div>` : ''}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
@@ -13390,6 +13523,7 @@ async function renderInstructions(instrSearch) {
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
               ${excerptText ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>80?'…':''}</div>` : ''}
+              ${_instrTagsHtml(item.tags||[], true)}
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
@@ -13499,17 +13633,22 @@ function _viewBtn(key, label) {
    فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
   const sortLabel = { default:'پیش‌فرض', name:'نام', recent:'آخرین ویرایش', oldest:'قدیمی‌ترین' }[_instrSort];
-  const canCreate = !_instrParentId && _teamCanCreateInstruction(_instrParentId);
-  return `
-    <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
-      ${canCreate ? `
+  const level = _instrCurrentLevel();
+  const canCreate = _teamCanCreateInstruction(_instrParentId);
+  const createButtons = !canCreate ? '' : level === 'root' ? `
+      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(null,'kcategory')" style="font-size:12px">
+        <span class="btn-icon">🗂</span><span> دسته‌بندی جدید</span>
+      </button>` : level === 'category' ? `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
-      </button>
-      <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
+      </button>` : `
+      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
-      </button>
-      <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>` : ''}
+      </button>`;
+  return `
+    <div class="instr-toolbar" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:6px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+      ${createButtons}
+      ${createButtons ? `<div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>` : ''}
       <div class="instr-toolbar-segment">
         <span class="instr-control-label">فیلتر</span>
         ${_filterBtn('all','همه')}
@@ -13547,19 +13686,22 @@ if (!window._instrQuickSearchBound) {
 /* ── دکمه شناور (FAB) ایجاد یادداشت/پوشه — فقط موبایل ── */
 function _instrFabHtml() {
   if (!_teamCanCreateInstruction(_instrParentId)) return '';
+  const level = _instrCurrentLevel();
+  const actions = level === 'root'
+    ? [{ type:'kcategory', icon:'🗂', label:'دسته‌بندی جدید' }]
+    : level === 'category'
+      ? [{ type:'category', icon:'📁', label:'پوشه جدید' }]
+      : [
+          { type:'note', icon:'📝', label:'یادداشت جدید' },
+          { type:'checklist', icon:'✅', label:'چک‌لیست جدید' },
+        ];
   return `
     <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
       <div class="instr-fab-menu" id="instr-fab-menu">
-        <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'category')">
-          <span>📁</span><span>پوشه جدید</span>
-        </button>
-        <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'checklist')">
-          <span>✅</span><span>چک‌لیست جدید</span>
-        </button>
-        <button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(_instrParentId,'note')">
-          <span>📝</span><span>یادداشت جدید</span>
-        </button>
+        ${actions.map(a => `<button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(${level === 'root' ? 'null' : '_instrParentId'},'${a.type}')">
+          <span>${a.icon}</span><span>${a.label}</span>
+        </button>`).join('')}
       </div>
       <button type="button" class="instr-fab-btn" id="instr-fab-btn" onclick="_toggleInstrFab()">+</button>
     </div>`;
@@ -13734,7 +13876,7 @@ function _instrBulkMove() {
     }
     return false;
   }
-  const folders = (_db.instructions || []).filter(x => x.type === 'category' && !idSet.has(x.id) && !isDescendantOfSelected(x.id));
+  const folders = (_db.instructions || []).filter(x => (x.type === 'category' || x.type === 'kcategory') && !idSet.has(x.id) && !isDescendantOfSelected(x.id));
   const optionsHtml = folders.map(f => `
     <div onclick="_confirmBulkMove(${f.id})" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border2);margin-bottom:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
       <span>${f.icon || '📁'}</span><span style="font-size:13px">${escapeHtml(f.title)}</span>
@@ -13793,7 +13935,7 @@ function _instrBulkExport() {
     const node = (_db.instructions || []).find(x => x.id === id);
     if (!node) return [];
     let list = [node];
-    if (node.type === 'category') {
+    if (node.type === 'category' || node.type === 'kcategory') {
       (_db.instructions || []).filter(x => x.parent_id === node.id).forEach(c => { list = list.concat(collect(c.id)); });
     }
     return list;
@@ -13805,8 +13947,8 @@ function _instrBulkExport() {
 
   let text = '';
   allNodes.forEach(n => {
-    if (n.type === 'category') {
-      text += `\n\n# 📁 ${n.title}\n`;
+    if (n.type === 'category' || n.type === 'kcategory') {
+      text += `\n\n# ${n.icon || '📁'} ${n.title}\n`;
     } else {
       text += `\n\n## ${n.icon || '📝'} ${n.title}\n`;
       if (n.content) text += n.content + '\n';
@@ -13982,11 +14124,16 @@ function openNoteDetail(id) {
   const isKey = node.importance === 'key';
   const dateStr = node.date_jalali ? `<div class="detail-row"><span class="detail-key">📅 تاریخ</span><span class="detail-val">${DateService.disp(node.date_jalali)}</span></div>` : '';
   const impStr = `<div class="detail-row"><span class="detail-key">اهمیت</span><span class="detail-val">${isKey?'<span style="color:var(--amber);font-weight:600">⭐ مهم و کلیدی</span>':'معمولی'}</span></div>`;
+  const statusMap = { active:'در حال انجام', done:'انجام شده', paused:'متوقف' };
+  const statusStr = `<div class="detail-row"><span class="detail-key">وضعیت</span><span class="detail-val">${statusMap[node.status||'active'] || 'در حال انجام'}</span></div>`;
+  const authorStr = node.author ? `<div class="detail-row"><span class="detail-key">نویسنده</span><span class="detail-val">${escapeHtml(node.author)}</span></div>` : '';
+  const tagsStr = _instrTagsHtml(node.tags||[]);
 
   openModal(`${node.icon||'📝'} ${escapeHtml(node.title)}`, `
     <div id="note-sticker-display-${id}" style="font-size:20px;letter-spacing:3px;margin-bottom:${stickers.length?'8':'0'}px">${stickers.join(' ')}</div>
     <div class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
-      ${dateStr}${impStr}
+      ${dateStr}${impStr}${statusStr}${authorStr}
+      ${tagsStr ? `<div style="margin-top:10px">${tagsStr}</div>` : ''}
     </div>
     <div class="detail-section">
       <h3>📄 محتوا</h3>
@@ -14088,9 +14235,9 @@ function openAddInstruction(parentId, type) {
     `<div onclick="document.getElementById('instr-color').value='${c}';document.querySelectorAll('.color-pick-dot').forEach(d=>d.style.outline='none');this.style.outline='3px solid var(--text)'" class="color-pick-dot" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0"></div>`
   ).join('');
 
-  const defaultIcon = type === 'category' ? '📁' : (type === 'checklist' ? '✅' : '📝');
-  const pholder = type === 'category' ? 'مثلاً: پسوردها، ایده‌های کسب‌وکار' : (type === 'checklist' ? 'مثلاً: چک‌لیست شروع پروژه' : 'مثلاً: دستورالعمل سرور');
-  const modalTitle = type === 'category' ? '📁 پوشه جدید' : (type === 'checklist' ? '✅ چک‌لیست جدید' : '📝 یادداشت جدید');
+  const defaultIcon = type === 'kcategory' ? '🗂' : (type === 'category' ? '📁' : (type === 'checklist' ? '✅' : '📝'));
+  const pholder = type === 'kcategory' ? 'مثلاً: مالی، طراحی، منابع' : (type === 'category' ? 'مثلاً: پسوردها، ایده‌های کسب‌وکار' : (type === 'checklist' ? 'مثلاً: چک‌لیست شروع پروژه' : 'مثلاً: دستورالعمل سرور'));
+  const modalTitle = type === 'kcategory' ? '🗂 دسته‌بندی جدید' : (type === 'category' ? '📁 پوشه جدید' : (type === 'checklist' ? '✅ چک‌لیست جدید' : '📝 یادداشت جدید'));
   const _pId = (parentId && parentId !== 'null') ? +parentId : null;
   /* چک‌لیست از نظر ساختار داده همان «یادداشت» است، فقط محتوای اولیه‌اش با چند خط
      «[ ] ...» پر می‌شه تا کاربر مستقیم آیتم‌ها را تایپ کنه؛ ذخیره هم مثل note انجام می‌شه */
@@ -14109,8 +14256,8 @@ function openAddInstruction(parentId, type) {
     </div>`;
 
   let bodyHtml;
-  if (type === 'category') {
-    /* ── Folders: just 3 fields, nothing to hide ── */
+  if (type === 'category' || type === 'kcategory') {
+    /* ── Categories/Folders: just 3 fields, nothing to hide ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان *</label>
@@ -14143,8 +14290,20 @@ function openAddInstruction(parentId, type) {
             ${_impChipsHtml('instr-importance','normal')}
           </div>
           <div class="form-group">
+            <label class="form-label">وضعیت</label>
+            <select class="form-input" id="instr-status">
+              <option value="active">در حال انجام</option>
+              <option value="done">انجام شده</option>
+              <option value="paused">متوقف</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">📅 تاریخ (شمسی)</label>
             <input class="form-input jdate" id="instr-date" value="${formatJalali(...todayJalali())}">
+          </div>
+          <div class="form-group full">
+            <label class="form-label">🏷 برچسب‌ها</label>
+            <input class="form-input" id="instr-tags" placeholder="مثلاً: UI، UX، مهم، در حال انجام">
           </div>
           <div class="form-group full">
             <label class="form-label">📝 یادداشت تکمیلی</label>
@@ -14158,8 +14317,8 @@ function openAddInstruction(parentId, type) {
   openModal(modalTitle, `<div class="form-grid">${bodyHtml}</div>`, [
     { label: 'ذخیره', cls: 'btn-primary', action: `saveAddInstruction(${_pId||'null'},'${type === 'checklist' ? 'note' : type}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ], type !== 'category' ? { overlayClass: 'note-editor-modal' } : {});
-  if (type !== 'category') initDatePickers();
+  ], (type !== 'category' && type !== 'kcategory') ? { overlayClass: 'note-editor-modal' } : {});
+  if (type !== 'category' && type !== 'kcategory') initDatePickers();
   // note-content-textarea نباید هیچ‌وقت auto-grow بگیرد (باعث jump کیبورد iOS می‌شد)؛
   // اگر به هر دلیلی data-autogrow-ready یا style.height از قبل روی این المان مانده،
   // اینجا پاکش می‌کنیم تا CSS اسکرول داخلی (height:100%) بدون تداخل اعمال شود.
@@ -14199,7 +14358,9 @@ async function saveAddInstruction(parentId, type) {
   const extra_note = document.getElementById('instr-extra')?.value || '';
   const importance = document.getElementById('instr-importance')?.value || 'normal';
   const date_jalali = document.getElementById('instr-date')?.value || '';
-  const res = await window.api.instructions.add({ parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali });
+  const status = document.getElementById('instr-status')?.value || 'active';
+  const tags = _parseTags(document.getElementById('instr-tags')?.value || '');
+  const res = await window.api.instructions.add({ parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali, status, tags });
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
   showToast('ذخیره شد ✓', 'success');
@@ -14233,8 +14394,8 @@ function openEditInstruction(id) {
     </div>`;
 
   let bodyHtml;
-  if (node.type === 'category') {
-    /* ── Folders: just 3 fields, nothing to hide ── */
+  if (node.type === 'category' || node.type === 'kcategory') {
+    /* ── Categories/Folders: just 3 fields, nothing to hide ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان</label>
@@ -14267,8 +14428,20 @@ function openEditInstruction(id) {
             ${_impChipsHtml('ei-importance', node.importance==='key' ? 'key' : 'normal')}
           </div>
           <div class="form-group">
+            <label class="form-label">وضعیت</label>
+            <select class="form-input" id="ei-status">
+              <option value="active" ${(node.status||'active')==='active'?'selected':''}>در حال انجام</option>
+              <option value="done" ${node.status==='done'?'selected':''}>انجام شده</option>
+              <option value="paused" ${node.status==='paused'?'selected':''}>متوقف</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">📅 تاریخ (شمسی)</label>
             <input class="form-input jdate" id="ei-date" value="${node.date_jalali||''}">
+          </div>
+          <div class="form-group full">
+            <label class="form-label">🏷 برچسب‌ها</label>
+            <input class="form-input" id="ei-tags" value="${escapeHtml((node.tags||[]).join('، '))}" placeholder="مثلاً: UI، UX، مهم، در حال انجام">
           </div>
           <div class="form-group full">
             <label class="form-label">📝 یادداشت تکمیلی</label>
@@ -14324,6 +14497,8 @@ async function saveEditInstruction(id, type) {
     extra_note: document.getElementById('ei-extra')?.value || '',
     importance: document.getElementById('ei-importance')?.value || 'normal',
     date_jalali: document.getElementById('ei-date')?.value || '',
+    status: document.getElementById('ei-status')?.value || 'active',
+    tags: _parseTags(document.getElementById('ei-tags')?.value || ''),
   });
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
@@ -14335,7 +14510,7 @@ async function deleteInstruction(id) {
   const node = (_db.instructions||[]).find(n => n.id === +id);
   if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const name = node ? escapeHtml(node.title) : 'این مورد';
-  const isFolder = node && node.type === 'category';
+  const isFolder = node && (node.type === 'category' || node.type === 'kcategory');
   const childCount = isFolder ? (_db.instructions||[]).filter(x => x.parent_id && +x.parent_id === +id).length : 0;
   const warnText = isFolder && childCount > 0
     ? `<div style="color:var(--red);background:rgba(248,113,113,.1);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:13px">⚠️ این پوشه دارای ${fa(childCount)} مورد زیرشاخه است که همه حذف خواهند شد.</div>`
