@@ -15502,6 +15502,7 @@ let _sbUser = null;
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
   const url = _API_URL + path;
+  const timeoutMs = Number.isFinite(+opts.timeoutMs) ? +opts.timeoutMs : 12000;
   const isFormData = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
   const headers = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -15510,8 +15511,23 @@ async function _apiFetch(path, opts = {}) {
   if (_sbSession?.token) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
-  const res = await fetch(url, { ...opts, headers });
-  return res;
+  const fetchOpts = { ...opts, headers };
+  delete fetchOpts.timeoutMs;
+  let timer = null;
+  let controller = null;
+  if (!fetchOpts.signal && typeof AbortController !== 'undefined' && timeoutMs > 0) {
+    controller = new AbortController();
+    fetchOpts.signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  }
+  try {
+    return await fetch(url, fetchOpts);
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('api_timeout');
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function _getApiAuthToken() {
@@ -15573,7 +15589,14 @@ const _auth = {
       _sbSession = { token: saved.token };
       _authSaveSession({ token: saved.token, user });
       return { token: saved.token, user };
-    } catch(e) { return null; }
+    } catch(e) {
+      if (e && e.message === 'api_timeout') {
+        _sbUser = saved.user;
+        _sbSession = { token: saved.token };
+        return { token: saved.token, user: saved.user, offline: true };
+      }
+      return null;
+    }
   },
 
   isAdmin() {
@@ -15623,7 +15646,8 @@ async function _syncToServer() {
     if (!accId) return;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: _db })
+      body: JSON.stringify({ data: _db }),
+      timeoutMs: 8000
     });
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
@@ -15639,7 +15663,7 @@ async function _loadFromServer() {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
     if (!accId) return false;
-    const res = await _apiFetch('/api/data/' + accId);
+    const res = await _apiFetch('/api/data/' + accId, { timeoutMs: 7000 });
     if (res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
       return false;
@@ -15963,7 +15987,7 @@ async function _authOnSuccess() {
 
   // آپدیت wallet از سرور
   try {
-    const wRes = await _apiFetch('/api/wallet');
+    const wRes = await _apiFetch('/api/wallet', { timeoutMs: 6000 });
     if (wRes.ok) {
       const ct = wRes.headers.get('content-type') || '';
       if (!ct.includes('application/json')) throw new Error('not json');
@@ -19876,22 +19900,31 @@ if (document.readyState === 'loading') {
   _initResponsiveTableObserver();
 }
 
+let _teamPulseStarted = false;
 function _startApp() {
+  if (_teamPulseStarted) return;
+  _teamPulseStarted = true;
   _initAuth().then(authed => {
     if (authed) {
       updateAccountDisplay();
     }
+  }).catch(e => {
+    console.error('[TeamPulse] startup failed:', e);
+    const content = document.getElementById('content');
+    if (content) {
+      content.innerHTML = '<div style="text-align:center;padding:40px;color:#f87171"><h2>خطا در شروع برنامه</h2><p style="color:#9399ab;margin:10px 0">اتصال یا کش مرورگر کامل پاسخ نداد. دوباره تلاش کن.</p><button onclick="location.reload()" style="padding:10px 24px;background:#7c6af7;color:white;border:none;border-radius:8px;cursor:pointer">تلاش مجدد</button></div>';
+    }
   });
 }
-// چون فایل چند تگ <script> جدا داره (renderHabits و بقیه‌ی توابع صفحات آخر فایل
-// در یک <script> بعدی تعریف می‌شن)، باید صبر کنیم همه‌ی اسکریپت‌ها اجرا بشن،
-// وگرنه اگه _initAuth سریع resolve بشه و صفحه‌ی ذخیره‌شده «عادت‌ها» باشه،
-// renderHabits هنوز تعریف نشده و خطای ReferenceError می‌ده.
-if (document.readyState === 'complete') {
-  _startApp();
+// شروع برنامه نباید منتظر window.load بماند؛ یک asset یا request کند می‌تواند
+// رویداد load را نگه دارد و صفحه روی «در حال بارگذاری» گیر کند.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(_startApp, 0), { once: true });
 } else {
-  window.addEventListener('load', _startApp, { once: true });
+  setTimeout(_startApp, 0);
 }
+// fallback دفاعی برای مرورگرهایی که در restore/cache رفتار غیرمنتظره دارند.
+setTimeout(_startApp, 2500);
 
 // ── MagicBento effect for .stat-card (global, event-delegated) ──────────────
 (function() {
