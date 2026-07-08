@@ -2726,6 +2726,142 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     border-radius: 0 !important;
     box-shadow: 0 -8px 18px rgba(0,0,0,.25) !important;
   }
+
+  /* Session editor: iOS/Android keyboard-safe full page.
+     Keep the close button and actions inside the visible modal flow; Safari's
+     keyboard viewport fights fixed footers and creates the black gap shown on iPhone. */
+  .session-editor-modal.modal-overlay,
+  body.modal-keyboard-open .session-editor-modal.modal-overlay {
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    height: var(--modal-vh, 100dvh) !important;
+    min-height: var(--modal-vh, 100dvh) !important;
+    background: var(--bg2) !important;
+    padding: 0 !important;
+  }
+  .session-editor-modal .modal,
+  body.modal-keyboard-open .session-editor-modal .modal {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: var(--modal-vh, 100dvh) !important;
+    max-height: var(--modal-vh, 100dvh) !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+  }
+  .session-editor-modal .modal-header,
+  body.modal-keyboard-open .session-editor-modal .modal-header {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    top: auto !important;
+    z-index: 20 !important;
+    min-height: 88px !important;
+    padding: max(44px, calc(env(safe-area-inset-top, 0px) + 18px)) 18px 10px !important;
+    border-radius: 0 !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .modal-header {
+    min-height: 68px !important;
+    padding: max(30px, calc(env(safe-area-inset-top, 0px) + 10px)) 14px 7px !important;
+  }
+  .session-editor-modal .modal-title,
+  body.modal-keyboard-open .session-editor-modal .modal-title {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+  }
+  .session-editor-modal .modal-fullpage-close,
+  body.modal-keyboard-open .session-editor-modal .modal-fullpage-close {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 11px !important;
+    align-self: center !important;
+    margin-top: 0 !important;
+  }
+  .session-editor-modal .modal-body,
+  body.modal-keyboard-open .session-editor-modal .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 10px 18px 10px !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .modal-body {
+    padding: 6px 14px 6px !important;
+  }
+  .session-editor-modal .modal-body > .form-grid,
+  body.modal-keyboard-open .session-editor-modal .modal-body > .form-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding-bottom: 8px !important;
+  }
+  body.modal-keyboard-open .session-editor-modal #ses-presummary-container,
+  body.modal-keyboard-open .session-editor-modal .ses-meta-bar {
+    display: none !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .ses-title-label,
+  body.modal-keyboard-open .session-editor-modal .session-note-wrap > .form-label {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .ses-title-input {
+    min-height: 34px !important;
+    padding: 7px 10px !important;
+    font-size: 12px !important;
+  }
+  .session-editor-modal .session-note-wrap,
+  body.modal-keyboard-open .session-editor-modal .session-note-wrap {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .session-note-wrap .rich-toolbar {
+    flex: 0 0 auto !important;
+    min-height: 34px !important;
+    padding: 5px 7px !important;
+  }
+  .session-editor-modal #f-ses-note,
+  body.modal-keyboard-open .session-editor-modal #f-ses-note {
+    flex: 1 1 auto !important;
+    min-height: 180px !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    resize: none !important;
+    padding-bottom: 18px !important;
+    scroll-padding-bottom: 18px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .form-group[style*="border-top"],
+  body.modal-keyboard-open .session-editor-modal #f-ses-adv-toggle {
+    margin-top: 2px !important;
+  }
+  .session-editor-modal .modal-actions,
+  body.modal-keyboard-open .session-editor-modal .modal-actions {
+    position: sticky !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: 0 !important;
+    z-index: 25 !important;
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+    padding: 8px 18px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    background: var(--bg2) !important;
+    box-shadow: 0 -8px 18px rgba(0,0,0,.25) !important;
+    transition: padding .18s ease, box-shadow .18s ease !important;
+  }
+  body.modal-keyboard-open .session-editor-modal .modal-actions {
+    padding: 7px 14px 8px !important;
+  }
 }
 /* Smooth momentum scrolling */
 .content, .modal, #key-events-list, #admin-users-list { -webkit-overflow-scrolling: touch; }
@@ -6662,7 +6798,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full">
+      <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
@@ -6723,16 +6859,17 @@ async function openAddSessionGeneral(presetStudentId = null) {
   `, [
     { label: 'ثبت جلسه', cls: 'btn-primary', action: `saveSessionGeneral()` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ], { fullPage: true });
+  ], { fullPage: true, overlayClass: 'session-editor-modal' });
   initDatePickers();
   window._pendingSessionAttachments = [];
   window._pendingFollowups = [];
-  setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
+  if (!isMobile()) setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
   setTimeout(() => {
     const sid = initStudentId || +document.getElementById('f-ses-student')?.value;
     if (sid) _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
     _updateSesPeriodBadge();
     _updateSesMetaSummary();
+    _bindSessionTextareaVisibilityGuard();
   }, 0);
 }
 
@@ -6791,6 +6928,30 @@ function _toggleExtraNote() {
   body.style.display = open ? 'none' : 'block';
   if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
   if (!open) setTimeout(() => document.getElementById('f-ses-extra')?.focus(), 50);
+}
+
+function _bindSessionTextareaVisibilityGuard() {
+  const ta = document.getElementById('f-ses-note');
+  if (!ta || ta.dataset.visibilityGuard === '1') return;
+  ta.dataset.visibilityGuard = '1';
+  const keepCaretVisible = () => {
+    if (!document.body.classList.contains('modal-keyboard-open')) return;
+    requestAnimationFrame(() => {
+      const nearEnd = ta.selectionStart >= Math.max(0, ta.value.length - 2);
+      if (nearEnd) ta.scrollTop = ta.scrollHeight;
+      const body = ta.closest('.modal-body');
+      const wrap = ta.closest('.session-note-wrap');
+      if (body && wrap) {
+        const bodyRect = body.getBoundingClientRect();
+        const wrapRect = wrap.getBoundingClientRect();
+        const overflow = wrapRect.bottom - bodyRect.bottom + 10;
+        if (overflow > 0) body.scrollTop += overflow;
+      }
+    });
+  };
+  ta.addEventListener('input', keepCaretVisible);
+  ta.addEventListener('focus', keepCaretVisible);
+  ta.addEventListener('keyup', keepCaretVisible);
 }
 
 function _toggleAdvSes() {
@@ -6917,7 +7078,7 @@ async function openEditSession(sessionId) {
       </div>
 
       <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full">
+      <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
@@ -6980,7 +7141,7 @@ async function openEditSession(sessionId) {
   `, [
     { label: 'ذخیره جلسه', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ], { fullPage: true });
+  ], { fullPage: true, overlayClass: 'session-editor-modal' });
   initDatePickers();
   const dateInput = document.getElementById('f-ses-date');
   if (dateInput) {
@@ -6991,6 +7152,7 @@ async function openEditSession(sessionId) {
     _renderAchievementTagPicker(_primaryEvalFormId(session.student_id) || session.eval_form_id, session.achievement_tags || []);
     _updateSesPeriodBadge();
     _updateSesMetaSummary();
+    _bindSessionTextareaVisibilityGuard();
   }, 0);
 }
 
@@ -13035,7 +13197,9 @@ function _syncOpenModalMetrics() {
   requestAnimationFrame(() => {
     const actions = document.querySelector('#modal-overlay.open .modal-actions');
     const footerH = actions ? Math.ceil(actions.getBoundingClientRect().height) : 56;
-    document.documentElement.style.setProperty('--modal-keyboard-footer-h', Math.max(52, footerH) + 'px');
+    const safeFooterH = Math.max(52, footerH);
+    document.documentElement.style.setProperty('--modal-actions-h', safeFooterH + 'px');
+    document.documentElement.style.setProperty('--modal-keyboard-footer-h', safeFooterH + 'px');
     _setRealAppHeight();
   });
 }
