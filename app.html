@@ -14739,8 +14739,8 @@ function openNoteDetail(id) {
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px;box-shadow:none' },
-    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})`, style: 'margin-left:auto' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})`, style: 'margin-left:auto' },
   ]);
 }
 
