@@ -2658,15 +2658,29 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   }
   .note-editor-modal .modal-body > .form-grid,
   body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
     padding-bottom: 12px !important;
   }
+  .note-editor-modal .form-group.full.note-content-wrap,
+  body.modal-keyboard-open .note-editor-modal .form-group.full.note-content-wrap {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
   .note-editor-modal textarea.note-content-textarea,
   body.modal-keyboard-open .note-editor-modal textarea.note-content-textarea {
+    flex: 1 1 auto !important;
     min-height: 180px !important;
+    height: auto !important;
     max-height: none !important;
     overflow-y: auto !important;
     resize: none !important;
+    box-sizing: border-box !important;
+    padding-bottom: calc(var(--modal-keyboard-footer-h, 56px) + 18px) !important;
+    scroll-padding-bottom: calc(var(--modal-keyboard-footer-h, 56px) + 18px) !important;
   }
   .modal-overlay.open .modal-actions,
   body.modal-keyboard-open .modal-actions,
@@ -2711,7 +2725,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     flex: 1 1 auto !important;
     min-height: 0 !important;
     overflow-y: auto !important;
-    padding: 8px 14px 8px !important;
+    padding: 8px 14px 0 !important;
   }
   body.modal-keyboard-open .note-editor-modal .modal-actions {
     position: sticky !important;
@@ -14609,6 +14623,26 @@ function _toggleAdvanced(sectionId, btnId) {
     ? 'تنظیمات کمتر ▴'
     : 'تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾';
 }
+function _bindNoteContentVisibilityGuard(ta) {
+  if (!ta || ta.dataset.noteVisibilityGuard === '1') return;
+  ta.dataset.noteVisibilityGuard = '1';
+  const keepCaretVisible = function () {
+    if (!document.body.classList.contains('modal-keyboard-open')) return;
+    const valueLen = ta.value.length;
+    const cursor = typeof ta.selectionStart === 'number' ? ta.selectionStart : valueLen;
+    if (cursor < valueLen - 3) return;
+    requestAnimationFrame(function () {
+      const footerH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--modal-keyboard-footer-h'), 10) || 56;
+      const safeGap = footerH + 18;
+      const bottomHidden = ta.scrollHeight - ta.clientHeight - ta.scrollTop;
+      if (bottomHidden < safeGap) ta.scrollTop = Math.max(0, ta.scrollHeight - ta.clientHeight);
+    });
+  };
+  ta.addEventListener('input', keepCaretVisible);
+  ta.addEventListener('keyup', keepCaretVisible);
+  ta.addEventListener('click', keepCaretVisible);
+  ta.addEventListener('focus', keepCaretVisible);
+}
 function _setImportanceChip(inputId, value, btn) {
   const input = document.getElementById(inputId);
   if (input) input.value = value;
@@ -14740,6 +14774,7 @@ function openAddInstruction(parentId, type) {
     delete ta.dataset.autogrowReady;
     ta.style.height = '';
     ta.style.overflowY = '';
+    _bindNoteContentVisibilityGuard(ta);
   })();
   setTimeout(() => {
     const first = document.querySelector('.icon-pick-btn');
@@ -14886,6 +14921,7 @@ function openEditInstruction(id) {
       delete ta.dataset.autogrowReady;
       ta.style.height = '';
       ta.style.overflowY = '';
+      _bindNoteContentVisibilityGuard(ta);
     })();
     setTimeout(function() {
       ['ei-content','ei-extra'].forEach(function(fid) {
