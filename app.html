@@ -13577,6 +13577,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:11px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:11px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین کردن'}">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
             </div>
@@ -13614,6 +13616,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:11px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:11px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
             </div>
@@ -13644,6 +13648,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:10px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:10px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:10px">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:10px">🗑</button>
             </div>
@@ -13684,6 +13690,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="position:absolute;top:8px;left:8px;display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:11px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:11px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
             </div>
@@ -13720,6 +13728,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px" title="ویرایش">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:11px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:11px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:11px" title="${item.pinned?'حذف پین':'پین'}">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:11px" title="حذف">🗑</button>
             </div>
@@ -13747,6 +13757,8 @@ async function renderInstructions(instrSearch) {
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'move')" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--purple);cursor:pointer;font-size:10px" title="انتقال">📁</button>
+              <button onclick="event.stopPropagation();_instrOpenTransferModal([${item.id}],'copy')" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--green);cursor:pointer;font-size:10px" title="کپی">📋</button>
               <button onclick="event.stopPropagation();_instrTogglePin(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--amber);cursor:pointer;font-size:10px">${item.pinned?'📌':'📍'}</button>
               <button onclick="event.stopPropagation();deleteInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--red);cursor:pointer;font-size:10px">🗑</button>
             </div>
@@ -13989,6 +14001,7 @@ function _instrRenderBulkBar() {
     <button type="button" class="instr-bulkbar-btn" onclick="_instrExitSelectMode()" title="لغو انتخاب"><span class="ic">✕</span><span>${fa(n)} مورد</span></button>
     <button type="button" class="instr-bulkbar-btn" onclick="_instrBulkPin()"><span class="ic">📌</span><span>پین</span></button>
     <button type="button" class="instr-bulkbar-btn" onclick="_instrBulkMove()"><span class="ic">📁</span><span>انتقال</span></button>
+    <button type="button" class="instr-bulkbar-btn" onclick="_instrBulkCopy()"><span class="ic">📋</span><span>کپی</span></button>
     <button type="button" class="instr-bulkbar-btn" onclick="_instrBulkLabel()"><span class="ic">🏷</span><span>برچسب</span></button>
     <button type="button" class="instr-bulkbar-btn" onclick="_instrBulkExport()"><span class="ic">📤</span><span>خروجی</span></button>
     <button type="button" class="instr-bulkbar-btn danger" onclick="_instrBulkDelete()"><span class="ic">🗑</span><span>حذف</span></button>`;
@@ -14058,6 +14071,182 @@ function _instrBulkPin() {
 
 function _instrBulkMove() {
   if (!_instrSelectedIds.size) return;
+  _instrOpenTransferModal([..._instrSelectedIds], 'move');
+}
+function _instrBulkCopy() {
+  if (!_instrSelectedIds.size) return;
+  _instrOpenTransferModal([..._instrSelectedIds], 'copy');
+}
+function _instrSelectedRootIds(ids) {
+  const idSet = new Set((ids || []).map(Number).filter(Boolean));
+  return [...idSet].filter(id => {
+    let cur = (_db.instructions || []).find(x => +x.id === +id);
+    while (cur && cur.parent_id) {
+      if (idSet.has(+cur.parent_id)) return false;
+      cur = (_db.instructions || []).find(x => +x.id === +cur.parent_id);
+    }
+    return true;
+  });
+}
+function _instrIsContainerNode(node) {
+  return !!node && (node.type === 'category' || node.type === 'kcategory');
+}
+function _instrTargetLabel(targetId) {
+  if (!targetId) return 'ریشه مرکز دانش';
+  const node = (_db.instructions || []).find(x => +x.id === +targetId);
+  if (!node) return '';
+  const parts = _instrAncestors(node.id).map(x => `${x.icon || '📁'} ${x.title}`);
+  parts.push(`${node.icon || '📁'} ${node.title}`);
+  return parts.join(' / ');
+}
+function _instrIsDescendantOf(nodeId, ancestorId) {
+  let cur = (_db.instructions || []).find(x => +x.id === +nodeId);
+  while (cur && cur.parent_id) {
+    if (+cur.parent_id === +ancestorId) return true;
+    cur = (_db.instructions || []).find(x => +x.id === +cur.parent_id);
+  }
+  return false;
+}
+function _instrCanPlaceInTarget(item, targetId) {
+  if (!item) return false;
+  if (targetId === null || targetId === undefined || targetId === '') {
+    return item.type === 'kcategory' && _teamCanCreateInstruction(null);
+  }
+  const target = (_db.instructions || []).find(x => +x.id === +targetId);
+  if (!_instrIsContainerNode(target)) return false;
+  if (!_teamCanCreateInstruction(+targetId)) return false;
+  if (item.type === 'kcategory') return false;
+  if (target.type === 'kcategory') return item.type === 'category';
+  return item.type !== 'kcategory';
+}
+function _instrTransferDestinationOptions(rootIds) {
+  const roots = (rootIds || []).map(id => (_db.instructions || []).find(x => +x.id === +id)).filter(Boolean);
+  const rootSet = new Set(roots.map(x => +x.id));
+  const opts = [];
+  if (roots.length && roots.every(x => _instrCanPlaceInTarget(x, null)) && _teamCanCreateInstruction(null)) {
+    opts.push({ id:null, icon:'🏠', title:'ریشه مرکز دانش', path:'سطح اول دسته‌بندی‌ها', depth:0 });
+  }
+  (_db.instructions || [])
+    .filter(_instrIsContainerNode)
+    .sort((a,b) => _instrTargetLabel(a.id).localeCompare(_instrTargetLabel(b.id), 'fa'))
+    .forEach(target => {
+      if (rootSet.has(+target.id)) return;
+      const invalid = roots.some(item =>
+        !_instrCanPlaceInTarget(item, target.id) ||
+        +item.id === +target.id ||
+        _instrIsDescendantOf(target.id, item.id)
+      );
+      if (invalid) return;
+      opts.push({
+        id:+target.id,
+        icon:target.icon || (target.type === 'kcategory' ? '🗂' : '📁'),
+        title:target.title,
+        path:_instrTargetLabel(target.id),
+        depth:Math.min(_instrAncestors(target.id).length, 4)
+      });
+    });
+  return opts;
+}
+function _instrUniqueCopyTitle(title, parentId) {
+  const base = `${title || 'بدون عنوان'} (کپی)`;
+  const siblings = (_db.instructions || []).filter(x => {
+    const a = x.parent_id ? +x.parent_id : null;
+    const b = parentId ? +parentId : null;
+    return a === b;
+  }).map(x => x.title);
+  if (!siblings.includes(base)) return base;
+  let i = 2;
+  while (siblings.includes(`${title || 'بدون عنوان'} (کپی ${fa(i)})`)) i++;
+  return `${title || 'بدون عنوان'} (کپی ${fa(i)})`;
+}
+function _instrCloneSubtree(sourceId, newParentId, isRoot) {
+  const items = _db.instructions || [];
+  const src = items.find(x => +x.id === +sourceId);
+  if (!src || !_teamCanInstructionNode(src.id)) return null;
+  const now = new Date().toISOString();
+  const children = items.filter(x => x.parent_id && +x.parent_id === +src.id).map(x => +x.id);
+  const clone = JSON.parse(JSON.stringify(src));
+  clone.id = _instrNextLocalId();
+  clone.parent_id = newParentId == null ? null : +newParentId;
+  clone.title = isRoot ? _instrUniqueCopyTitle(src.title, clone.parent_id) : src.title;
+  clone.created_at = now;
+  clone.updated_at = now;
+  clone.pinned = false;
+  if (clone.type === 'kcategory') delete clone.kcat_key;
+  items.push(clone);
+  children.forEach(childId => _instrCloneSubtree(childId, clone.id, false));
+  return clone;
+}
+function _instrOpenTransferModal(ids, mode) {
+  if (!_db || !_db.instructions) return;
+  const rootIds = _instrSelectedRootIds(ids).filter(id => {
+    const item = _db.instructions.find(x => +x.id === +id);
+    return item && _teamCanInstructionNode(id);
+  });
+  if (!rootIds.length) { showToast('مورد قابل انتقالی انتخاب نشده', 'error'); return; }
+  const op = mode === 'copy' ? 'copy' : 'move';
+  const title = op === 'copy' ? '📋 کپی به...' : '📁 انتقال به...';
+  const verb = op === 'copy' ? 'کپی' : 'انتقال';
+  const options = _instrTransferDestinationOptions(rootIds);
+  const selectedPreview = rootIds.map(id => {
+    const item = _db.instructions.find(x => +x.id === +id);
+    return item ? `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border2);background:var(--bg3);border-radius:999px;padding:4px 9px;font-size:11px;color:var(--text2)">${item.icon || (item.type === 'category' ? '📁' : '📝')} ${escapeHtml(item.title)}</span>` : '';
+  }).join('');
+  const optionsHtml = options.map(opt => {
+    const idArg = opt.id == null ? 'null' : opt.id;
+    return `
+      <button type="button" onclick="_instrConfirmTransfer('${op}', ${idArg})"
+        style="width:100%;display:flex;align-items:center;gap:10px;text-align:right;padding:11px 12px;margin-bottom:7px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer"
+        onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+        <span style="width:26px;height:26px;border-radius:8px;background:rgba(124,106,247,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0">${opt.icon}</span>
+        <span style="flex:1;min-width:0;padding-right:${opt.depth * 12}px">
+          <strong style="display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(opt.title)}</strong>
+          <small style="display:block;color:var(--text3);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${escapeHtml(opt.path)}</small>
+        </span>
+        <span style="color:var(--purple);font-size:15px">‹</span>
+      </button>`;
+  }).join('');
+  window._instrPendingTransfer = { ids: rootIds, mode: op };
+  openModal(title, `
+    <div style="display:grid;gap:12px">
+      <div style="border:1px solid var(--border);background:linear-gradient(135deg,rgba(124,106,247,.12),rgba(62,207,142,.08));border-radius:12px;padding:12px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${verb} ${fa(rootIds.length)} مورد انتخاب‌شده</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${selectedPreview}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text3)">مقصد را انتخاب کن. پوشه‌ها همراه با تمام زیرپوشه‌ها و یادداشت‌های داخلشان ${op === 'copy' ? 'کپی می‌شوند' : 'منتقل می‌شوند'}.</div>
+      <div style="max-height:min(420px,55vh);overflow:auto;padding-left:3px">
+        ${optionsHtml || '<p style="font-size:12px;color:var(--text3);text-align:center;padding:18px 0;border:1px dashed var(--border2);border-radius:12px">مقصد معتبری برای این انتخاب وجود ندارد.</p>'}
+      </div>
+    </div>`, [
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+function _instrConfirmTransfer(mode, targetId) {
+  const pending = window._instrPendingTransfer || {};
+  const ids = _instrSelectedRootIds(pending.ids || [..._instrSelectedIds]);
+  const op = mode || pending.mode || 'move';
+  const items = ids.map(id => (_db.instructions || []).find(x => +x.id === +id)).filter(Boolean);
+  if (!items.length) return;
+  const dest = targetId == null ? null : +targetId;
+  const invalid = items.some(item => !_teamCanInstructionNode(item.id) || !_teamCanCreateInstruction(dest) || !_instrCanPlaceInTarget(item, dest) || (dest && (+item.id === dest || _instrIsDescendantOf(dest, item.id))));
+  if (invalid) { showToast('این مقصد برای مورد انتخاب‌شده مجاز نیست', 'error'); return; }
+  if (op === 'copy') {
+    items.forEach(item => _instrCloneSubtree(item.id, dest, true));
+  } else {
+    items.forEach(item => { item.parent_id = dest; item.updated_at = new Date().toISOString(); });
+  }
+  _save();
+  closeModal();
+  window._instrPendingTransfer = null;
+  showToast(op === 'copy' ? 'کپی ساخته شد ✓' : 'منتقل شد ✓', 'success');
+  _instrExitSelectMode();
+  renderInstructions();
+}
+function _confirmBulkMove(targetId) {
+  _instrConfirmTransfer('move', targetId);
+}
+function _instrLegacyBulkMove() {
+  if (!_instrSelectedIds.size) return;
   const idSet = new Set(_instrSelectedIds);
   function isDescendantOfSelected(nodeId) {
     let cur = (_db.instructions || []).find(x => x.id === nodeId);
@@ -14082,18 +14271,6 @@ function _instrBulkMove() {
     </div>`, [
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
-}
-function _confirmBulkMove(targetId) {
-  const ids = [..._instrSelectedIds];
-  ids.forEach(id => {
-    const item = (_db.instructions || []).find(x => x.id === id);
-    if (item && _teamCanInstructionNode(id)) { item.parent_id = targetId; item.updated_at = new Date().toISOString(); }
-  });
-  _save();
-  closeModal();
-  showToast('منتقل شد ✓', 'success');
-  _instrExitSelectMode();
-  renderInstructions();
 }
 
 function _instrBulkLabel() {
@@ -14350,6 +14527,8 @@ function openNoteDetail(id) {
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})` },
+    { label: '📁 انتقال', cls: 'btn-ghost', action: `closeModal();_instrOpenTransferModal([${id}], 'move')` },
+    { label: '📋 کپی', cls: 'btn-ghost', action: `closeModal();_instrOpenTransferModal([${id}], 'copy')` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
