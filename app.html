@@ -1976,7 +1976,7 @@ body.light mark { background: rgba(251,191,36,.5); }
     border-radius:20px 20px 0 0;margin:0;}
   .modal-header{border-radius:20px 20px 0 0;padding:14px 16px 12px}
   .modal-body{padding:12px 16px;padding-bottom:max(6px,env(safe-area-inset-bottom,6px))}
-  .modal-actions{flex-wrap:wrap;gap:6px;padding:10px 16px max(16px,env(safe-area-inset-bottom,16px))}
+  .modal-actions{flex-wrap:wrap;gap:6px;padding:10px 16px max(0px,calc(env(safe-area-inset-bottom,0px) - 14px))}
   .modal-actions .btn{flex:1;min-width:80px;justify-content:center;padding:10px}
   /* روی موبایل هم دکمه‌ی اصلی باید غالب باشد، نه هم‌وزن با انصراف */
   .modal-actions .btn-primary{flex:2;min-width:0}
@@ -2483,6 +2483,13 @@ body.modal-keyboard-open .note-editor-modal .modal-actions {
   padding-top: 8px !important;
   padding-bottom: 6px !important;
 }
+/* موبایل آیفون: دکمه‌های ذخیره/انصراف ۳۰px بالاتر از safe-area */
+@media (max-width: 768px) {
+  .note-editor-modal .modal-actions {
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - 30px)) !important;
+    margin-bottom: 0 !important;
+  }
+}
 
 /* ── Note Editor Modal — Desktop: centered, Notion-style ── */
 @media (min-width: 769px) {
@@ -2496,7 +2503,7 @@ body.modal-keyboard-open .note-editor-modal .modal-actions {
   }
   .note-editor-modal .modal {
     width: 100% !important;
-    max-width: 1100px !important;
+    max-width: 770px !important;
     height: auto !important;
     max-height: none !important;
     min-height: 0 !important;
@@ -2516,8 +2523,8 @@ body.modal-keyboard-open .note-editor-modal .modal-actions {
     overflow: visible !important;
   }
   .note-editor-modal textarea.note-content-textarea {
-    min-height: 200px !important;
-    height: auto !important;
+    min-height: 270px !important;
+    height: 270px !important;
     overflow-y: hidden !important;
     resize: vertical !important;
   }
