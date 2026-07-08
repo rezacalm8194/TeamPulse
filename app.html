@@ -14428,7 +14428,7 @@ function openAddInstruction(parentId, type) {
   ).join('');
 
   const defaultIcon = type === 'kcategory' ? '🗂' : (type === 'category' ? '📁' : (type === 'checklist' ? '✅' : '📝'));
-  const pholder = type === 'kcategory' ? 'مثلاً: مالی، طراحی، منابع' : (type === 'category' ? 'مثلاً: پسوردها، ایده‌های کسب‌وکار' : (type === 'checklist' ? 'مثلاً: چک‌لیست شروع پروژه' : 'مثلاً: دستورالعمل سرور'));
+  const pholder = type === 'kcategory' ? 'مثلاً: مالی، طراحی، منابع' : (type === 'category' ? 'مثلاً: پسوردها، ایده‌های کسب‌وکار' : (type === 'checklist' ? 'مثلاً: چک‌لیست شروع پروژه' : 'مثلاً: نکاتی که امروز یاد گرفتم'));
   const modalTitle = type === 'kcategory' ? '🗂 دسته‌بندی جدید' : (type === 'category' ? '📁 پوشه جدید' : (type === 'checklist' ? '✅ چک‌لیست جدید' : '📝 یادداشت جدید'));
   const _pId = (parentId && parentId !== 'null') ? +parentId : null;
   /* چک‌لیست از نظر ساختار داده همان «یادداشت» است، فقط محتوای اولیه‌اش با چند خط
