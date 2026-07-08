@@ -6863,7 +6863,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
   initDatePickers();
   window._pendingSessionAttachments = [];
   window._pendingFollowups = [];
-  if (!isMobile()) setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
+  if (window.innerWidth > 768) setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
   setTimeout(() => {
     const sid = initStudentId || +document.getElementById('f-ses-student')?.value;
     if (sid) _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
