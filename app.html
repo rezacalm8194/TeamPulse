@@ -2529,11 +2529,52 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .mstu-actions{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
 .mstu-actions .btn{flex:1;justify-content:center}
 .mstu-actions .btn-details{flex:0 0 auto;padding-inline:14px}
+.students-section-nav{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:4px;
+  margin:0 0 12px;
+  background:rgba(31,37,56,.74);
+  border:1px solid var(--border);
+  border-radius:14px;
+  width:max-content;
+  max-width:100%;
+}
+.students-section-nav button{
+  border:0;
+  background:transparent;
+  color:var(--text3);
+  min-height:34px;
+  padding:7px 12px;
+  border-radius:10px;
+  font-family:var(--font);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background .16s ease,color .16s ease,box-shadow .16s ease;
+}
+.students-section-nav button.active{
+  background:var(--accent);
+  color:#fff;
+  box-shadow:0 8px 18px rgba(124,106,247,.24);
+}
 @media(max-width:768px){
   .stu-table-wrap{display:none}
   .mstu-list{display:block;padding-top:2px}
   .table-header.stu-header{flex-wrap:wrap}
   .table-header.stu-header .table-search{width:100%;max-width:none!important;padding:6px 12px 10px}
+  .students-section-nav{
+    width:100%;
+    justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .students-section-nav button{
+    flex:1;
+    padding:7px 6px;
+    font-size:11.5px;
+  }
   .table-header.stu-header .table-search input{width:100%}
   /* Hero-style stats: debt first (biggest), income second, count/sessions compact */
   .stu-stats-row{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"debt debt" "income count" "income sessions";gap:8px}
@@ -2581,8 +2622,6 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
       <div class="nav-section">مدیریت</div>
       <a class="nav-item" data-page="staff" title="مدیریت"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت</span></a>
-      <a class="nav-item" data-page="customerlist" title="لیست شاگردان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.3" cy="5" r=".9" fill="currentColor" stroke="none"/><circle cx="3.3" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="3.3" cy="15" r=".9" fill="currentColor" stroke="none"/></svg></span><span id="nav-label-customerlist">لیست شاگردان</span></a>
-      <a class="nav-item" data-page="archive" title="بایگانی شاگردان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="15" height="4" rx="1.2"/><path d="M3.5 7.5v8a2 2 0 002 2h9a2 2 0 002-2v-8M8 11.5h4"/></svg></span><span id="nav-label-archive">بایگانی شاگردان</span></a>
       <a class="nav-item" data-page="families" title="حساب‌های مشترک"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
 
       <div class="nav-section">مالی</div>
@@ -4408,12 +4447,16 @@ function _teamCanCreateInstruction(parentId) {
 // right as the script parses — before any auth/network/init() work runs.
 // This is what prevents the "flash of wrong menu item" on refresh: we never
 // let the browser paint the default HTML state before correcting it.
+function _menuPageFor(page) {
+  return (page === 'customerlist' || page === 'archive') ? 'students' : page;
+}
 (function _syncInitialActiveMenuSync() {
+  const menuPage = _menuPageFor(currentPage);
   document.querySelectorAll('.nav-item[data-page]').forEach(x => {
-    x.classList.toggle('active', x.dataset.page === currentPage);
+    x.classList.toggle('active', x.dataset.page === menuPage);
   });
   document.querySelectorAll('.bn-item[data-page]').forEach(x => {
-    x.classList.toggle('active', x.dataset.page === currentPage);
+    x.classList.toggle('active', x.dataset.page === menuPage);
   });
 })();
 let openSessionGroups = new Set();
@@ -4644,7 +4687,7 @@ function updatePageTitle() {
     sessions: META.sessionPlural || 'جلسات',
     families: 'حساب‌های مشترک',
     reminders: 'یادآوری پرداخت',
-    customerlist: `لیست ${META.entityPlural || 'مشتریان'}`,
+    customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
     staff: 'مدیریت',
     instructions: 'مرکز دانش',
@@ -4662,11 +4705,12 @@ function updatePageTitle() {
 // Keeps sidebar / bottom-nav highlight in sync with currentPage, no matter
 // which code path changed the page (click, back/forward, refresh restore).
 function setActiveMenu(page) {
+  const menuPage = _menuPageFor(page);
   document.querySelectorAll('.nav-item[data-page]').forEach(x => {
-    x.classList.toggle('active', x.dataset.page === page);
+    x.classList.toggle('active', x.dataset.page === menuPage);
   });
   document.querySelectorAll('.bn-item[data-page]').forEach(x => {
-    x.classList.toggle('active', x.dataset.page === page);
+    x.classList.toggle('active', x.dataset.page === menuPage);
   });
 }
 
@@ -4703,8 +4747,10 @@ function applyMetaToUI() {
   document.getElementById('logo-icon').textContent = (META.appTitle || 'س').charAt(0);
   document.getElementById('nav-label-students').textContent = META.entityPlural || 'شاگردان';
   document.getElementById('nav-label-sessions').textContent = META.sessionPlural || 'جلسات';
-  document.getElementById('nav-label-customerlist').textContent = `لیست ${META.entityPlural || 'مشتریان'}`;
-  document.getElementById('nav-label-archive').textContent = `بایگانی ${META.entityPlural || 'شاگردان'}`;
+  const customerListLabel = document.getElementById('nav-label-customerlist');
+  if (customerListLabel) customerListLabel.textContent = `لیست ${META.entityPlural || 'شاگردان'}`;
+  const archiveLabel = document.getElementById('nav-label-archive');
+  if (archiveLabel) archiveLabel.textContent = `بایگانی ${META.entityPlural || 'شاگردان'}`;
   document.title = (META.appTitle || 'TeamPulse');
   updatePageTitle();
   _applyTeamAccessToNav();
@@ -4784,6 +4830,25 @@ function toggleStuChipsExpanded() {
   const cur = document.querySelector('#content .table-search input');
   renderStudents(cur ? cur.value : '');
 }
+function goStudentSection(page) {
+  currentPage = page;
+  localStorage.setItem('tp_last_page', page);
+  if (location.hash !== '#' + page) location.hash = page;
+  if (typeof setActiveMenu === 'function') setActiveMenu(page);
+  updatePageTitle();
+  renderPage();
+}
+function studentSectionNav(active) {
+  const plural = META.entityPlural || 'شاگردان';
+  const items = [
+    { page: 'students', icon: '👥', label: plural },
+    { page: 'customerlist', icon: '📋', label: 'لیست' },
+    { page: 'archive', icon: '🗃', label: 'بایگانی' },
+  ].filter(item => typeof _teamCan !== 'function' || _teamCan(item.page));
+  return `<div class="students-section-nav" aria-label="بخش‌های ${plural}">
+    ${items.map(item => `<button class="${active === item.page ? 'active' : ''}" onclick="goStudentSection('${item.page}')">${item.icon} ${item.label}</button>`).join('')}
+  </div>`;
+}
 
 async function renderStudents(search = '') {
   updateTopbarActions(`
@@ -4812,6 +4877,7 @@ async function renderStudents(search = '') {
   const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
 
   let html = `
+  ${studentSectionNav('students')}
   <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
       <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
@@ -7094,7 +7160,8 @@ async function renderCustomerList() {
   updateTopbarActions(`<button class="btn btn-primary" onclick="exportCustomerList()">⬇ دانلود اکسل (CSV)</button>`);
   allStudents = await window.api.students.getAll();
 
-  let html = `<div class="table-card">
+  let html = `${studentSectionNav('customerlist')}<div class="table-card">
+    <div class="table-header"><span class="title">📋 لیست ${META.entityPlural || 'شاگردان'}</span></div>
     <table>
       <thead><tr><th>#</th><th>نام</th><th>نام خانوادگی</th><th>شماره تماس</th><th>پکیج‌ها</th></tr></thead>
       <tbody>`;
@@ -8387,13 +8454,14 @@ async function renderArchive() {
   const archived = await window.api.students.getArchived();
 
   if (archived.length === 0) {
-    setContent(`<div class="table-card"><div class="empty"><span>📦</span>
+    setContent(`${studentSectionNav('archive')}<div class="table-card"><div class="empty"><span>📦</span>
       بایگانی خالی است. ${META.entitySingular||'شاگردانی'} که کارشان تمام شده را می‌توانی از صفحه "${META.sessionPlural||'جلسات'}" به بایگانی منتقل کنی.
     </div></div>`);
     return;
   }
 
-  let html = `<div class="table-card">
+  let html = `${studentSectionNav('archive')}<div class="table-card">
+    <div class="table-header"><span class="title">🗃 بایگانی ${META.entityPlural || 'شاگردان'}</span></div>
     <table>
       <thead><tr><th>نام</th><th>پکیج‌ها</th><th>قرارداد کل</th><th>پرداخت‌شده</th><th>مانده حساب</th><th>عملیات</th></tr></thead>
       <tbody>`;
@@ -14230,8 +14298,6 @@ const DEFAULT_NAV_ORDER = [
   { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت' },
   { page: 'payments',     icon: '🛒', label: () => 'خرید ها و پرداخت ها' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری پرداخت' },
-  { page: 'customerlist', icon: '📋', label: () => 'لیست شاگردان' },
-  { page: 'archive',      icon: '📦', label: () => 'بایگانی شاگردان' },
   { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
   { page: 'admin_panel',  icon: '👑', label: () => 'پنل مدیریت' },
