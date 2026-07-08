@@ -819,6 +819,15 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .modal-actions .btn-ghost:hover { background: var(--bg3); color: var(--text2); }
 
+/* فرم‌های تمام‌صفحه مثل ثبت/ویرایش جلسه فوتر sticky دارند؛
+   این فاصله امن اجازه می‌دهد آخر متن پشت دکمه‌های ذخیره/انصراف نرود. */
+.modal-overlay-fullpage .modal-body {
+  padding-bottom: calc(var(--modal-actions-h, 72px) + 24px) !important;
+  scroll-padding-bottom: calc(var(--modal-actions-h, 72px) + 24px) !important;
+}
+.modal-overlay-fullpage textarea.form-textarea {
+  scroll-margin-bottom: calc(var(--modal-actions-h, 72px) + 24px);
+}
 
 /* ── Textarea حرفه‌ای ─────────────────────────────────────────── */
 .form-textarea {
@@ -13049,7 +13058,9 @@ function _syncOpenModalMetrics() {
   requestAnimationFrame(() => {
     const actions = document.querySelector('#modal-overlay.open .modal-actions');
     const footerH = actions ? Math.ceil(actions.getBoundingClientRect().height) : 56;
-    document.documentElement.style.setProperty('--modal-keyboard-footer-h', Math.max(52, footerH) + 'px');
+    const safeFooterH = Math.max(52, footerH);
+    document.documentElement.style.setProperty('--modal-actions-h', safeFooterH + 'px');
+    document.documentElement.style.setProperty('--modal-keyboard-footer-h', safeFooterH + 'px');
     _setRealAppHeight();
   });
 }
