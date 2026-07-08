@@ -1950,6 +1950,19 @@ body.light mark { background: rgba(251,191,36,.5); }
   .topbar-actions .table-search.tb-search-open input{
     width:110px; opacity:1; pointer-events:auto;
   }
+  .topbar-actions .table-search.stu-topbar-search{
+    max-width:150px;
+    width:auto;
+    padding:5px 8px;
+    justify-content:flex-start;
+    background:var(--bg3);
+    border-color:var(--border2);
+  }
+  .topbar-actions .table-search.stu-topbar-search input{
+    width:96px;
+    opacity:1;
+    pointer-events:auto;
+  }
 
   /* Forms */
   .form-grid{grid-template-columns:1fr!important}
@@ -2541,12 +2554,12 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .students-section-nav{
   display:flex;
   align-items:center;
-  gap:6px;
-  padding:4px;
-  margin:0 0 12px;
+  gap:0;
+  padding:3px;
+  margin:0 0 10px;
   background:rgba(31,37,56,.74);
   border:1px solid var(--border);
-  border-radius:14px;
+  border-radius:12px;
   width:max-content;
   max-width:100%;
 }
@@ -2554,11 +2567,11 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   border:0;
   background:transparent;
   color:var(--text3);
-  min-height:34px;
-  padding:7px 12px;
-  border-radius:10px;
+  min-height:28px;
+  padding:5px 13px;
+  border-radius:9px;
   font-family:var(--font);
-  font-size:12px;
+  font-size:11.5px;
   font-weight:800;
   cursor:pointer;
   white-space:nowrap;
@@ -2567,32 +2580,52 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .students-section-nav button.active{
   background:var(--accent);
   color:#fff;
-  box-shadow:0 8px 18px rgba(124,106,247,.24);
+  box-shadow:0 6px 14px rgba(124,106,247,.2);
 }
+.stu-stats-row{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:10px;
+}
+.stu-stats-row .stat-card{
+  min-height:0;
+  padding:9px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.stu-stats-row .stat-label{font-size:10px;margin:0;color:var(--text3)}
+.stu-stats-row .stat-value{font-size:16px;white-space:nowrap}
+.stu-stats-row .stat-sub{display:none}
+.stu-tools-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 14px 0;
+  flex-wrap:wrap;
+}
+.stu-tools-row .chip-bar{padding:0}
+.stu-table-actions{display:flex;justify-content:center}
 @media(max-width:768px){
   .stu-table-wrap{display:none}
   .mstu-list{display:block;padding-top:2px}
-  .table-header.stu-header{flex-wrap:wrap}
-  .table-header.stu-header .table-search{width:100%;max-width:none!important;padding:6px 12px 10px}
   .students-section-nav{
     width:100%;
     justify-content:space-between;
-    margin-bottom:10px;
+    margin-bottom:8px;
   }
   .students-section-nav button{
     flex:1;
-    padding:7px 6px;
-    font-size:11.5px;
+    padding:5px 6px;
+    font-size:11px;
   }
-  .table-header.stu-header .table-search input{width:100%}
-  /* Hero-style stats: debt first (biggest), income second, count/sessions compact */
-  .stu-stats-row{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"debt debt" "income count" "income sessions";gap:8px}
-  .stu-stats-row .stat-card:nth-child(1){grid-area:count;padding:9px 10px}
-  .stu-stats-row .stat-card:nth-child(2){grid-area:income;display:flex;flex-direction:column;justify-content:center}
-  .stu-stats-row .stat-card:nth-child(3){grid-area:debt;padding:16px 14px}
-  .stu-stats-row .stat-card:nth-child(3) .stat-value{font-size:22px!important}
-  .stu-stats-row .stat-card:nth-child(4){grid-area:sessions;padding:9px 10px}
-  .stu-stats-row .stat-card:nth-child(1) .stat-value,.stu-stats-row .stat-card:nth-child(4) .stat-value{font-size:14px!important}
+  .stu-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px;margin-bottom:9px}
+  .stu-stats-row .stat-card{padding:8px 10px}
+  .stu-stats-row .stat-value{font-size:14px!important}
+  .stu-tools-row{padding:8px 10px 0}
+  .mstu-actions{display:none}
 }
 
   </style>
@@ -4850,18 +4883,21 @@ function goStudentSection(page) {
 function studentSectionNav(active) {
   const plural = META.entityPlural || 'شاگردان';
   const items = [
-    { page: 'students', icon: '👥', label: plural },
-    { page: 'customerlist', icon: '📋', label: 'لیست' },
-    { page: 'archive', icon: '🗃', label: 'بایگانی' },
+    { page: 'students', label: 'پرونده‌ها' },
+    { page: 'customerlist', label: 'فهرست' },
+    { page: 'archive', label: 'بایگانی' },
   ].filter(item => typeof _teamCan !== 'function' || _teamCan(item.page));
   return `<div class="students-section-nav" aria-label="بخش‌های ${plural}">
-    ${items.map(item => `<button class="${active === item.page ? 'active' : ''}" onclick="goStudentSection('${item.page}')">${item.icon} ${item.label}</button>`).join('')}
+    ${items.map(item => `<button class="${active === item.page ? 'active' : ''}" onclick="goStudentSection('${item.page}')">${item.label}</button>`).join('')}
   </div>`;
 }
 
 async function renderStudents(search = '') {
   updateTopbarActions(`
-    <button class="btn btn-ghost" onclick="reloadAllData()"><span class="btn-icon">🔄</span><span> به‌روز</span></button>
+    <div class="table-search stu-topbar-search">
+      <span style="color:var(--text3)">🔍</span>
+      <input placeholder="جستجوی ${META.entitySingular || 'شاگرد'}..." oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
+    </div>
     <button class="btn btn-primary" onclick="openStudentModal()"><span class="btn-icon">+</span><span> افزودن ${META.entitySingular || 'شاگرد'}</span></button>
   `);
 
@@ -4911,14 +4947,7 @@ async function renderStudents(search = '') {
   </div>
 
   <div class="table-card">
-    <div class="table-header stu-header">
-      <span class="title">لیست ${META.entityPlural || 'شاگردان'}</span>
-      <div class="table-search">
-        <span style="color:var(--text3)">🔍</span>
-        <input placeholder="جستجو..." oninput="renderStudents(this.value)" value="${search}">
-      </div>
-    </div>
-    <div style="padding:10px 14px 0">
+    <div class="stu-tools-row">
       <div class="chip-bar">
         <button class="chip ${stuChip==='all'?'active':''}" onclick="setStuChip('all')">همه</button>
         <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
@@ -4952,6 +4981,7 @@ async function renderStudents(search = '') {
   } else {
     filtered.forEach((s, i) => {
       const fam = FAMILIES.find(f => f.id === s.family_id);
+      const tableMenuId = `stu-table-menu-${s.id}`;
       html += `<tr>
         <td>
           <div class="name-cell">
@@ -4968,10 +4998,20 @@ async function renderStudents(search = '') {
         <td>${s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
         <td>${balanceHtml(s.balance)}</td>
         <td>${statusHtml(s.balance)}</td>
-        <td style="display:flex;gap:5px">
-          <button class="btn btn-ghost btn-sm" onclick="openAddPayment(${s.id})">💳 پرداختی جدید</button>
-          <button class="btn btn-ghost btn-sm" onclick="openNewPurchase(${s.id})">🛍 خرید جدید</button>
-          <button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${s.id})">جزئیات</button>
+        <td>
+          <div class="stu-table-actions">
+            <div class="row-menu">
+              <button class="row-menu-btn" onclick="toggleRowMenu(event,'${tableMenuId}')" aria-label="عملیات">⋮</button>
+              <div class="row-menu-panel" id="${tableMenuId}">
+                <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+                <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
+                <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
+                <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
+                <div class="row-menu-divider"></div>
+                <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
+              </div>
+            </div>
+          </div>
         </td>
       </tr>`;
     });
@@ -5002,7 +5042,8 @@ async function renderStudents(search = '') {
             <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
             <div class="row-menu-panel" id="${menuId}">
               <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
-              <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید جدید</div>
+              <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
+              <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
               <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
               <div class="row-menu-divider"></div>
               <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
@@ -5014,10 +5055,6 @@ async function renderStudents(search = '') {
           ${visiblePkgs.map(pkgTag).join('')}
           ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
           ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
-        </div>
-        <div class="mstu-actions">
-          <button class="btn btn-primary btn-sm" onclick="openAddPayment(${s.id})">💳 پرداخت جدید</button>
-          <button class="btn btn-ghost btn-sm btn-details" onclick="openStudentDetail(${s.id})">جزئیات</button>
         </div>
       </div>`;
     });
