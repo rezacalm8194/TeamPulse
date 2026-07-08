@@ -2092,6 +2092,18 @@ body.light mark { background: rgba(251,191,36,.5); }
   overflow:hidden;
   transition:max-height .18s ease, opacity .18s ease;
 }
+._ifcard,
+._ifcard *,
+.instr-bulkbar,
+.instr-bulkbar *{
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+._ifcard{
+  touch-action:manipulation;
+}
 @media (hover:hover) and (pointer:fine) {
   ._ifcard-gallery:hover ._ifcard-preview{
     max-height:98px;
@@ -2145,8 +2157,14 @@ body.light mark { background: rgba(251,191,36,.5); }
    یک مربع تیک‌خور بالای هر کارت نشون داده می‌شه؛ لمس/کلیک روی کارت به‌جای باز
    کردن، فقط انتخاب/عدم‌انتخاب را toggle می‌کنه. */
 body.instr-select-mode ._ifcard-more-btn,
-body.instr-select-mode ._ifcard-actions { display:none!important; }
-body.instr-select-mode ._ifcard { user-select:none; -webkit-user-select:none; }
+body.instr-select-mode ._ifcard-actions,
+body.instr-select-mode .instr-fab-wrap { display:none!important; }
+body.instr-select-mode,
+body.instr-select-mode ._ifcard {
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
+}
 body.instr-select-mode ._ifcard::after {
   content:'';
   position:absolute; top:8px; left:8px;
@@ -13963,8 +13981,18 @@ let _instrSelectMode = false;
 let _instrSelectedIds = new Set();
 let _instrLPTimer = null, _instrLPStartX = 0, _instrLPStartY = 0, _instrLPCard = null;
 
+function _instrClearNativeSelection() {
+  try {
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+  } catch(e) {}
+  try {
+    if (document.selection && document.selection.empty) document.selection.empty();
+  } catch(e) {}
+}
 function _instrEnterSelectMode(firstId) {
   if (_instrSelectMode) return;
+  _instrClearNativeSelection();
   _instrSelectMode = true;
   document.body.classList.add('instr-select-mode');
   if (firstId != null) _instrToggleSelect(firstId, true);
@@ -13974,12 +14002,14 @@ function _instrEnterSelectMode(firstId) {
 function _instrExitSelectMode() {
   _instrSelectMode = false;
   _instrSelectedIds.clear();
+  _instrClearNativeSelection();
   document.body.classList.remove('instr-select-mode');
   document.querySelectorAll('._ifcard.instr-selected').forEach(c => c.classList.remove('instr-selected'));
   const bar = document.getElementById('instr-bulkbar');
   if (bar) bar.remove();
 }
 function _instrToggleSelect(id, forceOn) {
+  _instrClearNativeSelection();
   id = +id;
   const card = document.querySelector('._ifcard[data-id="'+id+'"]');
   const on = forceOn === true ? true : !_instrSelectedIds.has(id);
@@ -14044,6 +14074,18 @@ if (!window._instrSelectBound) {
   document.addEventListener('mouseup', _instrCardLPEnd, true);
   document.addEventListener('touchend', _instrCardLPEnd, true);
   document.addEventListener('touchcancel', _instrCardLPEnd, true);
+  document.addEventListener('selectstart', function (e) {
+    if (e.target && e.target.closest && e.target.closest('._ifcard, .instr-bulkbar')) {
+      e.preventDefault();
+      _instrClearNativeSelection();
+    }
+  }, true);
+  document.addEventListener('contextmenu', function (e) {
+    if (e.target && e.target.closest && e.target.closest('._ifcard, .instr-bulkbar')) {
+      e.preventDefault();
+      _instrClearNativeSelection();
+    }
+  }, true);
   // در حالت انتخاب، کلیک روی کارت باید فقط toggle کنه، نه این‌که پوشه/یادداشت را باز کنه؛
   // چون در فاز capture قبل از رسیدن به onclick خود کارت اجرا می‌شه، جلوش را می‌گیریم.
   document.addEventListener('click', function (e) {
