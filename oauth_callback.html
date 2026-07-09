@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>در حال اتصال...</title>
+<style>
+  body{font-family:Tahoma,sans-serif;background:#0f1117;color:#9399ab;display:flex;
+    align-items:center;justify-content:center;height:100vh;margin:0;font-size:14px}
+</style>
+</head>
+<body>
+  <p id="msg">در حال تکمیل اتصال…</p>
+  <script>
+    (function () {
+      // OAuth implicit flow برمی‌گرده با نتیجه در fragment (#) نه querystring
+      function parseHash(hash) {
+        const out = {};
+        (hash || '').replace(/^#/, '').split('&').forEach(function (pair) {
+          if (!pair) return;
+          const idx = pair.indexOf('=');
+          if (idx === -1) return;
+          const k = decodeURIComponent(pair.slice(0, idx));
+          const v = decodeURIComponent(pair.slice(idx + 1).replace(/\+/g, ' '));
+          out[k] = v;
+        });
+        return out;
+      }
+
+      const params = parseHash(window.location.hash);
+      const state = params.state || '';
+      // state با پیشوند مشخص می‌کنه این توکن مربوط به کدام قابلیت است
+      // (gcal_ => Google Calendar / بقیه => Google Drive، برای سازگاری با قبل)
+      const msgType = state.indexOf('gcal_') === 0 ? 'gcal_token' : 'gdrive_token';
+
+      let payload;
+      if (params.error) {
+        payload = { type: msgType, error: params.error };
+      } else if (params.access_token) {
+        payload = {
+          type: msgType,
+          token: params.access_token,
+          expires_in: parseInt(params.expires_in || '3600', 10),
+        };
+      } else {
+        payload = { type: msgType, error: 'no_token_returned' };
+      }
+
+      if (window.opener) {
+        try {
+          window.opener.postMessage(payload, window.location.origin);
+        } catch (e) {
+          window.opener.postMessage(payload, '*');
+        }
+        document.getElementById('msg').textContent = payload.error
+          ? 'اتصال ناموفق بود — این پنجره را می‌بندیم…'
+          : 'اتصال موفق بود ✓ — این پنجره را می‌بندیم…';
+      } else {
+        document.getElementById('msg').textContent = 'این صفحه باید از داخل برنامه باز شود.';
+      }
+
+      setTimeout(function () { window.close(); }, 600);
+    })();
+  </script>
+</body>
+</html>
