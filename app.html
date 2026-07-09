@@ -4471,9 +4471,17 @@ const _gdrive = {
 
 // ════════════════════════════════════════════════════════════════════════════
 // GOOGLE CALENDAR SYNC (todos/events -> Google Calendar)
+// این Client ID مخصوص خود اپلیکیشن teampulse.ir است (نه هر کاربر) و فقط یک‌بار
+// در Google Cloud Console ساخته می‌شود. کاربران فقط با اکانت گوگل خودشان روی
+// دکمه‌ی «اتصال با گوگل» کلیک می‌کنند و توکن شخصی خودشان را می‌گیرند.
+// ساخت آن: Google Cloud Console → OAuth Client ID (نوع Web application) →
+// Authorized JavaScript origins: https://teampulse.ir →
+// Authorized redirect URIs: https://teampulse.ir/app/oauth_callback.html (مسیر دقیق فایل روی سرور)
+const APP_GOOGLE_CLIENT_ID = '1084819671818-dgpcfrb1vp53cihjn4bnhhv7l8kesfnq.apps.googleusercontent.com';
+
 const _gcal = {
   enabled: false,
-  clientId: '',
+  clientId: APP_GOOGLE_CLIENT_ID,
   token: null,
   tokenExpiry: 0,
   SCOPE: 'https://www.googleapis.com/auth/calendar.events',
@@ -4526,10 +4534,8 @@ const _gcal = {
     return res;
   },
 
-  async connect(clientId) {
-    this.clientId=clientId;
-    _db._gcal_client_id=clientId;
-    _save(false);
+  async connect() {
+    this.clientId=APP_GOOGLE_CLIENT_ID;
     this.setStatusUI('syncing','در حال اتصال...');
     try{
       await this.ensureToken();
@@ -4549,7 +4555,7 @@ const _gcal = {
 
   disconnect() {
     this.enabled=false;this.token=null;this.tokenExpiry=0;
-    delete _db._gcal_client_id;delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;
+    delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;
     _save(false);
     this.setStatusUI('idle','متصل نشده');
     showToast('از Google Calendar قطع شدی','');
@@ -4616,8 +4622,8 @@ const _gcal = {
   },
 
   initOnLoad() {
-    this.clientId=_db._gcal_client_id||'';
-    if(_db._gcal_enabled&&this.clientId){
+    this.clientId=APP_GOOGLE_CLIENT_ID;
+    if(_db._gcal_enabled){
       this.enabled=true;
       if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
         this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;
@@ -8584,22 +8590,14 @@ async function renderSettings() {
         وقتی وصل باشی، در فرم «کار جدید» و «ویرایش کار» یک تیک «ذخیره در Google Calendar» می‌بینی. با فعال کردن آن تیک برای هر کار،
         همان کار به‌صورت خودکار در تقویم گوگل خودت هم ثبت/به‌روزرسانی/حذف می‌شود.
       </p>
-      ${!_gcal.enabled ? `
-      <div class="form-grid">
-        <div class="form-group full">
-          <label class="form-label">Google OAuth Client ID</label>
-          <input class="form-input" id="gcal-client-id-input" placeholder="xxxxxxxxxx.apps.googleusercontent.com" style="direction:ltr" value="${_db._gcal_client_id||''}">
-        </div>
-      </div>` : ''}
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button class="btn ${_gcal.enabled?'btn-danger':'btn-primary'}" id="gcal-sync-btn" onclick="gcalConnectUI()">
-          ${_gcal.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال Google Calendar'}
+          ${_gcal.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال با گوگل'}
         </button>
       </div>
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
-        راهنما: در Google Cloud Console یک OAuth Client (نوع Web) بساز، Google Calendar API را فعال کن، دامنه‌ی سایت را در Authorized redirect URIs
-        اضافه کن (به آدرس <code>/oauth_callback.html</code> ختم شود) و Client ID را همین‌جا وارد کن.
+        با کلیک روی دکمه، به صفحه‌ی ورود گوگل هدایت می‌شوی و با اکانت گوگل خودت اجازه می‌دهی به تقویمت دسترسی داشته باشیم.
       </p>
     </div>
   </div>
@@ -18135,17 +18133,8 @@ async function _onTodoGcalToggle(cb) {
   if (cb.checked && !_gcal.enabled) {
     cb.checked = false;
     cb.disabled = true;
-    let clientId = _db._gcal_client_id;
-    if (!clientId) {
-      clientId = (window.prompt('Google OAuth Client ID را وارد کن (از Google Cloud Console):') || '').trim();
-    }
-    if (!clientId || !clientId.includes('.apps.googleusercontent.com')) {
-      cb.disabled = false;
-      if (clientId) showToast('Client ID معتبر نیست', 'error');
-      return;
-    }
     try {
-      await _gcal.connect(clientId);
+      await _gcal.connect();
       cb.checked = _gcal.enabled;
     } catch (e) {
       showToast('اتصال ناموفق: ' + e.message, 'error');
@@ -20084,11 +20073,7 @@ async function gdriveConnectUI() {
 // Google Calendar connect UI
 async function gcalConnectUI() {
   if (_gcal.enabled) { _gcal.disconnect(); renderSettings(); return; }
-  const id = document.getElementById('gcal-client-id-input')?.value.trim();
-  if (!id || !id.includes('.apps.googleusercontent.com')) {
-    showToast('Client ID معتبر نیست','error'); return;
-  }
-  await _gcal.connect(id);
+  await _gcal.connect();
   renderSettings();
 }
 
