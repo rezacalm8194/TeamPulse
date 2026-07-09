@@ -8683,6 +8683,7 @@ function applyTextColor(textareaId, color) {
   const el = document.getElementById(textareaId);
   if (!el) return;
   const start = el.selectionStart, end = el.selectionEnd;
+  const scrollTop = el.scrollTop;
   const selected = el.value.slice(start, end) || 'متن';
   // به‌جای HTML خام از نشانه‌گذاری {{c:...}} استفاده می‌کنیم تا escapeHtml در renderRich
   // آن را از بین نبرد (همان الگوی **bold** و ==highlight==)
@@ -8692,6 +8693,7 @@ function applyTextColor(textareaId, color) {
   el.focus();
   el.selectionStart = start;
   el.selectionEnd = start + colored.length;
+  el.scrollTop = scrollTop;
   el.dispatchEvent(new Event('input', { bubbles: true }));
   // بستن color picker
   document.querySelectorAll('.rt-color-picker.open').forEach(p => p.classList.remove('open'));
