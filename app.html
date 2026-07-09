@@ -4949,6 +4949,10 @@ function renderRich(str, opts) {
   const noteId = (opts && opts.noteId != null) ? opts.noteId : null;
   const field = (opts && opts.field) ? opts.field : '';
   let s = escapeHtml(str);
+  // نشانه‌گذاری رنگ متن {{c:#hex}}...{{/c}} → span رنگی واقعی
+  s = s.replace(/\{\{c:(#[0-9a-fA-F]{3,8})\}\}([\s\S]*?)\{\{\/c\}\}/g, '<span style="color:$1">$2</span>');
+  // سازگاری با یادداشت‌های قدیمی که HTML خام رنگ در آن‌ها ذخیره و توسط escapeHtml خراب شده بود
+  s = s.replace(/&lt;span style="color:(#[0-9a-fA-F]{3,8})"&gt;([\s\S]*?)&lt;\/span&gt;/g, '<span style="color:$1">$2</span>');
   s = s.replace(/==(.+?)==/g, '<mark>$1</mark>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   s = s.replace(/^\s*---\s*$/gm, '<hr style="border:none;border-top:1px solid var(--border2);width:100%;margin:14px 0">');
@@ -8680,7 +8684,9 @@ function applyTextColor(textareaId, color) {
   if (!el) return;
   const start = el.selectionStart, end = el.selectionEnd;
   const selected = el.value.slice(start, end) || 'متن';
-  const colored = `<span style="color:${color}">${selected}</span>`;
+  // به‌جای HTML خام از نشانه‌گذاری {{c:...}} استفاده می‌کنیم تا escapeHtml در renderRich
+  // آن را از بین نبرد (همان الگوی **bold** و ==highlight==)
+  const colored = `{{c:${color}}}${selected}{{/c}}`;
   const val = el.value;
   el.value = val.slice(0, start) + colored + val.slice(end);
   el.focus();
