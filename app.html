@@ -6677,8 +6677,8 @@ async function openSessionDetail(sessionId) {
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditSession(${sessionId})`, style: 'min-width:160px;font-size:14px;padding:12px 28px;box-shadow:0 4px 16px rgba(124,106,247,.45)' },
-    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteSession(${sessionId})` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()', style: 'opacity:.85;font-size:11px;padding:7px 12px;box-shadow:none' },
+    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteSession(${sessionId})`, style: 'margin-left:auto' },
   ]);
 }
 
