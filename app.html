@@ -2102,11 +2102,17 @@ body.light mark { background: rgba(251,191,36,.5); }
   gap:5px;
   flex-wrap:wrap;
 }
+/* پیش‌نمایش کارت گالری همیشه با همان ارتفاع نمایش داده می‌شود (نه با Hover) تا
+   ارتفاع کارت‌ها ثابت بماند و کل ردیف گرید با هاور یک کارت جابه‌جا نشود. */
 ._ifcard-preview{
-  max-height:0;
-  opacity:0;
   overflow:hidden;
-  transition:max-height .18s ease, opacity .18s ease;
+}
+._ifgrid{
+  align-items:start;
+}
+._ifcard-gallery{
+  height:222px;
+  overflow:hidden;
 }
 ._ifcard,
 ._ifcard *,
@@ -2119,12 +2125,6 @@ body.light mark { background: rgba(251,191,36,.5); }
 }
 ._ifcard{
   touch-action:manipulation;
-}
-@media (hover:hover) and (pointer:fine) {
-  ._ifcard-gallery:hover ._ifcard-preview{
-    max-height:98px;
-    opacity:1;
-  }
 }
 
 @media(max-width:768px){
@@ -2163,7 +2163,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
 
   /* کارت‌های گالری: پدینگ کمتر، آیکون کوچک‌تر، بدون خط جداکننده اضافه */
-  ._ifcard-gallery{ padding:12px 12px 10px!important; min-height:auto!important; }
+  ._ifcard-gallery{ padding:12px 12px 10px!important; height:200px!important; }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
 }
