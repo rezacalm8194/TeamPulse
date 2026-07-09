@@ -7385,8 +7385,14 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // ════════════════════════════════════════════════════════════════════════════
 // REMINDERS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-async function renderReminders() {
-  updateTopbarActions(`<button class="btn btn-primary" onclick="openAddReminder()">+ یادآوری جدید</button>`);
+async function renderReminders(search = '') {
+  updateTopbarActions(`
+    <div class="table-search">
+      <span style="color:var(--text3)">🔍</span>
+      <input placeholder="جستجوی یادآوری..." oninput="renderReminders(this.value)" value="${escapeHtml(search)}">
+    </div>
+    <button class="btn btn-primary" onclick="openAddReminder()">+ یادآوری جدید</button>
+  `);
   allStudents = await window.api.students.getAll();
   const reminders = await window.api.reminders.getAll();
   const today = jalaliKey(formatJalali(...todayJalali()));
@@ -7402,12 +7408,20 @@ async function renderReminders() {
     return;
   }
 
+  const filtered = search
+    ? reminders.filter(r => (r.name + r.lname + r.title + (r.note || '')).toLowerCase().includes(search.toLowerCase()))
+    : reminders;
+
   let html = `<div class="table-card">
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>`;
 
-  reminders.forEach(r => {
+  if (filtered.length === 0) {
+    html += `<tr><td colspan="7"><div class="empty"><span>🔍</span>چیزی پیدا نشد</div></td></tr>`;
+  }
+
+  filtered.forEach(r => {
     const due = jalaliKey(r.due_date_jalali);
     let statusBadge;
     if (r.done) statusBadge = `<span class="status status-ok">پرداخت شد</span>`;
