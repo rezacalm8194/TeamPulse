@@ -24,11 +24,11 @@ bash scripts/install-vosk.sh
 The installer:
 
 - installs Python, pip, venv, ffmpeg, ffprobe, curl and unzip when `apt-get` is available
-- creates `backend/.venv-speech`
+- creates `backend/.venv`
 - installs `vosk`, `soundfile` and `numpy`
 - downloads the official Persian Vosk model
 - extracts it into `backend/speech-models/fa`
-- writes `SPEECH_PROVIDER=vosk`, `VOSK_MODEL_PATH` and `VOSK_PYTHON` into `backend/.env`
+- writes `SPEECH_PROVIDER=vosk` and `VOSK_MODEL_PATH` into `backend/.env`
 
 Restart the Node server after installation.
 
@@ -55,7 +55,8 @@ Expected ready response:
 If `ready` is `false`, check `errorCode`:
 
 - `vosk_model_missing`: Persian model is missing or extracted into the wrong folder.
-- `vosk_engine_missing`: Python Vosk worker or Python environment is missing.
+- `vosk_venv_missing`: `backend/.venv/bin/python` is missing. Run `bash scripts/install-vosk.sh`.
+- `vosk_engine_missing`: Vosk is not installed inside `backend/.venv`.
 - `audio_tool_missing`: `ffmpeg` or `ffprobe` is missing.
 
 ## Environment
@@ -63,7 +64,6 @@ If `ready` is `false`, check `errorCode`:
 ```env
 SPEECH_PROVIDER=vosk
 VOSK_MODEL_PATH=/home/pachim/TeamPulse.ir/backend/speech-models/fa
-VOSK_PYTHON=/home/pachim/TeamPulse.ir/backend/.venv-speech/bin/python
 ```
 
 To use another model URL during installation:

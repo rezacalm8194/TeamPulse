@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 MODEL_DIR="${VOSK_MODEL_PATH:-$BACKEND_DIR/speech-models/fa}"
-VENV_DIR="${VOSK_VENV_DIR:-$BACKEND_DIR/.venv-speech}"
+VENV_DIR="$BACKEND_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
 MODEL_LIST_URL="https://alphacephei.com/vosk/models/model-list.json"
 SUDO="sudo"
@@ -43,8 +43,9 @@ fi
 
 log "Creating Python virtual environment at $VENV_DIR"
 python3 -m venv "$VENV_DIR"
-"$PYTHON_BIN" -m pip install --upgrade pip wheel setuptools
-"$PYTHON_BIN" -m pip install --upgrade vosk soundfile numpy
+source "$VENV_DIR/bin/activate"
+python -m pip install --upgrade pip
+python -m pip install --upgrade vosk numpy soundfile
 
 mkdir -p "$MODEL_DIR"
 if [ ! -d "$MODEL_DIR/conf" ]; then
@@ -130,11 +131,7 @@ if grep -q '^VOSK_MODEL_PATH=' "$ENV_FILE"; then
 else
   printf 'VOSK_MODEL_PATH=%s\n' "$MODEL_DIR" >> "$ENV_FILE"
 fi
-if grep -q '^VOSK_PYTHON=' "$ENV_FILE"; then
-  sed -i "s|^VOSK_PYTHON=.*|VOSK_PYTHON=$PYTHON_BIN|" "$ENV_FILE"
-else
-  printf 'VOSK_PYTHON=%s\n' "$PYTHON_BIN" >> "$ENV_FILE"
-fi
+sed -i '/^VOSK_PYTHON=/d' "$ENV_FILE"
 
 log "Checking Vosk import and model path"
 "$PYTHON_BIN" - "$MODEL_DIR" <<'PY'

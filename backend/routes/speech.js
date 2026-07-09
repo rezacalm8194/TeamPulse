@@ -10,7 +10,7 @@ const auth = require('../middleware/auth');
 const DEBUG_AUDIO_DIR = path.join(__dirname, '..', '.speech-debug');
 const VOSK_MODEL_DIR = process.env.VOSK_MODEL_PATH || path.join(__dirname, '..', 'speech-models', 'fa');
 const VOSK_WORKER_PATH = path.join(__dirname, '..', 'vosk_worker.py');
-const VOSK_PYTHON = process.env.VOSK_PYTHON || path.join(__dirname, '..', '.venv-speech', 'bin', 'python');
+const VOSK_PYTHON = path.join(__dirname, '..', '.venv', 'bin', 'python');
 let lastDebugAudio = null;
 let voskWorker = null;
 let voskWorkerSeq = 0;
@@ -21,6 +21,8 @@ const voskWorkerState = {
   pendingReady: null,
   errorCode: null,
   errorMessage: null,
+  venvExists: fs.existsSync(VOSK_PYTHON),
+  pythonPath: VOSK_PYTHON,
   voskInstalled: false,
   voskVersion: null,
   modelLoaded: false,
@@ -115,13 +117,22 @@ async function toolAvailable(command) {
   }
 }
 
+async function pythonPackageAvailable(packageName) {
+  if (!fs.existsSync(VOSK_PYTHON)) return false;
+  try {
+    await runTool(VOSK_PYTHON, ['-c', `import ${packageName}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function speechProvider() {
   return (process.env.SPEECH_PROVIDER || 'vosk').trim().toLowerCase();
 }
 
 function pythonCommand() {
-  if (fs.existsSync(VOSK_PYTHON)) return VOSK_PYTHON;
-  return process.env.PYTHON || 'python3';
+  return VOSK_PYTHON;
 }
 
 function isVoskModelDirectory(dir) {
@@ -140,6 +151,8 @@ function applyVoskWorkerInfo(info) {
   if (!info) return;
   voskWorkerState.errorCode = info.errorCode || null;
   voskWorkerState.errorMessage = info.message || null;
+  voskWorkerState.venvExists = fs.existsSync(VOSK_PYTHON);
+  voskWorkerState.pythonPath = VOSK_PYTHON;
   voskWorkerState.voskInstalled = !!info.voskInstalled;
   voskWorkerState.voskVersion = info.voskVersion || null;
   voskWorkerState.modelLoaded = !!info.modelLoaded;
@@ -205,6 +218,17 @@ function startVoskWorker() {
   if (voskWorkerState.initializing && voskWorkerState.pendingReady) {
     return voskWorkerState.pendingReady.promise;
   }
+  voskWorkerState.venvExists = fs.existsSync(VOSK_PYTHON);
+  voskWorkerState.pythonPath = VOSK_PYTHON;
+  if (!voskWorkerState.venvExists) {
+    voskWorkerState.ready = false;
+    voskWorkerState.voskInstalled = false;
+    voskWorkerState.errorCode = 'vosk_venv_missing';
+    voskWorkerState.errorMessage = `Python virtual environment was not found at ${VOSK_PYTHON}`;
+    const err = new Error(voskWorkerState.errorMessage);
+    err.code = 'vosk_venv_missing';
+    return Promise.reject(err);
+  }
   if (!isVoskModelDirectory(VOSK_MODEL_DIR)) {
     voskWorkerState.ready = false;
     voskWorkerState.modelLoaded = false;
@@ -248,8 +272,9 @@ function startVoskWorker() {
   voskWorker.on('error', err => {
     voskWorkerState.initializing = false;
     voskWorkerState.ready = false;
+    voskWorkerState.venvExists = fs.existsSync(VOSK_PYTHON);
     voskWorkerState.voskInstalled = false;
-    voskWorkerState.errorCode = err.code === 'ENOENT' ? 'vosk_engine_missing' : 'vosk_worker_error';
+    voskWorkerState.errorCode = err.code === 'ENOENT' ? 'vosk_venv_missing' : 'vosk_worker_error';
     voskWorkerState.errorMessage = err.message;
     err.code = voskWorkerState.errorCode;
     if (voskWorkerState.pendingReady) {
@@ -282,6 +307,8 @@ async function ensureVoskReady() {
 
 function voskHealthSnapshot() {
   return {
+    venvExists: fs.existsSync(VOSK_PYTHON),
+    pythonPath: VOSK_PYTHON,
     voskInstalled: voskWorkerState.voskInstalled,
     voskVersion: voskWorkerState.voskVersion,
     modelLoaded: voskWorkerState.modelLoaded,
@@ -394,23 +421,31 @@ router.get('/health', async (req, res) => {
     toolAvailable('ffmpeg'),
     toolAvailable('ffprobe'),
   ]);
+  const venvExists = fs.existsSync(VOSK_PYTHON);
+  const voskInstalled = venvExists ? await pythonPackageAvailable('vosk') : false;
+  if (venvExists && !voskInstalled && !voskWorkerState.errorCode) {
+    voskWorkerState.errorCode = 'vosk_engine_missing';
+    voskWorkerState.errorMessage = 'Vosk is not installed inside backend/.venv';
+  }
   const modelExists = isVoskModelDirectory(VOSK_MODEL_DIR);
   const ready = provider === 'vosk'
-    ? !!(ffmpeg && ffprobe && voskWorkerState.voskInstalled && voskWorkerState.modelLoaded && voskWorkerState.ready)
+    ? !!(ffmpeg && ffprobe && venvExists && voskInstalled && voskWorkerState.modelLoaded && voskWorkerState.ready)
     : true;
   res.json({
     provider,
     ffmpeg,
     ffprobe,
-    voskInstalled: voskWorkerState.voskInstalled,
+    venvExists,
+    pythonPath: VOSK_PYTHON,
+    voskInstalled,
     voskVersion: voskWorkerState.voskVersion,
     modelLoaded: voskWorkerState.modelLoaded,
     modelExists,
     modelPath: voskWorkerState.modelPath || VOSK_MODEL_DIR,
     modelLoadTime: voskWorkerState.modelLoadTime,
     language: voskWorkerState.language || 'fa',
-    errorCode: voskWorkerState.errorCode,
-    errorMessage: voskWorkerState.errorMessage,
+    errorCode: !venvExists ? 'vosk_venv_missing' : (!voskInstalled ? 'vosk_engine_missing' : voskWorkerState.errorCode),
+    errorMessage: !venvExists ? `Python virtual environment was not found at ${VOSK_PYTHON}` : (!voskInstalled ? 'Vosk is not installed inside backend/.venv' : voskWorkerState.errorMessage),
     ready,
   });
 });
@@ -606,7 +641,16 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
           debug,
         });
       }
+      if (e.code === 'vosk_venv_missing') {
+        debug.vosk = { ...(debug.vosk || {}), ...voskHealthSnapshot() };
+        return res.status(503).json({
+          error: 'vosk_venv_missing',
+          message: 'محیط مجازی Python برای Vosk روی سرور ساخته نشده است.',
+          debug,
+        });
+      }
       if (e.code === 'vosk_model_missing') {
+        debug.vosk = { ...(debug.vosk || {}), ...voskHealthSnapshot() };
         return res.status(503).json({
           error: 'vosk_model_missing',
           message: 'مدل تبدیل صدای فارسی روی سرور نصب نشده',
@@ -614,6 +658,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         });
       }
       if (e.code === 'vosk_engine_missing') {
+        debug.vosk = { ...(debug.vosk || {}), ...voskHealthSnapshot() };
         return res.status(503).json({
           error: 'vosk_engine_missing',
           message: 'موتور Vosk روی سرور نصب نشده است.',

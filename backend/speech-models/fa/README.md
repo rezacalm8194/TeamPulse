@@ -25,7 +25,12 @@ The installer downloads the official Persian model from the Vosk model list, ext
 ```env
 SPEECH_PROVIDER=vosk
 VOSK_MODEL_PATH=/home/pachim/TeamPulse.ir/backend/speech-models/fa
-VOSK_PYTHON=/home/pachim/TeamPulse.ir/backend/.venv-speech/bin/python
+```
+
+Python packages are installed only inside:
+
+```text
+backend/.venv/bin/python
 ```
 
 Health check:
@@ -38,6 +43,7 @@ Expected errors:
 
 ```json
 { "error": "vosk_model_missing" }
+{ "error": "vosk_venv_missing" }
 { "error": "vosk_engine_missing" }
 { "error": "audio_tool_missing" }
 ```

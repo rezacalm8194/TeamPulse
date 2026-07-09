@@ -1,5 +1,7 @@
-app.html
+VOICE_TO_TEXT_SETUP.md
+backend/.env
 backend/routes/speech.js
-backend/server.js
 backend/speech-models/fa/README.md
-changed.tmp
+deploy-oauth_callback.bat
+privacy.html
+scripts/install-vosk.sh
