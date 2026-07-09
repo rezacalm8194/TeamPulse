@@ -4943,12 +4943,26 @@ function _renderChecklist(text, checked, interactive, noteId, field) {
   return '<label style="display:flex;align-items:flex-start;gap:8px;margin:3px 0"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
 }
 
+// پاک‌سازی لایه‌های تودرتوی نشانه‌ی رنگ که در نسخه‌ی قدیمی applyTextColor ذخیره می‌شدند
+function _cleanupColorMarkers(str) {
+  if (!str) return str;
+  let s = str, prev;
+  do {
+    prev = s;
+    s = s.replace(/\{\{c:(#[0-9a-fA-F]{3,8})\}\}\{\{c:#[0-9a-fA-F]{3,8}\}\}([\s\S]*?)\{\{\/c\}\}\{\{\/c\}\}/g, '{{c:$1}}$2{{/c}}');
+  } while (s !== prev);
+  return s;
+}
+
 function renderRich(str, opts) {
   if (!str) return '';
   const interactive = !!(opts && opts.interactive);
   const noteId = (opts && opts.noteId != null) ? opts.noteId : null;
   const field = (opts && opts.field) ? opts.field : '';
   let s = escapeHtml(str);
+  // پاک‌سازی لایه‌های تودرتوی رنگ که با نسخه‌ی قبلیِ باگ‌دار ذخیره شده بودند
+  // (مثل {{c:x}}{{c:y}}متن{{/c}}{{/c}}) — رنگ بیرونی (آخرین رنگ انتخاب‌شده) نگه داشته می‌شود.
+  s = _cleanupColorMarkers(s);
   // نشانه‌گذاری رنگ متن {{c:#hex}}...{{/c}} → span رنگی واقعی
   s = s.replace(/\{\{c:(#[0-9a-fA-F]{3,8})\}\}([\s\S]*?)\{\{\/c\}\}/g, '<span style="color:$1">$2</span>');
   // سازگاری با یادداشت‌های قدیمی که HTML خام رنگ در آن‌ها ذخیره و توسط escapeHtml خراب شده بود
@@ -8684,10 +8698,19 @@ function applyTextColor(textareaId, color) {
   if (!el) return;
   const start = el.selectionStart, end = el.selectionEnd;
   const scrollTop = el.scrollTop;
-  const selected = el.value.slice(start, end) || 'متن';
-  // به‌جای HTML خام از نشانه‌گذاری {{c:...}} استفاده می‌کنیم تا escapeHtml در renderRich
-  // آن را از بین نبرد (همان الگوی **bold** و ==highlight==)
-  const colored = `{{c:${color}}}${selected}{{/c}}`;
+  const rawSelected = el.value.slice(start, end) || 'متن';
+  // اگر متن انتخاب‌شده خودش قبلاً رنگی شده (یعنی کاربر دارد رنگ را عوض می‌کند، نه اینکه
+  // متن تازه‌ای را رنگی می‌کند)، به‌جای پیچیدن یک لایه‌ی جدید دور آن، رنگ قبلی را با رنگ
+  // جدید جایگزین می‌کنیم و هر لایه‌ی تودرتوی احتمالی (باقی‌مانده از این باگ) را هم پاک می‌کنیم.
+  const wrapMatch = rawSelected.match(/^\{\{c:#[0-9a-fA-F]{3,8}\}\}([\s\S]*)\{\{\/c\}\}$/);
+  let inner = wrapMatch ? wrapMatch[1] : rawSelected;
+  // پاک‌سازی لایه‌های تودرتوی باقی‌مانده از نسخه‌ی قبلی باگ، مثل {{c:x}}{{c:y}}متن{{/c}}{{/c}}
+  let prevInner;
+  do {
+    prevInner = inner;
+    inner = inner.replace(/^\{\{c:#[0-9a-fA-F]{3,8}\}\}([\s\S]*)\{\{\/c\}\}$/, '$1');
+  } while (inner !== prevInner);
+  const colored = `{{c:${color}}}${inner}{{/c}}`;
   const val = el.value;
   el.value = val.slice(0, start) + colored + val.slice(end);
   el.focus();
@@ -8933,7 +8956,7 @@ function _openFocusMode(textarea, noteId, field) {
 
   const focusTa = document.createElement('textarea');
   focusTa.id = 'fm-textarea';
-  focusTa.value = textarea.value;
+  focusTa.value = _cleanupColorMarkers(textarea.value);
   focusTa.style.cssText = `flex:1;width:100%;resize:none;background:transparent;border:none;padding:${FOCUS_IS_MOBILE ? '22px' : '32px'} 0 20px;font-family:var(--font);font-size:14px;line-height:2;color:var(--text);direction:rtl;text-align:right;outline:none;white-space:pre-wrap;box-sizing:border-box`;
   focusTa.placeholder = textarea.placeholder || 'بنویس...';
   textWrap.appendChild(focusTa);
@@ -15187,7 +15210,7 @@ function openEditInstruction(id) {
       <div class="form-group full note-content-wrap">
         <label class="form-label">📄 محتوا</label>
         ${richToolbar('ei-content')}
-        <textarea class="form-textarea note-content-textarea" id="ei-content" rows="6">${escapeHtml(node.content||'')}</textarea>
+        <textarea class="form-textarea note-content-textarea" id="ei-content" rows="6">${escapeHtml(_cleanupColorMarkers(node.content||''))}</textarea>
       </div>
       <div class="form-group full">
         <button type="button" id="ei-adv-toggle" onclick="_toggleAdvanced('ei-advanced','ei-adv-toggle')"
@@ -15221,7 +15244,7 @@ function openEditInstruction(id) {
           <div class="form-group full">
             <label class="form-label">📝 یادداشت تکمیلی</label>
             ${richToolbar('ei-extra')}
-            <textarea class="form-textarea" id="ei-extra" rows="3">${escapeHtml(node.extra_note||'')}</textarea>
+            <textarea class="form-textarea" id="ei-extra" rows="3">${escapeHtml(_cleanupColorMarkers(node.extra_note||''))}</textarea>
           </div>
           <div class="detail-section" style="margin-top:12px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
