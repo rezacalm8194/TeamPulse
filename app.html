@@ -17275,6 +17275,10 @@ async function _initAuth() {
 
         // لود مجدد داده تازه از سرور برای کاربر هدف (نه از کش قدیمی)
         window._impersonateLoadPending = true;
+        allStudents = [];
+        _db = _freshData();
+        _migrate(_db);
+        let loadedImpersonatedData = false;
         try {
           const dataRes = await _apiFetch('/api/data/' + impersonatingState.userId);
           if (dataRes.ok) {
@@ -17285,15 +17289,33 @@ async function _initAuth() {
                 _db = json.data;
                 _migrate(_db);
                 localStorage.setItem(targetKey, JSON.stringify(_db));
+                loadedImpersonatedData = true;
               }
             }
           }
-        } catch(e) { _load(); }
+        } catch(e) { console.warn('[Impersonate restore] data fetch error:', e.message); }
+        if (!loadedImpersonatedData) {
+          _db = _freshData();
+          _migrate(_db);
+          localStorage.setItem(targetKey, JSON.stringify(_db));
+        }
         window._impersonateLoadPending = false;
 
         _hideAuthScreen();
         _updateAuthUI();
-        await _authOnSuccess();
+        clearInterval(window._syncInterval);
+        clearInterval(window._pollInterval);
+        clearTimeout(window._serverSyncTimer);
+        window._syncInterval = setInterval(_syncToServer, 15000);
+        window._pollInterval = setInterval(async () => {
+          if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
+          const updated = await _loadFromServer();
+          if (updated && _canAutoRefresh()) renderPage();
+        }, 20000);
+        currentPage = location.hash ? location.hash.replace('#','') : 'students';
+        await init();
+        updateAccountDisplay();
+        _showImpersonateBar(impersonatingState.userName);
         return true;
       }
     } catch(e) { console.warn('[Impersonate restore] error:', e.message); }
