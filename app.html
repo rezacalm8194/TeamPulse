@@ -5084,6 +5084,13 @@ function _teamAccessSession() {
   try { return JSON.parse(localStorage.getItem(TEAM_ACCESS_SESSION_KEY) || 'null'); }
   catch(e) { return null; }
 }
+function _teamSessionStorageKey(session) {
+  const s = session || _teamAccessSession();
+  if (!s) return _userDBKey();
+  const owner = s.ownerUserId || s.ownerEmail || 'pending';
+  const account = s.accountId || 'default';
+  return 'tp_team_' + String(owner).replace(/[^a-zA-Z0-9_-]/g, '_') + '_v3_' + String(account).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
 function _isTeamGuest() { return !!_teamAccessSession(); }
 function _teamCan(page) {
   const s = _teamAccessSession();
@@ -5145,6 +5152,57 @@ function _acceptTeamInviteToken(token) {
   currentPage = payload.permissions[0] || 'settings';
   location.hash = currentPage;
 }
+async function _ensureTeamAccessOwner() {
+  const session = _teamAccessSession();
+  if (!session) return null;
+
+  const invitedEmail = String(session.email || '').trim().toLowerCase();
+  const currentEmail = String(_sbUser?.email || '').trim().toLowerCase();
+  if (invitedEmail && currentEmail && invitedEmail !== currentEmail) {
+    localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
+    showToast('این لینک دعوت برای ایمیل دیگری ساخته شده است', 'error');
+    return null;
+  }
+
+  if (session.ownerUserId) {
+    window._activeDBKey = _teamSessionStorageKey(session);
+    return session;
+  }
+
+  if (!session.ownerEmail) {
+    showToast('لینک هم‌تیمی قدیمی است؛ صاحب حساب لینک دعوت را دوباره کپی کند', 'error');
+    window._activeDBKey = _teamSessionStorageKey(session);
+    return session;
+  }
+
+  try {
+    const res = await _apiFetch('/api/auth/team-invite/resolve', {
+      method: 'POST',
+      body: JSON.stringify({
+        ownerEmail: session.ownerEmail,
+        inviteId: session.inviteId,
+        accountId: session.accountId || 'default'
+      })
+    });
+    if (!res.ok) throw new Error('resolve failed');
+    const resolved = await res.json();
+    const next = {
+      ...session,
+      ownerUserId: resolved.ownerUserId || session.ownerUserId || '',
+      ownerName: resolved.ownerName || session.ownerName || '',
+      ownerEmail: resolved.ownerEmail || session.ownerEmail || '',
+      permissions: resolved.permissions?.length ? resolved.permissions : session.permissions,
+      instructionFolders: resolved.instructionFolders || session.instructionFolders || []
+    };
+    localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify(next));
+    window._activeDBKey = _teamSessionStorageKey(next);
+    return next;
+  } catch(e) {
+    showToast('اتصال هم‌تیمی کامل نشد؛ لینک دعوت را دوباره از صاحب حساب بگیر', 'error');
+    window._activeDBKey = _teamSessionStorageKey(session);
+    return session;
+  }
+}
 function _leaveTeamAccess() {
   localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
   showToast('دسترسی هم‌تیمی خارج شد ✓', 'success');
@@ -5152,7 +5210,7 @@ function _leaveTeamAccess() {
 }
 function _teamActiveDBKey() {
   const s = _teamAccessSession();
-  return s?.ownerDbKey || _userDBKey();
+  return s ? _teamSessionStorageKey(s) : _userDBKey();
 }
 function _teamInstructionFolderIds(source) {
   const raw = source || _teamAccessSession() || {};
@@ -16719,6 +16777,7 @@ async function _authOnSuccess() {
     try { _acceptTeamInviteToken(pendingInvite); }
     catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
   }
+  await _ensureTeamAccessOwner();
   window._activeDBKey = _teamActiveDBKey();
   _load(); // load از localStorage (ممکنه خالی باشه)
 
@@ -16808,6 +16867,7 @@ async function _authOnSuccess() {
     // sync synchronous با sendBeacon
     if (_sbUser?.id && _sbSession?.token) {
       const teamSession = _teamAccessSession();
+      if (teamSession && !teamSession.ownerUserId) return;
       const accId = teamSession?.ownerUserId || _sbUser.id;
       const url = (window.location.origin || '') + '/api/data/' + accId;
       const data = JSON.stringify({ data: _db });
@@ -17427,6 +17487,7 @@ async function _initAuth() {
       try { _acceptTeamInviteToken(pendingInvite); }
       catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
     }
+    await _ensureTeamAccessOwner();
     window._activeDBKey = _teamActiveDBKey();
     _load();
     _hideAuthScreen();

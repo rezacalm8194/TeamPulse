@@ -47,6 +47,42 @@ router.get('/me', auth, (req, res) => {
   }
 });
 
+router.post('/team-invite/resolve', auth, (req, res) => {
+  try {
+    const ownerEmail = String(req.body?.ownerEmail || '').trim().toLowerCase();
+    const inviteId = String(req.body?.inviteId || '').trim();
+    const memberEmail = String(req.user.email || '').trim().toLowerCase();
+    if (!ownerEmail || !memberEmail) return res.status(400).json({ error: 'ownerEmail required' });
+
+    const owner = db.prepare('SELECT id,name,email FROM accounts WHERE lower(email)=? AND is_active=1').get(ownerEmail);
+    if (!owner) return res.status(404).json({ error: 'owner not found' });
+
+    const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(owner.id);
+    if (!row?.data) return res.status(403).json({ error: 'team access not found' });
+
+    let data = null;
+    try { data = JSON.parse(row.data); } catch {}
+    const members = Array.isArray(data?.team_members) ? data.team_members : [];
+    const member = members.find(m => {
+      const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
+      const sameInvite = !inviteId || String(m.id || '').trim() === inviteId;
+      return sameEmail && sameInvite && m.status !== 'حذف‌شده';
+    });
+    if (!member) return res.status(403).json({ error: 'team access not allowed' });
+
+    res.json({
+      ownerUserId: owner.id,
+      ownerName: owner.name || '',
+      ownerEmail: owner.email || '',
+      accountId: req.body?.accountId || 'default',
+      permissions: Array.isArray(member.permissions) ? member.permissions : [],
+      instructionFolders: member.instruction_folders || member.instructionFolders || []
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.put('/password', auth, (req, res) => {
   try {
     const { current_password, new_password } = req.body;
