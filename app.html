@@ -16366,10 +16366,7 @@ async function _syncToServer() {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey)) {
-      if (!window._impersonateLeakWarned) {
-        window._impersonateLeakWarned = true;
-        showToast('برای امنیت، داده‌های مدیر در حساب کاربر دیگر ذخیره نشد', 'error');
-      }
+      console.warn('[Impersonate] blocked admin-like data sync for target account');
       return;
     }
     if (teamSession && !teamSession.ownerUserId) {
@@ -17324,7 +17321,7 @@ async function _initAuth() {
               const json = await dataRes.json();
               if (json.data && Object.keys(json.data).length > 0) {
                 if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-                  showToast('داده‌های مدیر در حساب این کاربر دیده شد و نمایش داده نشد', 'error');
+                  console.warn('[Impersonate restore] ignored admin-like data for target account');
                 } else {
                   _db = json.data;
                   _migrate(_db);
@@ -19835,7 +19832,7 @@ async function _adminImpersonate(userId, userName) {
           const json = await dataRes.json();
           if (json.data && Object.keys(json.data).length > 0) {
             if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-              showToast('داده‌های مدیر در حساب این کاربر دیده شد و نمایش داده نشد', 'error');
+              console.warn('[Impersonate] ignored admin-like data for target account');
             } else {
               _db = json.data;
               _migrate(_db);
