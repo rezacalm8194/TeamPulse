@@ -17813,30 +17813,12 @@ function _todoStickyAddBoxHtml(stats = {}) {
   _todosInit();
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
-  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const todos = (_db.todos || []).filter(t => !t.archived);
-  const activeCount = stats.activeCount ?? todos.filter(t => !t.done).length;
   const todayCount = stats.todayCount ?? todos.filter(t => !t.date_jalali || _jalaliKey(t.date_jalali) === todayKey).length;
-  const overdueCount = stats.overdueCount ?? todos.filter(t => {
-    if (t.done || !t.date_jalali) return false;
-    const dk = _jalaliKey(t.date_jalali);
-    if (dk < todayKey) return true;
-    if (dk === todayKey && t.time) {
-      const [hh, mm] = t.time.split(':').map(Number);
-      return (hh * 60 + mm) < nowMinutes;
-    }
-    return false;
-  }).length;
   const doneCnt = stats.doneCnt ?? todos.filter(t => t.done && t.date_jalali && _jalaliKey(t.date_jalali) === todayKey).length;
   const totalToday = stats.totalToday ?? todayCount;
   const progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
   return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:rgba(17,22,34,.96);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 8px 28px rgba(0,0,0,.24)">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
-      <div>
-        <div style="font-size:18px;font-weight:900;color:var(--text);line-height:1.4">لیست کارها</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${fa(activeCount)} کار فعال · ${fa(todayCount)} امروز${overdueCount ? ` · ${fa(overdueCount)} عقب‌افتاده` : ''}</div>
-      </div>
-    </div>
     <button onclick="openAddTodo()"
       style="width:100%;padding:12px 18px;border-radius:12px;border:none;cursor:pointer;
         font-family:var(--font);font-size:15px;font-weight:700;
