@@ -4317,14 +4317,32 @@ const _gdrive = {
     if(!this.clientId)throw new Error('Client ID تنظیم نشده');
     return new Promise((resolve,reject)=>{
       const w=window.open('','_blank','width=500,height=650');
+      if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state=Math.random().toString(36).slice(2);
       const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       w.location=url;
-      const handler=e=>{
-        if(e.data?.type!=='gdrive_token')return;
+      console.log('OAuth popup opened', { type: 'gdrive_token' });
+      let done=false;
+      let timeoutId=null;
+      let closeTimer=null;
+      const cleanup=()=>{
+        done=true;
         window.removeEventListener('message',handler);
-        if(e.data.error){reject(new Error(e.data.error));return;}
+        clearTimeout(timeoutId);
+        clearInterval(closeTimer);
+      };
+      const handler=e=>{
+        console.log('callback message received', e.data);
+        console.log('message type', e.data?.type);
+        console.log('message origin', e.origin);
+        if(e.data?.type!=='gdrive_token')return;
+        if(e.origin!==window.location.origin)return;
+        if(e.source!==w)return;
+        if(e.data.state!==state)return;
+        cleanup();
+        if(e.data.error){console.log('OAuth error', e.data.error);reject(new Error(e.data.error));return;}
+        console.log('token received', Boolean(e.data.token));
         this.token=e.data.token;
         this.tokenExpiry=Date.now()+(e.data.expires_in-60)*1000;
         _db._gdrive_token=this.token;_db._gdrive_token_expiry=this.tokenExpiry;
@@ -4332,7 +4350,8 @@ const _gdrive = {
         resolve(this.token);
       };
       window.addEventListener('message',handler);
-      setTimeout(()=>{window.removeEventListener('message',handler);reject(new Error('Timeout'));},120000);
+      closeTimer=setInterval(()=>{if(!done&&w.closed){cleanup();reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));}},500);
+      timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
     });
   },
 
@@ -4508,14 +4527,32 @@ const _gcal = {
     if(!this.clientId)throw new Error('Client ID تنظیم نشده');
     return new Promise((resolve,reject)=>{
       const w=window.open('','_blank','width=500,height=650');
+      if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gcal_'+Math.random().toString(36).slice(2);
       const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       w.location=url;
-      const handler=e=>{
-        if(e.data?.type!=='gcal_token')return;
+      console.log('OAuth popup opened', { type: 'gcal_token' });
+      let done=false;
+      let timeoutId=null;
+      let closeTimer=null;
+      const cleanup=()=>{
+        done=true;
         window.removeEventListener('message',handler);
-        if(e.data.error){reject(new Error(e.data.error));return;}
+        clearTimeout(timeoutId);
+        clearInterval(closeTimer);
+      };
+      const handler=e=>{
+        console.log('callback message received', e.data);
+        console.log('message type', e.data?.type);
+        console.log('message origin', e.origin);
+        if(e.data?.type!=='gcal_token')return;
+        if(e.origin!==window.location.origin)return;
+        if(e.source!==w)return;
+        if(e.data.state!==state)return;
+        cleanup();
+        if(e.data.error){console.log('OAuth error', e.data.error);reject(new Error(e.data.error));return;}
+        console.log('token received', Boolean(e.data.token));
         this.token=e.data.token;
         this.tokenExpiry=Date.now()+(e.data.expires_in-60)*1000;
         _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
@@ -4523,7 +4560,8 @@ const _gcal = {
         resolve(this.token);
       };
       window.addEventListener('message',handler);
-      setTimeout(()=>{window.removeEventListener('message',handler);reject(new Error('Timeout'));},120000);
+      closeTimer=setInterval(()=>{if(!done&&w.closed){cleanup();reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));}},500);
+      timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
     });
   },
 
