@@ -4213,6 +4213,7 @@ window.api = {
       };
       collect(numId);
       _db.instructions = (_db.instructions||[]).filter(n => !toDelete.has(n.id));
+      _forceNextServerSync();
       _save(); return _P({ok:true});
     },
     getPath: (id) => {
@@ -4814,6 +4815,10 @@ function _consumeStoredGcalOAuthResult() {
     used=true;
   });
   return used;
+}
+
+function _forceNextServerSync() {
+  window._forceNextSync = true;
 }
 
 function _startGcalOAuthRescue() {
@@ -14240,7 +14245,7 @@ async function renderInstructions(instrSearch) {
   const currentLevel = _instrCurrentLevel();
   if (!instrSearch) {
     if (currentLevel === 'root') items = items.filter(n => n.type === 'kcategory');
-    else if (currentLevel === 'category') items = items.filter(n => n.type === 'category');
+    else if (currentLevel === 'category') items = items.filter(n => n.type !== 'kcategory');
     else items = items.filter(n => n.type !== 'category' && n.type !== 'kcategory');
   }
 
@@ -14318,12 +14323,13 @@ async function renderInstructions(instrSearch) {
     const emptyHint = currentLevel === 'root'
       ? 'برای شروع، دانش‌ها را در دسته‌بندی‌های اصلی مرتب کن.'
       : currentLevel === 'category'
-        ? 'داخل این دسته‌بندی چند پوشه بساز تا یادداشت‌ها منظم بمانند.'
+        ? 'داخل این دسته‌بندی می‌توانی پوشه بسازی یا مستقیم یادداشت اضافه کنی.'
         : 'یادداشت‌های این پوشه هنوز ثبت نشده‌اند.';
     const emptyCreate = currentLevel === 'root'
       ? `<button class="btn btn-primary" onclick="openAddInstruction(null,'kcategory')">🗂 دسته‌بندی جدید</button>`
       : currentLevel === 'category'
-        ? `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>`
+        ? `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
+           <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>`
         : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>`;
     setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
@@ -14666,6 +14672,9 @@ function _instrToolbarHtml() {
       </button>` : level === 'category' ? `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
+      </button>
+      <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
+        <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>` : `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
@@ -14715,7 +14724,10 @@ function _instrFabHtml() {
   const actions = level === 'root'
     ? [{ type:'kcategory', icon:'🗂', label:'دسته‌بندی جدید' }]
     : level === 'category'
-      ? [{ type:'category', icon:'📁', label:'پوشه جدید' }]
+      ? [
+          { type:'category', icon:'📁', label:'پوشه جدید' },
+          { type:'note', icon:'📝', label:'یادداشت جدید' },
+        ]
       : [
           { type:'note', icon:'📝', label:'یادداشت جدید' },
           { type:'checklist', icon:'✅', label:'چک‌لیست جدید' },
@@ -15260,7 +15272,10 @@ async function _confirmBulkDelete() {
       _db.instructions = (_db.instructions || []).filter(n => !ds.has(n.id));
     }
   }
+  _forceNextServerSync();
   _save();
+  clearTimeout(window._serverSyncTimer);
+  _syncToServer();
   showToast('موارد انتخاب‌شده حذف شدند', 'error');
   _instrExitSelectMode();
   renderInstructions();
@@ -15804,8 +15819,10 @@ async function _confirmDeleteInstruction(id) {
     if (res && res.ok === false) { showToast(res.error || 'حذف نشد', 'error'); return; }
   } else {
     const ds=new Set(); function dc(x){ds.add(x);(_db.instructions||[]).filter(n=>n.parent_id==x).forEach(n=>dc(n.id));} dc(id);
-    _db.instructions=(_db.instructions||[]).filter(n=>!ds.has(n.id)); _save();
+    _db.instructions=(_db.instructions||[]).filter(n=>!ds.has(n.id)); _forceNextServerSync(); _save();
   }
+  clearTimeout(window._serverSyncTimer);
+  _syncToServer();
   showToast('حذف شد','error');
   renderInstructions();
 }
@@ -16501,10 +16518,12 @@ async function _syncToServer() {
       window._teamOwnerDataReady = true;
     }
     if (!accId) return;
+    const forceSync = !!window._forceNextSync;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: _db })
+      body: JSON.stringify({ data: _db, force: forceSync })
     });
+    if (res && res.ok && forceSync) window._forceNextSync = false;
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
       window._teamSyncForbiddenWarned = true;
       showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
@@ -16938,7 +16957,7 @@ async function _authOnSuccess() {
       if (teamSession && !teamSession.ownerUserId) return;
       const accId = teamSession?.ownerUserId || _sbUser.id;
       const url = (window.location.origin || '') + '/api/data/' + accId;
-      const data = JSON.stringify({ data: _db });
+      const data = JSON.stringify({ data: _db, force: !!window._forceNextSync });
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
         navigator.sendBeacon(url, blob);
