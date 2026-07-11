@@ -2,10 +2,27 @@ const router = require('express').Router();
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 
+function canAccessAccount(req, targetId) {
+  if (req.user.id === targetId || req.user.role === 'admin') return true;
+  const requesterEmail = String(req.user.email || '').trim().toLowerCase();
+  if (!requesterEmail) return false;
+  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
+  if (!row?.data) return false;
+  try {
+    const data = JSON.parse(row.data);
+    return (data.team_members || []).some(member =>
+      String(member.email || '').trim().toLowerCase() === requesterEmail &&
+      member.status !== 'حذف‌شده'
+    );
+  } catch {
+    return false;
+  }
+}
+
 router.put('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
-    if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const { data } = req.body;
     if (!data) return res.status(400).json({ error: 'no data' });
     const existing = db.prepare("SELECT account_id FROM user_data WHERE account_id=?").get(targetId);
@@ -21,7 +38,7 @@ router.put('/:accountId', auth, (req, res) => {
 router.get('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
-    if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
     if (!row) return res.json({ data: null });
     res.json({ data: JSON.parse(row.data), updated_at: row.updated_at });

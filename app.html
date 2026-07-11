@@ -5132,6 +5132,7 @@ function _acceptTeamInviteToken(token) {
     email: payload.email,
     ownerName: payload.ownerName || '',
     ownerEmail: payload.ownerEmail || '',
+    ownerUserId: payload.ownerUserId || '',
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
     permissions: payload.permissions,
@@ -16343,11 +16344,22 @@ async function _syncToServer() {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    if (teamSession && !teamSession.ownerUserId) {
+      if (!window._teamMissingOwnerWarned) {
+        window._teamMissingOwnerWarned = true;
+        showToast('لینک هم‌تیمی قدیمی است؛ صاحب حساب لینک دعوت را دوباره کپی کند', 'error');
+      }
+      return;
+    }
     if (!accId) return;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
       body: JSON.stringify({ data: _db })
     });
+    if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
+      window._teamSyncForbiddenWarned = true;
+      showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
+    }
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
     }
@@ -16361,6 +16373,7 @@ async function _loadFromServer() {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
     const res = await _apiFetch('/api/data/' + accId);
     if (res.status === 429) {
