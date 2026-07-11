@@ -16483,6 +16483,17 @@ async function _syncToServer() {
       }
       return;
     }
+    if (teamSession && !window._teamOwnerDataReady) {
+      const loaded = await _loadFromServer();
+      if (!loaded) {
+        if (!window._teamOwnerDataNotReadyWarned) {
+          window._teamOwnerDataNotReadyWarned = true;
+          showToast('ذخیره انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
+        }
+        return;
+      }
+      window._teamOwnerDataReady = true;
+    }
     if (!accId) return;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
@@ -16526,6 +16537,15 @@ async function _loadFromServer() {
       window._impersonateServerBlocked = true;
       return false;
     }
+    if (teamSession) {
+      _db = data;
+      _migrate(_db);
+      const key = window._activeDBKey || _teamActiveDBKey();
+      localStorage.setItem(key, JSON.stringify(_db));
+      window._teamOwnerDataReady = true;
+      console.log('[TeamPulse] Team owner data loaded from server');
+      return true;
+    }
     // merge: همیشه از سرور load کن اگه داده داشت
     // (اولویت با سرور چون همه دستگاه‌ها sync می‌کنن)
     if (data && Object.keys(data).length > 0) {
@@ -16539,6 +16559,7 @@ async function _loadFromServer() {
         const key = window._activeDBKey || 'coaching_reza_v3';
         localStorage.setItem(key, JSON.stringify(_db));
         if (window._impersonating) window._impersonateServerBlocked = false;
+        if (teamSession) window._teamOwnerDataReady = true;
         console.log('[TeamPulse] Loaded from server');
         return true;
       }
@@ -16798,6 +16819,7 @@ async function _authOnSuccess() {
     try { _acceptTeamInviteToken(pendingInvite); }
     catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
   }
+  window._teamOwnerDataReady = false;
   await _ensureTeamAccessOwner();
   window._activeDBKey = _teamActiveDBKey();
   _load(); // load از localStorage (ممکنه خالی باشه)
@@ -16813,6 +16835,12 @@ async function _authOnSuccess() {
   if (loadedFromServer) {
     console.log('[TeamPulse] Data synced from server');
     _load();
+  }
+  if (_teamAccessSession()) {
+    window._teamOwnerDataReady = !!loadedFromServer;
+    if (!loadedFromServer) {
+      showToast('داده‌های حساب اصلی هنوز لود نشده؛ برای ذخیره دوباره صفحه را رفرش کن', 'error');
+    }
   }
 
   // کاربر جدید = نه از سرور داده اومد نه لوکال داده داره
@@ -17381,8 +17409,8 @@ async function _initAuth() {
     localStorage.setItem(TEAM_PENDING_INVITE_KEY, teamInviteToken);
   }
 
-  // پاک کردن URL param بدون reload
-  history.replaceState({}, '', window.location.pathname);
+  // پاک کردن URL param بدون reload، ولی hash صفحه فعلی را نگه دار
+  history.replaceState({}, '', window.location.pathname + (window.location.hash || ''));
 
   // force logout
   if (actionLogout) {
@@ -17478,7 +17506,7 @@ async function _initAuth() {
           const updated = await _loadFromServer();
           if (updated && _canAutoRefresh()) renderPage();
         }, 20000);
-        currentPage = location.hash ? location.hash.replace('#','') : 'students';
+        currentPage = _getInitialPage();
         await init();
         updateAccountDisplay();
         _showImpersonateBar(impersonatingState.userName);
@@ -17503,20 +17531,7 @@ async function _initAuth() {
   if (saved.token) {
     _sbSession = { token: saved.token };
     _sbUser = saved.user;
-    const pendingInvite = localStorage.getItem(TEAM_PENDING_INVITE_KEY);
-    if (pendingInvite) {
-      try { _acceptTeamInviteToken(pendingInvite); }
-      catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
-    }
-    await _ensureTeamAccessOwner();
-    window._activeDBKey = _teamActiveDBKey();
-    _load();
-    _hideAuthScreen();
-    _updateAuthUI();
-    await init();
-    updateAccountDisplay();
-    // در پس‌زمینه sync کن
-    _authOnSuccess().catch(() => {});
+    await _authOnSuccess();
     // verify token در پس‌زمینه
     _auth.refreshSession().then(r => {
       if (!r) {
