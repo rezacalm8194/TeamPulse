@@ -17809,6 +17809,65 @@ function _todoViewSwitcherHtml() {
   </div>`;
 }
 
+function _todoStickyAddBoxHtml(stats = {}) {
+  _todosInit();
+  const today = _todayJalaliStr();
+  const todayKey = _jalaliKey(today);
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const todos = (_db.todos || []).filter(t => !t.archived);
+  const activeCount = stats.activeCount ?? todos.filter(t => !t.done).length;
+  const todayCount = stats.todayCount ?? todos.filter(t => !t.date_jalali || _jalaliKey(t.date_jalali) === todayKey).length;
+  const overdueCount = stats.overdueCount ?? todos.filter(t => {
+    if (t.done || !t.date_jalali) return false;
+    const dk = _jalaliKey(t.date_jalali);
+    if (dk < todayKey) return true;
+    if (dk === todayKey && t.time) {
+      const [hh, mm] = t.time.split(':').map(Number);
+      return (hh * 60 + mm) < nowMinutes;
+    }
+    return false;
+  }).length;
+  const doneCnt = stats.doneCnt ?? todos.filter(t => t.done && t.date_jalali && _jalaliKey(t.date_jalali) === todayKey).length;
+  const totalToday = stats.totalToday ?? todayCount;
+  const progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
+  return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:rgba(17,22,34,.96);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 8px 28px rgba(0,0,0,.24)">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
+      <div>
+        <div style="font-size:18px;font-weight:900;color:var(--text);line-height:1.4">لیست کارها</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${fa(activeCount)} کار فعال · ${fa(todayCount)} امروز${overdueCount ? ` · ${fa(overdueCount)} عقب‌افتاده` : ''}</div>
+      </div>
+    </div>
+    <button onclick="openAddTodo()"
+      style="width:100%;padding:12px 18px;border-radius:12px;border:none;cursor:pointer;
+        font-family:var(--font);font-size:15px;font-weight:700;
+        background:linear-gradient(135deg,#7c6af7,#5b4de0);
+        color:white;letter-spacing:.01em;
+        box-shadow:0 4px 20px rgba(124,106,247,.4);
+        display:flex;align-items:center;justify-content:center;gap:10px;
+        transition:all .2s"
+      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(124,106,247,.5)'"
+      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(124,106,247,.4)'">
+      <span>کار جدید اضافه کن</span>
+      <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
+        display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
+    </button>
+    ${totalToday > 0 ? `
+    <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
+          <span>پیشرفت امروز</span>
+          <span>${fa(doneCnt)}/${fa(totalToday)} کار</span>
+        </div>
+        <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${progress}%;background:${progress===100?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .4s"></div>
+        </div>
+      </div>
+      <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
+    </div>` : ''}
+    <div style="margin-top:12px">${_todoViewSwitcherHtml()}</div>
+  </div>`;
+}
+
 function _todoTasksForCalendar() {
   _todosInit();
   const base = (_db.todos || [])
@@ -17901,6 +17960,7 @@ function _todoDropOnDate(event, date) {
 function _todoCalendarResponsiveCss() {
   return `<style>
     .todo-calendar-shell{max-width:1280px;margin:0 auto;padding:0 8px 70px}
+    .todo-sticky-add-box{position:sticky;top:0;z-index:30;background:rgba(17,22,34,.96);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 8px 28px rgba(0,0,0,.24)}
     .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
     .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
@@ -17916,9 +17976,9 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-year-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
     .todo-calendar-year-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px}
     .todo-calendar-year-dots{display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl}
-    .todo-calendar-floating-add{position:fixed;left:22px;bottom:22px;z-index:20;min-width:138px;height:46px;box-shadow:0 12px 28px rgba(124,106,247,.28)}
     @media (max-width:720px){
       .todo-calendar-shell{padding:0 10px 84px;max-width:none}
+      .todo-sticky-add-box{top:0!important;margin:0 -2px 12px!important;border-radius:12px!important;padding:11px!important}
       .todo-calendar-toolbar{gap:8px;margin-bottom:10px}
       .todo-calendar-toolbar-row{display:block}
       .todo-calendar-mode-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px}
@@ -17959,7 +18019,6 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-year-card button:first-child{margin-bottom:0!important;align-items:flex-start!important;display:block!important}
       .todo-calendar-year-dots{grid-template-columns:repeat(10,13px)!important;gap:4px!important;justify-content:end}
       .todo-calendar-year-dots button{width:13px!important;height:13px!important}
-      .todo-calendar-floating-add{left:12px!important;right:12px!important;bottom:14px!important;width:auto!important;height:48px!important;border-radius:12px!important}
     }
   </style>`;
 }
@@ -18157,7 +18216,6 @@ function _renderTodoCalendarView() {
   };
 
   const weekDays = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
-  const floatingAdd = `<button class="btn btn-primary todo-calendar-floating-add" onclick="openAddTodo()">+ کار جدید</button>`;
   const title = _todoViewMode==='week'?'تقویم هفتگی':_todoViewMode==='month'?'تقویم ماهانه':'تقویم سالانه';
   const subtitle = _todoViewMode === 'week' ? _todoWeekRangeLabel(activeWeekCells) : _todoViewMode === 'month' ? `${JMONTHS[cm-1]} ${fa(cy)}` : `سال ${fa(cy)}`;
   const header = `<div class="todo-calendar-header">
@@ -18166,7 +18224,6 @@ function _renderTodoCalendarView() {
         <div style="font-size:18px;font-weight:900;color:var(--text)">${title}</div>
         <div style="font-size:12px;color:var(--text3);margin-top:3px">${subtitle}</div>
       </div>
-      <button class="btn btn-primary" onclick="openAddTodo()" style="height:46px;min-width:132px;font-size:14px;font-weight:900">+ کار جدید</button>
     </div>
     <div class="todo-calendar-stats">
       ${statChip('فعال', fa(stats.active), 'var(--accent2)')}
@@ -18201,7 +18258,7 @@ function _renderTodoCalendarView() {
         ${listPreview('عقب‌افتاده‌ها', stats.overdue, 'کار عقب‌افتاده‌ای نیست.')}
         ${listPreview('نزدیک‌ترین موعد', nearest, 'موعد نزدیکی وجود ندارد.')}
       </div>
-    </div>${floatingAdd}`;
+    </div>`;
   }
 
   if (_todoViewMode === 'month') {
@@ -18224,7 +18281,7 @@ function _renderTodoCalendarView() {
           ${cells.map((x,i)=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded,weekIndex:i%7})).join('')}
         </div>
       </div>
-    </div>${floatingAdd}`;
+    </div>`;
   }
 
   const monthCards = Array.from({length:12}, (_,i) => {
@@ -18261,7 +18318,7 @@ function _renderTodoCalendarView() {
   </div>
   <div class="todo-calendar-year-layout">
     <div class="todo-calendar-year-grid">${monthCards}</div>
-  </div>${floatingAdd}`;
+  </div>`;
 }
 
 function renderTodoList() {
@@ -18308,7 +18365,7 @@ function renderTodoList() {
   })());
   const todos = [..._db.todos.filter(t => !t.archived), ..._todaySnapshots];
   if (_todoViewMode !== 'list') {
-    setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoViewSwitcherHtml()}${_renderTodoCalendarView()}</div>`);
+    setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoStickyAddBoxHtml()}${_renderTodoCalendarView()}</div>`);
     _checkTodoReminders();
     return;
   }
@@ -18459,42 +18516,14 @@ function renderTodoList() {
       ${subtitle?`<span style="font-size:11px;color:var(--text3)">${subtitle}</span>`:''}
     </div>`;
 
-  let html = _todoViewSwitcherHtml() + `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.12)">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
-        <div>
-          <div style="font-size:18px;font-weight:900;color:var(--text);line-height:1.4">لیست کارها</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">${fa(activeCount)} کار فعال · ${fa(todayTodos.length)} امروز${overdueTodos.length ? ` · ${fa(overdueTodos.length)} عقب‌افتاده` : ''}</div>
-        </div>
-      </div>
-      <button onclick="openAddTodo()"
-        style="width:100%;padding:12px 18px;border-radius:12px;border:none;cursor:pointer;
-          font-family:var(--font);font-size:15px;font-weight:700;
-          background:linear-gradient(135deg,#7c6af7,#5b4de0);
-          color:white;letter-spacing:.01em;
-          box-shadow:0 4px 20px rgba(124,106,247,.4);
-          display:flex;align-items:center;justify-content:center;gap:10px;
-          transition:all .2s"
-        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(124,106,247,.5)'"
-        onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(124,106,247,.4)'">
-        <span>کار جدید اضافه کن</span>
-        <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
-          display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
-      </button>
-      ${todayTodos.length > 0 ? `
-      <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
-        <div style="flex:1">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
-          <span>پیشرفت امروز</span>
-          <span>${fa(doneCnt)}/${fa(todayTodos.length)} کار</span>
-          </div>
-          <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${progress}%;background:${progress===100?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .4s"></div>
-          </div>
-        </div>
-        <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
-      </div>` : ''}
-    </div>`;
+  let html = _todoStickyAddBoxHtml({
+    activeCount,
+    todayCount: todayTodos.length,
+    overdueCount: overdueTodos.length,
+    doneCnt,
+    totalToday: todayTodos.length,
+    progress
+  });
 
   // ── عقب‌افتاده ──
   if (overdueTodos.length > 0) {
@@ -18610,7 +18639,7 @@ function renderTodoList() {
     // اگه بدون تاریخ هستن و امروز نیستن (نباید پیش بیاد ولی safety)
   }
 
-  setContent(`<div style="max-width:680px;margin:0 auto">${html}</div>`);
+  setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell" style="max-width:680px">${html}</div>`);
   _checkTodoReminders();
   _initTodoDragDrop();
 }
