@@ -18044,7 +18044,37 @@ function _todoMiniEventHtml(t) {
 }
 
 function _openTodoDayPopover(date) {
-  _selectTodoCalendarDay(date);
+  _todoCalendarSelectedDate = date || _todayJalaliStr();
+  localStorage.setItem('tp_todo_calendar_selected_date', _todoCalendarSelectedDate);
+  const list = _todoFilteredCalendarTasks(_todoTasksForCalendar()).filter(t => t.date_jalali === _todoCalendarSelectedDate);
+  const done = list.filter(t => t.done).length;
+  const remain = Math.max(0, list.length - done);
+  const birthdays = _todoCalendarBirthdays(_todoCalendarSelectedDate);
+  const note = (_db.todo_day_notes && _db.todo_day_notes[_todoCalendarSelectedDate]) || '';
+  const body = `
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px">
+      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">همه</div>
+        <div style="font-size:17px;font-weight:900;color:var(--accent2)">${fa(list.length)}</div>
+      </div>
+      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">انجام‌شده</div>
+        <div style="font-size:17px;font-weight:900;color:var(--green)">${fa(done)}</div>
+      </div>
+      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">مانده</div>
+        <div style="font-size:17px;font-weight:900;color:var(--amber)">${fa(remain)}</div>
+      </div>
+    </div>
+    ${birthdays.length ? `<div style="background:rgba(236,72,153,.12);border:1px solid rgba(236,72,153,.35);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text)">🎂 تولد: ${birthdays.map(escapeHtml).join('، ')}</div>` : ''}
+    ${note ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.28);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text2);line-height:1.8">📝 ${escapeHtml(note)}</div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:7px;max-height:58vh;overflow:auto;padding-left:2px">
+      ${list.map(_todoMiniEventHtml).join('') || '<div style="font-size:13px;color:var(--text3);text-align:center;padding:24px">برای این روز کاری ثبت نشده است.</div>'}
+    </div>`;
+  openModal(`کارهای ${DateService.disp(_todoCalendarSelectedDate)}`, body, [
+    { label:'افزودن کار', cls:'btn-primary', action:`closeModal();openAddTodo('${_todoCalendarSelectedDate}')` },
+    { label:'بستن', cls:'btn-ghost', action:'closeModal()' },
+  ]);
 }
 
 function _renderTodoCalendarView() {
@@ -18105,7 +18135,7 @@ function _renderTodoCalendarView() {
         ${items.map(_todoMiniEventHtml).join('')}
       </div>`;
     }).join('');
-    return `<div class="todo-day-card" onclick="_selectTodoCalendarDay('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
+    return `<div class="todo-day-card" onclick="_openTodoDayPopover('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
       style="min-height:${list.length ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isFriday?'rgba(255,107,107,.35)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':'1px solid '+(isFriday?'rgba(255,107,107,.35)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isFriday?'rgba(255,107,107,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:${list.length?'7px':'0'}">
         <div>
