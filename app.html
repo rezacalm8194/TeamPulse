@@ -16357,19 +16357,27 @@ function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
   }
 }
 
-async function _resetImpersonatedTargetData(userId, userName, targetKey) {
+function _useLocalImpersonatedFallback(userName, targetKey) {
   _db = _freshData();
   _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
   _db._lastSaved = Date.now();
   _migrate(_db);
   localStorage.setItem(targetKey, JSON.stringify(_db));
+  window._impersonateServerBlocked = true;
+}
+
+function _loadSafeImpersonatedCache(targetKey, adminDBKey) {
   try {
-    await _apiFetch('/api/data/' + userId, {
-      method: 'PUT',
-      body: JSON.stringify({ data: _db })
-    });
+    const raw = localStorage.getItem(targetKey);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || _looksLikeAdminDataDuringImpersonation(cached, adminDBKey)) return false;
+    _db = cached;
+    _migrate(_db);
+    return true;
   } catch(e) {
-    console.warn('[Impersonate] target reset sync failed:', e.message);
+    console.warn('[Impersonate] safe cache load failed:', e.message);
+    return false;
   }
 }
 
@@ -16381,6 +16389,10 @@ async function _syncToServer() {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    if (window._impersonating && window._impersonateServerBlocked) {
+      console.warn('[Impersonate] blocked sync while target data is isolated locally');
+      return;
+    }
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey)) {
       console.warn('[Impersonate] blocked admin-like data sync for target account');
       return;
@@ -16400,6 +16412,10 @@ async function _syncToServer() {
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
       window._teamSyncForbiddenWarned = true;
       showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
+    }
+    if (res && res.status === 409 && !window._destructiveSyncBlockedWarned) {
+      window._destructiveSyncBlockedWarned = true;
+      showToast('سرور جلوی پاک شدن ناگهانی داده‌ها را گرفت؛ صفحه را رفرش کنید', 'error');
     }
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
@@ -16428,6 +16444,7 @@ async function _loadFromServer() {
     if (!data) return false;
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(data, window._impersonating.adminDBKey)) {
       console.warn('[Impersonate] ignored admin-like server data during poll');
+      window._impersonateServerBlocked = true;
       return false;
     }
     // merge: همیشه از سرور load کن اگه داده داشت
@@ -16442,6 +16459,7 @@ async function _loadFromServer() {
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
         localStorage.setItem(key, JSON.stringify(_db));
+        if (window._impersonating) window._impersonateServerBlocked = false;
         console.log('[TeamPulse] Loaded from server');
         return true;
       }
@@ -17326,6 +17344,7 @@ async function _initAuth() {
           userName: impersonatingState.userName,
           adminSession, adminUser, adminDBKey,
         };
+        window._impersonateServerBlocked = false;
 
         // لود مجدد داده تازه از سرور برای کاربر هدف (نه از کش قدیمی)
         window._impersonateLoadPending = true;
@@ -17341,13 +17360,18 @@ async function _initAuth() {
               const json = await dataRes.json();
               if (json.data && Object.keys(json.data).length > 0) {
                 if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-                  console.warn('[Impersonate restore] ignored admin-like data for target account');
-                  await _resetImpersonatedTargetData(impersonatingState.userId, impersonatingState.userName, targetKey);
+                  console.warn('[Impersonate restore] blocked admin-like server data for target account');
+                  if (!_loadSafeImpersonatedCache(targetKey, adminDBKey)) {
+                    _useLocalImpersonatedFallback(impersonatingState.userName, targetKey);
+                  } else {
+                    window._impersonateServerBlocked = true;
+                  }
                   loadedImpersonatedData = true;
                 } else {
                   _db = json.data;
                   _migrate(_db);
                   localStorage.setItem(targetKey, JSON.stringify(_db));
+                  window._impersonateServerBlocked = false;
                   loadedImpersonatedData = true;
                 }
               }
@@ -17358,6 +17382,7 @@ async function _initAuth() {
           _db = _freshData();
           _migrate(_db);
           localStorage.setItem(targetKey, JSON.stringify(_db));
+          window._impersonateServerBlocked = false;
         }
         window._impersonateLoadPending = false;
 
@@ -19826,6 +19851,7 @@ async function _adminImpersonate(userId, userName) {
     const targetKey = 'tp_impersonate_' + userId;
     window._activeDBKey = targetKey;
     window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey };
+    window._impersonateServerBlocked = false;
     // ذخیره وضعیت impersonate در localStorage تا با رفرش صفحه از بین نره
     try {
       localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey }));
@@ -19854,13 +19880,18 @@ async function _adminImpersonate(userId, userName) {
           const json = await dataRes.json();
           if (json.data && Object.keys(json.data).length > 0) {
             if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-              console.warn('[Impersonate] ignored admin-like data for target account');
-              await _resetImpersonatedTargetData(userId, userName, targetKey);
+              console.warn('[Impersonate] blocked admin-like server data for target account');
+              if (!_loadSafeImpersonatedCache(targetKey, adminDBKey)) {
+                _useLocalImpersonatedFallback(userName, targetKey);
+              } else {
+                window._impersonateServerBlocked = true;
+              }
               loaded = true;
             } else {
               _db = json.data;
               _migrate(_db);
               localStorage.setItem(targetKey, JSON.stringify(_db));
+              window._impersonateServerBlocked = false;
               loaded = true;
             }
           }
@@ -19873,6 +19904,7 @@ async function _adminImpersonate(userId, userName) {
       _db = _freshData();
       _migrate(_db);
       localStorage.setItem(targetKey, JSON.stringify(_db));
+      window._impersonateServerBlocked = false;
     }
 
     // حالا sync مجاز است
