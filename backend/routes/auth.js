@@ -62,26 +62,43 @@ router.get('/me', auth, (req, res) => {
 
 router.post('/team-invite/resolve', auth, (req, res) => {
   try {
+    const ownerUserId = String(req.body?.ownerUserId || '').trim();
     const ownerEmail = String(req.body?.ownerEmail || '').trim().toLowerCase();
     const inviteId = String(req.body?.inviteId || '').trim();
+    const invitedEmail = String(req.body?.email || '').trim().toLowerCase();
     const memberEmail = String(req.user.email || '').trim().toLowerCase();
-    if (!ownerEmail || !memberEmail) return res.status(400).json({ error: 'ownerEmail required' });
+    if ((!ownerEmail && !ownerUserId) || !memberEmail) return res.status(400).json({ error: 'owner required' });
+    if (invitedEmail && invitedEmail !== memberEmail) return res.status(403).json({ error: 'invite email mismatch' });
 
-    const owner = db.prepare('SELECT id,name,email FROM accounts WHERE lower(email)=? AND is_active=1').get(ownerEmail);
+    const owner = ownerUserId
+      ? db.prepare('SELECT id,name,email FROM accounts WHERE id=? AND is_active=1').get(ownerUserId)
+      : db.prepare('SELECT id,name,email FROM accounts WHERE lower(email)=? AND is_active=1').get(ownerEmail);
     if (!owner) return res.status(404).json({ error: 'owner not found' });
+    if (ownerEmail && String(owner.email || '').trim().toLowerCase() !== ownerEmail) {
+      return res.status(403).json({ error: 'owner email mismatch' });
+    }
 
     const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(owner.id);
-    if (!row?.data) return res.status(403).json({ error: 'team access not found' });
-
     let data = null;
-    try { data = JSON.parse(row.data); } catch {}
+    try { data = row?.data ? JSON.parse(row.data) : null; } catch {}
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
-    const member = members.find(m => {
+    let member = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
       const sameInvite = !inviteId || String(m.id || '').trim() === inviteId;
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';
     });
-    if (!member) return res.status(403).json({ error: 'team access not allowed' });
+    if (!member) {
+      const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+      if (!ownerUserId || !invitedEmail || !permissions.length) {
+        return res.status(403).json({ error: 'team access not allowed' });
+      }
+      member = {
+        id: inviteId,
+        email: memberEmail,
+        permissions,
+        instruction_folders: req.body?.instructionFolders || []
+      };
+    }
 
     db.prepare(`
       INSERT INTO team_access_grants

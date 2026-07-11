@@ -5200,9 +5200,13 @@ async function _ensureTeamAccessOwner() {
     const res = await _apiFetch('/api/auth/team-invite/resolve', {
       method: 'POST',
       body: JSON.stringify({
+        ownerUserId: session.ownerUserId || '',
         ownerEmail: session.ownerEmail,
         inviteId: session.inviteId,
-        accountId: session.accountId || 'default'
+        email: session.email || '',
+        accountId: session.accountId || 'default',
+        permissions: session.permissions || [],
+        instructionFolders: session.instructionFolders || []
       })
     });
     if (!res.ok) throw new Error('resolve failed');
