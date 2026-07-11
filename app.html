@@ -4705,6 +4705,7 @@ const _gcal = {
       const j=await res.json();
       t.gcal_event_id=j.id;
       _save(false);
+      showToast('در Google Calendar ثبت شد ✓','success');
     }catch(e){
       showToast('خطا در سینک با Google Calendar: '+e.message,'error');
     }
@@ -18300,7 +18301,7 @@ function _todoGcalCheckboxHtml(checked) {
     <div class="form-group full" style="margin-top:4px">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
         <input type="checkbox" id="todo-gcal" onchange="_onTodoGcalToggle(this)" ${checked?'checked':''}>
-        🗓️ ذخیره در Google Calendar
+        🗓️ ذخیره در Google Calendar (تقویم اصلی)
         <span id="todo-gcal-hint" style="display:${_gcal.enabled?'none':'inline'};font-size:11px;color:var(--amber)">(با زدن این تیک یک‌بار به گوگل وصل می‌شوی)</span>
       </label>
     </div>`;
