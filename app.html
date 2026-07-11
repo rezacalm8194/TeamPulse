@@ -17732,6 +17732,16 @@ function _openTodoCalendarSearch() {
   setTimeout(() => document.getElementById('todo-calendar-search')?.focus(), 0);
 }
 
+function _toggleTodoCalendarSearch(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  _todoCalendarSearchOpen = !_todoCalendarSearchOpen;
+  renderTodoList();
+  if (_todoCalendarSearchOpen) {
+    setTimeout(() => document.getElementById('todo-calendar-search')?.focus(), 0);
+  }
+}
+
 function _maybeCloseTodoCalendarSearch() {
   if ((_todoCalendarSearch || '').trim()) return;
   _todoCalendarSearchOpen = false;
@@ -17783,7 +17793,7 @@ function _todoViewSwitcherHtml() {
     </div>
     ${_todoViewMode !== 'list' ? `<div class="todo-calendar-search-row">
       <div class="todo-calendar-search-box ${(_todoCalendarSearchOpen || _todoCalendarSearch) ? 'open' : ''}">
-        <button class="btn btn-ghost btn-sm todo-calendar-search-trigger" onclick="_openTodoCalendarSearch()" title="جستجو" aria-label="جستجو">🔍</button>
+        <button class="btn btn-ghost btn-sm todo-calendar-search-trigger ${_todoCalendarSearch ? 'active' : ''}" onmousedown="event.preventDefault()" onclick="_toggleTodoCalendarSearch(event)" title="جستجو" aria-label="جستجو">🔍</button>
         <input class="input" id="todo-calendar-search" value="${escapeHtml(_todoCalendarSearch)}" onfocus="_openTodoCalendarSearch()" onblur="_maybeCloseTodoCalendarSearch()" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی سریع..." style="min-width:220px;max-width:360px;height:38px">
       </div>
       <div class="todo-calendar-filter-row">${filters}</div>
@@ -17911,14 +17921,15 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-mode-row .btn{min-width:0!important;width:100%;height:38px;padding:0 4px;font-size:12px}
       .todo-calendar-nav-row{display:grid!important;grid-template-columns:1fr auto 1fr;gap:6px}
       .todo-calendar-nav-row .btn{min-width:0!important;height:36px;font-size:12px;padding:0 8px}
-      .todo-calendar-search-row{display:flex!important;flex-wrap:nowrap;overflow-x:auto;gap:6px;padding-bottom:3px;scrollbar-width:none}
+      .todo-calendar-search-row{display:flex!important;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:6px;padding:0 1px 5px;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain;touch-action:pan-x;max-width:100%}
       .todo-calendar-search-row::-webkit-scrollbar{display:none}
       .todo-calendar-search-box{flex:0 0 auto;gap:0}
       .todo-calendar-search-trigger{display:inline-flex!important;width:38px!important;height:36px!important;min-width:38px!important;padding:0!important;align-items:center;justify-content:center;border-radius:10px}
+      .todo-calendar-search-trigger.active{border-color:var(--accent2)!important;color:var(--accent2)!important;background:rgba(124,106,247,.12)!important}
       .todo-calendar-search-box #todo-calendar-search{width:0!important;min-width:0!important;max-width:0!important;height:36px!important;padding:0!important;border-width:0!important;opacity:0;pointer-events:none;transition:all .18s ease}
       .todo-calendar-search-box.open{gap:6px}
       .todo-calendar-search-box.open #todo-calendar-search{width:48vw!important;min-width:48vw!important;max-width:48vw!important;padding:0 10px!important;border-width:1px!important;opacity:1;pointer-events:auto}
-      .todo-calendar-filter-row{display:flex!important;flex-wrap:nowrap;gap:6px;flex:0 0 auto}
+      .todo-calendar-filter-row{display:flex!important;flex-wrap:nowrap;gap:6px;flex:0 0 auto;min-width:max-content}
       .todo-calendar-filter-row .btn{white-space:nowrap;height:36px;padding:0 10px;font-size:12px}
       .todo-calendar-repeat-toggle{white-space:nowrap;flex:0 0 auto;height:36px;padding:7px 9px!important}
       .todo-calendar-header{padding:12px;border-radius:12px}
