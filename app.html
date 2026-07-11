@@ -17679,6 +17679,9 @@ function _canAutoRefresh() {
 
 let _todoViewMode = localStorage.getItem('tp_todo_view_mode') || 'list';
 let _todoCalendarCursor = _todayJalaliStr();
+let _todoCalendarFilter = localStorage.getItem('tp_todo_calendar_filter') || 'all';
+let _todoCalendarSearch = '';
+let _todoCalendarSearchTimer = null;
 
 function _setTodoViewMode(mode) {
   _todoViewMode = mode || 'list';
@@ -17699,6 +17702,18 @@ function _todoCalendarToday() {
   renderTodoList();
 }
 
+function _setTodoCalendarFilter(filter) {
+  _todoCalendarFilter = filter || 'all';
+  localStorage.setItem('tp_todo_calendar_filter', _todoCalendarFilter);
+  renderTodoList();
+}
+
+function _setTodoCalendarSearch(value) {
+  _todoCalendarSearch = (value || '').trim();
+  clearTimeout(_todoCalendarSearchTimer);
+  _todoCalendarSearchTimer = setTimeout(renderTodoList, 220);
+}
+
 function _todoViewSwitcherHtml() {
   const modes = [
     ['list','☰','لیست'],
@@ -17711,12 +17726,28 @@ function _todoViewSwitcherHtml() {
     return `<button class="btn ${active?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoViewMode('${mode}')"
       style="min-width:64px;justify-content:center">${icon} ${label}</button>`;
   }).join('');
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div>
+  const navName = _todoViewMode === 'month' ? 'ماه' : _todoViewMode === 'year' ? 'سال' : 'هفته';
+  const filters = [
+    ['all','همه'],
+    ['urgent','فوری'],
+    ['open','انجام نشده'],
+    ['sessions','جلسات'],
+    ['habits','عادت‌ها'],
+    ['goals','اهداف'],
+  ].map(([key,label]) => `<button class="btn ${_todoCalendarFilter===key?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoCalendarFilter('${key}')"
+    style="min-width:54px;justify-content:center">${label}</button>`).join('');
+  return `<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div>
+      ${_todoViewMode !== 'list' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(-1)" style="min-width:86px">${navName} قبل</button>
+        <button class="btn btn-primary btn-sm" onclick="_todoCalendarToday()">امروز</button>
+        <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(1)" style="min-width:86px">${navName} بعد</button>
+      </div>` : ''}
+    </div>
     ${_todoViewMode !== 'list' ? `<div style="display:flex;gap:6px;align-items:center">
-      <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(-1)" title="قبلی">‹</button>
-      <button class="btn btn-ghost btn-sm" onclick="_todoCalendarToday()">امروز</button>
-      <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(1)" title="بعدی">›</button>
+      <input class="input" value="${escapeHtml(_todoCalendarSearch)}" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی سریع کارها..." style="min-width:220px;max-width:360px;height:38px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${filters}</div>
     </div>` : ''}
   </div>`;
 }
@@ -17729,18 +17760,102 @@ function _todoTasksForCalendar() {
     .sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
 }
 
+function _todoCategoryMeta(t) {
+  const text = `${t.title || ''} ${t.description || ''}`.toLowerCase();
+  const cat = t.category || '';
+  if (/جلسه|کال|ملاقات|رزرو/.test(text)) return { icon:'📅', label:'جلسه', kind:'sessions', color:'#60a5fa' };
+  if (/تماس|زنگ|پیگیری/.test(text)) return { icon:'📞', label:'تماس', kind:'call', color:'#38bdf8' };
+  if (/آموزش|درس|مطالعه|یادگیری|تمرین|دانش/.test(text)) return { icon:'🧠', label:'آموزش', kind:'education', color:'#22d3ee' };
+  if (/ورزش|پیاده|باشگاه|دویدن|روتین|عادت/.test(text) || cat === 'routine') return { icon:'🏃', label:'روتین', kind:'habits', color:'#34d399' };
+  if (/پرداخت|هزینه|مالی|قسط|حقوق|پول|فاکتور/.test(text)) return { icon:'💰', label:'مالی', kind:'finance', color:'#f59e0b' };
+  if (t.goal_id) return { icon:'🎯', label:'هدف', kind:'goals', color:'var(--accent2)' };
+  if (cat === 'personal') return { icon:'👤', label:'شخصی', kind:'personal', color:'var(--accent2)' };
+  if (cat === 'clients') return { icon:'👥', label:'مشتریان', kind:'clients', color:'#60a5fa' };
+  return { icon:'📝', label:'کار', kind:'task', color:'var(--accent2)' };
+}
+
+function _todoStatusColor(t) {
+  const meta = _todoCategoryMeta(t);
+  if (t.done) return { color:'var(--green)', bg:'rgba(62,207,142,.12)', label:'انجام شده' };
+  if (t.priority === 'urgent') return { color:'var(--red)', bg:'rgba(255,107,107,.14)', label:'فوری' };
+  if (t.priority === 'high') return { color:'var(--amber)', bg:'rgba(245,158,11,.14)', label:'مهم' };
+  if (meta.kind === 'sessions') return { color:'#60a5fa', bg:'rgba(96,165,250,.14)', label:'جلسه' };
+  if (meta.kind === 'personal') return { color:'var(--accent2)', bg:'rgba(124,106,247,.14)', label:'شخصی' };
+  return { color:meta.color, bg:'rgba(124,106,247,.11)', label:meta.label };
+}
+
+function _todoFilteredCalendarTasks(tasks) {
+  const q = (_todoCalendarSearch || '').trim().toLowerCase();
+  return tasks.filter(t => {
+    const meta = _todoCategoryMeta(t);
+    const hay = `${t.title || ''} ${t.description || ''} ${meta.label || ''}`.toLowerCase();
+    if (q && !hay.includes(q)) return false;
+    if (_todoCalendarFilter === 'urgent') return t.priority === 'urgent';
+    if (_todoCalendarFilter === 'open') return !t.done;
+    if (_todoCalendarFilter === 'sessions') return meta.kind === 'sessions';
+    if (_todoCalendarFilter === 'habits') return meta.kind === 'habits';
+    if (_todoCalendarFilter === 'goals') return !!t.goal_id || meta.kind === 'goals';
+    return true;
+  });
+}
+
+function _todoTimeBucket(t) {
+  if (!t.time) return 'بدون ساعت';
+  const h = parseInt(String(t.time).split(':')[0], 10);
+  if (h < 12) return 'صبح';
+  if (h < 17) return 'ظهر';
+  return 'عصر';
+}
+
+function _todoCalendarStats(tasks, weekCells) {
+  const today = _todayJalaliStr();
+  const todayKey = _jalaliKey(today);
+  const weekKeys = new Set((weekCells || []).map(d => _jalaliKey(_formatJalali(d[0],d[1],d[2]))));
+  const active = tasks.filter(t => !t.done).length;
+  const todayTasks = tasks.filter(t => t.date_jalali === today);
+  const done = tasks.filter(t => t.done).length;
+  const overdue = tasks.filter(t => !t.done && t._key < todayKey);
+  const weekTasks = weekCells ? tasks.filter(t => weekKeys.has(t._key)) : [];
+  const weekDone = weekTasks.filter(t => t.done).length;
+  const weekPercent = weekTasks.length ? Math.round((weekDone / weekTasks.length) * 100) : 0;
+  const nearest = tasks.filter(t => !t.done && t._key >= todayKey).sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''))[0];
+  return { active, todayTasks, done, overdue, weekTasks, weekDone, weekPercent, nearest };
+}
+
+function _todoWeekRangeLabel(cells) {
+  if (!cells || !cells.length) return '';
+  const first = cells[0], last = cells[cells.length - 1];
+  const a = `${fa(first[2])} ${JMONTHS[first[1]-1]}`;
+  const b = `${fa(last[2])} ${JMONTHS[last[1]-1]}`;
+  return `${a} تا ${b}`;
+}
+
 function _todoMiniEventHtml(t) {
-  const c = t.done ? 'var(--green)' : t.priority === 'urgent' ? 'var(--red)' : t.priority === 'high' ? 'var(--amber)' : 'var(--accent2)';
+  const meta = _todoCategoryMeta(t);
+  const s = _todoStatusColor(t);
   return `<div onclick="event.stopPropagation();openEditTodo(${t.id})"
-    title="${escapeHtml(t.title)}"
-    style="display:flex;align-items:center;gap:5px;min-width:0;padding:3px 6px;border-radius:6px;background:${t.done?'rgba(62,207,142,.10)':'rgba(124,106,247,.12)'};border-right:2px solid ${c};cursor:pointer">
-    <span style="font-size:10px;color:${c};flex-shrink:0">${t.time || '•'}</span>
+    title="${escapeHtml(meta.label)} - ${escapeHtml(t.title)}"
+    style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${s.bg};border-right:3px solid ${s.color};cursor:pointer">
+    <span style="font-size:12px;line-height:1;flex-shrink:0">${meta.icon}</span>
+    <span style="font-size:10px;color:${s.color};font-weight:800;flex-shrink:0">${t.time || '•'}</span>
     <span style="font-size:11px;color:${t.done?'var(--text3)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title)}</span>
   </div>`;
 }
 
+function _openTodoDayPopover(date) {
+  const list = _todoFilteredCalendarTasks(_todoTasksForCalendar()).filter(t => t.date_jalali === date);
+  const body = list.length
+    ? `<div style="display:flex;flex-direction:column;gap:8px">${list.map(t => _todoMiniEventHtml(t)).join('')}</div>`
+    : `<div style="color:var(--text3);font-size:13px">برای این روز کاری ثبت نشده است.</div>`;
+  openModal(`کارهای ${DateService.disp(date)}`, body, [
+    { text:'کار جدید', class:'btn-primary', onclick:`openAddTodo('${date}');closeModal()` },
+    { text:'بستن', class:'btn-ghost', onclick:'closeModal()' },
+  ]);
+}
+
 function _renderTodoCalendarView() {
-  const tasks = _todoTasksForCalendar();
+  const allTasks = _todoTasksForCalendar();
+  const tasks = _todoFilteredCalendarTasks(allTasks);
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
   const [cy, cm, cd] = _jalaliParse(_todoCalendarCursor || today);
@@ -17751,44 +17866,108 @@ function _renderTodoCalendarView() {
     byDate.set(t.date_jalali, arr);
   });
 
+  const weekStartFromCursor = () => {
+    const [gy,gm,gd] = jalaliToGregorian(cy,cm,cd);
+    const dow = new Date(gy,gm-1,gd).getDay();
+    const daysFromSaturday = (dow + 1) % 7;
+    const start = _addDays(cy,cm,cd,-daysFromSaturday);
+    return Array.from({length:7}, (_,i) => _addDays(start[0],start[1],start[2],i));
+  };
+  const activeWeekCells = weekStartFromCursor();
+  const stats = _todoCalendarStats(tasks, activeWeekCells);
+
+  const statChip = (label, value, color='var(--text)') => `<div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:92px">
+    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">${label}</div>
+    <div style="font-size:16px;font-weight:900;color:${color}">${value}</div>
+  </div>`;
+
+  const listPreview = (title, list, empty) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px">
+    <div style="font-size:12px;font-weight:900;color:var(--text);margin-bottom:8px">${title}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">${list.slice(0,5).map(_todoMiniEventHtml).join('') || `<span style="font-size:11px;color:var(--text3)">${empty}</span>`}</div>
+  </div>`;
+
   const dayCard = (jy,jm,jd, opts={}) => {
     const date = _formatJalali(jy,jm,jd);
     const list = byDate.get(date) || [];
     const isToday = _jalaliKey(date) === todayKey;
+    const isFriday = opts.weekIndex === 6;
     const faded = opts.faded ? '.38' : '1';
+    const doneCount = list.filter(t => t.done).length;
+    const remain = Math.max(0, list.length - doneCount);
+    const hours = list.length ? Math.max(1, Math.round(list.length * .75)) : 0;
+    const visibleCount = _todoViewMode === 'week' ? 6 : 2;
+    let shownCount = 0;
+    const grouped = ['صبح','ظهر','عصر','بدون ساعت'].map(bucket => {
+      const items = list.filter(t => _todoTimeBucket(t) === bucket).filter(() => shownCount++ < visibleCount);
+      if (!items.length) return '';
+      return `<div style="display:flex;flex-direction:column;gap:4px">
+        ${_todoViewMode === 'week' ? `<div style="font-size:9px;color:var(--text3);font-weight:800;margin-top:2px">${bucket}</div>` : ''}
+        ${items.map(_todoMiniEventHtml).join('')}
+      </div>`;
+    }).join('');
     return `<div onclick="openAddTodo('${date}')"
-      style="min-height:${_todoViewMode==='week'?'130px':'96px'};padding:8px;border:1px solid ${isToday?'var(--accent2)':'var(--border)'};border-radius:10px;background:${isToday?'rgba(124,106,247,.12)':'var(--bg2)'};opacity:${faded};overflow:hidden;cursor:pointer">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px">
-        <span style="font-size:11px;color:${isToday?'var(--accent2)':'var(--text3)'};font-weight:${isToday?800:600}">${fa(jd)}</span>
-        ${list.length ? `<span style="font-size:10px;color:var(--text3)">${fa(list.length)}</span>` : ''}
+      style="min-height:${list.length ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isToday?'var(--accent2)':isFriday?'rgba(255,107,107,.35)':'var(--border)'};border-top:${isToday?'3px solid var(--accent2)':'1px solid '+(isFriday?'rgba(255,107,107,.35)':'var(--border)')};border-radius:10px;background:${isToday?'rgba(124,106,247,.16)':isFriday?'rgba(255,107,107,.055)':'var(--bg2)'};opacity:${faded};overflow:hidden;cursor:pointer">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:${list.length?'7px':'0'}">
+        <div>
+          <div style="font-size:12px;color:${isToday?'var(--accent2)':isFriday?'var(--red)':'var(--text3)'};font-weight:900">${fa(jd)} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''}</div>
+          ${list.length ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(list.length)} کار · ${fa(doneCount)} انجام · ${fa(remain)} مانده · ${fa(hours)} ساعت</div>` : ''}
+        </div>
+        ${list.length ? `<span style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;gap:4px">
-        ${list.slice(0, _todoViewMode==='week'?8:3).map(_todoMiniEventHtml).join('')}
-        ${list.length > (_todoViewMode==='week'?8:3) ? `<div style="font-size:10px;color:var(--text3);padding:2px 4px">+${fa(list.length-(_todoViewMode==='week'?8:3))} بیشتر</div>` : ''}
+        ${_todoViewMode === 'week' ? grouped : list.slice(0, visibleCount).map(_todoMiniEventHtml).join('')}
+        ${list.length > visibleCount && _todoViewMode !== 'week' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" style="height:26px;font-size:10px;justify-content:center">مشاهده ${fa(list.length-visibleCount)} کار دیگر</button>` : ''}
+        ${list.length > 6 && _todoViewMode === 'week' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" style="height:26px;font-size:10px;justify-content:center">مشاهده ${fa(list.length-6)} کار دیگر</button>` : ''}
       </div>
     </div>`;
   };
 
   const weekDays = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
+  const floatingAdd = `<button class="btn btn-primary" onclick="openAddTodo()" style="position:fixed;left:22px;bottom:22px;z-index:20;min-width:138px;height:46px;box-shadow:0 12px 28px rgba(124,106,247,.28)">+ کار جدید</button>`;
+  const title = _todoViewMode==='week'?'تقویم هفتگی':_todoViewMode==='month'?'تقویم ماهانه':'تقویم سالانه';
+  const subtitle = _todoViewMode === 'week' ? _todoWeekRangeLabel(activeWeekCells) : _todoViewMode === 'month' ? `${JMONTHS[cm-1]} ${fa(cy)}` : `سال ${fa(cy)}`;
   const header = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div>
-        <div style="font-size:17px;font-weight:900;color:var(--text)">${_todoViewMode==='week'?'تقویم هفتگی':_todoViewMode==='month'?'تقویم ماهانه':'تقویم سالانه'}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:3px">${fa(tasks.filter(t=>!t.done).length)} کار فعال روی تقویم</div>
+        <div style="font-size:18px;font-weight:900;color:var(--text)">${title}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:3px">${subtitle}</div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="openAddTodo()">+ کار جدید</button>
+      <button class="btn btn-primary" onclick="openAddTodo()" style="height:46px;min-width:132px;font-size:14px;font-weight:900">+ کار جدید</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px">
+      ${statChip('فعال', fa(stats.active), 'var(--accent2)')}
+      ${statChip('امروز', fa(stats.todayTasks.length), '#60a5fa')}
+      ${statChip('انجام‌شده', fa(stats.done), 'var(--green)')}
+      ${statChip('عقب‌افتاده', fa(stats.overdue.length), 'var(--red)')}
+      ${statChip('این هفته', fa(stats.weekTasks.length || tasks.length), 'var(--amber)')}
+      ${statChip('درصد هفته', `${fa(stats.weekPercent)}٪`, 'var(--green)')}
     </div>
   </div>`;
 
   if (_todoViewMode === 'week') {
-    const [gy,gm,gd] = jalaliToGregorian(cy,cm,cd);
-    const dow = new Date(gy,gm-1,gd).getDay();
-    const daysFromSaturday = (dow + 1) % 7;
-    const start = _addDays(cy,cm,cd,-daysFromSaturday);
-    const cells = Array.from({length:7}, (_,i) => _addDays(start[0],start[1],start[2],i));
-    return header + `<div style="display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:8px;overflow:auto;padding-bottom:4px">
-      ${cells.map((d,i)=>`<div><div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d[0],d[1],d[2])}</div>`).join('')}
-    </div>`;
+    const cells = activeWeekCells;
+    const weekKeys = new Set(cells.map(d => _jalaliKey(_formatJalali(d[0],d[1],d[2]))));
+    const weekTasks = tasks.filter(t => weekKeys.has(t._key));
+    const nearest = stats.nearest ? [stats.nearest] : [];
+    return header + `<div style="display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:12px;align-items:start">
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(128px,1fr));gap:8px;overflow:auto;padding-bottom:4px">
+        ${cells.map((d,i)=>`<div><div style="font-size:11px;color:${i===6?'var(--red)':'var(--text3)'};font-weight:800;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d[0],d[1],d[2],{weekIndex:i})}</div>`).join('')}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <b style="font-size:12px;color:var(--text)">خلاصه هفته</b>
+            <span style="font-size:11px;color:var(--text3)">${fa(stats.weekDone)} از ${fa(weekTasks.length)}</span>
+          </div>
+          <div style="height:7px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden">
+            <div style="height:100%;width:${stats.weekPercent}%;background:linear-gradient(90deg,var(--green),var(--accent2));border-radius:999px"></div>
+          </div>
+        </div>
+        ${listPreview('کارهای امروز', stats.todayTasks, 'امروز کاری ندارید.')}
+        ${listPreview('عقب‌افتاده‌ها', stats.overdue, 'کار عقب‌افتاده‌ای نیست.')}
+        ${listPreview('نزدیک‌ترین موعد', nearest, 'موعد نزدیکی وجود ندارد.')}
+      </div>
+    </div>${floatingAdd}`;
   }
 
   if (_todoViewMode === 'month') {
@@ -17806,8 +17985,8 @@ function _renderTodoCalendarView() {
     return header + `<div style="font-size:15px;font-weight:800;color:var(--text);margin:2px 0 10px">${JMONTHS[cm-1]} ${fa(cy)}</div>
       <div style="display:grid;grid-template-columns:repeat(7,minmax(86px,1fr));gap:7px;overflow:auto">
         ${weekDays.map(w=>`<div style="font-size:10px;color:var(--text3);font-weight:700;text-align:center;padding-bottom:2px">${w}</div>`).join('')}
-        ${cells.map(x=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded})).join('')}
-      </div>`;
+        ${cells.map((x,i)=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded,weekIndex:i%7})).join('')}
+      </div>${floatingAdd}`;
   }
 
   const monthCards = Array.from({length:12}, (_,i) => {
@@ -17828,7 +18007,7 @@ function _renderTodoCalendarView() {
   return header + `<div style="display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px">
     <div style="font-size:15px;font-weight:800;color:var(--text)">سال ${fa(cy)}</div>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${monthCards}</div>`;
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${monthCards}</div>${floatingAdd}`;
 }
 
 function renderTodoList() {
@@ -17875,7 +18054,7 @@ function renderTodoList() {
   })());
   const todos = [..._db.todos.filter(t => !t.archived), ..._todaySnapshots];
   if (_todoViewMode !== 'list') {
-    setContent(`<div style="max-width:980px;margin:0 auto">${_todoViewSwitcherHtml()}${_renderTodoCalendarView()}</div>`);
+    setContent(`<div style="max-width:1280px;margin:0 auto">${_todoViewSwitcherHtml()}${_renderTodoCalendarView()}</div>`);
     _checkTodoReminders();
     return;
   }
