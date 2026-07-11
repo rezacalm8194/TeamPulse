@@ -11,6 +11,18 @@ db.prepare(`
   )
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_user_data_versions_account ON user_data_versions(account_id, created_at)").run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS team_access_grants (
+    owner_account_id TEXT NOT NULL,
+    member_email TEXT NOT NULL,
+    invite_id TEXT,
+    permissions TEXT DEFAULT '[]',
+    instruction_folders TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'active',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (owner_account_id, member_email)
+  )
+`).run();
 
 const DATA_ARRAY_KEYS = [
   'students',
@@ -46,6 +58,12 @@ function canAccessAccount(req, targetId) {
   if (req.user.id === targetId || req.user.role === 'admin') return true;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return false;
+  const grant = db.prepare(`
+    SELECT owner_account_id
+    FROM team_access_grants
+    WHERE owner_account_id=? AND member_email=? AND status='active'
+  `).get(targetId, requesterEmail);
+  if (grant) return true;
   const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
   if (!row?.data) return false;
   try {

@@ -5,6 +5,19 @@ const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const auth = require('../middleware/auth');
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS team_access_grants (
+    owner_account_id TEXT NOT NULL,
+    member_email TEXT NOT NULL,
+    invite_id TEXT,
+    permissions TEXT DEFAULT '[]',
+    instruction_folders TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'active',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (owner_account_id, member_email)
+  )
+`).run();
+
 router.post('/register', (req, res) => {
   try {
     const { name, email, password, business_name, business_type } = req.body;
@@ -69,6 +82,24 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';
     });
     if (!member) return res.status(403).json({ error: 'team access not allowed' });
+
+    db.prepare(`
+      INSERT INTO team_access_grants
+        (owner_account_id, member_email, invite_id, permissions, instruction_folders, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
+      ON CONFLICT(owner_account_id, member_email) DO UPDATE SET
+        invite_id=excluded.invite_id,
+        permissions=excluded.permissions,
+        instruction_folders=excluded.instruction_folders,
+        status='active',
+        updated_at=datetime('now')
+    `).run(
+      owner.id,
+      memberEmail,
+      inviteId || String(member.id || ''),
+      JSON.stringify(Array.isArray(member.permissions) ? member.permissions : []),
+      JSON.stringify(member.instruction_folders || member.instructionFolders || [])
+    );
 
     res.json({
       ownerUserId: owner.id,

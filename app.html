@@ -5185,7 +5185,7 @@ async function _ensureTeamAccessOwner() {
     return null;
   }
 
-  if (session.ownerUserId) {
+  if (session.ownerUserId && !session.ownerEmail) {
     window._activeDBKey = _teamSessionStorageKey(session);
     return session;
   }
@@ -5219,7 +5219,9 @@ async function _ensureTeamAccessOwner() {
     window._activeDBKey = _teamSessionStorageKey(next);
     return next;
   } catch(e) {
-    showToast('اتصال هم‌تیمی کامل نشد؛ لینک دعوت را دوباره از صاحب حساب بگیر', 'error');
+    if (!session.ownerUserId) {
+      showToast('اتصال هم‌تیمی کامل نشد؛ لینک دعوت را دوباره از صاحب حساب بگیر', 'error');
+    }
     window._activeDBKey = _teamSessionStorageKey(session);
     return session;
   }
@@ -16527,6 +16529,11 @@ async function _loadFromServer() {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
       return false;
     }
+    if (res.status === 403 && teamSession && !window._teamLoadForbiddenWarned) {
+      window._teamLoadForbiddenWarned = true;
+      showToast('دسترسی هم‌تیمی به حساب اصلی تأیید نشد؛ لینک دعوت را دوباره باز کن', 'error');
+      return false;
+    }
     if (!res.ok) return false;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
@@ -16911,6 +16918,14 @@ async function _authOnSuccess() {
     clearTimeout(window._serverSyncTimer);
     _syncToServer();
   });
+  if (!window._teamFocusRefreshBound) {
+    window._teamFocusRefreshBound = true;
+    window.addEventListener('focus', async () => {
+      if (!_teamAccessSession()) return;
+      const updated = await _loadFromServer();
+      if (updated && _canAutoRefresh()) renderPage();
+    });
+  }
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
     // sync synchronous با sendBeacon
