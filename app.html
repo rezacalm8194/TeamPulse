@@ -4326,11 +4326,13 @@ const _gdrive = {
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
+      let closeGraceTimer=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
         clearInterval(closeTimer);
+        clearTimeout(closeGraceTimer);
       };
       const handler=e=>{
         console.log('callback message received', e.data);
@@ -4350,7 +4352,14 @@ const _gdrive = {
         resolve(this.token);
       };
       window.addEventListener('message',handler);
-      closeTimer=setInterval(()=>{if(!done&&w.closed){cleanup();reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));}},500);
+      closeTimer=setInterval(()=>{
+        if(done||!w.closed||closeGraceTimer)return;
+        closeGraceTimer=setTimeout(()=>{
+          if(done)return;
+          cleanup();
+          reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
+        },2000);
+      },500);
       timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
     });
   },
@@ -4536,11 +4545,13 @@ const _gcal = {
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
+      let closeGraceTimer=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
         clearInterval(closeTimer);
+        clearTimeout(closeGraceTimer);
       };
       const handler=e=>{
         console.log('callback message received', e.data);
@@ -4560,7 +4571,14 @@ const _gcal = {
         resolve(this.token);
       };
       window.addEventListener('message',handler);
-      closeTimer=setInterval(()=>{if(!done&&w.closed){cleanup();reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));}},500);
+      closeTimer=setInterval(()=>{
+        if(done||!w.closed||closeGraceTimer)return;
+        closeGraceTimer=setTimeout(()=>{
+          if(done)return;
+          cleanup();
+          reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
+        },2000);
+      },500);
       timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
     });
   },
