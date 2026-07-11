@@ -3085,7 +3085,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
           <span style="font-size:16px">👤</span>
           <span id="account-name-display" style="max-width:100px;overflow:hidden;text-overflow:ellipsis">---</span>
         </button>
-        <button class="topbar-logout-btn" onclick="_auth.signOut()"
+        <button id="topbar-logout-btn" class="topbar-logout-btn" onclick="_auth.signOut()"
           style="padding:6px 12px;border-radius:20px;border:1px solid rgba(239,68,68,.3);
             background:rgba(239,68,68,.1);color:var(--red);cursor:pointer;
             font-family:var(--font);font-size:12px;font-weight:600;white-space:nowrap;transition:all .15s"
@@ -17180,11 +17180,20 @@ function _gotoSettings() {
 }
 
 function _updateAuthUI() {
+  const teamSession = _teamAccessSession();
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) {
     const name = _sbUser?.email?.split('@')[0] || '';
-    logoutBtn.textContent = '🚪 خروج (' + name + ')';
+    logoutBtn.textContent = teamSession ? '🚪 خروج از دسترسی هم‌تیمی' : '🚪 خروج (' + name + ')';
+    logoutBtn.onclick = teamSession ? _leaveTeamAccess : (() => _auth.signOut());
     logoutBtn.style.display = '';
+  }
+  const topbarLogoutBtn = document.getElementById('topbar-logout-btn');
+  if (topbarLogoutBtn) {
+    topbarLogoutBtn.textContent = teamSession ? 'خروج از هم‌تیمی' : 'خروج';
+    topbarLogoutBtn.onclick = teamSession ? _leaveTeamAccess : (() => _auth.signOut());
+    topbarLogoutBtn.title = teamSession ? 'خروج از دسترسی هم‌تیمی و برگشت به حساب خودت' : 'خروج از حساب';
+    topbarLogoutBtn.style.display = teamSession ? 'inline-flex' : '';
   }
   // نمایش نوار impersonation اگه فعال هست
   if (window._impersonating) {
@@ -17218,7 +17227,7 @@ function _updateTopbarLoginBtn() {
     if (authBtns) authBtns.style.display = 'none';
     if (userBtns) userBtns.style.display = 'flex';
     const nameDisplay = document.getElementById('account-name-display');
-    if (nameDisplay) nameDisplay.textContent = _sbUser.name || _sbUser.email || '---';
+    if (nameDisplay) nameDisplay.textContent = _teamAccessSession() ? 'هم‌تیمی' : (_sbUser.name || _sbUser.email || '---');
   } else {
     if (authBtns) authBtns.style.display = 'flex';
     if (userBtns) userBtns.style.display = 'none';
