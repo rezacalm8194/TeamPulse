@@ -4565,6 +4565,14 @@ const _gcal = {
     return this.requestToken();
   },
 
+  validTokenOrNull() {
+    if(this.token&&Date.now()<this.tokenExpiry)return this.token;
+    if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
+      this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;return this.token;
+    }
+    return null;
+  },
+
   async requestToken() {
     if(!this.clientId)throw new Error('Client ID تنظیم نشده');
     return new Promise((resolve,reject)=>{
@@ -4714,7 +4722,20 @@ const _gcal = {
   async deleteEvent(eventId) {
     if(!this.enabled||!eventId)return;
     try{
-      await this.req(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,{method:'DELETE'});
+      const token=this.validTokenOrNull();
+      if(!token){
+        console.warn('Calendar delete skipped: no valid token');
+        return;
+      }
+      const res=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,{
+        method:'DELETE',
+        headers:{'Authorization':'Bearer '+token}
+      });
+      if(res.status===401){
+        this.token=null;this.tokenExpiry=0;
+        delete _db._gcal_token;delete _db._gcal_token_expiry;
+        _save(false);
+      }
     }catch(e){ console.warn('Calendar delete failed:',e.message); }
   },
 
@@ -18973,6 +18994,10 @@ function _restoreTodo(id) {
   if (t) { t.archived = false; t.done = false; t.done_at = null; _save(); closeModal(); renderTodoList(); }
 }
 function _deleteTodoForever(id) {
+  const t = _db.todos.find(x => x.id == id);
+  if (t && t.gcal_event_id) {
+    _gcal.deleteEvent(t.gcal_event_id);
+  }
   _db.todos = _db.todos.filter(x => x.id != id);
   _save(); openTodoArchive();
 }
