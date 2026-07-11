@@ -4330,6 +4330,7 @@ const _gdrive = {
       let closeTimer=null;
       let closeGraceTimer=null;
       let storageTimer=null;
+      let oauthChannel=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
@@ -4337,6 +4338,7 @@ const _gdrive = {
         clearInterval(closeTimer);
         clearTimeout(closeGraceTimer);
         clearInterval(storageTimer);
+        if(oauthChannel){try{oauthChannel.close();}catch(e){}}
       };
       const acceptPayload=data=>{
         if(data?.type!=='gdrive_token')return false;
@@ -4362,6 +4364,15 @@ const _gdrive = {
         acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
+      if('BroadcastChannel' in window){
+        try{
+          oauthChannel=new BroadcastChannel('teampulse_oauth');
+          oauthChannel.onmessage=event=>{
+            console.log('callback channel received', event.data);
+            acceptPayload(event.data);
+          };
+        }catch(e){console.log('OAuth channel error', e);}
+      }
       storageTimer=setInterval(()=>{
         if(done)return;
         let raw=null;
@@ -4571,6 +4582,7 @@ const _gcal = {
       let closeTimer=null;
       let closeGraceTimer=null;
       let storageTimer=null;
+      let oauthChannel=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
@@ -4578,6 +4590,7 @@ const _gcal = {
         clearInterval(closeTimer);
         clearTimeout(closeGraceTimer);
         clearInterval(storageTimer);
+        if(oauthChannel){try{oauthChannel.close();}catch(e){}}
       };
       const acceptPayload=data=>{
         if(data?.type!=='gcal_token')return false;
@@ -4603,6 +4616,15 @@ const _gcal = {
         acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
+      if('BroadcastChannel' in window){
+        try{
+          oauthChannel=new BroadcastChannel('teampulse_oauth');
+          oauthChannel.onmessage=event=>{
+            console.log('callback channel received', event.data);
+            acceptPayload(event.data);
+          };
+        }catch(e){console.log('OAuth channel error', e);}
+      }
       storageTimer=setInterval(()=>{
         if(done)return;
         let raw=null;
