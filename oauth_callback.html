@@ -21,11 +21,6 @@
       const errorDescription = params.get('error_description');
       const messageType = state.indexOf('gcal_') === 0 ? 'gcal_token' : 'gdrive_token';
 
-      if (!window.opener || window.opener.closed) {
-        status.textContent = 'پنجره اصلی TeamPulse پیدا نشد. این صفحه را ببند و دوباره تلاش کن.';
-        return;
-      }
-
       const payload = error
         ? {
             type: messageType,
@@ -44,16 +39,25 @@
       }
 
       try {
-        try {
-          if (state) {
-            localStorage.setItem('teampulse_oauth_result_' + state, JSON.stringify({
-              ...payload,
-              saved_at: Date.now()
-            }));
-          }
-        } catch (storageErr) {
-          console.error('OAuth callback storage error:', storageErr);
+        if (state) {
+          localStorage.setItem('teampulse_oauth_result_' + state, JSON.stringify({
+            ...payload,
+            saved_at: Date.now()
+          }));
         }
+      } catch (storageErr) {
+        console.error('OAuth callback storage error:', storageErr);
+      }
+
+      if (!window.opener || window.opener.closed) {
+        status.textContent = payload.error
+          ? 'اتصال انجام نشد. این صفحه را ببند و دوباره تلاش کن.'
+          : 'اتصال دریافت شد. به صفحه اصلی TeamPulse برگرد.';
+        setTimeout(function () { window.close(); }, 800);
+        return;
+      }
+
+      try {
         window.opener.postMessage(payload, window.location.origin);
         status.textContent = payload.error
           ? 'اتصال انجام نشد.'
