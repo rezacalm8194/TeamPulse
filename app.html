@@ -4319,20 +4319,38 @@ const _gdrive = {
       const w=window.open('','_blank','width=500,height=650');
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state=Math.random().toString(36).slice(2);
+      const resultKey='teampulse_oauth_result_'+state;
       const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
+      try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       console.log('OAuth popup opened', { type: 'gdrive_token' });
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
       let closeGraceTimer=null;
+      let storageTimer=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
         clearInterval(closeTimer);
         clearTimeout(closeGraceTimer);
+        clearInterval(storageTimer);
+      };
+      const acceptPayload=data=>{
+        if(data?.type!=='gdrive_token')return false;
+        if(data.state!==state)return false;
+        cleanup();
+        try{localStorage.removeItem(resultKey);}catch(e){}
+        if(data.error){console.log('OAuth error', data.error);reject(new Error(data.error));return true;}
+        console.log('token received', Boolean(data.token));
+        this.token=data.token;
+        this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
+        _db._gdrive_token=this.token;_db._gdrive_token_expiry=this.tokenExpiry;
+        _save(false);
+        resolve(this.token);
+        return true;
       };
       const handler=e=>{
         console.log('callback message received', e.data);
@@ -4341,20 +4359,24 @@ const _gdrive = {
         if(e.data?.type!=='gdrive_token')return;
         if(e.origin!==window.location.origin)return;
         if(e.source!==w)return;
-        if(e.data.state!==state)return;
-        cleanup();
-        if(e.data.error){console.log('OAuth error', e.data.error);reject(new Error(e.data.error));return;}
-        console.log('token received', Boolean(e.data.token));
-        this.token=e.data.token;
-        this.tokenExpiry=Date.now()+(e.data.expires_in-60)*1000;
-        _db._gdrive_token=this.token;_db._gdrive_token_expiry=this.tokenExpiry;
-        _save(false);
-        resolve(this.token);
+        acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
+      storageTimer=setInterval(()=>{
+        if(done)return;
+        let raw=null;
+        try{raw=localStorage.getItem(resultKey);}catch(e){}
+        if(!raw)return;
+        try{acceptPayload(JSON.parse(raw));}catch(e){console.log('OAuth storage parse error', e);}
+      },300);
       closeTimer=setInterval(()=>{
         if(done||!w.closed||closeGraceTimer)return;
         closeGraceTimer=setTimeout(()=>{
+          let raw=null;
+          try{raw=localStorage.getItem(resultKey);}catch(e){}
+          if(raw){
+            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){console.log('OAuth storage parse error', e);}
+          }
           if(done)return;
           cleanup();
           reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
@@ -4538,20 +4560,38 @@ const _gcal = {
       const w=window.open('','_blank','width=500,height=650');
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gcal_'+Math.random().toString(36).slice(2);
+      const resultKey='teampulse_oauth_result_'+state;
       const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
+      try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       console.log('OAuth popup opened', { type: 'gcal_token' });
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
       let closeGraceTimer=null;
+      let storageTimer=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
         clearInterval(closeTimer);
         clearTimeout(closeGraceTimer);
+        clearInterval(storageTimer);
+      };
+      const acceptPayload=data=>{
+        if(data?.type!=='gcal_token')return false;
+        if(data.state!==state)return false;
+        cleanup();
+        try{localStorage.removeItem(resultKey);}catch(e){}
+        if(data.error){console.log('OAuth error', data.error);reject(new Error(data.error));return true;}
+        console.log('token received', Boolean(data.token));
+        this.token=data.token;
+        this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
+        _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
+        _save(false);
+        resolve(this.token);
+        return true;
       };
       const handler=e=>{
         console.log('callback message received', e.data);
@@ -4560,20 +4600,24 @@ const _gcal = {
         if(e.data?.type!=='gcal_token')return;
         if(e.origin!==window.location.origin)return;
         if(e.source!==w)return;
-        if(e.data.state!==state)return;
-        cleanup();
-        if(e.data.error){console.log('OAuth error', e.data.error);reject(new Error(e.data.error));return;}
-        console.log('token received', Boolean(e.data.token));
-        this.token=e.data.token;
-        this.tokenExpiry=Date.now()+(e.data.expires_in-60)*1000;
-        _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
-        _save(false);
-        resolve(this.token);
+        acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
+      storageTimer=setInterval(()=>{
+        if(done)return;
+        let raw=null;
+        try{raw=localStorage.getItem(resultKey);}catch(e){}
+        if(!raw)return;
+        try{acceptPayload(JSON.parse(raw));}catch(e){console.log('OAuth storage parse error', e);}
+      },300);
       closeTimer=setInterval(()=>{
         if(done||!w.closed||closeGraceTimer)return;
         closeGraceTimer=setTimeout(()=>{
+          let raw=null;
+          try{raw=localStorage.getItem(resultKey);}catch(e){}
+          if(raw){
+            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){console.log('OAuth storage parse error', e);}
+          }
           if(done)return;
           cleanup();
           reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
