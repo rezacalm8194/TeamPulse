@@ -17758,19 +17758,19 @@ function _todoViewSwitcherHtml() {
     ['goals','اهداف'],
   ].map(([key,label]) => `<button class="btn ${_todoCalendarFilter===key?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoCalendarFilter('${key}')"
     style="min-width:54px;justify-content:center">${label}</button>`).join('');
-  return `<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div>
-      ${_todoViewMode !== 'list' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+  return `<div class="todo-calendar-toolbar">
+    <div class="todo-calendar-toolbar-row">
+      <div class="todo-calendar-mode-row">${btns}</div>
+      ${_todoViewMode !== 'list' ? `<div class="todo-calendar-nav-row">
         <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(-1)" style="min-width:86px">${navName} قبل</button>
         <button class="btn btn-primary btn-sm" onclick="_todoCalendarToday()">امروز</button>
         <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(1)" style="min-width:86px">${navName} بعد</button>
       </div>` : ''}
     </div>
-    ${_todoViewMode !== 'list' ? `<div style="display:flex;gap:6px;align-items:center">
+    ${_todoViewMode !== 'list' ? `<div class="todo-calendar-search-row">
       <input class="input" id="todo-calendar-search" value="${escapeHtml(_todoCalendarSearch)}" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی سریع کارها..." style="min-width:220px;max-width:360px;height:38px">
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${filters}</div>
-      <label style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
+      <div class="todo-calendar-filter-row">${filters}</div>
+      <label class="todo-calendar-repeat-toggle" style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
         <input type="checkbox" ${_todoCalendarShowRepeats?'checked':''} onchange="_toggleTodoCalendarRepeats(this.checked)">
         نمایش تکرارهای آینده
       </label>
@@ -17865,6 +17865,69 @@ function _todoDropOnDate(event, date) {
   const id = event.dataTransfer?.getData('text/plain') || _todoDragId;
   _todoDragId = null;
   if (id) _moveTodoToDate(id, date);
+}
+
+function _todoCalendarResponsiveCss() {
+  return `<style>
+    .todo-calendar-shell{max-width:1280px;margin:0 auto;padding:0 8px 70px}
+    .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+    .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
+    .todo-calendar-search-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .todo-calendar-header{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+    .todo-calendar-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px}
+    .todo-calendar-week-layout,.todo-calendar-month-layout,.todo-calendar-year-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start}
+    .todo-calendar-week-grid{display:grid;grid-template-columns:repeat(7,minmax(128px,1fr));gap:8px;overflow:auto;padding-bottom:4px}
+    .todo-calendar-month-grid{display:grid;grid-template-columns:repeat(7,minmax(86px,1fr));gap:7px;overflow:auto}
+    .todo-calendar-side{display:flex;flex-direction:column;gap:10px}
+    .todo-calendar-day-panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px;position:sticky;top:12px}
+    .todo-calendar-year-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+    .todo-calendar-year-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px}
+    .todo-calendar-year-dots{display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl}
+    .todo-calendar-floating-add{position:fixed;left:22px;bottom:22px;z-index:20;min-width:138px;height:46px;box-shadow:0 12px 28px rgba(124,106,247,.28)}
+    @media (max-width:720px){
+      .todo-calendar-shell{padding:0 10px 84px;max-width:none}
+      .todo-calendar-toolbar{gap:8px;margin-bottom:10px}
+      .todo-calendar-toolbar-row{display:block}
+      .todo-calendar-mode-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px}
+      .todo-calendar-mode-row .btn{min-width:0!important;width:100%;height:38px;padding:0 4px;font-size:12px}
+      .todo-calendar-nav-row{display:grid!important;grid-template-columns:1fr auto 1fr;gap:6px}
+      .todo-calendar-nav-row .btn{min-width:0!important;height:36px;font-size:12px;padding:0 8px}
+      .todo-calendar-search-row{display:flex!important;flex-wrap:nowrap;overflow-x:auto;gap:7px;padding-bottom:3px;scrollbar-width:none}
+      .todo-calendar-search-row::-webkit-scrollbar{display:none}
+      #todo-calendar-search{min-width:72vw!important;max-width:none!important;height:40px!important;flex:0 0 72vw}
+      .todo-calendar-filter-row{display:flex!important;flex-wrap:nowrap;gap:6px;flex:0 0 auto}
+      .todo-calendar-filter-row .btn{white-space:nowrap;height:36px;padding:0 10px;font-size:12px}
+      .todo-calendar-repeat-toggle{white-space:nowrap;flex:0 0 auto;height:36px;padding:7px 9px!important}
+      .todo-calendar-header{padding:12px;border-radius:12px}
+      .todo-calendar-header-main{align-items:flex-start!important}
+      .todo-calendar-header-main .btn{height:40px!important;min-width:104px!important;font-size:12px!important}
+      .todo-calendar-stats{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px}
+      .todo-calendar-stats>div,.todo-calendar-day-panel [style*="min-width:92px"]{min-width:0!important;padding:7px!important}
+      .todo-calendar-stats div[style*="font-size:16px"]{font-size:14px!important}
+      .todo-calendar-week-layout,.todo-calendar-month-layout,.todo-calendar-year-layout{grid-template-columns:1fr!important;gap:10px}
+      .todo-calendar-week-grid{grid-template-columns:1fr!important;overflow:visible!important;gap:8px}
+      .todo-calendar-week-day-label{text-align:right!important;margin:0 2px 5px!important;font-size:12px!important}
+      .todo-calendar-month-grid{grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:5px!important;overflow:visible!important}
+      .todo-calendar-month-grid .todo-day-card{min-height:58px!important;padding:6px!important;border-radius:9px!important}
+      .todo-calendar-month-grid .todo-day-card [style*="font-size:9px;color:var(--text3);margin-top:3px"]{display:none!important}
+      .todo-calendar-month-grid .todo-day-card [draggable="true"]{display:none!important}
+      .todo-calendar-month-grid .todo-day-card .btn{display:none!important}
+      .todo-calendar-week-grid .todo-day-card{min-height:94px!important}
+      .todo-calendar-day-panel{position:static!important;top:auto!important;order:2;padding:11px;border-radius:12px}
+      .todo-calendar-day-panel textarea{min-height:76px}
+      .todo-calendar-day-panel [style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+      .todo-calendar-side{gap:8px}
+      .todo-calendar-year-head{display:block!important}
+      .todo-calendar-legend{margin-top:8px;gap:5px!important}
+      .todo-calendar-year-grid{grid-template-columns:1fr!important;gap:8px}
+      .todo-calendar-year-card{display:grid;grid-template-columns:76px 1fr;gap:8px;align-items:start;padding:9px}
+      .todo-calendar-year-card button:first-child{margin-bottom:0!important;align-items:flex-start!important;display:block!important}
+      .todo-calendar-year-dots{grid-template-columns:repeat(10,13px)!important;gap:4px!important;justify-content:end}
+      .todo-calendar-year-dots button{width:13px!important;height:13px!important}
+      .todo-calendar-floating-add{left:12px!important;right:12px!important;bottom:14px!important;width:auto!important;height:48px!important;border-radius:12px!important}
+    }
+  </style>`;
 }
 
 function _todoCategoryMeta(t) {
@@ -17994,7 +18057,7 @@ function _renderTodoCalendarView() {
   const selectedTime = _todoDayTimeStats(selectedList);
   const selectedBirthdays = _todoCalendarBirthdays(selectedDate);
   const selectedNote = (_db.todo_day_notes && _db.todo_day_notes[selectedDate]) || '';
-  const dayPanel = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px;position:sticky;top:12px">
+  const dayPanel = `<div class="todo-calendar-day-panel">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div>
         <div style="font-size:15px;font-weight:900;color:var(--text)">${DateService.disp(selectedDate)}</div>
@@ -18041,7 +18104,7 @@ function _renderTodoCalendarView() {
         ${items.map(_todoMiniEventHtml).join('')}
       </div>`;
     }).join('');
-    return `<div onclick="_selectTodoCalendarDay('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
+    return `<div class="todo-day-card" onclick="_selectTodoCalendarDay('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
       style="min-height:${list.length ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isFriday?'rgba(255,107,107,.35)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':'1px solid '+(isFriday?'rgba(255,107,107,.35)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isFriday?'rgba(255,107,107,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:${list.length?'7px':'0'}">
         <div>
@@ -18059,18 +18122,18 @@ function _renderTodoCalendarView() {
   };
 
   const weekDays = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
-  const floatingAdd = `<button class="btn btn-primary" onclick="openAddTodo()" style="position:fixed;left:22px;bottom:22px;z-index:20;min-width:138px;height:46px;box-shadow:0 12px 28px rgba(124,106,247,.28)">+ کار جدید</button>`;
+  const floatingAdd = `<button class="btn btn-primary todo-calendar-floating-add" onclick="openAddTodo()">+ کار جدید</button>`;
   const title = _todoViewMode==='week'?'تقویم هفتگی':_todoViewMode==='month'?'تقویم ماهانه':'تقویم سالانه';
   const subtitle = _todoViewMode === 'week' ? _todoWeekRangeLabel(activeWeekCells) : _todoViewMode === 'month' ? `${JMONTHS[cm-1]} ${fa(cy)}` : `سال ${fa(cy)}`;
-  const header = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+  const header = `<div class="todo-calendar-header">
+    <div class="todo-calendar-header-main" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div>
         <div style="font-size:18px;font-weight:900;color:var(--text)">${title}</div>
         <div style="font-size:12px;color:var(--text3);margin-top:3px">${subtitle}</div>
       </div>
       <button class="btn btn-primary" onclick="openAddTodo()" style="height:46px;min-width:132px;font-size:14px;font-weight:900">+ کار جدید</button>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px">
+    <div class="todo-calendar-stats">
       ${statChip('فعال', fa(stats.active), 'var(--accent2)')}
       ${statChip('امروز', fa(stats.todayTasks.length), '#60a5fa')}
       ${statChip('انجام‌شده', fa(stats.done), 'var(--green)')}
@@ -18085,11 +18148,11 @@ function _renderTodoCalendarView() {
     const weekKeys = new Set(cells.map(d => _jalaliKey(_formatJalali(d[0],d[1],d[2]))));
     const weekTasks = tasks.filter(t => weekKeys.has(t._key));
     const nearest = stats.nearest ? [stats.nearest] : [];
-    return header + `<div style="display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:12px;align-items:start">
-      <div style="display:grid;grid-template-columns:repeat(7,minmax(128px,1fr));gap:8px;overflow:auto;padding-bottom:4px">
-        ${cells.map((d,i)=>`<div><div style="font-size:11px;color:${i===6?'var(--red)':'var(--text3)'};font-weight:800;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d[0],d[1],d[2],{weekIndex:i})}</div>`).join('')}
+    return header + `<div class="todo-calendar-week-layout">
+      <div class="todo-calendar-week-grid">
+        ${cells.map((d,i)=>`<div><div class="todo-calendar-week-day-label" style="font-size:11px;color:${i===6?'var(--red)':'var(--text3)'};font-weight:800;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d[0],d[1],d[2],{weekIndex:i})}</div>`).join('')}
       </div>
-      <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="todo-calendar-side">
         ${dayPanel}
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -18119,10 +18182,10 @@ function _renderTodoCalendarView() {
       const last = cells[cells.length-1].d;
       cells.push({d:_addDays(last[0],last[1],last[2],1), faded:true});
     }
-    return header + `<div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start">
+    return header + `<div class="todo-calendar-month-layout">
       <div>
         <div style="font-size:15px;font-weight:800;color:var(--text);margin:2px 0 10px">${JMONTHS[cm-1]} ${fa(cy)}</div>
-        <div style="display:grid;grid-template-columns:repeat(7,minmax(86px,1fr));gap:7px;overflow:auto">
+        <div class="todo-calendar-month-grid">
           ${weekDays.map(w=>`<div style="font-size:10px;color:var(--text3);font-weight:700;text-align:center;padding-bottom:2px">${w}</div>`).join('')}
           ${cells.map((x,i)=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded,weekIndex:i%7})).join('')}
         </div>
@@ -18145,26 +18208,26 @@ function _renderTodoCalendarView() {
           ${birthdays.length?'<span style="position:absolute;inset:auto -3px -7px auto;font-size:8px">🎂</span>':''}
         </button>`;
     }).join('');
-    return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px">
+    return `<div class="todo-calendar-year-card">
       <button onclick="_todoCalendarCursor='${_formatJalali(cy,jm,1)}';_setTodoViewMode('month')"
         style="all:unset;display:flex;justify-content:space-between;align-items:center;width:100%;cursor:pointer;margin-bottom:8px">
         <b style="font-size:13px;color:var(--text)">${JMONTHS[i]}</b>
         <span style="font-size:11px;color:var(--text3)">${fa(tasks.filter(t => { const [y,m] = _jalaliParse(t.date_jalali); return y === cy && m === jm; }).length)} کار</span>
       </button>
-      <div style="display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl">${dayDots}</div>
+      <div class="todo-calendar-year-dots">${dayDots}</div>
     </div>`;
   }).join('');
-  return header + `<div style="display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px">
+  return header + `<div class="todo-calendar-year-head" style="display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px">
     <div style="font-size:15px;font-weight:800;color:var(--text)">سال ${fa(cy)}</div>
-    <div style="display:flex;gap:8px;font-size:11px;color:var(--text3);align-items:center;flex-wrap:wrap">
+    <div class="todo-calendar-legend" style="display:flex;gap:8px;font-size:11px;color:var(--text3);align-items:center;flex-wrap:wrap">
       <span>سبک</span><span style="width:14px;height:14px;border-radius:3px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.38)"></span>
       <span>متوسط</span><span style="width:14px;height:14px;border-radius:3px;background:rgba(245,158,11,.13);border:1px solid rgba(245,158,11,.42)"></span>
       <span>شلوغ</span><span style="width:14px;height:14px;border-radius:3px;background:rgba(249,115,22,.14);border:1px solid rgba(249,115,22,.48)"></span>
       <span>سنگین</span><span style="width:14px;height:14px;border-radius:3px;background:rgba(239,68,68,.16);border:1px solid rgba(239,68,68,.55)"></span>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${monthCards}</div>
+  <div class="todo-calendar-year-layout">
+    <div class="todo-calendar-year-grid">${monthCards}</div>
     ${dayPanel}
   </div>${floatingAdd}`;
 }
@@ -18213,7 +18276,7 @@ function renderTodoList() {
   })());
   const todos = [..._db.todos.filter(t => !t.archived), ..._todaySnapshots];
   if (_todoViewMode !== 'list') {
-    setContent(`<div style="max-width:1280px;margin:0 auto">${_todoViewSwitcherHtml()}${_renderTodoCalendarView()}</div>`);
+    setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoViewSwitcherHtml()}${_renderTodoCalendarView()}</div>`);
     _checkTodoReminders();
     return;
   }
