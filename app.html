@@ -16336,6 +16336,27 @@ function _userDBKey() {
   return 'tp_' + uid + '_v3_' + accId;
 }
 
+function _dataSignatureForIsolation(data) {
+  if (!data) return '';
+  const pick = {};
+  ['students','packages','payments','sessions','families','todos','staff','instructions'].forEach(k => {
+    pick[k] = data[k] || [];
+  });
+  return JSON.stringify(pick);
+}
+
+function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
+  if (!data || !adminDBKey) return false;
+  try {
+    const adminRaw = localStorage.getItem(adminDBKey);
+    if (!adminRaw) return false;
+    const adminData = JSON.parse(adminRaw);
+    return _dataSignatureForIsolation(data) === _dataSignatureForIsolation(adminData);
+  } catch(e) {
+    return false;
+  }
+}
+
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (!_sbUser || !_sbSession?.token) return;
@@ -16344,6 +16365,13 @@ async function _syncToServer() {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    if (window._impersonating && _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey)) {
+      if (!window._impersonateLeakWarned) {
+        window._impersonateLeakWarned = true;
+        showToast('برای امنیت، داده‌های مدیر در حساب کاربر دیگر ذخیره نشد', 'error');
+      }
+      return;
+    }
     if (teamSession && !teamSession.ownerUserId) {
       if (!window._teamMissingOwnerWarned) {
         window._teamMissingOwnerWarned = true;
@@ -17286,10 +17314,14 @@ async function _initAuth() {
             if (ct.includes('application/json')) {
               const json = await dataRes.json();
               if (json.data && Object.keys(json.data).length > 0) {
-                _db = json.data;
-                _migrate(_db);
-                localStorage.setItem(targetKey, JSON.stringify(_db));
-                loadedImpersonatedData = true;
+                if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
+                  showToast('داده‌های مدیر در حساب این کاربر دیده شد و نمایش داده نشد', 'error');
+                } else {
+                  _db = json.data;
+                  _migrate(_db);
+                  localStorage.setItem(targetKey, JSON.stringify(_db));
+                  loadedImpersonatedData = true;
+                }
               }
             }
           }
@@ -19793,10 +19825,14 @@ async function _adminImpersonate(userId, userName) {
         if (ct.includes('application/json')) {
           const json = await dataRes.json();
           if (json.data && Object.keys(json.data).length > 0) {
-            _db = json.data;
-            _migrate(_db);
-            localStorage.setItem(targetKey, JSON.stringify(_db));
-            loaded = true;
+            if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
+              showToast('داده‌های مدیر در حساب این کاربر دیده شد و نمایش داده نشد', 'error');
+            } else {
+              _db = json.data;
+              _migrate(_db);
+              localStorage.setItem(targetKey, JSON.stringify(_db));
+              loaded = true;
+            }
           }
         }
       }
