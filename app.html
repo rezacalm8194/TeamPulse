@@ -4666,7 +4666,8 @@ const _gcal = {
       _save(false);
       this.setStatusUI('ok','متصل شد ✓');
       showToast('به Google Calendar متصل شدی ✓','success');
-      document.getElementById('gcal-sync-btn').textContent='🔌 قطع Google Calendar';
+      const btn=document.getElementById('gcal-sync-btn');
+      if(btn)btn.textContent='🔌 قطع Google Calendar';
       _refreshTodoGcalCheckboxes();
     }catch(e){
       this.enabled=false;
@@ -4745,6 +4746,7 @@ const _gcal = {
 
   initOnLoad() {
     this.clientId=APP_GOOGLE_CLIENT_ID;
+    if(_consumeStoredGcalOAuthResult())return;
     if(_db._gcal_enabled){
       this.enabled=true;
       if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
@@ -4756,6 +4758,59 @@ const _gcal = {
     }
   },
 };
+
+function _consumeStoredGcalOAuthResult() {
+  const prefix='teampulse_oauth_result_gcal_';
+  const keys=[];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);
+      if(key&&key.indexOf(prefix)===0)keys.push(key);
+    }
+  }catch(e){return false;}
+  let used=false;
+  keys.forEach(key=>{
+    if(used)return;
+    let data=null;
+    try{data=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}
+    try{localStorage.removeItem(key);}catch(e){}
+    if(!data||data.type!=='gcal_token')return;
+    if(data.error){showToast('خطا در اتصال Google Calendar: '+data.error,'error');return;}
+    if(!data.token)return;
+    _gcal.token=data.token;
+    _gcal.tokenExpiry=Date.now()+((Number(data.expires_in)||3600)-60)*1000;
+    _gcal.enabled=true;
+    _db._gcal_token=_gcal.token;
+    _db._gcal_token_expiry=_gcal.tokenExpiry;
+    _db._gcal_enabled=true;
+    _save(false);
+    _gcal.setStatusUI('ok','متصل شد ✓');
+    showToast('به Google Calendar متصل شدی ✓','success');
+    const btn=document.getElementById('gcal-sync-btn');
+    if(btn)btn.textContent='🔌 قطع Google Calendar';
+    _refreshTodoGcalCheckboxes();
+    used=true;
+  });
+  return used;
+}
+
+function _startGcalOAuthRescue() {
+  window.addEventListener('storage',e=>{
+    if(e.key&&e.key.indexOf('teampulse_oauth_result_gcal_')===0)_consumeStoredGcalOAuthResult();
+  });
+  if('BroadcastChannel' in window){
+    try{
+      const channel=new BroadcastChannel('teampulse_oauth');
+      channel.onmessage=e=>{
+        if(e.data?.type!=='gcal_token')return;
+        const key='teampulse_oauth_result_'+(e.data.state||('gcal_'+Date.now()));
+        try{localStorage.setItem(key,JSON.stringify({...e.data,saved_at:Date.now()}));}catch(err){}
+        _consumeStoredGcalOAuthResult();
+      };
+    }catch(e){}
+  }
+  setInterval(_consumeStoredGcalOAuthResult,1000);
+}
 
 // وقتی وضعیت اتصال گوگل‌کلندر عوض میشه، تیک داخل فرم‌های باز رو آپدیت کن
 function _refreshTodoGcalCheckboxes() {
@@ -20248,6 +20303,7 @@ async function importBackup() {
 _gdrive.initOnLoad();
 
 // Init Google Calendar on startup
+_startGcalOAuthRescue();
 _gcal.initOnLoad();
 
 // Start app — auth first
