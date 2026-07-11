@@ -16357,6 +16357,22 @@ function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
   }
 }
 
+async function _resetImpersonatedTargetData(userId, userName, targetKey) {
+  _db = _freshData();
+  _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
+  _db._lastSaved = Date.now();
+  _migrate(_db);
+  localStorage.setItem(targetKey, JSON.stringify(_db));
+  try {
+    await _apiFetch('/api/data/' + userId, {
+      method: 'PUT',
+      body: JSON.stringify({ data: _db })
+    });
+  } catch(e) {
+    console.warn('[Impersonate] target reset sync failed:', e.message);
+  }
+}
+
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (!_sbUser || !_sbSession?.token) return;
@@ -16410,6 +16426,10 @@ async function _loadFromServer() {
     if (!ct.includes('application/json')) return false;
     const { data } = await res.json();
     if (!data) return false;
+    if (window._impersonating && _looksLikeAdminDataDuringImpersonation(data, window._impersonating.adminDBKey)) {
+      console.warn('[Impersonate] ignored admin-like server data during poll');
+      return false;
+    }
     // merge: همیشه از سرور load کن اگه داده داشت
     // (اولویت با سرور چون همه دستگاه‌ها sync می‌کنن)
     if (data && Object.keys(data).length > 0) {
@@ -17322,6 +17342,8 @@ async function _initAuth() {
               if (json.data && Object.keys(json.data).length > 0) {
                 if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
                   console.warn('[Impersonate restore] ignored admin-like data for target account');
+                  await _resetImpersonatedTargetData(impersonatingState.userId, impersonatingState.userName, targetKey);
+                  loadedImpersonatedData = true;
                 } else {
                   _db = json.data;
                   _migrate(_db);
@@ -19833,6 +19855,8 @@ async function _adminImpersonate(userId, userName) {
           if (json.data && Object.keys(json.data).length > 0) {
             if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
               console.warn('[Impersonate] ignored admin-like data for target account');
+              await _resetImpersonatedTargetData(userId, userName, targetKey);
+              loaded = true;
             } else {
               _db = json.data;
               _migrate(_db);
