@@ -17818,9 +17818,9 @@ function _todoStickyAddBoxHtml(stats = {}) {
   const doneCnt = stats.doneCnt ?? todos.filter(t => t.done && t.date_jalali && _jalaliKey(t.date_jalali) === todayKey).length;
   const totalToday = stats.totalToday ?? todayCount;
   const progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
-  return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:rgba(17,22,34,.96);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 8px 28px rgba(0,0,0,.24)">
+  return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:transparent;border:none;border-radius:0;padding:0;margin-bottom:14px;box-shadow:none">
     <button onclick="openAddTodo()"
-      style="width:100%;padding:12px 18px;border-radius:12px;border:none;cursor:pointer;
+      style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
         font-family:var(--font);font-size:15px;font-weight:700;
         background:linear-gradient(135deg,#7c6af7,#5b4de0);
         color:white;letter-spacing:.01em;
@@ -17942,7 +17942,7 @@ function _todoDropOnDate(event, date) {
 function _todoCalendarResponsiveCss() {
   return `<style>
     .todo-calendar-shell{max-width:920px;margin:0 auto;padding:0 8px 70px}
-    .todo-sticky-add-box{position:sticky;top:0;z-index:30;background:rgba(17,22,34,.96);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 8px 28px rgba(0,0,0,.24)}
+    .todo-sticky-add-box{position:sticky;top:0;z-index:30;background:transparent;border:none;border-radius:0;padding:0;margin-bottom:14px;box-shadow:none}
     .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
     .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
@@ -17960,7 +17960,7 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-year-dots{display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl}
     @media (max-width:720px){
       .todo-calendar-shell{padding:0 10px 84px;max-width:none}
-      .todo-sticky-add-box{top:0!important;margin:0 -2px 12px!important;border-radius:12px!important;padding:11px!important}
+      .todo-sticky-add-box{top:0!important;margin:0 0 12px!important;border-radius:0!important;padding:0!important}
       .todo-calendar-toolbar{gap:8px;margin-bottom:10px}
       .todo-calendar-toolbar-row{display:block}
       .todo-calendar-mode-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px}
