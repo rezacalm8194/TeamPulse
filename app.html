@@ -2182,25 +2182,29 @@ body.light mark { background: rgba(251,191,36,.5); }
 ._ifcard-subfolders{
   display:flex;
   flex-wrap:wrap;
-  gap:5px;
-  margin-top:10px;
-  min-height:28px;
-  max-height:64px;
+  gap:4px;
+  margin-top:9px;
+  min-height:22px;
+  max-height:72px;
   overflow:hidden;
+  align-content:flex-start;
 }
 ._ifcard-subfolder-chip{
   display:inline-flex;
   align-items:center;
-  gap:4px;
-  max-width:100%;
-  padding:3px 7px;
+  gap:3px;
+  flex:0 1 calc(33.333% - 4px);
+  min-width:72px;
+  max-width:calc(50% - 4px);
+  height:20px;
+  padding:1px 5px;
   border:1px solid var(--border2);
-  border-radius:7px;
+  border-radius:6px;
   background:rgba(124,106,247,.09);
   color:var(--text2);
-  font-size:10.5px;
+  font-size:9px;
   font-weight:600;
-  line-height:1.5;
+  line-height:1;
 }
 ._ifcard-subfolder-chip span{
   min-width:0;
@@ -2260,6 +2264,8 @@ body.light mark { background: rgba(251,191,36,.5); }
   ._ifcard-gallery{ padding:12px 12px 10px!important; height:200px!important; }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
+  ._ifcard-subfolders{ max-height:72px; }
+  ._ifcard-subfolder-chip{ flex-basis:calc(50% - 4px); max-width:calc(50% - 4px); }
 }
 
 /* ── حالت انتخاب چندتایی (نگه‌داشتن انگشت روی کارت) ──────────────────────────
