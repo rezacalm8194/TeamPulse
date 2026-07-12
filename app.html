@@ -14468,7 +14468,7 @@ async function renderInstructions(instrSearch) {
   if (!instrSearch) {
     if (currentLevel === 'root') items = items.filter(n => n.type === 'kcategory');
     else if (currentLevel === 'category') items = items.filter(n => n.type !== 'kcategory');
-    else items = items.filter(n => n.type !== 'category' && n.type !== 'kcategory');
+    else items = items.filter(n => n.type !== 'kcategory');
   }
 
   /* ── Search: full-text across ALL items ── */
@@ -14541,18 +14541,14 @@ async function renderInstructions(instrSearch) {
   /* ── Empty state ── */
   if (items.length === 0) {
     const canCreateHere = _teamCanCreateInstruction(_instrParentId);
-    const emptyIcon = instrSearch ? '🔍' : (currentLevel === 'root' ? '🗂' : (currentLevel === 'category' ? '📁' : '📝'));
+    const emptyIcon = instrSearch ? '🔍' : (currentLevel === 'root' ? '🗂' : '📁');
     const emptyHint = currentLevel === 'root'
       ? 'برای شروع، دانش‌ها را در دسته‌بندی‌های اصلی مرتب کن.'
-      : currentLevel === 'category'
-        ? 'داخل این دسته‌بندی می‌توانی پوشه بسازی یا مستقیم یادداشت اضافه کنی.'
-        : 'یادداشت‌های این پوشه هنوز ثبت نشده‌اند.';
+      : 'اینجا می‌توانی زیرپوشه بسازی یا مستقیم یادداشت اضافه کنی.';
     const emptyCreate = currentLevel === 'root'
       ? `<button class="btn btn-primary" onclick="openAddInstruction(null,'kcategory')">🗂 دسته‌بندی جدید</button>`
-      : currentLevel === 'category'
-        ? `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
-           <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>`
-        : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'note')">📝 اولین یادداشت</button>`;
+      : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
+         <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>`;
     setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${emptyIcon}</span>
@@ -14899,14 +14895,11 @@ function _instrToolbarHtml() {
   const createButtons = !canCreate ? '' : level === 'root' ? `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(null,'kcategory')" style="font-size:12px">
         <span class="btn-icon">🗂</span><span> دسته‌بندی جدید</span>
-      </button>` : level === 'category' ? `
+      </button>` : `
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
       </button>
       <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
-        <span class="btn-icon">📝</span><span> یادداشت جدید</span>
-      </button>` : `
-      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>`;
   return `
@@ -14953,15 +14946,11 @@ function _instrFabHtml() {
   const level = _instrCurrentLevel();
   const actions = level === 'root'
     ? [{ type:'kcategory', icon:'🗂', label:'دسته‌بندی جدید' }]
-    : level === 'category'
-      ? [
-          { type:'category', icon:'📁', label:'پوشه جدید' },
-          { type:'note', icon:'📝', label:'یادداشت جدید' },
-        ]
-      : [
-          { type:'note', icon:'📝', label:'یادداشت جدید' },
-          { type:'checklist', icon:'✅', label:'چک‌لیست جدید' },
-        ];
+    : [
+        { type:'category', icon:'📁', label:'پوشه جدید' },
+        { type:'note', icon:'📝', label:'یادداشت جدید' },
+        { type:'checklist', icon:'✅', label:'چک‌لیست جدید' },
+      ];
   return `
     <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
