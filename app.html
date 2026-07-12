@@ -2149,6 +2149,35 @@ body.light mark { background: rgba(251,191,36,.5); }
   height:222px;
   overflow:hidden;
 }
+._ifcard-subfolders{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:10px;
+  min-height:28px;
+  max-height:64px;
+  overflow:hidden;
+}
+._ifcard-subfolder-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  max-width:100%;
+  padding:3px 7px;
+  border:1px solid var(--border2);
+  border-radius:7px;
+  background:rgba(124,106,247,.09);
+  color:var(--text2);
+  font-size:10.5px;
+  font-weight:600;
+  line-height:1.5;
+}
+._ifcard-subfolder-chip span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 ._ifcard,
 ._ifcard *,
 .instr-bulkbar,
@@ -14534,6 +14563,13 @@ async function renderInstructions(instrSearch) {
         const countLabel = item.type === 'kcategory' ? 'پوشه' : 'آیتم';
         const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
+        const subfolders = flat.filter(x => x.parent_id && +x.parent_id === +item.id && (x.type === 'category' || x.type === 'kcategory'));
+        const visibleSubfolders = subfolders.slice(0, 9);
+        const subfoldersHtml = visibleSubfolders.length ? `
+          <div class="_ifcard-subfolders" title="${escapeHtml(subfolders.map(x => x.title).join('، '))}">
+            ${visibleSubfolders.map(f => `<span class="_ifcard-subfolder-chip"><span>📁 ${escapeHtml(f.title)}</span></span>`).join('')}
+            ${subfolders.length > visibleSubfolders.length ? `<span class="_ifcard-subfolder-chip"><span>+${fa(subfolders.length - visibleSubfolders.length)}</span></span>` : ''}
+          </div>` : '';
         const preview = flat.filter(x => x.parent_id && +x.parent_id === +item.id && x.type !== 'category' && x.type !== 'kcategory').slice(0,3);
         const previewHtml = preview.length ? `
           <div class="_ifcard-preview" style="border-top:1px solid var(--border);padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px">
@@ -14557,6 +14593,7 @@ async function renderInstructions(instrSearch) {
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
               <span style="font-size:11px;color:var(--text3)">${fa(childCount)} ${countLabel}</span>
               ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
+              ${subfoldersHtml}
             </div>
             ${previewHtml}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
