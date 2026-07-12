@@ -3892,7 +3892,14 @@ window.api = {
       const totalAmount=summaries.reduce((a,s)=>a+s.totalAmount,0);
       const totalPaid=summaries.reduce((a,s)=>a+s.totalPaid,0);
       const totalWallet=summaries.reduce((a,s)=>a+s.wallet,0);
-      const debtors=summaries.filter(s=>s.balance>0).map(s=>({id:s.id,name:s.name,lname:s.lname,debt:s.balance})).sort((a,b)=>b.debt-a.debt);
+      const debtors=summaries.filter(s=>s.balance>0).map(s=>({
+        id:s.id,
+        name:s.name,
+        lname:s.lname,
+        packages:s.packages,
+        totalAmount:s.totalAmount,
+        debt:s.balance
+      })).sort((a,b)=>b.debt-a.debt);
       const earnerCandidates=summaries.filter(s=>s.totalPaid>0).map(s=>{
         const sp=_db.payments.filter(p=>p.student_id===s.id&&(p.currency||'تومان')==='تومان');
         const pkg=_db.packages.filter(p=>p.student_id===s.id);
@@ -8170,11 +8177,34 @@ async function renderDashboard() {
       <h3>بدهکاران</h3>
       ${debtors.length === 0
         ? '<div style="color:var(--green);font-size:13px;padding:8px 0">✓ همه تسویه هستند</div>'
-        : debtors.map(d => `
-          <div class="detail-row">
-            <span class="detail-key">${d.name} ${d.lname}</span>
-            <span class="detail-val amount-debt">${fmt(d.debt)} ت</span>
-          </div>`).join('')}
+        : `<div class="stu-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>نام</th>
+                  <th>پکیج</th>
+                  <th>قرارداد کل</th>
+                  <th>مانده حساب</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${debtors.map(d => `
+                  <tr>
+                    <td>
+                      <div class="name-cell">
+                        ${avatar(d.name, d.id)}
+                        <div>
+                          <div style="font-weight:500">${d.name} ${d.lname}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>${(d.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+                    <td><span class="amount amount-neutral">${fmt(d.totalAmount)}</span></td>
+                    <td>${balanceHtml(d.debt)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`}
     </div>
   </div>
 
