@@ -4809,8 +4809,7 @@ const _gcal = {
   clientId: APP_GOOGLE_CLIENT_ID,
   token: null,
   tokenExpiry: 0,
-  calendarTz: null,
-  SCOPE: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
+  SCOPE: 'https://www.googleapis.com/auth/calendar.events',
 
   setStatusUI(status, msg) {
     const el=document.getElementById('gcal-status');
@@ -4964,7 +4963,7 @@ const _gcal = {
   async upsertEvent(t) {
     if(!this.enabled)return;
     try{
-      const body=this._buildEventBody(t, await this.calendarTimeZone());
+      const body=this._buildEventBody(t);
       const method=t.gcal_event_id?'PATCH':'POST';
       const url=t.gcal_event_id
         ?`https://www.googleapis.com/calendar/v3/calendars/primary/events/${t.gcal_event_id}`
@@ -5004,32 +5003,8 @@ const _gcal = {
     }catch(e){ console.warn('Calendar delete failed:',e.message); }
   },
 
-  async calendarTimeZone() {
-    if (this.calendarTz) return this.calendarTz;
-    if (_db._gcal_calendar_tz) {
-      this.calendarTz = _db._gcal_calendar_tz;
-      return this.calendarTz;
-    }
-    try {
-      const res = await this.req('https://www.googleapis.com/calendar/v3/calendars/primary');
-      if (res.ok) {
-        const info = await res.json();
-        if (info.timeZone) {
-          this.calendarTz = info.timeZone;
-          _db._gcal_calendar_tz = info.timeZone;
-          _save(false);
-          return this.calendarTz;
-        }
-      }
-    } catch(e) {
-      console.warn('Calendar timezone fetch failed:', e.message);
-    }
-    this.calendarTz = Intl.DateTimeFormat().resolvedOptions().timeZone || _appTimeZone();
-    return this.calendarTz;
-  },
-
-  _buildEventBody(t, calendarTz) {
-    const tz = calendarTz || Intl.DateTimeFormat().resolvedOptions().timeZone || _appTimeZone();
+  _buildEventBody(t) {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tehran';
     const pad = n => String(n).padStart(2,'0');
     const parts = _jalaliParse(t.date_jalali);
     const [gy,gm,gd] = jalaliToGregorian(parts[0],parts[1],parts[2]);
