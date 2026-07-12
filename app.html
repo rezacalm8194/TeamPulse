@@ -11539,6 +11539,19 @@ async function openSessionsSummary(studentId, displayName) {
   const groups = await window.api.sessions.getAll();
   const g = groups.find(x => x.student_id === studentId);
   const sessions = (g?.sessions || []).slice().sort((a,b) => jalaliKey(a.date_jalali) - jalaliKey(b.date_jalali) || a.id - b.id);
+  const copyText = sessions.length === 0
+    ? `خلاصه کل ${META.sessionPlural||'جلسات'} — ${displayName}\n\nهنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده`
+    : [
+        `خلاصه کل ${META.sessionPlural||'جلسات'} — ${displayName}`,
+        '',
+        ...sessions.map(s => [
+          `${DateService.disp(s.date_jalali)}${s.importance==='key'?' ⭐':''}`,
+          s.title || '(بدون عنوان)',
+          s.note ? String(s.note).trim() : '',
+          s.extra_note ? String(s.extra_note).trim() : ''
+        ].filter(Boolean).join('\n'))
+      ].join('\n\n--------------------\n\n');
+  window._sessionsSummaryCopyText = copyText;
 
   const body = sessions.length === 0
     ? `<p style="font-size:12px;color:var(--text3)">هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</p>`
@@ -11551,8 +11564,12 @@ async function openSessionsSummary(studentId, displayName) {
       </div>`).join('');
 
   openModal(`📋 خلاصه کل ${META.sessionPlural||'جلسات'} — ${displayName}`, `
+    <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
+      <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(window._sessionsSummaryCopyText || '', 'کل متن خلاصه کپی شد ✓')" style="min-width:150px">📋 کپی کل متن</button>
+    </div>
     <div class="detail-section" style="max-height:60vh;overflow-y:auto">${body}</div>
   `, [
+    { label: '📋 کپی کل متن', cls: 'btn-ghost', action: `copyToClipboard(window._sessionsSummaryCopyText || '', 'کل متن خلاصه کپی شد ✓')` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
 }
@@ -18041,6 +18058,12 @@ let _todoCalendarSearchOpen = false;
 let _todoCalendarShowRepeats = localStorage.getItem('tp_todo_calendar_show_repeats') !== '0';
 let _todoCalendarSelectedDate = localStorage.getItem('tp_todo_calendar_selected_date') || _todayJalaliStr();
 let _todoDragId = null;
+let _todoTomorrowExpanded = localStorage.getItem('tp_todo_tomorrow_expanded') === '1';
+
+function _setTodoTomorrowExpanded(open) {
+  _todoTomorrowExpanded = !!open;
+  localStorage.setItem('tp_todo_tomorrow_expanded', _todoTomorrowExpanded ? '1' : '0');
+}
 
 function _setTodoViewMode(mode) {
   _todoViewMode = mode || 'list';
@@ -18896,7 +18919,7 @@ function renderTodoList() {
   // ── فردا (کشویی - بسته) ──
   if (tomorrowTodos.length > 0) {
     const _tomorrowSorted = tomorrowTodos.sort(_sortByTime);
-    html += `<details style="margin-top:12px">
+    html += `<details ${_todoTomorrowExpanded ? 'open' : ''} ontoggle="_setTodoTomorrowExpanded(this.open)" style="margin-top:12px">
       <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">
         ${sectionHeader('🌙', 'فردا', tomorrowStr + ' · ' + fa(tomorrowTodos.length) + ' کار', 'var(--accent2)')}
       </summary>
