@@ -1578,6 +1578,40 @@ body.light mark { background: rgba(251,191,36,.5); }
 }
 .role-total-amount { font-size: 14px; font-weight: 700; color: var(--accent2); }
 .role-total-words { font-size: 10px; color: var(--text3); margin-top: 2px; min-height: 13px; }
+.bonus-details {
+  border: 1px solid rgba(124,106,247,.24);
+  background: rgba(124,106,247,.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.bonus-details summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; cursor: pointer; user-select: none;
+  color: var(--text); font-size: 12px; font-weight: 700;
+}
+.bonus-details summary::-webkit-details-marker { display: none; }
+.bonus-details summary::before {
+  content: '▾'; color: var(--accent2); transition: transform .18s ease;
+}
+.bonus-details:not([open]) summary::before { transform: rotate(90deg); }
+.bonus-summary-amount {
+  margin-right: auto; color: var(--accent2); font-size: 11px; font-weight: 800;
+}
+.bonus-items { padding: 0 10px 10px; display: grid; gap: 8px; }
+.bonus-item {
+  display: grid; grid-template-columns: minmax(90px,.8fr) minmax(140px,1.3fr) 34px; gap: 8px; align-items: end;
+  padding: 8px; border: 1px solid var(--border2); border-radius: 8px; background: var(--bg2);
+}
+.bonus-remove {
+  width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid rgba(255,107,107,.25); background: rgba(255,107,107,.08);
+  color: var(--red); cursor: pointer;
+}
+.bonus-add-btn {
+  align-self: start; width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(124,106,247,.35); background: rgba(124,106,247,.14);
+  color: var(--accent2); cursor: pointer; font-size: 18px; line-height: 1;
+}
 
 @keyframes pulse {
   0%,100% { opacity:1; }
@@ -10066,7 +10100,7 @@ async function openQuickStaffModal() {
   openModal('⚡ افزودن سریع همکار', `
     <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">ثبت سریع برای وقتی که فقط می‌خواهی همکار را وارد لیست کنی.</div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.8">بعداً از گزینه ویرایش می‌توانی نقش‌ها، یادآوری حقوق و جزئیات کامل را تکمیل کنی.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">بعداً از گزینه تنظیمات همکاری می‌توانی نقش‌ها، یادآوری حقوق و جزئیات کامل را تکمیل کنی.</div>
     </div>
     <div class="form-grid">
       <div class="form-group">
@@ -10118,6 +10152,32 @@ async function saveQuickStaff() {
   await renderStaff();
 }
 
+function isStaffBonusRoleLabel(label) {
+  return /پاداش|bonus/i.test(label || '');
+}
+
+function staffBonusItemsFromRole(role) {
+  const saved = Array.isArray(role?.bonus_items) ? role.bonus_items : [];
+  if (saved.length) return saved;
+  const legacyAmount = (role?.amount || 0) * (role?.count ?? 1);
+  return legacyAmount > 0 ? [{ amount: legacyAmount, note: '' }] : [{ amount: 0, note: '' }];
+}
+
+function staffBonusItemHtml(item = {}, disabled = false) {
+  return `
+    <div class="bonus-item">
+      <div class="role-field">
+        <label class="form-label">مبلغ پاداش</label>
+        <input class="form-input bonus-amount amount-input" type="number" min="0" value="${item.amount || 0}" ${disabled ? 'disabled' : ''} oninput="updateStaffBonusTotal(this)">
+      </div>
+      <div class="role-field">
+        <label class="form-label">دلیل / توضیحات</label>
+        <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="مثلاً عملکرد عالی، جذب شاگرد، انجام پروژه...">
+      </div>
+      <button type="button" class="bonus-remove" onclick="removeStaffBonusItem(this)" title="حذف آیتم">×</button>
+    </div>`;
+}
+
 async function refreshRolesAndOpenStaffModal(editing, id) {
   STAFF_ROLES = await window.api.staffRoles.getAll();
   let s = null;
@@ -10132,24 +10192,37 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
   const roleRows = STAFF_ROLES.map(r => {
     const existing = (s?.roles || []).find(x => x.role_id === r.id);
     const checked = !!existing;
+    const isBonus = isStaffBonusRoleLabel(r.label);
     const amt = existing?.amount || 0;
     const cnt = existing?.count ?? 1;
-    const total = amt * cnt;
+    const bonusItems = isBonus ? staffBonusItemsFromRole(existing) : [];
+    const total = isBonus ? bonusItems.reduce((a, item) => a + (+(item.amount || 0)), 0) : amt * cnt;
     return `
-    <div class="role-row">
+    <div class="role-row ${isBonus ? 'staff-bonus-row' : ''}" data-role-label="${escapeHtml(r.label)}">
       <label class="role-row-label">
         <input type="checkbox" class="role-checkbox" data-role-id="${r.id}" ${checked?'checked':''}
           onchange="onRoleCheckChange(this)">
         <span>${r.label}</span>
       </label>
+      ${isBonus ? `
+      <details class="bonus-details" ${checked ? 'open' : ''}>
+        <summary>
+          آیتم‌های پاداش
+          <button type="button" class="bonus-add-btn" onclick="event.preventDefault();event.stopPropagation();addStaffBonusItem(this)" title="افزودن پاداش">+</button>
+          <span class="bonus-summary-amount">${fmt(total)} تومان</span>
+        </summary>
+        <div class="bonus-items">
+          ${bonusItems.map(item => staffBonusItemHtml(item, !checked)).join('')}
+        </div>
+      </details>` : ''}
       <div class="role-row-fields">
         <div class="role-field">
           <label class="form-label">قیمت هر بار (تومان)</label>
-          <input class="form-input role-amount" type="number" placeholder="0" value="${amt}" ${checked?'':'disabled'} oninput="updateRoleRowTotal(this)">
+          <input class="form-input role-amount" type="number" placeholder="0" value="${isBonus ? total : amt}" ${checked?'':'disabled'} ${isBonus ? 'readonly' : ''} oninput="updateRoleRowTotal(this)">
         </div>
         <div class="role-field role-field-sm">
           <label class="form-label">تعداد دفعات</label>
-          <input class="form-input role-count" type="number" min="0" placeholder="1" value="${cnt}" ${checked?'':'disabled'} oninput="updateRoleRowTotal(this)">
+          <input class="form-input role-count" type="number" min="0" placeholder="1" value="${isBonus ? 1 : cnt}" ${checked?'':'disabled'} ${isBonus ? 'readonly' : ''} oninput="updateRoleRowTotal(this)">
         </div>
         <div class="role-field role-total-wrap">
           <label class="form-label">جمع کل این نقش</label>
@@ -10160,7 +10233,7 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
     </div>`;
   }).join('');
 
-  openModal(editing ? 'ویرایش همکار' : 'افزودن همکار', `
+  openModal(editing ? 'تنظیمات همکاری' : 'افزودن همکار', `
     ${!editing ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">ثبت سریع یا کامل، هر دو از همین فرم انجام می‌شود.</div>
       <div style="font-size:11px;color:var(--text3);line-height:1.8">برای افزودن فوری فقط نام را وارد کن و ذخیره بزن. اگر خواستی، همین حالا شماره تماس، کارت، حقوق، نقش‌ها و یادآوری حقوق را هم تکمیل کن.</div>
@@ -10219,17 +10292,57 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
 
 function onRoleCheckChange(checkbox) {
   const row = checkbox.closest('.role-row');
-  row.querySelectorAll('.role-amount,.role-count').forEach(el => el.disabled = !checkbox.checked);
+  row.querySelectorAll('.role-amount,.role-count,.bonus-amount,.bonus-note').forEach(el => el.disabled = !checkbox.checked);
+  const bonusDetails = row.querySelector('.bonus-details');
+  if (bonusDetails && checkbox.checked) bonusDetails.open = true;
   updateRoleRowTotal(row.querySelector('.role-amount'));
 }
 
 function updateRoleRowTotal(input) {
   const row = input.closest('.role-row');
+  if (row.classList.contains('staff-bonus-row')) {
+    updateStaffBonusTotal(row);
+    return;
+  }
   const amount = +(row.querySelector('.role-amount').value || 0);
   const count = +(row.querySelector('.role-count').value || 0);
   const total = amount * count;
   row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
   row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
+}
+
+function updateStaffBonusTotal(elOrRow) {
+  const row = elOrRow.closest ? elOrRow.closest('.role-row') : elOrRow;
+  const total = [...row.querySelectorAll('.bonus-amount')].reduce((a, input) => a + (+(input.value || 0)), 0);
+  const amount = row.querySelector('.role-amount');
+  const count = row.querySelector('.role-count');
+  if (amount) amount.value = total;
+  if (count) count.value = 1;
+  row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
+  row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
+  const summaryAmount = row.querySelector('.bonus-summary-amount');
+  if (summaryAmount) summaryAmount.textContent = `${fmt(total)} تومان`;
+}
+
+function addStaffBonusItem(button) {
+  const row = button.closest('.role-row');
+  const box = row.querySelector('.bonus-items');
+  box.insertAdjacentHTML('beforeend', staffBonusItemHtml({}, !row.querySelector('.role-checkbox')?.checked));
+  updateStaffBonusTotal(row);
+  initAmountHints();
+}
+
+function removeStaffBonusItem(button) {
+  const row = button.closest('.role-row');
+  const items = row.querySelectorAll('.bonus-item');
+  if (items.length <= 1) {
+    const item = button.closest('.bonus-item');
+    item.querySelector('.bonus-amount').value = 0;
+    item.querySelector('.bonus-note').value = '';
+  } else {
+    button.closest('.bonus-item').remove();
+  }
+  updateStaffBonusTotal(row);
 }
 
 async function addRoleInline() {
@@ -10273,11 +10386,25 @@ function collectStaffRoles() {
   document.querySelectorAll('#staff-role-rows .role-row').forEach(row => {
     const cb = row.querySelector('.role-checkbox');
     if (cb.checked) {
-      roles.push({
-        role_id: +cb.dataset.roleId,
-        amount: +(row.querySelector('.role-amount').value || 0),
-        count: +(row.querySelector('.role-count').value || 0),
-      });
+      if (row.classList.contains('staff-bonus-row')) {
+        const bonusItems = [...row.querySelectorAll('.bonus-item')].map(item => ({
+          amount: +(item.querySelector('.bonus-amount')?.value || 0),
+          note: item.querySelector('.bonus-note')?.value || '',
+        })).filter(item => item.amount > 0 || item.note.trim());
+        const total = bonusItems.reduce((a, item) => a + item.amount, 0);
+        roles.push({
+          role_id: +cb.dataset.roleId,
+          amount: total,
+          count: 1,
+          bonus_items: bonusItems.length ? bonusItems : [{ amount: 0, note: '' }],
+        });
+      } else {
+        roles.push({
+          role_id: +cb.dataset.roleId,
+          amount: +(row.querySelector('.role-amount').value || 0),
+          count: +(row.querySelector('.role-count').value || 0),
+        });
+      }
     }
   });
   return roles;
@@ -10779,7 +10906,7 @@ async function openSalaryTransfer(staffId) {
   if (!s) return;
 
   if (!s.card_number) {
-    showToast('شماره کارت این همکار ثبت نشده. ابتدا از بخش ویرایش همکار، شماره کارت را وارد کنید.', 'error');
+    showToast('شماره کارت این همکار ثبت نشده. ابتدا از بخش تنظیمات همکاری، شماره کارت را وارد کنید.', 'error');
     return;
   }
 
