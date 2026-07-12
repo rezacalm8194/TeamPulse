@@ -3775,9 +3775,15 @@ function _save(stamp=true) {
   }
   if (stamp) {
     _saveVersion();
-    // sync به سرور با debounce
     clearTimeout(window._serverSyncTimer);
-    window._serverSyncTimer = setTimeout(_syncToServer, 200);
+    if (_teamAccessSession()) {
+      window._serverSyncTimer = setTimeout(() => {
+        _syncToServer();
+      }, 20);
+    } else {
+      // sync به سرور با debounce
+      window._serverSyncTimer = setTimeout(_syncToServer, 200);
+    }
   }
 }
 
@@ -19531,7 +19537,7 @@ async function _onTodoGcalToggle(cb) {
   }
 }
 
-function saveTodo() {
+async function saveTodo() {
   _todosInit();
   const title = document.getElementById('todo-title')?.value.trim();
   if (!title) { showToast('عنوان کار را وارد کنید', 'error'); return; }
@@ -19566,6 +19572,14 @@ function saveTodo() {
   };
   _db.todos.push(newTodo);
   _save();
+  if (_teamAccessSession()) {
+    clearTimeout(window._serverSyncTimer);
+    await _syncToServer();
+    if ((_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+      showToast('کار داخل TeamPulse ذخیره نشد؛ اتصال هم‌تیمی را دوباره باز کن', 'error');
+      return;
+    }
+  }
 
   // Schedule notification
   if (remindMin > 0 && time && dateJalali) {
