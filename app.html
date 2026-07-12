@@ -5012,7 +5012,8 @@ const _gcal = {
     if (t.time) {
       const [hh,mm] = t.time.split(':').map(Number);
       const startDate = _zonedWallTimeToLocalDate(gy, gm, gd, hh, mm, 0, tz);
-      const endParts = _timeZoneParts(new Date(startDate.getTime() + 30*60000), tz);
+      const durationMin = _todoDurationMinutes(t) || 30;
+      const endParts = _timeZoneParts(new Date(startDate.getTime() + durationMin*60000), tz);
       const startIso = `${gy}-${pad(gm)}-${pad(gd)}T${pad(hh)}:${pad(mm)}:00`;
       const endIso = `${endParts.year}-${pad(endParts.month)}-${pad(endParts.day)}T${pad(endParts.hour)}:${pad(endParts.minute)}:00`;
       start = {dateTime: startIso, timeZone: tz};
@@ -18099,7 +18100,7 @@ async function _initAuth() {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Data model ───────────────────────────────────────────────────────────────
-// _db.todos = [{id, title, note, date_jalali, time, repeat, remind_min, done, done_at, archived, created_at}]
+// _db.todos = [{id, title, note, date_jalali, time, duration_min, repeat, remind_min, done, done_at, archived, created_at}]
 // repeat: 'none'|'daily'|'every2days'|'weekly'|'monthly'|'custom'
 // remind_min: دقیقه قبل از زمان task
 
@@ -18167,9 +18168,50 @@ function _todoDateBadge(t, todayKey, tomorrowKey, isOverdue) {
     out += '<span style="color:#9399ab;font-size:11px"> 📅 ' + DateService.disp(t.date_jalali) + '</span>';
   }
   if (t.time) {
-    out += '<span style="color:#9399ab;font-size:11px;font-weight:600"> ⏰ ' + t.time + '</span>';
+    out += '<span style="color:#9399ab;font-size:11px;font-weight:600"> ⏰ ' + _todoTimeRangeLabel(t) + '</span>';
   }
   return out;
+}
+
+function _todoDurationMinutes(t) {
+  const raw = typeof t === 'object' && t ? t.duration_min : t;
+  const n = parseInt(raw || '0', 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function _todoEndTime(time, durationMin) {
+  if (!time || !durationMin) return '';
+  const parts = String(time).split(':').map(Number);
+  if (parts.length < 2 || parts.some(n => !Number.isFinite(n))) return '';
+  const total = ((parts[0] * 60 + parts[1] + durationMin) % 1440 + 1440) % 1440;
+  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+}
+
+function _todoDurationLabel(minutes) {
+  const n = parseInt(minutes || '0', 10);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 60) return fa(n) + ' دقیقه';
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return fa(h) + ' ساعت' + (m ? ' و ' + fa(m) + ' دقیقه' : '');
+}
+
+function _todoTimeRangeLabel(t) {
+  if (!t || !t.time) return '';
+  const duration = _todoDurationMinutes(t);
+  const end = _todoEndTime(t.time, duration);
+  return t.time + (end ? ' تا ' + end + ' · ' + _todoDurationLabel(duration) : '');
+}
+
+function _updateTodoEndPreview() {
+  const preview = document.getElementById('todo-end-preview');
+  if (!preview) return;
+  const time = document.getElementById('todo-time')?.value || '';
+  const duration = _todoDurationMinutes(document.getElementById('todo-duration')?.value || '0');
+  const end = _todoEndTime(time, duration);
+  preview.textContent = end
+    ? 'پایان: ' + end + ' · مدت: ' + _todoDurationLabel(duration)
+    : 'با انتخاب ساعت، زمان پایان نمایش داده می‌شود';
 }
 
 function _canAutoRefresh() {
@@ -18597,7 +18639,7 @@ function _todoMiniEventHtml(t) {
     style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${s.bg};border-right:3px solid ${s.color};cursor:pointer">
     <span style="font-size:12px;line-height:1;flex-shrink:0">${meta.icon}</span>
     ${t._repeatPreview ? '<span style="font-size:10px;line-height:1;flex-shrink:0" title="تکرار آینده">🔁</span>' : ''}
-    <span style="font-size:10px;color:${s.color};font-weight:800;flex-shrink:0">${t.time || '•'}</span>
+    <span style="font-size:10px;color:${s.color};font-weight:800;flex-shrink:0">${t.time ? escapeHtml(_todoTimeRangeLabel(t)) : '•'}</span>
     <span style="font-size:11px;color:${t.done?'var(--text3)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title)}</span>
   </div>`;
 }
@@ -19346,12 +19388,12 @@ function _showTodoReminder(t) {
       navigator.serviceWorker.controller.postMessage({
         type: 'SHOW_NOTIFICATION',
         title: '⏰ ' + t.title,
-        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'ساعت ' + t.time,
+        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
         tag: 'todo-' + t.id,
       });
     } else {
       new Notification('⏰ ' + t.title, {
-        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'ساعت ' + t.time,
+        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
         icon: '/logo.png',
         tag: 'todo-' + t.id,
         requireInteraction: true,
@@ -19386,7 +19428,7 @@ function _scheduleTodoNotifications() {
       scheduled.push({
         id: t.id,
         title: '⏰ ' + t.title,
-        body: 'ساعت ' + t.time + (t.note ? ' — ' + t.note.slice(0,50) : ''),
+        body: 'زمان ' + _todoTimeRangeLabel(t) + (t.note ? ' — ' + t.note.slice(0,50) : ''),
         tag: 'todo-' + t.id,
         delayMs: notifTime - now,
       });
@@ -19433,7 +19475,7 @@ function openAddTodo(dateStr) {
       <label class="form-label">توضیحات</label>
       <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات..."></textarea>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:start">
       <div class="form-group">
         <label class="form-label" style="display:flex;align-items:center;gap:4px">
           📅 تاریخ
@@ -19447,7 +19489,15 @@ function openAddTodo(dateStr) {
       </div>
       <div class="form-group">
         <label class="form-label">⏰ ساعت</label>
-        <input class="form-input" id="todo-time" type="time" placeholder="09:00" style="direction:ltr">
+        <input class="form-input" id="todo-time" type="time" placeholder="09:00" onchange="_updateTodoEndPreview()" oninput="_updateTodoEndPreview()" style="direction:ltr">
+      </div>
+      <div class="form-group">
+        <label class="form-label">⏱️ مدت انجام</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input class="form-input" id="todo-duration" type="number" min="5" step="5" value="30" onchange="_updateTodoEndPreview()" oninput="_updateTodoEndPreview()" style="direction:ltr;text-align:center">
+          <span style="font-size:11px;color:var(--text3);white-space:nowrap">دقیقه</span>
+        </div>
+        <div id="todo-end-preview" style="margin-top:5px;font-size:11px;color:var(--accent);font-weight:700;min-height:18px">با انتخاب ساعت، زمان پایان نمایش داده می‌شود</div>
       </div>
     </div>
     <div class="form-group full">
@@ -19526,7 +19576,7 @@ function openAddTodo(dateStr) {
     {label: '+ ذخیره', cls: 'btn-primary', action: 'saveTodo()'},
     {label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()'},
   ]);
-  setTimeout(() => initDatePickers(), 50);
+  setTimeout(() => { initDatePickers(); _updateTodoEndPreview(); }, 50);
 }
 
 function _onTodoRepeatChange(val) {
@@ -19708,6 +19758,7 @@ async function saveTodo() {
   const remindMin = parseInt(document.getElementById('todo-remind')?.value || '0');
   const dateJalali = document.getElementById('todo-date')?.value.trim() || _todayJalaliStr();
   const time = document.getElementById('todo-time')?.value || '';
+  const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
 
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
@@ -19719,6 +19770,7 @@ async function saveTodo() {
     note: document.getElementById('todo-note')?.value.trim() || '',
     date_jalali: dateJalali,
     time,
+    duration_min: durationMin,
     repeat,
     weekdays,
     priority,
@@ -19818,8 +19870,8 @@ function openEditTodo(id) {
     </div>
 
     <!-- ردیف تاریخ و ساعت -->
-    <div style="display:flex;gap:10px;margin-bottom:10px">
-      <div style="flex:1">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;align-items:start">
+      <div>
         <label class="form-label" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
           📅 <span>تاریخ</span>
           <div style="display:flex;gap:4px;margin-right:auto">
@@ -19833,9 +19885,17 @@ function openEditTodo(id) {
         </label>
         <input class="form-input jdate" id="todo-date" value="${t.date_jalali||''}">
       </div>
-      <div style="width:110px">
+      <div>
         <label class="form-label" style="margin-bottom:6px">⏰ ساعت</label>
-        <input class="form-input" id="todo-time" type="time" value="${t.time||''}" style="direction:ltr">
+        <input class="form-input" id="todo-time" type="time" value="${t.time||''}" onchange="_updateTodoEndPreview()" oninput="_updateTodoEndPreview()" style="direction:ltr">
+      </div>
+      <div>
+        <label class="form-label" style="margin-bottom:6px">⏱️ مدت انجام</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input class="form-input" id="todo-duration" type="number" min="5" step="5" value="${_todoDurationMinutes(t)||30}" onchange="_updateTodoEndPreview()" oninput="_updateTodoEndPreview()" style="direction:ltr;text-align:center">
+          <span style="font-size:11px;color:var(--text3);white-space:nowrap">دقیقه</span>
+        </div>
+        <div id="todo-end-preview" style="margin-top:5px;font-size:11px;color:var(--accent);font-weight:700;min-height:18px">با انتخاب ساعت، زمان پایان نمایش داده می‌شود</div>
       </div>
     </div>
 
@@ -19916,7 +19976,7 @@ function openEditTodo(id) {
     {label: '💾 ذخیره', cls: 'btn-primary', action: 'updateTodo(' + id + ')'},
     {label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()'},
   ]);
-  setTimeout(() => initDatePickers(), 50);
+  setTimeout(() => { initDatePickers(); _updateTodoEndPreview(); }, 50);
 }
 
 function _setTodoDateShortcut(when) {
@@ -20000,6 +20060,7 @@ function updateTodo(id) {
   const remindMin = parseInt(document.getElementById('todo-remind')?.value || '0');
   const dateJalali = document.getElementById('todo-date')?.value.trim() || t.date_jalali;
   const time = document.getElementById('todo-time')?.value || '';
+  const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
   const priority = document.getElementById('todo-priority')?.value || 'medium';
 
   const category2 = document.getElementById('todo-category')?.value || t.category || 'general';
@@ -20009,7 +20070,7 @@ function updateTodo(id) {
   const prevEventId = t.gcal_event_id;
   Object.assign(t, { title,
     note: document.getElementById('todo-note')?.value.trim() || '',
-    date_jalali: dateJalali, time, repeat, weekdays,
+    date_jalali: dateJalali, time, duration_min: durationMin, repeat, weekdays,
     priority, category: category2, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
     sync_gcal: syncGcalWanted,
   });
@@ -20131,7 +20192,7 @@ async function openTodoArchive() {
         '<div style="font-size:10px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap">' +
           (doneDate ? '<span>✓ ' + doneDate + '</span>' : '') +
           (t.date_jalali ? '<span>📅 ' + DateService.disp(t.date_jalali) + '</span>' : '') +
-          (t.time ? '<span>⏰ ' + t.time + '</span>' : '') +
+          (t.time ? '<span>⏰ ' + _todoTimeRangeLabel(t) + '</span>' : '') +
         '</div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
