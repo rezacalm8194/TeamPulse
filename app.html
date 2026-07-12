@@ -1612,6 +1612,36 @@ body.light mark { background: rgba(251,191,36,.5); }
   border: 1px solid rgba(124,106,247,.35); background: rgba(124,106,247,.14);
   color: var(--accent2); cursor: pointer; font-size: 18px; line-height: 1;
 }
+@media(min-width:769px){
+  .bonus-item {
+    grid-template-columns: minmax(190px,240px) minmax(260px,1fr) 34px;
+    align-items: center;
+    padding: 7px 9px;
+  }
+  .bonus-item .role-field {
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr);
+    align-items: center;
+    column-gap: 8px;
+  }
+  .bonus-item .role-field .form-label {
+    margin: 0;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .bonus-item .form-input {
+    min-height: 36px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .bonus-item .amount-hint {
+    grid-column: 2;
+    margin-top: 2px;
+  }
+  .bonus-remove {
+    align-self: center;
+  }
+}
 
 @keyframes pulse {
   0%,100% { opacity:1; }
