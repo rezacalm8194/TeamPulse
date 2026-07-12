@@ -9695,7 +9695,7 @@ async function renderStaff() {
             <div class="row-menu-panel" id="${rowMenuId}">
               ${!isPaid ? `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ ثبت دستی پرداخت</div>` : ''}
               <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
-              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ ویرایش</div>
+              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ تنظیمات همکاری</div>
               <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
               <div class="row-menu-divider"></div>
               <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑 حذف همکار</div>
