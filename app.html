@@ -16735,6 +16735,64 @@ function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
   }
 }
 
+function _cloneData(data) {
+  try { return JSON.parse(JSON.stringify(data || {})); }
+  catch(e) { return {}; }
+}
+
+function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
+  if (!localBeforeLoad || !ownerData) return ownerData;
+  const collections = [
+    'students','packages','payments','sessions','families','wallet_tx','reminders','key_events','topics',
+    'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
+    'instructions','todos'
+  ];
+  const merged = ownerData;
+  merged._nextId = merged._nextId || {};
+
+  collections.forEach(key => {
+    const localArr = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
+    if (!localArr.length) return;
+    const serverArr = Array.isArray(merged[key]) ? merged[key] : [];
+    const byId = new Map(serverArr.map(item => [String(item.id), item]));
+    let maxId = Math.max(0, ...(serverArr.map(item => +item.id || 0)), +(merged._nextId[key] || 1) - 1);
+
+    localArr.forEach(localItem => {
+      if (!localItem || localItem.id == null) return;
+      const idKey = String(localItem.id);
+      const serverItem = byId.get(idKey);
+      if (!serverItem) {
+        serverArr.push(_cloneData(localItem));
+        maxId = Math.max(maxId, +localItem.id || 0);
+        return;
+      }
+
+      const same = JSON.stringify(serverItem) === JSON.stringify(localItem);
+      if (same) return;
+
+      const localCreated = localItem.created_at || '';
+      const serverCreated = serverItem.created_at || '';
+      if (localCreated && serverCreated && localCreated !== serverCreated) {
+        const copy = _cloneData(localItem);
+        copy.id = ++maxId;
+        serverArr.push(copy);
+        return;
+      }
+
+      const localTime = Date.parse(localItem.updated_at || localItem.created_at || '') || 0;
+      const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
+      if (localTime >= serverTime) Object.assign(serverItem, _cloneData(localItem));
+    });
+
+    merged[key] = serverArr;
+    const maxAfter = Math.max(0, ...(serverArr.map(item => +item.id || 0)));
+    merged._nextId[key] = Math.max(+(merged._nextId[key] || 1), maxAfter + 1);
+  });
+
+  merged._lastSaved = Math.max(Date.now(), localBeforeLoad._lastSaved || 0, merged._lastSaved || 0);
+  return merged;
+}
+
 function _useLocalImpersonatedFallback(userName, targetKey) {
   _db = _freshData();
   _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
@@ -16783,6 +16841,7 @@ async function _syncToServer() {
       return;
     }
     if (teamSession && !window._teamOwnerDataReady) {
+      const localPending = _cloneData(_db);
       const loaded = await _loadFromServer();
       if (!loaded) {
         if (!window._teamOwnerDataNotReadyWarned) {
@@ -16791,6 +16850,12 @@ async function _syncToServer() {
         }
         return;
       }
+      _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db);
+      _migrate(_db);
+      try {
+        const key = window._activeDBKey || _teamActiveDBKey();
+        localStorage.setItem(key, JSON.stringify(_db));
+      } catch(e) {}
       window._teamOwnerDataReady = true;
     }
     if (!accId) return;
@@ -16799,7 +16864,10 @@ async function _syncToServer() {
       method: 'PUT',
       body: JSON.stringify({ data: _db, force: forceSync })
     });
-    if (res && res.ok && forceSync) window._forceNextSync = false;
+    if (res && res.ok) {
+      if (forceSync) window._forceNextSync = false;
+      if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
+    }
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
       window._teamSyncForbiddenWarned = true;
       showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
@@ -16849,6 +16917,7 @@ async function _loadFromServer() {
       const key = window._activeDBKey || _teamActiveDBKey();
       localStorage.setItem(key, JSON.stringify(_db));
       window._teamOwnerDataReady = true;
+      window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
       console.log('[TeamPulse] Team owner data loaded from server');
       return true;
     }
@@ -17221,6 +17290,10 @@ async function _authOnSuccess() {
     window._teamFocusRefreshBound = true;
     window.addEventListener('focus', async () => {
       if (!_teamAccessSession()) return;
+      if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+        clearTimeout(window._serverSyncTimer);
+        await _syncToServer();
+      }
       const updated = await _loadFromServer();
       if (updated && _canAutoRefresh()) renderPage();
     });
