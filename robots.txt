@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /oauth_callback.html
+Disallow: /backend/
+
+Sitemap: https://teampulse.ir/sitemap.xml
