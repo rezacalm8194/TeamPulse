@@ -443,6 +443,20 @@ nav{
 }
 .job-chip:hover{border-color:var(--glow);color:var(--glow);background:rgba(124,106,247,.1);}
 
+/* ── Blog Links ───────────── */
+.articles-section{padding:86px 6vw;background:var(--ink2);}
+.articles-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;max-width:1080px;margin:38px auto 0;}
+.article-card{
+  display:block;padding:22px;border-radius:16px;background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.08);transition:all .22s;text-decoration:none;min-height:190px;
+}
+.article-card:hover{transform:translateY(-4px);border-color:rgba(124,106,247,.42);background:rgba(124,106,247,.075);}
+.article-card span{display:inline-flex;padding:3px 9px;border-radius:999px;background:rgba(124,106,247,.14);color:var(--glow);font-size:11px;font-weight:800;margin-bottom:12px;}
+.article-card h3{font-size:17px;line-height:1.55;color:white;margin-bottom:8px;}
+.article-card p{font-size:13px;color:rgba(255,255,255,.5);line-height:1.75;}
+.articles-more{display:flex;justify-content:center;margin-top:26px;}
+.articles-more a{color:var(--glow);font-weight:800;font-size:13px;text-decoration:none;border:1px solid rgba(124,106,247,.32);padding:9px 16px;border-radius:10px;}
+
 /* ── CTA ──────────────────── */
 .cta-section{
   padding:100px 6vw;background:var(--ink2);
@@ -709,6 +723,36 @@ footer a{color:var(--glow);text-decoration:none;}
     <div class="job-chip">🛍️ فروشگاه</div>
     <div class="job-chip">⭐ و هر شغل دیگری</div>
   </div>
+</section>
+
+<!-- Blog -->
+<section class="articles-section">
+  <div class="section-label">راهنماها</div>
+  <h2 class="section-title">آموزش مدیریت کوچینگ، هدف و عادت‌سازی</h2>
+  <p class="section-sub">مقاله‌های کاربردی برای کوچ‌ها و مشاورانی که می‌خواهند شاگردان، جلسات، چک لیست‌ها و مسیر رشد را منظم‌تر مدیریت کنند.</p>
+  <div class="articles-grid">
+    <a class="article-card" href="/blog/coaching-management-software.html">
+      <span>مدیریت کوچینگ</span>
+      <h3>نرم افزار مدیریت کوچینگ چیست؟</h3>
+      <p>چرا کوچ‌ها برای مدیریت شاگردان، جلسات، پرداخت‌ها و پیگیری رشد به یک سیستم منظم نیاز دارند؟</p>
+    </a>
+    <a class="article-card" href="/blog/goal-habit-checklist-tracking.html">
+      <span>هدف و عادت</span>
+      <h3>پیگیری هدف، عادت و چک لیست شاگردان</h3>
+      <p>چطور هدف‌های بزرگ را به عادت‌ها، کارهای روزانه و چک لیست قابل پیگیری تبدیل کنیم؟</p>
+    </a>
+    <a class="article-card" href="/blog/coaching-session-checklist.html">
+      <span>جلسه کوچینگ</span>
+      <h3>چک لیست جلسه کوچینگ</h3>
+      <p>قبل، حین و بعد از جلسه چه چیزهایی باید ثبت شود تا پیگیری‌ها از دست نروند؟</p>
+    </a>
+    <a class="article-card" href="/blog/teampulse-tutorial.html">
+      <span>آموزش TeamPulse</span>
+      <h3>آموزش کار با TeamPulse</h3>
+      <p>از ثبت شاگرد و جلسه تا مدیریت هدف، مرکز دانش، لیست کارها، پرداخت‌ها و داشبورد مالی.</p>
+    </a>
+  </div>
+  <div class="articles-more"><a href="/blog/">مشاهده همه مقاله‌ها</a></div>
 </section>
 
 <!-- CTA -->

@@ -42,3 +42,12 @@ TeamPulse is not a public marketplace, social network, accounting replacement, o
 - Homepage: https://teampulse.ir/
 - App login: https://teampulse.ir/app
 - Privacy policy: https://teampulse.ir/privacy.html
+- Blog index: https://teampulse.ir/blog/
+- What is coaching management software: https://teampulse.ir/blog/coaching-management-software.html
+- Goal, habit, and checklist tracking: https://teampulse.ir/blog/goal-habit-checklist-tracking.html
+- Coaching session checklist: https://teampulse.ir/blog/coaching-session-checklist.html
+- TeamPulse tutorial: https://teampulse.ir/blog/teampulse-tutorial.html
+
+## Blog And Tutorial Content
+
+The TeamPulse blog explains practical workflows for Persian-speaking coaches and consultants, including coaching management software, tracking client goals and habits, coaching session checklists, and how to use TeamPulse for students, sessions, goals, tasks, knowledge notes, payments, and financial dashboards. The tutorial page can include Aparat video links or embedded training videos alongside written instructions.
