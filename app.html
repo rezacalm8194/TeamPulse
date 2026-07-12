@@ -2145,6 +2145,57 @@ body.light mark { background: rgba(251,191,36,.5); }
 /* Breadcrumb: full trail is the default (desktop); compact pill only appears ≤768px */
 .instr-breadcrumb-compact{ display:none; }
 .instr-breadcrumb-full{ display:flex; }
+.instr-breadcrumb{
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+  padding:11px 14px;
+  background:linear-gradient(135deg, rgba(124,106,247,.18), rgba(96,165,250,.07));
+  border:1px solid rgba(124,106,247,.34);
+  border-radius:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.instr-crumb-back{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:32px;
+  padding:6px 11px;
+  border-radius:9px;
+  border:1px solid rgba(124,106,247,.45);
+  background:rgba(124,106,247,.18);
+  color:var(--accent2);
+  font-family:var(--font);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.instr-crumb-link{
+  display:inline-flex;
+  align-items:center;
+  max-width:220px;
+  min-height:28px;
+  padding:4px 8px;
+  border-radius:8px;
+  color:var(--accent2);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.instr-crumb-current{
+  color:var(--text);
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.07);
+}
+.instr-crumb-sep{
+  color:var(--text3);
+  font-weight:800;
+}
 
 /* Toolbar (create + filter + sort) now shows on every screen size, not just desktop */
 .instr-toolbar{ display:flex; flex-wrap:wrap; }
@@ -14421,21 +14472,27 @@ async function renderInstructions(instrSearch) {
      so the path is never simply hidden, it's just adapted to the screen. ── */
   let breadcrumb = '';
   if (_instrPath.length) {
-    let full = `<div class="instr-breadcrumb instr-breadcrumb-full" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:9px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
-      <span onclick="_instrGoTo(null,[])" style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">🏠 مرکز دانش</span>`;
+    const backTargetPath = _instrPath.slice(0, -1);
+    const backTarget = backTargetPath.length ? backTargetPath[backTargetPath.length - 1] : null;
+    const backAction = `_instrGoTo(${backTarget ? backTarget.id : 'null'}, ${JSON.stringify(backTargetPath).replace(/'/g,"&#39;")})`;
+    let full = `<div class="instr-breadcrumb instr-breadcrumb-full">
+      <button type="button" class="instr-crumb-back" onclick='${backAction}' title="یک مرحله عقب">‹ عقب</button>
+      <span onclick="_instrGoTo(null,[])" class="instr-crumb-link">🏠 مرکز دانش</span>`;
     _instrPath.forEach((p, i) => {
-      full += `<span style="color:var(--text3)">‹</span>
-        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' style="cursor:pointer;color:var(--accent2);font-size:12px;font-weight:600">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
+      const isCurrent = i === _instrPath.length - 1;
+      full += `<span class="instr-crumb-sep">‹</span>
+        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' class="instr-crumb-link ${isCurrent ? 'instr-crumb-current' : ''}">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
     });
     full += `</div>`;
 
     const parent = _instrPath.length > 1 ? _instrPath[_instrPath.length-2] : null;
     /* روی موبایل جای کم است و عنوان پوشه‌ی فعلی همین حالا توی هدر (کنار دکمه‌ی بازگشت) دیده می‌شه،
        پس این‌جا فقط «خانه ‹ بالادست» به‌صورت کوتاه نشون داده می‌شه — نه کل مسیر که باعث بریدگی می‌شد */
-    const compact = `<div class="instr-breadcrumb instr-breadcrumb-compact" style="align-items:center;gap:5px;margin-bottom:12px;font-size:12px;max-width:100%;min-width:0">
-      <span onclick="_instrGoTo(null,[])" style="cursor:pointer;color:var(--text3);flex-shrink:0">🏠</span>
-      ${parent ? `<span style="color:var(--text3);flex-shrink:0">‹</span><span onclick='_instrGoTo(${parent.id}, ${JSON.stringify(_instrPath.slice(0,_instrPath.length-1)).replace(/'/g,"&#39;")})' style="cursor:pointer;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38vw">${escapeHtml(parent.title)}</span>` : ''}
-      <span style="color:var(--text3);flex-shrink:0">‹</span><span style="color:var(--accent2);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45vw">${escapeHtml(_instrPath[_instrPath.length-1].title)}</span>
+    const compact = `<div class="instr-breadcrumb instr-breadcrumb-compact" style="max-width:100%;min-width:0">
+      <button type="button" class="instr-crumb-back" onclick='${backAction}' title="یک مرحله عقب">‹ عقب</button>
+      <span onclick="_instrGoTo(null,[])" class="instr-crumb-link" style="flex-shrink:0">🏠</span>
+      ${parent ? `<span class="instr-crumb-sep">‹</span><span onclick='_instrGoTo(${parent.id}, ${JSON.stringify(_instrPath.slice(0,_instrPath.length-1)).replace(/'/g,"&#39;")})' class="instr-crumb-link" style="max-width:30vw">${escapeHtml(parent.title)}</span>` : ''}
+      <span class="instr-crumb-sep">‹</span><span class="instr-crumb-link instr-crumb-current" style="max-width:36vw">${escapeHtml(_instrPath[_instrPath.length-1].title)}</span>
     </div>`;
 
     breadcrumb = full + compact;
