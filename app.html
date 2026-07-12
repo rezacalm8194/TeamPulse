@@ -3384,8 +3384,8 @@ const JMONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مر
 const JWEEKDAYS = ['ش','ی','د','س','چ','پ','ج']; // starting Saturday
 
 function todayJalali() {
-  const now = new Date();
-  return gregorianToJalali(now.getFullYear(), now.getMonth()+1, now.getDate());
+  const now = _appTodayGregorianParts();
+  return gregorianToJalali(now.year, now.month, now.day);
 }
 
 function addJalaliMonths(jy, jm, jd, months) {
@@ -3440,7 +3440,9 @@ function calendarDateFieldHtml(fieldId, jalaliValue, label) {
   const isGregorian = META.calendarType === 'gregorian';
   const lbl = label || 'تاریخ';
   if (isGregorian) {
-    const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : new Date().toISOString().slice(0,10);
+    const gToday = _appTodayGregorianParts();
+    const todayIso = `${gToday.year}-${String(gToday.month).padStart(2,'0')}-${String(gToday.day).padStart(2,'0')}`;
+    const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : todayIso;
     return `
       <label class="form-label">${lbl} (میلادی)</label>
       <input class="form-input" type="date" id="${fieldId}" data-cal="gregorian" value="${iso}">`;
@@ -3693,6 +3695,73 @@ const DEFAULT_PKG_TYPES = [
 ];
 const DEFAULT_META = { entitySingular:'شاگرد', entityPlural:'شاگردان', sessionSingular:'جلسه', sessionPlural:'جلسات', appTitle:'TeamPulse' };
 
+function _appTimeZone() {
+  try {
+    return (typeof META !== 'undefined' && META?.timezone)
+      || _db?.meta?.timezone
+      || Intl.DateTimeFormat().resolvedOptions().timeZone
+      || 'Asia/Tehran';
+  } catch(e) {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tehran';
+  }
+}
+
+function _timeZoneParts(date = new Date(), timeZone = _appTimeZone()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year:'numeric',
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    second:'2-digit',
+    hourCycle:'h23'
+  }).formatToParts(date);
+  const out = {};
+  parts.forEach(p => {
+    if (p.type !== 'literal') out[p.type] = Number(p.value);
+  });
+  return {
+    year: out.year,
+    month: out.month,
+    day: out.day,
+    hour: out.hour || 0,
+    minute: out.minute || 0,
+    second: out.second || 0
+  };
+}
+
+function _appTodayGregorianParts() {
+  const p = _timeZoneParts();
+  return { year:p.year, month:p.month, day:p.day };
+}
+
+function _appNowMinutes() {
+  const p = _timeZoneParts();
+  return p.hour * 60 + p.minute;
+}
+
+function _appTimeLabel() {
+  const p = _timeZoneParts();
+  return `${String(p.hour).padStart(2,'0')}:${String(p.minute).padStart(2,'0')}`;
+}
+
+function _jalaliFromInstant(value) {
+  const p = _timeZoneParts(value ? new Date(value) : new Date());
+  return gregorianToJalali(p.year, p.month, p.day);
+}
+
+function _zonedWallTimeToLocalDate(gy, gm, gd, hh = 0, mm = 0, ss = 0, timeZone = _appTimeZone()) {
+  let utcMs = Date.UTC(gy, gm - 1, gd, hh, mm, ss);
+  for (let i = 0; i < 3; i++) {
+    const p = _timeZoneParts(new Date(utcMs), timeZone);
+    const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second || 0);
+    const targetUtc = Date.UTC(gy, gm - 1, gd, hh, mm, ss);
+    utcMs += targetUtc - asUtc;
+  }
+  return new Date(utcMs);
+}
+
 // ── تشخیص خودکار منطقه زمانی و تقویم ──────────────────────────────────────
 function _detectUserLocale() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tehran';
@@ -3836,8 +3905,9 @@ function _daysUntil(str) {
   const [jy,jm,jd]=_jalaliParse(str);
   if(!jy)return 9999;
   const [gy,gm,gd]=jalaliToGregorian(jy,jm,jd);
-  const t=new Date(gy,gm-1,gd), now=new Date();
-  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const t=new Date(gy,gm-1,gd);
+  const appToday = _appTodayGregorianParts();
+  const today=new Date(appToday.year, appToday.month-1, appToday.day);
   return Math.round((t-today)/86400000);
 }
 function _addMonths(jy,jm,jd,months) {
@@ -3851,8 +3921,8 @@ function _formatJalali(jy,jm,jd) {
   return`${f(jy)}/${f(String(jm).padStart(2,'0'))}/${f(String(jd).padStart(2,'0'))}`;
 }
 function _todayJalali() {
-  const n=new Date();
-  return gregorianToJalali(n.getFullYear(),n.getMonth()+1,n.getDate());
+  const n = _appTodayGregorianParts();
+  return gregorianToJalali(n.year,n.month,n.day);
 }
 function _jalaliApproxDays(str) {
   const [jy,jm,jd]=_jalaliParse(str);
@@ -4941,11 +5011,12 @@ const _gcal = {
     let start, end;
     if (t.time) {
       const [hh,mm] = t.time.split(':').map(Number);
-      const startDate = new Date(gy, gm-1, gd, hh, mm);
-      const endDate = new Date(startDate.getTime() + 30*60000);
-      const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-      start = {dateTime: iso(startDate), timeZone: tz};
-      end = {dateTime: iso(endDate), timeZone: tz};
+      const startDate = _zonedWallTimeToLocalDate(gy, gm, gd, hh, mm, 0, tz);
+      const endParts = _timeZoneParts(new Date(startDate.getTime() + 30*60000), tz);
+      const startIso = `${gy}-${pad(gm)}-${pad(gd)}T${pad(hh)}:${pad(mm)}:00`;
+      const endIso = `${endParts.year}-${pad(endParts.month)}-${pad(endParts.day)}T${pad(endParts.hour)}:${pad(endParts.minute)}:00`;
+      start = {dateTime: startIso, timeZone: tz};
+      end = {dateTime: endIso, timeZone: tz};
     } else {
       const dateStr = `${gy}-${pad(gm)}-${pad(gd)}`;
       const endDateObj = new Date(gy, gm-1, gd+1);
@@ -8524,6 +8595,7 @@ function saveLocaleSettings() {
   _db.meta = { ..._db.meta, ...META };
   _save();
   showToast('تنظیمات منطقه ذخیره شد ✓', 'success');
+  renderSettings();
 }
 
 const SAMPLE_PKG_TYPES = [
@@ -9010,6 +9082,9 @@ async function renderSettings() {
       </div>
       <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
         🔍 تشخیص خودکار: منطقه زمانی <strong>${Intl.DateTimeFormat().resolvedOptions().timeZone}</strong> · زبان <strong>${navigator.language}</strong>
+      </div>
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.20);border-radius:8px;font-size:11px;color:var(--text2)">
+        ⏱️ ساعت فعلی برنامه بر اساس <strong>${escapeHtml(META.timezone || _appTimeZone())}</strong>: <strong style="color:var(--accent2);direction:ltr;display:inline-block">${_appTimeLabel()}</strong>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:12px">
         <button class="btn btn-primary" onclick="saveLocaleSettings()">ذخیره تنظیمات منطقه</button>
@@ -18751,8 +18826,7 @@ function renderTodoList() {
   let _archiveChanged = false;
   _db.todos.forEach(t => {
     if (t.done && !t.archived && !t.repeat && t.done_at) {
-      const d = new Date(t.done_at);
-      const [dy,dm,dd] = gregorianToJalali(d.getFullYear(), d.getMonth()+1, d.getDate());
+      const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
@@ -18780,8 +18854,7 @@ function renderTodoList() {
   // کارهای اصلی + snapshot های امروز (کارهای repeat که امروز انجام شدن)
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
   const _todaySnapshots = _db.todos.filter(t => t.archived && t._snapshot && t.done_at && (() => {
-    const d = new Date(t.done_at);
-    const [dy,dm,dd] = gregorianToJalali(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
     return _jalaliKey(_formatJalali(dy,dm,dd)) === _todayKeyForFilter;
   })());
   const todos = [..._db.todos.filter(t => !t.archived), ..._todaySnapshots];
@@ -18792,7 +18865,7 @@ function renderTodoList() {
   }
 
   // کار overdue است اگه تاریخش گذشته، یا امروز است و ساعتش رد شده
-  const _nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const _nowMinutes = _appNowMinutes();
   const _isTodoOverdue = (t) => {
     if (t.done || !t.date_jalali) return false;
     const dk = _jalaliKey(t.date_jalali);
@@ -18808,8 +18881,7 @@ function renderTodoList() {
   // تابع کمکی: آیا این کار امروز done شده؟
   const _doneToday = (t) => {
     if (!t.done || !t.done_at) return false;
-    const d = new Date(t.done_at);
-    const [dy,dm,dd] = gregorianToJalali(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
     return _jalaliKey(_formatJalali(dy,dm,dd)) === todayKey;
   };
 
@@ -19299,13 +19371,17 @@ function _scheduleTodoNotifications() {
 
   const todayStr = _todayJalaliStr();
   const now = new Date();
+  const appNow = _timeZoneParts(now);
   const scheduled = [];
 
   _db.todos.filter(t => !t.done && !t.archived && t.time && t.remind_min > 0).forEach(t => {
     if (t.date_jalali && t.date_jalali !== todayStr) return;
     const [h, m] = t.time.split(':').map(Number);
-    const notifTime = new Date();
-    notifTime.setHours(h, m - t.remind_min, 0, 0);
+    const parts = _jalaliParse(t.date_jalali || todayStr);
+    if (parts.length !== 3 || parts.some(isNaN)) return;
+    const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+    const taskTime = _zonedWallTimeToLocalDate(gy, gm, gd, h, m, 0);
+    const notifTime = new Date(taskTime.getTime() - t.remind_min * 60000);
     if (notifTime > now) {
       scheduled.push({
         id: t.id,
@@ -19691,7 +19767,7 @@ function _scheduleTodoNotification(id, title, dateJalali, time, remindMinutes) {
     const [jy, jm, jd] = parts;
     const gDate = jalaliToGregorian(jy, jm, jd);
     const [timH, timM] = time.split(':').map(Number);
-    const taskDate = new Date(gDate[0], gDate[1]-1, gDate[2], timH, timM, 0);
+    const taskDate = _zonedWallTimeToLocalDate(gDate[0], gDate[1], gDate[2], timH, timM, 0);
     const notifTime = new Date(taskDate.getTime() - remindMinutes * 60000);
     const now = new Date();
     const delay = notifTime.getTime() - now.getTime();
@@ -20038,12 +20114,12 @@ async function openTodoArchive() {
     const catMap = {clients:'👥',routine:'🔄',general:'🌐',personal:'🧘'};
     const catIcon = t.category ? (catMap[t.category] || '') : '';
     const todayK = _jalaliKey(_todayJalaliStr());
-    const doneDay = t.done_at ? (() => { const d=new Date(t.done_at); const [dy,dm,dd]=gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate()); return _jalaliKey(_formatJalali(dy,dm,dd)); })() : 0;
+    const doneDay = t.done_at ? (() => { const [dy,dm,dd]=_jalaliFromInstant(t.done_at); return _jalaliKey(_formatJalali(dy,dm,dd)); })() : 0;
     const isToday = doneDay === todayK;
     const statusBadge = isToday
       ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(62,207,142,.15);color:#3ecf8e;font-weight:700">امروز</span>'
       : '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(124,106,247,.12);color:#9d8fff;font-weight:600">بایگانی</span>';
-    const doneDate = t.done_at ? new Date(t.done_at).toLocaleDateString('fa-IR') : '';
+    const doneDate = t.done_at ? DateService.disp(_formatJalali(..._jalaliFromInstant(t.done_at))) : '';
     return '<div id="archive-row-' + t.id + '" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border:1px solid var(--border)">' +
       '<span style="font-size:15px;flex-shrink:0">✅</span>' +
       '<div style="flex:1;min-width:0">' +
@@ -20470,7 +20546,7 @@ function _addStaffRoleEntry(staffId) {
     count, rate,
     note,
     date_jalali: _formatJalali(jy,jm,jd),
-    time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,
+    time: `${String(appNow.hour).padStart(2,'0')}:${String(appNow.minute).padStart(2,'0')}`,
     created_at: now.toISOString(),
   });
   _save();
@@ -23594,8 +23670,8 @@ function _habitLastDone(habitId) {
   const doneLogs = logs.filter(l => l.habit_id === habitId && l.done && l.logged_at).sort((a,b)=> new Date(b.logged_at)-new Date(a.logged_at));
   if (!doneLogs.length) return null;
   const last = doneLogs[0];
-  const dt = new Date(last.logged_at);
-  const timeStr = fa(String(dt.getHours()).padStart(2,'0')) + ':' + fa(String(dt.getMinutes()).padStart(2,'0'));
+  const dt = _timeZoneParts(new Date(last.logged_at));
+  const timeStr = fa(String(dt.hour).padStart(2,'0')) + ':' + fa(String(dt.minute).padStart(2,'0'));
   if (last.date === todayStr) return `امروز ساعت ${timeStr}`;
   try {
     const daysAgo = _jalaliOrdinal(todayStr) - _jalaliOrdinal(last.date);
@@ -23716,7 +23792,7 @@ function renderHabits() {
   const justToggledId = _justToggledHabitId;
   _justToggledHabitId = null;
 
-  const nowHHMM = (() => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })();
+  const nowHHMM = _appTimeLabel();
 
   const html = displayHabits.map(h => {
     const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
@@ -23869,7 +23945,7 @@ function renderHabits() {
             const streak = getStreak(h.id);
             const monthSuccess = getMonthSuccess(h.id);
             const color = h.color || 'var(--amber)';
-            const nowHHMM2 = (() => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })();
+            const nowHHMM2 = _appTimeLabel();
             const timeNotYetDue = !!h.time && !doneToday && nowHHMM2 < h.time;
             let statusIcon, statusColor;
             if (doneToday) { statusIcon = '✅'; statusColor = 'var(--green)'; }
@@ -24119,9 +24195,15 @@ function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
     const [h, m] = habitTime.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return;
     const now = new Date();
-    const notifDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+    const today = _appTodayGregorianParts();
+    const notifDate = _zonedWallTimeToLocalDate(today.year, today.month, today.day, h, m, 0);
     notifDate.setMinutes(notifDate.getMinutes() - remindMinutes);
-    if (notifDate <= now) notifDate.setDate(notifDate.getDate() + 1);
+    if (notifDate <= now) {
+      const tomorrowJ = _addDays(..._todayJalali(), 1);
+      const [gy, gm, gd] = jalaliToGregorian(tomorrowJ[0], tomorrowJ[1], tomorrowJ[2]);
+      const nextDate = _zonedWallTimeToLocalDate(gy, gm, gd, h, m, 0);
+      notifDate.setTime(nextDate.getTime() - remindMinutes * 60000);
+    }
     const delay = notifDate.getTime() - now.getTime();
     if (delay > 0 && delay < 48 * 3600 * 1000) {
       setTimeout(() => {
