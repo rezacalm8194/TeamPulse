@@ -14964,23 +14964,6 @@ async function renderInstructions(instrSearch) {
      already covers create actions there, and there's no room for a toolbar row too. ── */
   const toolbar = _instrToolbarHtml();
 
-  /* ── View toggle + filter bar ── */
-  const viewBar = `
-    <div id="instr-filterview-row" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-      <div id="instr-filter-group" style="display:flex;gap:6px;flex-wrap:wrap">
-        ${_filterBtn('all','همه')}
-        ${_filterBtn('pinned','📌 پین‌شده')}
-      </div>
-      <label id="instr-view-group" class="instr-view-select" title="انتخاب حالت نمایش مرکز دانش">
-        <span>نمایش</span>
-        <select onchange="_instrView=this.value;renderInstructions()" aria-label="نمایش مرکز دانش">
-          <option value="gallery" ${_instrView==='gallery'?'selected':''}>گالری</option>
-          <option value="list" ${_instrView==='list'?'selected':''}>فهرست</option>
-          <option value="compact" ${_instrView==='compact'?'selected':''}>فشرده</option>
-        </select>
-      </label>
-    </div>`;
-
   /* ── Get items for current folder ── */
   let items = flat.filter(n => (n.parent_id||null) === (_instrParentId ? +_instrParentId : null));
   const currentLevel = _instrCurrentLevel();
@@ -15068,7 +15051,7 @@ async function renderInstructions(instrSearch) {
       ? `<button class="btn btn-primary" onclick="openAddInstruction(null,'kcategory')">🗂 دسته‌بندی جدید</button>`
       : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
          <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>`;
-    setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar + `
+    setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${emptyIcon}</span>
         <p style="font-size:15px;font-weight:700;margin:12px 0 6px">${instrSearch ? 'چیزی پیدا نشد' : 'هنوز چیزی اضافه نشده'}</p>
@@ -15098,7 +15081,7 @@ async function renderInstructions(instrSearch) {
     return [...arr].sort(byMode);
   };
 
-  let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar + viewBar;
+  let html = statsBar + breadcrumb + toolbar + pinnedBar + recentBar;
 
   /* ── FOLDERS ── */
   if (folders.length > 0) {
@@ -15439,6 +15422,15 @@ function _instrToolbarHtml() {
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده‌ها')}
       </div>
+      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
+      <label id="instr-view-group" class="instr-view-select" title="انتخاب حالت نمایش مرکز دانش">
+        <span>نمایش</span>
+        <select onchange="_instrView=this.value;renderInstructions()" aria-label="نمایش مرکز دانش">
+          <option value="gallery" ${_instrView==='gallery'?'selected':''}>گالری</option>
+          <option value="list" ${_instrView==='list'?'selected':''}>فهرست</option>
+          <option value="compact" ${_instrView==='compact'?'selected':''}>فشرده</option>
+        </select>
+      </label>
     </div>`;
 }
 function _instrCycleSort() {
