@@ -18476,6 +18476,10 @@ function _selectTodoCalendarDay(date) {
 }
 
 function _todoViewSwitcherHtml() {
+  if (['open','sessions','habits'].includes(_todoCalendarFilter)) {
+    _todoCalendarFilter = 'all';
+    localStorage.setItem('tp_todo_calendar_filter', _todoCalendarFilter);
+  }
   const modes = [
     ['list','☰','لیست'],
     ['week','▦','هفته'],
@@ -18491,9 +18495,6 @@ function _todoViewSwitcherHtml() {
   const filters = [
     ['all','همه'],
     ['urgent','فوری'],
-    ['open','انجام نشده'],
-    ['sessions','جلسات'],
-    ['habits','عادت‌ها'],
     ['goals','اهداف'],
   ].map(([key,label]) => `<button class="btn ${_todoCalendarFilter===key?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoCalendarFilter('${key}')"
     style="min-width:54px;justify-content:center">${label}</button>`).join('');
