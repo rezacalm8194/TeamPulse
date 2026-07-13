@@ -18627,6 +18627,15 @@ function _selectTodoCalendarDay(date) {
   renderTodoList();
 }
 
+function _openTodoWeekFromDate(date) {
+  _todoCalendarSelectedDate = date || _todayJalaliStr();
+  _todoCalendarCursor = _todoCalendarSelectedDate;
+  _todoViewMode = 'week';
+  localStorage.setItem('tp_todo_calendar_selected_date', _todoCalendarSelectedDate);
+  localStorage.setItem('tp_todo_view_mode', _todoViewMode);
+  renderTodoList();
+}
+
 function _todoViewSwitcherHtml() {
   if (['open','sessions','habits'].includes(_todoCalendarFilter)) {
     _todoCalendarFilter = 'all';
@@ -18815,7 +18824,7 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-month-grid{display:grid;grid-template-columns:repeat(7,minmax(72px,1fr));gap:7px;overflow:auto}
     .todo-calendar-side{display:flex;flex-direction:column;gap:10px}
     .todo-calendar-mobile-range-list{display:none}
-    .todo-calendar-year-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+    .todo-calendar-year-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
     .todo-calendar-year-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px}
     .todo-calendar-year-dots{display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl}
     @media (max-width:720px){
@@ -18858,11 +18867,11 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-mobile-range-list [draggable="true"]{display:flex!important}
       .todo-calendar-year-head{display:block!important}
       .todo-calendar-legend{margin-top:8px;gap:5px!important}
-      .todo-calendar-year-grid{grid-template-columns:1fr!important;gap:8px}
-      .todo-calendar-year-card{display:grid;grid-template-columns:76px 1fr;gap:8px;align-items:start;padding:9px}
+      .todo-calendar-year-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}
+      .todo-calendar-year-card{display:block!important;padding:9px}
       .todo-calendar-year-card button:first-child{margin-bottom:0!important;align-items:flex-start!important;display:block!important}
-      .todo-calendar-year-dots{grid-template-columns:repeat(10,13px)!important;gap:4px!important;justify-content:end}
-      .todo-calendar-year-dots button{width:13px!important;height:13px!important}
+      .todo-calendar-year-dots{grid-template-columns:repeat(7,12px)!important;gap:4px!important;justify-content:end;margin-top:7px}
+      .todo-calendar-year-dots button{width:12px!important;height:12px!important}
     }
   </style>`;
 }
@@ -19145,7 +19154,7 @@ function _renderTodoCalendarView() {
       const heat = _todoCalendarHeat(list);
       const birthdays = _todoCalendarBirthdays(date);
       const isSelected = date === selectedDate;
-      return `<button onclick="_selectTodoCalendarDay('${date}')" title="${DateService.disp(date)} · ${fa(list.length)} کار"
+      return `<button onclick="_openTodoWeekFromDate('${date}')" title="${DateService.disp(date)} · ورود به هفته · ${fa(list.length)} کار"
         style="width:14px;height:14px;border-radius:3px;border:1px solid ${isSelected?'var(--accent2)':heat.border};background:${heat.bg};padding:0;cursor:pointer;position:relative">
           ${birthdays.length?'<span style="position:absolute;inset:auto -3px -7px auto;font-size:8px">🎂</span>':''}
         </button>`;
