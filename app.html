@@ -2213,6 +2213,59 @@ body.light mark { background: rgba(251,191,36,.5); }
   padding:0 4px;
   align-self:center;
 }
+.instr-view-select{
+  height:38px;
+  min-width:174px;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid var(--border2);
+  border-radius:12px;
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+  padding:0 11px;
+  color:var(--text2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+}
+.instr-view-select span{
+  font-size:11px;
+  font-weight:800;
+  color:var(--text3);
+  white-space:nowrap;
+}
+.instr-view-select select{
+  appearance:none;
+  -webkit-appearance:none;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:var(--text);
+  font-family:var(--font);
+  font-size:13px;
+  font-weight:900;
+  min-width:82px;
+  flex:1;
+  cursor:pointer;
+  padding:0 0 0 18px;
+  text-align:right;
+  color-scheme:dark;
+}
+.instr-view-select select option{background:#181c27;color:#e8eaf0}
+.instr-view-select select option:checked{background:#7c6af7;color:#fff}
+body.light .instr-view-select select{color-scheme:light}
+body.light .instr-view-select select option{background:#fff;color:#1a1d2e}
+body.light .instr-view-select select option:checked{background:#7c6af7;color:#fff}
+.instr-view-select::before{
+  content:'⌄';
+  color:var(--accent2);
+  font-size:13px;
+  font-weight:900;
+  order:3;
+  pointer-events:none;
+}
+.instr-view-select:focus-within{
+  border-color:var(--accent2);
+  box-shadow:0 0 0 3px rgba(124,106,247,.12),inset 0 1px 0 rgba(255,255,255,.04);
+}
 .instr-toolbar-segment{
   display:flex;
   align-items:center;
@@ -2314,11 +2367,10 @@ body.light mark { background: rgba(251,191,36,.5); }
     overflow-x:visible!important;
   }
   #instr-view-group{
-    flex-wrap:wrap!important;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;
-    padding-bottom:2px;
+    width:100%;
+    min-width:0;
+    overflow:visible!important;
+    padding-bottom:0;
   }
   #instr-view-group::-webkit-scrollbar{ display:none; }
 
@@ -14919,12 +14971,14 @@ async function renderInstructions(instrSearch) {
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده')}
       </div>
-      <div id="instr-view-group" style="display:flex;gap:4px">
-        <span class="instr-control-label">نمایش</span>
-        ${_viewBtn('gallery','◻ گالری')}
-        ${_viewBtn('list','☰ فهرست')}
-        ${_viewBtn('compact','▤ فشرده')}
-      </div>
+      <label id="instr-view-group" class="instr-view-select" title="انتخاب حالت نمایش مرکز دانش">
+        <span>نمایش</span>
+        <select onchange="_instrView=this.value;renderInstructions()" aria-label="نمایش مرکز دانش">
+          <option value="gallery" ${_instrView==='gallery'?'selected':''}>گالری</option>
+          <option value="list" ${_instrView==='list'?'selected':''}>فهرست</option>
+          <option value="compact" ${_instrView==='compact'?'selected':''}>فشرده</option>
+        </select>
+      </label>
     </div>`;
 
   /* ── Get items for current folder ── */
@@ -15364,7 +15418,6 @@ function _viewBtn(key, label) {
    File Explorer، Notion و Google Drive می‌شناسند. (فقط دسکتاپ؛ در موبایل ردیف
    فیلتر قدیمی زیر نوار نمایش/فیلتر همچنان جدا نمایش داده می‌شود.) ── */
 function _instrToolbarHtml() {
-  const sortLabel = { default:'پیش‌فرض', name:'نام', recent:'آخرین ویرایش', oldest:'قدیمی‌ترین' }[_instrSort];
   const level = _instrCurrentLevel();
   const canCreate = _teamCanCreateInstruction(_instrParentId);
   const createButtons = !canCreate ? '' : level === 'root' ? `
@@ -15385,13 +15438,6 @@ function _instrToolbarHtml() {
         <span class="instr-control-label">فیلتر</span>
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده‌ها')}
-      </div>
-      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
-      <div class="instr-toolbar-segment">
-        <span class="instr-control-label">مرتب‌سازی</span>
-        <button class="btn btn-ghost" onclick="_instrCycleSort()" style="font-size:12px" title="ترتیب نمایش را عوض کن">
-          <span>⇅ ${sortLabel}</span>
-        </button>
       </div>
     </div>`;
 }
