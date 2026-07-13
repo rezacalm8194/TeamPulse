@@ -2322,9 +2322,8 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
   #instr-view-group::-webkit-scrollbar{ display:none; }
 
-  /* کارت‌های گالری در موبایل باید جا برای پیش‌نمایش داخلی داشته باشند؛
-     دو ستونه بودن باعث بریدگی و خروج چیپ‌ها از کادر می‌شد. */
-  ._ifgrid{ grid-template-columns:1fr!important; gap:12px!important; }
+  /* گالری موبایل: دو ستونه، اما با ارتفاع و محتوای داخلی یکدست و کنترل‌شده */
+  ._ifgrid{ grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:12px!important; }
 
   /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد قدیمی از تاپ‌بار حذف می‌شن — تولبار جایگزینشون شده */
   .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
@@ -2345,29 +2344,29 @@ body.light mark { background: rgba(251,191,36,.5); }
   /* کارت‌های گالری: در موبایل ارتفاع ثابت باعث بریده شدن محتوا می‌شد؛ کارت باید به اندازه محتوا قد بکشد. */
   ._ifcard-gallery{
     padding:0!important;
-    height:auto!important;
-    min-height:0!important;
+    height:214px!important;
+    min-height:214px!important;
     overflow:hidden!important;
     border-radius:13px!important;
   }
+  ._ifcard-gallery[data-type="folder"]{
+    display:flex!important;
+    flex-direction:column!important;
+  }
   ._ifcard-gallery[data-type="folder"] ._ifcard-body{
-    padding:12px 12px 11px!important;
-    display:grid!important;
-    grid-template-columns:46px minmax(0,1fr);
-    column-gap:10px;
-    align-items:start;
+    padding:10px 10px 9px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    min-height:0;
+    flex:1;
   }
   ._ifcard-gallery[data-type="folder"] ._ifcard-icon{
-    grid-row:1 / span 3;
-    font-size:24px!important;
-    margin:0!important;
-    width:42px;
-    height:42px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    border-radius:10px;
-    background:rgba(255,255,255,.04);
+    font-size:23px!important;
+    margin:0 0 6px!important;
+    width:auto!important;
+    height:auto!important;
+    background:none!important;
+    text-align:right;
   }
   ._ifcard-divider{ display:none!important; }
   ._ifcard-title{
@@ -2375,7 +2374,7 @@ body.light mark { background: rgba(251,191,36,.5); }
     overflow:hidden!important;
     text-overflow:clip!important;
     max-width:none!important;
-    line-height:1.55!important;
+    line-height:1.45!important;
     word-break:break-word;
     overflow-wrap:anywhere;
   }
@@ -2389,23 +2388,22 @@ body.light mark { background: rgba(251,191,36,.5); }
     min-height:20px!important;
   }
   ._ifcard-subfolders{
-    grid-column:1 / -1;
     display:grid!important;
     grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:6px!important;
+    gap:4px!important;
     max-height:none!important;
     min-height:0!important;
     overflow:hidden!important;
-    margin-top:10px!important;
+    margin-top:7px!important;
   }
   ._ifcard-subfolder-chip{
     min-width:0!important;
     max-width:none!important;
     width:100%!important;
-    height:36px!important;
-    min-height:36px!important;
-    padding:4px 6px!important;
-    font-size:9px!important;
+    height:27px!important;
+    min-height:27px!important;
+    padding:2px 4px!important;
+    font-size:7.7px!important;
     justify-content:center;
     box-sizing:border-box;
     overflow:hidden!important;
@@ -2421,6 +2419,45 @@ body.light mark { background: rgba(251,191,36,.5); }
     text-align:center;
     overflow-wrap:anywhere;
     word-break:break-word;
+  }
+  ._ifcard-list-row{
+    display:grid!important;
+    grid-template-columns:34px minmax(0,1fr) 34px!important;
+    gap:8px!important;
+    align-items:center!important;
+    min-height:70px!important;
+    padding:10px 12px!important;
+  }
+  ._ifcard-list-row > span:first-child{
+    grid-row:1 / span 2;
+    width:34px!important;
+    height:34px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:10px;
+    background:rgba(255,255,255,.04);
+    font-size:20px!important;
+  }
+  ._ifcard-list-row > div{
+    min-width:0!important;
+  }
+  ._ifcard-list-row > ._ifcard-more-btn,
+  ._ifcard-list-row > ._ifcard-actions{
+    grid-column:3;
+    justify-self:end;
+  }
+  ._ifcard-list-row > span[style*="‹"],
+  ._ifcard-list-row > div[style*="white-space:nowrap"]{
+    display:none!important;
+  }
+  ._ifcard-list-row ._ifcard-title-row{
+    gap:6px!important;
+  }
+  ._ifcard-list-row ._ifcard-title{
+    font-size:13px!important;
+    font-weight:800!important;
+    line-height:1.55!important;
   }
 }
 
@@ -14937,7 +14974,7 @@ async function renderInstructions(instrSearch) {
         const iconSafe = (item.icon||'📁').replace(/'/g,"\\'");
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
-          <div class="_ifcard" data-id="${item.id}" data-type="folder"
+          <div class="_ifcard _ifcard-list-row" data-id="${item.id}" data-type="folder"
             style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:background .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
@@ -15053,7 +15090,7 @@ async function renderInstructions(instrSearch) {
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const isLast = idx === arr.length - 1;
         html += `
-          <div class="_ifcard" data-id="${item.id}" data-type="note"
+          <div class="_ifcard _ifcard-list-row" data-id="${item.id}" data-type="note"
             style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
