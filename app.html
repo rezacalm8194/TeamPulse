@@ -2341,12 +2341,57 @@ body.light mark { background: rgba(251,191,36,.5); }
     margin-bottom:12px!important;
   }
 
-  /* کارت‌های گالری: پدینگ کمتر، آیکون کوچک‌تر، بدون خط جداکننده اضافه */
-  ._ifcard-gallery{ padding:12px 12px 10px!important; height:200px!important; }
+  /* کارت‌های گالری: در موبایل ارتفاع ثابت باعث بریده شدن محتوا می‌شد؛ کارت باید به اندازه محتوا قد بکشد. */
+  ._ifcard-gallery{
+    padding:12px 12px 10px!important;
+    height:auto!important;
+    min-height:198px!important;
+    overflow:visible!important;
+  }
+  ._ifcard-gallery ._ifcard-body{ padding:12px 12px 10px!important; }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
-  ._ifcard-subfolders{ max-height:72px; }
-  ._ifcard-subfolder-chip{ flex-basis:calc(50% - 4px); max-width:calc(50% - 4px); }
+  ._ifcard-title{
+    white-space:normal!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+    max-width:none!important;
+    line-height:1.55!important;
+    word-break:break-word;
+  }
+  ._ifcard-title-row{
+    flex-wrap:wrap!important;
+    align-items:flex-start!important;
+  }
+  ._instr-type-badge{
+    height:auto!important;
+    min-height:20px!important;
+  }
+  ._ifcard-subfolders{
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:4px!important;
+    max-height:none!important;
+    min-height:0!important;
+    overflow:visible!important;
+  }
+  ._ifcard-subfolder-chip{
+    min-width:0!important;
+    max-width:none!important;
+    width:100%!important;
+    height:auto!important;
+    min-height:18px!important;
+    padding:2px 4px!important;
+    font-size:8px!important;
+    justify-content:center;
+  }
+  ._ifcard-subfolder-chip span{
+    white-space:normal!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+    line-height:1.35!important;
+    text-align:center;
+  }
 }
 
 /* ── حالت انتخاب چندتایی (نگه‌داشتن انگشت روی کارت) ──────────────────────────
@@ -14828,8 +14873,8 @@ async function renderInstructions(instrSearch) {
             <div class="_ifcard-body" style="padding:13px 14px 11px">
               ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
               <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${item.icon||'📁'}</div>
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
-                <div style="font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1">${escapeHtml(item.title)}</div>
+              <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
+                <div class="_ifcard-title" style="font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1">${escapeHtml(item.title)}</div>
                 ${_instrTypeBadge(item)}
               </div>
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
@@ -14869,8 +14914,8 @@ async function renderInstructions(instrSearch) {
             onmouseout="this.style.background=''">
             <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${item.icon||'📁'}</span>
             <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
+              <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
+                <span class="_ifcard-title" style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
                 ${_instrTypeBadge(item)}
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
@@ -14907,7 +14952,7 @@ async function renderInstructions(instrSearch) {
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
             <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📁'}</span>
-            <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
+            <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
             <span style="font-size:10px;color:var(--text3);flex-shrink:0">${fa(childCount)} ${countLabel}</span>
@@ -14948,8 +14993,8 @@ async function renderInstructions(instrSearch) {
             onmouseout="_instrUnhoverCard(this)">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
             <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${item.icon||'📝'}</div>
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
-              <div style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
+            <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
+              <div class="_ifcard-title" style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
               ${_instrTypeBadge(item)}
             </div>
             ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
@@ -14985,8 +15030,8 @@ async function renderInstructions(instrSearch) {
             onmouseout="this.style.background=''">
             <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${item.icon||'📝'}</span>
             <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
+              <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
+                <span class="_ifcard-title" style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
                 ${_instrTypeBadge(item)}
                 ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:4px;padding:1px 6px;font-weight:600;flex-shrink:0">⭐ مهم</span>` : ''}
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
@@ -15021,7 +15066,7 @@ async function renderInstructions(instrSearch) {
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
             <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📝'}</span>
-            <span style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
+            <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
             ${isKey ? `<span style="font-size:10px;color:var(--amber);flex-shrink:0">⭐</span>` : ''}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
@@ -17042,6 +17087,52 @@ async function _syncToServer() {
   } catch(e) { console.warn('Server sync failed:', e.message); }
 }
 
+function _syncItemTime(item) {
+  const t = Date.parse(item?.updated_at || item?.done_at || item?.created_at || 0);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function _mergeServerTodosIntoLocal(serverData) {
+  if (!serverData || !Array.isArray(serverData.todos)) return false;
+  if (!_db.todos) _db.todos = [];
+  let changed = false;
+  const localById = new Map((_db.todos || []).map(t => [String(t.id), t]));
+  serverData.todos.forEach(remote => {
+    if (!remote || remote.id == null) return;
+    const key = String(remote.id);
+    const local = localById.get(key);
+    if (!local) {
+      _db.todos.push({ ...remote });
+      changed = true;
+      return;
+    }
+    const remoteTime = _syncItemTime(remote);
+    const localTime = _syncItemTime(local);
+    if (remoteTime > localTime) {
+      Object.assign(local, remote);
+      changed = true;
+      return;
+    }
+    // داده‌های قدیمی ممکن است updated_at نداشته باشند؛ برای مشکل تیک‌ها، done_at سرور را جدی بگیر.
+    if (remote.done && remote.done_at && !local.done) {
+      local.done = true;
+      local.done_at = remote.done_at;
+      local.archived = !!remote.archived;
+      local.updated_at = remote.updated_at || remote.done_at;
+      changed = true;
+    }
+  });
+  if (changed) {
+    _db._lastSaved = Math.max(_db._lastSaved || 0, serverData._lastSaved || 0);
+    _migrate(_db);
+    try {
+      const key = window._activeDBKey || DB_KEY;
+      localStorage.setItem(key, JSON.stringify(_db));
+    } catch(e) {}
+  }
+  return changed;
+}
+
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
 async function _loadFromServer() {
   if (!_sbUser || !_sbSession?.token) return false;
@@ -17100,6 +17191,8 @@ async function _loadFromServer() {
       }
       // لوکال جدیدتره — sync لوکال رو به سرور بفرست
       if (localTime > serverTime) {
+        const merged = _mergeServerTodosIntoLocal(data);
+        if (merged) return true;
         setTimeout(() => _syncToServer(), 500);
       }
     }
@@ -17421,16 +17514,16 @@ async function _authOnSuccess() {
     } else { _initUserWallet(); }
   } catch(e) { _initUserWallet(); }
 
-  // sync هر ۱۵ ثانیه
+  // sync هر ۵ ثانیه؛ برای موبایل مهم است که تیک کارها سریع بین دستگاه‌ها برسد.
   clearInterval(window._syncInterval);
-  window._syncInterval = setInterval(_syncToServer, 15000);
-  // poll از سرور هر ۲۰ ثانیه
+  window._syncInterval = setInterval(_syncToServer, 5000);
+  // poll از سرور هر ۵ ثانیه
   clearInterval(window._pollInterval);
   window._pollInterval = setInterval(async () => {
     if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
     const updated = await _loadFromServer();
     if (updated && _canAutoRefresh()) renderPage();
-  }, 20000);
+  }, 5000);
   // چک یادآوری رویدادهای مهم هر ۵ دقیقه
   _checkKeyEventReminders();
   setInterval(_checkKeyEventReminders, 5 * 60 * 1000);
@@ -17440,6 +17533,8 @@ async function _authOnSuccess() {
     if (document.hidden) {
       clearTimeout(window._serverSyncTimer);
       _syncToServer();
+    } else {
+      _loadFromServer().then(updated => { if (updated && _canAutoRefresh()) renderPage(); });
     }
   });
   window.addEventListener('pagehide', () => {
@@ -17449,7 +17544,6 @@ async function _authOnSuccess() {
   if (!window._teamFocusRefreshBound) {
     window._teamFocusRefreshBound = true;
     window.addEventListener('focus', async () => {
-      if (!_teamAccessSession()) return;
       if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
         clearTimeout(window._serverSyncTimer);
         await _syncToServer();
@@ -18047,12 +18141,12 @@ async function _initAuth() {
         clearInterval(window._syncInterval);
         clearInterval(window._pollInterval);
         clearTimeout(window._serverSyncTimer);
-        window._syncInterval = setInterval(_syncToServer, 15000);
+        window._syncInterval = setInterval(_syncToServer, 5000);
         window._pollInterval = setInterval(async () => {
           if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
           const updated = await _loadFromServer();
           if (updated && _canAutoRefresh()) renderPage();
-        }, 20000);
+        }, 5000);
         currentPage = _getInitialPage();
         await init();
         updateAccountDisplay();
@@ -19251,6 +19345,7 @@ function _toggleTodo(id) {
   if (!t) return;
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
+  t.updated_at = new Date().toISOString();
 
   if (t.done) {
     _playDoneSound();
@@ -19274,8 +19369,10 @@ function _toggleTodo(id) {
           tt.archived = false;
           tt.done = false;
           tt.done_at = null;
+          tt.updated_at = new Date().toISOString();
           _advanceTodoDate(tt);
           _save();
+          _syncToServer();
           renderTodoList();
         }
       }, 3000);
@@ -19283,6 +19380,7 @@ function _toggleTodo(id) {
     // کارهای غیر تکراری: در renderTodoList روز بعد archive میشن
   }
   _save();
+  _syncToServer();
   // نگه داشتن وضعیت details (باز/بسته) بعد از render
   const detailsWasOpen = document.querySelector('.todo-done-details')?.open || false;
   renderTodoList();
@@ -19781,6 +19879,7 @@ async function saveTodo() {
     gcal_event_id: null,
     done: false, done_at: null, archived: false,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
   _db.todos.push(newTodo);
   _save();
@@ -20073,6 +20172,7 @@ function updateTodo(id) {
     date_jalali: dateJalali, time, duration_min: durationMin, repeat, weekdays,
     priority, category: category2, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
     sync_gcal: syncGcalWanted,
+    updated_at: new Date().toISOString(),
   });
   _save();
 
@@ -21247,12 +21347,12 @@ async function _adminImpersonate(userId, userName) {
     // راه‌اندازی intervaloadPending = false;
 
     // راه‌اندازی interval های جدید
-    window._syncInterval = setInterval(_syncToServer, 15000);
+    window._syncInterval = setInterval(_syncToServer, 5000);
     window._pollInterval = setInterval(async () => {
       if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
       const updated = await _loadFromServer();
       if (updated && _canAutoRefresh()) renderPage();
-    }, 20000);
+    }, 5000);
 
     // نمایش نوار بازگشت
     _showImpersonateBar(userName);
@@ -21340,12 +21440,12 @@ async function _adminReturnToAdmin() {
     showToast('به حساب ادمین بازگشتید ✓', 'success');
 
     // راه‌اندازی interval های ادمین
-    window._syncInterval = setInterval(_syncToServer, 15000);
+    window._syncInterval = setInterval(_syncToServer, 5000);
     window._pollInterval = setInterval(async () => {
       if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
       const updated = await _loadFromServer();
       if (updated && _canAutoRefresh()) renderPage();
-    }, 20000);
+    }, 5000);
   } catch(e) {
     showToast('خطا در بازگشت: ' + e.message, 'error');
   }
