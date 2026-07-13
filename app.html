@@ -2322,8 +2322,9 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
   #instr-view-group::-webkit-scrollbar{ display:none; }
 
-  /* کارت‌های گالری پوشه/یادداشت: فشرده‌تر روی صفحه کوچک */
-  ._ifgrid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important; gap:12px!important; }
+  /* کارت‌های گالری در موبایل باید جا برای پیش‌نمایش داخلی داشته باشند؛
+     دو ستونه بودن باعث بریدگی و خروج چیپ‌ها از کادر می‌شد. */
+  ._ifgrid{ grid-template-columns:1fr!important; gap:12px!important; }
 
   /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد قدیمی از تاپ‌بار حذف می‌شن — تولبار جایگزینشون شده */
   .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
@@ -2345,11 +2346,29 @@ body.light mark { background: rgba(251,191,36,.5); }
   ._ifcard-gallery{
     padding:0!important;
     height:auto!important;
-    min-height:214px!important;
+    min-height:0!important;
     overflow:hidden!important;
+    border-radius:13px!important;
   }
-  ._ifcard-gallery ._ifcard-body{ padding:12px 12px 10px!important; }
-  ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
+  ._ifcard-gallery[data-type="folder"] ._ifcard-body{
+    padding:12px 12px 11px!important;
+    display:grid!important;
+    grid-template-columns:46px minmax(0,1fr);
+    column-gap:10px;
+    align-items:start;
+  }
+  ._ifcard-gallery[data-type="folder"] ._ifcard-icon{
+    grid-row:1 / span 3;
+    font-size:24px!important;
+    margin:0!important;
+    width:42px;
+    height:42px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:10px;
+    background:rgba(255,255,255,.04);
+  }
   ._ifcard-divider{ display:none!important; }
   ._ifcard-title{
     white-space:normal!important;
@@ -2363,28 +2382,30 @@ body.light mark { background: rgba(251,191,36,.5); }
   ._ifcard-title-row{
     flex-wrap:wrap!important;
     align-items:flex-start!important;
+    margin-bottom:4px!important;
   }
   ._instr-type-badge{
     height:auto!important;
     min-height:20px!important;
   }
   ._ifcard-subfolders{
+    grid-column:1 / -1;
     display:grid!important;
     grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:5px!important;
+    gap:6px!important;
     max-height:none!important;
     min-height:0!important;
     overflow:hidden!important;
-    margin-top:8px!important;
+    margin-top:10px!important;
   }
   ._ifcard-subfolder-chip{
     min-width:0!important;
     max-width:none!important;
     width:100%!important;
-    height:34px!important;
-    min-height:34px!important;
-    padding:3px 5px!important;
-    font-size:8.5px!important;
+    height:36px!important;
+    min-height:36px!important;
+    padding:4px 6px!important;
+    font-size:9px!important;
     justify-content:center;
     box-sizing:border-box;
     overflow:hidden!important;
