@@ -2361,17 +2361,50 @@ body.light .instr-view-select select option:checked{background:#7c6af7;color:#ff
 
 @media(max-width:768px){
   /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
+  .instr-toolbar{
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    gap:6px!important;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .instr-toolbar::-webkit-scrollbar{ display:none; }
+  .instr-toolbar-segment{
+    flex-wrap:nowrap!important;
+    flex:0 0 auto;
+    gap:5px!important;
+  }
+  .instr-toolbar .instr-control-label{ display:none!important; }
+  .instr-toolbar-segment .btn{
+    height:34px!important;
+    padding:0 10px!important;
+    font-size:11px!important;
+    white-space:nowrap;
+  }
+  .instr-toolbar-divider{
+    flex:0 0 1px;
+    min-height:30px;
+    margin:0!important;
+  }
   #instr-filterview-row{
     flex-direction:column!important;
     align-items:stretch!important;
     overflow-x:visible!important;
   }
   #instr-view-group{
-    width:100%;
-    min-width:0;
+    width:auto;
+    min-width:124px;
+    flex:0 0 124px;
+    height:34px;
+    padding:0 9px;
+    gap:6px;
     overflow:visible!important;
     padding-bottom:0;
   }
+  #instr-view-group span{font-size:10px}
+  #instr-view-group select{font-size:11px;min-width:54px;padding-left:12px}
   #instr-view-group::-webkit-scrollbar{ display:none; }
 
   /* گالری موبایل: دو ستونه، اما با ارتفاع و محتوای داخلی یکدست و کنترل‌شده */
@@ -15422,7 +15455,7 @@ function _instrToolbarHtml() {
         ${_filterBtn('all','همه')}
         ${_filterBtn('pinned','📌 پین‌شده‌ها')}
       </div>
-      <div style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
+      <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       <label id="instr-view-group" class="instr-view-select" title="انتخاب حالت نمایش مرکز دانش">
         <span>نمایش</span>
         <select onchange="_instrView=this.value;renderInstructions()" aria-label="نمایش مرکز دانش">
