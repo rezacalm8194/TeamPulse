@@ -18822,7 +18822,7 @@ function _todoDropOnDate(event, date) {
 function _todoCalendarResponsiveCss() {
   return `<style>
     .todo-calendar-shell{max-width:920px;margin:0 auto;padding:0 8px 70px}
-    .todo-sticky-add-box{position:sticky;top:0;z-index:30;background:transparent;border:none;border-radius:0;padding:0;margin-bottom:14px;box-shadow:none}
+    .todo-sticky-add-box{position:sticky;top:0;z-index:60;background:var(--bg)!important;border:none;border-radius:0;padding:0 0 12px!important;margin-bottom:14px;box-shadow:0 10px 24px rgba(0,0,0,.22)}
     .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
     .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
@@ -18851,7 +18851,7 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-year-dots{display:grid;grid-template-columns:repeat(7,14px);gap:5px;direction:rtl}
     @media (max-width:720px){
       .todo-calendar-shell{padding:0 10px 84px;max-width:none}
-      .todo-sticky-add-box{top:0!important;margin:0 0 12px!important;border-radius:0!important;padding:0!important}
+      .todo-sticky-add-box{position:relative!important;top:auto!important;z-index:1!important;background:transparent!important;margin:0 0 12px!important;border-radius:0!important;padding:0!important;box-shadow:none!important}
       .todo-calendar-toolbar{gap:8px;margin-bottom:10px}
       .todo-calendar-toolbar-row{display:block}
       .todo-calendar-mode-row{display:flex!important;justify-content:flex-end;margin-bottom:8px}
