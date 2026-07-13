@@ -18828,7 +18828,12 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
     .todo-overview-select{height:40px;min-width:188px;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border2);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));padding:0 11px;color:var(--text2);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
     .todo-overview-select span{font-size:11px;font-weight:800;color:var(--text3);white-space:nowrap}
-    .todo-overview-select select{appearance:none;-webkit-appearance:none;border:0;outline:0;background:transparent;color:var(--text);font-family:var(--font);font-size:13px;font-weight:900;min-width:88px;flex:1;cursor:pointer;padding:0 0 0 18px;text-align:right}
+    .todo-overview-select select{appearance:none;-webkit-appearance:none;border:0;outline:0;background:transparent;color:var(--text);font-family:var(--font);font-size:13px;font-weight:900;min-width:88px;flex:1;cursor:pointer;padding:0 0 0 18px;text-align:right;color-scheme:dark}
+    .todo-overview-select select option{background:#181c27;color:#e8eaf0}
+    .todo-overview-select select option:checked{background:#7c6af7;color:#fff}
+    body.light .todo-overview-select select{color-scheme:light}
+    body.light .todo-overview-select select option{background:#fff;color:#1a1d2e}
+    body.light .todo-overview-select select option:checked{background:#7c6af7;color:#fff}
     .todo-overview-select::before{content:'⌄';color:var(--accent2);font-size:13px;font-weight:900;order:3;pointer-events:none}
     .todo-overview-select:focus-within{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(124,106,247,.12),inset 0 1px 0 rgba(255,255,255,.04)}
     .todo-calendar-search-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
