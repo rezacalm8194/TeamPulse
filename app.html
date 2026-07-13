@@ -18652,17 +18652,17 @@ function _todoViewSwitcherHtml() {
     _todoCalendarFilter = 'all';
     localStorage.setItem('tp_todo_calendar_filter', _todoCalendarFilter);
   }
-  const calLabels = {week:'هفته', month:'ماه', year:'سال'};
-  const calendarMode = calLabels[_todoViewMode] ? _todoViewMode : 'week';
-  const btns = `
-    <button class="btn ${_todoViewMode==='list'?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoViewMode('list')"
-      style="min-width:112px;justify-content:center">☰ لیست کارها</button>
-    <button class="btn ${_todoViewMode!=='list'?'btn-primary':'btn-ghost'} btn-sm" onclick="_cycleTodoCalendarView()"
-      title="با هر کلیک بین هفته، ماه و سال جابه‌جا می‌شود"
-      style="min-width:142px;justify-content:center;gap:7px">
-      <span>نمایش: ${calLabels[calendarMode]}</span>
-      <span style="font-size:11px;opacity:.72">↻</span>
-    </button>
+  const viewValue = ['list','week','month','year'].includes(_todoViewMode) ? _todoViewMode : 'list';
+  const viewSelect = `
+    <label class="todo-overview-select" title="انتخاب نمای لیست کارها">
+      <span>نمای کلی</span>
+      <select onchange="_setTodoViewMode(this.value)" aria-label="نمای کلی لیست کارها">
+        <option value="list" ${viewValue==='list'?'selected':''}>لیست کارها</option>
+        <option value="week" ${viewValue==='week'?'selected':''}>هفته</option>
+        <option value="month" ${viewValue==='month'?'selected':''}>ماه</option>
+        <option value="year" ${viewValue==='year'?'selected':''}>سال</option>
+      </select>
+    </label>
   `;
   const navName = _todoViewMode === 'month' ? 'ماه' : _todoViewMode === 'year' ? 'سال' : 'هفته';
   const filters = [
@@ -18673,7 +18673,7 @@ function _todoViewSwitcherHtml() {
     style="min-width:54px;justify-content:center">${label}</button>`).join('');
   return `<div class="todo-calendar-toolbar">
     <div class="todo-calendar-toolbar-row">
-      <div class="todo-calendar-mode-row">${btns}</div>
+      <div class="todo-calendar-mode-row">${viewSelect}</div>
     </div>
     ${_todoViewMode !== 'list' ? `<div class="todo-calendar-search-row">
       <div class="todo-calendar-search-box ${(_todoCalendarSearchOpen || _todoCalendarSearch) ? 'open' : ''}">
@@ -18826,6 +18826,11 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
     .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .todo-calendar-mode-row,.todo-calendar-nav-row,.todo-calendar-filter-row{display:flex;gap:6px;flex-wrap:wrap}
+    .todo-overview-select{height:40px;min-width:188px;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border2);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));padding:0 11px;color:var(--text2);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+    .todo-overview-select span{font-size:11px;font-weight:800;color:var(--text3);white-space:nowrap}
+    .todo-overview-select select{appearance:none;-webkit-appearance:none;border:0;outline:0;background:transparent;color:var(--text);font-family:var(--font);font-size:13px;font-weight:900;min-width:88px;flex:1;cursor:pointer;padding:0 0 0 18px;text-align:right}
+    .todo-overview-select::before{content:'⌄';color:var(--accent2);font-size:13px;font-weight:900;order:3;pointer-events:none}
+    .todo-overview-select:focus-within{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(124,106,247,.12),inset 0 1px 0 rgba(255,255,255,.04)}
     .todo-calendar-search-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .todo-calendar-search-box{display:flex;align-items:center;gap:6px}
     .todo-calendar-search-trigger{display:none}
@@ -18844,8 +18849,10 @@ function _todoCalendarResponsiveCss() {
       .todo-sticky-add-box{top:0!important;margin:0 0 12px!important;border-radius:0!important;padding:0!important}
       .todo-calendar-toolbar{gap:8px;margin-bottom:10px}
       .todo-calendar-toolbar-row{display:block}
-      .todo-calendar-mode-row{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1.18fr);gap:6px;margin-bottom:8px}
+      .todo-calendar-mode-row{display:flex!important;justify-content:flex-end;margin-bottom:8px}
       .todo-calendar-mode-row .btn{min-width:0!important;width:100%;height:38px;padding:0 4px;font-size:12px}
+      .todo-overview-select{width:100%;min-width:0;height:38px;border-radius:11px}
+      .todo-overview-select select{font-size:12px;min-width:0}
       .todo-calendar-nav-row{display:grid!important;grid-template-columns:1fr auto 1fr;gap:6px}
       .todo-calendar-nav-row .btn{min-width:0!important;height:36px;font-size:12px;padding:0 8px}
       .todo-calendar-search-row{display:flex!important;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:6px;padding:0 1px 5px;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain;max-width:100%}
