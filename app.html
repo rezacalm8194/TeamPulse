@@ -2343,21 +2343,22 @@ body.light mark { background: rgba(251,191,36,.5); }
 
   /* کارت‌های گالری: در موبایل ارتفاع ثابت باعث بریده شدن محتوا می‌شد؛ کارت باید به اندازه محتوا قد بکشد. */
   ._ifcard-gallery{
-    padding:12px 12px 10px!important;
+    padding:0!important;
     height:auto!important;
-    min-height:198px!important;
-    overflow:visible!important;
+    min-height:214px!important;
+    overflow:hidden!important;
   }
   ._ifcard-gallery ._ifcard-body{ padding:12px 12px 10px!important; }
   ._ifcard-icon{ font-size:22px!important; margin-bottom:6px!important; }
   ._ifcard-divider{ display:none!important; }
   ._ifcard-title{
     white-space:normal!important;
-    overflow:visible!important;
+    overflow:hidden!important;
     text-overflow:clip!important;
     max-width:none!important;
     line-height:1.55!important;
     word-break:break-word;
+    overflow-wrap:anywhere;
   }
   ._ifcard-title-row{
     flex-wrap:wrap!important;
@@ -2369,28 +2370,36 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
   ._ifcard-subfolders{
     display:grid!important;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:4px!important;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:5px!important;
     max-height:none!important;
     min-height:0!important;
-    overflow:visible!important;
+    overflow:hidden!important;
+    margin-top:8px!important;
   }
   ._ifcard-subfolder-chip{
     min-width:0!important;
     max-width:none!important;
     width:100%!important;
-    height:auto!important;
-    min-height:18px!important;
-    padding:2px 4px!important;
-    font-size:8px!important;
+    height:34px!important;
+    min-height:34px!important;
+    padding:3px 5px!important;
+    font-size:8.5px!important;
     justify-content:center;
+    box-sizing:border-box;
+    overflow:hidden!important;
   }
   ._ifcard-subfolder-chip span{
+    display:-webkit-box!important;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
     white-space:normal!important;
-    overflow:visible!important;
+    overflow:hidden!important;
     text-overflow:clip!important;
-    line-height:1.35!important;
+    line-height:1.45!important;
     text-align:center;
+    overflow-wrap:anywhere;
+    word-break:break-word;
   }
 }
 
@@ -14848,7 +14857,7 @@ async function renderInstructions(instrSearch) {
         const color = _instrAccent(item);
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         const subfolders = flat.filter(x => x.parent_id && +x.parent_id === +item.id && (x.type === 'category' || x.type === 'kcategory'));
-        const visibleSubfolders = subfolders.slice(0, 9);
+        const visibleSubfolders = subfolders.slice(0, 6);
         const subfoldersHtml = visibleSubfolders.length ? `
           <div class="_ifcard-subfolders" title="${escapeHtml(subfolders.map(x => x.title).join('، '))}">
             ${visibleSubfolders.map(f => `<span class="_ifcard-subfolder-chip"><span>📁 ${escapeHtml(f.title)}</span></span>`).join('')}
