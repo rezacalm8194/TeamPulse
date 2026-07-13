@@ -4915,6 +4915,7 @@ const _gcal = {
   clientId: APP_GOOGLE_CLIENT_ID,
   token: null,
   tokenExpiry: 0,
+  importTimer: null,
   SCOPE: 'https://www.googleapis.com/auth/calendar.events',
 
   setStatusUI(status, msg) {
@@ -5047,6 +5048,8 @@ const _gcal = {
       const btn=document.getElementById('gcal-sync-btn');
       if(btn)btn.textContent='🔌 قطع Google Calendar';
       _refreshTodoGcalCheckboxes();
+      this.startAutoImport();
+      this.importEvents({silent:false});
     }catch(e){
       this.enabled=false;
       this.setStatusUI('error',e.message);
@@ -5063,6 +5066,150 @@ const _gcal = {
     const btn=document.getElementById('gcal-sync-btn');
     if(btn)btn.textContent='🗓️ اتصال Google Calendar';
     _refreshTodoGcalCheckboxes();
+    if(this.importTimer){clearInterval(this.importTimer);this.importTimer=null;}
+  },
+
+  startAutoImport() {
+    if(this.importTimer)clearInterval(this.importTimer);
+    this.importTimer=setInterval(()=>this.importEvents({silent:true}),10*60*1000);
+  },
+
+  async importEvents({silent=true, forceAuth=false} = {}) {
+    if(!this.enabled&&!_db._gcal_enabled)return {created:0,updated:0};
+    const token = forceAuth ? await this.ensureToken() : this.validTokenOrNull();
+    if(!token){
+      if(!silent)this.setStatusUI('error','برای وارد کردن رویدادها دوباره به گوگل وصل شو');
+      return {created:0,updated:0};
+    }
+    if(!silent)this.setStatusUI('syncing','در حال وارد کردن رویدادهای Google Calendar...');
+    try{
+      _todosInit();
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || _appTimeZone();
+      const now = new Date();
+      const timeMin = new Date(now.getTime() - 183*24*60*60*1000).toISOString();
+      const timeMax = new Date(now.getTime() + 548*24*60*60*1000).toISOString();
+      let pageToken = '';
+      let created = 0, updated = 0;
+      do{
+        const params = new URLSearchParams({
+          singleEvents:'true',
+          orderBy:'startTime',
+          showDeleted:'false',
+          maxResults:'2500',
+          timeMin,
+          timeMax,
+          timeZone:tz,
+          fields:'items(id,summary,description,start,end,updated,status,htmlLink),nextPageToken'
+        });
+        if(pageToken)params.set('pageToken',pageToken);
+        const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,{
+          headers:{'Authorization':'Bearer '+token}
+        });
+        if(res.status===401){
+          this.token=null;this.tokenExpiry=0;delete _db._gcal_token;delete _db._gcal_token_expiry;_save(false);
+          throw new Error('نیاز به ورود مجدد');
+        }
+        if(!res.ok)throw new Error('کد '+res.status);
+        const data = await res.json();
+        for(const ev of (data.items||[])){
+          const result = this._upsertImportedTodo(ev);
+          if(result==='created')created++;
+          if(result==='updated')updated++;
+        }
+        pageToken = data.nextPageToken || '';
+      }while(pageToken);
+      _db._gcal_last_import_at = Date.now();
+      _save();
+      _syncToServer();
+      if(!silent){
+        this.setStatusUI('ok',`وارد شد: ${fa(created)} جدید، ${fa(updated)} به‌روزرسانی`);
+        showToast(`Google Calendar وارد شد: ${fa(created)} جدید، ${fa(updated)} به‌روزرسانی`,'success');
+      }
+      if(currentPage==='todolist')renderTodoList();
+      return {created,updated};
+    }catch(e){
+      if(!silent){
+        this.setStatusUI('error',e.message);
+        showToast('خطا در وارد کردن Google Calendar: '+e.message,'error');
+      }
+      return {created:0,updated:0,error:e};
+    }
+  },
+
+  _eventDateToTodoFields(ev) {
+    const startRaw = ev?.start?.dateTime || ev?.start?.date;
+    if(!startRaw)return null;
+    const isAllDay = !!ev.start.date;
+    if(isAllDay){
+      const [gy,gm,gd] = startRaw.split('-').map(Number);
+      const [jy,jm,jd] = gregorianToJalali(gy,gm,gd);
+      return {date_jalali:_formatJalali(jy,jm,jd), time:'', duration_min:0};
+    }
+    const startDate = new Date(startRaw);
+    if(isNaN(startDate.getTime()))return null;
+    const eventTz = ev.start.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || _appTimeZone();
+    const p = _timeZoneParts(startDate,eventTz);
+    const [jy,jm,jd] = gregorianToJalali(p.year,p.month,p.day);
+    const time = String(p.hour).padStart(2,'0') + ':' + String(p.minute).padStart(2,'0');
+    let durationMin = 30;
+    if(ev.end?.dateTime){
+      const endDate = new Date(ev.end.dateTime);
+      if(!isNaN(endDate.getTime())){
+        durationMin = Math.max(5,Math.round((endDate.getTime()-startDate.getTime())/60000));
+      }
+    }
+    return {date_jalali:_formatJalali(jy,jm,jd), time, duration_min:durationMin};
+  },
+
+  _upsertImportedTodo(ev) {
+    if(!ev||!ev.id||ev.status==='cancelled')return null;
+    const fields = this._eventDateToTodoFields(ev);
+    if(!fields)return null;
+    const title = (ev.summary || 'بدون عنوان').trim();
+    const note = [ev.description || '', ev.htmlLink ? `Google Calendar: ${ev.htmlLink}` : ''].filter(Boolean).join('\n\n');
+    const nowIso = new Date().toISOString();
+    const existing = (_db.todos||[]).find(t => t.gcal_event_id === ev.id || t.gcal_import_id === ev.id);
+    if(existing){
+      Object.assign(existing,{
+        title,
+        note,
+        date_jalali:fields.date_jalali,
+        time:fields.time,
+        duration_min:fields.duration_min,
+        sync_gcal:true,
+        gcal_event_id:ev.id,
+        gcal_import_id:ev.id,
+        category:existing.category || 'general',
+        priority:existing.priority || 'medium',
+        updated_at:ev.updated || nowIso,
+      });
+      return 'updated';
+    }
+    const id = _nextId('todos');
+    _db.todos.push({
+      id,
+      title,
+      note,
+      date_jalali:fields.date_jalali,
+      time:fields.time,
+      duration_min:fields.duration_min,
+      repeat:'none',
+      weekdays:'',
+      priority:'medium',
+      category:'general',
+      goal_id:null,
+      remind_min:0,
+      sync_gcal:true,
+      gcal_event_id:ev.id,
+      gcal_import_id:ev.id,
+      done:false,
+      done_at:null,
+      archived:false,
+      created_at:nowIso,
+      updated_at:ev.updated || nowIso,
+      source:'google_calendar',
+    });
+    return 'created';
   },
 
   // یک تسک/کار را می‌سازد یا (اگه قبلاً ساخته شده) آپدیت می‌کند
@@ -5147,6 +5294,8 @@ const _gcal = {
         this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;
       }
       this.setStatusUI('ok','متصل');
+      this.startAutoImport();
+      setTimeout(()=>this.importEvents({silent:true}),1200);
     } else {
       this.setStatusUI('idle','متصل نشده');
     }
@@ -5183,6 +5332,8 @@ function _consumeStoredGcalOAuthResult() {
     const btn=document.getElementById('gcal-sync-btn');
     if(btn)btn.textContent='🔌 قطع Google Calendar';
     _refreshTodoGcalCheckboxes();
+    _gcal.startAutoImport();
+    setTimeout(()=>_gcal.importEvents({silent:false}),300);
     used=true;
   });
   return used;
@@ -9266,13 +9417,14 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>🗓️ اتصال به Google Calendar</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        وقتی وصل باشی، در فرم «کار جدید» و «ویرایش کار» یک تیک «ذخیره در Google Calendar» می‌بینی. با فعال کردن آن تیک برای هر کار،
-        همان کار به‌صورت خودکار در تقویم گوگل خودت هم ثبت/به‌روزرسانی/حذف می‌شود.
+        وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم اصلی گوگل هم
+        به‌صورت خودکار وارد لیست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
       </p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button class="btn ${_gcal.enabled?'btn-danger':'btn-primary'}" id="gcal-sync-btn" onclick="gcalConnectUI()">
           ${_gcal.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال با گوگل'}
         </button>
+        ${_gcal.enabled ? `<button class="btn btn-ghost" onclick="gcalImportUI()">⬇️ وارد کردن از گوگل</button>` : ''}
       </div>
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
@@ -21916,6 +22068,15 @@ async function gdriveConnectUI() {
 async function gcalConnectUI() {
   if (_gcal.enabled) { _gcal.disconnect(); renderSettings(); return; }
   await _gcal.connect();
+  renderSettings();
+}
+
+async function gcalImportUI() {
+  if (!_gcal.enabled) {
+    showToast('اول Google Calendar را وصل کن','error');
+    return;
+  }
+  await _gcal.importEvents({silent:false, forceAuth:true});
   renderSettings();
 }
 
