@@ -16114,23 +16114,18 @@ function _instrPushHistory() {
   } catch (e) {}
 }
 
-/* ── Swap the topbar hamburger for a back arrow (+ home shortcut) while inside a folder ── */
+/* ── Keep the knowledge-center topbar simple; folder navigation lives in-page. ── */
 function _instrSetHeaderNav(inFolder, title) {
   const hb = document.getElementById('hamburger-btn');
-  if (!hb) return;
-  if (inFolder) {
-    hb.dataset.role = 'back';
-    hb.textContent = '←';
-    hb.classList.remove('open');
-    hb.onclick = function () { history.back(); };
-    hb.title = 'بازگشت';
-    if (title) { const pt = document.getElementById('page-title'); if (pt) pt.textContent = title; }
-  } else {
+  if (hb) {
     hb.dataset.role = 'menu';
     hb.textContent = '☰';
+    hb.classList.remove('open');
     hb.onclick = toggleSidebar;
     hb.title = '';
   }
+  const pt = document.getElementById('page-title');
+  if (pt && currentPage === 'instructions') pt.textContent = 'مرکز دانش';
 }
 
 /* ── Hardware/gesture back button (Android back, browser back) drives the folder stack
