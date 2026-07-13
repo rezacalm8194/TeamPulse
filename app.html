@@ -18653,11 +18653,6 @@ function _todoViewSwitcherHtml() {
   return `<div class="todo-calendar-toolbar">
     <div class="todo-calendar-toolbar-row">
       <div class="todo-calendar-mode-row">${btns}</div>
-      ${_todoViewMode !== 'list' ? `<div class="todo-calendar-nav-row">
-        <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(-1)" style="min-width:86px">${navName} قبل</button>
-        <button class="btn btn-primary btn-sm" onclick="_todoCalendarToday()">امروز</button>
-        <button class="btn btn-ghost btn-sm" onclick="_todoCalendarShift(1)" style="min-width:86px">${navName} بعد</button>
-      </div>` : ''}
     </div>
     ${_todoViewMode !== 'list' ? `<div class="todo-calendar-search-row">
       <div class="todo-calendar-search-box ${(_todoCalendarSearchOpen || _todoCalendarSearch) ? 'open' : ''}">
@@ -19085,24 +19080,7 @@ function _renderTodoCalendarView() {
   };
 
   const weekDays = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
-  const title = _todoViewMode==='week'?'تقویم هفتگی':_todoViewMode==='month'?'تقویم ماهانه':'تقویم سالانه';
-  const subtitle = _todoViewMode === 'week' ? _todoWeekRangeLabel(activeWeekCells) : _todoViewMode === 'month' ? `${JMONTHS[cm-1]} ${fa(cy)}` : `سال ${fa(cy)}`;
-  const header = `<div class="todo-calendar-header">
-    <div class="todo-calendar-header-main" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:18px;font-weight:900;color:var(--text)">${title}</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:3px">${subtitle}</div>
-      </div>
-    </div>
-    <div class="todo-calendar-stats">
-      ${statChip('فعال', fa(stats.active), 'var(--accent2)')}
-      ${statChip('امروز', fa(stats.todayTasks.length), '#60a5fa')}
-      ${statChip('انجام‌شده', fa(stats.done), 'var(--green)')}
-      ${statChip('عقب‌افتاده', fa(stats.overdue.length), 'var(--red)')}
-      ${statChip('این هفته', fa(stats.weekTasks.length), 'var(--amber)')}
-      ${statChip('درصد هفته', `${fa(stats.weekPercent)}٪`, 'var(--green)')}
-    </div>
-  </div>`;
+  const header = '';
 
   if (_todoViewMode === 'week') {
     const cells = activeWeekCells;
