@@ -18965,18 +18965,40 @@ function _renderTodoCalendarView() {
 function renderTodoList() {
   _todosInit();
 
-  // بایگانی خودکار: کارهایی که روز قبل done شدن رو archive کن
+  // بایگانی/ترمیم خودکار: کارهایی که روز قبل done شدن رو archive کن؛
+  // تکراری‌های گیرکرده از روز قبل را هم به دوره بعدی همان روز انجام منتقل کن.
   const _todayStr = _todayJalaliStr();
   const _todayK = _jalaliKey(_todayStr);
   let _archiveChanged = false;
   _db.todos.forEach(t => {
+    if (t.done && !t.archived && t.repeat && t.repeat !== 'none' && t.done_at) {
+      const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
+      const doneDayStr = _formatJalali(dy,dm,dd);
+      const doneDayKey = _jalaliKey(doneDayStr);
+      if (doneDayKey < _todayK) {
+        _db.todos.push({
+          ...t,
+          id: (_db._nextId.todos++),
+          done: true,
+          archived: true,
+          repeat: 'none',
+          _snapshot: true,
+        });
+        t.archived = false;
+        t.done = false;
+        t.done_at = null;
+        t.updated_at = new Date().toISOString();
+        _advanceTodoDate(t, doneDayStr);
+        _archiveChanged = true;
+      }
+    }
     if (t.done && !t.archived && !t.repeat && t.done_at) {
       const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
   });
-  if (_archiveChanged) _save(false);
+  if (_archiveChanged) { _save(); _syncToServer(); }
 
   updateTopbarActions(`
     <button class="btn btn-ghost btn-sm" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها" style="width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center">📦</button>
@@ -19009,17 +19031,12 @@ function renderTodoList() {
     return;
   }
 
-  // کار overdue است اگه تاریخش گذشته، یا امروز است و ساعتش رد شده
-  const _nowMinutes = _appNowMinutes();
+  // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
+  // کارهای امروز حتی اگر ساعتشان رد شده باشد باید در بخش «امروز» بمانند.
   const _isTodoOverdue = (t) => {
     if (t.done || !t.date_jalali) return false;
     const dk = _jalaliKey(t.date_jalali);
     if (dk < todayKey) return true; // روزهای قبل
-    if (dk === todayKey && t.time) {
-      // امروز + ساعت مشخص → اگه ساعت گذشته overdue است
-      const [hh, mm] = t.time.split(':').map(Number);
-      return (hh * 60 + mm) < _nowMinutes;
-    }
     return false;
   };
 
@@ -19040,7 +19057,7 @@ function renderTodoList() {
   const todayTodos = todos.filter(t =>
     _doneToday(t) ||
     !t.date_jalali ||
-    (_jalaliKey(t.date_jalali) === todayKey && !_isTodoOverdue(t))
+    _jalaliKey(t.date_jalali) === todayKey
   );
   const tomorrowTodos  = todos.filter(t => t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey);
   const _afterKey = tomorrowKey || todayKey;
@@ -19359,32 +19376,22 @@ function _toggleTodo(id) {
   if (t.done) {
     _playDoneSound();
     if (t.repeat && t.repeat !== 'none') {
-      // تکرار: یه snapshot در بایگانی ذخیره کن، بعد advance کن
-      setTimeout(() => {
-        const tt = _db.todos.find(x => x.id == id);
-        if (tt && tt.done) {
-          // snapshot کار انجام‌شده در بایگانی
-          const snapshot = {
-            ...tt,
-            id: (_db._nextId.todos++),
-            done: true,
-            archived: true,
-            done_at: tt.done_at || new Date().toISOString(),
-            repeat: 'none',
-            _snapshot: true,
-          };
-          _db.todos.push(snapshot);
-          // advance کار اصلی به دوره بعدی
-          tt.archived = false;
-          tt.done = false;
-          tt.done_at = null;
-          tt.updated_at = new Date().toISOString();
-          _advanceTodoDate(tt);
-          _save();
-          _syncToServer();
-          renderTodoList();
-        }
-      }, 3000);
+      // تکراری‌ها باید همان لحظه به دوره بعدی بروند؛ تأخیر باعث می‌شد با بستن موبایل، فردا ساخته نشود.
+      const snapshot = {
+        ...t,
+        id: (_db._nextId.todos++),
+        done: true,
+        archived: true,
+        done_at: t.done_at || new Date().toISOString(),
+        repeat: 'none',
+        _snapshot: true,
+      };
+      _db.todos.push(snapshot);
+      t.archived = false;
+      t.done = false;
+      t.done_at = null;
+      t.updated_at = new Date().toISOString();
+      _advanceTodoDate(t);
     }
     // کارهای غیر تکراری: در renderTodoList روز بعد archive میشن
   }
@@ -19417,19 +19424,24 @@ function _playDoneSound() {
   } catch(e) {}
 }
 
-function _advanceTodoDate(t) {
+function _advanceTodoDate(t, baseDateStr) {
   // کار بدون تاریخ و repeat → فقط reset کن (فردا دوباره نشون داده میشه)
   if (!t.date_jalali) { t.done = false; t.done_at = null; t.archived = false; return; }
 
-  // برای جلوگیری از باگ: همیشه از امروز (یا تاریخ فعلی کار اگه آینده است) حساب کن
-  const todayKey = _jalaliToday();
-  const taskKey = _jalaliKey(t.date_jalali);
+  let jy, jm, jd;
+  if (baseDateStr) {
+    [jy, jm, jd] = _jalaliParse(baseDateStr);
+  } else {
+    // برای جلوگیری از باگ: همیشه از امروز (یا تاریخ فعلی کار اگه آینده است) حساب کن
+    const todayKey = _jalaliToday();
+    const taskKey = _jalaliKey(t.date_jalali);
 
-  // تاریخ پایه = بزرگتر از امروز یا امروز
-  const baseKey = Math.max(todayKey, taskKey);
-  let [jy, jm, jd] = baseKey === taskKey
-    ? _jalaliParse(t.date_jalali)
-    : _jalaliParse(_todayJalaliStr());
+    // تاریخ پایه = بزرگتر از امروز یا امروز
+    const baseKey = Math.max(todayKey, taskKey);
+    [jy, jm, jd] = baseKey === taskKey
+      ? _jalaliParse(t.date_jalali)
+      : _jalaliParse(_todayJalaliStr());
+  }
 
   let newDate;
   if (t.repeat === 'daily') {
