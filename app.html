@@ -2341,24 +2341,19 @@ body.light mark { background: rgba(251,191,36,.5); }
     margin-bottom:12px!important;
   }
 
-  /* کارت‌های گالری: در موبایل ارتفاع ثابت باعث بریده شدن محتوا می‌شد؛ کارت باید به اندازه محتوا قد بکشد. */
+  /* کارت‌های گالری موبایل باید همان حس کارت‌های قبلی را حفظ کنند؛ فقط محتوای داخلی جمع‌وجورتر می‌شود. */
   ._ifcard-gallery{
-    padding:0!important;
-    height:214px!important;
-    min-height:214px!important;
+    padding:12px 12px 10px!important;
+    height:222px!important;
+    min-height:222px!important;
     overflow:hidden!important;
-    border-radius:13px!important;
-  }
-  ._ifcard-gallery[data-type="folder"]{
-    display:flex!important;
-    flex-direction:column!important;
+    border-radius:14px!important;
   }
   ._ifcard-gallery[data-type="folder"] ._ifcard-body{
-    padding:10px 10px 9px!important;
-    display:flex!important;
-    flex-direction:column!important;
-    min-height:0;
-    flex:1;
+    padding:0!important;
+    display:block!important;
+    min-height:auto;
+    flex:initial;
   }
   ._ifcard-gallery[data-type="folder"] ._ifcard-icon{
     font-size:23px!important;
@@ -2366,9 +2361,8 @@ body.light mark { background: rgba(251,191,36,.5); }
     width:auto!important;
     height:auto!important;
     background:none!important;
-    text-align:right;
   }
-  ._ifcard-divider{ display:none!important; }
+  ._ifcard-divider{ display:block!important; }
   ._ifcard-title{
     white-space:normal!important;
     overflow:hidden!important;
@@ -2391,19 +2385,19 @@ body.light mark { background: rgba(251,191,36,.5); }
     display:grid!important;
     grid-template-columns:repeat(2,minmax(0,1fr));
     gap:4px!important;
-    max-height:none!important;
+    max-height:82px!important;
     min-height:0!important;
     overflow:hidden!important;
-    margin-top:7px!important;
+    margin-top:8px!important;
   }
   ._ifcard-subfolder-chip{
     min-width:0!important;
     max-width:none!important;
     width:100%!important;
-    height:27px!important;
-    min-height:27px!important;
-    padding:2px 4px!important;
-    font-size:7.7px!important;
+    height:24px!important;
+    min-height:24px!important;
+    padding:1px 4px!important;
+    font-size:7.1px!important;
     justify-content:center;
     box-sizing:border-box;
     overflow:hidden!important;
@@ -2415,7 +2409,7 @@ body.light mark { background: rgba(251,191,36,.5); }
     white-space:normal!important;
     overflow:hidden!important;
     text-overflow:clip!important;
-    line-height:1.45!important;
+    line-height:1.28!important;
     text-align:center;
     overflow-wrap:anywhere;
     word-break:break-word;
