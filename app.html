@@ -517,9 +517,6 @@ button { cursor: pointer; font-family: var(--font); }
   margin: 0 0 12px;
   justify-content: flex-start;
 }
-.account-tabs-toolbar .table-search {
-  margin-right: auto;
-}
 .account-tabs-toolbar .payments-segmented {
   max-width: 100%;
   overflow-x: auto;
@@ -7634,8 +7631,6 @@ async function saveGeneralPayment() {
 let _paymentsTab = 'purchases';
 
 function accountCustomerTabsHtml(tab, search = '') {
-  const isSearchable = ['purchases', 'payments', 'reminders'].includes(tab);
-  const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
   return `
     <div class="payments-toolbar account-tabs-toolbar">
       <div class="payments-segmented" role="tablist" aria-label="حساب مشتریان">
@@ -7645,11 +7640,17 @@ function accountCustomerTabsHtml(tab, search = '') {
         <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_paymentsTab='families';currentPage='payments';renderPayments()">👥 حساب مشترک</button>
         <button class="${tab==='dashboard'?'active':''}" role="tab" aria-selected="${tab==='dashboard'}" onclick="_paymentsTab='dashboard';currentPage='payments';renderPayments()">📊 داشبورد مالی</button>
       </div>
-      ${isSearchable ? `<div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input placeholder="${searchPlaceholder}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
-      </div>` : ''}
       ${tab === 'families' ? `<button class="btn btn-primary btn-sm" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>` : ''}
     </div>`;
+}
+
+function accountCustomerTopbarHtml(tab, search = '') {
+  if (!['purchases', 'payments', 'reminders'].includes(tab)) return '';
+  const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
+  return `<div class="table-search">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input placeholder="${searchPlaceholder}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
+  </div>`;
 }
 
 function updateReminderBadges(count) {
@@ -7670,7 +7671,7 @@ async function refreshReminderSurface(search = '') {
 async function renderPayments(search = '') {
   const tab = _paymentsTab;
 
-  updateTopbarActions('');
+  updateTopbarActions(accountCustomerTopbarHtml(tab, search));
 
   allStudents = await window.api.students.getAll();
   try {
