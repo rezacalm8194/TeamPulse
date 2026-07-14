@@ -1349,6 +1349,41 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   scrollbar-width: thin; scrollbar-color: var(--amber) transparent;
   min-width: 0; max-width: 100%;
 }
+.key-sessions-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0;
+  padding:0 0 4px;
+  border:0;
+  background:transparent;
+  color:var(--text);
+  font-family:var(--font);
+  font-size:15px;
+  font-weight:800;
+  cursor:pointer;
+  text-align:right;
+}
+.key-sessions-count{
+  margin-right:auto;
+  color:var(--text3);
+  font-size:11px;
+  font-weight:700;
+}
+.key-sessions-arrow{
+  width:24px;
+  height:24px;
+  border-radius:8px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(251,191,36,.12);
+  color:var(--amber);
+  border:1px solid rgba(251,191,36,.22);
+  flex-shrink:0;
+}
 .key-sessions-row .key-session-card {
   flex: 0 0 230px;
 }
@@ -3339,6 +3374,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .stu-table-actions{display:flex;justify-content:center}
 @media(max-width:768px){
   .stu-table-wrap{display:none}
+  .dashboard-debtors-wrap{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .dashboard-debtors-wrap table{min-width:520px}
   .mstu-list{display:block;padding-top:2px}
   .students-section-nav{
     width:100%;
@@ -5717,6 +5754,7 @@ let currentPage = _getInitialPage();
 let _studentsTab = currentPage === 'students' ? 'sessions' : (currentPage === 'sessions' ? 'sessions' : 'students');
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
+let _keySessionsExpanded = false;
 
 const TEAM_ACCESS_SESSION_KEY = 'tp_team_access_session';
 const TEAM_PENDING_INVITE_KEY = 'tp_pending_team_invite';
@@ -6173,7 +6211,7 @@ function bindNavItems() {
       document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') _studentsTab = 'sessions';
+      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
       updatePageTitle();
       renderPage();
     };
@@ -6185,7 +6223,7 @@ bindNavItems();
 window.addEventListener('hashchange', () => {
   const page = (location.hash || '').replace('#', '').trim();
   if (page && page !== currentPage && _SAFE_RESTORE_PAGES.includes(page)) {
-    if (page === 'students' || page === 'sessions') _studentsTab = 'sessions';
+    if (page === 'students' || page === 'sessions') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
     currentPage = page;
     updatePageTitle();
     renderPage();
@@ -6196,7 +6234,7 @@ function updatePageTitle() {
   const titles = {
     students: 'امور مشتریان',
     payments: 'فروش و دریافت',
-    purchases: 'تاریخچه کل خریدها',
+    purchases: 'تاریخچه کل فروش ها',
     sessions: 'امور مشتریان',
     families: 'حساب‌های مشترک',
     reminders: 'فروش و دریافت',
@@ -6344,6 +6382,7 @@ async function renderPage() {
   if (currentPage === 'sessions') {
     currentPage = 'students';
     _studentsTab = 'sessions';
+    _keySessionsExpanded = false;
     updatePageTitle();
   }
   if (currentPage === 'reminders') {
@@ -7284,7 +7323,7 @@ async function renderPurchases(search = '') {
     packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
   }
   let html = `<div class="table-card">
-    <div class="table-header"><span class="title">🛒 تاریخچه کل خریدها (${fa(packages.length)} مورد)</span></div>
+    <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span></div>
     <table><thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
   if (packages.length === 0) {
     html += `<tr><td colspan="7"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
@@ -7593,7 +7632,7 @@ async function renderPayments(search = '') {
       <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
         <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';renderPayments()">🛒 فروش</button>
         <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';renderPayments()">💳 دریافت</button>
-        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';renderPayments()">🔔 یادآوری <span class="badge" id="payments-reminder-badge" style="display:none">0</span></button>
+        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';renderPayments()">🔔 یادآوری</button>
       </div>
       <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input placeholder="${tab==='reminders'?'جستجوی یادآوری...':'جستجو با نام...'}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
@@ -7612,7 +7651,7 @@ async function renderPayments(search = '') {
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
     let html = `<div class="table-card">
-      <div class="table-header"><span class="title">🛒 تاریخچه کل خریدها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
+      <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
@@ -7762,10 +7801,14 @@ async function renderSessions(search = '') {
   // ── Key sessions summary — horizontal scroll AFTER board ──────────────
   if (!search && keyOnes.length > 0) {
     html += `
-    <div class="detail-section" style="border-color:var(--amber);margin-top:24px;background:linear-gradient(135deg,var(--bg2) 0%,rgba(251,191,36,.05) 100%)">
-      <h3 style="margin-bottom:14px;font-size:15px">⭐ نکات مهم و کلیدی</h3>
-      <div class="key-sessions-row">
-        ${keyOnes.map(s => `
+    <div class="detail-section key-sessions-panel" id="key-sessions-panel" style="border-color:var(--amber);margin-top:24px;background:linear-gradient(135deg,var(--bg2) 0%,rgba(251,191,36,.05) 100%)">
+      <button class="key-sessions-toggle" onclick="toggleKeySessionsPanel()" aria-expanded="${_keySessionsExpanded ? 'true' : 'false'}">
+        <span>⭐ نکات مهم و کلیدی</span>
+        <span class="key-sessions-count">${fa(keyOnes.length)} مورد</span>
+        <span class="key-sessions-arrow">${_keySessionsExpanded ? '−' : '+'}</span>
+      </button>
+      <div class="key-sessions-row" id="key-sessions-row" style="${_keySessionsExpanded ? '' : 'display:none'}">
+        ${_keySessionsExpanded ? keyOnes.map(s => `
           <div class="key-session-card" onclick="openSessionDetail(${s.id})">
             <div class="ks-top">
               <span class="ks-name">${s.name} ${s.lname}</span>
@@ -7773,7 +7816,7 @@ async function renderSessions(search = '') {
             </div>
             <div class="ks-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
             <div class="ks-excerpt">${renderRich(excerpt(s.note))}</div>
-          </div>`).join('')}
+          </div>`).join('') : ''}
       </div>
     </div>`;
   }
@@ -7783,6 +7826,12 @@ async function renderSessions(search = '') {
 
   const board = document.getElementById('sessions-board');
   if (board) board.scrollLeft = prevScroll;
+  if (!search && !_keySessionsExpanded) {
+    requestAnimationFrame(() => {
+      const contentEl = document.getElementById('content');
+      if (contentEl) contentEl.scrollTop = 0;
+    });
+  }
 
   if (search) {
     requestAnimationFrame(() => {
@@ -7791,6 +7840,20 @@ async function renderSessions(search = '') {
       if (si) { si.focus(); try { si.setSelectionRange(search.length, search.length); } catch(e){} }
     });
   }
+}
+
+function toggleKeySessionsPanel() {
+  _keySessionsExpanded = !_keySessionsExpanded;
+  renderSessions().then(() => {
+    if (!_keySessionsExpanded) return;
+    requestAnimationFrame(() => {
+      const panel = document.getElementById('key-sessions-panel');
+      if (!panel) return;
+      panel.setAttribute('tabindex', '-1');
+      panel.focus({ preventScroll: true });
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    });
+  });
 }
 
 function initSessionsDragDrop() {
@@ -8987,7 +9050,7 @@ async function renderDashboard() {
       <h3>بدهکاران</h3>
       ${debtors.length === 0
         ? '<div style="color:var(--green);font-size:13px;padding:8px 0">✓ همه تسویه هستند</div>'
-        : `<div class="stu-table-wrap">
+        : `<div class="stu-table-wrap dashboard-debtors-wrap">
             <table>
               <thead>
                 <tr>
@@ -16943,7 +17006,7 @@ function applyNavOrder() {
       sidebar.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') _studentsTab = 'sessions';
+      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
       updatePageTitle();
       renderPage();
       closeSidebar();
@@ -22434,7 +22497,7 @@ function bnNav(el){
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-  currentPage=page;if(currentPage==='students')_studentsTab='sessions';updatePageTitle();renderPage();
+  currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}updatePageTitle();renderPage();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
@@ -22458,7 +22521,7 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   navEl.classList.add('active');
   currentPage = page;
-  if (currentPage === 'students') _studentsTab = 'sessions';
+  if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
   updatePageTitle();
   renderPage();
 }, true); // capture phase
