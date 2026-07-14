@@ -2032,20 +2032,6 @@ body.light mark { background: rgba(251,191,36,.5); }
   .topbar-actions .table-search.tb-search-open input{
     width:110px; opacity:1; pointer-events:auto;
   }
-  .topbar-actions .table-search.stu-topbar-search{
-    max-width:150px;
-    width:auto;
-    padding:5px 8px;
-    justify-content:flex-start;
-    background:var(--bg3);
-    border-color:var(--border2);
-  }
-  .topbar-actions .table-search.stu-topbar-search input{
-    width:96px;
-    opacity:1;
-    pointer-events:auto;
-  }
-
   /* Forms */
   .form-grid{grid-template-columns:1fr!important}
   .form-group.full{grid-column:1!important}
@@ -3311,6 +3297,11 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   white-space:nowrap;
   transition:background .16s ease,color .16s ease,box-shadow .16s ease;
 }
+.students-section-nav button.students-tab-sessions{
+  min-width:126px;
+  padding-inline:20px;
+  font-size:12.5px;
+}
 .students-section-nav button.active{
   background:var(--accent);
   color:#fff;
@@ -3355,6 +3346,12 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     padding:5px 6px;
     font-size:11px;
   }
+  .students-section-nav button.students-tab-sessions{
+    flex:1.45;
+    min-width:0;
+    padding-inline:6px;
+    font-size:11.5px;
+  }
   .stu-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px;margin-bottom:9px}
   .stu-stats-row .stat-card{padding:8px 10px}
   .stu-stats-row .stat-value{font-size:14px!important}
@@ -3393,8 +3390,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <a class="nav-item" data-page="instructions" title="مرکز دانش" onclick="currentPage='instructions';document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage();closeSidebar()"><span class="knowledge-lamp-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg"><path class="lamp-glow-core" d="M12 3.8c-3 0-5.4 2.35-5.4 5.25 0 1.9.95 3.15 2.05 4.25.7.7 1.15 1.45 1.25 2.25h4.2c.1-.8.55-1.55 1.25-2.25 1.1-1.1 2.05-2.35 2.05-4.25C17.4 6.15 15 3.8 12 3.8Z"/><path d="M12 3.8c-3 0-5.4 2.35-5.4 5.25 0 1.9.95 3.15 2.05 4.25.7.7 1.15 1.45 1.25 2.25h4.2c.1-.8.55-1.55 1.25-2.25 1.1-1.1 2.05-2.35 2.05-4.25C17.4 6.15 15 3.8 12 3.8Z"/><path d="M9.5 18h5"/><path d="M10.2 21h3.6"/><path class="lamp-ray" d="M12 1.6v1.3"/><path class="lamp-ray" d="M4.4 4.4l1 1"/><path class="lamp-ray" d="M19.6 4.4l-1 1"/><path class="lamp-ray" d="M2.2 11h1.5"/><path class="lamp-ray" d="M20.3 11h1.5"/><path class="lamp-ray" d="M5.2 17.4l1.1-1.1"/><path class="lamp-ray" d="M18.8 17.4l-1.1-1.1"/></svg></span><span>مرکز دانش</span></a>
 
       <div class="nav-section">امور مشتریان</div>
-      <a class="nav-item" data-page="students" title="شاگردان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="14.5" cy="7" r="2"/><path d="M13 11.6c2 .2 3.5 1.8 3.5 4.1"/></svg></span><span id="nav-label-students">شاگردان</span><span class="badge" id="student-badge">0</span></a>
-      <a class="nav-item" data-page="sessions" title="جلسات"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="13" rx="2"/><path d="M2.5 8h15M6.5 2v3.5M13.5 2v3.5"/></svg></span><span id="nav-label-sessions">جلسات</span></a>
+      <a class="nav-item" data-page="students" title="امور مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="14.5" cy="7" r="2"/><path d="M13 11.6c2 .2 3.5 1.8 3.5 4.1"/></svg></span><span id="nav-label-students">امور مشتریان</span><span class="badge" id="student-badge">0</span></a>
+      <a class="nav-item" data-page="sessions" title="جلسات" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="13" rx="2"/><path d="M2.5 8h15M6.5 2v3.5M13.5 2v3.5"/></svg></span><span id="nav-label-sessions">جلسات</span></a>
 
       <div class="nav-section">مدیریت همکاران</div>
       <a class="nav-item" data-page="staff" title="مدیریت"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت</span></a>
@@ -5711,6 +5708,7 @@ function _getInitialPage() {
   const fromHash = (location.hash || '').replace('#', '').trim();
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
   const fromStorage = localStorage.getItem('tp_last_page');
+  if (fromStorage === 'sessions') return 'students';
   if (fromStorage && _SAFE_RESTORE_PAGES.includes(fromStorage)) return fromStorage;
   return 'students';
 }
@@ -5721,7 +5719,7 @@ let _habitsViewMode = 'full'; // 'full' | 'compact'
 const TEAM_ACCESS_SESSION_KEY = 'tp_team_access_session';
 const TEAM_PENDING_INVITE_KEY = 'tp_pending_team_invite';
 const TEAM_ACCESS_SECTIONS = [
-  {key:'students', label:'شاگردان', icon:'👥', desc:'مشاهده و مدیریت پرونده شاگردان'},
+  {key:'students', label:'امور مشتریان', icon:'👥', desc:'مشاهده و مدیریت پرونده شاگردان'},
   {key:'sessions', label:'جلسات', icon:'📅', desc:'ثبت، مشاهده و پیگیری جلسات'},
   {key:'goals', label:'اهداف', icon:'🎯', desc:'برنامه‌ریزی و پیگیری هدف‌ها'},
   {key:'habits', label:'عادت‌ها', icon:'🔥', desc:'مدیریت عادت‌ها و گزارش انجام'},
@@ -5752,6 +5750,7 @@ function _teamCan(page) {
   const s = _teamAccessSession();
   if (!s) return true;
   if (['settings','tutorial'].includes(page)) return true;
+  if (page === 'students' && Array.isArray(s.permissions) && s.permissions.includes('sessions')) return true;
   if (page === 'payments' && Array.isArray(s.permissions) && s.permissions.includes('reminders')) return true;
   return Array.isArray(s.permissions) && s.permissions.includes(page);
 }
@@ -5764,7 +5763,7 @@ function _applyTeamAccessToNav() {
   const s = _teamAccessSession();
   document.querySelectorAll('.nav-item[data-page], .bn-item[data-page]').forEach(el => {
     const page = el.dataset.page;
-    if (page === 'reminders' && el.classList.contains('nav-item')) {
+    if ((page === 'reminders' || page === 'sessions') && el.classList.contains('nav-item')) {
       el.style.display = 'none';
       return;
     }
@@ -5938,7 +5937,7 @@ function _teamCanCreateInstruction(parentId) {
 // This is what prevents the "flash of wrong menu item" on refresh: we never
 // let the browser paint the default HTML state before correcting it.
 function _menuPageFor(page) {
-  if (page === 'customerlist' || page === 'archive') return 'students';
+  if (page === 'sessions' || page === 'customerlist' || page === 'archive') return 'students';
   if (page === 'reminders') return 'payments';
   return page;
 }
@@ -6191,10 +6190,10 @@ window.addEventListener('hashchange', () => {
 
 function updatePageTitle() {
   const titles = {
-    students: META.entityPlural || 'شاگردان',
+    students: 'امور مشتریان',
     payments: 'خرید ها و پرداخت ها',
     purchases: 'تاریخچه کل خریدها',
-    sessions: META.sessionPlural || 'جلسات',
+    sessions: 'امور مشتریان',
     families: 'حساب‌های مشترک',
     reminders: 'خرید ها و پرداخت ها',
     customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
@@ -6259,7 +6258,7 @@ function applyMetaToUI() {
   document.getElementById('app-title').textContent = META.appTitle || 'TeamPulse';
   document.getElementById('app-subtitle').textContent = `مدیریت ${META.entityPlural || 'شاگردان'}`;
   document.getElementById('logo-icon').textContent = (META.appTitle || 'س').charAt(0);
-  document.getElementById('nav-label-students').textContent = META.entityPlural || 'شاگردان';
+  document.getElementById('nav-label-students').textContent = 'امور مشتریان';
   document.getElementById('nav-label-sessions').textContent = META.sessionPlural || 'جلسات';
   const customerListLabel = document.getElementById('nav-label-customerlist');
   if (customerListLabel) customerListLabel.textContent = `لیست ${META.entityPlural || 'شاگردان'}`;
@@ -6408,12 +6407,14 @@ let stuChip = 'all';
 let stuChipsExpanded = false;
 function setStuChip(val) {
   stuChip = val;
-  const cur = document.querySelector('#content .table-search input');
+  const cur = document.querySelector('#topbar-actions .table-search input') ||
+              document.querySelector('#content .table-search input');
   renderStudents(cur ? cur.value : '');
 }
 function toggleStuChipsExpanded() {
   stuChipsExpanded = !stuChipsExpanded;
-  const cur = document.querySelector('#content .table-search input');
+  const cur = document.querySelector('#topbar-actions .table-search input') ||
+              document.querySelector('#content .table-search input');
   renderStudents(cur ? cur.value : '');
 }
 function goStudentSection(page) {
@@ -6427,19 +6428,20 @@ function goStudentSection(page) {
 function studentSectionNav(active) {
   const plural = META.entityPlural || 'شاگردان';
   const items = [
+    { page: 'sessions', label: META.sessionPlural || 'جلسات', cls: 'students-tab-sessions' },
     { page: 'students', label: 'پرونده‌ها' },
     { page: 'customerlist', label: 'فهرست' },
     { page: 'archive', label: 'بایگانی' },
   ].filter(item => typeof _teamCan !== 'function' || _teamCan(item.page));
   return `<div class="students-section-nav" aria-label="بخش‌های ${plural}">
-    ${items.map(item => `<button class="${active === item.page ? 'active' : ''}" onclick="goStudentSection('${item.page}')">${item.label}</button>`).join('')}
+    ${items.map(item => `<button class="${[active === item.page ? 'active' : '', item.cls || ''].filter(Boolean).join(' ')}" onclick="goStudentSection('${item.page}')">${item.label}</button>`).join('')}
   </div>`;
 }
 
 async function renderStudents(search = '') {
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
-      <span style="color:var(--text3)">🔍</span>
+      <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
       <input placeholder="جستجوی ${META.entitySingular || 'شاگرد'}..." oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
     </div>
     <button class="btn btn-primary" onclick="openStudentModal()"><span class="btn-icon">+</span><span> افزودن ${META.entitySingular || 'شاگرد'}</span></button>
@@ -7669,9 +7671,9 @@ async function renderPayments(search = '') {
 async function renderSessions(search = '') {
   const prevScroll = document.getElementById('sessions-board')?.scrollLeft || 0;
   updateTopbarActions(`
-    <div class="table-search" style="margin-left:8px">
-      <span style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="renderSessions(this.value)" value="${search}">
+    <div class="table-search stu-topbar-search" style="margin-left:8px">
+      <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
+      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="renderSessions(this.value)" value="${escapeHtml(search)}">
     </div>
     <button class="btn btn-primary" onclick="openAddSessionGeneral()">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
   `);
@@ -7679,7 +7681,7 @@ async function renderSessions(search = '') {
   const groups = await window.api.sessions.getAll();
   const keyOnes = await window.api.sessions.keyOnes();
 
-  let html = '';
+  let html = studentSectionNav('sessions');
 
   // ── Board: students as vertical columns, in stable user-defined order ────
   const savedOrder = await window.api.sessions.getOrder();
@@ -9085,7 +9087,7 @@ async function _clearAllAccountData() {
     const keysToDelete = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key !== 'tp_session' && key !== 'tp_admin_settings') {
+      if (key && key !== 'tp_session' && key !== TP_AUTH_CREDENTIALS_KEY && key !== 'tp_admin_settings') {
         keysToDelete.push(key);
       }
     }
@@ -16788,8 +16790,7 @@ async function _confirmDeleteInstruction(id) {
 // ════════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_NAV_ORDER = [
-  { page: 'students',     icon: '👥', label: () => META.entityPlural || 'شاگردان' },
-  { page: 'sessions',     icon: '📅', label: () => META.sessionPlural || 'جلسات' },
+  { page: 'students',     icon: '👥', label: () => 'امور مشتریان' },
   { page: 'goals',        icon: '🎯', label: () => 'اهداف' },
   { page: 'habits',       icon: '🔥', label: () => 'عادت‌ها' },
   { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
@@ -16816,9 +16817,10 @@ function renderNavOrderEditor() {
   const list = document.getElementById('nav-order-list');
   if (!list) return;
   const order = _getNavOrder();
-  const ordered = order.map(page => DEFAULT_NAV_ORDER.find(n => n.page === page)).filter(Boolean);
+  const hiddenPages = new Set(['sessions']);
+  const ordered = order.map(page => DEFAULT_NAV_ORDER.find(n => n.page === page)).filter(Boolean).filter(item => !hiddenPages.has(item.page));
   // اضافه کردن آیتم‌هایی که در order نیستن
-  DEFAULT_NAV_ORDER.forEach(n => { if (!order.includes(n.page)) ordered.push(n); });
+  DEFAULT_NAV_ORDER.forEach(n => { if (!order.includes(n.page) && !hiddenPages.has(n.page)) ordered.push(n); });
 
   list.innerHTML = ordered.map((item, i) => `
     <div draggable="true" data-page="${item.page}" style="touch-action:none" data-index="${i}"
@@ -16870,6 +16872,7 @@ function applyNavOrder() {
   const order = _getNavOrder();
   const sidebar = document.querySelector('.sidebar-nav');
   if (!sidebar) return;
+  const hiddenPages = new Set(['sessions']);
   
   // ذخیره section‌ها
   const sections = {};
@@ -16897,6 +16900,7 @@ function applyNavOrder() {
   let addedGap = false;
   
   order.forEach(page => {
+    if (hiddenPages.has(page)) return;
     if (gapPages.includes(page) && !addedGap) {
       // اضافه کردن section "گزارش" قبل از این آیتم
       const sec = document.createElement('div');
@@ -16910,6 +16914,7 @@ function applyNavOrder() {
   
   // اضافه کردن آیتم‌هایی که در order نیستن
   Object.entries(navItems).forEach(([page, el]) => {
+    if (hiddenPages.has(page)) return;
     if (!order.includes(page)) sidebar.appendChild(el);
   });
 
@@ -17280,6 +17285,40 @@ const _ADMIN_EMAIL = 'rezasafarinet1@gmail.com';
 
 let _sbSession = null;
 let _sbUser = null;
+const TP_AUTH_CREDENTIALS_KEY = 'tp_auth_credentials_v1';
+const TP_SESSION_TTL_SECONDS = 10 * 365 * 24 * 3600;
+
+function _authSaveCredentials(email, password) {
+  if (!email || !password) return;
+  try {
+    localStorage.setItem(TP_AUTH_CREDENTIALS_KEY, JSON.stringify({
+      email,
+      password,
+      saved_at: Date.now(),
+    }));
+  } catch(e) {}
+}
+
+function _authLoadCredentials() {
+  try {
+    const raw = localStorage.getItem(TP_AUTH_CREDENTIALS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function _authTrySavedCredentialLogin() {
+  const creds = _authLoadCredentials();
+  if (!creds?.email || !creds?.password) return false;
+  try {
+    await _auth.signIn(creds.email, creds.password);
+    return true;
+  } catch(e) {
+    console.warn('[TeamPulse] saved credential login failed:', e.message);
+    return false;
+  }
+}
 
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
@@ -17313,6 +17352,7 @@ const _auth = {
     _sbSession = { token: data.token };
     _sbUser = data.user;
     _authSaveSession({ token: data.token, user: data.user });
+    _authSaveCredentials(email, password);
     return data;
   },
 
@@ -17326,6 +17366,7 @@ const _auth = {
     _sbSession = { token: data.token };
     _sbUser = data.user;
     _authSaveSession({ token: data.token, user: data.user });
+    _authSaveCredentials(email, password);
     return data;
   },
 
@@ -17355,7 +17396,11 @@ const _auth = {
       _sbSession = { token: saved.token };
       _authSaveSession({ token: saved.token, user });
       return { token: saved.token, user };
-    } catch(e) { return null; }
+    } catch(e) {
+      _sbSession = { token: saved.token };
+      _sbUser = saved.user || _sbUser;
+      return { token: saved.token, user: _sbUser, offline: true };
+    }
   },
 
   isAdmin() {
@@ -17369,7 +17414,7 @@ function _authSaveSession(session) {
     token: session.token || session.access_token,
     user: session.user,
     saved_at: Date.now(),
-    expires_at: Math.floor(Date.now() / 1000) + (7 * 24 * 3600),
+    expires_at: Math.floor(Date.now() / 1000) + TP_SESSION_TTL_SECONDS,
   });
   try { localStorage.setItem('tp_session', data); } catch(e) {}
   try { sessionStorage.setItem('tp_session', data); } catch(e) {}
@@ -17723,6 +17768,9 @@ function _hideAuthScreen() {
 function _authHTML(mode) {
   const isLogin = mode === 'login';
   const isReset = mode === 'reset';
+  const savedCreds = _authLoadCredentials() || {};
+  const savedEmail = isLogin || isReset ? escapeHtml(savedCreds.email || '') : '';
+  const savedPass = isLogin ? escapeHtml(savedCreds.password || '') : '';
 
 const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radius:18px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,.4)" onerror="this.style.display=&quot;none&quot;">';
   const features = [
@@ -17740,7 +17788,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
   const resetForm =
     '<div style="display:flex;flex-direction:column;gap:14px">' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
-    '<input class="form-input" id="auth-email" type="email" placeholder="example@gmail.com" style="direction:ltr;width:100%"></div>' +
+    '<input class="form-input" id="auth-email" name="email" autocomplete="username email" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" style="direction:ltr;width:100%"></div>' +
     '<button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;border-radius:12px" onclick="_doReset()">📧 ارسال لینک بازیابی</button>' +
     '<button class="btn btn-ghost" style="width:100%;text-align:center" onclick="_showAuthScreen(&#39;login&#39;)">← بازگشت به ورود</button>' +
     '<div id="auth-msg" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;text-align:center"></div>' +
@@ -17748,7 +17796,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
 
   const pass2 = !isLogin ? (
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">تکرار رمز عبور</label>' +
-    '<input class="form-input" id="auth-pass2" type="password" placeholder="رمز عبور را تکرار کنید" style="width:100%" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;register&#39;)"></div>'
+    '<input class="form-input" id="auth-pass2" name="password-confirm" autocomplete="new-password" type="password" placeholder="رمز عبور را تکرار کنید" style="width:100%" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;register&#39;)"></div>'
   ) : '';
 
   const rememberRow = isLogin ? (
@@ -17778,12 +17826,12 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     '<div style="display:flex;flex-direction:column;gap:14px">' +
     (!isLogin ? '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">نام و نام خانوادگی</label>' +
     '<input class="form-input" id="auth-name" type="text" placeholder="مثلاً: رضا صفری" ' +
-    'style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
+    'autocomplete="name" style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
-    '<input class="form-input" id="auth-email" type="email" placeholder="example@gmail.com" ' +
+    '<input class="form-input" id="auth-email" name="email" autocomplete="username email" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" ' +
     'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-pass\').focus()"></div>' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور</label>' +
-    '<div style="position:relative"><input class="form-input" id="auth-pass" type="password" placeholder="حداقل ۶ کاراکتر" ' +
+    '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="حداقل ۶ کاراکتر" value="' + savedPass + '" ' +
     'style="width:100%;padding-left:44px;font-size:14px" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;' + mode + '&#39;)">' +
     '<button onclick="const i=document.getElementById(&#39;auth-pass&#39;);i.type=i.type===&#39;password&#39;?&#39;text&#39;:&#39;password&#39;" ' +
     'style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px">👁</button></div></div>' +
@@ -18556,6 +18604,10 @@ async function _initAuth() {
   const saved = _authLoadSession();
 
   if (!saved) {
+    if (!actionLogout && await _authTrySavedCredentialLogin()) {
+      await _authOnSuccess();
+      return true;
+    }
     // لاگین نکرده — فوری فرم ورود نشون بده
     document.getElementById('app').style.display = '';
     const bn = document.querySelector('.bottom-nav');
@@ -18668,10 +18720,16 @@ async function _initAuth() {
     // verify token در پس‌زمینه
     _auth.refreshSession().then(r => {
       if (!r) {
-        _sbSession = null; _sbUser = null;
-        localStorage.removeItem('tp_session');
-        try { sessionStorage.removeItem('tp_session'); } catch(e) {}
-        _showAuthScreen('login');
+        _authTrySavedCredentialLogin().then(async ok => {
+          if (ok) {
+            await _authOnSuccess();
+            return;
+          }
+          _sbSession = null; _sbUser = null;
+          localStorage.removeItem('tp_session');
+          try { sessionStorage.removeItem('tp_session'); } catch(e) {}
+          _showAuthScreen('login');
+        });
       }
     }).catch(() => {});
     return true;
@@ -22756,6 +22814,13 @@ setTimeout(() => {
 document.addEventListener('click', function(e) {
   if (window.innerWidth > 768) return; // فقط روی موبایل
   const searchBox = e.target.closest('.topbar-actions .table-search');
+  const clickedToggleIcon = !!e.target.closest('.search-toggle-icon');
+  if (searchBox && searchBox.classList.contains('tb-search-open') && clickedToggleIcon) {
+    searchBox.classList.remove('tb-search-open');
+    searchBox.querySelector('input')?.blur();
+    e.preventDefault();
+    return;
+  }
   if (searchBox && !searchBox.classList.contains('tb-search-open')) {
     // بستن سایر سرچ‌های باز
     document.querySelectorAll('.topbar-actions .table-search.tb-search-open').forEach(s => {
