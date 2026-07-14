@@ -7640,11 +7640,13 @@ function accountCustomerTabsHtml(tab, search = '') {
         <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_paymentsTab='families';currentPage='payments';renderPayments()">👥 حساب مشترک</button>
         <button class="${tab==='dashboard'?'active':''}" role="tab" aria-selected="${tab==='dashboard'}" onclick="_paymentsTab='dashboard';currentPage='payments';renderPayments()">📊 داشبورد مالی</button>
       </div>
-      ${tab === 'families' ? `<button class="btn btn-primary btn-sm" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>` : ''}
     </div>`;
 }
 
 function accountCustomerTopbarHtml(tab, search = '') {
+  if (tab === 'families') {
+    return `<button class="btn btn-primary" onclick="openNewFamily()"><span class="btn-icon">+</span><span> ایجاد میزکار مشترک</span></button>`;
+  }
   if (!['purchases', 'payments', 'reminders'].includes(tab)) return '';
   const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
   return `<div class="table-search">
@@ -8582,6 +8584,7 @@ async function _refreshEditFollowupList(sessionId) {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderFamilies(embedded = currentPage === 'payments') {
   if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>`);
+  else updateTopbarActions(accountCustomerTopbarHtml('families'));
   FAMILIES = await window.api.families.getAll();
   allStudents = await window.api.students.getAll();
   const prefix = embedded ? accountCustomerTabsHtml('families') : '';
