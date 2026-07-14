@@ -4269,7 +4269,7 @@ window.api = {
       const pkgId=_nextId('packages');
       _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:p.date||'',note:p.note||''});
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
-      _createRepeatReminder(p.student_id,pkgId,p,p.date);
+      if(!p.skip_reminder)_createRepeatReminder(p.student_id,pkgId,p,p.date);
       _save(); return _P({ok:true,id:pkgId});
     },
     update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_save();} return _P({ok:true}); },
@@ -4333,44 +4333,22 @@ window.api = {
       else r.done=true;
       _save(); return _P({ok:true,reminder:r});
     },
-    createPurchase: (p)=>{
+    completePurchase: (p)=>{
       const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
-      let typeId=null;
-      const sourcePkg=r.package_id?_db.packages.find(x=>x.id===r.package_id):null;
-      if(sourcePkg)typeId=sourcePkg.type_id;
-      if(!typeId){
-        const label=(r.title||'خرید جدید').trim()||'خرید جدید';
-        let pt=_db.package_types.find(x=>String(x.label||'').trim()===label);
-        if(!pt){
-          const id=_nextId('package_types');
-          pt={id,key:'pt'+id,label,color:'#7c6af7'};
-          _db.package_types.push(pt);
-        }
-        typeId=pt.id;
-      }
-      const pkgId=_nextId('packages');
-      const purchaseDate=p.date||_formatJalali(..._todayJalali());
-      _db.packages.push({
-        id:pkgId,
-        student_id:r.student_id,
-        type_id:typeId,
-        total_amount:r.amount||0,
-        initial_cost:0,
-        repeat_months:r.repeat_months||0,
-        start_date:purchaseDate,
-        note:p.note||`ثبت خرید از یادآوری: ${r.title||''}`
-      });
-      if(r.repeat_months>0){
-        const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);
-        const next=_addMonths(jy,jm,jd,r.repeat_months);
-        r.package_id=pkgId;
+      if(p.package_id)r.package_id=p.package_id;
+      const repeatMonths=Number(p.repeat_months ?? r.repeat_months ?? 0);
+      r.repeat_months=repeatMonths;
+      if(repeatMonths>0){
+        const baseDate=p.date||r.due_date_jalali;
+        const[jy,jm,jd]=_jalaliParse(baseDate);
+        const next=_addMonths(jy,jm,jd,repeatMonths);
         r.due_date_jalali=_formatJalali(...next);
         r.done=false;
         r.notified_levels=[];
       }else{
         r.done=true;
       }
-      _save(); return _P({ok:true,package_id:pkgId,reminder:r});
+      _save(); return _P({ok:true,reminder:r});
     },
   },
 
@@ -6762,11 +6740,18 @@ function _getDefaultPkgTypeId() {
 }
 
 // ── New Purchase (add another package to an existing student) ────────────────
-function openNewPurchase(studentId) {
+function openNewPurchase(studentId, preset = {}) {
   const s = allStudents.find(x => x.id === studentId);
   if (!s) return;
-  const defaultPkgId = _getDefaultPkgTypeId();
-  const typeOptions = PKG_TYPES.map(pt => `<option value="${pt.id}" ${pt.id===defaultPkgId?'selected':''}>${pt.label}</option>`).join('');
+  const defaultPkgId = preset.type_id || _getDefaultPkgTypeId();
+  const amount = Number(preset.amount || 0);
+  const initial = Number(preset.initial_cost || 0);
+  const current = Number(preset.current_payment || 0);
+  const repeat = Number(preset.repeat_months || 0);
+  const date = preset.date || formatJalali(...todayJalali());
+  const note = preset.note || '';
+  const reminderId = preset.reminder_id ? Number(preset.reminder_id) : 0;
+  const typeOptions = PKG_TYPES.map(pt => `<option value="${pt.id}" ${pt.id===defaultPkgId?'selected':''}>${escapeHtml(pt.label)}</option>`).join('');
 
   openModal(`🛍 ثبت خرید جدید — ${s.name} ${s.lname}`, `
     <div class="form-grid">
@@ -6776,58 +6761,65 @@ function openNewPurchase(studentId) {
       </div>
       <div class="form-group">
         <label class="form-label">مبلغ کل / دوره‌ای (تومان)</label>
-        <input class="form-input amount-input" id="np-amount" type="number" placeholder="0">
+        <input class="form-input amount-input" id="np-amount" type="number" placeholder="0" value="${amount || ''}">
       </div>
       <div class="form-group">
         <label class="form-label">بدهی قبلی (تومان)</label>
-        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0">
+        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}">
       </div>
       <div class="form-group">
         <label class="form-label">پرداختی حال حاضر (تومان)</label>
-        <input class="form-input amount-input" id="np-current" type="number" placeholder="0">
+        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}">
       </div>
       <div class="form-group">
         <label class="form-label">تاریخ خرید (شمسی)</label>
-        <input class="form-input jdate" id="np-date" value="${formatJalali(...todayJalali())}">
+        <input class="form-input jdate" id="np-date" value="${escapeHtml(date)}">
       </div>
       <div class="form-group full">
         <label class="form-label">🔁 تکرار / یادآوری تجدید</label>
         <select class="form-select" id="np-repeat">
-          <option value="0">بدون تکرار</option>
-          <option value="1">هر ۱ ماه</option>
-          <option value="3">هر ۳ ماه</option>
-          <option value="6">هر ۶ ماه</option>
-          <option value="12">هر ۱۲ ماه</option>
+          <option value="0" ${repeat===0?'selected':''}>بدون تکرار</option>
+          <option value="1" ${repeat===1?'selected':''}>هر ۱ ماه</option>
+          <option value="3" ${repeat===3?'selected':''}>هر ۳ ماه</option>
+          <option value="6" ${repeat===6?'selected':''}>هر ۶ ماه</option>
+          <option value="12" ${repeat===12?'selected':''}>هر ۱۲ ماه</option>
         </select>
       </div>
       <div class="form-group full">
         <label class="form-label">توضیحات خرید</label>
-        <input class="form-input" id="np-note" placeholder="توضیح یا یادداشت درباره این خرید...">
+        <input class="form-input" id="np-note" placeholder="توضیح یا یادداشت درباره این خرید..." value="${escapeHtml(note)}">
       </div>
     </div>
   `, [
-    { label: 'ثبت خرید', cls: 'btn-primary', action: `saveNewPurchase(${studentId})` },
+    { label: 'ثبت خرید', cls: 'btn-primary', action: `saveNewPurchase(${studentId}, ${reminderId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
 }
 
-async function saveNewPurchase(studentId) {
+async function saveNewPurchase(studentId, reminderId = 0) {
   const type_id = +document.getElementById('np-type')?.value;
   const date = document.getElementById('np-date')?.value;
-  await window.api.packages.add({
+  const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
+  const res = await window.api.packages.add({
     student_id: studentId,
     type_id,
     total_amount: +(document.getElementById('np-amount')?.value || 0),
     initial_cost: +(document.getElementById('np-initial')?.value || 0),
     current_payment: +(document.getElementById('np-current')?.value || 0),
-    repeat_months: +(document.getElementById('np-repeat')?.value || 0),
+    repeat_months,
     note: document.getElementById('np-note')?.value || '',
     date,
+    skip_reminder: !!reminderId,
   });
+  if (reminderId) {
+    await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, date });
+  }
   closeModal();
   showToast('خرید جدید ثبت شد ✓', 'success');
-  await renderStudents();
+  if (currentPage === 'reminders') await renderReminders();
+  else if (currentPage === 'payments') await renderPayments();
+  else await renderStudents();
 }
 
 // ── Wallet adjust modal ────────────────────────────────────────────────────────
@@ -8621,7 +8613,7 @@ async function renderReminders(search = '') {
           <button class="row-menu-btn" onclick="toggleRowMenu(event,'${reminderMenuId}')" aria-label="عملیات یادآوری">⋮</button>
           <div class="row-menu-panel" id="${reminderMenuId}">
             ${!r.done ? `<div class="row-menu-item" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</div>` : ''}
-            ${!r.done ? `<div class="row-menu-item" onclick="createPurchaseFromReminder(${r.id})">🛒 خرید جدید با همین عنوان و مبلغ</div>` : ''}
+            ${!r.done ? `<div class="row-menu-item" onclick="openPurchaseFromReminder(${r.id})">🛒 خرید جدید</div>` : ''}
             <div class="row-menu-item" onclick="openEditReminder(${r.id})">✏️ ویرایش</div>
             <div class="row-menu-divider"></div>
             <div class="row-menu-item danger" onclick="deleteReminder(${r.id})">🗑 حذف</div>
@@ -8734,17 +8726,32 @@ async function confirmReminderPaid(id) {
   await renderReminders();
 }
 
-async function createPurchaseFromReminder(id) {
-  const res = await window.api.reminders.createPurchase({
-    id,
-    date: formatJalali(...todayJalali()),
-  });
-  if (!res?.ok) {
-    showToast(res?.error || 'ثبت خرید انجام نشد', 'error');
-    return;
+async function _ensurePackageTypeByLabel(label) {
+  const clean = (label || '').trim() || 'خرید جدید';
+  PKG_TYPES = PKG_TYPES.length ? PKG_TYPES : await window.api.packageTypes.getAll();
+  let pt = PKG_TYPES.find(x => String(x.label || '').trim() === clean);
+  if (!pt) {
+    await window.api.packageTypes.add({ label: clean, color: '#7c6af7' });
+    PKG_TYPES = await window.api.packageTypes.getAll();
+    pt = PKG_TYPES.find(x => String(x.label || '').trim() === clean);
   }
-  showToast('خرید جدید با همین عنوان و مبلغ ثبت شد ✓', 'success');
-  await renderReminders();
+  return pt;
+}
+
+async function openPurchaseFromReminder(id) {
+  const reminders = await window.api.reminders.getAll();
+  const r = reminders.find(x => x.id === id);
+  if (!r) return;
+  allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
+  const pt = await _ensurePackageTypeByLabel(r.title);
+  openNewPurchase(r.student_id, {
+    reminder_id: r.id,
+    type_id: pt?.id,
+    amount: r.amount || 0,
+    repeat_months: r.repeat_months || 0,
+    date: formatJalali(...todayJalali()),
+    note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
+  });
 }
 
 async function openEditReminder(id) {
