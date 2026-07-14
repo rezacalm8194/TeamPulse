@@ -513,6 +513,21 @@ button { cursor: pointer; font-family: var(--font); }
   align-items: center;
   flex-wrap: wrap;
 }
+.account-tabs-toolbar {
+  margin: 0 0 12px;
+  justify-content: flex-start;
+}
+.account-tabs-toolbar .table-search {
+  margin-right: auto;
+}
+.account-tabs-toolbar .payments-segmented {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.account-tabs-toolbar .payments-segmented::-webkit-scrollbar { display: none; }
+.account-tabs-toolbar .payments-segmented button { flex: 0 0 auto; }
 .payments-segmented {
   display: inline-flex;
   align-items: center;
@@ -3434,11 +3449,10 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
       <a class="nav-item" data-page="staff" title="مدیریت همکاران"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت همکاران</span></a>
 
-      <div class="nav-section">مالی</div>
-      <a class="nav-item" data-page="families" title="حساب‌های مشترک"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
-      <a class="nav-item" data-page="payments" title="فروش و دریافت"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>فروش و دریافت</span></a>
+      <a class="nav-item" data-page="families" title="حساب‌های مشترک" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
+      <a class="nav-item" data-page="payments" title="حساب مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>حساب مشتریان</span></a>
       <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
-      <a class="nav-item" data-page="dashboard" title="داشبورد مالی"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
+      <a class="nav-item" data-page="dashboard" title="داشبورد مالی" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
 
       <div class="nav-section">سیستم</div>
       <a class="nav-item" onclick="_sbUser?openWalletPanel():_showAuthScreen('login')" title="کیف پول"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h10.5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6a2 2 0 012-2z"/><path d="M4.8 6.5V5.2c0-.9.6-1.6 1.5-1.8l6.5-1.1c1-.2 1.9.6 1.9 1.6v2.6"/><path d="M13.4 11.5h3.1"/><circle cx="13.2" cy="11.5" r=".7" fill="currentColor" stroke="none"/></svg></span><span>کیف پول</span></a>
@@ -5769,7 +5783,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'customerlist', label:'لیست شاگردان', icon:'📋', desc:'نمای جدولی شاگردان و اطلاعات تماس'},
   {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
   {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
-  {key:'payments', label:'فروش و دریافت', icon:'🛒', desc:'تاریخچه فروش‌ها و دریافت‌ها'},
+  {key:'payments', label:'حساب مشتریان', icon:'🛒', desc:'فروش، دریافت، یادآوری، حساب مشترک و داشبورد مالی'},
   {key:'reminders', label:'یادآوری', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
   {key:'dashboard', label:'داشبورد مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
 ];
@@ -5791,7 +5805,7 @@ function _teamCan(page) {
   if (!s) return true;
   if (['settings','tutorial'].includes(page)) return true;
   if (page === 'students' && Array.isArray(s.permissions) && s.permissions.includes('sessions')) return true;
-  if (page === 'payments' && Array.isArray(s.permissions) && s.permissions.includes('reminders')) return true;
+  if (page === 'payments' && Array.isArray(s.permissions) && ['reminders','families','dashboard'].some(p => s.permissions.includes(p))) return true;
   return Array.isArray(s.permissions) && s.permissions.includes(page);
 }
 function _teamDefaultPage() {
@@ -5803,7 +5817,7 @@ function _applyTeamAccessToNav() {
   const s = _teamAccessSession();
   document.querySelectorAll('.nav-item[data-page], .bn-item[data-page]').forEach(el => {
     const page = el.dataset.page;
-    if ((page === 'reminders' || page === 'sessions') && el.classList.contains('nav-item')) {
+    if ((page === 'reminders' || page === 'sessions' || page === 'families' || page === 'dashboard') && el.classList.contains('nav-item')) {
       el.style.display = 'none';
       return;
     }
@@ -5978,7 +5992,7 @@ function _teamCanCreateInstruction(parentId) {
 // let the browser paint the default HTML state before correcting it.
 function _menuPageFor(page) {
   if (page === 'sessions' || page === 'customerlist' || page === 'archive') return 'students';
-  if (page === 'reminders') return 'payments';
+  if (page === 'reminders' || page === 'families' || page === 'dashboard') return 'payments';
   return page;
 }
 (function _syncInitialActiveMenuSync() {
@@ -6233,11 +6247,11 @@ window.addEventListener('hashchange', () => {
 function updatePageTitle() {
   const titles = {
     students: 'امور مشتریان',
-    payments: 'فروش و دریافت',
+    payments: 'حساب مشتریان',
     purchases: 'تاریخچه کل فروش ها',
     sessions: 'امور مشتریان',
-    families: 'حساب‌های مشترک',
-    reminders: 'فروش و دریافت',
+    families: 'حساب مشتریان',
+    reminders: 'حساب مشتریان',
     customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
     staff: 'مدیریت همکاران',
@@ -6245,7 +6259,7 @@ function updatePageTitle() {
     todolist: 'لیست کارها',
     tutorial: 'آموزش‌ها',
     admin_panel: '👑 پنل مدیریت',
-    dashboard: 'داشبورد مالی',
+    dashboard: 'حساب مشتریان',
     settings: 'تنظیمات',
     goals: '🎯 اهداف',
     habits: '🔥 عادت‌ها',
@@ -6388,6 +6402,16 @@ async function renderPage() {
   if (currentPage === 'reminders') {
     currentPage = 'payments';
     _paymentsTab = 'reminders';
+    updatePageTitle();
+  }
+  if (currentPage === 'families') {
+    currentPage = 'payments';
+    _paymentsTab = 'families';
+    updatePageTitle();
+  }
+  if (currentPage === 'dashboard') {
+    currentPage = 'payments';
+    _paymentsTab = 'dashboard';
     updatePageTitle();
   }
   _applyTeamAccessToNav();
@@ -6778,7 +6802,7 @@ async function openStudentDetail(id) {
       ${purchaseRows}
     </div>
     <div class="detail-section">
-      <h3>تاریخچه پرداخت‌ها</h3>
+      <h3>تاریخچه دریافت‌ها</h3>
       ${payRows}
     </div>
   `, [
@@ -7609,6 +7633,25 @@ async function saveGeneralPayment() {
 // ════════════════════════════════════════════════════════════════════════════
 let _paymentsTab = 'purchases';
 
+function accountCustomerTabsHtml(tab, search = '') {
+  const isSearchable = ['purchases', 'payments', 'reminders'].includes(tab);
+  const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
+  return `
+    <div class="payments-toolbar account-tabs-toolbar">
+      <div class="payments-segmented" role="tablist" aria-label="حساب مشتریان">
+        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';currentPage='payments';renderPayments()">🛒 فروش</button>
+        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';currentPage='payments';renderPayments()">💳 دریافت</button>
+        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';currentPage='payments';renderPayments()">🔔 یادآوری</button>
+        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_paymentsTab='families';currentPage='payments';renderPayments()">👥 حساب مشترک</button>
+        <button class="${tab==='dashboard'?'active':''}" role="tab" aria-selected="${tab==='dashboard'}" onclick="_paymentsTab='dashboard';currentPage='payments';renderPayments()">📊 داشبورد مالی</button>
+      </div>
+      ${isSearchable ? `<div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input placeholder="${searchPlaceholder}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
+      </div>` : ''}
+      ${tab === 'families' ? `<button class="btn btn-primary btn-sm" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>` : ''}
+    </div>`;
+}
+
 function updateReminderBadges(count) {
   const text = fa(count || 0);
   ['reminder-badge', 'payments-reminder-badge', 'bn-reminder-badge'].forEach(id => {
@@ -7627,17 +7670,7 @@ async function refreshReminderSurface(search = '') {
 async function renderPayments(search = '') {
   const tab = _paymentsTab;
 
-  updateTopbarActions(`
-    <div class="payments-toolbar">
-      <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
-        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';renderPayments()">🛒 فروش</button>
-        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';renderPayments()">💳 دریافت</button>
-        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';renderPayments()">🔔 یادآوری</button>
-      </div>
-      <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input placeholder="${tab==='reminders'?'جستجوی یادآوری...':'جستجو با نام...'}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
-      </div>
-    </div>`);
+  updateTopbarActions('');
 
   allStudents = await window.api.students.getAll();
   try {
@@ -7646,11 +7679,20 @@ async function renderPayments(search = '') {
   } catch(e) {}
   const q = search.trim().toLowerCase();
 
+  if (tab === 'families') {
+    await renderFamilies(true);
+    return;
+  }
+  if (tab === 'dashboard') {
+    await renderDashboard(true);
+    return;
+  }
+
   if (tab === 'purchases') {
     let packages = await window.api.packages.getAll();
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
-    let html = `<div class="table-card">
+    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card">
       <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
@@ -7683,8 +7725,8 @@ async function renderPayments(search = '') {
     let payments = await window.api.payments.getAll();
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
-    let html = `<div class="table-card">
-      <div class="table-header"><span class="title">💳 تاریخچه پرداخت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن پرداختی" onclick="openGeneralPaymentModal()">+</button></div>
+    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card">
+      <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
         <tbody>`;
@@ -7710,7 +7752,7 @@ async function renderPayments(search = '') {
     html += `</tbody></table></div>`;
     setContent(html);
   } else {
-    await renderReminders(search, true);
+    await renderReminders(search, true, accountCustomerTabsHtml(tab, search));
   }
 
   if (search) {
@@ -8537,20 +8579,21 @@ async function _refreshEditFollowupList(sessionId) {
 // ════════════════════════════════════════════════════════════════════════════
 // FAMILIES (shared accounts) PAGE
 // ════════════════════════════════════════════════════════════════════════════
-async function renderFamilies() {
-  updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>`);
+async function renderFamilies(embedded = currentPage === 'payments') {
+  if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>`);
   FAMILIES = await window.api.families.getAll();
   allStudents = await window.api.students.getAll();
+  const prefix = embedded ? accountCustomerTabsHtml('families') : '';
 
   if (FAMILIES.length === 0) {
-    setContent(`<div class="table-card"><div class="empty"><span>👨‍👩‍👧</span>
+    setContent(`${prefix}<div class="table-card"><div class="empty"><span>👨‍👩‍👧</span>
       هنوز حساب مشترکی ایجاد نشده. اگر چند ${META.entitySingular||'شاگرد'} با هم (مثلاً زن و شوهر) پرداخت می‌کنند،
       یک حساب مشترک بساز.
     </div></div>`);
     return;
   }
 
-  let html = '';
+  let html = prefix;
   FAMILIES.forEach(f => {
     html += `
     <div class="table-card">
@@ -8662,7 +8705,7 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // ════════════════════════════════════════════════════════════════════════════
 // REMINDERS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-async function renderReminders(search = '', embedded = false) {
+async function renderReminders(search = '', embedded = false, contentPrefix = '') {
   if (!embedded) {
     updateTopbarActions(`
       <div class="payments-toolbar">
@@ -8686,7 +8729,7 @@ async function renderReminders(search = '', embedded = false) {
   updateReminderBadges(pending.length);
 
   if (reminders.length === 0) {
-    setContent(`<div class="table-card">
+    setContent(`${contentPrefix}<div class="table-card">
       <div class="table-header"><span class="title">🔔 یادآوری‌ها</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
       <div class="empty"><span>⏰</span>
         یادآوری‌ای ثبت نشده. برای پکیج‌های دوره‌ای (مثلاً کوچینگ ۶ ماهه) یک یادآوری بساز تا قبل از سررسید پرداخت بعدی به تو خبر بدهد.
@@ -8699,7 +8742,7 @@ async function renderReminders(search = '', embedded = false) {
     ? reminders.filter(r => (r.name + r.lname + r.title + (r.note || '')).toLowerCase().includes(search.toLowerCase()))
     : reminders;
 
-  let html = `<div class="table-card">
+  let html = `${contentPrefix}<div class="table-card">
     <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(filtered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
@@ -8995,14 +9038,14 @@ async function exportCustomerList() {
 // ════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ════════════════════════════════════════════════════════════════════════════
-async function renderDashboard() {
-  updateTopbarActions('');
+async function renderDashboard(embedded = currentPage === 'payments') {
+  if (!embedded) updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
   const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const collected = totalAmount > 0 ? Math.round(totalPaid / totalAmount * 100) : 0;
 
-  const html = `
+  const html = `${embedded ? accountCustomerTabsHtml('dashboard') : ''}
   <div class="stats-row">
     <div class="stat-card s-accent">
       <div class="stat-label">کل قرارداد</div>
@@ -16877,7 +16920,7 @@ const DEFAULT_NAV_ORDER = [
   { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
   { page: 'instructions', icon: '💡', label: () => 'مرکز دانش' },
   { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت همکاران' },
-  { page: 'payments',     icon: '🛒', label: () => 'فروش و دریافت' },
+  { page: 'payments',     icon: '🛒', label: () => 'حساب مشتریان' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری' },
   { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
@@ -16898,7 +16941,7 @@ function renderNavOrderEditor() {
   const list = document.getElementById('nav-order-list');
   if (!list) return;
   const order = _getNavOrder();
-  const hiddenPages = new Set(['sessions']);
+  const hiddenPages = new Set(['sessions', 'families', 'dashboard']);
   const ordered = order.map(page => DEFAULT_NAV_ORDER.find(n => n.page === page)).filter(Boolean).filter(item => !hiddenPages.has(item.page));
   // اضافه کردن آیتم‌هایی که در order نیستن
   DEFAULT_NAV_ORDER.forEach(n => { if (!order.includes(n.page) && !hiddenPages.has(n.page)) ordered.push(n); });
@@ -16953,7 +16996,7 @@ function applyNavOrder() {
   const order = _getNavOrder();
   const sidebar = document.querySelector('.sidebar-nav');
   if (!sidebar) return;
-  const hiddenPages = new Set(['sessions']);
+  const hiddenPages = new Set(['sessions', 'families', 'dashboard']);
   
   // ذخیره section‌ها
   const sections = {};
