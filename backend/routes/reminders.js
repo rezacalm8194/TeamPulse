@@ -70,6 +70,25 @@ function jalaliToUTC(dateJalali, timeStr) {
   return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - iranOffsetMs);
 }
 
+const IRAN_OFFSET_MS = (3 * 60 + 30) * 60 * 1000;
+
+function iranTodayParts(now = new Date()) {
+  const iranNow = new Date(now.getTime() + IRAN_OFFSET_MS);
+  const gy = iranNow.getUTCFullYear();
+  const gm = iranNow.getUTCMonth() + 1;
+  const gd = iranNow.getUTCDate();
+  return {
+    gy, gm, gd,
+    key: `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`,
+  };
+}
+
+function iranWallTimeToUTC(gy, gm, gd, timeStr) {
+  const [h, m] = (timeStr || '').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - IRAN_OFFSET_MS);
+}
+
 // ── ارسال push به همه دستگاه‌های یه کاربر ─────────────────────
 async function pushToUser(accountId, title, body) {
   const subs = db.prepare('SELECT id, endpoint, subscription FROM push_subscriptions WHERE account_id=?').all(accountId);
@@ -118,6 +137,24 @@ cron.schedule('* * * * *', async () => {
           console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
           sentSet.add(key);
           await pushToUser(acc.id, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`);
+        }
+      }
+
+      const today = iranTodayParts(now);
+      for (const h of (userData.habits || [])) {
+        if (h.archived || !h.time || !(h.remind_min > 0)) continue;
+
+        const key = `${acc.id}_habit_${h.id}_${today.key}`;
+        if (sentSet.has(key)) continue;
+
+        const habitUTC = iranWallTimeToUTC(today.gy, today.gm, today.gd, h.time);
+        if (!habitUTC) continue;
+
+        const notifUTC = new Date(habitUTC.getTime() - h.remind_min * 60000);
+        if (Math.abs(now - notifUTC) <= 60000) {
+          console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
+          sentSet.add(key);
+          await pushToUser(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`);
         }
       }
     }

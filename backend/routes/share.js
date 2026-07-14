@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../database/teampulse.db');
 const db = new Database(DB_PATH);
-const JWT_SECRET = process.env.JWT_SECRET || 'teampulse_secret';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS share_pages (
@@ -19,6 +19,7 @@ db.exec(`
 `);
 
 function requireAuth(req, res, next) {
+  if (!JWT_SECRET) return res.status(500).json({ error: 'jwt_secret_not_configured' });
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'unauthorized' });
@@ -79,6 +80,10 @@ a{display:inline-block;padding:10px 24px;background:#7c6af7;color:#fff;border-ra
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self' data: blob: https:; script-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:"
+  );
   res.send(row.html);
 }
 

@@ -48,6 +48,10 @@ function isDevelopment() {
   return process.env.NODE_ENV !== 'production';
 }
 
+function responseDebug(debug) {
+  return isDevelopment() ? debug : undefined;
+}
+
 function audioExtension(filename, mimetype) {
   const ext = path.extname(filename || '').toLowerCase();
   if (ext) return ext;
@@ -403,10 +407,12 @@ router.get('/debug-last-audio', async (req, res) => {
 });
 
 router.get('/ping', (req, res) => {
-  console.log('[speech-ping]', new Date().toISOString(), {
-    method: req.method,
-    url: req.originalUrl,
-  });
+  if (isDevelopment()) {
+    console.log('[speech-ping]', new Date().toISOString(), {
+      method: req.method,
+      url: req.originalUrl,
+    });
+  }
   res.json({ ok: true, route: 'speech', time: new Date().toISOString() });
 });
 
@@ -436,28 +442,29 @@ router.get('/health', async (req, res) => {
     ffmpeg,
     ffprobe,
     venvExists,
-    pythonPath: VOSK_PYTHON,
+    pythonPath: responseDebug(VOSK_PYTHON),
     voskInstalled,
     voskVersion: voskWorkerState.voskVersion,
     modelLoaded: voskWorkerState.modelLoaded,
     modelExists,
-    modelPath: voskWorkerState.modelPath || VOSK_MODEL_DIR,
+    modelPath: responseDebug(voskWorkerState.modelPath || VOSK_MODEL_DIR),
     modelLoadTime: voskWorkerState.modelLoadTime,
     language: voskWorkerState.language || 'fa',
     errorCode: !venvExists ? 'vosk_venv_missing' : (!voskInstalled ? 'vosk_engine_missing' : voskWorkerState.errorCode),
-    errorMessage: !venvExists ? `Python virtual environment was not found at ${VOSK_PYTHON}` : (!voskInstalled ? 'Vosk is not installed inside backend/.venv' : voskWorkerState.errorMessage),
+    errorMessage: responseDebug(!venvExists ? `Python virtual environment was not found at ${VOSK_PYTHON}` : (!voskInstalled ? 'Vosk is not installed inside backend/.venv' : voskWorkerState.errorMessage)),
     ready,
   });
 });
 
 function speechRouteHit(req, res, next) {
-  console.log('speech route hit');
-  console.log('[speech-route-hit]', new Date().toISOString(), {
-    method: req.method,
-    url: req.originalUrl,
-    contentType: req.headers['content-type'] || null,
-    contentLength: req.headers['content-length'] || null,
-  });
+  if (isDevelopment()) {
+    console.log('[speech-route-hit]', new Date().toISOString(), {
+      method: req.method,
+      url: req.originalUrl,
+      contentType: req.headers['content-type'] || null,
+      contentLength: req.headers['content-length'] || null,
+    });
+  }
   next();
 }
 
@@ -469,13 +476,13 @@ function handleSpeechUpload(req, res, next) {
     return res.status(isSize ? 413 : 400).json({
       error: isSize ? 'audio_too_large' : 'audio_upload_failed',
       message: err.message || 'audio upload failed',
-      debug: {
+      debug: responseDebug({
         backend: {
           mimetype: null,
           size: null,
           uploadError: err.code || err.message || 'upload_failed',
         },
-      },
+      }),
     });
   });
 }
@@ -535,7 +542,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
       return res.status(isToolMissing ? 503 : 422).json({
         error: isToolMissing ? 'audio_tool_missing' : 'audio_unprocessable',
         message: isToolMissing ? 'ffprobe is not installed on the server' : 'فایل صوتی قابل پردازش نیست.',
-        debug,
+        debug: responseDebug(debug),
       });
     }
 
@@ -543,7 +550,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
       return res.status(422).json({
         error: 'audio_unprocessable',
         message: 'فایل صوتی قابل پردازش نیست.',
-        debug,
+        debug: responseDebug(debug),
       });
     }
 
@@ -560,7 +567,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         return res.status(422).json({
           error: 'audio_unprocessable',
           message: 'فایل صوتی قابل پردازش نیست.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       lastDebugAudio.converted = {
@@ -575,14 +582,14 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
       return res.status(isToolMissing ? 503 : 422).json({
         error: isToolMissing ? 'audio_tool_missing' : 'audio_unprocessable',
         message: isToolMissing ? 'ffmpeg is not installed on the server' : 'فایل صوتی قابل پردازش نیست.',
-        debug,
+        debug: responseDebug(debug),
       });
     }
 
-    const convertedBuffer = await fsp.readFile(convertedPath);
     let text = '';
     try {
       if (provider === 'openai') {
+        const convertedBuffer = await fsp.readFile(convertedPath);
         text = await transcribeWithOpenAI(convertedBuffer, model, debug);
       } else if (provider === 'vosk') {
         text = await transcribeWithVosk(convertedPath, debug);
@@ -590,13 +597,13 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         return res.status(501).json({
           error: 'speech_provider_not_implemented',
           message: 'این provider هنوز پیاده‌سازی نشده است.',
-          debug,
+          debug: responseDebug(debug),
         });
       } else {
         return res.status(400).json({
           error: 'speech_provider_invalid',
           message: 'SPEECH_PROVIDER معتبر نیست.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
     } catch (e) {
@@ -631,14 +638,14 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
           error: errorCode,
           message,
           details: process.env.NODE_ENV === 'production' ? undefined : (e.payload?.error || null),
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'node_fetch_not_available') {
         return res.status(500).json({
           error: 'node_fetch_not_available',
           message: 'Server runtime must support fetch, FormData and Blob',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'vosk_venv_missing') {
@@ -646,7 +653,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         return res.status(503).json({
           error: 'vosk_venv_missing',
           message: 'محیط مجازی Python برای Vosk روی سرور ساخته نشده است.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'vosk_model_missing') {
@@ -654,7 +661,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         return res.status(503).json({
           error: 'vosk_model_missing',
           message: 'مدل تبدیل صدای فارسی روی سرور نصب نشده',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'vosk_engine_missing') {
@@ -662,21 +669,21 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         return res.status(503).json({
           error: 'vosk_engine_missing',
           message: 'موتور Vosk روی سرور نصب نشده است.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'vosk_worker_error' || e.code === 'vosk_worker_exited' || e.code === 'vosk_worker_write_failed') {
         return res.status(503).json({
           error: 'vosk_engine_missing',
           message: 'موتور Vosk روی سرور آماده نیست.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       if (e.code === 'audio_unprocessable') {
         return res.status(422).json({
           error: 'audio_unprocessable',
           message: 'فایل صوتی قابل پردازش نیست.',
-          debug,
+          debug: responseDebug(debug),
         });
       }
       throw e;
@@ -687,13 +694,13 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
       return res.status(422).json({
         error: 'empty_transcription',
         message: 'صدای کافی تشخیص داده نشد',
-        debug,
+        debug: responseDebug(debug),
       });
     }
 
     debug.transcription = { textLength: text.length };
     console.log('[speech] transcription completed', debug.transcription);
-    res.json({ text, debug });
+    res.json({ text, debug: responseDebug(debug) });
   } catch (e) {
     const msg = e && e.message ? e.message : 'speech transcription error';
     console.error('[speech] transcription route error', e);
