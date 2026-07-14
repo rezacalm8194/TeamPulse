@@ -18480,6 +18480,9 @@ async function _initAuth() {
 function _todosInit() {
   if (!_db.todos) _db.todos = [];
   if (!_db._nextId.todos) _db._nextId.todos = 1;
+  _db.todos.forEach(t => {
+    if ((t.remind_min === undefined || t.remind_min === null) && t.time) t.remind_min = 15;
+  });
 }
 
 function _todayJalaliStr() {
@@ -20037,15 +20040,53 @@ function _toggleWeekDay(btn, day) {
 }
 
 function _requestNotifPermission() {
-  if ('Notification' in window) {
-    Notification.requestPermission().then(p => {
-      const el = document.getElementById('notif-status');
-      if (el && p === 'granted') {
-        el.style.background = 'rgba(62,207,142,.1)';
-        el.style.color = 'var(--green)';
-        el.innerHTML = '🔔 نوتیفیکیشن فعال شد ✓';
+  _ensureReminderPushEnabled('notif-status');
+}
+
+async function _ensureReminderPushEnabled(statusId) {
+  const el = statusId ? document.getElementById(statusId) : null;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    showToast('این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند', 'error');
+    return false;
+  }
+
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      if (el) {
+        el.style.background = 'rgba(248,113,113,.08)';
+        el.style.color = 'var(--red)';
+        el.innerHTML = '❌ برای ارسال یادآوری باید اجازه نوتیفیکیشن داده شود';
       }
+      showToast('برای یادآوری باید نوتیفیکیشن را Allow کنی', 'error');
+      return false;
+    }
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const keyRes = await fetch('/api/reminders/vapid-key');
+      const { publicKey } = await keyRes.json();
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlB64ToUint8Array(publicKey),
+      });
+    }
+    await _apiFetch('/api/reminders/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ subscription: sub }),
     });
+    if (el) {
+      el.style.background = 'rgba(62,207,142,.1)';
+      el.style.color = 'var(--green)';
+      el.innerHTML = '🔔 نوتیفیکیشن فعال شد ✓';
+    }
+    return true;
+  } catch (e) {
+    showToast('فعال‌سازی نوتیفیکیشن انجام نشد: ' + e.message, 'error');
+    return false;
   }
 }
 
@@ -20191,6 +20232,11 @@ async function saveTodo() {
   const dateJalali = document.getElementById('todo-date')?.value.trim() || _todayJalaliStr();
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
+  if (remindMin > 0 && !time) {
+    showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
+    return;
+  }
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) return;
 
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
@@ -20480,7 +20526,7 @@ function _setTodoCategory(btn, val) {
   if (inp) inp.value = val;
 }
 
-function updateTodo(id) {
+async function updateTodo(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
@@ -20494,6 +20540,11 @@ function updateTodo(id) {
   const dateJalali = document.getElementById('todo-date')?.value.trim() || t.date_jalali;
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
+  if (remindMin > 0 && !time) {
+    showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
+    return;
+  }
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled())) return;
   const priority = document.getElementById('todo-priority')?.value || 'medium';
 
   const category2 = document.getElementById('todo-category')?.value || t.category || 'general';
@@ -24102,6 +24153,9 @@ function _habitsInit() {
   if (!_db.habit_logs) _db.habit_logs = [];
   if (!_db._nextId) _db._nextId = {};
   if (!_db._nextId.habits) _db._nextId.habits = 1;
+  _db.habits.forEach(h => {
+    if ((h.remind_min === undefined || h.remind_min === null) && h.time) h.remind_min = 15;
+  });
 }
 
 let _habitFilter = 'active';
@@ -24567,13 +24621,18 @@ function openAddHabit() {
   ]);
 }
 
-function saveNewHabit() {
+async function saveNewHabit() {
   _habitsInit();
   const title = document.getElementById('hab-title')?.value.trim();
   if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
   const goalId = document.getElementById('hab-goal')?.value || '';
   const habitTime = document.getElementById('hab-time')?.value || '';
   const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
+  if (remindMin > 0 && !habitTime) {
+    showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
+    return;
+  }
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled('hab-notif-status'))) return;
   const newId = _db._nextId.habits++;
   _db.habits.push({
     id: newId,
@@ -24656,7 +24715,7 @@ function openEditHabit(id) {
   ]);
 }
 
-function saveEditHabit(id) {
+async function saveEditHabit(id) {
   const h = (_db.habits||[]).find(x => x.id === id);
   if (!h) return;
   const title = document.getElementById('hab-title')?.value.trim();
@@ -24664,6 +24723,11 @@ function saveEditHabit(id) {
   const goalId = document.getElementById('hab-goal')?.value || '';
   const habitTime = document.getElementById('hab-time')?.value || '';
   const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
+  if (remindMin > 0 && !habitTime) {
+    showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
+    return;
+  }
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled('hab-notif-status'))) return;
   Object.assign(h, {
     title,
     icon: document.getElementById('hab-icon')?.value || '🔥',
@@ -24680,16 +24744,7 @@ function saveEditHabit(id) {
 }
 
 function _requestHabitNotifPermission() {
-  if ('Notification' in window) {
-    Notification.requestPermission().then(p => {
-      const el = document.getElementById('hab-notif-status');
-      if (el && p === 'granted') {
-        el.style.background = 'rgba(62,207,142,.1)';
-        el.style.color = 'var(--green)';
-        el.innerHTML = '🔔 نوتیفیکیشن فعال شد ✓';
-      }
-    });
-  }
+  _ensureReminderPushEnabled('hab-notif-status');
 }
 
 function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
