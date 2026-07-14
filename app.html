@@ -4197,7 +4197,7 @@ function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
 window.api = {
 
   openNewWindow: ()=>{ window.open(location.href,'_blank'); return _P(true); },
-  openExternal: (url)=>{ window.open(url,'_blank'); return _P(true); },
+  openExternal: (url)=>{ window.open(url,'_blank','noopener,noreferrer'); return _P(true); },
 
   meta: {
     get: ()=>_P({..._db.meta}),
@@ -4774,13 +4774,12 @@ const _gdrive = {
     return new Promise((resolve,reject)=>{
       const w=window.open('','_blank','width=500,height=650');
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
-      const state=Math.random().toString(36).slice(2);
+      const state='gdrive_'+Math.random().toString(36).slice(2);
       const resultKey='teampulse_oauth_result_'+state;
       const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
-      console.log('OAuth popup opened', { type: 'gdrive_token' });
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
@@ -4801,8 +4800,7 @@ const _gdrive = {
         if(data.state!==state)return false;
         cleanup();
         try{localStorage.removeItem(resultKey);}catch(e){}
-        if(data.error){console.log('OAuth error', data.error);reject(new Error(data.error));return true;}
-        console.log('token received', Boolean(data.token));
+        if(data.error){reject(new Error(data.error));return true;}
         this.token=data.token;
         this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
         _db._gdrive_token=this.token;_db._gdrive_token_expiry=this.tokenExpiry;
@@ -4811,9 +4809,6 @@ const _gdrive = {
         return true;
       };
       const handler=e=>{
-        console.log('callback message received', e.data);
-        console.log('message type', e.data?.type);
-        console.log('message origin', e.origin);
         if(e.data?.type!=='gdrive_token')return;
         if(e.origin!==window.location.origin)return;
         if(e.source!==w)return;
@@ -4824,17 +4819,16 @@ const _gdrive = {
         try{
           oauthChannel=new BroadcastChannel('teampulse_oauth');
           oauthChannel.onmessage=event=>{
-            console.log('callback channel received', event.data);
             acceptPayload(event.data);
           };
-        }catch(e){console.log('OAuth channel error', e);}
+        }catch(e){}
       }
       storageTimer=setInterval(()=>{
         if(done)return;
         let raw=null;
         try{raw=localStorage.getItem(resultKey);}catch(e){}
         if(!raw)return;
-        try{acceptPayload(JSON.parse(raw));}catch(e){console.log('OAuth storage parse error', e);}
+        try{acceptPayload(JSON.parse(raw));}catch(e){}
       },300);
       closeTimer=setInterval(()=>{
         if(done||!w.closed||closeGraceTimer)return;
@@ -4842,7 +4836,7 @@ const _gdrive = {
           let raw=null;
           try{raw=localStorage.getItem(resultKey);}catch(e){}
           if(raw){
-            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){console.log('OAuth storage parse error', e);}
+            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){}
           }
           if(done)return;
           cleanup();
@@ -4870,7 +4864,7 @@ const _gdrive = {
   },
 
   async push() {
-    const body=JSON.stringify(_db);
+    const body=JSON.stringify(_serverSafeData(_db));
     const boundary='----coaching_boundary';
     const fileId=await this.findFile();
     const url=fileId
@@ -5041,7 +5035,6 @@ const _gcal = {
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
-      console.log('OAuth popup opened', { type: 'gcal_token' });
       let done=false;
       let timeoutId=null;
       let closeTimer=null;
@@ -5062,8 +5055,7 @@ const _gcal = {
         if(data.state!==state)return false;
         cleanup();
         try{localStorage.removeItem(resultKey);}catch(e){}
-        if(data.error){console.log('OAuth error', data.error);reject(new Error(data.error));return true;}
-        console.log('token received', Boolean(data.token));
+        if(data.error){reject(new Error(data.error));return true;}
         this.token=data.token;
         this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
         _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
@@ -5072,9 +5064,6 @@ const _gcal = {
         return true;
       };
       const handler=e=>{
-        console.log('callback message received', e.data);
-        console.log('message type', e.data?.type);
-        console.log('message origin', e.origin);
         if(e.data?.type!=='gcal_token')return;
         if(e.origin!==window.location.origin)return;
         if(e.source!==w)return;
@@ -5085,17 +5074,16 @@ const _gcal = {
         try{
           oauthChannel=new BroadcastChannel('teampulse_oauth');
           oauthChannel.onmessage=event=>{
-            console.log('callback channel received', event.data);
             acceptPayload(event.data);
           };
-        }catch(e){console.log('OAuth channel error', e);}
+        }catch(e){}
       }
       storageTimer=setInterval(()=>{
         if(done)return;
         let raw=null;
         try{raw=localStorage.getItem(resultKey);}catch(e){}
         if(!raw)return;
-        try{acceptPayload(JSON.parse(raw));}catch(e){console.log('OAuth storage parse error', e);}
+        try{acceptPayload(JSON.parse(raw));}catch(e){}
       },300);
       closeTimer=setInterval(()=>{
         if(done||!w.closed||closeGraceTimer)return;
@@ -5103,7 +5091,7 @@ const _gcal = {
           let raw=null;
           try{raw=localStorage.getItem(resultKey);}catch(e){}
           if(raw){
-            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){console.log('OAuth storage parse error', e);}
+            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){}
           }
           if(done)return;
           cleanup();
@@ -5430,6 +5418,7 @@ function _forceNextServerSync() {
 }
 
 function _startGcalOAuthRescue() {
+  _cleanupStaleOAuthResults();
   window.addEventListener('storage',e=>{
     if(e.key&&e.key.indexOf('teampulse_oauth_result_gcal_')===0)_consumeStoredGcalOAuthResult();
   });
@@ -5445,6 +5434,21 @@ function _startGcalOAuthRescue() {
     }catch(e){}
   }
   setInterval(_consumeStoredGcalOAuthResult,1000);
+}
+
+function _cleanupStaleOAuthResults() {
+  const maxAgeMs = 10 * 60 * 1000;
+  const now = Date.now();
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.indexOf('teampulse_oauth_result_') !== 0) return;
+      let item = null;
+      try { item = JSON.parse(localStorage.getItem(key) || 'null'); } catch(e) {}
+      if (!item || !item.saved_at || now - Number(item.saved_at) > maxAgeMs) {
+        try { localStorage.removeItem(key); } catch(e) {}
+      }
+    });
+  } catch(e) {}
 }
 
 // وقتی وضعیت اتصال گوگل‌کلندر عوض میشه، تیک داخل فرم‌های باز رو آپدیت کن
@@ -13650,12 +13654,12 @@ async function _evalShare(filename, htmlContent, title, studentName) {
           <!-- دکمه‌های share -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
 
-            <a id="share-btn-whatsapp" href="https://api.whatsapp.com/send?text=${encodeURIComponent(defaultMsg)}" target="_blank" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-whatsapp" href="https://api.whatsapp.com/send?text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.3);color:#128c7e;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">📱</span> واتساپ
             </a>
 
-            <a id="share-btn-telegram" href="https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(defaultMsg)}" target="_blank" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-telegram" href="https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(41,182,246,.1);border:1px solid rgba(41,182,246,.3);color:#0088cc;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">✈️</span> تلگرام
             </a>
@@ -13675,7 +13679,7 @@ async function _evalShare(filename, htmlContent, title, studentName) {
               <span style="font-size:18px">📧</span> ایمیل
             </a>
 
-            <a id="share-btn-linkedin" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" target="_blank" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-linkedin" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(10,102,194,.1);border:1px solid rgba(10,102,194,.3);color:#0a66c2;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">💼</span> لینکدین
             </a>
@@ -13776,7 +13780,7 @@ function _evalShareFallback(filename, htmlContent, title) {
               style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:7px;border:1px solid rgba(96,165,250,.3);background:rgba(96,165,250,.1);color:var(--blue);font-size:12px;cursor:pointer">
               ⬇ دانلود فایل HTML
             </button>
-            <a href="https://api.whatsapp.com/send?text=${encodedText}" target="_blank" onclick="setTimeout(closeShareModal,500)"
+            <a href="https://api.whatsapp.com/send?text=${encodedText}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
               style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:7px;border:1px solid rgba(37,211,102,.3);background:rgba(37,211,102,.1);color:#128c7e;text-decoration:none;font-size:12px;font-weight:600">
               📱 واتساپ
             </a>
@@ -17391,6 +17395,15 @@ function _loadSafeImpersonatedCache(targetKey, adminDBKey) {
   }
 }
 
+function _serverSafeData(data) {
+  const copy = _cloneData(data || {});
+  delete copy._gdrive_token;
+  delete copy._gdrive_token_expiry;
+  delete copy._gcal_token;
+  delete copy._gcal_token_expiry;
+  return copy;
+}
+
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (!_sbUser || !_sbSession?.token) return;
@@ -17436,7 +17449,7 @@ async function _syncToServer() {
     const forceSync = !!window._forceNextSync;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: _db, force: forceSync })
+      body: JSON.stringify({ data: _serverSafeData(_db), force: forceSync })
     });
     if (res && res.ok) {
       if (forceSync) window._forceNextSync = false;
@@ -18401,7 +18414,7 @@ async function openAdminPanel() {
         برای دیدن لیست کاربران، تعلیق، حذف و تغییر رمز از Supabase Dashboard استفاده کن:
       </p>
       <a href="https://supabase.com/dashboard/project/ihdsnodbqwhatycfixwn/auth/users"
-        target="_blank" class="btn btn-primary" style="display:inline-flex;text-decoration:none;gap:6px">
+        target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;text-decoration:none;gap:6px">
         🔗 Supabase Users Dashboard
       </a>
     </div>
@@ -20898,7 +20911,7 @@ async function renderTutorial() {
           <iframe src="${embedUrl}" frameborder="0" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen
             style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:12px"></iframe>
         </div>` : `
-        <a href="${videoUrl}" target="_blank" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
+        <a href="${videoUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
           ▶️ مشاهده ویدیو آموزشی
         </a>`}
       </div>
