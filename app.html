@@ -17883,7 +17883,21 @@ function _showAuthScreen(mode) {
   }
   authDiv.style.cssText = 'display:block;position:fixed;inset:0;z-index:9999;overflow-y:auto;background:var(--bg);-webkit-overflow-scrolling:touch';
   authDiv.innerHTML = _authHTML(mode);
+  if (mode === 'login' || mode === 'reset') setTimeout(_authHydrateSavedFields, 80);
   if (mode === 'register') setTimeout(_refreshCaptcha, 50);
+}
+
+function _authHydrateSavedFields() {
+  const creds = _authLoadCredentials();
+  if (!creds) return;
+  const email = document.getElementById('auth-email');
+  const pass = document.getElementById('auth-pass');
+  if (email && creds.email && !email.value) email.value = creds.email;
+  if (pass && creds.password && !pass.value) pass.value = creds.password;
+  [email, pass].filter(Boolean).forEach(el => {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 function _hideAuthScreen() {
@@ -17915,24 +17929,24 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
   ).join('');
 
   const resetForm =
-    '<div style="display:flex;flex-direction:column;gap:14px">' +
+    '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doReset()" style="display:flex;flex-direction:column;gap:14px">' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
-    '<input class="form-input" id="auth-email" name="email" autocomplete="username email" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" style="direction:ltr;width:100%"></div>' +
-    '<button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;border-radius:12px" onclick="_doReset()">📧 ارسال لینک بازیابی</button>' +
-    '<button class="btn btn-ghost" style="width:100%;text-align:center" onclick="_showAuthScreen(&#39;login&#39;)">← بازگشت به ورود</button>' +
+    '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" style="direction:ltr;width:100%"></div>' +
+    '<button type="submit" class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;border-radius:12px">📧 ارسال لینک بازیابی</button>' +
+    '<button type="button" class="btn btn-ghost" style="width:100%;text-align:center" onclick="_showAuthScreen(&#39;login&#39;)">← بازگشت به ورود</button>' +
     '<div id="auth-msg" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;text-align:center"></div>' +
-    '</div>';
+    '</form>';
 
   const pass2 = !isLogin ? (
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">تکرار رمز عبور</label>' +
-    '<input class="form-input" id="auth-pass2" name="password-confirm" autocomplete="new-password" type="password" placeholder="رمز عبور را تکرار کنید" style="width:100%" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;register&#39;)"></div>'
+    '<input class="form-input" id="auth-pass2" name="new-password-confirm" autocomplete="new-password" type="password" placeholder="رمز عبور را تکرار کنید" style="width:100%"></div>'
   ) : '';
 
   const rememberRow = isLogin ? (
     '<div style="display:flex;align-items:center;justify-content:space-between">' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">' +
     '<input type="checkbox" id="remember-me" checked style="width:16px;height:16px;cursor:pointer"> مرا به خاطر بسپار</label>' +
-    '<button onclick="_showAuthScreen(&#39;reset&#39;)" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--accent2)">فراموشی رمز؟</button>' +
+    '<button type="button" onclick="_showAuthScreen(&#39;reset&#39;)" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--accent2)">فراموشی رمز؟</button>' +
     '</div>'
   ) : '';
 
@@ -17942,36 +17956,36 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     '<div style="display:flex;align-items:center;gap:10px">' +
     '<div id="captcha-question" style="font-size:22px;font-weight:700;color:var(--accent2);background:var(--bg2);padding:8px 14px;border-radius:8px;letter-spacing:2px;flex-shrink:0;direction:ltr;font-family:monospace"></div>' +
     '<span style="font-size:18px;color:var(--text3)">=</span>' +
-    '<input class="form-input" id="captcha-answer" type="number" placeholder="؟" style="width:80px;text-align:center;font-size:16px" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;register&#39;)">' +
-    '<button onclick="_refreshCaptcha()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3)" title="سؤال جدید">🔄</button>' +
+    '<input class="form-input" id="captcha-answer" type="number" placeholder="؟" style="width:80px;text-align:center;font-size:16px">' +
+    '<button type="button" onclick="_refreshCaptcha()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3)" title="سؤال جدید">🔄</button>' +
     '</div></div>'
   ) : '';
 
   const switchText = isLogin
-    ? 'حساب نداری؟ <button onclick="_showAuthScreen(\'register\')" style="background:none;border:none;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px">ثبت‌نام رایگان ←</button>'
-    : 'حساب داری؟ <button onclick="_showAuthScreen(\'login\')" style="background:none;border:none;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px">وارد شو</button>';
+    ? 'حساب نداری؟ <button type="button" onclick="_showAuthScreen(\'register\')" style="background:none;border:none;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px">ثبت‌نام رایگان ←</button>'
+    : 'حساب داری؟ <button type="button" onclick="_showAuthScreen(\'login\')" style="background:none;border:none;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px">وارد شو</button>';
 
   const mainForm =
-    '<div style="display:flex;flex-direction:column;gap:14px">' +
+    '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doAuth(&#39;' + mode + '&#39;)" style="display:flex;flex-direction:column;gap:14px">' +
     (!isLogin ? '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">نام و نام خانوادگی</label>' +
-    '<input class="form-input" id="auth-name" type="text" placeholder="مثلاً: رضا صفری" ' +
+    '<input class="form-input" id="auth-name" name="name" type="text" placeholder="مثلاً: رضا صفری" ' +
     'autocomplete="name" style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
-    '<input class="form-input" id="auth-email" name="email" autocomplete="username email" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" ' +
+    '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" ' +
     'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-pass\').focus()"></div>' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور</label>' +
     '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="حداقل ۶ کاراکتر" value="' + savedPass + '" ' +
-    'style="width:100%;padding-left:44px;font-size:14px" onkeydown="if(event.key===&#39;Enter&#39;)_doAuth(&#39;' + mode + '&#39;)">' +
-    '<button onclick="const i=document.getElementById(&#39;auth-pass&#39;);i.type=i.type===&#39;password&#39;?&#39;text&#39;:&#39;password&#39;" ' +
+    'style="width:100%;padding-left:44px;font-size:14px">' +
+    '<button type="button" onclick="const i=document.getElementById(&#39;auth-pass&#39;);i.type=i.type===&#39;password&#39;?&#39;text&#39;:&#39;password&#39;" ' +
     'style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px">👁</button></div></div>' +
     pass2 +
     (isLogin ? rememberRow : captchaSection) +
-    '<button class="btn btn-primary" id="auth-submit-btn" ' +
-    'style="width:100%;padding:14px;font-size:15px;font-weight:700;border-radius:12px;letter-spacing:.3px" onclick="_doAuth(&#39;' + mode + '&#39;)">' +
+    '<button type="submit" class="btn btn-primary" id="auth-submit-btn" ' +
+    'style="width:100%;padding:14px;font-size:15px;font-weight:700;border-radius:12px;letter-spacing:.3px">' +
     (isLogin ? '🔐 ورود به TeamPulse' : '✅ ایجاد حساب رایگان') + '</button>' +
     '<div id="auth-msg" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;text-align:center"></div>' +
     '<div style="text-align:center;font-size:13px;color:var(--text3)">' + switchText + '</div>' +
-    '</div>';
+    '</form>';
 
   return (
     '<div style="min-height:100vh;display:grid;grid-template-columns:1fr;align-items:center;' +
