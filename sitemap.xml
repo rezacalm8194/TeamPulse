@@ -2,43 +2,139 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://teampulse.ir/</loc>
-    <lastmod>2026-07-12</lastmod>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://teampulse.ir/privacy.html</loc>
-    <lastmod>2026-07-12</lastmod>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
     <loc>https://teampulse.ir/blog/</loc>
-    <lastmod>2026-07-12</lastmod>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://teampulse.ir/blog/coaching-management-software.html</loc>
-    <lastmod>2026-07-12</lastmod>
+    <loc>https://teampulse.ir/blog/importance-of-goals-in-life-and-work.html</loc>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://teampulse.ir/blog/goal-habit-checklist-tracking.html</loc>
-    <lastmod>2026-07-12</lastmod>
+    <loc>https://teampulse.ir/blog/capture-tasks-clear-your-mind.html</loc>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://teampulse.ir/blog/coaching-session-checklist.html</loc>
-    <lastmod>2026-07-12</lastmod>
+    <loc>https://teampulse.ir/blog/avoid-daily-rut.html</loc>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://teampulse.ir/blog/teampulse-tutorial.html</loc>
-    <lastmod>2026-07-12</lastmod>
+    <loc>https://teampulse.ir/blog/stay-on-growth-path.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/positive-habits-aligned-with-goals.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/personal-order-and-discipline.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/momentum-and-routine-chain.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/successful-people-positive-habits-mindset.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/goal-setting-and-continuous-reminders.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/checklists-for-repetitive-work.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/daily-checkmarks-and-confidence.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/learning-knowledge-capture-review.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/client-and-student-follow-up-for-coaches.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/effective-feedback-for-clients-and-students.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/client-and-student-management-system.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/record-and-review-previous-client-sessions.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/systems-thinking-for-work-and-staff.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/measure-staff-progress-trends.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/income-expense-recording-financial-system.html</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://teampulse.ir/blog/know-last-month-and-year-income.html</loc>
+    <lastmod>2026-07-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
