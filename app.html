@@ -5713,6 +5713,7 @@ function _getInitialPage() {
   return 'students';
 }
 let currentPage = _getInitialPage();
+let _studentsTab = currentPage === 'students' ? 'sessions' : (currentPage === 'sessions' ? 'sessions' : 'students');
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
 
@@ -6171,6 +6172,7 @@ function bindNavItems() {
       document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
+      if (currentPage === 'students') _studentsTab = 'sessions';
       updatePageTitle();
       renderPage();
     };
@@ -6182,6 +6184,7 @@ bindNavItems();
 window.addEventListener('hashchange', () => {
   const page = (location.hash || '').replace('#', '').trim();
   if (page && page !== currentPage && _SAFE_RESTORE_PAGES.includes(page)) {
+    if (page === 'students' || page === 'sessions') _studentsTab = 'sessions';
     currentPage = page;
     updatePageTitle();
     renderPage();
@@ -6337,6 +6340,11 @@ function _selectGoogleTranslateLanguage(lang) {
 }
 
 async function renderPage() {
+  if (currentPage === 'sessions') {
+    currentPage = 'students';
+    _studentsTab = 'sessions';
+    updatePageTitle();
+  }
   if (currentPage === 'reminders') {
     currentPage = 'payments';
     _paymentsTab = 'reminders';
@@ -6373,9 +6381,11 @@ async function renderPage() {
     history.replaceState(null, '', '#' + currentPage);
   }
   try {
-    if (currentPage === 'students')  await renderStudents();
+    if (currentPage === 'students')  {
+      if (_studentsTab === 'sessions') await renderSessions();
+      else await renderStudents();
+    }
     else if (currentPage === 'payments')  await renderPayments();
-    else if (currentPage === 'sessions')  await renderSessions();
     else if (currentPage === 'families')  await renderFamilies();
     else if (currentPage === 'reminders')  await renderReminders();
     else if (currentPage === 'customerlist')  await renderCustomerList();
@@ -6418,10 +6428,17 @@ function toggleStuChipsExpanded() {
   renderStudents(cur ? cur.value : '');
 }
 function goStudentSection(page) {
-  currentPage = page;
-  localStorage.setItem('tp_last_page', page);
-  if (location.hash !== '#' + page) location.hash = page;
-  if (typeof setActiveMenu === 'function') setActiveMenu(page);
+  if (page === 'sessions' || page === 'students') {
+    _studentsTab = page;
+    currentPage = 'students';
+    localStorage.setItem('tp_last_page', 'students');
+    if (location.hash !== '#students') location.hash = 'students';
+  } else {
+    currentPage = page;
+    localStorage.setItem('tp_last_page', page);
+    if (location.hash !== '#' + page) location.hash = page;
+  }
+  if (typeof setActiveMenu === 'function') setActiveMenu(currentPage);
   updatePageTitle();
   renderPage();
 }
@@ -16925,6 +16942,7 @@ function applyNavOrder() {
       sidebar.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
+      if (currentPage === 'students') _studentsTab = 'sessions';
       updatePageTitle();
       renderPage();
       closeSidebar();
@@ -22415,7 +22433,7 @@ function bnNav(el){
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-  currentPage=page;updatePageTitle();renderPage();
+  currentPage=page;if(currentPage==='students')_studentsTab='sessions';updatePageTitle();renderPage();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
@@ -22439,6 +22457,7 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   navEl.classList.add('active');
   currentPage = page;
+  if (currentPage === 'students') _studentsTab = 'sessions';
   updatePageTitle();
   renderPage();
 }, true); // capture phase
