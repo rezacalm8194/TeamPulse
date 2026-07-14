@@ -6226,6 +6226,7 @@ function applyMetaToUI() {
   const appLang = _getAppLanguage();
   document.documentElement.lang = appLang === 'en' ? 'en' : 'fa';
   document.documentElement.dir = appLang === 'en' ? 'ltr' : 'rtl';
+  _applyAppTranslation(appLang);
   document.getElementById('app-title').textContent = META.appTitle || 'TeamPulse';
   document.getElementById('app-subtitle').textContent = `مدیریت ${META.entityPlural || 'شاگردان'}`;
   document.getElementById('logo-icon').textContent = (META.appTitle || 'س').charAt(0);
@@ -6238,6 +6239,73 @@ function applyMetaToUI() {
   document.title = (META.appTitle || 'TeamPulse');
   updatePageTitle();
   _applyTeamAccessToNav();
+}
+
+function _setGoogleTranslateCookie(targetLang) {
+  const value = targetLang === 'en' ? '/fa/en' : '/fa/fa';
+  const expires = targetLang === 'en'
+    ? ';expires=Fri, 31 Dec 9999 23:59:59 GMT'
+    : ';expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  document.cookie = `googtrans=${value};path=/${expires}`;
+  if (location.hostname) {
+    document.cookie = `googtrans=${value};domain=${location.hostname};path=/${expires}`;
+  }
+}
+
+function _applyAppTranslation(targetLang) {
+  if (!document.body) {
+    setTimeout(() => _applyAppTranslation(targetLang), 100);
+    return;
+  }
+  if (!document.getElementById('app-translation-style')) {
+    const style = document.createElement('style');
+    style.id = 'app-translation-style';
+    style.textContent = '.goog-te-banner-frame,.skiptranslate{display:none!important}body{top:0!important}#google_translate_element{display:none!important}';
+    document.head.appendChild(style);
+  }
+  if (targetLang !== 'en') {
+    _setGoogleTranslateCookie('fa');
+    _selectGoogleTranslateLanguage('fa');
+    document.body?.classList.remove('app-translated');
+    return;
+  }
+  _setGoogleTranslateCookie('en');
+  document.body?.classList.add('app-translated');
+
+  if (!document.getElementById('google_translate_element')) {
+    const holder = document.createElement('div');
+    holder.id = 'google_translate_element';
+    holder.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden';
+    document.body.appendChild(holder);
+  }
+
+  window.googleTranslateElementInit = function() {
+    if (window.google?.translate?.TranslateElement) {
+      new google.translate.TranslateElement({
+        pageLanguage: 'fa',
+        includedLanguages: 'en,fa',
+        autoDisplay: false,
+      }, 'google_translate_element');
+      setTimeout(() => _selectGoogleTranslateLanguage('en'), 400);
+    }
+  };
+
+  if (!document.getElementById('google-translate-script')) {
+    const script = document.createElement('script');
+    script.id = 'google-translate-script';
+    script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+    script.onerror = () => showToast('ترجمه خودکار در دسترس نیست؛ اتصال یا دسترسی به Google Translate را بررسی کن', 'error');
+    document.head.appendChild(script);
+  } else {
+    setTimeout(() => _selectGoogleTranslateLanguage('en'), 150);
+  }
+}
+
+function _selectGoogleTranslateLanguage(lang) {
+  const combo = document.querySelector('.goog-te-combo');
+  if (!combo) return;
+  combo.value = lang;
+  combo.dispatchEvent(new Event('change'));
 }
 
 async function renderPage() {
@@ -8943,6 +9011,7 @@ function saveLocaleSettings() {
   META.location = document.getElementById('set-location')?.value.trim() || '';
   _db.meta = { ..._db.meta, ...META };
   _save();
+  applyMetaToUI();
   showToast('تنظیمات منطقه ذخیره شد ✓', 'success');
   renderSettings();
 }
