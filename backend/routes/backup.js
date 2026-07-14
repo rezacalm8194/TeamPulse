@@ -5,8 +5,9 @@ const db = require('../config/database');
 router.get('/export', auth, (req, res) => {
   try {
     const accountId = req.user.id;
+    const exportedAt = new Date().toISOString();
     const data = {
-      meta: { version: '1.0.0', exported_at: new Date().toISOString(), account_id: accountId },
+      meta: { version: '1.0.0', exported_at: exportedAt, account_id: accountId },
       account: db.prepare('SELECT id,name,email,business_name,business_type,plan,created_at FROM accounts WHERE id=?').get(accountId),
       clients: db.prepare('SELECT * FROM clients WHERE account_id=?').all(accountId),
       staff: db.prepare('SELECT id,name,phone,email,role,salary_type,salary_amount,commission_percent,is_active,notes,created_at FROM staff WHERE account_id=?').all(accountId),
@@ -17,7 +18,8 @@ router.get('/export', auth, (req, res) => {
       reminders: db.prepare('SELECT * FROM reminders WHERE account_id=?').all(accountId),
     };
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename=backup.json');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `attachment; filename=teampulse-backup-${exportedAt.slice(0, 10)}.json`);
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -33,6 +33,25 @@ function requireAuth(req, res, next) {
 
 const SHARE_MAX_SIZE = 600 * 1024;
 const SHARE_TTL_DAYS = 30;
+const SHARE_CSP = [
+  "default-src 'self' data: blob: https:",
+  "script-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "frame-src 'none'",
+  "child-src 'none'",
+  "form-action 'none'",
+  "style-src 'self' 'unsafe-inline' https:",
+  "img-src 'self' data: https:",
+  "font-src 'self' data: https:",
+].join('; ');
+
+function setShareSecurityHeaders(res) {
+  res.setHeader('Content-Security-Policy', SHARE_CSP);
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+}
 
 router.post('/', requireAuth, (req, res) => {
   const { html } = req.body;
@@ -64,6 +83,7 @@ function serveShare(req, res) {
   `).get(token);
 
   if (!row) {
+    setShareSecurityHeaders(res);
     return res.status(404).send(`<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head><meta charset="UTF-8"><title>لینک منقضی شده</title>
@@ -80,10 +100,7 @@ a{display:inline-block;padding:10px 24px;background:#7c6af7;color:#fff;border-ra
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self' data: blob: https:; script-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:"
-  );
+  setShareSecurityHeaders(res);
   res.send(row.html);
 }
 

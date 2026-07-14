@@ -20,16 +20,19 @@ const corsOptions = allowedCorsOrigins.length
       credentials: false,
     }
   : { origin: '*', credentials: false };
-const cspReportOnlyValue = [
+const cspValue = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com",
+  "script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com https://www.gstatic.com",
   "style-src 'self' 'unsafe-inline' https:",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",
   "connect-src 'self' https:",
   "media-src 'self' blob: data:",
+  "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://translate.google.com",
+  "child-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://translate.google.com",
   "worker-src 'self'",
   "manifest-src 'self'",
+  "form-action 'self'",
   "base-uri 'self'",
   "frame-ancestors 'self'",
   "object-src 'none'",
@@ -43,7 +46,8 @@ function securityHeaders(req, res, next) {
   next();
 }
 function reportOnlyCsp(req, res, next) {
-  res.setHeader('Content-Security-Policy-Report-Only', cspReportOnlyValue);
+  res.setHeader('Content-Security-Policy', cspValue);
+  res.setHeader('Content-Security-Policy-Report-Only', cspValue);
   next();
 }
 function noStoreApi(req, res, next) {
@@ -78,6 +82,27 @@ const authLoginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'too_many_login_attempts' },
 });
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_admin_requests' },
+});
+const backupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_backup_requests' },
+});
+const speechLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_speech_requests' },
+});
 app.use('/api/auth/login', authLoginLimiter);
 app.use('/api/', noStoreApi);
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }));
@@ -88,14 +113,14 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/files', require('./routes/files'));
-app.use('/api/backup', require('./routes/backup'));
+app.use('/api/backup', backupLimiter, require('./routes/backup'));
 app.use('/api/data', require('./routes/data'));
-app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin', adminLimiter, require('./routes/admin'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/share', require('./routes/share'));
 app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/wallet', require('./routes/wallet'));
-app.use('/api/speech', require('./routes/speech'));
+app.use('/api/speech', speechLimiter, require('./routes/speech'));
 console.log('Speech API loaded');
 app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
 app.get('/share/:token', require('./routes/share').serveShare);
@@ -119,7 +144,8 @@ function setStaticCacheHeaders(res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.html') {
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Content-Security-Policy-Report-Only', cspReportOnlyValue);
+    res.setHeader('Content-Security-Policy', cspValue);
+    res.setHeader('Content-Security-Policy-Report-Only', cspValue);
   } else if (/\.(?:css|js|png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
     res.setHeader('Cache-Control', 'public, max-age=86400');
   }

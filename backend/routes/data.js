@@ -54,6 +54,16 @@ function looksLikeDestructiveOverwrite(previousData, nextData) {
   return previousCount >= 10 && nextCount < Math.ceil(previousCount * 0.1);
 }
 
+function sanitizeUserDataForStorage(data) {
+  if (!data || typeof data !== 'object') return data;
+  const clean = Array.isArray(data) ? [...data] : { ...data };
+  delete clean._gdrive_token;
+  delete clean._gdrive_token_expiry;
+  delete clean._gcal_token;
+  delete clean._gcal_token_expiry;
+  return clean;
+}
+
 function canAccessAccount(req, targetId) {
   if (req.user.id === targetId || req.user.role === 'admin') return true;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
@@ -81,7 +91,8 @@ router.put('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
-    const { data, force } = req.body;
+    const { force } = req.body;
+    const data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(targetId);
     if (existing) {
@@ -122,7 +133,7 @@ router.get('/:accountId', auth, (req, res) => {
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
     if (!row) return res.json({ data: null });
-    res.json({ data: JSON.parse(row.data), updated_at: row.updated_at });
+    res.json({ data: sanitizeUserDataForStorage(JSON.parse(row.data)), updated_at: row.updated_at });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

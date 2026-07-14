@@ -2,6 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
 <title>در حال اتصال...</title>
 <style>
   body{font-family:Tahoma,sans-serif;background:#0f1117;color:#9399ab;display:flex;
@@ -19,6 +20,11 @@
       const state = params.get('state') || '';
       const error = params.get('error');
       const errorDescription = params.get('error_description');
+      if (!/^(gcal|gdrive)_[a-z0-9]+$/i.test(state)) {
+        status.textContent = 'درخواست اتصال معتبر نیست.';
+        setTimeout(function () { window.close(); }, 800);
+        return;
+      }
       const messageType = state.indexOf('gcal_') === 0 ? 'gcal_token' : 'gdrive_token';
 
       const payload = error
