@@ -3402,7 +3402,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <div class="nav-section">مالی</div>
       <a class="nav-item" data-page="families" title="حساب‌های مشترک"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
       <a class="nav-item" data-page="payments" title="خرید ها و پرداخت ها"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>خرید ها و پرداخت ها</span></a>
-      <a class="nav-item" data-page="reminders" title="یادآوری پرداخت"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری پرداخت</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
+      <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
       <a class="nav-item" data-page="dashboard" title="داشبورد مالی"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
 
       <div class="nav-section">سیستم</div>
@@ -5732,7 +5732,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
   {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
   {key:'payments', label:'پرداخت‌ها', icon:'🛒', desc:'تاریخچه خریدها و پرداخت‌ها'},
-  {key:'reminders', label:'یادآوری پرداخت', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
+  {key:'reminders', label:'یادآوری‌ها', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
   {key:'dashboard', label:'داشبورد مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
 ];
 
@@ -5752,6 +5752,7 @@ function _teamCan(page) {
   const s = _teamAccessSession();
   if (!s) return true;
   if (['settings','tutorial'].includes(page)) return true;
+  if (page === 'payments' && Array.isArray(s.permissions) && s.permissions.includes('reminders')) return true;
   return Array.isArray(s.permissions) && s.permissions.includes(page);
 }
 function _teamDefaultPage() {
@@ -5763,6 +5764,10 @@ function _applyTeamAccessToNav() {
   const s = _teamAccessSession();
   document.querySelectorAll('.nav-item[data-page], .bn-item[data-page]').forEach(el => {
     const page = el.dataset.page;
+    if (page === 'reminders' && el.classList.contains('nav-item')) {
+      el.style.display = 'none';
+      return;
+    }
     el.style.display = (!s || _teamCan(page)) ? '' : 'none';
   });
   const accountBtn = document.getElementById('account-btn');
@@ -5933,7 +5938,9 @@ function _teamCanCreateInstruction(parentId) {
 // This is what prevents the "flash of wrong menu item" on refresh: we never
 // let the browser paint the default HTML state before correcting it.
 function _menuPageFor(page) {
-  return (page === 'customerlist' || page === 'archive') ? 'students' : page;
+  if (page === 'customerlist' || page === 'archive') return 'students';
+  if (page === 'reminders') return 'payments';
+  return page;
 }
 (function _syncInitialActiveMenuSync() {
   const menuPage = _menuPageFor(currentPage);
@@ -6189,7 +6196,7 @@ function updatePageTitle() {
     purchases: 'تاریخچه کل خریدها',
     sessions: META.sessionPlural || 'جلسات',
     families: 'حساب‌های مشترک',
-    reminders: 'یادآوری پرداخت',
+    reminders: 'خرید ها و پرداخت ها',
     customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
     staff: 'مدیریت',
@@ -6331,6 +6338,11 @@ function _selectGoogleTranslateLanguage(lang) {
 }
 
 async function renderPage() {
+  if (currentPage === 'reminders') {
+    currentPage = 'payments';
+    _paymentsTab = 'reminders';
+    updatePageTitle();
+  }
   _applyTeamAccessToNav();
   if (!_teamCan(currentPage)) {
     const fallback = _teamDefaultPage();
@@ -6818,6 +6830,7 @@ async function saveNewPurchase(studentId, reminderId = 0) {
   closeModal();
   showToast('خرید جدید ثبت شد ✓', 'success');
   if (currentPage === 'reminders') await renderReminders();
+  else if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments();
   else if (currentPage === 'payments') await renderPayments();
   else await renderStudents();
 }
@@ -7537,6 +7550,21 @@ async function saveGeneralPayment() {
 // ════════════════════════════════════════════════════════════════════════════
 let _paymentsTab = 'purchases';
 
+function updateReminderBadges(count) {
+  const text = fa(count || 0);
+  ['reminder-badge', 'payments-reminder-badge', 'bn-reminder-badge'].forEach(id => {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.style.display = count ? 'inline-block' : 'none';
+    badge.textContent = text;
+  });
+}
+
+async function refreshReminderSurface(search = '') {
+  if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments(search);
+  else if (currentPage === 'reminders') await renderReminders(search);
+}
+
 async function renderPayments(search = '') {
   const tab = _paymentsTab;
 
@@ -7545,13 +7573,18 @@ async function renderPayments(search = '') {
       <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
         <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';renderPayments()">🛒 خریدها</button>
         <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';renderPayments()">💳 پرداخت‌ها</button>
+        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';renderPayments()">🔔 یادآوری‌ها <span class="badge" id="payments-reminder-badge" style="display:none">0</span></button>
       </div>
       <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input placeholder="جستجو با نام..." oninput="renderPayments(this.value)" value="${search}">
+        <input placeholder="${tab==='reminders'?'جستجوی یادآوری...':'جستجو با نام...'}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
       </div>
     </div>`);
 
   allStudents = await window.api.students.getAll();
+  try {
+    const remindersForBadge = await window.api.reminders.getAll();
+    updateReminderBadges(remindersForBadge.filter(r => !r.done).length);
+  } catch(e) {}
   const q = search.trim().toLowerCase();
 
   if (tab === 'purchases') {
@@ -7587,7 +7620,7 @@ async function renderPayments(search = '') {
     html += `</tbody></table></div>`;
     setContent(html);
 
-  } else {
+  } else if (tab === 'payments') {
     let payments = await window.api.payments.getAll();
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
@@ -7617,6 +7650,8 @@ async function renderPayments(search = '') {
     }
     html += `</tbody></table></div>`;
     setContent(html);
+  } else {
+    await renderReminders(search, true);
   }
 
   if (search) {
@@ -8544,26 +8579,36 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // ════════════════════════════════════════════════════════════════════════════
 // REMINDERS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-async function renderReminders(search = '') {
-  updateTopbarActions(`
-    <div class="table-search">
-      <span style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی یادآوری..." oninput="renderReminders(this.value)" value="${escapeHtml(search)}">
-    </div>
-    <button class="btn btn-primary" onclick="openAddReminder()">+ یادآوری جدید</button>
-  `);
+async function renderReminders(search = '', embedded = false) {
+  if (!embedded) {
+    updateTopbarActions(`
+      <div class="payments-toolbar">
+        <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
+          <button role="tab" onclick="_paymentsTab='purchases';currentPage='payments';renderPage()">🛒 خریدها</button>
+          <button role="tab" onclick="_paymentsTab='payments';currentPage='payments';renderPage()">💳 پرداخت‌ها</button>
+          <button class="active" role="tab" aria-selected="true">🔔 یادآوری‌ها</button>
+        </div>
+        <div class="table-search">
+          <span style="color:var(--text3)">🔍</span>
+          <input placeholder="جستجوی یادآوری..." oninput="renderReminders(this.value)" value="${escapeHtml(search)}">
+        </div>
+      </div>
+    `);
+  }
   allStudents = await window.api.students.getAll();
   const reminders = await window.api.reminders.getAll();
   const today = jalaliKey(formatJalali(...todayJalali()));
 
   const pending = reminders.filter(r => !r.done);
-  document.getElementById('reminder-badge').style.display = pending.length ? 'inline-block' : 'none';
-  document.getElementById('reminder-badge').textContent = fa(pending.length);
+  updateReminderBadges(pending.length);
 
   if (reminders.length === 0) {
-    setContent(`<div class="table-card"><div class="empty"><span>⏰</span>
-      یادآوری‌ای ثبت نشده. برای پکیج‌های دوره‌ای (مثلاً کوچینگ ۶ ماهه) یک یادآوری بساز تا قبل از سررسید پرداخت بعدی به تو خبر بدهد.
-    </div></div>`);
+    setContent(`<div class="table-card">
+      <div class="table-header"><span class="title">🔔 یادآوری‌ها</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
+      <div class="empty"><span>⏰</span>
+        یادآوری‌ای ثبت نشده. برای پکیج‌های دوره‌ای (مثلاً کوچینگ ۶ ماهه) یک یادآوری بساز تا قبل از سررسید پرداخت بعدی به تو خبر بدهد.
+      </div>
+    </div>`);
     return;
   }
 
@@ -8572,6 +8617,7 @@ async function renderReminders(search = '') {
     : reminders;
 
   let html = `<div class="table-card">
+    <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(filtered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>`;
@@ -8685,7 +8731,7 @@ async function saveReminder() {
   });
   closeModal();
   showToast('یادآوری ثبت شد ✓', 'success');
-  if (currentPage === 'reminders') await renderReminders();
+  await refreshReminderSurface();
 }
 
 async function markReminderPaid(id) {
@@ -8723,7 +8769,7 @@ async function confirmReminderPaid(id) {
   await window.api.reminders.markPaid({ id, record_payment: record, amount, date });
   closeModal();
   showToast('ثبت شد ✓', 'success');
-  await renderReminders();
+  await refreshReminderSurface();
 }
 
 async function _ensurePackageTypeByLabel(label) {
@@ -8811,14 +8857,14 @@ async function saveEditReminder(id) {
   });
   closeModal();
   showToast('ذخیره شد ✓', 'success');
-  await renderReminders();
+  await refreshReminderSurface();
 }
 
 async function deleteReminder(id) {
   if (!confirm('این یادآوری حذف شود؟')) return;
   await window.api.reminders.delete(id);
   showToast('حذف شد', 'error');
-  await renderReminders();
+  await refreshReminderSurface();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -9822,9 +9868,7 @@ async function reloadAllData() {
   try {
     const reminders = await window.api.reminders.getAll();
     const pending = reminders.filter(r => !r.done).length;
-    const badge = document.getElementById('reminder-badge');
-    badge.style.display = pending ? 'inline-block' : 'none';
-    badge.textContent = fa(pending);
+    updateReminderBadges(pending);
   } catch(e) {}
   await renderPage();
 }
@@ -14909,9 +14953,7 @@ async function init() {
     try {
       const reminders = await window.api.reminders.getAll();
       const pending = reminders.filter(r => !r.done).length;
-      const badge = document.getElementById('reminder-badge');
-      badge.style.display = pending ? 'inline-block' : 'none';
-      badge.textContent = fa(pending);
+      updateReminderBadges(pending);
     } catch(e) { console.warn('[TeamPulse] reminders error:', e); }
     console.log('[TeamPulse] renderPage...');
     await renderPage();
