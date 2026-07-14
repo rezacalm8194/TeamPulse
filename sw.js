@@ -1,36 +1,123 @@
-const CACHE = 'team-pulse-v-voice-debug-v4';
-self.addEventListener('install', e => { self.skipWaiting(); });
-self.addEventListener('activate', e => {
-  e.waitUntil(
+const CACHE = 'team-pulse-static-v5';
+const CORE_ASSETS = [
+  '/app',
+  '/manifest.json',
+  '/favicon.png',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/logo.png',
+  '/sw.js',
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => cache.addAll(CORE_ASSETS))
+      .catch(() => {})
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
-self.addEventListener('fetch', e => { if (!e.request.url.startsWith(self.location.origin)||e.request.url.includes('/api/')) return; e.respondWith(fetch(e.request).catch(()=>caches.match(e.request))); });
-const _t = new Map();
-self.addEventListener('message', e => {
-  if (!e.data) return;
-  if (e.data.type === 'SHOW_NOTIFICATION') {
-    self.registration.showNotification(e.data.title, {body:e.data.body||'',icon:'/logo.png',tag:e.data.tag||'tp',requireInteraction:true,dir:'rtl',vibrate:[200,100,200]});
+
+function isSameOrigin(request) {
+  return new URL(request.url).origin === self.location.origin;
+}
+
+function shouldSkip(request) {
+  const url = new URL(request.url);
+  return request.method !== 'GET' ||
+    !isSameOrigin(request) ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/share/');
+}
+
+function cacheableResponse(response) {
+  return response && response.ok && response.type === 'basic';
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    const response = await fetch(request);
+    if (cacheableResponse(response)) cache.put(request, response.clone());
+    return response;
+  } catch {
+    return (await cache.match(request)) || (await cache.match('/app'));
   }
-  if (e.data.type === 'SCHEDULE_NOTIFICATIONS') {
-    _t.forEach(t=>clearTimeout(t)); _t.clear();
-    (e.data.notifications||[]).forEach(n => {
-      if (n.delayMs>0&&n.delayMs<86400000) {
-        _t.set(n.id,setTimeout(()=>{self.registration.showNotification(n.title,{body:n.body||'',icon:'/logo.png',tag:n.tag,requireInteraction:true,dir:'rtl',vibrate:[300,100,300],actions:[{action:'done',title:'✅ انجام شد'},{action:'snooze',title:'⏰ ۱۰ دقیقه دیگه'}]});_t.delete(n.id);},n.delayMs));
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  const fresh = fetch(request)
+    .then(response => {
+      if (cacheableResponse(response)) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => cached);
+  return cached || fresh;
+}
+
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  if (shouldSkip(request)) return;
+  if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+  event.respondWith(staleWhileRevalidate(request));
+});
+
+const _t = new Map();
+self.addEventListener('message', event => {
+  if (!event.data) return;
+  if (event.data.type === 'SHOW_NOTIFICATION') {
+    self.registration.showNotification(event.data.title, {
+      body: event.data.body || '',
+      icon: '/logo.png',
+      tag: event.data.tag || 'tp',
+      requireInteraction: true,
+      dir: 'rtl',
+      vibrate: [200, 100, 200],
+    });
+  }
+  if (event.data.type === 'SCHEDULE_NOTIFICATIONS') {
+    _t.forEach(timer => clearTimeout(timer));
+    _t.clear();
+    (event.data.notifications || []).forEach(notification => {
+      if (notification.delayMs > 0 && notification.delayMs < 86400000) {
+        _t.set(notification.id, setTimeout(() => {
+          self.registration.showNotification(notification.title, {
+            body: notification.body || '',
+            icon: '/logo.png',
+            tag: notification.tag,
+            requireInteraction: true,
+            dir: 'rtl',
+            vibrate: [300, 100, 300],
+            actions: [
+              { action: 'done', title: '✅ انجام شد' },
+              { action: 'snooze', title: '⏰ ۱۰ دقیقه دیگه' },
+            ],
+          });
+          _t.delete(notification.id);
+        }, notification.delayMs));
       }
     });
-    console.log('[SW] Scheduled',e.data.notifications.length,'notifs');
   }
 });
 
-// ── Web Push از سرور ─────────────────────────────────────────
-self.addEventListener('push', e => {
-  if (!e.data) return;
+self.addEventListener('push', event => {
+  if (!event.data) return;
   let data;
-  try { data = e.data.json(); } catch { data = { title: '⏰ یادآور', body: e.data.text() }; }
-  e.waitUntil(
+  try { data = event.data.json(); } catch { data = { title: '⏰ یادآور', body: event.data.text() }; }
+  event.waitUntil(
     self.registration.showNotification(data.title || '⏰ یادآور TeamPulse', {
       body: data.body || '',
       icon: data.icon || '/logo.png',
@@ -40,14 +127,32 @@ self.addEventListener('push', e => {
       vibrate: [300, 100, 300],
       actions: [
         { action: 'open', title: '📋 مشاهده' },
-        { action: 'dismiss', title: '✅ فهمیدم' }
-      ]
+        { action: 'dismiss', title: '✅ فهمیدم' },
+      ],
     })
   );
 });
 
-self.addEventListener('notificationclick', e => {
-  e.notification.close();
-  if (e.action==='snooze'){const n=e.notification;setTimeout(()=>self.registration.showNotification(n.title,{body:n.body,icon:'/logo.png',tag:n.tag+'-s',requireInteraction:true,dir:'rtl'}),600000);return;}
-  e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(cl=>{for(const c of cl){if(c.url.includes('/app')&&'focus'in c)return c.focus();}return clients.openWindow('/app');}));
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  if (event.action === 'snooze') {
+    const notification = event.notification;
+    setTimeout(() => self.registration.showNotification(notification.title, {
+      body: notification.body,
+      icon: '/logo.png',
+      tag: notification.tag + '-s',
+      requireInteraction: true,
+      dir: 'rtl',
+    }), 600000);
+    return;
+  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(clientList => {
+        for (const client of clientList) {
+          if (client.url.includes('/app') && 'focus' in client) return client.focus();
+        }
+        return clients.openWindow('/app');
+      })
+  );
 });

@@ -22527,7 +22527,7 @@ async function _installPWA() {
 
 // Register Service Worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?v=voice-debug-v4').catch(() => {});
+  navigator.serviceWorker.register('/sw.js?v=static-cache-v5').catch(() => {});
 }
 
 
@@ -22859,7 +22859,7 @@ if (document.readyState === 'complete') {
 <script>
 // Service Worker for PWA
 if (false && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js?v=voice-debug-v4').catch(()=>{});
+  navigator.serviceWorker.register('sw.js?v=static-cache-v5').catch(()=>{});
 }
 </script>
 
