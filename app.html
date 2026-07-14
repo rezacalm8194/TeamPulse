@@ -4333,6 +4333,45 @@ window.api = {
       else r.done=true;
       _save(); return _P({ok:true,reminder:r});
     },
+    createPurchase: (p)=>{
+      const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
+      let typeId=null;
+      const sourcePkg=r.package_id?_db.packages.find(x=>x.id===r.package_id):null;
+      if(sourcePkg)typeId=sourcePkg.type_id;
+      if(!typeId){
+        const label=(r.title||'خرید جدید').trim()||'خرید جدید';
+        let pt=_db.package_types.find(x=>String(x.label||'').trim()===label);
+        if(!pt){
+          const id=_nextId('package_types');
+          pt={id,key:'pt'+id,label,color:'#7c6af7'};
+          _db.package_types.push(pt);
+        }
+        typeId=pt.id;
+      }
+      const pkgId=_nextId('packages');
+      const purchaseDate=p.date||_formatJalali(..._todayJalali());
+      _db.packages.push({
+        id:pkgId,
+        student_id:r.student_id,
+        type_id:typeId,
+        total_amount:r.amount||0,
+        initial_cost:0,
+        repeat_months:r.repeat_months||0,
+        start_date:purchaseDate,
+        note:p.note||`ثبت خرید از یادآوری: ${r.title||''}`
+      });
+      if(r.repeat_months>0){
+        const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);
+        const next=_addMonths(jy,jm,jd,r.repeat_months);
+        r.package_id=pkgId;
+        r.due_date_jalali=_formatJalali(...next);
+        r.done=false;
+        r.notified_levels=[];
+      }else{
+        r.done=true;
+      }
+      _save(); return _P({ok:true,package_id:pkgId,reminder:r});
+    },
   },
 
   dashboard: {
@@ -8551,6 +8590,7 @@ async function renderReminders(search = '') {
 
   filtered.forEach(r => {
     const due = jalaliKey(r.due_date_jalali);
+    const reminderMenuId = `reminder-menu-${r.id}`;
     let statusBadge;
     if (r.done) statusBadge = `<span class="status status-ok">پرداخت شد</span>`;
     else if (due < today) statusBadge = `<span class="status status-debt">سررسید گذشته</span>`;
@@ -8576,10 +8616,17 @@ async function renderReminders(search = '') {
       <td>${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
       <td style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? `هر ${fa(r.repeat_months)} ماه` : 'یک‌بار'}</td>
       <td>${statusBadge}</td>
-      <td style="display:flex;gap:5px">
-        ${!r.done ? `<button class="btn btn-primary btn-sm" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="openEditReminder(${r.id})">✏️ ویرایش</button>
-        <button class="btn btn-danger" style="font-size:14px;padding:7px 12px" onclick="deleteReminder(${r.id})">🗑</button>
+      <td>
+        <div class="row-menu">
+          <button class="row-menu-btn" onclick="toggleRowMenu(event,'${reminderMenuId}')" aria-label="عملیات یادآوری">⋮</button>
+          <div class="row-menu-panel" id="${reminderMenuId}">
+            ${!r.done ? `<div class="row-menu-item" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</div>` : ''}
+            ${!r.done ? `<div class="row-menu-item" onclick="createPurchaseFromReminder(${r.id})">🛒 خرید جدید با همین عنوان و مبلغ</div>` : ''}
+            <div class="row-menu-item" onclick="openEditReminder(${r.id})">✏️ ویرایش</div>
+            <div class="row-menu-divider"></div>
+            <div class="row-menu-item danger" onclick="deleteReminder(${r.id})">🗑 حذف</div>
+          </div>
+        </div>
       </td>
     </tr>`;
   });
@@ -8684,6 +8731,19 @@ async function confirmReminderPaid(id) {
   await window.api.reminders.markPaid({ id, record_payment: record, amount, date });
   closeModal();
   showToast('ثبت شد ✓', 'success');
+  await renderReminders();
+}
+
+async function createPurchaseFromReminder(id) {
+  const res = await window.api.reminders.createPurchase({
+    id,
+    date: formatJalali(...todayJalali()),
+  });
+  if (!res?.ok) {
+    showToast(res?.error || 'ثبت خرید انجام نشد', 'error');
+    return;
+  }
+  showToast('خرید جدید با همین عنوان و مبلغ ثبت شد ✓', 'success');
   await renderReminders();
 }
 
