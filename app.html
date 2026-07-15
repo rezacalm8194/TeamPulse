@@ -19252,12 +19252,6 @@ function _todoViewSwitcherHtml() {
     </label>
   `;
   const navName = _todoViewMode === 'month' ? 'ماه' : _todoViewMode === 'year' ? 'سال' : 'هفته';
-  const filters = [
-    ['all','همه'],
-    ['urgent','فوری'],
-    ['goals','اهداف'],
-  ].map(([key,label]) => `<button class="btn ${_todoCalendarFilter===key?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoCalendarFilter('${key}')"
-    style="min-width:54px;justify-content:center">${label}</button>`).join('');
   return `<div class="todo-calendar-toolbar">
     <div class="todo-calendar-toolbar-row">
       <div class="todo-calendar-mode-row">${viewSelect}</div>
@@ -19267,7 +19261,6 @@ function _todoViewSwitcherHtml() {
         <button type="button" class="btn btn-ghost btn-sm todo-calendar-search-trigger ${_todoCalendarSearch ? 'active' : ''}" onpointerdown="event.preventDefault();_toggleTodoCalendarSearch(event)" onclick="return false" title="جستجو" aria-label="جستجو">🔍</button>
         <input class="input" id="todo-calendar-search" value="${escapeHtml(_todoCalendarSearch)}" onfocus="_openTodoCalendarSearch()" onblur="_maybeCloseTodoCalendarSearch()" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی سریع..." style="min-width:220px;max-width:360px;height:38px">
       </div>
-      <div class="todo-calendar-filter-row">${filters}</div>
       <label class="todo-calendar-repeat-toggle" style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
         <input type="checkbox" ${_todoCalendarShowRepeats?'checked':''} onchange="_toggleTodoCalendarRepeats(this.checked)">
         نمایش تکرارهای آینده
@@ -19647,6 +19640,7 @@ function _todoFilteredCalendarTasks(tasks) {
     const meta = _todoCategoryMeta(t);
     const hay = `${t.title || ''} ${t.description || ''} ${meta.label || ''}`.toLowerCase();
     if (q && !hay.includes(q)) return false;
+    if (['week','month','year'].includes(_todoViewMode)) return true;
     if (_todoCalendarFilter === 'urgent') return t.priority === 'urgent';
     if (_todoCalendarFilter === 'open') return !t.done;
     if (_todoCalendarFilter === 'sessions') return meta.kind === 'sessions';
