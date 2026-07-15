@@ -18906,6 +18906,9 @@ function _todosInit() {
   if (!_db._nextId.todos) _db._nextId.todos = 1;
   _db.todos.forEach(t => {
     if ((t.remind_min === undefined || t.remind_min === null) && t.time) t.remind_min = 15;
+    if (t.scheduledDate && !t.scheduled_date) t.scheduled_date = t.scheduledDate;
+    if (!t.scheduled_date && t.date_jalali) t.scheduled_date = t.date_jalali;
+    if (!t.status) t.status = t.done ? 'completed' : 'pending';
   });
 }
 
@@ -18915,6 +18918,80 @@ function _todayJalaliStr() {
 }
 
 function _jalaliToday() { return _jalaliKey(_todayJalaliStr()); }
+
+function _todoScheduledDate(t) {
+  return t?.scheduled_date || t?.scheduledDate || t?.date_jalali || '';
+}
+
+function _todoRootId(t) {
+  return t?.recurrence_parent_id || t?.recurring_parent_id || t?.parent_todo_id || t?.template_id || t?.id;
+}
+
+function _isTodoRecurring(t) {
+  return !!(t && t.repeat && t.repeat !== 'none');
+}
+
+function _todoDoneDayKey(t) {
+  if (!t?.done_at && !t?.completedAt && !t?.completed_at) return 0;
+  const raw = t.done_at || t.completedAt || t.completed_at;
+  const [dy,dm,dd] = _jalaliFromInstant(raw);
+  return _jalaliKey(_formatJalali(dy,dm,dd));
+}
+
+function _todoIsDoneToday(t, todayKey = _jalaliToday()) {
+  return !!(t?.done && _todoDoneDayKey(t) === todayKey);
+}
+
+function _todoHasOccurrenceFor(rootId, date, excludeId = null) {
+  if (!rootId || !date) return false;
+  return (_db.todos || []).some(x => {
+    if (excludeId !== null && String(x.id) === String(excludeId)) return false;
+    if (x.archived || x.status === 'deleted') return false;
+    return String(_todoRootId(x)) === String(rootId) && _todoScheduledDate(x) === date;
+  });
+}
+
+function _createTodoOccurrenceRecord(t, status, completedAt = null) {
+  const scheduledDate = _todoScheduledDate(t);
+  const isCompleted = status === 'completed' || status === 'late_completed';
+  const nowIso = completedAt || new Date().toISOString();
+  const record = {
+    ...t,
+    id: (_db._nextId.todos++),
+    recurrence_parent_id: _todoRootId(t),
+    scheduled_date: scheduledDate,
+    scheduledDate,
+    date_jalali: scheduledDate,
+    repeat: 'none',
+    done: isCompleted,
+    done_at: isCompleted ? nowIso : null,
+    completedAt: isCompleted ? nowIso : null,
+    completed_at: isCompleted ? nowIso : null,
+    status,
+    skipped_at: status === 'skipped' ? nowIso : null,
+    archived: true,
+    _snapshot: true,
+    _occurrence: true,
+    updated_at: nowIso,
+  };
+  _db.todos.push(record);
+  return record;
+}
+
+function _advanceRecurringTodoOccurrence(t, scheduledDate) {
+  if (!_isTodoRecurring(t)) return;
+  t.recurrence_parent_id = _todoRootId(t);
+  t.archived = false;
+  t.done = false;
+  t.done_at = null;
+  t.completedAt = null;
+  t.completed_at = null;
+  t.status = 'pending';
+  t.updated_at = new Date().toISOString();
+  _advanceTodoDate(t, scheduledDate);
+  t.scheduled_date = t.date_jalali || '';
+  t.scheduledDate = t.scheduled_date;
+}
 
 // ── Render Todo List ──────────────────────────────────────────────────────────
 function _sortByTime(a, b) {
@@ -19218,6 +19295,11 @@ function _todoStickyAddBoxHtml(stats = {}) {
         </div>
       </div>
       <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
+    </div>` : ''}
+    ${(stats.completedTodayTotal !== undefined && stats.completedTodayTotal > 0) ? `
+    <div style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text3)">
+      <span style="padding:3px 8px;border-radius:999px;background:rgba(62,207,142,.08);color:var(--green);font-weight:700">امروز انجام‌شده: ${fa(stats.completedTodayTotal)}</span>
+      ${stats.lateCompletedTodayCount ? `<span style="padding:3px 8px;border-radius:999px;background:rgba(245,158,11,.10);color:var(--amber);font-weight:700">عقب‌افتاده تکمیل‌شده: ${fa(stats.lateCompletedTodayCount)}</span>` : ''}
     </div>` : ''}
     <div style="margin-top:12px">${_todoViewSwitcherHtml()}</div>
   </div>`;
@@ -19758,12 +19840,9 @@ function renderTodoList() {
   } catch(e) {}
   const tomorrowKey = tomorrowStr ? _jalaliKey(tomorrowStr) : 0;
 
-  // کارهای اصلی + snapshot های امروز (کارهای repeat که امروز انجام شدن)
+  // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
-  const _todaySnapshots = _db.todos.filter(t => t.archived && t._snapshot && t.done_at && (() => {
-    const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
-    return _jalaliKey(_formatJalali(dy,dm,dd)) === _todayKeyForFilter;
-  })());
+  const _todaySnapshots = _db.todos.filter(t => t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
   const todos = [..._db.todos.filter(t => !t.archived), ..._todaySnapshots];
   if (_todoViewMode !== 'list') {
     setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoStickyAddBoxHtml()}${_renderTodoCalendarView()}</div>`);
@@ -19781,11 +19860,7 @@ function renderTodoList() {
   };
 
   // تابع کمکی: آیا این کار امروز done شده؟
-  const _doneToday = (t) => {
-    if (!t.done || !t.done_at) return false;
-    const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
-    return _jalaliKey(_formatJalali(dy,dm,dd)) === todayKey;
-  };
+  const _doneToday = (t) => _todoIsDoneToday(t, todayKey);
 
   const overdueTodos = todos.filter(t => _isTodoOverdue(t) && !_doneToday(t))
     .sort((a,b) => {
@@ -19794,11 +19869,15 @@ function renderTodoList() {
       return (a.time||'').localeCompare(b.time||'');
     });
 
-  const todayTodos = todos.filter(t =>
-    _doneToday(t) ||
-    !t.date_jalali ||
-    _jalaliKey(t.date_jalali) === todayKey
-  );
+  const todayTodos = todos.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
+    return !scheduled || scheduledKey === todayKey;
+  });
+  const lateDoneTodayTodos = todos.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    return _doneToday(t) && scheduled && _jalaliKey(scheduled) < todayKey;
+  }).sort((a,b) => _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) || _sortByTime(a,b));
   const tomorrowTodos  = todos.filter(t => t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey);
   const _afterKey = tomorrowKey || todayKey;
   const futureTodos    = todos.filter(t => t.date_jalali && _jalaliKey(t.date_jalali) > _afterKey)
@@ -19825,6 +19904,8 @@ function renderTodoList() {
 
   const pending = todayTodos.filter(t=>!t.done).length;
   const doneCnt = todayTodos.filter(t=>t.done).length;
+  const completedTodayTotal = todos.filter(t => _doneToday(t)).length;
+  const lateCompletedTodayCount = lateDoneTodayTodos.length;
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
   const activeCount = todos.filter(t => !t.done).length;
 
@@ -19898,6 +19979,12 @@ function renderTodoList() {
         <div style="font-size:11px;margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           ${_todoDateBadge(t, todayKey, tomorrowKey, isOverdue)}
         </div>
+        ${isOverdue ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+          <button class="btn btn-success btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'done')">انجام شد</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'move_today')">ببر به امروز</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 8px;height:auto;color:var(--amber)" onclick="_resolveOverdueTodo(${t.id},'skip')">انجام نمی‌دهم</button>
+          <button class="btn btn-danger btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'delete_occurrence')">حذف نوبت</button>
+        </div>` : ''}
       </div>
       <button class="x-close-sm" onclick="deleteTodo(${t.id})">×</button>
     </div>`;
@@ -19917,14 +20004,28 @@ function renderTodoList() {
     overdueCount: overdueTodos.length,
     doneCnt,
     totalToday: todayTodos.length,
-    progress
+    progress,
+    completedTodayTotal,
+    lateCompletedTodayCount
   });
 
   // ── عقب‌افتاده ──
   if (overdueTodos.length > 0) {
     html += sectionHeader('🚨', 'عقب‌افتاده', `${fa(overdueTodos.length)} کار از قبل`, 'var(--red)');
+    html += `<div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--amber)" onclick="_openResolveAllOverdueTodos()">
+        تعیین تکلیف همه عقب‌افتاده‌ها
+      </button>
+    </div>`;
     html += `<div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:8px;margin-bottom:8px">`;
     html += overdueTodos.map(renderTodo).join('');
+    html += `</div>`;
+  }
+
+  if (lateDoneTodayTodos.length > 0) {
+    html += sectionHeader('✅', 'عقب‌افتاده‌های تکمیل‌شده امروز', `${fa(lateDoneTodayTodos.length)} نوبت`, 'var(--amber)');
+    html += `<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.18);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">`;
+    html += lateDoneTodayTodos.map(renderTodo).join('');
     html += `</div>`;
   }
 
@@ -20109,29 +20210,25 @@ function _toggleTodo(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
+  const scheduledDate = _todoScheduledDate(t);
+  const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
+  const todayKey = _jalaliToday();
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
+  t.completedAt = t.done_at;
+  t.completed_at = t.done_at;
+  t.status = t.done ? (scheduledKey && scheduledKey < todayKey ? 'late_completed' : 'completed') : 'pending';
   t.updated_at = new Date().toISOString();
 
   if (t.done) {
     _playDoneSound();
     if (t.repeat && t.repeat !== 'none') {
-      // تکراری‌ها باید همان لحظه به دوره بعدی بروند؛ تأخیر باعث می‌شد با بستن موبایل، فردا ساخته نشود.
-      const snapshot = {
-        ...t,
-        id: (_db._nextId.todos++),
-        done: true,
-        archived: true,
-        done_at: t.done_at || new Date().toISOString(),
-        repeat: 'none',
-        _snapshot: true,
-      };
-      _db.todos.push(snapshot);
-      t.archived = false;
-      t.done = false;
-      t.done_at = null;
-      t.updated_at = new Date().toISOString();
-      _advanceTodoDate(t);
+      const completedAt = t.done_at || new Date().toISOString();
+      _createTodoOccurrenceRecord(t, t.status, completedAt);
+      _advanceRecurringTodoOccurrence(t, scheduledDate);
+      if (scheduledKey && scheduledKey < todayKey) {
+        showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد؛ نوبت امروز همچنان باقی است.`, 'success');
+      }
     }
     // کارهای غیر تکراری: در renderTodoList روز بعد archive میشن
   }
@@ -20144,6 +20241,180 @@ function _toggleTodo(id) {
     const details = document.querySelector('.todo-done-details');
     if (details) details.open = true;
   }
+}
+
+function _resolveOverdueTodo(id, action) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == id);
+  if (!t) return;
+  const scheduledDate = _todoScheduledDate(t);
+  const today = _todayJalaliStr();
+  const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
+  const todayKey = _jalaliKey(today);
+  if (!scheduledDate || scheduledKey >= todayKey) return;
+
+  if (action === 'done') {
+    if (_isTodoRecurring(t)) {
+      const completedAt = new Date().toISOString();
+      _createTodoOccurrenceRecord(t, 'late_completed', completedAt);
+      _advanceRecurringTodoOccurrence(t, scheduledDate);
+      _save();
+      _syncToServer();
+      _playDoneSound();
+      showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد؛ نوبت امروز همچنان باقی است.`, 'success');
+      renderTodoList();
+      return;
+    }
+    t.done = true;
+    t.done_at = new Date().toISOString();
+    t.completedAt = t.done_at;
+    t.completed_at = t.done_at;
+    t.status = 'late_completed';
+    t.updated_at = t.done_at;
+    _save(); _syncToServer(); _playDoneSound(); renderTodoList();
+    return;
+  }
+
+  if (action === 'skip') {
+    if (_isTodoRecurring(t)) {
+      _createTodoOccurrenceRecord(t, 'skipped', new Date().toISOString());
+      _advanceRecurringTodoOccurrence(t, scheduledDate);
+    } else {
+      t.status = 'skipped';
+      t.skipped_at = new Date().toISOString();
+      t.archived = true;
+      t.done = false;
+      t.done_at = null;
+      t.updated_at = t.skipped_at;
+    }
+    _save(); _syncToServer();
+    showToast(`نوبت ${DateService.disp(scheduledDate)} انجام‌نشده بسته شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
+    renderTodoList();
+    return;
+  }
+
+  if (action === 'delete_occurrence') {
+    if (!confirm('فقط همین نوبت حذف شود؟ قالب تکرار و نوبت امروز دست‌نخورده می‌ماند.')) return;
+    _deleteTodoOccurrenceOnly(t, scheduledDate);
+    _save(); _syncToServer();
+    showToast('نوبت حذف شد؛ زنجیره تکرار حفظ شد.', 'success');
+    renderTodoList();
+    return;
+  }
+
+  if (action === 'move_today') {
+    _moveTodoOccurrenceToToday(t, scheduledDate, today);
+    return;
+  }
+}
+
+function _deleteTodoOccurrenceOnly(t, scheduledDate = _todoScheduledDate(t)) {
+  if (!t) return;
+  if (_isTodoRecurring(t)) {
+    _advanceRecurringTodoOccurrence(t, scheduledDate);
+  } else {
+    _db.todos = _db.todos.filter(x => x.id != t.id);
+  }
+}
+
+function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
+  const rootId = _todoRootId(t);
+  const existingToday = _todoHasOccurrenceFor(rootId, today, t.id);
+  if (existingToday) {
+    const makeBoth = confirm('از همین کار یک نوبت برای امروز وجود دارد. تایید = هر دو نوبت امروز انجام شوند. انصراف = نوبت گذشته رد شود و فقط نوبت امروز باقی بماند.');
+    if (!makeBoth) {
+      if (_isTodoRecurring(t)) _createTodoOccurrenceRecord(t, 'skipped', new Date().toISOString());
+      _db.todos = _db.todos.filter(x => x.id != t.id);
+      _save(); _syncToServer();
+      showToast(`نوبت ${DateService.disp(scheduledDate)} انجام‌نشده بسته شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
+      renderTodoList();
+      return;
+    }
+    const copy = {
+      ...t,
+      id: (_db._nextId.todos++),
+      recurrence_parent_id: rootId,
+      scheduled_date: today,
+      scheduledDate: today,
+      date_jalali: today,
+      repeat: 'none',
+      done: false,
+      done_at: null,
+      completedAt: null,
+      completed_at: null,
+      status: 'pending',
+      archived: false,
+      _occurrence: true,
+      _moved_from: scheduledDate,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    _db.todos.push(copy);
+    _db.todos = _db.todos.filter(x => x.id != t.id);
+  } else {
+    t.date_jalali = today;
+    t.scheduled_date = today;
+    t.scheduledDate = today;
+    t.status = 'pending';
+    t.done = false;
+    t.done_at = null;
+    t.completedAt = null;
+    t.completed_at = null;
+    t.updated_at = new Date().toISOString();
+  }
+  _save(); _syncToServer();
+  showToast(`نوبت ${DateService.disp(scheduledDate)} به امروز منتقل شد.`, 'success');
+  renderTodoList();
+}
+
+function _currentOverdueTodos() {
+  const todayKey = _jalaliToday();
+  return (_db.todos || []).filter(t => !t.archived && !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey);
+}
+
+function _openResolveAllOverdueTodos() {
+  _todosInit();
+  const count = _currentOverdueTodos().length;
+  if (!count) { showToast('نوبت عقب‌افتاده‌ای وجود ندارد.', 'info'); return; }
+  openModal('تعیین تکلیف عقب‌افتاده‌ها', `
+    <p style="font-size:13px;color:var(--text2);line-height:1.9;margin:0 0 12px">
+      ${fa(count)} نوبت عقب‌افتاده پیدا شد. عملیات گروهی فقط روی همین نوبت‌های گذشته انجام می‌شود و برنامه امروز را تغییر نمی‌دهد.
+    </p>
+    <div style="display:grid;gap:8px">
+      <button class="btn btn-success" onclick="_resolveAllOverdueTodos('done')">همه انجام شد</button>
+      <button class="btn btn-ghost" style="color:var(--amber)" onclick="_resolveAllOverdueTodos('skip')">همه انجام نمی‌دهم</button>
+      <button class="btn btn-danger" onclick="_resolveAllOverdueTodos('delete_occurrence')">حذف همه نوبت‌های گذشته</button>
+    </div>
+  `, [{label:'انصراف', cls:'btn-ghost', action:'closeModal()'}]);
+}
+
+function _resolveAllOverdueTodos(action) {
+  const items = _currentOverdueTodos();
+  if (!items.length) { closeModal(); return; }
+  const labels = { done:'انجام‌شده', skip:'انجام‌نشده', delete_occurrence:'حذف' };
+  if (!confirm(`برای ${fa(items.length)} نوبت عقب‌افتاده عملیات «${labels[action] || action}» انجام شود؟`)) return;
+  items.slice().forEach(t => {
+    const scheduledDate = _todoScheduledDate(t);
+    if (action === 'done') {
+      if (_isTodoRecurring(t)) {
+        _createTodoOccurrenceRecord(t, 'late_completed', new Date().toISOString());
+        _advanceRecurringTodoOccurrence(t, scheduledDate);
+      } else {
+        t.done = true; t.done_at = new Date().toISOString(); t.completedAt = t.done_at; t.completed_at = t.done_at; t.status = 'late_completed'; t.updated_at = t.done_at;
+      }
+    } else if (action === 'skip') {
+      if (_isTodoRecurring(t)) {
+        _createTodoOccurrenceRecord(t, 'skipped', new Date().toISOString());
+        _advanceRecurringTodoOccurrence(t, scheduledDate);
+      } else {
+        t.status = 'skipped'; t.skipped_at = new Date().toISOString(); t.archived = true; t.done = false; t.done_at = null; t.updated_at = t.skipped_at;
+      }
+    } else if (action === 'delete_occurrence') {
+      _deleteTodoOccurrenceOnly(t, scheduledDate);
+    }
+  });
+  _save(); _syncToServer(); closeModal(); renderTodoList();
+  showToast('تعیین تکلیف گروهی انجام شد.', 'success');
 }
 
 function _playDoneSound() {
@@ -20166,7 +20437,7 @@ function _playDoneSound() {
 
 function _advanceTodoDate(t, baseDateStr) {
   // کار بدون تاریخ و repeat → فقط reset کن (فردا دوباره نشون داده میشه)
-  if (!t.date_jalali) { t.done = false; t.done_at = null; t.archived = false; return; }
+  if (!t.date_jalali) { t.done = false; t.done_at = null; t.archived = false; t.status = 'pending'; return; }
 
   let jy, jm, jd;
   if (baseDateStr) {
@@ -20216,8 +20487,13 @@ function _advanceTodoDate(t, baseDateStr) {
   }
 
   t.date_jalali = _formatJalali(...newDate);
+  t.scheduled_date = t.date_jalali;
+  t.scheduledDate = t.date_jalali;
   t.done = false;
   t.done_at = null;
+  t.completedAt = null;
+  t.completed_at = null;
+  t.status = 'pending';
 }
 
 function _addDays(jy,jm,jd,days) {
@@ -20671,6 +20947,8 @@ async function saveTodo() {
     id, title,
     note: document.getElementById('todo-note')?.value.trim() || '',
     date_jalali: dateJalali,
+    scheduled_date: dateJalali,
+    scheduledDate: dateJalali,
     time,
     duration_min: durationMin,
     repeat,
@@ -20681,7 +20959,7 @@ async function saveTodo() {
     remind_min: remindMin,
     sync_gcal: syncGcal,
     gcal_event_id: null,
-    done: false, done_at: null, archived: false,
+    done: false, done_at: null, completedAt: null, completed_at: null, archived: false, status: 'pending',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -20976,9 +21254,53 @@ async function updateTodo(id) {
   const syncGcalWanted = !!document.getElementById('todo-gcal')?.checked;
   const wasSynced = !!t.sync_gcal;
   const prevEventId = t.gcal_event_id;
+  const originalScheduledDate = _todoScheduledDate(t);
+  const isPastRecurringOccurrence = _isTodoRecurring(t) && originalScheduledDate && _jalaliKey(originalScheduledDate) < _jalaliToday();
+  if (isPastRecurringOccurrence) {
+    const editOnlyThis = confirm('این کار یک نوبت عقب‌افتاده از کار تکرارشونده است. تایید = فقط همین نوبت ویرایش شود. انصراف = کل زنجیره/قالب تکرار ویرایش شود.');
+    if (editOnlyThis) {
+      const occurrence = {
+        ...t,
+        id: (_db._nextId.todos++),
+        recurrence_parent_id: _todoRootId(t),
+        title,
+        note: document.getElementById('todo-note')?.value.trim() || '',
+        date_jalali: dateJalali,
+        scheduled_date: dateJalali,
+        scheduledDate: dateJalali,
+        time,
+        duration_min: durationMin,
+        repeat: 'none',
+        weekdays: '',
+        priority,
+        category: category2,
+        goal_id: goalId2 ? +goalId2 : null,
+        remind_min: remindMin,
+        sync_gcal: syncGcalWanted,
+        gcal_event_id: null,
+        done: false,
+        done_at: null,
+        completedAt: null,
+        completed_at: null,
+        status: 'pending',
+        archived: false,
+        _occurrence: true,
+        updated_at: new Date().toISOString(),
+      };
+      _db.todos.push(occurrence);
+      _advanceRecurringTodoOccurrence(t, originalScheduledDate);
+      _save();
+      if (remindMin > 0 && time && dateJalali) _scheduleTodoNotification(occurrence.id, title, dateJalali, time, remindMin);
+      if (syncGcalWanted && dateJalali) _gcal.upsertEvent(occurrence);
+      closeModal();
+      showToast('فقط همین نوبت ویرایش شد؛ زنجیره تکرار بدون تغییر ادامه دارد.', 'success');
+      renderTodoList();
+      return;
+    }
+  }
   Object.assign(t, { title,
     note: document.getElementById('todo-note')?.value.trim() || '',
-    date_jalali: dateJalali, time, duration_min: durationMin, repeat, weekdays,
+    date_jalali: dateJalali, scheduled_date: dateJalali, scheduledDate: dateJalali, time, duration_min: durationMin, repeat, weekdays,
     priority, category: category2, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
     sync_gcal: syncGcalWanted,
     updated_at: new Date().toISOString(),
@@ -21004,8 +21326,18 @@ async function updateTodo(id) {
 }
 
 function deleteTodo(id) {
-  if (!confirm('این کار حذف شود؟')) return;
   const t = _db.todos.find(x => x.id == id);
+  if (!t) return;
+  const scheduledDate = _todoScheduledDate(t);
+  if (_isTodoRecurring(t) && scheduledDate && _jalaliKey(scheduledDate) < _jalaliToday()) {
+    if (!confirm('فقط همین نوبت عقب‌افتاده حذف شود؟ قالب تکرار و نوبت امروز حذف نمی‌شود.')) return;
+    _deleteTodoOccurrenceOnly(t, scheduledDate);
+    _save(); _syncToServer();
+    showToast('فقط همان نوبت حذف شد؛ تکرار کار حفظ شد.', 'success');
+    renderTodoList();
+    return;
+  }
+  if (!confirm('این کار حذف شود؟')) return;
   if (t && t.gcal_event_id) {
     _gcal.deleteEvent(t.gcal_event_id);
   }
