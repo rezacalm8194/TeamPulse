@@ -19308,13 +19308,30 @@ function _todoStickyAddBoxHtml(stats = {}) {
   </div>`;
 }
 
+let _todoCalendarTasksCache = { sig: '', items: [] };
+
+function _todoCalendarTasksSignature() {
+  return JSON.stringify({
+    repeats: _todoCalendarShowRepeats ? 1 : 0,
+    todos: (_db.todos || []).map(t => [
+      t.id, t.date_jalali, t.scheduled_date, t.time, t.repeat, t.weekdays,
+      t.done ? 1 : 0, t.archived ? 1 : 0, t.status || '', t.updated_at || '', t.done_at || ''
+    ])
+  });
+}
+
 function _todoTasksForCalendar() {
   _todosInit();
+  const sig = _todoCalendarTasksSignature();
+  if (_todoCalendarTasksCache.sig === sig) return _todoCalendarTasksCache.items;
   const base = (_db.todos || [])
     .filter(t => !t.archived && t.date_jalali)
     .map(t => ({ ...t, _key: _jalaliKey(t.date_jalali) }))
     .sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
-  if (!_todoCalendarShowRepeats) return base;
+  if (!_todoCalendarShowRepeats) {
+    _todoCalendarTasksCache = { sig, items: base };
+    return base;
+  }
   const out = [...base];
   const seen = new Set(base.map(t => `${t.id}:${t.date_jalali}`));
   base.filter(t => !t.done && t.repeat && t.repeat !== 'none').forEach(t => {
@@ -19330,7 +19347,9 @@ function _todoTasksForCalendar() {
       cursor = { ...cursor, date_jalali: nextDate };
     }
   });
-  return out.sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
+  const items = out.sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
+  _todoCalendarTasksCache = { sig, items };
+  return items;
 }
 
 function _todoCalendarHeat(list) {
@@ -19354,15 +19373,32 @@ function _todoDayTimeStats(list) {
   return { free, sessionHours, deepHours, workHours, busy };
 }
 
+let _todoBirthdayIndexCache = { sig: '', map: new Map() };
+
+function _todoBirthdayIndex() {
+  const students = _db.students || [];
+  const sig = students.map(s => [s.id, s.name, s.lname, s.birth_jalali, s.birthday_jalali, s.birth_date, s.birthday, s.date_jalali].join('|')).join('~');
+  if (_todoBirthdayIndexCache.sig === sig) return _todoBirthdayIndexCache.map;
+  const map = new Map();
+  students.forEach(s => {
+    const raw = s.birth_jalali || s.birthday_jalali || s.birth_date || s.birthday || s.date_jalali || '';
+    if (!raw) return;
+    const [,sm,sd] = _jalaliParse(raw);
+    const key = `${sm}/${sd}`;
+    const name = `${s.name || ''} ${s.lname || ''}`.trim();
+    if (!name) return;
+    const arr = map.get(key) || [];
+    arr.push(name);
+    map.set(key, arr);
+  });
+  _todoBirthdayIndexCache = { sig, map };
+  return map;
+}
+
 function _todoCalendarBirthdays(date) {
   if (!_db.students) return [];
   const [,m,d] = _jalaliParse(date);
-  return (_db.students || []).filter(s => {
-    const raw = s.birth_jalali || s.birthday_jalali || s.birth_date || s.birthday || s.date_jalali || '';
-    if (!raw) return false;
-    const [,sm,sd] = _jalaliParse(raw);
-    return sm === m && sd === d;
-  }).map(s => `${s.name || ''} ${s.lname || ''}`.trim()).filter(Boolean);
+  return _todoBirthdayIndex().get(`${m}/${d}`) || [];
 }
 
 function _saveTodoDayNote(date) {
@@ -19800,6 +19836,11 @@ function _renderTodoCalendarView() {
     </div>`;
   }
 
+  const yearMonthCounts = new Map();
+  tasks.forEach(t => {
+    const [y,m] = _jalaliParse(t.date_jalali);
+    if (y === cy) yearMonthCounts.set(m, (yearMonthCounts.get(m) || 0) + 1);
+  });
   const monthCards = Array.from({length:12}, (_,i) => {
     const jm = i + 1;
     const daysInMonth = jm <= 6 ? 31 : jm <= 11 ? 30 : 29;
@@ -19818,7 +19859,7 @@ function _renderTodoCalendarView() {
       <button onclick="_todoCalendarCursor='${_formatJalali(cy,jm,1)}';_setTodoViewMode('month')"
         style="all:unset;display:flex;justify-content:space-between;align-items:center;width:100%;cursor:pointer;margin-bottom:8px">
         <b style="font-size:13px;color:var(--text)">${JMONTHS[i]}</b>
-        <span style="font-size:11px;color:var(--text3)">${fa(tasks.filter(t => { const [y,m] = _jalaliParse(t.date_jalali); return y === cy && m === jm; }).length)} کار</span>
+        <span style="font-size:11px;color:var(--text3)">${fa(yearMonthCounts.get(jm) || 0)} کار</span>
       </button>
       <div class="todo-calendar-year-dots">${dayDots}</div>
     </div>`;
