@@ -20011,13 +20011,6 @@ function renderTodoList() {
     html += `</div>`;
   }
 
-  if (lateDoneTodayTodos.length > 0) {
-    html += sectionHeader('✅', 'عقب‌افتاده‌های تکمیل‌شده امروز', `${fa(lateDoneTodayTodos.length)} نوبت`, 'var(--amber)');
-    html += `<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.18);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">`;
-    html += lateDoneTodayTodos.map(renderTodo).join('');
-    html += `</div>`;
-  }
-
   // ── امروز ──
   html += sectionHeader('☀️', 'امروز', `${today} · ${fa(pending)} باقیمانده`, 'var(--text)');
   if (todayTodos.length === 0) {
@@ -20039,6 +20032,20 @@ function renderTodoList() {
       html += todayTodos.filter(t=>t.done).map(renderTodo).join('');
       html += `</div></details>`;
     }
+  }
+
+  if (lateDoneTodayTodos.length > 0) {
+    html += `<details class="todo-late-done-details" style="margin-top:12px">
+      <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:10px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22)">
+          <span style="font-size:13px;font-weight:800;color:var(--amber);display:flex;align-items:center;gap:6px">✅ عقب‌افتاده‌های تکمیل‌شده امروز</span>
+          <span style="font-size:11px;color:var(--text3)">${fa(lateDoneTodayTodos.length)} نوبت · باز کردن</span>
+        </div>
+      </summary>
+      <div style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.16);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">
+        ${lateDoneTodayTodos.map(renderTodo).join('')}
+      </div>
+    </details>`;
   }
 
   // ── فردا (کشویی - بسته) ──
