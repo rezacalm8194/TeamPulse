@@ -601,6 +601,14 @@ button { cursor: pointer; font-family: var(--font); }
 .row-menu-item.danger { color: var(--red); }
 .row-menu-item.danger:hover { background: rgba(248,113,113,.12); }
 .row-menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
+.todo-overdue-menu-btn,
+.todo-overdue-menu-btn:hover {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.todo-overdue-menu-btn { color: rgba(255,255,255,.42) !important; }
+.todo-overdue-menu-btn:hover { color: var(--text) !important; }
 
 /* ── Paid badge (replaces heavy button once paid) ──────────── */
 .badge-paid {
@@ -19977,14 +19985,14 @@ function renderTodoList() {
         </div>
       </div>
       ${isOverdue ? `<div class="row-menu" onclick="event.stopPropagation()">
-        <button class="row-menu-btn" onclick="toggleRowMenu(event,'${overdueMenuId}')" aria-label="تعیین تکلیف نوبت عقب‌افتاده">⋮</button>
+        <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${overdueMenuId}')" aria-label="تعیین تکلیف نوبت عقب‌افتاده">⋮</button>
         <div class="row-menu-panel" id="${overdueMenuId}">
           <div class="row-menu-item" onclick="_resolveOverdueTodo(${t.id},'done')">✓ انجام شد</div>
           <div class="row-menu-item" onclick="_resolveOverdueTodo(${t.id},'move_today')">↩ ببر به امروز</div>
           <div class="row-menu-item" onclick="_resolveOverdueTodo(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
         </div>
       </div>` : ''}
-      <button class="x-close-sm" onclick="deleteTodo(${t.id})">×</button>
+      ${!isOverdue ? `<button class="x-close-sm" onclick="deleteTodo(${t.id})">×</button>` : ''}
     </div>`;
   };
 
