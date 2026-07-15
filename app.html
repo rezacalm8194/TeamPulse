@@ -3444,10 +3444,9 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <a class="nav-item" data-page="students" title="امور مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="14.5" cy="7" r="2"/><path d="M13 11.6c2 .2 3.5 1.8 3.5 4.1"/></svg></span><span id="nav-label-students">امور مشتریان</span><span class="badge" id="student-badge">0</span></a>
       <a class="nav-item" data-page="sessions" title="جلسات" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="13" rx="2"/><path d="M2.5 8h15M6.5 2v3.5M13.5 2v3.5"/></svg></span><span id="nav-label-sessions">جلسات</span></a>
 
-      <a class="nav-item" data-page="staff" title="مدیریت همکاران"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت همکاران</span></a>
-
       <a class="nav-item" data-page="families" title="حساب‌های مشترک" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
       <a class="nav-item" data-page="payments" title="حساب مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>حساب مشتریان</span></a>
+      <a class="nav-item" data-page="staff" title="مدیریت پرسنل"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت پرسنل</span></a>
       <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
       <a class="nav-item" data-page="dashboard" title="داشبورد مالی" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
 
@@ -5776,7 +5775,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'habits', label:'عادت‌ها', icon:'🔥', desc:'مدیریت عادت‌ها و گزارش انجام'},
   {key:'todolist', label:'لیست کارها', icon:'✅', desc:'کارها، یادآوری‌ها و پیگیری روزانه'},
   {key:'instructions', label:'مرکز دانش', icon:'💡', desc:'یادداشت‌ها، پوشه‌ها و فایل‌های دانشی'},
-  {key:'staff', label:'مدیریت همکاران', icon:'💼', desc:'همکاران، نقش‌ها، حقوق و یادآوری‌ها'},
+  {key:'staff', label:'مدیریت پرسنل', icon:'💼', desc:'پرسنل، نقش‌ها، حقوق و یادآوری‌ها'},
   {key:'customerlist', label:'لیست شاگردان', icon:'📋', desc:'نمای جدولی شاگردان و اطلاعات تماس'},
   {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
   {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
@@ -6251,7 +6250,7 @@ function updatePageTitle() {
     reminders: 'حساب مشتریان',
     customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
-    staff: 'مدیریت همکاران',
+    staff: 'مدیریت پرسنل',
     instructions: 'مرکز دانش',
     todolist: 'لیست کارها',
     tutorial: 'آموزش‌ها',
@@ -10537,7 +10536,7 @@ async function renderArchive() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STAFF MANAGEMENT (مدیریت همکاران) — separate from students
+// STAFF MANAGEMENT (مدیریت پرسنل) — separate from students
 // ════════════════════════════════════════════════════════════════════════════
 let STAFF_ROLES = [];
 
@@ -16923,8 +16922,8 @@ const DEFAULT_NAV_ORDER = [
   { page: 'habits',       icon: '🔥', label: () => 'عادت‌ها' },
   { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
   { page: 'instructions', icon: '💡', label: () => 'مرکز دانش' },
-  { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت همکاران' },
   { page: 'payments',     icon: '🛒', label: () => 'حساب مشتریان' },
+  { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت پرسنل' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری' },
   { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
@@ -16933,12 +16932,23 @@ const DEFAULT_NAV_ORDER = [
   { page: 'tutorial',     icon: '🎓', label: () => 'آموزش‌ها' },
 ];
 
+function _normalizeNavOrder(order) {
+  const clean = Array.isArray(order) ? order.filter(Boolean) : DEFAULT_NAV_ORDER.map(n => n.page);
+  const staffIndex = clean.indexOf('staff');
+  if (staffIndex !== -1) {
+    clean.splice(staffIndex, 1);
+    const paymentsIndex = clean.indexOf('payments');
+    clean.splice(paymentsIndex !== -1 ? paymentsIndex + 1 : clean.length, 0, 'staff');
+  }
+  return clean;
+}
+
 function _getNavOrder() {
   try {
     const saved = JSON.parse(localStorage.getItem('teampulse_nav_order') || 'null');
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved)) return _normalizeNavOrder(saved);
   } catch(e) {}
-  return DEFAULT_NAV_ORDER.map(n => n.page);
+  return _normalizeNavOrder(DEFAULT_NAV_ORDER.map(n => n.page));
 }
 
 function renderNavOrderEditor() {
