@@ -19978,7 +19978,6 @@ function renderTodoList() {
           <button class="btn btn-success btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'done')">انجام شد</button>
           <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'move_today')">ببر به امروز</button>
           <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 8px;height:auto;color:var(--amber)" onclick="_resolveOverdueTodo(${t.id},'skip')">انجام نمی‌دهم</button>
-          <button class="btn btn-danger btn-sm" style="font-size:10px;padding:5px 8px;height:auto" onclick="_resolveOverdueTodo(${t.id},'delete_occurrence')">حذف نوبت</button>
         </div>` : ''}
       </div>
       <button class="x-close-sm" onclick="deleteTodo(${t.id})">×</button>
