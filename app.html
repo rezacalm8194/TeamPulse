@@ -19543,7 +19543,7 @@ function openAddTodoCalendarEvent(date = _todoCalendarSelectedDate || _todayJala
     { label:'ثبت مناسبت', cls:'btn-primary', action:'saveTodoCalendarEvent()' },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
-  initJalaliPickers();
+  setTimeout(() => document.querySelectorAll('.modal-overlay.open .jdate, .modal .jdate').forEach(el => attachJalaliDatePicker(el)), 0);
 }
 
 function saveTodoCalendarEvent() {
@@ -23861,8 +23861,113 @@ function closeNewItemSheet() {
 // ── Goals Page ────────────────────────────────────────────────
 function _goalsInit() {
   if (!_db.goals) _db.goals = [];
+  if (!_db.goal_achievements) _db.goal_achievements = [];
   if (!_db._nextId) _db._nextId = {};
   if (!_db._nextId.goals) _db._nextId.goals = 1;
+  if (!_db._nextId.goal_achievements) _db._nextId.goal_achievements = 1;
+}
+
+function _goalAchievementDate(g) {
+  if (g.completed_date_jalali) return g.completed_date_jalali;
+  if (g.completed_at) {
+    try {
+      if (typeof _jalaliFromInstant === 'function') return _formatJalali(..._jalaliFromInstant(g.completed_at));
+    } catch(e) {}
+  }
+  return _todayJalaliStr ? _todayJalaliStr() : '';
+}
+
+function _goalAchievementYear(date) {
+  return String(date || '').split('/')[0] || (_todayJalaliStr ? _todayJalaliStr().split('/')[0] : '');
+}
+
+function _isGoalAchieved(g) {
+  return !!g && ((g.status || 'active') === 'done' || +(g.progress || 0) >= 100);
+}
+
+function _ensureGoalAchievement(g) {
+  _goalsInit();
+  if (!g || !g.id) return null;
+  if (!g.completed_at) g.completed_at = new Date().toISOString();
+  if (!g.completed_date_jalali) g.completed_date_jalali = _goalAchievementDate(g);
+  const completedDate = _goalAchievementDate(g);
+  const year = _goalAchievementYear(completedDate);
+  let ach = (_db.goal_achievements || []).find(x => x.goal_id === g.id);
+  if (!ach) {
+    ach = { id: _db._nextId.goal_achievements++, goal_id: g.id, created_at: new Date().toISOString() };
+    _db.goal_achievements.push(ach);
+  }
+  ach.title = g.title || '';
+  ach.icon = g.icon || '🎯';
+  ach.category = g.category || '';
+  ach.why = g.why || '';
+  ach.completed_at = g.completed_at;
+  ach.completed_date_jalali = completedDate;
+  ach.year = year;
+  return ach;
+}
+
+function _removeGoalAchievement(goalId) {
+  _db.goal_achievements = (_db.goal_achievements || []).filter(x => x.goal_id !== goalId);
+}
+
+function _syncGoalAchievements() {
+  _goalsInit();
+  const goals = _db.goals || [];
+  const goalIds = new Set(goals.map(g => g.id));
+  _db.goal_achievements = (_db.goal_achievements || []).filter(a => goalIds.has(a.goal_id));
+  goals.forEach(g => {
+    if (_isGoalAchieved(g)) _ensureGoalAchievement(g);
+    else _removeGoalAchievement(g.id);
+  });
+}
+
+function setGoalAchievementYear(year) {
+  localStorage.setItem('tp_goal_achievement_year', year);
+  if (currentPage === 'goals') renderGoals();
+}
+
+function _goalAchievementsHtml() {
+  _syncGoalAchievements();
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const list = (_db.goal_achievements || []).slice().sort((a,b) => String(b.completed_date_jalali||'').localeCompare(String(a.completed_date_jalali||'')));
+  const currentYear = _todayJalaliStr ? _todayJalaliStr().split('/')[0] : '';
+  const years = Array.from(new Set([currentYear, ...list.map(a => a.year || _goalAchievementYear(a.completed_date_jalali)).filter(Boolean)])).sort((a,b) => String(b).localeCompare(String(a)));
+  const selectedYear = localStorage.getItem('tp_goal_achievement_year') || years[0] || currentYear;
+  const yearItems = list.filter(a => (a.year || _goalAchievementYear(a.completed_date_jalali)) === selectedYear);
+  const yearButtons = years.map(y => `
+    <button onclick="setGoalAchievementYear('${escapeHtml(y)}')" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
+  `).join('');
+  const cards = yearItems.length ? yearItems.map(a => `
+    <div onclick="openGoalDetail(${a.goal_id})" style="background:var(--bg3);border:1px solid rgba(62,207,142,.24);border-radius:12px;padding:12px;cursor:pointer">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:24px;line-height:1">${a.icon || '🏆'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:900;color:var(--text);line-height:1.6">${escapeHtml(a.title || 'هدف تکمیل‌شده')}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+            <span style="font-size:11px;color:var(--green);font-weight:800">🏆 ${DateService.disp(a.completed_date_jalali || '')}</span>
+            ${a.category ? `<span style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:999px">${escapeHtml(a.category)}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      ${a.why ? `<div style="font-size:11px;color:var(--text2);line-height:1.8;margin-top:8px;opacity:.85">${escapeHtml(a.why)}</div>` : ''}
+    </div>
+  `).join('') : `
+    <div style="text-align:center;color:var(--text3);font-size:12px;padding:18px;border:1px dashed var(--border2);border-radius:12px;background:rgba(255,255,255,.02)">
+      هنوز برای سال ${fa(selectedYear || '')} دستاوردی ثبت نشده.
+    </div>`;
+
+  return `
+    <div style="background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(124,106,247,.08));border:1px solid rgba(62,207,142,.24);border-radius:14px;padding:14px 16px;margin-bottom:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div>
+          <h2 style="font-size:15px;font-weight:900;color:var(--text);margin:0 0 4px">🏆 دستاوردها</h2>
+          <div style="font-size:11px;color:var(--text3)">${fa(yearItems.length)} دستاورد در سال ${fa(selectedYear || '')}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">${yearButtons}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${cards}</div>
+    </div>`;
 }
 
 function _goalDaysLeft(deadline) {
@@ -23971,6 +24076,7 @@ function _goalTimelineHtml(g) {
 
 function renderGoals() {
   _goalsInit();
+  _syncGoalAchievements();
   updateTopbarActions(`
     <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
   `);
@@ -24139,6 +24245,7 @@ function renderGoals() {
         </button>
       </div>
       ${statsHTML}
+      ${_goalAchievementsHtml()}
       ${todayWidgetHTML}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
@@ -24974,7 +25081,21 @@ function openAddTodoForGoal(goalId) {
 function updateGoalProgress(id, val) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
+  const prevAchieved = _isGoalAchieved(g);
   g.progress = +val;
+  if (g.progress >= 100) {
+    g.progress = 100;
+    g.status = 'done';
+    if (!g.completed_at) g.completed_at = new Date().toISOString();
+    g.completed_date_jalali = _goalAchievementDate(g);
+    _ensureGoalAchievement(g);
+    if (!prevAchieved) showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
+  } else if ((g.status || 'active') === 'done') {
+    g.status = 'active';
+    g.completed_at = '';
+    g.completed_date_jalali = '';
+    _removeGoalAchievement(g.id);
+  }
   _save(false);
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
   const label = document.getElementById('goal-progress-label-'+id);
@@ -25194,12 +25315,23 @@ function saveEditGoal(id) {
   g.vision_images = '';
   g.music_url = _readGoalMusic('eg');
   g.difficulty = document.getElementById('eg-difficulty')?.value || g.difficulty || 'medium';
+  if (_isGoalAchieved(g)) {
+    if (g.progress < 100 && g.status === 'done') g.progress = 100;
+    if (!g.completed_at) g.completed_at = new Date().toISOString();
+    g.completed_date_jalali = _goalAchievementDate(g);
+    _ensureGoalAchievement(g);
+  } else {
+    g.completed_at = '';
+    g.completed_date_jalali = '';
+    _removeGoalAchievement(g.id);
+  }
   _save(); closeModal(); if (currentPage === 'goals') renderGoals();
   showToast('تغییرات هدف ذخیره شد ✓', 'success');
 }
 function deleteGoal(id) {
   if (!confirm('این هدف حذف شود؟')) return;
   _db.goals = (_db.goals||[]).filter(x=>x.id!==id);
+  _removeGoalAchievement(id);
   _save(); showToast('حذف شد','error'); if (currentPage === 'goals') renderGoals();
 }
 
