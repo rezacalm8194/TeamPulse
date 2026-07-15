@@ -24187,7 +24187,11 @@ function renderGoals() {
       onmouseenter="this.style.borderColor='rgba(62,207,142,.6)'"
       onmouseleave="this.style.borderColor='${urgencyColor}'">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
-        <span style="font-size:28px;flex-shrink:0">${g.icon || '🎯'}</span>
+        <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
+          style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
+            border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:15px;font-weight:900">
+          ${_isGoalAchieved(g) ? '✓' : ''}
+        </button>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700;color:var(--text)">${g.title}</span>
@@ -24271,7 +24275,11 @@ function renderGoals() {
             return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
               onmouseenter="this.style.borderColor='rgba(62,207,142,.5)'" onmouseleave="this.style.borderColor='var(--border)'">
               <div style="display:flex;align-items:flex-start;gap:10px">
-                <span style="font-size:26px;flex-shrink:0;line-height:1.2;margin-top:1px">${g.icon||'🎯'}</span>
+                <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
+                  style="width:26px;height:26px;border-radius:8px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+                    border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:14px;font-weight:900">
+                  ${_isGoalAchieved(g) ? '✓' : ''}
+                </button>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.5">${g.title}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
@@ -25082,6 +25090,7 @@ function updateGoalProgress(id, val) {
   const g = (_db.goals||[]).find(x=>x.id===id);
   if (!g) return;
   const prevAchieved = _isGoalAchieved(g);
+  if (+val < 100 && !prevAchieved) g.progress_before_done = +val;
   g.progress = +val;
   if (g.progress >= 100) {
     g.progress = 100;
@@ -25103,6 +25112,31 @@ function updateGoalProgress(id, val) {
   // به‌روزرسانی زنده صفحه اهداف پشت مودال، بدون نیاز به رفرش
   if (currentPage === 'goals') renderGoals();
 }
+
+function toggleGoalAchievement(id) {
+  _goalsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g) return;
+  if (_isGoalAchieved(g)) {
+    g.status = 'active';
+    g.progress = Math.max(0, Math.min(99, +(g.progress_before_done ?? 99)));
+    g.completed_at = '';
+    g.completed_date_jalali = '';
+    _removeGoalAchievement(g.id);
+    showToast('هدف به لیست اهداف برگشت', 'success');
+  } else {
+    g.progress_before_done = +(g.progress || 0);
+    g.progress = 100;
+    g.status = 'done';
+    g.completed_at = new Date().toISOString();
+    g.completed_date_jalali = _goalAchievementDate(g);
+    _ensureGoalAchievement(g);
+    showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
+  }
+  _save();
+  if (currentPage === 'goals') renderGoals();
+}
+
 function toggleMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g || !g.milestones[idx]) return;
