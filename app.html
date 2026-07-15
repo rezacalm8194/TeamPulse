@@ -19125,10 +19125,17 @@ let _todoCalendarShowHolidays = localStorage.getItem('tp_todo_calendar_show_holi
 let _todoCalendarSelectedDate = localStorage.getItem('tp_todo_calendar_selected_date') || _todayJalaliStr();
 let _todoDragId = null;
 let _todoTomorrowExpanded = localStorage.getItem('tp_todo_tomorrow_expanded') === '1';
+let _todoFutureExpanded = {};
+try { _todoFutureExpanded = JSON.parse(localStorage.getItem('tp_todo_future_expanded') || '{}') || {}; } catch(e) { _todoFutureExpanded = {}; }
 
 function _setTodoTomorrowExpanded(open) {
   _todoTomorrowExpanded = !!open;
   localStorage.setItem('tp_todo_tomorrow_expanded', _todoTomorrowExpanded ? '1' : '0');
+}
+
+function _setTodoFutureExpanded(key, open) {
+  _todoFutureExpanded[key] = !!open;
+  localStorage.setItem('tp_todo_future_expanded', JSON.stringify(_todoFutureExpanded));
 }
 
 function _setTodoViewMode(mode) {
@@ -20382,10 +20389,11 @@ function renderTodoList() {
 
   // ── دسته‌بندی آینده ──
   if (futureTodos.length > 0) {
-    const _renderCollapsible = (icon, title, subtitle, color, items) => {
+    const _renderCollapsible = (key, icon, title, subtitle, color, items) => {
       if (!items.length) return '';
       const itemsHTML = items.sort(_sortByTime).map(renderTodo).join('');
-      return '<details style="margin-top:10px">' +
+      const isOpen = !!_todoFutureExpanded[key];
+      return '<details ' + (isOpen ? 'open ' : '') + 'ontoggle="_setTodoFutureExpanded(\'' + key + '\', this.open)" style="margin-top:10px">' +
         '<summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">' +
             '<h3 style="font-size:14px;font-weight:700;color:' + color + ';margin:0;display:flex;align-items:center;gap:6px">' +
@@ -20412,12 +20420,12 @@ function renderTodoList() {
     const _thisYear   = futureTodos.filter(t => { const k = _jalaliKey(t.date_jalali); return k > endOfSeasonKey && k <= endOfYearKey; });
     const _beyond     = futureTodos.filter(t => _jalaliKey(t.date_jalali) > endOfYearKey);
 
-    html += _renderCollapsible('📅', 'این هفته', fa(_thisWeek.length) + ' کار', '#a78bfa', _thisWeek);
-    html += _renderCollapsible('🗓', 'این ماه', fa(_thisMonth.length) + ' کار', '#60a5fa', _thisMonth);
-    html += _renderCollapsible('🍂', 'این فصل', fa(_thisSeason.length) + ' کار', '#34d399', _thisSeason);
-    html += _renderCollapsible('📆', 'امسال', fa(_thisYear.length) + ' کار', '#fbbf24', _thisYear);
+    html += _renderCollapsible('week', '📅', 'این هفته', fa(_thisWeek.length) + ' کار', '#a78bfa', _thisWeek);
+    html += _renderCollapsible('month', '🗓', 'این ماه', fa(_thisMonth.length) + ' کار', '#60a5fa', _thisMonth);
+    html += _renderCollapsible('season', '🍂', 'این فصل', fa(_thisSeason.length) + ' کار', '#34d399', _thisSeason);
+    html += _renderCollapsible('year', '📆', 'امسال', fa(_thisYear.length) + ' کار', '#fbbf24', _thisYear);
     if (_beyond.length > 0) {
-      html += _renderCollapsible('🔮', 'سال‌های بعد', fa(_beyond.length) + ' کار', '#9399ab', _beyond);
+      html += _renderCollapsible('beyond', '🔮', 'سال‌های بعد', fa(_beyond.length) + ' کار', '#9399ab', _beyond);
     }
   }
 
