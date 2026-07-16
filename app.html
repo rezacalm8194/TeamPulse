@@ -18397,30 +18397,11 @@ async function _authOnSuccess() {
   await _ensureTeamAccessOwner();
   window._activeDBKey = _teamActiveDBKey();
   _load(); // load از localStorage (ممکنه خالی باشه)
-
-  // همیشه از سرور load کن — مهم‌ترین قدم برای sync چند دستگاه
-  // روی iOS Chrome باید retry داشته باشیم
   let loadedFromServer = false;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    loadedFromServer = await _loadFromServer();
-    if (loadedFromServer) break;
-    if (attempt < 2) await new Promise(r => setTimeout(r, 800));
-  }
-  if (loadedFromServer) {
-    console.log('[TeamPulse] Data synced from server');
-    _load();
-  }
-  if (_teamAccessSession()) {
-    window._teamOwnerDataReady = !!loadedFromServer;
-    if (!loadedFromServer) {
-      showToast('داده‌های حساب اصلی هنوز لود نشده؛ برای ذخیره دوباره صفحه را رفرش کن', 'error');
-    }
-  }
+  const hasLocalDataAtStart = (_db.students?.length > 0) || (_db.todos?.length > 0) || (_db.instructions?.length > 0) || (_db.staff?.length > 0) || (_db.meta?.jobId) || (_db.meta?.appTitle && _db.meta.appTitle !== 'TeamPulse');
 
   // کاربر جدید = نه از سرور داده اومد نه لوکال داده داره
-  const hasServerData = loadedFromServer;
-  const hasLocalData = (_db.students?.length > 0) || (_db.meta?.jobId) || (_db.meta?.appTitle && _db.meta.appTitle !== 'TeamPulse');
-  const isNewUser = !hasServerData && !hasLocalData;
+  const isNewUser = !hasLocalDataAtStart && !_teamAccessSession();
 
   if (isNewUser) {
     // واقعاً اولین بار — setup wizard نشون بده
@@ -18441,6 +18422,29 @@ async function _authOnSuccess() {
   _updateAuthUI();
   await init();
   updateAccountDisplay();
+
+  // داده محلی را فوری نشان می‌دهیم؛ sync سرور بعد از بالا آمدن صفحه انجام می‌شود
+  // تا رفرش صفحه روی حالت «در حال بارگذاری» مکث نکند.
+  (async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      loadedFromServer = await _loadFromServer();
+      if (loadedFromServer) break;
+      if (attempt < 2) await new Promise(r => setTimeout(r, 800));
+    }
+    if (loadedFromServer) {
+      console.log('[TeamPulse] Data synced from server');
+      updateAccountDisplay();
+      if (_canAutoRefresh()) renderPage();
+      applyMetaToUI();
+      return;
+    }
+    if (_teamAccessSession()) {
+      window._teamOwnerDataReady = false;
+      showToast('داده‌های حساب اصلی هنوز لود نشده؛ برای ذخیره دوباره صفحه را رفرش کن', 'error');
+    } else if (isNewUser) {
+      setTimeout(() => _showWelcomeTour(), 800);
+    }
+  })();
 
   // آپدیت wallet از سرور
   try {
@@ -18514,10 +18518,7 @@ async function _authOnSuccess() {
     }
   });
 
-  if (isNewUser) {
-    // فقط اگه واقعاً کاربر جدیده (نه از سرور، نه لوکال)
-    setTimeout(() => _showWelcomeTour(), 800);
-  } else if (loadedFromServer && _db.meta?.jobId) {
+  if (loadedFromServer && _db.meta?.jobId) {
     // کاربر موجود — wizard رو نشون نده، فقط applyMeta
     applyMetaToUI();
   }
@@ -24549,10 +24550,10 @@ function _startApp() {
 // در یک <script> بعدی تعریف می‌شن)، باید صبر کنیم همه‌ی اسکریپت‌ها اجرا بشن،
 // وگرنه اگه _initAuth سریع resolve بشه و صفحه‌ی ذخیره‌شده «عادت‌ها» باشه،
 // renderHabits هنوز تعریف نشده و خطای ReferenceError می‌ده.
-if (document.readyState === 'complete') {
-  _startApp();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startApp, { once: true });
 } else {
-  window.addEventListener('load', _startApp, { once: true });
+  _startApp();
 }
 
 // ── MagicBento effect for .stat-card (global, event-delegated) ──────────────
