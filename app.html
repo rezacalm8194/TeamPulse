@@ -15227,14 +15227,35 @@ function initAmountHints() {
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function setContent(html) {
+  const contentEl = document.getElementById('content');
+  if (!contentEl) return;
+  if (!window._contentScrollTrackerBound) {
+    window._contentScrollTrackerBound = true;
+    const markScroll = () => { window._lastUserContentScrollAt = Date.now(); };
+    contentEl.addEventListener('scroll', markScroll, { passive: true });
+    window.addEventListener('scroll', markScroll, { passive: true });
+  }
+  const samePage = window._lastRenderedContentPage === currentPage;
+  const prevContentScroll = samePage ? contentEl.scrollTop : 0;
+  const prevWindowScroll = samePage ? (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0) : 0;
+  const preserveScroll = samePage && (prevContentScroll > 0 || prevWindowScroll > 0);
   // Save content search state
   const prevC = document.querySelector('#content .table-search input');
   const prevCVal = prevC ? prevC.value : null;
   const prevCPos = prevC ? prevC.selectionStart : null;
   
-  document.getElementById('content').innerHTML = html;
+  contentEl.innerHTML = html;
   if (typeof _applyResponsiveTableLabels === 'function') {
     try { _applyResponsiveTableLabels(); } catch(e) {}
+  }
+  window._lastRenderedContentPage = currentPage;
+  if (preserveScroll) {
+    requestAnimationFrame(() => {
+      const maxContentScroll = Math.max(0, contentEl.scrollHeight - contentEl.clientHeight);
+      contentEl.scrollTop = Math.min(prevContentScroll, maxContentScroll);
+      const maxWindowScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      window.scrollTo(0, Math.min(prevWindowScroll, maxWindowScroll));
+    });
   }
   
   // Restore content search — فقط اگه قبلاً واقعاً متن جستجو وارد شده بود
@@ -17913,6 +17934,16 @@ function _serverSafeData(data) {
   return copy;
 }
 
+function _serverDataSignature(data) {
+  try { return JSON.stringify(_serverSafeData(data || {})); }
+  catch(e) { return ''; }
+}
+
+function _serverDataChanged(nextData, currentData) {
+  if (!nextData || typeof nextData !== 'object') return false;
+  return _serverDataSignature(nextData) !== _serverDataSignature(currentData || {});
+}
+
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (!_sbUser || !_sbSession?.token) return;
@@ -18054,6 +18085,12 @@ async function _loadFromServer() {
       return false;
     }
     if (teamSession) {
+      const changed = _serverDataChanged(data, _db);
+      if (!changed) {
+        window._teamOwnerDataReady = true;
+        window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, data._lastSaved || 0);
+        return false;
+      }
       _db = data;
       _migrate(_db);
       const key = window._activeDBKey || _teamActiveDBKey();
@@ -18069,8 +18106,9 @@ async function _loadFromServer() {
       const serverTime = data._lastSaved || 0;
       const localTime = _db._lastSaved || 0;
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
+      const changed = _serverDataChanged(data, _db);
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
-      if (localEmpty || serverTime >= localTime) {
+      if ((localEmpty && changed) || (serverTime > localTime && changed)) {
         _db = data;
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
@@ -19786,6 +19824,8 @@ function _canAutoRefresh() {
   if (document.activeElement?.contentEditable === 'true') return false;
   // کیبورد مجازی موبایل باز هست
   if (window._mobileKeyboardOpen) return false;
+  // کاربر همین الان در حال اسکرول/خواندن صفحه است؛ رندر خودکار نباید جای صفحه را بپراند.
+  if (Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
   return true;
 }
 
