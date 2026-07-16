@@ -3455,7 +3455,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
       <a class="nav-item" data-page="families" title="حساب‌های مشترک" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="7" r="2.6"/><circle cx="13.5" cy="7" r="2.6"/><path d="M2.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3M9.3 16.5c0-2.6 1.9-4.3 4.2-4.3s4.2 1.7 4.2 4.3"/></svg></span><span>حساب‌های مشترک</span></a>
       <a class="nav-item" data-page="payments" title="حساب مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>حساب مشتریان</span></a>
-      <a class="nav-item" data-page="staff" title="مدیریت پرسنل"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>مدیریت پرسنل</span></a>
+      <a class="nav-item" data-page="staff" title="حساب پرسنل و اعضا"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>حساب پرسنل و اعضا</span></a>
       <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
       <a class="nav-item" data-page="dashboard" title="داشبورد مالی" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
 
@@ -4062,7 +4062,7 @@ function _migrate(d) {
   d.session_order = d.session_order||[];
   if (!d.eval_forms) d.eval_forms = {};
   d.topics.forEach(t=>{if(!t.checklist)t.checklist=[];});
-  d.staff.forEach(s=>{if(!s.card_number)s.card_number='';if(!s.roles)s.roles=[];});
+  d.staff.forEach(s=>{if(!s.card_number)s.card_number='';if(!s.roles)s.roles=[];if(!s.person_type)s.person_type='personnel';});
   d.staff_reminders.forEach(r=>{if(!r.notified_levels)r.notified_levels=[];});
   d.reminders.forEach(r=>{if(!r.notified_levels)r.notified_levels=[];});
   d.sessions.forEach(s=>{
@@ -4551,7 +4551,7 @@ window.api = {
     },
     add: (p)=>{
       const id=_nextId('staff');
-      _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',card_number:p.card_number||'',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',note:p.note||'',created_at:new Date().toISOString()});
+      _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||'',card_number:p.card_number||'',person_type:p.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',note:p.note||'',created_at:new Date().toISOString()});
       const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const repeatMonths = p.repeat_months ?? 1;
       if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const next=_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...next),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
@@ -4559,7 +4559,7 @@ window.api = {
     },
     update: (p)=>{
       const s=_db.staff.find(x=>x.id===p.id); if(!s)return _P({ok:false});
-      Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',card_number:p.card_number||'',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,note:p.note||''});
+      Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||s.email||'',card_number:p.card_number||'',person_type:p.person_type||s.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,note:p.note||''});
       if(p.start_date)s.start_date=p.start_date;
       const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const er=_db.staff_reminders.find(r=>r.staff_id===s.id);
@@ -5784,7 +5784,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'habits', label:'عادت‌ها', icon:'🔥', desc:'مدیریت عادت‌ها و گزارش انجام'},
   {key:'todolist', label:'لیست کارها', icon:'✅', desc:'کارها، یادآوری‌ها و پیگیری روزانه'},
   {key:'instructions', label:'مرکز دانش', icon:'💡', desc:'یادداشت‌ها، پوشه‌ها و فایل‌های دانشی'},
-  {key:'staff', label:'مدیریت پرسنل', icon:'💼', desc:'پرسنل، نقش‌ها، حقوق و یادآوری‌ها'},
+  {key:'staff', label:'حساب پرسنل و اعضا', icon:'💼', desc:'پرسنل، اعضای پرداختی، نقش‌ها، حقوق و یادآوری‌ها'},
   {key:'customerlist', label:'لیست شاگردان', icon:'📋', desc:'نمای جدولی شاگردان و اطلاعات تماس'},
   {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
   {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
@@ -5873,7 +5873,7 @@ function _todoCanDelete(t) {
 }
 function _todoSessionStaff() {
   const email = _teamEmail();
-  return (_db.staff || []).find(s => String(s.email || '').trim().toLowerCase() === email) || null;
+  return (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.email || '').trim().toLowerCase() === email) || null;
 }
 function _todoCanCreateForStaff(staffId) {
   if (!_isTeamGuest()) return true;
@@ -6328,7 +6328,7 @@ function updatePageTitle() {
     reminders: 'حساب مشتریان',
     customerlist: `لیست ${META.entityPlural || 'شاگردان'}`,
     archive: `بایگانی ${META.entityPlural || 'شاگردان'}`,
-    staff: 'مدیریت پرسنل',
+    staff: 'حساب پرسنل و اعضا',
     instructions: 'مرکز دانش',
     todolist: 'لیست کارها',
     tutorial: 'آموزش‌ها',
@@ -10640,14 +10640,25 @@ async function renderArchive() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STAFF MANAGEMENT (مدیریت پرسنل) — separate from students
+// STAFF / MEMBER ACCOUNTS — separate from students
 // ════════════════════════════════════════════════════════════════════════════
 let STAFF_ROLES = [];
+let _staffReturnToTodoAfterSave = false;
+
+function staffIsPersonnel(s) {
+  return (s?.person_type || 'personnel') === 'personnel';
+}
+
+function staffPersonTypeLabel(s) {
+  return staffIsPersonnel(s) ? 'پرسنل' : 'عضو';
+}
 
 async function renderStaff() {
-  updateTopbarActions(`<button class="btn btn-primary" onclick="openStaffModal()">+ افزودن همکار</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
+  updateTopbarActions(`<button class="btn btn-primary" onclick="openAddStaffChoice()">+ افزودن</button><button class="btn btn-ghost" onclick="openStaffRolesCompleted()" style="margin-right:6px">📋 نقش‌های انجام‌شده</button>`);
   STAFF_ROLES = await window.api.staffRoles.getAll();
   const staffList = await window.api.staff.getAll();
+  const personnelCount = staffList.filter(staffIsPersonnel).length;
+  const memberCount = staffList.length - personnelCount;
   const dash = await window.api.staff.getDashboard();
   const reminders = await window.api.staffReminders.getAll();
   const remByStaff = {};
@@ -10657,9 +10668,9 @@ async function renderStaff() {
   let html = `
   <div class="stats-row stats-bento">
     <div class="stat-card s-accent">
-      <div class="stat-label">تعداد همکاران</div>
+      <div class="stat-label">تعداد پرسنل و اعضا</div>
       <div class="stat-value">${fa(dash.totalStaff)}</div>
-      <div class="stat-sub">نفر</div>
+      <div class="stat-sub">${fa(personnelCount)} پرسنل، ${fa(memberCount)} عضو</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">جمع حقوق ثابت ماهانه</div>
@@ -10681,17 +10692,17 @@ async function renderStaff() {
   <div class="table-card">
     <div class="table-header">
       <div class="title-wrap">
-        <span class="title">لیست همکاران</span>
-        <span class="subtitle">${fa(staffList.length)} نفر — مدیریت حقوق و پرداخت پرسنل</span>
+        <span class="title">لیست پرسنل و اعضا</span>
+        <span class="subtitle">${fa(staffList.length)} نفر — مدیریت حقوق، اجاره، پرداخت‌ها و اعضای غیرپرسنل</span>
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-right:auto" onclick="openManageRoles()">🏷 مدیریت نقش‌ها</button>
     </div>
     <table>
-      <thead><tr><th>نام</th><th>نقش‌ها</th><th>شماره کارت</th><th>حقوق کل این ماه (${JMONTHS[todayJalali()[1]-1]})</th><th>جمع پرداختی</th><th>سررسید این ماه</th><th>عملیات</th></tr></thead>
+      <thead><tr><th>نام</th><th>نوع</th><th>نقش‌ها</th><th>شماره کارت</th><th>حقوق/پرداخت این ماه (${JMONTHS[todayJalali()[1]-1]})</th><th>جمع پرداختی</th><th>سررسید این ماه</th><th>عملیات</th></tr></thead>
       <tbody>`;
 
   if (staffList.length === 0) {
-    html += `<tr><td colspan="7"><div class="empty"><span>🧑‍💼</span>هنوز همکاری ثبت نشده</div></td></tr>`;
+    html += `<tr><td colspan="8"><div class="empty"><span>🧑‍💼</span>هنوز پرسنل یا عضوی ثبت نشده</div></td></tr>`;
   } else {
     staffList.forEach((s,i) => {
       const roleTags = [
@@ -10731,7 +10742,8 @@ async function renderStaff() {
             <div><div style="font-weight:500">${s.name} ${s.lname}</div><div class="name-cell-sub">${s.phone||'—'}</div></div>
           </div>
         </td>
-        <td>${roleTags}</td>
+        <td><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
+        <td>${staffIsPersonnel(s) ? roleTags : '<span style="color:var(--text3)">عضو پرداختی</span>'}</td>
         <td>${cardMasked}</td>
         <td><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
         <td><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
@@ -10743,10 +10755,10 @@ async function renderStaff() {
             <div class="row-menu-panel" id="${rowMenuId}">
               ${!isPaid ? `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ ثبت دستی پرداخت</div>` : ''}
               <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
-              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ تنظیمات همکاری</div>
+              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ تنظیمات حساب</div>
               <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
               <div class="row-menu-divider"></div>
-              <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑 حذف همکار</div>
+              <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑 حذف</div>
             </div>
           </div>
         </td>
@@ -10758,9 +10770,9 @@ async function renderStaff() {
   // ── Salary reminders ────────────────────────────────────────────────────
   html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">⏰ یادآوری‌های پرداخت حقوق</span><span class="subtitle">سررسیدهای نزدیک و یادآوری‌های خودکار</span></div><button class="btn btn-primary btn-sm" style="margin-right:auto" onclick="openAddStaffReminder()">+ افزودن یادآوری پرداخت حقوق</button></div>`;
   if (reminders.length === 0) {
-    html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت حقوق برای یک همکار، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
+    html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت پرداخت برای یک نفر، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
   } else {
-    html += `<table><thead><tr><th>همکار</th><th>سررسید آینده</th><th>مبلغ (زنده)</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>پرسنل/عضو</th><th>سررسید آینده</th><th>مبلغ (زنده)</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
     reminders.forEach(r => {
       const du = r.days_until;
       let statusBadge;
@@ -10826,7 +10838,7 @@ async function renderStaff() {
   const trends = await window.api.staffMonthly.getTrends();
   html += `<div class="table-card">
     <div class="table-header">
-      <span class="title">📈 روند حقوق همکاران</span>
+      <span class="title">📈 روند پرداخت پرسنل و اعضا</span>
       <div class="table-search" style="max-width:260px">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input id="trend-search" placeholder="جستجو: نام، ماه یا سال..." oninput="filterTrends(this.value)">
@@ -11060,7 +11072,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
         <div class="salary-avatar">${(t.name || '؟').charAt(0)}</div>
         <div>
           <div class="salary-name">${t.name} ${t.lname}</div>
-          <div class="salary-name-sub">پروفایل مالی همکار، حقوق ${last.label}</div>
+          <div class="salary-name-sub">پروفایل مالی پرسنل/عضو، پرداخت ${last.label}</div>
         </div>
       </div>
       <div class="salary-current">
@@ -11104,9 +11116,31 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
 }
 
 // ── Add/Edit staff ────────────────────────────────────────────────────────────
-function openStaffModal(id = null) {
+function openAddStaffChoice(defaultType = '') {
+  openModal('افزودن', `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <button type="button" onclick="closeModal();openStaffModal(null,'personnel')" style="text-align:right;border:1px solid rgba(124,106,247,.35);background:rgba(124,106,247,.12);border-radius:12px;padding:14px;color:var(--text);font-family:var(--font);cursor:pointer">
+        <div style="font-size:15px;font-weight:900;margin-bottom:6px">پرسنل</div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.8">کارمند یا نیروی اجرایی که نقش، چک‌لیست و گزارش عملکرد دارد.</div>
+      </button>
+      <button type="button" onclick="closeModal();openStaffModal(null,'member')" style="text-align:right;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.10);border-radius:12px;padding:14px;color:var(--text);font-family:var(--font);cursor:pointer">
+        <div style="font-size:15px;font-weight:900;margin-bottom:6px">عضو</div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.8">فرد یا طرف حساب پرداختی مثل صاحب دفتر، موجر یا همکار غیرپرسنلی.</div>
+      </button>
+    </div>
+  `, [
+    { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
+  ]);
+}
+
+function openAddPersonnelFromTodo() {
+  _staffReturnToTodoAfterSave = true;
+  openStaffModal(null, 'personnel');
+}
+
+function openStaffModal(id = null, personType = 'personnel') {
   const editing = id !== null;
-  refreshRolesAndOpenStaffModal(editing, id);
+  refreshRolesAndOpenStaffModal(editing, id, personType);
 }
 
 async function openQuickStaffModal() {
@@ -11192,13 +11226,15 @@ function staffBonusItemHtml(item = {}, disabled = false) {
     </div>`;
 }
 
-async function refreshRolesAndOpenStaffModal(editing, id) {
+async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personnel') {
   STAFF_ROLES = await window.api.staffRoles.getAll();
   let s = null;
   if (editing) {
     const list = await window.api.staff.getAll();
     s = list.find(x => x.id === id);
   }
+  const currentType = s?.person_type || personType || 'personnel';
+  const isPersonnel = currentType === 'personnel';
   // Find existing reminder repeat setting for this staff member
   const allReminders = editing ? await window.api.staffReminders.getAll() : [];
   const existingRem = allReminders.find(r => r.staff_id === id);
@@ -11247,11 +11283,12 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
     </div>`;
   }).join('');
 
-  openModal(editing ? 'تنظیمات همکاری' : 'افزودن همکار', `
+  openModal(editing ? 'تنظیمات حساب' : (isPersonnel ? 'افزودن پرسنل' : 'افزودن عضو'), `
     ${!editing ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">ثبت سریع یا کامل، هر دو از همین فرم انجام می‌شود.</div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.8">برای افزودن فوری فقط نام را وارد کن و ذخیره بزن. اگر خواستی، همین حالا شماره تماس، کارت، حقوق، نقش‌ها و یادآوری حقوق را هم تکمیل کن.</div>
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">${isPersonnel ? 'پرسنل برای نقش‌ها، چک‌لیست و گزارش عملکرد استفاده می‌شود.' : 'عضو فقط طرف حساب پرداختی است و وارد چک‌لیست پرسنل نمی‌شود.'}</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">برای افزودن فوری فقط نام را وارد کن و ذخیره بزن. اگر خواستی، شماره تماس، کارت، مبلغ پرداخت و یادآوری را هم تکمیل کن.</div>
     </div>` : ''}
+    <input type="hidden" id="st-person-type" value="${currentType}">
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">نام *</label>
@@ -11266,6 +11303,10 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
         <input class="form-input" id="st-phone" value="${s?.phone||''}">
       </div>
       <div class="form-group">
+        <label class="form-label">ایمیل دسترسی</label>
+        <input class="form-input" id="st-email" type="email" style="direction:ltr;text-align:left" value="${s?.email||''}" placeholder="برای لینک هم‌تیمی">
+      </div>
+      <div class="form-group">
         <label class="form-label">شماره کارت</label>
         <input class="form-input" id="st-card" style="direction:ltr;text-align:right" value="${s?.card_number||''}" placeholder="xxxx-xxxx-xxxx-xxxx">
       </div>
@@ -11278,15 +11319,21 @@ async function refreshRolesAndOpenStaffModal(editing, id) {
       </div>
     </div>
 
-    <div class="form-section">نقش‌ها (این فرد ممکن است چند نقش داشته باشد)</div>
-    <div id="staff-role-rows">
-      ${roleRows}
-    </div>
-    <p style="font-size:11px;color:var(--text3);margin-top:6px">حقوق کل ماهانه = حقوق ثابت + جمع دستمزد نقش‌هایی که آن ماه فعال بوده‌اند.</p>
-    <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
-      <input class="form-input" id="st-newrole" placeholder="نقش جدید..." style="max-width:200px">
-      <button class="btn btn-ghost btn-sm" onclick="addRoleInline()">+ افزودن نقش جدید</button>
-    </div>
+    ${isPersonnel ? `
+      <div class="form-section">نقش‌ها (این فرد ممکن است چند نقش داشته باشد)</div>
+      <div id="staff-role-rows">
+        ${roleRows}
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin-top:6px">حقوق کل ماهانه = حقوق ثابت + جمع دستمزد نقش‌هایی که آن ماه فعال بوده‌اند.</p>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <input class="form-input" id="st-newrole" placeholder="نقش جدید..." style="max-width:200px">
+        <button class="btn btn-ghost btn-sm" onclick="addRoleInline()">+ افزودن نقش جدید</button>
+      </div>
+    ` : `
+      <div class="form-section">پرداخت عضو</div>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-top:0">برای اعضای غیرپرسنل فقط مبلغ پرداخت ثابت/دوره‌ای، شماره کارت و یادآوری پرداخت استفاده می‌شود.</p>
+      <div id="staff-role-rows" style="display:none"></div>
+    `}
 
     <div class="form-section">🔁 تکرار یادآوری پرداخت حقوق</div>
     <select class="form-select" id="st-repeat">
@@ -11427,13 +11474,16 @@ function collectStaffRoles() {
 async function saveStaffNew() {
   const name = document.getElementById('st-name')?.value.trim();
   if (!name) { showToast('نام را وارد کنید', 'error'); return; }
+  const personType = document.getElementById('st-person-type')?.value || 'personnel';
   const roles = collectStaffRoles();
   await window.api.staff.add({
     name, lname: document.getElementById('st-lname')?.value||'',
     phone: document.getElementById('st-phone')?.value||'',
+    email: document.getElementById('st-email')?.value||'',
     card_number: document.getElementById('st-card')?.value||'',
+    person_type: personType,
     role_id: roles[0]?.role_id || STAFF_ROLES[0]?.id,
-    roles,
+    roles: personType === 'personnel' ? roles : [],
     salary: +(document.getElementById('st-salary')?.value||0),
     start_date: readCalendarDateField('st-start'),
     repeat_months: +(document.getElementById('st-repeat')?.value||0),
@@ -11441,20 +11491,33 @@ async function saveStaffNew() {
   });
   closeModal();
   showToast(`${name} اضافه شد ✓`, 'success');
-  await renderStaff();
+  if (_staffReturnToTodoAfterSave) {
+    _staffReturnToTodoAfterSave = false;
+    currentPage = 'todolist';
+    localStorage.setItem('tp_last_page', 'todolist');
+    _todoActiveTab = 'staff';
+    localStorage.setItem('tp_todo_active_tab', 'staff');
+    updatePageTitle();
+    renderTodoList();
+  } else {
+    await renderStaff();
+  }
 }
 
 async function saveStaffEdit(id) {
   const name = document.getElementById('st-name')?.value.trim();
   if (!name) { showToast('نام را وارد کنید', 'error'); return; }
+  const personType = document.getElementById('st-person-type')?.value || 'personnel';
   const roles = collectStaffRoles();
   const repeat = +(document.getElementById('st-repeat')?.value || 0);
   await window.api.staff.update({
     id, name, lname: document.getElementById('st-lname')?.value||'',
     phone: document.getElementById('st-phone')?.value||'',
+    email: document.getElementById('st-email')?.value||'',
     card_number: document.getElementById('st-card')?.value||'',
+    person_type: personType,
     role_id: roles[0]?.role_id || STAFF_ROLES[0]?.id,
-    roles,
+    roles: personType === 'personnel' ? roles : [],
     salary: +(document.getElementById('st-salary')?.value||0),
     start_date: readCalendarDateField('st-start'),
     note: document.getElementById('st-note')?.value||'',
@@ -17027,7 +17090,7 @@ const DEFAULT_NAV_ORDER = [
   { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
   { page: 'instructions', icon: '💡', label: () => 'مرکز دانش' },
   { page: 'payments',     icon: '🛒', label: () => 'حساب مشتریان' },
-  { page: 'staff',        icon: '🧑‍💼', label: () => 'مدیریت پرسنل' },
+  { page: 'staff',        icon: '🧑‍💼', label: () => 'حساب پرسنل و اعضا' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری' },
   { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
@@ -19176,13 +19239,13 @@ function _todoStaffAvatar(s) {
 }
 
 function _todoStaffOptions(selected = '') {
-  const rows = (_db.staff || []).filter(s => s.is_active !== false && s.is_active !== 0);
+  const rows = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
   return '<option value="all"' + (selected === 'all' ? ' selected' : '') + '>همه پرسنل</option>' +
     rows.map(s => `<option value="${s.id}" ${String(selected)===String(s.id)?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('');
 }
 
 function _todoTaskStaff(t) {
-  return (_db.staff || []).find(s => String(s.id) === String(t.assignee_id || t.staff_id || '')) || null;
+  return (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(t.assignee_id || t.staff_id || '')) || null;
 }
 
 function _todoAssigneeLabel(t) {
@@ -19288,7 +19351,7 @@ function _todoPerfCards(p) {
 function _todoStaffDashboardHtml() {
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
-  const staff = (_db.staff || []).filter(s => s.is_active !== false && s.is_active !== 0);
+  const staff = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
   const tasks = (_db.todos || []).filter(t => _todoCanView(t) && (t.assignee_id || t.assignee_email));
   const rows = staff.map(s => {
     const mine = tasks.filter(t => String(t.assignee_id) === String(s.id));
@@ -19312,6 +19375,7 @@ function _todoStaffDashboardHtml() {
     </div>`;
   }).join('');
   return `${_todoTabsHtml()}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="btn btn-primary btn-sm" onclick="openAddPersonnelFromTodo()">+ افزودن پرسنل</button>
     <select class="form-input" style="max-width:180px" onchange="_todoStaffFilter.staffId=this.value;_renderTodoStaffFilteredList()">${_todoStaffOptions(_todoStaffFilter.staffId)}</select>
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.range=this.value;_renderTodoStaffFilteredList()"><option value="today">امروز</option><option value="week">هفته</option><option value="month">ماه</option><option value="year">سال</option><option value="custom">دلخواه</option></select>
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.status=this.value;_renderTodoStaffFilteredList()"><option value="all">همه وضعیت‌ها</option><option value="done">انجام‌شده</option><option value="open">انجام‌نشده</option><option value="overdue">عقب‌افتاده</option></select>
@@ -19340,7 +19404,7 @@ function _openStaffTodoChecklist(staffId) {
 }
 
 function _todoReportForStaffHtml(staffId) {
-  const staff = (_db.staff || []).find(s => String(s.id) === String(staffId));
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   const list = (_db.todos || [])
     .filter(t => _todoCanView(t) && String(t.assignee_id || '') === String(staffId))
     .filter(t => _todoInRange(t, _todoReportFilter.range, _todoReportFilter.from, _todoReportFilter.to));
@@ -21275,7 +21339,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
   const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
   const canChooseAssignee = !_isTeamGuest() || _teamPerm('todo_create_others') || _teamPerm('todo_manage_staff');
-  const staffRows = (_db.staff || []).filter(s => !_isTeamGuest() || canChooseAssignee || String(s.id) === selectedAssigneeId);
+  const staffRows = (_db.staff || []).filter(s => staffIsPersonnel(s) && (!_isTeamGuest() || canChooseAssignee || String(s.id) === selectedAssigneeId));
   const assigneeOptions = `<option value="" ${selectedAssigneeId ? '' : 'selected'}>کار شخصی من</option>` +
     staffRows.map(s=>`<option value="${s.id}" ${String(s.id)===selectedAssigneeId?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('');
   const weekDays = [
@@ -21644,7 +21708,7 @@ async function saveTodo() {
   const ownStaff = _todoSessionStaff();
   const assigneeId = assigneeEl?.value || (assigneeEl?.disabled && ownStaff ? String(ownStaff.id) : '');
   if (!_todoCanCreateForStaff(assigneeId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
-  const assignee = (_db.staff || []).find(s => String(s.id) === String(assigneeId));
+  const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
   const id = _db._nextId.todos++;
   const newTodo = {
@@ -21783,7 +21847,7 @@ function openEditTodo(id) {
     <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
       <label class="form-label">مسئول و دسترسی</label>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
-        <select class="form-input" id="todo-assignee"><option value="">کار شخصی من</option>${(_db.staff||[]).map(s=>`<option value="${s.id}" ${String(t.assignee_id||'')===String(s.id)?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('')}</select>
+        <select class="form-input" id="todo-assignee"><option value="">کار شخصی من</option>${(_db.staff||[]).filter(staffIsPersonnel).map(s=>`<option value="${s.id}" ${String(t.assignee_id||'')===String(s.id)?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('')}</select>
         <select class="form-input" id="todo-visibility"><option value="private" ${(t.visibility||'private')==='private'?'selected':''}>فقط من</option><option value="assignee" ${t.visibility==='assignee'?'selected':''}>فقط مسئول انجام</option><option value="selected" ${t.visibility==='selected'?'selected':''}>افراد انتخاب‌شده</option><option value="team" ${t.visibility==='team'?'selected':''}>اعضای مجاز تیم</option></select>
         <select class="form-input" id="todo-requires-report"><option value="none" ${(t.requires_report||'none')==='none'?'selected':''}>گزارش لازم نیست</option><option value="optional" ${t.requires_report==='optional'?'selected':''}>گزارش اختیاری</option><option value="required" ${t.requires_report==='required'?'selected':''}>گزارش الزامی</option></select>
         <select class="form-input" id="todo-requires-attachment"><option value="none" ${(t.requires_attachment||'none')==='none'?'selected':''}>فایل لازم نیست</option><option value="optional" ${t.requires_attachment==='optional'?'selected':''}>فایل اختیاری</option><option value="required" ${t.requires_attachment==='required'?'selected':''}>فایل الزامی</option></select>
@@ -21995,7 +22059,7 @@ async function updateTodo(id) {
   const goalId2 = document.getElementById('todo-goal')?.value || '';
   const syncGcalWanted = !!document.getElementById('todo-gcal')?.checked;
   const assigneeId = document.getElementById('todo-assignee')?.value || '';
-  const assignee = (_db.staff || []).find(s => String(s.id) === String(assigneeId));
+  const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const wasSynced = !!t.sync_gcal;
   const prevEventId = t.gcal_event_id;
   const originalScheduledDate = _todoScheduledDate(t);
@@ -22285,8 +22349,8 @@ async function renderTutorial() {
       desc:'یه پایگاه دانش شخصی. پوشه‌بندی تودرتو، یادداشت با محتوای کامل، آیکون و رنگ سفارشی.',
       tips:['می‌تونی پوشه داخل پوشه بسازی','فایل و عکس به یادداشت‌ها ضمیمه کن'] },
     { icon:'🧑‍💼', title:'مدیریت', color:'#fb923c',
-      desc:'حقوق، نقش‌ها، پرداخت‌های ماهانه و یادآوری حقوق همکاران رو مدیریت کن.',
-      tips:['هر همکار می‌تونه چند نقش با دستمزد مجزا داشته باشه','یادآوری پرداخت ماهانه خودکار تنظیم میشه'] },
+      desc:'حقوق، نقش‌ها، پرداخت‌های ماهانه و یادآوری پرداخت پرسنل و اعضا رو مدیریت کن.',
+      tips:['هر پرسنل می‌تونه چند نقش با دستمزد مجزا داشته باشه','اعضا برای پرداخت‌های غیرپرسنلی مثل اجاره مناسب‌اند'] },
     { icon:'📊', title:'داشبورد مالی', color:'#f472b6',
       desc:'نمای کلی از وضعیت مالی: درآمد ماهانه، بدهکاران، بهترین مشتریان و نمودار درآمد.',
       tips:['نمودار درآمد رو با فیلتر سال ببین','لیست بدهکاران رو برای پیگیری استفاده کن'] },
