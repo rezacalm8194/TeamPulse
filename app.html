@@ -19766,39 +19766,99 @@ function _renderTodoStaffFilteredList() {
   const box = document.getElementById('todo-staff-filtered-list');
   if (!box) return;
   const todayKey = _jalaliToday();
+  const today = _todayJalaliStr();
+  const todayParts = _jalaliParse(today);
+  let tomorrowStr = '';
+  try {
+    const gToday = jalaliToGregorian(todayParts[0], todayParts[1], todayParts[2]);
+    const tmDate = new Date(gToday[0], gToday[1]-1, gToday[2]+1);
+    const tmJ = gregorianToJalali(tmDate.getFullYear(), tmDate.getMonth()+1, tmDate.getDate());
+    tomorrowStr = _formatJalali(tmJ[0], tmJ[1], tmJ[2]);
+  } catch(e) {}
+  const tomorrowKey = tomorrowStr ? _jalaliKey(tomorrowStr) : 0;
   const todaySnapshots = (_db.todos || []).filter(t => _todoCanView(t) && t.archived && t._snapshot && _todoStaffDoneToday(t, todayKey));
   let list = [...(_db.todos || []).filter(t => _todoCanView(t) && !t.archived), ...todaySnapshots]
     .filter(t => t.assignee_id || t.assignee_email);
   if (_todoStaffFilter.staffId !== 'all') list = list.filter(t => String(t.assignee_id) === String(_todoStaffFilter.staffId));
-  list = list.filter(t => _todoInRange(t, _todoStaffFilter.range, _todoStaffFilter.from, _todoStaffFilter.to));
-  if (_todoStaffFilter.status === 'done') list = list.filter(t => t.done);
-  if (_todoStaffFilter.status === 'open') list = list.filter(t => !t.done);
-  if (_todoStaffFilter.status === 'overdue') list = list.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey);
+  const todayMode = _todoStaffFilter.range === 'today';
+  if (!todayMode) list = list.filter(t => _todoInRange(t, _todoStaffFilter.range, _todoStaffFilter.from, _todoStaffFilter.to));
   const report = _todoStaffReportId ? _todoReportForStaffHtml(_todoStaffReportId) : '';
-  const openItems = list.filter(t => !t.done).sort((a,b) => {
-    const ak = _jalaliKey(_todoScheduledDate(a) || _todayJalaliStr());
-    const bk = _jalaliKey(_todoScheduledDate(b) || _todayJalaliStr());
+  const statusAllows = (t) => {
+    if (_todoStaffFilter.status === 'done') return !!t.done;
+    if (_todoStaffFilter.status === 'open') return !t.done;
+    if (_todoStaffFilter.status === 'overdue') return !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey;
+    return true;
+  };
+  list = list.filter(statusAllows);
+  const sortByDateTime = (a,b) => {
+    const ak = _jalaliKey(_todoScheduledDate(a) || today);
+    const bk = _jalaliKey(_todoScheduledDate(b) || today);
     return ak - bk || _sortByTime(a,b);
-  });
+  };
+  const overdueItems = list.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey).sort(sortByDateTime);
+  const todayItems = list.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    const key = scheduled ? _jalaliKey(scheduled) : 0;
+    return !scheduled || key === todayKey;
+  }).sort(_sortByTime);
+  const todayOpenItems = todayItems.filter(t => !t.done);
   const doneTodayItems = list.filter(t => _todoStaffDoneToday(t, todayKey)).sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
+  const lateDoneTodayItems = doneTodayItems.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    return scheduled && _jalaliKey(scheduled) < todayKey;
+  });
+  const tomorrowItems = list.filter(t => !t.done && t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey).sort(_sortByTime);
+  const futureItems = list.filter(t => !t.done && t.date_jalali && _jalaliKey(t.date_jalali) > (tomorrowKey || todayKey)).sort(sortByDateTime);
+  const noDateItems = list.filter(t => !t.done && !_todoScheduledDate(t)).sort(_sortByTime);
+  const openItems = list.filter(t => !t.done).sort(sortByDateTime);
   const oldDoneItems = list.filter(t => t.done && !_todoStaffDoneToday(t, todayKey)).sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
   const staffName = _todoStaffFilter.staffId !== 'all'
     ? _todoStaffName((_db.staff || []).find(s => String(s.id) === String(_todoStaffFilter.staffId)) || {})
     : 'همه پرسنل';
-  const section = (title, count, body, color = 'var(--text)', open = true) => `<details ${open?'open':''} style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px">
+  const totalToday = todayItems.length;
+  const doneTodayInSchedule = todayItems.filter(t => t.done).length;
+  const progress = totalToday ? Math.round(doneTodayInSchedule / totalToday * 100) : 0;
+  const statChip = (label, value, color='var(--text)') => `<div style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;padding:8px 10px;min-width:92px">
+    <div style="font-size:10px;color:var(--text3);margin-bottom:4px">${label}</div>
+    <div style="font-size:17px;font-weight:900;color:${color}">${fa(value)}</div>
+  </div>`;
+  const overview = `<div style="background:linear-gradient(180deg,rgba(124,106,247,.10),rgba(255,255,255,.02));border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div><div style="font-size:14px;font-weight:900;color:var(--text)">نمای کلی کارهای پرسنل</div><div style="font-size:11px;color:var(--text3);margin-top:3px">${escapeHtml(staffName)} · ${DateService.disp(today)}</div></div>
+      <div style="font-size:22px;font-weight:900;color:var(--accent2)">${fa(progress)}٪</div>
+    </div>
+    <div style="height:7px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-bottom:10px"><div style="height:100%;width:${progress}%;background:linear-gradient(90deg,var(--accent2),var(--green))"></div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px">
+      ${statChip('امروز', totalToday, '#60a5fa')}
+      ${statChip('مانده امروز', todayOpenItems.length, 'var(--amber)')}
+      ${statChip('انجام امروز', doneTodayItems.length, 'var(--green)')}
+      ${statChip('عقب‌افتاده', overdueItems.length, 'var(--red)')}
+      ${statChip('همه باز', openItems.length, 'var(--text)')}
+    </div>
+  </div>`;
+  const section = (icon, title, count, body, color = 'var(--text)', open = true, note = '') => `<details ${open?'open':''} style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px">
     <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;color:${color};font-size:13px;font-weight:900">
-      <span>${title}</span><span style="font-size:11px;color:var(--text3)">${fa(count)} مورد</span>
+      <span>${icon} ${title}${note ? ` <small style="font-size:10px;color:var(--text3);font-weight:600">${note}</small>` : ''}</span><span style="font-size:11px;color:var(--text3)">${fa(count)} مورد</span>
     </summary>
     <div style="margin-top:10px">${body || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:14px">موردی در این بخش نیست.</div>'}</div>
   </details>`;
-  box.innerHTML = `${report}
-    <div style="margin-bottom:8px;font-size:12px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+  const rangeTitle = ({today:'امروز', week:'این هفته', month:'این ماه', year:'امسال', custom:'بازه دلخواه'})[_todoStaffFilter.range] || 'این بازه';
+  const rangeList = `<div style="margin-bottom:8px;font-size:12px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span>چک‌لیست ${escapeHtml(staffName)}</span>
       <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayItems.length)} انجام‌شده امروز</span>
     </div>
-    ${section('کارهای انجام‌نشده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true)}
-    ${section('انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
-    ${oldDoneItems.length && _todoStaffFilter.status === 'done' ? section('انجام‌شده‌های قدیمی‌تر', oldDoneItems.length, oldDoneItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}`;
+    ${section('📌', 'کارهای انجام‌نشده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true)}
+    ${section('✅', 'انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
+    ${oldDoneItems.length && _todoStaffFilter.status === 'done' ? section('🗂', 'انجام‌شده‌های قدیمی‌تر', oldDoneItems.length, oldDoneItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}`;
+  const todayLayout = `
+    ${overdueItems.length ? section('🚨', 'عقب‌افتاده', overdueItems.length, overdueItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--red)', true, 'کارهای قبل از امروز') : ''}
+    ${section('☀️', 'امروز', todayOpenItems.length, todayOpenItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true, `${DateService.disp(today)} · ${fa(todayOpenItems.length)} باقی‌مانده`)}
+    ${section('✅', 'انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
+    ${lateDoneTodayItems.length ? section('↩', 'عقب‌افتاده‌های تکمیل‌شده امروز', lateDoneTodayItems.length, lateDoneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--amber)', false) : ''}
+    ${tomorrowItems.length ? section('🌙', 'فردا', tomorrowItems.length, tomorrowItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false, DateService.disp(tomorrowStr)) : ''}
+    ${futureItems.length ? section('📆', 'روزهای بعد', futureItems.length, futureItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}
+    ${noDateItems.length ? section('🗂', 'بدون تاریخ', noDateItems.length, noDateItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}`;
+  box.innerHTML = `${report}${overview}${todayMode ? todayLayout : `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">نمای ${rangeTitle}</div>${rangeList}`}`;
 }
 
 function _openStaffTodoChecklist(staffId) {
