@@ -87,17 +87,119 @@ function canAccessAccount(req, targetId) {
   }
 }
 
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getTeamGrant(req, targetId) {
+  if (req.user.id === targetId || req.user.role === 'admin') return null;
+  const requesterEmail = String(req.user.email || '').trim().toLowerCase();
+  if (!requesterEmail) return null;
+  const grant = db.prepare(`
+    SELECT permissions
+    FROM team_access_grants
+    WHERE owner_account_id=? AND member_email=? AND status='active'
+  `).get(targetId, requesterEmail);
+  return grant ? { email: requesterEmail, permissions: parseJsonArray(grant.permissions) } : null;
+}
+
+function todoSharedWith(todo) {
+  if (Array.isArray(todo?.shared_with)) return todo.shared_with.map(String);
+  if (Array.isArray(todo?.sharedWith)) return todo.sharedWith.map(String);
+  return [];
+}
+
+function todoVisibleToTeamMember(todo, memberEmail, permissions) {
+  const visibility = todo?.visibility || (todo?.assignee_id ? 'assignee' : 'private');
+  if (permissions.includes('todo_view_team') || permissions.includes('todo_manage_staff')) return true;
+  if (permissions.includes('todo_view_assigned') && String(todo?.assignee_email || '').toLowerCase() === memberEmail) return true;
+  if (permissions.includes('todo_view_shared') && todoSharedWith(todo).map(x => x.toLowerCase()).includes(memberEmail)) return true;
+  if (visibility === 'team' && permissions.includes('todo_view_shared')) return true;
+  return false;
+}
+
+function sanitizeDataForTeamMember(data, grant) {
+  if (!grant || !data || typeof data !== 'object') return data;
+  const clean = sanitizeUserDataForStorage(data);
+  const permissions = grant.permissions || [];
+  const memberEmail = grant.email;
+  clean.todos = Array.isArray(clean.todos)
+    ? clean.todos.filter(todo => todoVisibleToTeamMember(todo, memberEmail, permissions))
+    : [];
+  if (!permissions.includes('goals')) clean.goals = [];
+  if (!permissions.includes('habits')) clean.habits = [];
+  if (!permissions.includes('staff') && !permissions.includes('todo_manage_staff') && !permissions.includes('todo_view_team')) {
+    clean.staff = [];
+    clean.staff_payments = [];
+    clean.staff_reminders = [];
+    clean.staff_adjustments = [];
+    clean.staff_monthly = [];
+  }
+  clean.team_members = [];
+  clean.team_invites = [];
+  return clean;
+}
+
+function mergeAllowedTeamTodos(previousData, nextData, grant) {
+  if (!grant || !previousData || !nextData) return nextData;
+  const memberEmail = grant.email;
+  const permissions = grant.permissions || [];
+  const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
+  const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
+  const incomingById = new Map(incomingTodos.map(t => [String(t.id), t]));
+  const nextTodos = previousTodos.map(oldTodo => {
+    const incoming = incomingById.get(String(oldTodo.id));
+    if (!incoming) return oldTodo;
+    if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions)) return oldTodo;
+    const canCompleteOwn = permissions.includes('todo_complete_own') &&
+      String(oldTodo.assignee_email || '').toLowerCase() === memberEmail;
+    const canReportOwn = permissions.includes('todo_report_own') &&
+      String(oldTodo.assignee_email || '').toLowerCase() === memberEmail;
+    const canEditManager = permissions.includes('todo_edit_manager');
+    if (canEditManager) return { ...oldTodo, ...incoming };
+    return {
+      ...oldTodo,
+      done: canCompleteOwn ? !!incoming.done : oldTodo.done,
+      done_at: canCompleteOwn ? (incoming.done_at || null) : oldTodo.done_at,
+      completedAt: canCompleteOwn ? (incoming.completedAt || incoming.done_at || null) : oldTodo.completedAt,
+      completed_at: canCompleteOwn ? (incoming.completed_at || incoming.done_at || null) : oldTodo.completed_at,
+      completed_by: canCompleteOwn ? (incoming.completed_by || memberEmail) : oldTodo.completed_by,
+      completed_by_email: canCompleteOwn ? (incoming.completed_by_email || memberEmail) : oldTodo.completed_by_email,
+      status: canCompleteOwn ? (incoming.status || oldTodo.status) : oldTodo.status,
+      staff_report: canReportOwn ? (incoming.staff_report || oldTodo.staff_report || '') : oldTodo.staff_report,
+      report_updated_at: canReportOwn ? (incoming.report_updated_at || oldTodo.report_updated_at || null) : oldTodo.report_updated_at,
+      history: incoming.history || oldTodo.history,
+      updated_at: incoming.updated_at || oldTodo.updated_at,
+    };
+  });
+  if (permissions.includes('todo_create_self')) {
+    incomingTodos.forEach(todo => {
+      if (previousTodos.some(x => String(x.id) === String(todo.id))) return;
+      if (String(todo.assignee_email || '').toLowerCase() !== memberEmail) return;
+      nextTodos.push(todo);
+    });
+  }
+  return { ...previousData, todos: nextTodos, _lastSaved: nextData._lastSaved || previousData._lastSaved };
+}
+
 router.put('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
+    const grant = getTeamGrant(req, targetId);
     const { force } = req.body;
-    const data = sanitizeUserDataForStorage(req.body.data);
+    let data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(targetId);
     if (existing) {
       let previousData = null;
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
+      if (grant) data = mergeAllowedTeamTodos(previousData, data, grant);
       if (!force && looksLikeDestructiveOverwrite(previousData, data)) {
         return res.status(409).json({
           error: 'destructive_overwrite_blocked',
@@ -133,7 +235,9 @@ router.get('/:accountId', auth, (req, res) => {
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
     if (!row) return res.json({ data: null });
-    res.json({ data: sanitizeUserDataForStorage(JSON.parse(row.data)), updated_at: row.updated_at });
+    const grant = getTeamGrant(req, targetId);
+    const data = JSON.parse(row.data);
+    res.json({ data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data), updated_at: row.updated_at });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
