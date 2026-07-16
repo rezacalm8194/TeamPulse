@@ -19316,6 +19316,168 @@ function _openAddTodoForStaff(staffId) {
   openAddTodo('', staffId);
 }
 
+function _quickStaffDateShortcut(kind) {
+  const today = _todayJalaliStr();
+  if (kind === 'today') return today;
+  const [jy,jm,jd] = _jalaliParse(today);
+  if (kind === 'tomorrow') return _formatJalali(..._addDays(jy,jm,jd,1));
+  if (kind === 'week') return _formatJalali(..._addDays(jy,jm,jd,7));
+  return today;
+}
+
+function _setQuickStaffChecklistDate(kind) {
+  const input = document.getElementById('quick-staff-date');
+  if (input) input.value = _quickStaffDateShortcut(kind);
+}
+
+function _setQuickStaffChecklistPriority(btn, priority) {
+  document.querySelectorAll('.quick-priority-btn').forEach(b => {
+    b.dataset.active = '0';
+    b.style.borderColor = 'var(--border2)';
+    b.style.background = 'var(--bg3)';
+    b.style.color = 'var(--text2)';
+  });
+  btn.dataset.active = '1';
+  btn.style.borderColor = 'var(--accent)';
+  btn.style.background = 'rgba(124,106,247,.18)';
+  btn.style.color = 'var(--accent2)';
+  const input = document.getElementById('quick-staff-priority');
+  if (input) input.value = priority;
+}
+
+function _openQuickStaffChecklist(staffId) {
+  if (!_todoCanCreateForStaff(staffId)) { showToast('برای تعریف چک‌لیست این پرسنل دسترسی نداری', 'error'); return; }
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
+  if (!staff) { showToast('پرسنل پیدا نشد', 'error'); return; }
+  const today = _todayJalaliStr();
+  openModal('چک‌لیست سریع', `
+    <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:900;color:var(--text);margin-bottom:4px">${escapeHtml(_todoStaffName(staff))}</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">هر خط یک کار جدا می‌شود. دسترسی پیش‌فرض: فقط مسئول انجام.</div>
+    </div>
+    <div class="form-group full">
+      <label class="form-label">عنوان کارها *</label>
+      <textarea class="form-input" id="quick-staff-titles" rows="6" autofocus onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')_saveQuickStaffChecklist('${staff.id}')" placeholder="مثلاً:
+پیگیری پرداخت مشتری
+آماده‌سازی ویدیو
+ارسال گزارش روزانه"></textarea>
+      <div style="font-size:10px;color:var(--text3);margin-top:5px">برای ذخیره سریع می‌توانی Ctrl+Enter بزنی.</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
+      <div class="form-group">
+        <label class="form-label">تاریخ</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('today')">امروز</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('tomorrow')">فردا</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('week')">هفته دیگر</button>
+        </div>
+        <input class="form-input jdate" id="quick-staff-date" value="${today}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">اولویت</label>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'low')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">پایین</button>
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'medium')" data-active="1" style="padding:8px;border-radius:9px;border:1px solid var(--accent);background:rgba(124,106,247,.18);color:var(--accent2);font-family:var(--font)">متوسط</button>
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'high')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">بالا</button>
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'urgent')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">فوری</button>
+        </div>
+        <input type="hidden" id="quick-staff-priority" value="medium">
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text2);cursor:pointer">
+      <input type="checkbox" id="quick-staff-report" style="width:16px;height:16px;accent-color:var(--accent)">
+      برای تکمیل، گزارش بخواهد
+    </label>
+  `, [
+    { label:'ذخیره سریع', cls:'btn-primary', action:`_saveQuickStaffChecklist('${staff.id}')` },
+    { label:'فرم کامل', cls:'btn-ghost', action:`closeModal();_openAddTodoForStaff('${staff.id}')` },
+    { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
+  ]);
+  setTimeout(() => { initDatePickers(); document.getElementById('quick-staff-titles')?.focus(); }, 50);
+}
+
+async function _saveQuickStaffChecklist(staffId) {
+  _todosInit();
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
+  if (!staff) { showToast('پرسنل پیدا نشد', 'error'); return; }
+  if (!_todoCanCreateForStaff(staffId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
+  const titles = (document.getElementById('quick-staff-titles')?.value || '')
+    .split(/\r?\n/)
+    .map(x => x.trim())
+    .filter(Boolean);
+  if (!titles.length) { showToast('حداقل یک عنوان وارد کن', 'error'); return; }
+  const dateJalali = document.getElementById('quick-staff-date')?.value.trim() || _todayJalaliStr();
+  const priority = document.getElementById('quick-staff-priority')?.value || 'medium';
+  const requiresReport = document.getElementById('quick-staff-report')?.checked ? 'required' : 'none';
+  const now = new Date().toISOString();
+  titles.forEach(title => {
+    const id = _db._nextId.todos++;
+    _db.todos.push({
+      id, title, note:'', manager_note:'',
+      assignee_id: staff.id,
+      assignee_email: staff.email || '',
+      visibility:'assignee',
+      shared_with: [],
+      requires_report: requiresReport,
+      requires_attachment:'none',
+      requires_approval:false,
+      owner_id: _sbUser?.id || 'local-owner',
+      created_by: _sbUser?.id || 'local-owner',
+      created_by_name: _sbUser?.name || '',
+      date_jalali: dateJalali,
+      scheduled_date: dateJalali,
+      scheduledDate: dateJalali,
+      time:'',
+      duration_min:0,
+      repeat:'none',
+      weekdays:'',
+      priority,
+      category:'general',
+      goal_id:null,
+      remind_min:0,
+      sync_gcal:false,
+      gcal_event_id:null,
+      done:false,
+      done_at:null,
+      completedAt:null,
+      completed_at:null,
+      archived:false,
+      status:'pending',
+      created_at: now,
+      updated_at: now,
+    });
+  });
+  _save();
+  await _syncToServer();
+  closeModal();
+  showToast(`${fa(titles.length)} کار برای ${_todoStaffName(staff)} ساخته شد ✓`, 'success');
+  _todoActiveTab = 'staff';
+  _todoStaffFilter.staffId = String(staff.id);
+  localStorage.setItem('tp_todo_active_tab', 'staff');
+  renderTodoList();
+  setTimeout(_renderTodoStaffFilteredList, 30);
+}
+
+function _openQuickStaffChecklistFromFilter() {
+  if (_todoStaffFilter.staffId && _todoStaffFilter.staffId !== 'all') {
+    _openQuickStaffChecklist(_todoStaffFilter.staffId);
+    return;
+  }
+  const rows = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
+  if (!rows.length) { showToast('اول یک پرسنل اضافه کن', 'error'); return; }
+  openModal('انتخاب پرسنل', `
+    <div class="form-group full">
+      <label class="form-label">برای چه کسی چک‌لیست بسازم؟</label>
+      <select class="form-input" id="quick-staff-pick">
+        ${rows.map(s => `<option value="${s.id}">${escapeHtml(_todoStaffName(s))}</option>`).join('')}
+      </select>
+    </div>
+  `, [
+    { label:'ادامه', cls:'btn-primary', action:`const v=document.getElementById('quick-staff-pick')?.value;closeModal();_openQuickStaffChecklist(v)` },
+    { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
+  ]);
+}
+
 function _todoRangeBounds(range, from, to) {
   const today = _todayJalaliStr();
   const [jy,jm,jd] = _jalaliParse(today);
@@ -19389,7 +19551,7 @@ function _todoStaffDashboardHtml() {
       <div style="margin-top:8px;height:6px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden"><div style="height:100%;width:${progress}%;background:var(--accent2)"></div></div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px">آخرین فعالیت: ${last ? new Date(last).toLocaleString('fa-IR') : '—'}</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        ${_todoCanCreateForStaff(s.id) ? `<button class="btn btn-primary btn-sm" onclick="_openAddTodoForStaff('${s.id}')">تعریف چک‌لیست</button>` : ''}
+        ${_todoCanCreateForStaff(s.id) ? `<button class="btn btn-primary btn-sm" onclick="_openQuickStaffChecklist('${s.id}')">+ سریع</button><button class="btn btn-ghost btn-sm" onclick="_openAddTodoForStaff('${s.id}')">فرم کامل</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoChecklist('${s.id}')">چک‌لیست</button>
         <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoReport('${s.id}')">گزارش عملکرد</button>
       </div>
@@ -19397,6 +19559,7 @@ function _todoStaffDashboardHtml() {
   }).join('');
   return `${_todoTabsHtml()}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="btn btn-primary btn-sm" onclick="openAddPersonnelFromTodo()">+ افزودن پرسنل</button>
+    <button class="btn btn-primary btn-sm" onclick="_openQuickStaffChecklistFromFilter()">+ چک‌لیست سریع</button>
     <select class="form-input" style="max-width:180px" onchange="_todoStaffFilter.staffId=this.value;_renderTodoStaffFilteredList()">${_todoStaffOptions(_todoStaffFilter.staffId)}</select>
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.range=this.value;_renderTodoStaffFilteredList()"><option value="today">امروز</option><option value="week">هفته</option><option value="month">ماه</option><option value="year">سال</option><option value="custom">دلخواه</option></select>
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.status=this.value;_renderTodoStaffFilteredList()"><option value="all">همه وضعیت‌ها</option><option value="done">انجام‌شده</option><option value="open">انجام‌نشده</option><option value="overdue">عقب‌افتاده</option></select>
