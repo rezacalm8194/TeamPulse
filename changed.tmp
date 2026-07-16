@@ -1,6 +1,3 @@
-backend/.env
-backend/routes/data.js
-backend/utils/jwt.js
+backend/database/schema.sql
+backend/routes/tasks.js
 changed.tmp
-scripts/generate-blog-articles.js
-scripts/todo-occurrence-tests.js
