@@ -5810,6 +5810,7 @@ const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_co
 let _todoActiveTab = localStorage.getItem('tp_todo_active_tab') || 'mine';
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
+let _todoStaffReportId = '';
 
 function _teamAccessSession() {
   try { return JSON.parse(localStorage.getItem(TEAM_ACCESS_SESSION_KEY) || 'null'); }
@@ -19192,11 +19193,25 @@ function _setTodoTab(tab) {
 }
 
 function _todoTabsHtml() {
-  const guest = _isTeamGuest();
-  const tabs = guest
-    ? [_todoTabButton('mine','کارهای من'), _todoTabButton('my_report','گزارش عملکرد من')]
-    : [_todoTabButton('mine','کارهای من'), _todoTabButton('staff','کارهای پرسنل'), _todoTabButton('report','گزارش عملکرد')];
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${tabs.join('')}</div>`;
+  return '';
+}
+
+function _todoTopbarActionsHtml() {
+  const tabs = [_todoTabButton('mine','کارهای من')];
+  if (!_isTeamGuest()) tabs.push(_todoTabButton('staff','کارهای پرسنل'));
+  return `${tabs.join('')}
+    <button class="btn btn-ghost btn-sm" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها" style="width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center">📦</button>`;
+}
+
+function _openMyTodoReport() {
+  _todoReportFilter.staffIds = [];
+  openModal('📈 گزارش عملکرد خودم', _todoReportHtml(true), { size:'large' });
+}
+
+function _openStaffTodoReport(staffId) {
+  _todoStaffReportId = String(staffId || '');
+  _todoStaffFilter.staffId = _todoStaffReportId || _todoStaffFilter.staffId;
+  _renderTodoStaffFilteredList();
 }
 
 function _todoRangeBounds(range, from, to) {
@@ -19264,14 +19279,18 @@ function _todoStaffDashboardHtml() {
     const overdue = mine.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey).length;
     const last = mine.map(t => t.updated_at || t.done_at || t.created_at).filter(Boolean).sort().pop();
     const progress = todayTasks.length ? Math.round(done / todayTasks.length * 100) : 0;
-    return `<button onclick="_openStaffTodoChecklist('${s.id}')" style="text-align:right;border:1px solid var(--border);background:var(--bg2);border-radius:10px;padding:12px;cursor:pointer;color:var(--text);font-family:var(--font)">
+    return `<div style="text-align:right;border:1px solid var(--border);background:var(--bg2);border-radius:10px;padding:12px;color:var(--text);font-family:var(--font)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">${_todoStaffAvatar(s)}<div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:900">${escapeHtml(_todoStaffName(s))}</div><div style="font-size:11px;color:var(--text3)">${escapeHtml(s.role || 'پرسنل')}</div></div><div style="font-size:19px;font-weight:900;color:var(--accent2)">${fa(progress)}٪</div></div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:10px;color:var(--text3)">
         <span>امروز: <b style="color:var(--text)">${fa(todayTasks.length)}</b></span><span>انجام: <b style="color:var(--green)">${fa(done)}</b></span><span>مانده: <b style="color:var(--amber)">${fa(Math.max(0,todayTasks.length-done))}</b></span><span>عقب: <b style="color:var(--red)">${fa(overdue)}</b></span>
       </div>
       <div style="margin-top:8px;height:6px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden"><div style="height:100%;width:${progress}%;background:var(--accent2)"></div></div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px">آخرین فعالیت: ${last ? new Date(last).toLocaleString('fa-IR') : '—'}</div>
-    </button>`;
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoChecklist('${s.id}')">چک‌لیست</button>
+        <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoReport('${s.id}')">گزارش عملکرد</button>
+      </div>
+    </div>`;
   }).join('');
   return `${_todoTabsHtml()}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <select class="form-input" style="max-width:180px" onchange="_todoStaffFilter.staffId=this.value;_renderTodoStaffFilteredList()">${_todoStaffOptions(_todoStaffFilter.staffId)}</select>
@@ -19290,13 +19309,35 @@ function _renderTodoStaffFilteredList() {
   if (_todoStaffFilter.status === 'done') list = list.filter(t => t.done);
   if (_todoStaffFilter.status === 'open') list = list.filter(t => !t.done);
   if (_todoStaffFilter.status === 'overdue') list = list.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey);
-  box.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px">${list.map(t => `<div style="display:flex;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px solid var(--border)"><span>${escapeHtml(t.title)}</span><span style="font-size:11px;color:var(--text3)">${escapeHtml(_todoAssigneeLabel(t))} · ${DateService.disp(_todoScheduledDate(t)||'')}</span></div>`).join('') || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px">کاری در این فیلتر نیست.</div>'}</div>`;
+  const report = _todoStaffReportId ? _todoReportForStaffHtml(_todoStaffReportId) : '';
+  box.innerHTML = `${report}<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px">${list.map(t => `<div style="display:flex;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px solid var(--border)"><span>${escapeHtml(t.title)}</span><span style="font-size:11px;color:var(--text3)">${escapeHtml(_todoAssigneeLabel(t))} · ${DateService.disp(_todoScheduledDate(t)||'')}</span></div>`).join('') || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px">کاری در این فیلتر نیست.</div>'}</div>`;
 }
 
 function _openStaffTodoChecklist(staffId) {
+  _todoStaffReportId = '';
   _todoStaffFilter.staffId = String(staffId);
   renderTodoList();
   setTimeout(_renderTodoStaffFilteredList, 20);
+}
+
+function _todoReportForStaffHtml(staffId) {
+  const staff = (_db.staff || []).find(s => String(s.id) === String(staffId));
+  const list = (_db.todos || [])
+    .filter(t => _todoCanView(t) && String(t.assignee_id || '') === String(staffId))
+    .filter(t => _todoInRange(t, _todoReportFilter.range, _todoReportFilter.from, _todoReportFilter.to));
+  const perf = _todoPerf(list);
+  return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="font-size:14px;font-weight:900">گزارش عملکرد ${escapeHtml(staff ? _todoStaffName(staff) : 'پرسنل')}</div>
+      <select class="form-input" style="max-width:160px" onchange="_todoReportFilter.range=this.value;_renderTodoStaffFilteredList()">
+        <option value="today" ${_todoReportFilter.range==='today'?'selected':''}>روزانه</option>
+        <option value="week" ${_todoReportFilter.range==='week'?'selected':''}>هفتگی</option>
+        <option value="month" ${_todoReportFilter.range==='month'?'selected':''}>ماهانه</option>
+        <option value="year" ${_todoReportFilter.range==='year'?'selected':''}>سالانه</option>
+      </select>
+    </div>
+    ${_todoPerfCards(perf)}
+  </div>`;
 }
 
 function _todoReportHtml(myOnly = false) {
@@ -19570,6 +19611,7 @@ function _todoStickyAddBoxHtml(stats = {}) {
       <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
     </div>` : ''}
     <div style="margin-top:12px">${_todoViewSwitcherHtml()}</div>
+    ${_todoActiveTab === 'mine' ? `<button class="btn btn-ghost btn-sm" onclick="_openMyTodoReport()" style="margin-top:10px;width:100%;justify-content:center">گزارش عملکرد خودم</button>` : ''}
   </div>`;
 }
 
@@ -20368,12 +20410,9 @@ function renderTodoList() {
   });
   if (_archiveChanged) { _save(); _syncToServer(); }
 
-  updateTopbarActions(`
-    <button class="btn btn-ghost btn-sm" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها" style="width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center">📦</button>
-  `);
-
-  if (_isTeamGuest() && !['mine','my_report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
-  if (!_isTeamGuest() && _todoActiveTab === 'my_report') _todoActiveTab = 'report';
+  if (_isTeamGuest() && _todoActiveTab !== 'mine') _todoActiveTab = 'mine';
+  if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
+  updateTopbarActions(_todoTopbarActionsHtml());
   if (_todoActiveTab === 'staff') {
     setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoStaffDashboardHtml()}</div>`);
     setTimeout(_renderTodoStaffFilteredList, 20);
