@@ -1,1 +1,6 @@
+backend/.env
+backend/routes/data.js
+backend/utils/jwt.js
 changed.tmp
+scripts/generate-blog-articles.js
+scripts/todo-occurrence-tests.js

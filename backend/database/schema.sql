@@ -111,15 +111,43 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
   client_id TEXT,
+  owner_id TEXT,
+  created_by TEXT,
+  assignee_id TEXT,
+  workspace_id TEXT,
+  visibility TEXT DEFAULT 'private',
+  shared_with TEXT DEFAULT '[]',
   title TEXT NOT NULL,
   description TEXT,
+  manager_note TEXT,
   priority TEXT DEFAULT 'medium',
   status TEXT DEFAULT 'open',
   due_date TEXT,
+  due_time TEXT,
+  requires_report TEXT DEFAULT 'none',
+  requires_attachment TEXT DEFAULT 'none',
+  requires_approval INTEGER DEFAULT 0,
+  staff_report TEXT,
+  report_updated_at TEXT,
+  completed_by TEXT,
+  completed_at TEXT,
+  recurrence_rule TEXT,
+  occurrence_date TEXT,
   reminder_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS task_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 
 -- یادآوری‌های پرداخت
@@ -202,6 +230,9 @@ CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id);
 CREATE INDEX IF NOT EXISTS idx_payments_client ON payments(client_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_account ON tasks(account_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_occurrence ON tasks(occurrence_date);
+CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
 CREATE INDEX IF NOT EXISTS idx_sync_account ON sync_events(account_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_account ON wallet_transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_charge_account ON wallet_charge_requests(account_id);
