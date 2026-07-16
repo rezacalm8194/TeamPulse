@@ -642,6 +642,33 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .todo-overdue-menu-btn { color: rgba(255,255,255,.42) !important; }
 .todo-overdue-menu-btn:hover { color: var(--text) !important; }
+.todo-form-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+.todo-form-tabs button {
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text2);
+  border-radius: 10px;
+  padding: 9px 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 800;
+}
+.todo-form-tabs button.active {
+  border-color: var(--accent);
+  background: rgba(124,106,247,.18);
+  color: var(--accent2);
+}
+.quick-template-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 7px 0 0;
+}
 
 /* ── Paid badge (replaces heavy button once paid) ──────────── */
 .badge-paid {
@@ -19361,6 +19388,11 @@ function _openQuickStaffChecklist(staffId) {
 پیگیری پرداخت مشتری
 آماده‌سازی ویدیو
 ارسال گزارش روزانه"></textarea>
+      <div class="quick-template-row">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('daily')">روتین روزانه</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('sales')">پیگیری فروش</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('content')">تولید محتوا</button>
+      </div>
       <div style="font-size:10px;color:var(--text3);margin-top:5px">برای ذخیره سریع می‌توانی Ctrl+Enter بزنی.</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
@@ -19394,6 +19426,19 @@ function _openQuickStaffChecklist(staffId) {
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
   setTimeout(() => { initDatePickers(); document.getElementById('quick-staff-titles')?.focus(); }, 50);
+}
+
+function _fillQuickStaffTemplate(kind) {
+  const templates = {
+    daily: ['بررسی پیام‌ها و پیگیری‌های امروز','ثبت گزارش پایان روز','مرتب‌سازی کارهای باقی‌مانده'],
+    sales: ['پیگیری مشتریان معوق','ارسال پیام یادآوری پرداخت','ثبت نتیجه تماس‌ها'],
+    content: ['ایده‌پردازی محتوای امروز','آماده‌سازی فایل یا ویدیو','ارسال خروجی برای بررسی']
+  };
+  const box = document.getElementById('quick-staff-titles');
+  if (!box) return;
+  const text = (templates[kind] || []).join('\n');
+  box.value = box.value.trim() ? (box.value.trim() + '\n' + text) : text;
+  box.focus();
 }
 
 async function _saveQuickStaffChecklist(staffId) {
@@ -19476,6 +19521,70 @@ function _openQuickStaffChecklistFromFilter() {
     { label:'ادامه', cls:'btn-primary', action:`const v=document.getElementById('quick-staff-pick')?.value;closeModal();_openQuickStaffChecklist(v)` },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
+}
+
+function _todoFormSections() {
+  const byId = id => document.getElementById(id);
+  return {
+    quick: [
+      byId('todo-title')?.closest('.form-group'),
+      byId('todo-assignee')?.closest('.form-group'),
+      byId('todo-date')?.closest('div[style*="grid-template-columns"]'),
+      byId('todo-priority')?.closest('div[style*="margin-bottom"]'),
+    ],
+    details: [
+      byId('todo-title')?.closest('.form-group'),
+      byId('todo-note')?.closest('.form-group'),
+      byId('todo-category')?.closest('.form-group'),
+      byId('todo-goal')?.closest('.form-group'),
+    ],
+    schedule: [
+      byId('todo-title')?.closest('.form-group'),
+      byId('todo-date')?.closest('div[style*="grid-template-columns"]'),
+      byId('todo-repeat')?.closest('.form-group'),
+      byId('weekdays-picker'),
+      byId('todo-remind')?.closest('.form-group'),
+      byId('notif-status'),
+      byId('todo-gcal')?.closest('.form-group'),
+    ],
+    access: [
+      byId('todo-title')?.closest('.form-group'),
+      byId('todo-assignee')?.closest('.form-group'),
+    ],
+  };
+}
+
+function _setTodoFormTab(tab) {
+  const tabs = ['quick','details','schedule','access'];
+  document.querySelectorAll('.todo-form-tabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+  const sections = _todoFormSections();
+  const all = new Set();
+  Object.values(sections).flat().filter(Boolean).forEach(el => all.add(el));
+  all.forEach(el => { el.style.display = 'none'; });
+  (sections[tab] || sections.quick).filter(Boolean).forEach(el => { el.style.display = ''; });
+  if (tab !== 'schedule') {
+    const weekdays = document.getElementById('weekdays-picker');
+    if (weekdays) weekdays.style.display = 'none';
+  } else {
+    _onTodoRepeatChange(document.getElementById('todo-repeat')?.value || 'none');
+  }
+}
+
+function _initTodoFormTabs() {
+  const title = document.getElementById('todo-title');
+  if (!title || document.getElementById('todo-form-tabs')) return;
+  const noteGroup = document.getElementById('todo-note')?.closest('.form-group');
+  const tabs = document.createElement('div');
+  tabs.id = 'todo-form-tabs';
+  tabs.className = 'todo-form-tabs';
+  tabs.innerHTML = `
+    <button type="button" class="active" data-tab="quick" onclick="_setTodoFormTab('quick')">سریع</button>
+    <button type="button" data-tab="details" onclick="_setTodoFormTab('details')">جزئیات</button>
+    <button type="button" data-tab="schedule" onclick="_setTodoFormTab('schedule')">زمان‌بندی</button>
+    <button type="button" data-tab="access" onclick="_setTodoFormTab('access')">دسترسی</button>
+  `;
+  (noteGroup || title.closest('.form-group'))?.before(tabs);
+  _setTodoFormTab('quick');
 }
 
 function _todoRangeBounds(range, from, to) {
@@ -21657,7 +21766,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     {label: '+ ذخیره', cls: 'btn-primary', action: 'saveTodo()'},
     {label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()'},
   ]);
-  setTimeout(() => { initDatePickers(); _updateTodoEndPreview(); }, 50);
+  setTimeout(() => { initDatePickers(); _updateTodoEndPreview(); _initTodoFormTabs(); }, 50);
 }
 
 function _onTodoRepeatChange(val) {
