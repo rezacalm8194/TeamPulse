@@ -5871,6 +5871,17 @@ function _todoCanDelete(t) {
   if (!_isTeamGuest()) return true;
   return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff');
 }
+function _todoSessionStaff() {
+  const email = _teamEmail();
+  return (_db.staff || []).find(s => String(s.email || '').trim().toLowerCase() === email) || null;
+}
+function _todoCanCreateForStaff(staffId) {
+  if (!_isTeamGuest()) return true;
+  const ownStaff = _todoSessionStaff();
+  const ownId = ownStaff ? String(ownStaff.id) : '';
+  if (staffId && ownId && String(staffId) !== ownId) return _teamPerm('todo_create_others') || _teamPerm('todo_manage_staff');
+  return _teamPerm('todo_create_self') || _teamPerm('todo_manage_staff');
+}
 function _teamDefaultPage() {
   const s = _teamAccessSession();
   const first = s?.permissions?.find(p => _SAFE_RESTORE_PAGES.includes(p));
@@ -19214,6 +19225,13 @@ function _openStaffTodoReport(staffId) {
   _renderTodoStaffFilteredList();
 }
 
+function _openAddTodoForStaff(staffId) {
+  if (!_todoCanCreateForStaff(staffId)) { showToast('برای تعریف چک‌لیست این پرسنل دسترسی نداری', 'error'); return; }
+  _todoActiveTab = 'staff';
+  localStorage.setItem('tp_todo_active_tab', 'staff');
+  openAddTodo('', staffId);
+}
+
 function _todoRangeBounds(range, from, to) {
   const today = _todayJalaliStr();
   const [jy,jm,jd] = _jalaliParse(today);
@@ -19287,6 +19305,7 @@ function _todoStaffDashboardHtml() {
       <div style="margin-top:8px;height:6px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden"><div style="height:100%;width:${progress}%;background:var(--accent2)"></div></div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px">آخرین فعالیت: ${last ? new Date(last).toLocaleString('fa-IR') : '—'}</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        ${_todoCanCreateForStaff(s.id) ? `<button class="btn btn-primary btn-sm" onclick="_openAddTodoForStaff('${s.id}')">تعریف چک‌لیست</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoChecklist('${s.id}')">چک‌لیست</button>
         <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoReport('${s.id}')">گزارش عملکرد</button>
       </div>
@@ -21248,9 +21267,17 @@ function _buildGoalSelectOptions(selectedId) {
   return opts;
 }
 
-function openAddTodo(dateStr) {
+function openAddTodo(dateStr, presetAssigneeId = '') {
+  if (!_todoCanCreateForStaff(presetAssigneeId)) { showToast('برای ساخت این کار دسترسی نداری', 'error'); return; }
   _requestNotificationPermission();
   const today = _todayJalaliStr();
+  const ownStaff = _todoSessionStaff();
+  const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
+  const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
+  const canChooseAssignee = !_isTeamGuest() || _teamPerm('todo_create_others') || _teamPerm('todo_manage_staff');
+  const staffRows = (_db.staff || []).filter(s => !_isTeamGuest() || canChooseAssignee || String(s.id) === selectedAssigneeId);
+  const assigneeOptions = `<option value="" ${selectedAssigneeId ? '' : 'selected'}>کار شخصی من</option>` +
+    staffRows.map(s=>`<option value="${s.id}" ${String(s.id)===selectedAssigneeId?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('');
   const weekDays = [
     {key:'sat', label:'ش'}, {key:'sun', label:'ی'}, {key:'mon', label:'د'},
     {key:'tue', label:'س'}, {key:'wed', label:'چ'}, {key:'thu', label:'پ'}, {key:'fri', label:'ج'}
@@ -21274,8 +21301,8 @@ function openAddTodo(dateStr) {
     <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
       <label class="form-label">مسئول و دسترسی</label>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
-        <select class="form-input" id="todo-assignee"><option value="">کار شخصی من</option>${(_db.staff||[]).map(s=>`<option value="${s.id}">${escapeHtml(_todoStaffName(s))}</option>`).join('')}</select>
-        <select class="form-input" id="todo-visibility"><option value="private">فقط من</option><option value="assignee">فقط مسئول انجام</option><option value="selected">افراد انتخاب‌شده</option><option value="team">اعضای مجاز تیم</option></select>
+        <select class="form-input" id="todo-assignee" ${canChooseAssignee ? '' : 'disabled'}>${assigneeOptions}</select>
+        <select class="form-input" id="todo-visibility"><option value="private" ${selectedAssigneeId ? '' : 'selected'}>فقط من</option><option value="assignee" ${selectedAssigneeId ? 'selected' : ''}>فقط مسئول انجام</option><option value="selected">افراد انتخاب‌شده</option><option value="team">اعضای مجاز تیم</option></select>
         <select class="form-input" id="todo-requires-report"><option value="none">گزارش لازم نیست</option><option value="optional">گزارش اختیاری</option><option value="required">گزارش الزامی</option></select>
         <select class="form-input" id="todo-requires-attachment"><option value="none">فایل لازم نیست</option><option value="optional">فایل اختیاری</option><option value="required">فایل الزامی</option></select>
       </div>
@@ -21613,7 +21640,10 @@ async function saveTodo() {
   const category = document.getElementById('todo-category')?.value || 'general';
   const goalId = document.getElementById('todo-goal')?.value || '';
   const syncGcal = !!document.getElementById('todo-gcal')?.checked;
-  const assigneeId = document.getElementById('todo-assignee')?.value || '';
+  const assigneeEl = document.getElementById('todo-assignee');
+  const ownStaff = _todoSessionStaff();
+  const assigneeId = assigneeEl?.value || (assigneeEl?.disabled && ownStaff ? String(ownStaff.id) : '');
+  if (!_todoCanCreateForStaff(assigneeId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
   const assignee = (_db.staff || []).find(s => String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
   const id = _db._nextId.todos++;
