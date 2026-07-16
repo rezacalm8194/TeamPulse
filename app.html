@@ -644,7 +644,7 @@ button { cursor: pointer; font-family: var(--font); }
 .todo-overdue-menu-btn:hover { color: var(--text) !important; }
 .todo-form-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin: 10px 0 12px;
 }
@@ -19525,37 +19525,44 @@ function _openQuickStaffChecklistFromFilter() {
 
 function _todoFormSections() {
   const byId = id => document.getElementById(id);
+  const titleGroup = byId('todo-title')?.closest('.form-group');
+  const accessGroup = byId('todo-assignee')?.closest('.form-group');
+  const noteGroup = byId('todo-note')?.closest('.form-group');
+  const dateGroup = byId('todo-date')?.closest('.form-group');
+  const timeGroup = byId('todo-time')?.closest('.form-group');
+  const durationGroup = byId('todo-duration')?.closest('.form-group');
+  const priorityGroup = byId('todo-priority')?.closest('div[style*="margin-bottom"]');
+  const categoryGroup = byId('todo-category')?.closest('.form-group');
+  const goalGroup = byId('todo-goal')?.closest('.form-group');
+  const repeatGroup = byId('todo-repeat')?.closest('.form-group');
+  const remindGroup = byId('todo-remind')?.closest('.form-group');
+  const gcalGroup = byId('todo-gcal')?.closest('.form-group');
   return {
     quick: [
-      byId('todo-title')?.closest('.form-group'),
-      byId('todo-assignee')?.closest('.form-group'),
-      byId('todo-date')?.closest('div[style*="grid-template-columns"]'),
-      byId('todo-priority')?.closest('div[style*="margin-bottom"]'),
-    ],
-    details: [
-      byId('todo-title')?.closest('.form-group'),
-      byId('todo-note')?.closest('.form-group'),
-      byId('todo-category')?.closest('.form-group'),
-      byId('todo-goal')?.closest('.form-group'),
+      titleGroup,
+      accessGroup,
+      dateGroup,
     ],
     schedule: [
-      byId('todo-title')?.closest('.form-group'),
-      byId('todo-date')?.closest('div[style*="grid-template-columns"]'),
-      byId('todo-repeat')?.closest('.form-group'),
+      timeGroup,
+      durationGroup,
+      repeatGroup,
       byId('weekdays-picker'),
-      byId('todo-remind')?.closest('.form-group'),
+      remindGroup,
       byId('notif-status'),
-      byId('todo-gcal')?.closest('.form-group'),
+      gcalGroup,
     ],
-    access: [
-      byId('todo-title')?.closest('.form-group'),
-      byId('todo-assignee')?.closest('.form-group'),
+    details: [
+      noteGroup,
+      priorityGroup,
+      categoryGroup,
+      goalGroup,
     ],
   };
 }
 
 function _setTodoFormTab(tab) {
-  const tabs = ['quick','details','schedule','access'];
+  const tabs = ['quick','schedule','details'];
   document.querySelectorAll('.todo-form-tabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   const sections = _todoFormSections();
   const all = new Set();
@@ -19579,9 +19586,8 @@ function _initTodoFormTabs() {
   tabs.className = 'todo-form-tabs';
   tabs.innerHTML = `
     <button type="button" class="active" data-tab="quick" onclick="_setTodoFormTab('quick')">سریع</button>
-    <button type="button" data-tab="details" onclick="_setTodoFormTab('details')">جزئیات</button>
     <button type="button" data-tab="schedule" onclick="_setTodoFormTab('schedule')">زمان‌بندی</button>
-    <button type="button" data-tab="access" onclick="_setTodoFormTab('access')">دسترسی</button>
+    <button type="button" data-tab="details" onclick="_setTodoFormTab('details')">جزئیات</button>
   `;
   (noteGroup || title.closest('.form-group'))?.before(tabs);
   _setTodoFormTab('quick');
