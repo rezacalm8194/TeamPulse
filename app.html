@@ -5904,23 +5904,28 @@ function _todoSharedWith(t) {
   if (Array.isArray(t?.sharedWith)) return t.sharedWith.map(String);
   return [];
 }
+function _todoIsOwnAssigned(t) {
+  const email = _teamEmail();
+  const ownStaff = _todoSessionStaff();
+  if (email && String(t?.assignee_email || '').trim().toLowerCase() === email) return true;
+  if (ownStaff && String(t?.assignee_id || t?.staff_id || '') === String(ownStaff.id)) return true;
+  return false;
+}
 function _todoCanView(t) {
   if (!_isTeamGuest()) return true;
   const email = _teamEmail();
   if (_teamPerm('todo_view_team') || _teamPerm('todo_manage_staff')) return true;
-  if (_teamPerm('todo_view_assigned') && String(t.assignee_email || '').toLowerCase() === email) return true;
+  if (_teamPerm('todo_view_assigned') && _todoIsOwnAssigned(t)) return true;
   if (_teamPerm('todo_view_shared') && _todoSharedWith(t).map(x => x.toLowerCase()).includes(email)) return true;
   return false;
 }
 function _todoCanComplete(t) {
   if (!_isTeamGuest()) return true;
-  const email = _teamEmail();
-  return _teamPerm('todo_complete_own') && String(t.assignee_email || '').toLowerCase() === email;
+  return _teamPerm('todo_complete_own') && _todoIsOwnAssigned(t);
 }
 function _todoCanReport(t) {
   if (!_isTeamGuest()) return true;
-  const email = _teamEmail();
-  return _teamPerm('todo_report_own') && String(t.assignee_email || '').toLowerCase() === email;
+  return _teamPerm('todo_report_own') && _todoIsOwnAssigned(t);
 }
 function _todoCanEdit(t) {
   if (!_isTeamGuest()) return true;
@@ -17970,7 +17975,7 @@ async function _syncToServer() {
     if (teamSession && !window._teamOwnerDataReady) {
       const localPending = _cloneData(_db);
       const loaded = await _loadFromServer();
-      if (!loaded) {
+      if (!loaded && !window._teamOwnerDataReady) {
         if (!window._teamOwnerDataNotReadyWarned) {
           window._teamOwnerDataNotReadyWarned = true;
           showToast('ذخیره انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
@@ -18438,9 +18443,13 @@ async function _authOnSuccess() {
       applyMetaToUI();
       return;
     }
-    if (_teamAccessSession()) {
+    if (_teamAccessSession() && !window._teamOwnerDataReady) {
       window._teamOwnerDataReady = false;
       showToast('داده‌های حساب اصلی هنوز لود نشده؛ برای ذخیره دوباره صفحه را رفرش کن', 'error');
+    } else if (_teamAccessSession()) {
+      updateAccountDisplay();
+      if (_canAutoRefresh()) renderPage();
+      applyMetaToUI();
     } else if (isNewUser) {
       setTimeout(() => _showWelcomeTour(), 800);
     }
@@ -19889,9 +19898,8 @@ function _todoReportForStaffHtml(staffId) {
 }
 
 function _todoReportHtml(myOnly = false) {
-  const email = _teamEmail();
   let list = (_db.todos || []).filter(t => _todoCanView(t));
-  if (myOnly) list = list.filter(t => String(t.assignee_email || '').toLowerCase() === email);
+  if (myOnly) list = list.filter(t => _todoIsOwnAssigned(t));
   if (!myOnly && _todoReportFilter.staffIds.length) list = list.filter(t => _todoReportFilter.staffIds.includes(String(t.assignee_id)));
   list = list.filter(t => _todoInRange(t, myOnly ? 'month' : _todoReportFilter.range, _todoReportFilter.from, _todoReportFilter.to));
   const perf = _todoPerf(list);
