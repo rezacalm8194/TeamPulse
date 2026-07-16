@@ -11,13 +11,16 @@ echo.
 git status --short
 echo.
 
-echo Staging website, blog, SEO, and app files...
+echo Staging website, blog, SEO, app, service worker, and backend task files...
 git add index.html
 git add app.html
+git add sw.js
 git add robots.txt
 git add sitemap.xml
 git add llms.txt
 git add blog
+git add backend/database/schema.sql
+git add backend/routes/tasks.js
 
 echo.
 echo Files staged:
