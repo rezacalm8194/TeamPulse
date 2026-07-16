@@ -114,6 +114,36 @@ function todoSharedWith(todo) {
   return [];
 }
 
+function staffEmail(staff) {
+  return String(staff?.email || staff?.work_email || staff?.username || '').trim().toLowerCase();
+}
+
+function ownStaffRows(data, memberEmail) {
+  const rows = Array.isArray(data?.staff) ? data.staff : [];
+  return rows.filter(staff => staffEmail(staff) === memberEmail);
+}
+
+function staffRelatedToMember(row, ownStaffIds, memberEmail) {
+  if (!row || typeof row !== 'object') return false;
+  const ids = [
+    row.staff_id,
+    row.staffId,
+    row.employee_id,
+    row.employeeId,
+    row.personnel_id,
+    row.personnelId,
+    row.user_id,
+    row.userId,
+    row.assignee_id,
+    row.assigneeId
+  ].filter(v => v != null).map(v => String(v));
+  if (ids.some(id => ownStaffIds.has(id))) return true;
+  const emails = [row.email, row.staff_email, row.staffEmail, row.assignee_email, row.assigneeEmail]
+    .filter(Boolean)
+    .map(v => String(v).trim().toLowerCase());
+  return emails.includes(memberEmail);
+}
+
 function todoVisibleToTeamMember(todo, memberEmail, permissions) {
   const visibility = todo?.visibility || (todo?.assignee_id ? 'assignee' : 'private');
   if (permissions.includes('todo_view_team') || permissions.includes('todo_manage_staff')) return true;
@@ -128,17 +158,20 @@ function sanitizeDataForTeamMember(data, grant) {
   const clean = sanitizeUserDataForStorage(data);
   const permissions = grant.permissions || [];
   const memberEmail = grant.email;
+  const ownStaff = ownStaffRows(clean, memberEmail);
+  const ownStaffIds = new Set(ownStaff.map(staff => String(staff.id)).filter(Boolean));
   clean.todos = Array.isArray(clean.todos)
     ? clean.todos.filter(todo => todoVisibleToTeamMember(todo, memberEmail, permissions))
     : [];
   if (!permissions.includes('goals')) clean.goals = [];
   if (!permissions.includes('habits')) clean.habits = [];
   if (!permissions.includes('staff') && !permissions.includes('todo_manage_staff') && !permissions.includes('todo_view_team')) {
-    clean.staff = [];
-    clean.staff_payments = [];
-    clean.staff_reminders = [];
-    clean.staff_adjustments = [];
-    clean.staff_monthly = [];
+    clean.staff = ownStaff;
+    ['staff_payments','staff_reminders','staff_adjustments','staff_monthly','staff_role_entries'].forEach(key => {
+      clean[key] = Array.isArray(clean[key])
+        ? clean[key].filter(row => staffRelatedToMember(row, ownStaffIds, memberEmail))
+        : [];
+    });
   }
   clean.team_members = [];
   clean.team_invites = [];
