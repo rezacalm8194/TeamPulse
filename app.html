@@ -19720,18 +19720,85 @@ function _todoStaffDashboardHtml() {
   </div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px">${rows || '<div style="color:var(--text3);font-size:13px">پرسنلی ثبت نشده است.</div>'}</div><div id="todo-staff-filtered-list"></div>`;
 }
 
+function _todoStaffDoneToday(t, todayKey = _jalaliToday()) {
+  return !!t?.done && _todoIsDoneToday(t, todayKey);
+}
+
+function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
+  const scheduled = _todoScheduledDate(t);
+  const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
+  const isOverdue = !t.done && scheduledKey && scheduledKey < todayKey;
+  const doneToday = _todoStaffDoneToday(t, todayKey);
+  const canEdit = _todoCanEdit(t);
+  const canDelete = _todoCanDelete(t);
+  const priority = t.priority || 'medium';
+  const priorityText = ({low:'پایین', medium:'متوسط', high:'بالا', urgent:'فوری'})[priority] || 'متوسط';
+  const priorityColor = ({low:'var(--text3)', medium:'#60a5fa', high:'var(--amber)', urgent:'var(--red)'})[priority] || '#60a5fa';
+  const borderColor = t.done ? 'rgba(62,207,142,.34)' : (isOverdue ? 'rgba(239,68,68,.45)' : 'var(--border)');
+  const bg = t.done ? 'rgba(62,207,142,.07)' : (isOverdue ? 'rgba(239,68,68,.07)' : 'var(--bg2)');
+  const dateLabel = scheduled ? DateService.disp(scheduled) : 'بدون تاریخ';
+  const timeLabel = _todoTimeRangeLabel(t);
+  return `<div data-todo-id="${t.id}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1};transition:all .15s">
+    <button onclick="_toggleTodo(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
+      style="width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;cursor:pointer;border:2px solid ${t.done?'var(--green)':isOverdue?'var(--red)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:12px;font-weight:900;line-height:1">
+      ${t.done?'✓':''}
+    </button>
+    <div style="flex:1;min-width:0;cursor:pointer" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:${t.done?'600':'900'};color:${t.done?'var(--text2)':'var(--text)'};text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        ${isOverdue ? '<span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(239,68,68,.14);color:var(--red);font-weight:800">عقب‌افتاده</span>' : ''}
+        ${doneToday ? '<span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(62,207,142,.12);color:var(--green);font-weight:800">انجام‌شده امروز</span>' : ''}
+        <span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(96,165,250,.09);color:${priorityColor};font-weight:800">${priorityText}</span>
+      </div>
+      ${t.note ? `<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:4px">${escapeHtml(String(t.note).slice(0,90))}${String(t.note).length>90?'…':''}</div>` : ''}
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--text3)">
+        <span>${escapeHtml(_todoAssigneeLabel(t) || 'پرسنل')}</span>
+        <span>📅 ${escapeHtml(dateLabel)}</span>
+        ${timeLabel ? `<span>⏰ ${escapeHtml(timeLabel)}</span>` : ''}
+        ${t.done_at ? `<span>✓ ${new Date(t.done_at).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+      </div>
+    </div>
+    ${canDelete ? `<button class="x-close-sm" onclick="event.stopPropagation();deleteTodo(${t.id})">×</button>` : ''}
+  </div>`;
+}
+
 function _renderTodoStaffFilteredList() {
   const box = document.getElementById('todo-staff-filtered-list');
   if (!box) return;
   const todayKey = _jalaliToday();
-  let list = (_db.todos || []).filter(t => _todoCanView(t) && (t.assignee_id || t.assignee_email));
+  const todaySnapshots = (_db.todos || []).filter(t => _todoCanView(t) && t.archived && t._snapshot && _todoStaffDoneToday(t, todayKey));
+  let list = [...(_db.todos || []).filter(t => _todoCanView(t) && !t.archived), ...todaySnapshots]
+    .filter(t => t.assignee_id || t.assignee_email);
   if (_todoStaffFilter.staffId !== 'all') list = list.filter(t => String(t.assignee_id) === String(_todoStaffFilter.staffId));
   list = list.filter(t => _todoInRange(t, _todoStaffFilter.range, _todoStaffFilter.from, _todoStaffFilter.to));
   if (_todoStaffFilter.status === 'done') list = list.filter(t => t.done);
   if (_todoStaffFilter.status === 'open') list = list.filter(t => !t.done);
   if (_todoStaffFilter.status === 'overdue') list = list.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey);
   const report = _todoStaffReportId ? _todoReportForStaffHtml(_todoStaffReportId) : '';
-  box.innerHTML = `${report}<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px">${list.map(t => `<div style="display:flex;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px solid var(--border)"><span>${escapeHtml(t.title)}</span><span style="font-size:11px;color:var(--text3)">${escapeHtml(_todoAssigneeLabel(t))} · ${DateService.disp(_todoScheduledDate(t)||'')}</span></div>`).join('') || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px">کاری در این فیلتر نیست.</div>'}</div>`;
+  const openItems = list.filter(t => !t.done).sort((a,b) => {
+    const ak = _jalaliKey(_todoScheduledDate(a) || _todayJalaliStr());
+    const bk = _jalaliKey(_todoScheduledDate(b) || _todayJalaliStr());
+    return ak - bk || _sortByTime(a,b);
+  });
+  const doneTodayItems = list.filter(t => _todoStaffDoneToday(t, todayKey)).sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
+  const oldDoneItems = list.filter(t => t.done && !_todoStaffDoneToday(t, todayKey)).sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
+  const staffName = _todoStaffFilter.staffId !== 'all'
+    ? _todoStaffName((_db.staff || []).find(s => String(s.id) === String(_todoStaffFilter.staffId)) || {})
+    : 'همه پرسنل';
+  const section = (title, count, body, color = 'var(--text)', open = true) => `<details ${open?'open':''} style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px">
+    <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;color:${color};font-size:13px;font-weight:900">
+      <span>${title}</span><span style="font-size:11px;color:var(--text3)">${fa(count)} مورد</span>
+    </summary>
+    <div style="margin-top:10px">${body || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:14px">موردی در این بخش نیست.</div>'}</div>
+  </details>`;
+  box.innerHTML = `${report}
+    <div style="margin-bottom:8px;font-size:12px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span>چک‌لیست ${escapeHtml(staffName)}</span>
+      <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayItems.length)} انجام‌شده امروز</span>
+    </div>
+    ${section('کارهای انجام‌نشده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true)}
+    ${section('انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
+    ${oldDoneItems.length && _todoStaffFilter.status === 'done' ? section('انجام‌شده‌های قدیمی‌تر', oldDoneItems.length, oldDoneItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}`;
 }
 
 function _openStaffTodoChecklist(staffId) {
