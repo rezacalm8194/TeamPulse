@@ -19489,11 +19489,11 @@ function _openQuickStaffChecklist(staffId) {
         <label class="form-label">اولویت</label>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
           <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'low')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">پایین</button>
-          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'medium')" data-active="1" style="padding:8px;border-radius:9px;border:1px solid var(--accent);background:rgba(124,106,247,.18);color:var(--accent2);font-family:var(--font)">متوسط</button>
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'medium')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">متوسط</button>
           <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'high')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">بالا</button>
-          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'urgent')" style="padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-family:var(--font)">فوری</button>
+          <button type="button" class="quick-priority-btn" onclick="_setQuickStaffChecklistPriority(this,'urgent')" data-active="1" style="padding:8px;border-radius:9px;border:1px solid var(--accent);background:rgba(124,106,247,.18);color:var(--accent2);font-family:var(--font)">فوری</button>
         </div>
-        <input type="hidden" id="quick-staff-priority" value="medium">
+        <input type="hidden" id="quick-staff-priority" value="urgent">
       </div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text2);cursor:pointer">
@@ -19533,7 +19533,7 @@ async function _saveQuickStaffChecklist(staffId) {
     return;
   }
   if (remindMin > 0 && !(await _ensureReminderPushEnabled('quick-staff-notif-status'))) return;
-  const priority = document.getElementById('quick-staff-priority')?.value || 'medium';
+  const priority = document.getElementById('quick-staff-priority')?.value || 'urgent';
   const requiresReport = document.getElementById('quick-staff-report')?.checked ? 'required' : 'none';
   const now = new Date().toISOString();
   titles.forEach(title => {
@@ -19558,7 +19558,7 @@ async function _saveQuickStaffChecklist(staffId) {
       repeat:'none',
       weekdays:'',
       priority,
-      category:'general',
+      category:'clients',
       goal_id:null,
       remind_min:remindMin,
       sync_gcal:false,
@@ -21848,6 +21848,9 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
   const ownStaff = _todoSessionStaff();
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
   const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
+  const isStaffTodo = !!selectedAssigneeId;
+  const defaultCategory = isStaffTodo ? 'clients' : 'personal';
+  const defaultPriority = isStaffTodo ? 'urgent' : 'high';
   const canChooseAssignee = !_isTeamGuest() || _teamPerm('todo_create_others') || _teamPerm('todo_manage_staff');
   const staffRows = (_db.staff || []).filter(s => staffIsPersonnel(s) && (!_isTeamGuest() || canChooseAssignee || String(s.id) === selectedAssigneeId));
   const assigneeOptions = `<option value="" ${selectedAssigneeId ? '' : 'selected'}>کار شخصی من</option>` +
@@ -21926,29 +21929,15 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     <div class="form-group full">
       <label class="form-label">🗂 دسته‌بندی</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button type="button" onclick="_setTodoCategory(this,'clients')" data-cat="clients"
-          style="flex:1;min-width:80px;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">👥 مشتریان</button>
-        <button type="button" onclick="_setTodoCategory(this,'routine')" data-cat="routine"
-          style="flex:1;min-width:80px;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">🔄 روتین‌ها</button>
-        <button type="button" onclick="_setTodoCategory(this,'general')" data-cat="general"
-          style="flex:1;min-width:80px;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid #60a5fa;background:#60a5fa22;color:#60a5fa">🌐 عمومی</button>
-        <button type="button" onclick="_setTodoCategory(this,'personal')" data-cat="personal"
-          style="flex:1;min-width:80px;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">🧘 شخصی</button>
-        <input type="hidden" id="todo-category" value="general">
+        ${_buildCategoryButtons(defaultCategory)}
+        <input type="hidden" id="todo-category" value="${defaultCategory}">
       </div>
     </div>
     <div style="margin-bottom:10px">
       <label class="form-label" style="margin-bottom:6px">🚩 اولویت</label>
       <div style="display:flex;gap:6px">
-        <button type="button" onclick="_setTodoPriority(this,'low')" data-priority="low"
-          style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">پایین</button>
-        <button type="button" onclick="_setTodoPriority(this,'medium')" data-priority="medium"
-          style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid #fbbf24;background:#fbbf2422;color:#fbbf24">متوسط</button>
-        <button type="button" onclick="_setTodoPriority(this,'high')" data-priority="high"
-          style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">بالا</button>
-        <button type="button" onclick="_setTodoPriority(this,'urgent')" data-priority="urgent"
-          style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid var(--border2);background:var(--bg3);color:var(--text2)">فوری</button>
-        <input type="hidden" id="todo-priority" value="medium">
+        ${_buildPriorityButtons(defaultPriority)}
+        <input type="hidden" id="todo-priority" value="${defaultPriority}">
       </div>
     </div>
     <div class="form-group full">
@@ -22520,6 +22509,19 @@ function _setTodoPriority(btn, val) {
   btn.style.color = colors[val];
   const inp = document.getElementById('todo-priority');
   if (inp) inp.value = val;
+}
+
+function _buildPriorityButtons(selected) {
+  const colors = {low:'#60a5fa', medium:'#fbbf24', high:'#f97316', urgent:'#ef4444'};
+  const labels = {low:'پایین', medium:'متوسط', high:'بالا', urgent:'فوری'};
+  return ['low','medium','high','urgent'].map(priority => {
+    const sel = selected === priority;
+    const border = sel ? colors[priority] : 'var(--border2)';
+    const bg = sel ? colors[priority] + '22' : 'var(--bg3)';
+    const color = sel ? colors[priority] : 'var(--text2)';
+    return `<button type="button" onclick="_setTodoPriority(this,'${priority}')" data-priority="${priority}"
+      style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:2px solid ${border};background:${bg};color:${color}">${labels[priority]}</button>`;
+  }).join('');
 }
 
 function _buildCategoryButtons(selected) {
