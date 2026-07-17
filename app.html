@@ -6033,11 +6033,29 @@ function _teamEncodeInvite(data) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
 }
 function _teamDecodeInvite(token) {
-  return JSON.parse(decodeURIComponent(escape(atob(token))));
+  const rawToken = String(token || '').trim();
+  const packed = rawToken.includes('~') ? rawToken.split('~').pop() : rawToken;
+  const normalized = packed.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const data = JSON.parse(decodeURIComponent(escape(atob(padded))));
+  if (data && data.v === 2) {
+    return {
+      inviteId: data.i,
+      email: data.e,
+      ownerName: data.n || '',
+      ownerEmail: data.o || '',
+      ownerUserId: data.u || '',
+      accountId: data.a || 'default',
+      permissions: [],
+      instructionFolders: [],
+      compact: true
+    };
+  }
+  return data;
 }
 function _acceptTeamInviteToken(token) {
   const payload = _teamDecodeInvite(token);
-  if (!payload || !payload.email || !Array.isArray(payload.permissions)) throw new Error('دعوت‌نامه معتبر نیست');
+  if (!payload || !payload.email) throw new Error('دعوت‌نامه معتبر نیست');
   localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify({
     inviteId: payload.inviteId,
     email: payload.email,
@@ -6046,14 +6064,14 @@ function _acceptTeamInviteToken(token) {
     ownerUserId: payload.ownerUserId || '',
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
-    permissions: payload.permissions,
+    permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
   }));
   if (payload.accountId) localStorage.setItem('teampulse_current_account', payload.accountId);
   if (payload.ownerDbKey) window._activeDBKey = payload.ownerDbKey;
   localStorage.removeItem(TEAM_PENDING_INVITE_KEY);
-  currentPage = payload.permissions[0] || 'settings';
+  currentPage = (Array.isArray(payload.permissions) && payload.permissions[0]) || 'todolist';
   location.hash = currentPage;
 }
 async function _ensureTeamAccessOwner() {
@@ -9522,20 +9540,40 @@ function _teamSectionLabel(key) {
   return TEAM_ACCESS_SECTIONS.find(s => s.key === key)?.label || key;
 }
 
+function _teamInviteSlugPart(value, fallback = 'team') {
+  const s = String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .split('@')[0]
+    .replace(/[^a-z0-9\u0600-\u06FF]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 18);
+  return s || fallback;
+}
+
+function _teamEncodeInviteCompact(data) {
+  return _teamEncodeInvite(data)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
 function _teamInviteLink(member) {
-  const payload = {
-    inviteId: member.id,
-    email: member.email,
-    ownerName: _sbUser?.name || _db?.meta?.appTitle || '',
-    ownerEmail: _sbUser?.email || '',
-    ownerUserId: _sbUser?.id || '',
-    accountId: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
-    ownerDbKey: window._activeDBKey || _userDBKey(),
-    permissions: member.permissions || [],
-    instructionFolders: member.instruction_folders || [],
-    createdAt: member.created_at || new Date().toISOString(),
+  const ownerName = _sbUser?.name || _db?.meta?.appTitle || 'TeamPulse';
+  const ownerEmail = _sbUser?.email || '';
+  const compact = {
+    v: 2,
+    i: member.id,
+    e: member.email,
+    n: ownerName,
+    o: ownerEmail,
+    u: _sbUser?.id || '',
+    a: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
   };
-  const token = _teamEncodeInvite(payload);
+  const ownerPart = _teamInviteSlugPart(ownerName || ownerEmail, 'owner');
+  const memberPart = _teamInviteSlugPart(member.email, 'member');
+  const shortId = String(member.id || Date.now()).replace(/^tm_/, '').slice(-6);
+  const token = `${ownerPart}-${memberPart}-${shortId}~${_teamEncodeInviteCompact(compact)}`;
   return `${location.origin}${location.pathname}?team_invite=${encodeURIComponent(token)}`;
 }
 
