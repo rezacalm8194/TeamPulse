@@ -22648,8 +22648,9 @@ function deleteTodo(id) {
   renderTodoList();
 }
 
-async function openTodoArchive() {
+async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine') {
   _todosInit();
+  window._todoArchiveTab = activeArchive;
 
   // Safety: اگه در حال impersonate هستیم و todos خالیه، یه بار دیگه از سرور بکش
   // (جلوگیری از باگ احتمالی sync بعد از رفرش صفحه)
@@ -22683,11 +22684,24 @@ async function openTodoArchive() {
   }
 
   // نمایش همه کارهای done (چه archived شده چه امروز انجام شده)
-  const archived = _db.todos.filter(t => t.archived || t.done)
+  const allArchived = _db.todos.filter(t => (t.archived || t.done) && _todoCanView(t))
     .sort((a,b) => new Date(b.done_at||0) - new Date(a.done_at||0));
+  const isStaffArchiveTodo = (t) => !!(t.assignee_id || t.assignee_email || t.staff_id);
+  const mineArchived = allArchived.filter(t => !isStaffArchiveTodo(t));
+  const staffArchived = allArchived.filter(isStaffArchiveTodo);
+  const archived = activeArchive === 'staff' ? staffArchived : mineArchived;
+  const archiveTabs = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <button class="btn ${activeArchive === 'mine' ? 'btn-primary' : 'btn-ghost'} btn-sm" onclick="openTodoArchive('mine')" style="justify-content:center">
+        بایگانی کارهای من <span style="opacity:.75">(${fa(mineArchived.length)})</span>
+      </button>
+      <button class="btn ${activeArchive === 'staff' ? 'btn-primary' : 'btn-ghost'} btn-sm" onclick="openTodoArchive('staff')" style="justify-content:center">
+        بایگانی کارهای پرسنل <span style="opacity:.75">(${fa(staffArchived.length)})</span>
+      </button>
+    </div>`;
 
-  if (archived.length === 0) {
-    openModal('📦 بایگانی کارها', '<p style="color:var(--text3);font-size:13px;text-align:center;padding:30px">بایگانی خالیه 🎉</p>',
+  if (allArchived.length === 0) {
+    openModal('📦 بایگانی کارها', archiveTabs + '<p style="color:var(--text3);font-size:13px;text-align:center;padding:30px">بایگانی خالیه 🎉</p>',
       [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
     return;
   }
@@ -22717,6 +22731,7 @@ async function openTodoArchive() {
   const renderRow = (t) => {
     const catMap = {clients:'👥',routine:'🔄',general:'🌐',personal:'🧘'};
     const catIcon = t.category ? (catMap[t.category] || '') : '';
+    const assignee = _todoAssigneeLabel(t);
     const todayK = _jalaliKey(_todayJalaliStr());
     const doneDay = t.done_at ? (() => { const [dy,dm,dd]=_jalaliFromInstant(t.done_at); return _jalaliKey(_formatJalali(dy,dm,dd)); })() : 0;
     const isToday = doneDay === todayK;
@@ -22736,6 +22751,7 @@ async function openTodoArchive() {
           (doneDate ? '<span>✓ ' + doneDate + '</span>' : '') +
           (t.date_jalali ? '<span>📅 ' + DateService.disp(t.date_jalali) + '</span>' : '') +
           (t.time ? '<span>⏰ ' + _todoTimeRangeLabel(t) + '</span>' : '') +
+          (assignee ? '<span>👤 ' + escapeHtml(assignee) + '</span>' : '') +
         '</div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
@@ -22757,19 +22773,34 @@ async function openTodoArchive() {
 
   const clearAllBtn = `
     <div style="margin-top:4px;padding-top:12px;border-top:1px solid var(--border)">
-      <button class="btn btn-danger" style="width:100%;font-size:12px" onclick="if(confirm('همه بایگانی پاک شود؟')){_db.todos=_db.todos.filter(t=>!t.archived);_save();closeModal();showToast('همه بایگانی پاک شد','error');}">
-        🗑 حذف همه بایگانی (${fa(archived.length)} کار)
+      <button class="btn btn-danger" style="width:100%;font-size:12px" onclick="_clearTodoArchive('${activeArchive}')">
+        🗑 حذف همه ${activeArchive === 'staff' ? 'بایگانی کارهای پرسنل' : 'بایگانی کارهای من'} (${fa(archived.length)} کار)
       </button>
     </div>`;
 
   openModal('📦 بایگانی کارها', `
+    ${archiveTabs}
     <div style="font-size:11px;color:var(--text3);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-      <span>${fa(archived.length)} کار انجام‌شده</span>
+      <span>${activeArchive === 'staff' ? 'بایگانی کارهای پرسنل' : 'بایگانی کارهای من'} — ${fa(archived.length)} کار انجام‌شده</span>
       <span style="opacity:.6">هر سال ۱ فروردین خودکار پاک می‌شه</span>
     </div>
-    <div style="max-height:420px;overflow-y:auto">${rows}</div>
+    <div style="max-height:420px;overflow-y:auto">${rows || '<p style="color:var(--text3);font-size:13px;text-align:center;padding:30px">در این بخش هنوز کاری نیست.</p>'}</div>
     ${clearAllBtn}
   `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
+}
+
+function _clearTodoArchive(kind = window._todoArchiveTab || 'mine') {
+  const isStaffArchiveTodo = (t) => !!(t.assignee_id || t.assignee_email || t.staff_id);
+  const label = kind === 'staff' ? 'بایگانی کارهای پرسنل' : 'بایگانی کارهای من';
+  if (!confirm('همه ' + label + ' پاک شود؟')) return;
+  _db.todos = _db.todos.filter(t => {
+    if (!t.archived) return true;
+    const isStaff = isStaffArchiveTodo(t);
+    return kind === 'staff' ? !isStaff : isStaff;
+  });
+  _save();
+  closeModal();
+  showToast(label + ' پاک شد', 'error');
 }
 
 function _restoreTodo(id) {
@@ -22782,7 +22813,7 @@ function _deleteTodoForever(id) {
     _gcal.deleteEvent(t.gcal_event_id);
   }
   _db.todos = _db.todos.filter(x => x.id != id);
-  _save(); openTodoArchive();
+  _save(); openTodoArchive(window._todoArchiveTab || 'mine');
 }
 
 function _requestNotificationPermission() {
