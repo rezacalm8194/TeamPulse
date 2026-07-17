@@ -678,13 +678,6 @@ button { cursor: pointer; font-family: var(--font); }
   background: rgba(124,106,247,.18);
   color: var(--accent2);
 }
-.quick-template-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin: 7px 0 0;
-}
-
 /* ── Paid badge (replaces heavy button once paid) ──────────── */
 .badge-paid {
   display: inline-flex; align-items: center; gap: 5px;
@@ -19463,14 +19456,9 @@ function _openQuickStaffChecklist(staffId) {
 پیگیری پرداخت مشتری
 آماده‌سازی ویدیو
 ارسال گزارش روزانه"></textarea>
-      <div class="quick-template-row">
-        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('daily')">روتین روزانه</button>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('sales')">پیگیری فروش</button>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="_fillQuickStaffTemplate('content')">تولید محتوا</button>
-      </div>
       <div style="font-size:10px;color:var(--text3);margin-top:5px">برای ذخیره سریع می‌توانی Ctrl+Enter بزنی.</div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end">
       <div class="form-group">
         <label class="form-label">تاریخ</label>
         <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
@@ -19479,6 +19467,23 @@ function _openQuickStaffChecklist(staffId) {
           <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('week')">هفته دیگر</button>
         </div>
         <input class="form-input jdate" id="quick-staff-date" value="${today}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">⏰ ساعت انجام</label>
+        <input class="form-input" id="quick-staff-time" type="time" style="direction:ltr">
+      </div>
+      <div class="form-group">
+        <label class="form-label">🔔 یادآوری</label>
+        <select class="form-input" id="quick-staff-remind">
+          <option value="0">بدون یادآوری</option>
+          <option value="5">۵ دقیقه قبل</option>
+          <option value="10">۱۰ دقیقه قبل</option>
+          <option value="15" selected>۱۵ دقیقه قبل</option>
+          <option value="30">۳۰ دقیقه قبل</option>
+          <option value="60">۱ ساعت قبل</option>
+          <option value="120">۲ ساعت قبل</option>
+          <option value="1440">۱ روز قبل</option>
+        </select>
       </div>
       <div class="form-group">
         <label class="form-label">اولویت</label>
@@ -19495,25 +19500,19 @@ function _openQuickStaffChecklist(staffId) {
       <input type="checkbox" id="quick-staff-report" style="width:16px;height:16px;accent-color:var(--accent)">
       برای تکمیل، گزارش بخواهد
     </label>
+    <div id="quick-staff-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:8px;
+      background:${Notification.permission==='granted'?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+      color:${Notification.permission==='granted'?'var(--green)':'var(--amber)'}">
+      ${Notification.permission==='granted'
+        ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
+        : '⚠️ برای یادآوری باید اجازه نوتیفیکیشن بدهی'}
+    </div>
   `, [
     { label:'ذخیره سریع', cls:'btn-primary', action:`_saveQuickStaffChecklist('${staff.id}')` },
     { label:'فرم کامل', cls:'btn-ghost', action:`closeModal();_openAddTodoForStaff('${staff.id}')` },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
   setTimeout(() => { initDatePickers(); document.getElementById('quick-staff-titles')?.focus(); }, 50);
-}
-
-function _fillQuickStaffTemplate(kind) {
-  const templates = {
-    daily: ['بررسی پیام‌ها و پیگیری‌های امروز','ثبت گزارش پایان روز','مرتب‌سازی کارهای باقی‌مانده'],
-    sales: ['پیگیری مشتریان معوق','ارسال پیام یادآوری پرداخت','ثبت نتیجه تماس‌ها'],
-    content: ['ایده‌پردازی محتوای امروز','آماده‌سازی فایل یا ویدیو','ارسال خروجی برای بررسی']
-  };
-  const box = document.getElementById('quick-staff-titles');
-  if (!box) return;
-  const text = (templates[kind] || []).join('\n');
-  box.value = box.value.trim() ? (box.value.trim() + '\n' + text) : text;
-  box.focus();
 }
 
 async function _saveQuickStaffChecklist(staffId) {
@@ -19527,6 +19526,13 @@ async function _saveQuickStaffChecklist(staffId) {
     .filter(Boolean);
   if (!titles.length) { showToast('حداقل یک عنوان وارد کن', 'error'); return; }
   const dateJalali = document.getElementById('quick-staff-date')?.value.trim() || _todayJalaliStr();
+  const time = document.getElementById('quick-staff-time')?.value || '';
+  const remindMin = parseInt(document.getElementById('quick-staff-remind')?.value || '0');
+  if (remindMin > 0 && !time) {
+    showToast('برای یادآوری باید ساعت انجام را وارد کنی', 'error');
+    return;
+  }
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled('quick-staff-notif-status'))) return;
   const priority = document.getElementById('quick-staff-priority')?.value || 'medium';
   const requiresReport = document.getElementById('quick-staff-report')?.checked ? 'required' : 'none';
   const now = new Date().toISOString();
@@ -19547,14 +19553,14 @@ async function _saveQuickStaffChecklist(staffId) {
       date_jalali: dateJalali,
       scheduled_date: dateJalali,
       scheduledDate: dateJalali,
-      time:'',
+      time,
       duration_min:0,
       repeat:'none',
       weekdays:'',
       priority,
       category:'general',
       goal_id:null,
-      remind_min:0,
+      remind_min:remindMin,
       sync_gcal:false,
       gcal_event_id:null,
       done:false,
@@ -19566,6 +19572,9 @@ async function _saveQuickStaffChecklist(staffId) {
       created_at: now,
       updated_at: now,
     });
+    if (remindMin > 0 && time && dateJalali) {
+      _scheduleTodoNotification(id, title, dateJalali, time, remindMin);
+    }
   });
   _save();
   await _syncToServer();
