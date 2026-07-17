@@ -144,10 +144,21 @@ function staffRelatedToMember(row, ownStaffIds, memberEmail) {
   return emails.includes(memberEmail);
 }
 
-function todoVisibleToTeamMember(todo, memberEmail, permissions) {
+function todoAssignedToMember(todo, memberEmail, ownStaffIds = new Set()) {
+  const emails = [todo?.assignee_email, todo?.assigneeEmail]
+    .filter(Boolean)
+    .map(v => String(v).trim().toLowerCase());
+  if (emails.includes(memberEmail)) return true;
+  const ids = [todo?.assignee_id, todo?.assigneeId, todo?.staff_id, todo?.staffId]
+    .filter(v => v != null)
+    .map(v => String(v));
+  return ids.some(id => ownStaffIds.has(id));
+}
+
+function todoVisibleToTeamMember(todo, memberEmail, permissions, ownStaffIds = new Set()) {
   const visibility = todo?.visibility || (todo?.assignee_id ? 'assignee' : 'private');
   if (permissions.includes('todo_view_team') || permissions.includes('todo_manage_staff')) return true;
-  if (permissions.includes('todo_view_assigned') && String(todo?.assignee_email || '').toLowerCase() === memberEmail) return true;
+  if (permissions.includes('todo_view_assigned') && todoAssignedToMember(todo, memberEmail, ownStaffIds)) return true;
   if (permissions.includes('todo_view_shared') && todoSharedWith(todo).map(x => x.toLowerCase()).includes(memberEmail)) return true;
   if (visibility === 'team' && permissions.includes('todo_view_shared')) return true;
   return false;
@@ -161,7 +172,7 @@ function sanitizeDataForTeamMember(data, grant) {
   const ownStaff = ownStaffRows(clean, memberEmail);
   const ownStaffIds = new Set(ownStaff.map(staff => String(staff.id)).filter(Boolean));
   clean.todos = Array.isArray(clean.todos)
-    ? clean.todos.filter(todo => todoVisibleToTeamMember(todo, memberEmail, permissions))
+    ? clean.todos.filter(todo => todoVisibleToTeamMember(todo, memberEmail, permissions, ownStaffIds))
     : [];
   if (!permissions.includes('goals')) clean.goals = [];
   if (!permissions.includes('habits')) clean.habits = [];
@@ -184,15 +195,15 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   const permissions = grant.permissions || [];
   const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
   const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
+  const ownStaffIds = new Set(ownStaffRows(previousData, memberEmail).map(staff => String(staff.id)).filter(Boolean));
   const incomingById = new Map(incomingTodos.map(t => [String(t.id), t]));
   const nextTodos = previousTodos.map(oldTodo => {
     const incoming = incomingById.get(String(oldTodo.id));
     if (!incoming) return oldTodo;
-    if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions)) return oldTodo;
-    const canCompleteOwn = permissions.includes('todo_complete_own') &&
-      String(oldTodo.assignee_email || '').toLowerCase() === memberEmail;
-    const canReportOwn = permissions.includes('todo_report_own') &&
-      String(oldTodo.assignee_email || '').toLowerCase() === memberEmail;
+    if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)) return oldTodo;
+    const assignedToMember = todoAssignedToMember(oldTodo, memberEmail, ownStaffIds);
+    const canCompleteOwn = permissions.includes('todo_complete_own') && assignedToMember;
+    const canReportOwn = permissions.includes('todo_report_own') && assignedToMember;
     const canEditManager = permissions.includes('todo_edit_manager');
     if (canEditManager) return { ...oldTodo, ...incoming };
     return {
@@ -213,7 +224,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   if (permissions.includes('todo_create_self')) {
     incomingTodos.forEach(todo => {
       if (previousTodos.some(x => String(x.id) === String(todo.id))) return;
-      if (String(todo.assignee_email || '').toLowerCase() !== memberEmail) return;
+      if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return;
       nextTodos.push(todo);
     });
   }

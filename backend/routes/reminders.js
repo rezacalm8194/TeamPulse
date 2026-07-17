@@ -25,10 +25,97 @@ try {
       account_id TEXT NOT NULL,
       endpoint TEXT NOT NULL,
       subscription TEXT NOT NULL,
+      subscriber_user_id TEXT,
+      subscriber_email TEXT,
+      member_email TEXT,
+      scope TEXT DEFAULT 'owner',
       created_at TEXT DEFAULT (datetime('now'))
     )
   `).run();
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS team_access_grants (
+      owner_account_id TEXT NOT NULL,
+      member_email TEXT NOT NULL,
+      invite_id TEXT,
+      permissions TEXT DEFAULT '[]',
+      instruction_folders TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'active',
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (owner_account_id, member_email)
+    )
+  `).run();
 } catch(e) {}
+
+function ensurePushSubscriptionColumn(name, ddl) {
+  try {
+    const cols = db.prepare("PRAGMA table_info(push_subscriptions)").all().map(col => col.name);
+    if (!cols.includes(name)) db.prepare(`ALTER TABLE push_subscriptions ADD COLUMN ${ddl}`).run();
+  } catch (e) {}
+}
+
+ensurePushSubscriptionColumn('subscriber_user_id', 'subscriber_user_id TEXT');
+ensurePushSubscriptionColumn('subscriber_email', 'subscriber_email TEXT');
+ensurePushSubscriptionColumn('member_email', 'member_email TEXT');
+ensurePushSubscriptionColumn('scope', "scope TEXT DEFAULT 'owner'");
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getActiveTeamGrant(ownerAccountId, memberEmail) {
+  if (!ownerAccountId || !memberEmail) return null;
+  const grant = db.prepare(`
+    SELECT permissions
+    FROM team_access_grants
+    WHERE owner_account_id=? AND member_email=? AND status='active'
+  `).get(ownerAccountId, memberEmail);
+  return grant ? { permissions: parseJsonArray(grant.permissions) } : null;
+}
+
+function staffEmail(staff) {
+  return String(staff?.email || staff?.work_email || staff?.username || '').trim().toLowerCase();
+}
+
+function ownStaffIdsForEmail(data, memberEmail) {
+  const rows = Array.isArray(data?.staff) ? data.staff : [];
+  return new Set(rows
+    .filter(staff => staffEmail(staff) === memberEmail)
+    .map(staff => String(staff.id || ''))
+    .filter(Boolean));
+}
+
+function todoSharedWith(todo) {
+  if (Array.isArray(todo?.shared_with)) return todo.shared_with.map(String);
+  if (Array.isArray(todo?.sharedWith)) return todo.sharedWith.map(String);
+  return [];
+}
+
+function todoAssignedToMember(todo, memberEmail, ownStaffIds) {
+  const emails = [todo?.assignee_email, todo?.assigneeEmail]
+    .filter(Boolean)
+    .map(value => String(value).trim().toLowerCase());
+  if (emails.includes(memberEmail)) return true;
+  const ids = [todo?.assignee_id, todo?.assigneeId, todo?.staff_id, todo?.staffId]
+    .filter(value => value != null)
+    .map(value => String(value));
+  return ids.some(id => ownStaffIds.has(id));
+}
+
+function todoShouldNotifyTeamMember(todo, data, memberEmail, permissions) {
+  if (!permissions.includes('todolist')) return false;
+  const ownStaffIds = ownStaffIdsForEmail(data, memberEmail);
+  if (todoAssignedToMember(todo, memberEmail, ownStaffIds)) return true;
+  if (String(todo?.category || '') === 'clients') return true;
+  const sharedEmails = todoSharedWith(todo).map(email => email.trim().toLowerCase());
+  if (permissions.includes('todo_view_shared') && sharedEmails.includes(memberEmail)) return true;
+  if (todo?.visibility === 'team' && permissions.includes('todo_view_shared')) return true;
+  return false;
+}
 
 // ── تبدیل شمسی به UTC ─────────────────────────────────────────
 function jalaliToGregorian(jy, jm, jd) {
@@ -89,14 +176,15 @@ function iranWallTimeToUTC(gy, gm, gd, timeStr) {
   return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - IRAN_OFFSET_MS);
 }
 
-// ── ارسال push به همه دستگاه‌های یه کاربر ─────────────────────
-async function pushToUser(accountId, title, body) {
-  const subs = db.prepare('SELECT id, endpoint, subscription FROM push_subscriptions WHERE account_id=?').all(accountId);
+async function sendPushSubscriptions(subs, title, body) {
   if (!subs.length) return;
 
   const payload = JSON.stringify({ title: '⏰ ' + title, body, icon: '/logo.png', tag: 'todo-' + Date.now() });
+  const sentEndpoints = new Set();
 
   for (const s of subs) {
+    if (sentEndpoints.has(s.endpoint)) continue;
+    sentEndpoints.add(s.endpoint);
     try {
       await webpush.sendNotification(JSON.parse(s.subscription), payload);
     } catch (e) {
@@ -106,6 +194,43 @@ async function pushToUser(accountId, title, body) {
       }
     }
   }
+}
+
+// ── ارسال push فقط به صاحب حساب ───────────────────────────────
+async function pushToOwner(accountId, title, body) {
+  const subs = db.prepare(`
+    SELECT id, endpoint, subscription
+    FROM push_subscriptions
+    WHERE account_id=?
+      AND (scope IS NULL OR scope!='team')
+  `).all(accountId);
+  await sendPushSubscriptions(subs, title, body);
+}
+
+// ── ارسال push تسک به صاحب حساب و پرسنل مرتبط ─────────────────
+async function pushTodoToRecipients(accountId, userData, todo, title, body) {
+  const subs = db.prepare(`
+    SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, scope
+    FROM push_subscriptions
+    WHERE account_id=?
+  `).all(accountId);
+  if (!subs.length) return;
+
+  const allowed = [];
+  for (const sub of subs) {
+    if (sub.scope !== 'team') {
+      allowed.push(sub);
+      continue;
+    }
+
+    const memberEmail = String(sub.member_email || sub.subscriber_email || '').trim().toLowerCase();
+    const grant = getActiveTeamGrant(accountId, memberEmail);
+    if (!grant) continue;
+    if (todoShouldNotifyTeamMember(todo, userData, memberEmail, grant.permissions)) {
+      allowed.push(sub);
+    }
+  }
+  await sendPushSubscriptions(allowed, title, body);
 }
 
 // ── Cron: هر دقیقه ─────────────────────────────────────────────
@@ -136,7 +261,7 @@ cron.schedule('* * * * *', async () => {
         if (Math.abs(now - notifUTC) <= 60000) {
           console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
           sentSet.add(key);
-          await pushToUser(acc.id, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`);
+          await pushTodoToRecipients(acc.id, userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`);
         }
       }
 
@@ -154,7 +279,7 @@ cron.schedule('* * * * *', async () => {
         if (Math.abs(now - notifUTC) <= 60000) {
           console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
           sentSet.add(key);
-          await pushToUser(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`);
+          await pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`);
         }
       }
     }
@@ -168,16 +293,39 @@ console.log('[Push] Cron started — checking every minute');
 // ── API: ذخیره push subscription از مرورگر ────────────────────
 router.post('/subscribe', auth, (req, res) => {
   try {
-    const { subscription } = req.body;
+    const { subscription, ownerAccountId } = req.body;
     if (!subscription?.endpoint) return res.status(400).json({ error: 'invalid' });
+
+    const requesterEmail = String(req.user.email || '').trim().toLowerCase();
+    const requestedOwnerId = String(ownerAccountId || '').trim();
+    let accountId = req.user.id;
+    let scope = 'owner';
+    let memberEmail = null;
+
+    if (requestedOwnerId && requestedOwnerId !== req.user.id) {
+      const grant = getActiveTeamGrant(requestedOwnerId, requesterEmail);
+      if (!grant) return res.status(403).json({ error: 'team access not allowed' });
+      accountId = requestedOwnerId;
+      scope = 'team';
+      memberEmail = requesterEmail;
+    }
 
     // چک کن قبلاً همین endpoint نباشه
     const exists = db.prepare('SELECT id FROM push_subscriptions WHERE account_id=? AND endpoint=?')
-      .get(req.user.id, subscription.endpoint);
+      .get(accountId, subscription.endpoint);
 
-    if (!exists) {
-      db.prepare('INSERT INTO push_subscriptions (id, account_id, endpoint, subscription) VALUES (?,?,?,?)')
-        .run(randomUUID(), req.user.id, subscription.endpoint, JSON.stringify(subscription));
+    if (exists) {
+      db.prepare(`
+        UPDATE push_subscriptions
+        SET subscription=?, subscriber_user_id=?, subscriber_email=?, member_email=?, scope=?, created_at=datetime('now')
+        WHERE id=?
+      `).run(JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, scope, exists.id);
+    } else {
+      db.prepare(`
+        INSERT INTO push_subscriptions
+          (id, account_id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, scope)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(randomUUID(), accountId, subscription.endpoint, JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, scope);
     }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -187,7 +335,11 @@ router.post('/subscribe', auth, (req, res) => {
 // ── API: حذف push subscription (غیرفعال‌سازی) ────────────────
 router.delete('/subscribe', auth, (req, res) => {
   try {
-    db.prepare('DELETE FROM push_subscriptions WHERE account_id=?').run(req.user.id);
+    db.prepare(`
+      DELETE FROM push_subscriptions
+      WHERE subscriber_user_id=?
+         OR (subscriber_user_id IS NULL AND account_id=?)
+    `).run(req.user.id, req.user.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -200,7 +352,7 @@ router.get('/vapid-key', (req, res) => {
 // ── API: تست push (فقط ادمین) ──────────────────────────────────
 router.post('/test-push', auth, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-  await pushToUser(req.user.id, 'تست نوتیفیکیشن TeamPulse', 'اگه این رو میبینی، Push کار می‌کنه! ✅');
+  await pushToOwner(req.user.id, 'تست نوتیفیکیشن TeamPulse', 'اگه این رو میبینی، Push کار می‌کنه! ✅');
   res.json({ success: true });
 });
 

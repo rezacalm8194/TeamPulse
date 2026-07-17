@@ -18791,7 +18791,7 @@ async function _enablePushFromWizard() {
     const keyRes = await fetch('/api/reminders/vapid-key');
     const { publicKey } = await keyRes.json();
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8Array(publicKey) });
-    await _apiFetch('/api/reminders/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub }) });
+    await _apiFetch('/api/reminders/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, ..._pushSubscriptionContext() }) });
 
     if (statusBox) {
       statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)';
@@ -21980,6 +21980,17 @@ function _requestNotifPermission() {
   _ensureReminderPushEnabled('notif-status');
 }
 
+function _pushSubscriptionContext() {
+  const teamSession = _teamAccessSession?.();
+  if (teamSession?.ownerUserId) {
+    return {
+      ownerAccountId: teamSession.ownerUserId,
+      scope: 'team',
+    };
+  }
+  return { scope: 'owner' };
+}
+
 async function _ensureReminderPushEnabled(statusId) {
   const el = statusId ? document.getElementById(statusId) : null;
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -22013,7 +22024,7 @@ async function _ensureReminderPushEnabled(statusId) {
     }
     await _apiFetch('/api/reminders/subscribe', {
       method: 'POST',
-      body: JSON.stringify({ subscription: sub }),
+      body: JSON.stringify({ subscription: sub, ..._pushSubscriptionContext() }),
     });
     if (el) {
       el.style.background = 'rgba(62,207,142,.1)';
@@ -22086,7 +22097,7 @@ async function _enablePushFromSettings() {
     const keyRes = await fetch('/api/reminders/vapid-key');
     const { publicKey } = await keyRes.json();
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8Array(publicKey) });
-    await _apiFetch('/api/reminders/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub }) });
+    await _apiFetch('/api/reminders/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub, ..._pushSubscriptionContext() }) });
 
     if (statusBox) { statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)'; statusBox.textContent='✅ نوتیفیکیشن روی این دستگاه فعال شد'; }
     if (enableBtn) enableBtn.style.display='none';
