@@ -16908,7 +16908,7 @@ function openNoteDetail(id) {
       </div>
       ${(node.attachments||[]).length === 0
         ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
-        : renderAttachmentsGrid(node.attachments||[], null)}
+        : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
     </div>
     <div class="detail-section">
       <h3 style="margin-bottom:10px">🏷 استیکر</h3>
@@ -17223,7 +17223,7 @@ function openEditInstruction(id) {
             </div>
             ${(node.attachments||[]).length === 0
               ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
-              : renderAttachmentsGrid(node.attachments||[], null)}
+              : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
           </div>
         </div>
       </div>`;
@@ -17655,6 +17655,9 @@ async function attachFiles(entityType, entityId, existingAttachments) {
 // ── Render attachments grid ───────────────────────────────────────────────────
 function renderAttachmentsGrid(attachments, onDelete) {
   if (!attachments || !attachments.length) return '';
+  const deleteCall = (fileId) => onDelete
+    ? (String(onDelete).includes('=>') ? `(${onDelete})('${fileId}')` : `${onDelete}('${fileId}')`)
+    : '';
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px">
       ${attachments.map(a => `
@@ -17674,7 +17677,7 @@ function renderAttachmentsGrid(attachments, onDelete) {
             <div style="font-size:10px;color:var(--text3)">${_formatSize(a.size)}</div>
           </div>
           ${onDelete ? `
-          <button onclick="event.stopPropagation();${onDelete}('${a.id}')"
+          <button onclick="event.stopPropagation();${deleteCall(a.id)}"
             style="position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:50%;
                    background:rgba(248,113,113,.9);color:white;border:none;cursor:pointer;
                    font-size:11px;display:flex;align-items:center;justify-content:center;
@@ -17771,7 +17774,7 @@ async function _triggerAttach(entityType, entityId) {
     node.attachments = newAttachments;
     _save();
     showToast('پیوست اضافه شد ✓', 'success');
-    openEditInstruction(id);
+    openNoteDetail(id);
   }
 }
 
@@ -17796,6 +17799,7 @@ async function _deleteAttachment(entityType, entityId, fileId) {
   await _IDB.delete(fileId);
   _save();
   showToast('پیوست حذف شد', 'error');
+  if (entityType === 'instruction') openNoteDetail(id);
 }
 
 
