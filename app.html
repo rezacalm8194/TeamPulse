@@ -9639,8 +9639,15 @@ function _teamSelectTodoDefaults(prefix) {
   _teamToggleInstructionFolderPanel(prefix);
 }
 
+function _teamSetInstructionPermission(prefix, checked) {
+  const perm = document.querySelector(`.${prefix}-team-perm[value="instructions"]`);
+  if (perm) perm.checked = !!checked;
+}
+
 function _teamToggleInstructionFolderAll(prefix, checked) {
+  _teamSetInstructionPermission(prefix, checked);
   document.querySelectorAll(`.${prefix}-team-folder`).forEach(x => x.checked = !!checked);
+  _teamRefreshInstructionFolderPanel(prefix);
 }
 
 function _teamInstructionPermEnabled(prefix) {
@@ -9649,15 +9656,8 @@ function _teamInstructionPermEnabled(prefix) {
 
 function _teamToggleInstructionFolderPanel(prefix) {
   const enabled = _teamInstructionPermEnabled(prefix);
-  const panel = document.getElementById(`${prefix}-team-folder-panel`);
-  if (panel) {
-    panel.style.opacity = enabled ? '1' : '.48';
-    panel.style.pointerEvents = enabled ? '' : 'none';
-  }
   const all = document.getElementById(`${prefix}-team-folder-all`);
   const boxes = [...document.querySelectorAll(`.${prefix}-team-folder`)];
-  if (all) all.disabled = !enabled;
-  boxes.forEach(x => x.disabled = !enabled);
   if (enabled && all && !all.checked && !boxes.some(x => x.checked)) {
     all.checked = true;
     boxes.forEach(x => x.checked = true);
@@ -9666,13 +9666,30 @@ function _teamToggleInstructionFolderPanel(prefix) {
     if (all) all.checked = false;
     boxes.forEach(x => x.checked = false);
   }
+  _teamRefreshInstructionFolderPanel(prefix);
+}
+
+function _teamRefreshInstructionFolderPanel(prefix) {
+  const enabled = _teamInstructionPermEnabled(prefix);
+  const panel = document.getElementById(`${prefix}-team-folder-panel`);
+  const hint = document.getElementById(`${prefix}-team-folder-hint`);
+  if (panel) panel.style.opacity = enabled ? '1' : '.74';
+  if (hint) {
+    hint.textContent = enabled
+      ? 'اگر «تمام مرکز دانش» روشن باشد، همه پوشه‌ها دیده می‌شوند. در غیر این صورت فقط پوشه‌های انتخاب‌شده و محتوای داخلشان نمایش داده می‌شود.'
+      : 'برای دادن دسترسی، «تمام مرکز دانش» یا پوشه‌های موردنظر را انتخاب کن؛ مجوز مرکز دانش خودکار روشن می‌شود.';
+  }
 }
 
 function _teamSyncInstructionFolderAll(prefix) {
   const all = document.getElementById(`${prefix}-team-folder-all`);
   if (!all) return;
   const boxes = [...document.querySelectorAll(`.${prefix}-team-folder`)];
-  all.checked = boxes.length > 0 && boxes.every(x => x.checked);
+  const anyChecked = boxes.some(x => x.checked);
+  const allChecked = boxes.length > 0 && boxes.every(x => x.checked);
+  all.checked = allChecked;
+  _teamSetInstructionPermission(prefix, anyChecked || allChecked);
+  _teamRefreshInstructionFolderPanel(prefix);
 }
 
 function _teamInstructionFolderPicker(prefix, selected, enabled = false) {
@@ -9686,7 +9703,7 @@ function _teamInstructionFolderPicker(prefix, selected, enabled = false) {
     .map(f => {
       const depth = depthOf(f);
       return `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border2);border-radius:9px;background:var(--bg3);cursor:pointer;margin-right:${Math.min(depth,4)*16}px">
-        <input type="checkbox" class="${prefix}-team-folder" value="${f.id}" ${(enabled && (allChecked || selectedIds.has(+f.id)))?'checked':''} ${enabled?'':'disabled'}
+        <input type="checkbox" class="${prefix}-team-folder" value="${f.id}" ${(enabled && (allChecked || selectedIds.has(+f.id)))?'checked':''}
           onchange="_teamSyncInstructionFolderAll('${prefix}')" style="width:16px;height:16px;accent-color:var(--accent)">
         <span style="font-size:15px">${f.icon || '📁'}</span>
         <span style="font-size:12px;font-weight:700;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(f.title || 'بدون عنوان')}</span>
@@ -9695,14 +9712,14 @@ function _teamInstructionFolderPicker(prefix, selected, enabled = false) {
     }).join('')
     : `<div style="font-size:12px;color:var(--text3);padding:10px;border:1px dashed var(--border2);border-radius:9px">هنوز پوشه‌ای در مرکز دانش ساخته نشده است.</div>`;
 
-  return `<div id="${prefix}-team-folder-panel" style="margin-top:14px;padding:12px;border:1px solid rgba(96,165,250,.25);border-radius:12px;background:rgba(96,165,250,.04);opacity:${enabled?'1':'.48'};pointer-events:${enabled?'auto':'none'}">
+  return `<div id="${prefix}-team-folder-panel" style="margin-top:14px;padding:12px;border:1px solid rgba(96,165,250,.25);border-radius:12px;background:rgba(96,165,250,.04);opacity:${enabled?'1':'.74'}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
       <div>
         <div style="font-size:13px;font-weight:800;color:var(--text)">دسترسی پوشه‌های مرکز دانش</div>
-        <div style="font-size:11px;color:var(--text3);line-height:1.7">${enabled ? 'اگر «تمام مرکز دانش» روشن باشد، همه پوشه‌ها دیده می‌شوند. در غیر این صورت فقط پوشه‌های انتخاب‌شده و محتوای داخلشان نمایش داده می‌شود.' : 'برای فعال شدن این بخش، اول مجوز «مرکز دانش» را از بالا روشن کن.'}</div>
+        <div id="${prefix}-team-folder-hint" style="font-size:11px;color:var(--text3);line-height:1.7">${enabled ? 'اگر «تمام مرکز دانش» روشن باشد، همه پوشه‌ها دیده می‌شوند. در غیر این صورت فقط پوشه‌های انتخاب‌شده و محتوای داخلشان نمایش داده می‌شود.' : 'برای دادن دسترسی، «تمام مرکز دانش» یا پوشه‌های موردنظر را انتخاب کن؛ مجوز مرکز دانش خودکار روشن می‌شود.'}</div>
       </div>
       <label style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-size:12px;font-weight:700;color:var(--text2)">
-        <input id="${prefix}-team-folder-all" type="checkbox" ${allChecked?'checked':''} ${enabled?'':'disabled'}
+        <input id="${prefix}-team-folder-all" type="checkbox" ${allChecked?'checked':''}
           onchange="_teamToggleInstructionFolderAll('${prefix}', this.checked)" style="width:16px;height:16px;accent-color:var(--accent)">
         تمام مرکز دانش
       </label>
