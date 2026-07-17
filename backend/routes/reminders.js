@@ -110,7 +110,7 @@ function todoShouldNotifyTeamMember(todo, data, memberEmail, permissions) {
   if (!permissions.includes('todolist')) return false;
   const ownStaffIds = ownStaffIdsForEmail(data, memberEmail);
   if (todoAssignedToMember(todo, memberEmail, ownStaffIds)) return true;
-  if (String(todo?.category || '') === 'clients') return true;
+  if (permissions.includes('todo_view_clients') && String(todo?.category || '') === 'clients') return true;
   const sharedEmails = todoSharedWith(todo).map(email => email.trim().toLowerCase());
   if (permissions.includes('todo_view_shared') && sharedEmails.includes(memberEmail)) return true;
   if (todo?.visibility === 'team' && permissions.includes('todo_view_shared')) return true;

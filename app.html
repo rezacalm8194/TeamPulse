@@ -5874,6 +5874,7 @@ const TODO_TEAM_PERMISSIONS = [
   {key:'todo_complete_own', label:'تیک‌زدن کارهای خودش', icon:'☑️', desc:'امکان تکمیل یا برداشتن تیک کارهای واگذارشده'},
   {key:'todo_report_own', label:'ثبت گزارش برای کارهای خودش', icon:'📝', desc:'ثبت نتیجه انجام کار و ویرایش گزارش خودش'},
   {key:'todo_view_shared', label:'مشاهده کارهای به‌اشتراک‌گذاشته‌شده', icon:'👁️', desc:'دیدن کارهایی که مدیر صریحاً به اشتراک گذاشته'},
+  {key:'todo_view_clients', label:'مشاهده کارهای دسته مشتریان', icon:'👥', desc:'دیدن کارهای دسته مشتریان فقط در صورت اجازه مدیر'},
   {key:'todo_create_self', label:'ساخت کار برای خودش', icon:'➕', desc:'هم‌تیمی بتواند برای خودش کار بسازد'},
   {key:'todo_create_others', label:'ساخت کار برای دیگران', icon:'👥', desc:'تعریف کار برای سایر پرسنل'},
   {key:'todo_edit_manager', label:'ویرایش کارهای تعریف‌شده توسط مدیر', icon:'✏️', desc:'ویرایش متن و تنظیمات کار مدیر'},
@@ -5883,7 +5884,7 @@ const TODO_TEAM_PERMISSIONS = [
   {key:'todo_view_team_report', label:'مشاهده گزارش عملکرد تیم', icon:'📊', desc:'گزارش عملکرد همه پرسنل مجاز'},
   {key:'todo_manage_staff', label:'مدیریت چک‌لیست پرسنل', icon:'🧩', desc:'تعریف، ویرایش و بررسی کارهای پرسنل'},
 ];
-const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_shared','todo_view_self_report'];
+const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report'];
 let _todoActiveTab = 'mine';
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
@@ -5935,6 +5936,7 @@ function _todoCanView(t) {
   if (_teamPerm('todo_view_team') || _teamPerm('todo_manage_staff')) return true;
   if (_teamPerm('todo_view_assigned') && _todoIsOwnAssigned(t)) return true;
   if (_teamPerm('todo_view_shared') && _todoSharedWith(t).map(x => x.toLowerCase()).includes(email)) return true;
+  if (_teamPerm('todo_view_clients') && String(t?.category || '') === 'clients') return true;
   return false;
 }
 function _todoCanComplete(t) {
@@ -9543,7 +9545,15 @@ function _teamPermCards(prefix, selected) {
 }
 
 function _teamSelectedPerms(prefix) {
-  return [...document.querySelectorAll(`.${prefix}-team-perm:checked`)].map(x => x.value);
+  const selected = [...document.querySelectorAll(`.${prefix}-team-perm:checked`)].map(x => x.value);
+  const hasTodoSection = selected.includes('todolist');
+  const hasTodoDetail = selected.some(key => TODO_TEAM_PERMISSIONS.some(permission => permission.key === key));
+  if (hasTodoSection && !hasTodoDetail) {
+    TODO_DEFAULT_STAFF_PERMISSIONS.forEach(key => {
+      if (!selected.includes(key)) selected.push(key);
+    });
+  }
+  return selected;
 }
 
 function _teamSelectAll(prefix, checked) {

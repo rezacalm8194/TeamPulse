@@ -160,6 +160,7 @@ function todoVisibleToTeamMember(todo, memberEmail, permissions, ownStaffIds = n
   if (permissions.includes('todo_view_team') || permissions.includes('todo_manage_staff')) return true;
   if (permissions.includes('todo_view_assigned') && todoAssignedToMember(todo, memberEmail, ownStaffIds)) return true;
   if (permissions.includes('todo_view_shared') && todoSharedWith(todo).map(x => x.toLowerCase()).includes(memberEmail)) return true;
+  if (permissions.includes('todo_view_clients') && String(todo?.category || '') === 'clients') return true;
   if (visibility === 'team' && permissions.includes('todo_view_shared')) return true;
   return false;
 }
