@@ -19287,6 +19287,33 @@ function _todoHasOccurrenceFor(rootId, date, excludeId = null) {
   });
 }
 
+function _todoNormalizedTitle(title) {
+  return String(title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function _todoDuplicateKey(t) {
+  if (!t || t.done || t.archived || t.status === 'deleted') return '';
+  const title = _todoNormalizedTitle(t.title);
+  if (!title) return '';
+  const assignee = String(t.assignee_id || t.staff_id || t.assignee_email || 'mine').trim().toLowerCase();
+  const date = _todoScheduledDate(t) || '';
+  return [assignee, date, title].join('|');
+}
+
+function _dedupeOpenTodos() {
+  _todosInit();
+  const seen = new Set();
+  let removed = 0;
+  _db.todos = (_db.todos || []).filter(t => {
+    const key = _todoDuplicateKey(t);
+    if (!key) return true;
+    if (seen.has(key)) { removed++; return false; }
+    seen.add(key);
+    return true;
+  });
+  return removed;
+}
+
 function _createTodoOccurrenceRecord(t, status, completedAt = null) {
   const scheduledDate = _todoScheduledDate(t);
   const isCompleted = status === 'completed' || status === 'late_completed';
@@ -19544,10 +19571,18 @@ async function _saveQuickStaffChecklist(staffId) {
   const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   if (!staff) { showToast('پرسنل پیدا نشد', 'error'); return; }
   if (!_todoCanCreateForStaff(staffId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
-  const titles = (document.getElementById('quick-staff-titles')?.value || '')
+  const rawTitles = (document.getElementById('quick-staff-titles')?.value || '')
     .split(/\r?\n/)
     .map(x => x.trim())
     .filter(Boolean);
+  const titleSeen = new Set();
+  const duplicateInputCount = rawTitles.length;
+  const titles = rawTitles.filter(title => {
+    const key = _todoNormalizedTitle(title);
+    if (!key || titleSeen.has(key)) return false;
+    titleSeen.add(key);
+    return true;
+  });
   if (!titles.length) { showToast('حداقل یک عنوان وارد کن', 'error'); return; }
   const dateJalali = document.getElementById('quick-staff-date')?.value.trim() || _todayJalaliStr();
   const time = document.getElementById('quick-staff-time')?.value || '';
@@ -19561,8 +19596,15 @@ async function _saveQuickStaffChecklist(staffId) {
   const priority = 'urgent';
   const requiresReport = document.getElementById('quick-staff-report')?.checked ? 'required' : 'none';
   const now = new Date().toISOString();
+  const existingKeys = new Set((_db.todos || []).map(_todoDuplicateKey).filter(Boolean));
+  let skipped = duplicateInputCount - titles.length;
+  let created = 0;
   titles.forEach(title => {
+    const duplicateKey = [String(staff.id), dateJalali, _todoNormalizedTitle(title)].join('|');
+    if (existingKeys.has(duplicateKey)) { skipped++; return; }
     const id = _db._nextId.todos++;
+    existingKeys.add(duplicateKey);
+    created++;
     _db.todos.push({
       id, title, note:'', manager_note:'',
       assignee_id: staff.id,
@@ -19601,10 +19643,14 @@ async function _saveQuickStaffChecklist(staffId) {
       _scheduleTodoNotification(id, title, dateJalali, time, remindMin);
     }
   });
+  if (!created) {
+    showToast('همه آیتم‌ها تکراری بودند و چیزی اضافه نشد', 'warning');
+    return;
+  }
   _save();
   await _syncToServer();
   closeModal();
-  showToast(`${fa(titles.length)} کار برای ${_todoStaffName(staff)} ساخته شد ✓`, 'success');
+  showToast(`${fa(created)} کار برای ${_todoStaffName(staff)} ساخته شد${skipped ? `؛ ${fa(skipped)} تکراری اضافه نشد` : ''} ✓`, 'success');
   _todoActiveTab = 'staff';
   _todoStaffFilter.staffId = String(staff.id);
   renderTodoList();
@@ -19827,7 +19873,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
         ${t.done_at ? `<span>✓ ${new Date(t.done_at).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}
       </div>
     </div>
-    ${canDelete ? `<button class="x-close-sm" onclick="event.stopPropagation();deleteTodo(${t.id})">×</button>` : ''}
+    ${canDelete ? `<button class="x-close-sm" onclick="event.stopPropagation();_deleteTodoCompletely(${t.id})">×</button>` : ''}
   </div>`;
 }
 
@@ -20991,12 +21037,13 @@ function _renderTodoCalendarView() {
 
 function renderTodoList() {
   _todosInit();
+  const duplicateCleanupCount = _dedupeOpenTodos();
 
   // بایگانی/ترمیم خودکار: کارهایی که روز قبل done شدن رو archive کن؛
   // تکراری‌های گیرکرده از روز قبل را هم به دوره بعدی همان روز انجام منتقل کن.
   const _todayStr = _todayJalaliStr();
   const _todayK = _jalaliKey(_todayStr);
-  let _archiveChanged = false;
+  let _archiveChanged = duplicateCleanupCount > 0;
   _db.todos.forEach(t => {
     if (t.done && !t.archived && t.repeat && t.repeat !== 'none' && t.done_at) {
       const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
@@ -22707,6 +22754,26 @@ function deleteTodo(id) {
   }
   _db.todos = _db.todos.filter(x => x.id != id);
   _save();
+  renderTodoList();
+}
+
+function _deleteTodoCompletely(id) {
+  const t = _db.todos.find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanDelete(t)) { showToast('برای حذف این کار دسترسی نداری', 'error'); return; }
+  const rootId = String(_todoRootId(t));
+  const isSeries = _isTodoRecurring(t) || (_db.todos || []).some(x => String(_todoRootId(x)) === rootId && String(x.id) !== String(t.id));
+  const msg = isSeries
+    ? 'این کار تکرارشونده است. حذف کامل شود؟'
+    : 'این کار حذف شود؟';
+  if (!confirm(msg)) return;
+  (_db.todos || [])
+    .filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId)
+    .forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id); });
+  _db.todos = (_db.todos || []).filter(x => String(x.id) !== String(t.id) && String(_todoRootId(x)) !== rootId);
+  _save();
+  _syncToServer();
+  showToast('کار حذف شد', 'success');
   renderTodoList();
 }
 
