@@ -657,6 +657,41 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .todo-overdue-menu-btn { color: rgba(255,255,255,.42) !important; }
 .todo-overdue-menu-btn:hover { color: var(--text) !important; }
+.todo-edit-accordion {
+  border: 1px solid rgba(96,165,250,.22);
+  border-radius: 12px;
+  background: rgba(96,165,250,.035);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.todo-edit-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 11px 13px;
+  color: var(--text);
+  font-weight: 900;
+  user-select: none;
+}
+.todo-edit-accordion > summary::-webkit-details-marker { display: none; }
+.todo-edit-accordion .todo-acc-hint {
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 700;
+  margin-inline-start: auto;
+}
+.todo-edit-accordion .todo-acc-chevron {
+  color: var(--accent);
+  font-size: 13px;
+  transition: transform .16s ease;
+}
+.todo-edit-accordion[open] .todo-acc-chevron { transform: rotate(180deg); }
+.todo-edit-accordion-body { padding: 0 13px 13px; }
+.todo-edit-accordion-body .form-group.full { margin-bottom: 0; }
 .todo-form-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -22645,27 +22680,38 @@ function openEditTodo(id) {
   }).join('');
 
   const repeatVal = t.repeat || 'none';
+  const editCategoryLabels = {clients:'مشتریان', routine:'روتین‌ها', general:'عمومی', personal:'شخصی'};
+  const editPriorityLabels = {low:'پایین', medium:'متوسط', high:'بالا', urgent:'فوری'};
+  const editAssignee = (_db.staff || []).find(s => String(s.id) === String(t.assignee_id || ''));
+  const editAssigneeLabel = editAssignee ? _todoStaffName(editAssignee) : 'کار شخصی';
 
   openModal('✏️ ویرایش کار', `
     <div class="form-group full">
       <label class="form-label">✏️ عنوان کار *</label>
       <input class="form-input" id="todo-title" value="${escapeHtml(t.title)}" autofocus>
     </div>
-    <div class="form-group full">
-      <label class="form-label">📝 توضیحات</label>
-      <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات...">${escapeHtml(t.note||'')}</textarea>
-    </div>
-    <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
-      <label class="form-label">مسئول و دسترسی</label>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
-        <select class="form-input" id="todo-assignee"><option value="">کار شخصی من</option>${(_db.staff||[]).filter(staffIsPersonnel).map(s=>`<option value="${s.id}" ${String(t.assignee_id||'')===String(s.id)?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('')}</select>
-        <select class="form-input" id="todo-visibility"><option value="private" ${(t.visibility||'private')==='private'?'selected':''}>فقط من</option><option value="assignee" ${t.visibility==='assignee'?'selected':''}>فقط مسئول انجام</option><option value="selected" ${t.visibility==='selected'?'selected':''}>افراد انتخاب‌شده</option><option value="team" ${t.visibility==='team'?'selected':''}>اعضای مجاز تیم</option></select>
-        <select class="form-input" id="todo-requires-report"><option value="none" ${(t.requires_report||'none')==='none'?'selected':''}>گزارش لازم نیست</option><option value="optional" ${t.requires_report==='optional'?'selected':''}>گزارش اختیاری</option><option value="required" ${t.requires_report==='required'?'selected':''}>گزارش الزامی</option></select>
-        <select class="form-input" id="todo-requires-attachment"><option value="none" ${(t.requires_attachment||'none')==='none'?'selected':''}>فایل لازم نیست</option><option value="optional" ${t.requires_attachment==='optional'?'selected':''}>فایل اختیاری</option><option value="required" ${t.requires_attachment==='required'?'selected':''}>فایل الزامی</option></select>
+    <details class="todo-edit-accordion form-group full">
+      <summary><span>📝 جزئیات</span><span class="todo-acc-hint">${t.note ? 'توضیح دارد' : 'اختیاری'}</span><span class="todo-acc-chevron">⌄</span></summary>
+      <div class="todo-edit-accordion-body">
+        <div class="form-group full">
+          <label class="form-label">توضیحات</label>
+          <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات...">${escapeHtml(t.note||'')}</textarea>
+        </div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text2);cursor:pointer"><input type="checkbox" id="todo-requires-approval" ${t.requires_approval?'checked':''} style="width:16px;height:16px;accent-color:var(--accent)"> نیاز به تأیید مدیر دارد</label>
-      ${t.staff_report ? `<div style="margin-top:10px;padding:9px;border-radius:9px;background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.22);font-size:12px;color:var(--text2);line-height:1.8"><b style="color:var(--green)">گزارش انجام کار:</b><br>${escapeHtml(t.staff_report)}</div>` : ''}
-    </div>
+    </details>
+    <details class="todo-edit-accordion form-group full">
+      <summary><span>مسئول و دسترسی</span><span class="todo-acc-hint">${escapeHtml(editAssigneeLabel)}</span><span class="todo-acc-chevron">⌄</span></summary>
+      <div class="todo-edit-accordion-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+          <select class="form-input" id="todo-assignee"><option value="">کار شخصی من</option>${(_db.staff||[]).filter(staffIsPersonnel).map(s=>`<option value="${s.id}" ${String(t.assignee_id||'')===String(s.id)?'selected':''}>${escapeHtml(_todoStaffName(s))}</option>`).join('')}</select>
+          <select class="form-input" id="todo-visibility"><option value="private" ${(t.visibility||'private')==='private'?'selected':''}>فقط من</option><option value="assignee" ${t.visibility==='assignee'?'selected':''}>فقط مسئول انجام</option><option value="selected" ${t.visibility==='selected'?'selected':''}>افراد انتخاب‌شده</option><option value="team" ${t.visibility==='team'?'selected':''}>اعضای مجاز تیم</option></select>
+          <select class="form-input" id="todo-requires-report"><option value="none" ${(t.requires_report||'none')==='none'?'selected':''}>گزارش لازم نیست</option><option value="optional" ${t.requires_report==='optional'?'selected':''}>گزارش اختیاری</option><option value="required" ${t.requires_report==='required'?'selected':''}>گزارش الزامی</option></select>
+          <select class="form-input" id="todo-requires-attachment"><option value="none" ${(t.requires_attachment||'none')==='none'?'selected':''}>فایل لازم نیست</option><option value="optional" ${t.requires_attachment==='optional'?'selected':''}>فایل اختیاری</option><option value="required" ${t.requires_attachment==='required'?'selected':''}>فایل الزامی</option></select>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text2);cursor:pointer"><input type="checkbox" id="todo-requires-approval" ${t.requires_approval?'checked':''} style="width:16px;height:16px;accent-color:var(--accent)"> نیاز به تأیید مدیر دارد</label>
+        ${t.staff_report ? `<div style="margin-top:10px;padding:9px;border-radius:9px;background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.22);font-size:12px;color:var(--text2);line-height:1.8"><b style="color:var(--green)">گزارش انجام کار:</b><br>${escapeHtml(t.staff_report)}</div>` : ''}
+      </div>
+    </details>
 
     <!-- ردیف تاریخ و ساعت -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;align-items:start">
@@ -22698,31 +22744,35 @@ function openEditTodo(id) {
     </div>
 
     <!-- دسته‌بندی -->
-    <div class="form-group full" style="margin-bottom:10px">
-      <label class="form-label">🗂 دسته‌بندی</label>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${_buildCategoryButtons(t.category||'general')}
-        <input type="hidden" id="todo-category" value="${t.category||'general'}">
+    <details class="todo-edit-accordion form-group full">
+      <summary><span>🗂 دسته‌بندی</span><span class="todo-acc-hint">${editCategoryLabels[t.category || 'general'] || 'عمومی'}</span><span class="todo-acc-chevron">⌄</span></summary>
+      <div class="todo-edit-accordion-body">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${_buildCategoryButtons(t.category||'general')}
+          <input type="hidden" id="todo-category" value="${t.category||'general'}">
+        </div>
       </div>
-    </div>
+    </details>
 
     <!-- اولویت -->
-    <div style="margin-bottom:10px">
-      <label class="form-label" style="margin-bottom:6px">🚩 اولویت</label>
-      <div style="display:flex;gap:6px">
-        ${['low','medium','high','urgent'].map((p,i) => {
-          const labels = ['پایین','متوسط','بالا','فوری'];
-          const colors = ['#60a5fa','#fbbf24','#f97316','#ef4444'];
-          const sel = (t.priority||'medium') === p;
-          return '<button type="button" onclick="_setTodoPriority(this,\'' + p + '\')" data-priority="' + p + '" ' +
-            'style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);' +
-            'border:2px solid ' + (sel?colors[i]:'var(--border2)') + ';' +
-            'background:' + (sel?colors[i]+'22':'var(--bg3)') + ';color:' + (sel?colors[i]:'var(--text2)') + '">' +
-            labels[i] + '</button>';
-        }).join('')}
-        <input type="hidden" id="todo-priority" value="${t.priority||'medium'}">
+    <details class="todo-edit-accordion form-group full">
+      <summary><span>🚩 اولویت</span><span class="todo-acc-hint">${editPriorityLabels[t.priority || 'medium'] || 'متوسط'}</span><span class="todo-acc-chevron">⌄</span></summary>
+      <div class="todo-edit-accordion-body">
+        <div style="display:flex;gap:6px">
+          ${['low','medium','high','urgent'].map((p,i) => {
+            const labels = ['پایین','متوسط','بالا','فوری'];
+            const colors = ['#60a5fa','#fbbf24','#f97316','#ef4444'];
+            const sel = (t.priority||'medium') === p;
+            return '<button type="button" onclick="_setTodoPriority(this,\'' + p + '\')" data-priority="' + p + '" ' +
+              'style="flex:1;padding:6px 4px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);' +
+              'border:2px solid ' + (sel?colors[i]:'var(--border2)') + ';' +
+              'background:' + (sel?colors[i]+'22':'var(--bg3)') + ';color:' + (sel?colors[i]:'var(--text2)') + '">' +
+              labels[i] + '</button>';
+          }).join('')}
+          <input type="hidden" id="todo-priority" value="${t.priority||'medium'}">
+        </div>
       </div>
-    </div>
+    </details>
 
     <!-- تکرار -->
     <div style="margin-bottom:10px">
