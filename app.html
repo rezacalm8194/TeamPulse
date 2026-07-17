@@ -587,6 +587,21 @@ button { cursor: pointer; font-family: var(--font); }
   color: #fff;
   box-shadow: 0 6px 16px rgba(124, 106, 247, .26);
 }
+.todo-topbar-tabs {
+  flex: 0 1 auto;
+  max-width: min(360px, 58vw);
+}
+.todo-topbar-tabs button {
+  min-width: 112px;
+}
+.todo-archive-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .payment-header-add {
   margin-right: auto;
   width: 34px;
@@ -2015,6 +2030,9 @@ body.light mark { background: rgba(251,191,36,.5); }
   .topbar{padding:0 10px;gap:6px;height:52px;padding-top:max(24px, env(safe-area-inset-top,0px));height:calc(52px + max(24px, env(safe-area-inset-top,0px)))}
   .topbar-actions{gap:4px}
   .topbar-actions .btn{padding:5px 8px;font-size:11px}
+  .todo-topbar-tabs{max-width:50vw}
+  .todo-topbar-tabs button{min-width:78px;padding:7px 9px;font-size:11px}
+  .todo-archive-btn{width:34px;height:34px;min-width:34px}
   .page-title{font-size:13px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* Content area */
@@ -5866,7 +5884,7 @@ const TODO_TEAM_PERMISSIONS = [
   {key:'todo_manage_staff', label:'مدیریت چک‌لیست پرسنل', icon:'🧩', desc:'تعریف، ویرایش و بررسی کارهای پرسنل'},
 ];
 const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_shared','todo_view_self_report'];
-let _todoActiveTab = localStorage.getItem('tp_todo_active_tab') || 'mine';
+let _todoActiveTab = 'mine';
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
 let _todoStaffReportId = '';
@@ -6364,6 +6382,7 @@ function bindNavItems() {
       el.classList.add('active');
       currentPage = el.dataset.page;
       if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
+      if (currentPage === 'todolist') _todoActiveTab = 'mine';
       updatePageTitle();
       renderPage();
     };
@@ -6377,6 +6396,7 @@ window.addEventListener('hashchange', () => {
   if (page && page !== currentPage && _SAFE_RESTORE_PAGES.includes(page)) {
     if (page === 'students' || page === 'sessions') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
     currentPage = page;
+    if (currentPage === 'todolist') _todoActiveTab = 'mine';
     updatePageTitle();
     renderPage();
   }
@@ -11549,7 +11569,6 @@ async function saveStaffNew() {
     currentPage = 'todolist';
     localStorage.setItem('tp_last_page', 'todolist');
     _todoActiveTab = 'staff';
-    localStorage.setItem('tp_todo_active_tab', 'staff');
     updatePageTitle();
     renderTodoList();
   } else {
@@ -19353,12 +19372,11 @@ function _todoAssigneeLabel(t) {
 
 function _todoTabButton(tab, label) {
   const active = _todoActiveTab === tab;
-  return `<button class="btn ${active?'btn-primary':'btn-ghost'} btn-sm" onclick="_setTodoTab('${tab}')" style="min-width:110px;justify-content:center">${label}</button>`;
+  return `<button class="${active ? 'active' : ''}" role="tab" aria-selected="${active ? 'true' : 'false'}" onclick="_setTodoTab('${tab}')">${label}</button>`;
 }
 
 function _setTodoTab(tab) {
   _todoActiveTab = tab;
-  localStorage.setItem('tp_todo_active_tab', tab);
   renderTodoList();
 }
 
@@ -19369,8 +19387,8 @@ function _todoTabsHtml() {
 function _todoTopbarActionsHtml() {
   const tabs = [_todoTabButton('mine','کارهای من')];
   if (!_isTeamGuest()) tabs.push(_todoTabButton('staff','کارهای پرسنل'));
-  return `${tabs.join('')}
-    <button class="btn btn-ghost btn-sm" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها" style="width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center">📦</button>`;
+  return `<div class="payments-segmented todo-topbar-tabs" role="tablist" aria-label="لیست کارها">${tabs.join('')}</div>
+    <button class="btn btn-ghost btn-sm todo-archive-btn" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها">📦</button>`;
 }
 
 function _openMyTodoReport() {
@@ -19387,7 +19405,6 @@ function _openStaffTodoReport(staffId) {
 function _openAddTodoForStaff(staffId) {
   if (!_todoCanCreateForStaff(staffId)) { showToast('برای تعریف چک‌لیست این پرسنل دسترسی نداری', 'error'); return; }
   _todoActiveTab = 'staff';
-  localStorage.setItem('tp_todo_active_tab', 'staff');
   openAddTodo('', staffId);
 }
 
@@ -19546,7 +19563,6 @@ async function _saveQuickStaffChecklist(staffId) {
   showToast(`${fa(titles.length)} کار برای ${_todoStaffName(staff)} ساخته شد ✓`, 'success');
   _todoActiveTab = 'staff';
   _todoStaffFilter.staffId = String(staff.id);
-  localStorage.setItem('tp_todo_active_tab', 'staff');
   renderTodoList();
   setTimeout(_renderTodoStaffFilteredList, 30);
 }
@@ -24233,7 +24249,7 @@ function bnNav(el){
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-  currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}updatePageTitle();renderPage();
+  currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
