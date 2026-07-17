@@ -4804,6 +4804,8 @@ window.api = {
         status: p.status||'active',
         tags: Array.isArray(p.tags) ? p.tags : [],
         author: p.author||(_sbUser?.name||_sbUser?.email||''),
+        staff_id: p.staff_id || null,
+        instruction_scope: p.instruction_scope || '',
         stickers: [],
         attachments: [],
         created_at: new Date().toISOString(),
@@ -5921,6 +5923,7 @@ let _todoActiveTab = 'mine';
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
 let _todoStaffReportId = '';
+let _staffInstructionContext = null;
 
 function _teamAccessSession() {
   try { return JSON.parse(localStorage.getItem(TEAM_ACCESS_SESSION_KEY) || 'null'); }
@@ -9695,7 +9698,7 @@ function _teamSyncInstructionFolderAll(prefix) {
 function _teamInstructionFolderPicker(prefix, selected, enabled = false) {
   const selectedIds = new Set((selected || []).map(Number));
   const allChecked = enabled && selectedIds.size === 0;
-  const folders = (_db.instructions || []).filter(n => n.type === 'category' || n.type === 'kcategory');
+  const folders = (_db.instructions || []).filter(n => !n.staff_id && (n.type === 'category' || n.type === 'kcategory'));
   const depthOf = (node) => _instrAncestors(node.id).length;
   const rows = folders.length ? folders
     .slice()
@@ -15658,7 +15661,7 @@ async function renderInstructions(instrSearch) {
   if (!_db.instructions) { _db.instructions = []; }
   _instrEnsureKnowledgeStructure();
 
-  const rawFlat = _db.instructions || [];
+  const rawFlat = (_db.instructions || []).filter(n => !n.staff_id);
   if (_instrParentId && !_teamCanInstructionNode(_instrParentId)) {
     updateTopbarActions('');
     setContent(_teamAccessDeniedHtml('instructions'));
@@ -16980,6 +16983,7 @@ function _impChipsHtml(inputId, selected) {
 }
 
 function openAddInstruction(parentId, type) {
+  if (!window._openingStaffInstruction) _staffInstructionContext = null;
   if (!_teamCanCreateInstruction(parentId)) { showToast('برای ساختن مورد جدید در این پوشه دسترسی نداری', 'error'); return; }
   if (!type) type = 'note';
   const iconBtns = INSTR_ICONS.map(i =>
@@ -17104,6 +17108,7 @@ function openAddInstruction(parentId, type) {
 async function saveAddInstruction(parentId, type) {
   const title = document.getElementById('instr-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
+  const staffCtx = _staffInstructionContext;
   const _parentId = (!parentId || parentId === 'null' || parentId === '') ? null : +parentId;
   if (!_teamCanCreateInstruction(_parentId)) { showToast('برای ذخیره در این پوشه دسترسی نداری', 'error'); return; }
   const icon = document.getElementById('instr-icon')?.value || '📝';
@@ -17114,10 +17119,19 @@ async function saveAddInstruction(parentId, type) {
   const date_jalali = document.getElementById('instr-date')?.value || '';
   const status = document.getElementById('instr-status')?.value || 'active';
   const tags = _parseTags(document.getElementById('instr-tags')?.value || '');
-  const res = await window.api.instructions.add({ parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali, status, tags });
+  const res = await window.api.instructions.add({
+    parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali, status, tags,
+    staff_id: staffCtx?.staffId || null,
+    instruction_scope: staffCtx ? 'staff' : ''
+  });
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
   showToast('ذخیره شد ✓', 'success');
+  if (staffCtx) {
+    _staffInstructionContext = null;
+    _openStaffInstructions(staffCtx.staffId, _parentId);
+    return;
+  }
   renderInstructions();
 }
 
@@ -17241,6 +17255,7 @@ function openEditInstruction(id) {
 
 async function saveEditInstruction(id, type) {
   if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
+  const existingNode = (_db.instructions || []).find(n => +n.id === +id);
   const title = document.getElementById('ei-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید','error'); return; }
   const res = await window.api.instructions.update({
@@ -17257,6 +17272,10 @@ async function saveEditInstruction(id, type) {
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
   closeModal();
   showToast('ذخیره شد ✓','success');
+  if (existingNode?.staff_id) {
+    _openStaffInstructions(existingNode.staff_id, existingNode.parent_id || null);
+    return;
+  }
   renderInstructions();
 }
 
@@ -17284,6 +17303,7 @@ async function deleteInstruction(id) {
 
 async function _confirmDeleteInstruction(id) {
   if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
+  const nodeBeforeDelete = (_db.instructions || []).find(n => +n.id === +id);
   closeModal();
   if (window.api && window.api.instructions) {
     const res = await window.api.instructions.delete(id);
@@ -17295,6 +17315,10 @@ async function _confirmDeleteInstruction(id) {
   clearTimeout(window._serverSyncTimer);
   _syncToServer();
   showToast('حذف شد','error');
+  if (nodeBeforeDelete?.staff_id) {
+    _openStaffInstructions(nodeBeforeDelete.staff_id, nodeBeforeDelete.parent_id || null);
+    return;
+  }
   renderInstructions();
 }
 
@@ -19506,6 +19530,73 @@ function _todoStaffAvatar(s) {
   return `<div style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,rgba(124,106,247,.35),rgba(96,165,250,.18));border:1px solid rgba(124,106,247,.35);display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px;font-weight:900;flex-shrink:0">${escapeHtml(name.trim().charAt(0) || 'پ')}</div>`;
 }
 
+function _staffInstructionNodes(staffId) {
+  return (_db.instructions || []).filter(n => String(n.staff_id || '') === String(staffId));
+}
+
+function _staffInstructionPath(staffId, parentId) {
+  const nodes = _staffInstructionNodes(staffId);
+  const path = [];
+  let cur = parentId ? nodes.find(n => +n.id === +parentId) : null;
+  while (cur) {
+    path.unshift(cur);
+    cur = cur.parent_id ? nodes.find(n => +n.id === +cur.parent_id) : null;
+  }
+  return path;
+}
+
+function _openStaffInstructions(staffId, parentId = null) {
+  _todosInit();
+  const staff = (_db.staff || []).find(s => String(s.id) === String(staffId));
+  if (!staff) { showToast('پرسنل پیدا نشد', 'error'); return; }
+  if (!_db.instructions) _db.instructions = [];
+  const nodes = _staffInstructionNodes(staffId);
+  const currentParent = parentId ? +parentId : null;
+  const path = _staffInstructionPath(staffId, currentParent);
+  const items = nodes
+    .filter(n => (n.parent_id || null) === currentParent)
+    .sort((a,b) => {
+      const af = (a.type === 'category' || a.type === 'kcategory') ? 0 : 1;
+      const bf = (b.type === 'category' || b.type === 'kcategory') ? 0 : 1;
+      return af - bf || String(a.title || '').localeCompare(String(b.title || ''), 'fa');
+    });
+  const crumb = path.length ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:12px;color:var(--text2)">
+      <button class="btn btn-ghost btn-sm" onclick="_openStaffInstructions('${staffId}', null)">ریشه</button>
+      ${path.map(p => `<span>‹</span><button class="btn btn-ghost btn-sm" onclick="_openStaffInstructions('${staffId}', ${p.id})">${escapeHtml(p.icon || '📁')} ${escapeHtml(p.title || '')}</button>`).join('')}
+    </div>` : '';
+  const cards = items.length ? items.map(n => {
+    const isFolder = n.type === 'category' || n.type === 'kcategory';
+    const action = isFolder ? `_openStaffInstructions('${staffId}', ${n.id})` : `openNoteDetail(${n.id})`;
+    return `<div onclick="${action}" style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);cursor:pointer;min-height:62px">
+      <span style="width:34px;height:34px;border-radius:10px;background:${n.color || '#7c6af7'}22;display:inline-flex;align-items:center;justify-content:center;font-size:19px">${escapeHtml(n.icon || (isFolder ? '📁' : '📝'))}</span>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:13px;font-weight:900;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(n.title || 'بدون عنوان')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">${isFolder ? 'پوشه دستورالعمل' : 'یادداشت'}${n.updated_at ? ` · ${new Date(n.updated_at).toLocaleDateString('fa-IR')}` : ''}</div>
+      </div>
+    </div>`;
+  }).join('') : `<div style="padding:24px;border:1px dashed var(--border2);border-radius:12px;text-align:center;color:var(--text3);font-size:12px">هنوز دستورالعملی برای این بخش ثبت نشده است.</div>`;
+
+  openModal(`📚 دستورالعمل‌های ${escapeHtml(_todoStaffName(staff))}`, `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="font-size:12px;color:var(--text2);line-height:1.8">برای این پرسنل پوشه پروژه بساز و داخل هر پوشه یادداشت یا دستورالعمل ثبت کن.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="_openStaffAddInstruction('${staffId}', ${currentParent || 'null'}, 'category')">📁 پوشه جدید</button>
+        <button class="btn btn-ghost btn-sm" onclick="_openStaffAddInstruction('${staffId}', ${currentParent || 'null'}, 'note')">📝 یادداشت جدید</button>
+      </div>
+    </div>
+    ${crumb}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">${cards}</div>
+  `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}], { size:'large' });
+}
+
+function _openStaffAddInstruction(staffId, parentId, type) {
+  _staffInstructionContext = { staffId:String(staffId), parentId: parentId ? +parentId : null };
+  window._openingStaffInstruction = true;
+  openAddInstruction(parentId || null, type || 'note');
+  window._openingStaffInstruction = false;
+}
+
 function _todoStaffOptions(selected = '') {
   const rows = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
   return '<option value="all"' + (selected === 'all' ? ' selected' : '') + '>همه پرسنل</option>' +
@@ -19905,7 +19996,7 @@ function _todoStaffDashboardHtml() {
       <div style="font-size:10px;color:var(--text3);margin-top:8px">آخرین فعالیت: ${last ? new Date(last).toLocaleString('fa-IR') : '—'}</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         ${_todoCanCreateForStaff(s.id) ? `<button class="btn btn-primary btn-sm" onclick="_openQuickStaffChecklist('${s.id}')">+ سریع</button><button class="btn btn-ghost btn-sm" onclick="_openAddTodoForStaff('${s.id}')">فرم کامل</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoChecklist('${s.id}')">چک‌لیست</button>
+        <button class="btn btn-ghost btn-sm" onclick="_openStaffInstructions('${s.id}')">دستورالعمل‌ها</button>
         <button class="btn btn-ghost btn-sm" onclick="_openStaffTodoReport('${s.id}')">گزارش عملکرد</button>
       </div>
     </div>`;
