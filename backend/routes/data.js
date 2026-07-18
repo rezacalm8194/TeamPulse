@@ -96,16 +96,61 @@ function parseJsonArray(value) {
   }
 }
 
+const TODO_TEAM_PERMISSION_KEYS = [
+  'todo_view_assigned',
+  'todo_complete_own',
+  'todo_report_own',
+  'todo_view_shared',
+  'todo_view_clients',
+  'todo_create_self',
+  'todo_create_others',
+  'todo_edit_manager',
+  'todo_delete',
+  'todo_view_team',
+  'todo_view_self_report',
+  'todo_view_team_report',
+  'todo_manage_staff'
+];
+
+function normalizeTeamPermissions(permissions) {
+  const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
+  if (list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key)) && !list.includes('todolist')) {
+    list.unshift('todolist');
+  }
+  return list;
+}
+
+function memberPermissionsFromAccountData(targetId, memberEmail, inviteId = '') {
+  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
+  if (!row?.data) return [];
+  try {
+    const data = JSON.parse(row.data);
+    const members = Array.isArray(data?.team_members) ? data.team_members : [];
+    const member = members.find(m => {
+      const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
+      const sameInvite = !inviteId || String(m.id || '').trim() === String(inviteId).trim();
+      return sameEmail && sameInvite && m.status !== 'حذف‌شده';
+    });
+    return normalizeTeamPermissions(member?.permissions || []);
+  } catch {
+    return [];
+  }
+}
+
 function getTeamGrant(req, targetId) {
   if (req.user.id === targetId || req.user.role === 'admin') return null;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return null;
   const grant = db.prepare(`
-    SELECT permissions
+    SELECT permissions, invite_id
     FROM team_access_grants
     WHERE owner_account_id=? AND member_email=? AND status='active'
   `).get(targetId, requesterEmail);
-  return grant ? { email: requesterEmail, permissions: parseJsonArray(grant.permissions) } : null;
+  if (!grant) return null;
+  const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
+  const currentPermissions = memberPermissionsFromAccountData(targetId, requesterEmail, grant.invite_id);
+  const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
+  return { email: requesterEmail, permissions };
 }
 
 function todoSharedWith(todo) {
@@ -207,15 +252,22 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
     const canReportOwn = permissions.includes('todo_report_own') && assignedToMember;
     const canEditManager = permissions.includes('todo_edit_manager');
     if (canEditManager) return { ...oldTodo, ...incoming };
+    const nextDone = canCompleteOwn ? !!incoming.done : !!oldTodo.done;
+    const nextDoneAt = canCompleteOwn
+      ? (nextDone ? (incoming.done_at || incoming.completedAt || incoming.completed_at || oldTodo.done_at || new Date().toISOString()) : null)
+      : oldTodo.done_at;
+    const nextStatus = canCompleteOwn
+      ? (nextDone ? (incoming.status || oldTodo.status || 'completed') : (incoming.status || 'pending'))
+      : oldTodo.status;
     return {
       ...oldTodo,
-      done: canCompleteOwn ? !!incoming.done : oldTodo.done,
-      done_at: canCompleteOwn ? (incoming.done_at || null) : oldTodo.done_at,
-      completedAt: canCompleteOwn ? (incoming.completedAt || incoming.done_at || null) : oldTodo.completedAt,
-      completed_at: canCompleteOwn ? (incoming.completed_at || incoming.done_at || null) : oldTodo.completed_at,
+      done: nextDone,
+      done_at: nextDoneAt,
+      completedAt: canCompleteOwn ? nextDoneAt : oldTodo.completedAt,
+      completed_at: canCompleteOwn ? nextDoneAt : oldTodo.completed_at,
       completed_by: canCompleteOwn ? (incoming.completed_by || memberEmail) : oldTodo.completed_by,
       completed_by_email: canCompleteOwn ? (incoming.completed_by_email || memberEmail) : oldTodo.completed_by_email,
-      status: canCompleteOwn ? (incoming.status || oldTodo.status) : oldTodo.status,
+      status: nextStatus,
       staff_report: canReportOwn ? (incoming.staff_report || oldTodo.staff_report || '') : oldTodo.staff_report,
       report_updated_at: canReportOwn ? (incoming.report_updated_at || oldTodo.report_updated_at || null) : oldTodo.report_updated_at,
       history: incoming.history || oldTodo.history,

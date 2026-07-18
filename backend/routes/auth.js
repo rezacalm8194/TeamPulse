@@ -18,6 +18,30 @@ db.prepare(`
   )
 `).run();
 
+const TODO_TEAM_PERMISSION_KEYS = [
+  'todo_view_assigned',
+  'todo_complete_own',
+  'todo_report_own',
+  'todo_view_shared',
+  'todo_view_clients',
+  'todo_create_self',
+  'todo_create_others',
+  'todo_edit_manager',
+  'todo_delete',
+  'todo_view_team',
+  'todo_view_self_report',
+  'todo_view_team_report',
+  'todo_manage_staff'
+];
+
+function normalizeTeamPermissions(permissions) {
+  const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
+  if (list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key)) && !list.includes('todolist')) {
+    list.unshift('todolist');
+  }
+  return list;
+}
+
 router.post('/register', (req, res) => {
   try {
     const { name, email, password, business_name, business_type } = req.body;
@@ -100,6 +124,9 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       };
     }
 
+    const permissions = normalizeTeamPermissions(member.permissions);
+    member.permissions = permissions;
+
     db.prepare(`
       INSERT INTO team_access_grants
         (owner_account_id, member_email, invite_id, permissions, instruction_folders, status, updated_at)
@@ -114,7 +141,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       owner.id,
       memberEmail,
       inviteId || String(member.id || ''),
-      JSON.stringify(Array.isArray(member.permissions) ? member.permissions : []),
+      JSON.stringify(permissions),
       JSON.stringify(member.instruction_folders || member.instructionFolders || [])
     );
 
@@ -123,7 +150,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       ownerName: owner.name || '',
       ownerEmail: owner.email || '',
       accountId: req.body?.accountId || 'default',
-      permissions: Array.isArray(member.permissions) ? member.permissions : [],
+      permissions,
       instructionFolders: member.instruction_folders || member.instructionFolders || []
     });
   } catch (e) {
