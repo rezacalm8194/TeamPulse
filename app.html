@@ -20225,7 +20225,11 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const isOverdue = !t.done && scheduledKey && scheduledKey < todayKey;
   const doneToday = _todoStaffDoneToday(t, todayKey);
   const canEdit = _todoCanEdit(t);
-  const canDelete = _todoCanDelete(t);
+  const canDelete = !_isTeamGuest() && _todoCanDelete(t);
+  const todoMenuId = `staff-todo-menu-${t.id}`;
+  const deleteMenuItem = canDelete
+    ? `<div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>`
+    : '';
   const priority = t.priority || 'medium';
   const priorityText = ({low:'پایین', medium:'متوسط', high:'بالا', urgent:'فوری'})[priority] || 'متوسط';
   const priorityColor = ({low:'var(--text3)', medium:'#60a5fa', high:'var(--amber)', urgent:'var(--red)'})[priority] || '#60a5fa';
@@ -20253,7 +20257,15 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
         ${t.done_at ? `<span>✓ ${new Date(t.done_at).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}
       </div>
     </div>
-    ${canDelete ? `<button class="x-close-sm" onclick="event.stopPropagation();_deleteTodoCompletely(${t.id})">×</button>` : ''}
+    <div class="row-menu" onclick="event.stopPropagation()">
+      <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
+      <div class="row-menu-panel" id="${todoMenuId}">
+        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'done')">✓ انجام شد</div>
+        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_today')">↩ ببر به امروز</div>
+        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
+        ${deleteMenuItem}
+      </div>
+    </div>
   </div>`;
 }
 
