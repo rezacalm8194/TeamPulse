@@ -6088,6 +6088,12 @@ function _teamAccessSession() {
   try { return JSON.parse(localStorage.getItem(TEAM_ACCESS_SESSION_KEY) || 'null'); }
   catch(e) { return null; }
 }
+function _normalizeTeamPermissions(permissions) {
+  const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
+  const hasTodoDetail = list.some(key => TODO_TEAM_PERMISSIONS.some(permission => permission.key === key));
+  if (hasTodoDetail && !list.includes('todolist')) list.unshift('todolist');
+  return list;
+}
 function _teamSessionStorageKey(session) {
   const s = session || _teamAccessSession();
   if (!s) return _userDBKey();
@@ -6099,15 +6105,16 @@ function _isTeamGuest() { return !!_teamAccessSession(); }
 function _teamCan(page) {
   const s = _teamAccessSession();
   if (!s) return true;
+  const permissions = _normalizeTeamPermissions(s.permissions);
   if (['settings','tutorial'].includes(page)) return true;
-  if (page === 'students' && Array.isArray(s.permissions) && s.permissions.includes('sessions')) return true;
-  if (page === 'payments' && Array.isArray(s.permissions) && ['reminders','families','dashboard'].some(p => s.permissions.includes(p))) return true;
-  return Array.isArray(s.permissions) && s.permissions.includes(page);
+  if (page === 'students' && permissions.includes('sessions')) return true;
+  if (page === 'payments' && ['reminders','families','dashboard'].some(p => permissions.includes(p))) return true;
+  return permissions.includes(page);
 }
 function _teamPerm(key) {
   const s = _teamAccessSession();
   if (!s) return true;
-  return Array.isArray(s.permissions) && s.permissions.includes(key);
+  return _normalizeTeamPermissions(s.permissions).includes(key);
 }
 function _teamEmail() {
   return String(_teamAccessSession()?.email || _sbUser?.email || '').trim().toLowerCase();
@@ -6162,7 +6169,7 @@ function _todoCanCreateForStaff(staffId) {
 }
 function _teamDefaultPage() {
   const s = _teamAccessSession();
-  const first = s?.permissions?.find(p => _SAFE_RESTORE_PAGES.includes(p));
+  const first = _normalizeTeamPermissions(s?.permissions).find(p => _SAFE_RESTORE_PAGES.includes(p));
   return first || 'settings';
 }
 function _applyTeamAccessToNav() {
@@ -6218,6 +6225,7 @@ function _teamDecodeInvite(token) {
 function _acceptTeamInviteToken(token) {
   const payload = _teamDecodeInvite(token);
   if (!payload || !payload.email) throw new Error('دعوت‌نامه معتبر نیست');
+  const permissions = _normalizeTeamPermissions(payload.permissions);
   localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify({
     inviteId: payload.inviteId,
     email: payload.email,
@@ -6226,14 +6234,14 @@ function _acceptTeamInviteToken(token) {
     ownerUserId: payload.ownerUserId || '',
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
-    permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+    permissions,
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
   }));
   if (payload.accountId) localStorage.setItem('teampulse_current_account', payload.accountId);
   if (payload.ownerDbKey) window._activeDBKey = payload.ownerDbKey;
   localStorage.removeItem(TEAM_PENDING_INVITE_KEY);
-  currentPage = (Array.isArray(payload.permissions) && payload.permissions[0]) || 'todolist';
+  currentPage = permissions.find(p => _SAFE_RESTORE_PAGES.includes(p)) || 'todolist';
   location.hash = currentPage;
 }
 async function _ensureTeamAccessOwner() {
@@ -6268,7 +6276,7 @@ async function _ensureTeamAccessOwner() {
         inviteId: session.inviteId,
         email: session.email || '',
         accountId: session.accountId || 'default',
-        permissions: session.permissions || [],
+        permissions: _normalizeTeamPermissions(session.permissions),
         instructionFolders: session.instructionFolders || []
       })
     });
@@ -6279,7 +6287,7 @@ async function _ensureTeamAccessOwner() {
       ownerUserId: resolved.ownerUserId || session.ownerUserId || '',
       ownerName: resolved.ownerName || session.ownerName || '',
       ownerEmail: resolved.ownerEmail || session.ownerEmail || '',
-      permissions: resolved.permissions?.length ? resolved.permissions : session.permissions,
+      permissions: _normalizeTeamPermissions(resolved.permissions?.length ? resolved.permissions : session.permissions),
       instructionFolders: resolved.instructionFolders || session.instructionFolders || []
     };
     localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify(next));
@@ -9782,12 +9790,15 @@ function _teamSelectedPerms(prefix) {
   const selected = [...document.querySelectorAll(`.${prefix}-team-perm:checked`)].map(x => x.value);
   const hasTodoSection = selected.includes('todolist');
   const hasTodoDetail = selected.some(key => TODO_TEAM_PERMISSIONS.some(permission => permission.key === key));
+  if (hasTodoDetail && !selected.includes('todolist')) {
+    selected.unshift('todolist');
+  }
   if (hasTodoSection && !hasTodoDetail) {
     TODO_DEFAULT_STAFF_PERMISSIONS.forEach(key => {
       if (!selected.includes(key)) selected.push(key);
     });
   }
-  return selected;
+  return _normalizeTeamPermissions(selected);
 }
 
 function _teamSelectAll(prefix, checked) {
@@ -9947,15 +9958,16 @@ function _deleteTeamMember(id) {
 function _openEditTeamMember(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
+  const permissions = _normalizeTeamPermissions(member.permissions);
   openModal(`ویرایش دسترسی — ${escapeHtml(member.email)}`, `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
       <div style="font-size:12px;color:var(--text2)">بخش‌هایی را که این هم‌تیمی می‌تواند ببیند انتخاب کن.</div>
       <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('edit', true)">انتخاب همه</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">
-      ${_teamPermCards('edit', member.permissions)}
+      ${_teamPermCards('edit', permissions)}
     </div>
-    ${_teamInstructionFolderPicker('edit', member.instruction_folders || [], (member.permissions || []).includes('instructions'))}
+    ${_teamInstructionFolderPicker('edit', member.instruction_folders || [], permissions.includes('instructions'))}
   `, [
     {label:'ذخیره دسترسی', cls:'btn-primary', action:`_saveTeamMemberEdit('${id}')`},
     {label:'انصراف', cls:'btn-ghost', action:'closeModal()'},
@@ -9984,9 +9996,10 @@ function _saveTeamMemberEdit(id) {
 function _teamSettingsHtml() {
   const session = _teamAccessSession();
   if (session) {
-    const perms = (session.permissions || []).map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
+    const sessionPermissions = _normalizeTeamPermissions(session.permissions);
+    const perms = sessionPermissions.map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
     const folderIds = _teamInstructionFolderIds(session);
-    const folderLabel = (session.permissions || []).includes('instructions')
+    const folderLabel = sessionPermissions.includes('instructions')
       ? (folderIds.length ? `${fa(folderIds.length)} پوشه مشخص در مرکز دانش` : 'تمام مرکز دانش')
       : 'مرکز دانش فعال نیست';
     return `
@@ -10001,10 +10014,11 @@ function _teamSettingsHtml() {
 
   const members = _db.team_members || [];
   const memberRows = members.length ? members.map(m => {
-    const count = (m.permissions || []).length;
-    const labels = (m.permissions || []).slice(0, 4).map(_teamSectionLabel).join('، ');
+    const memberPermissions = _normalizeTeamPermissions(m.permissions);
+    const count = memberPermissions.length;
+    const labels = memberPermissions.slice(0, 4).map(_teamSectionLabel).join('، ');
     const folderIds = _teamInstructionFolderIds(m);
-    const folderText = (m.permissions || []).includes('instructions')
+    const folderText = memberPermissions.includes('instructions')
       ? (folderIds.length ? ` · مرکز دانش: ${fa(folderIds.length)} پوشه` : ' · مرکز دانش: کامل')
       : '';
     return `
