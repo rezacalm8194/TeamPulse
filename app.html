@@ -19770,6 +19770,10 @@ function _todoTaskStaff(t) {
   return (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(t.assignee_id || t.staff_id || '')) || null;
 }
 
+function _todoIsStaffAssignedTask(t) {
+  return !!(t && (t.assignee_id || t.staff_id || t.assignee_email));
+}
+
 function _todoAssigneeLabel(t) {
   const staff = _todoTaskStaff(t);
   if (staff) return _todoStaffName(staff);
@@ -20171,6 +20175,44 @@ function _todoStaffDashboardHtml() {
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.range=this.value;_renderTodoStaffFilteredList()"><option value="today">امروز</option><option value="week">هفته</option><option value="month">ماه</option><option value="year">سال</option><option value="custom">دلخواه</option></select>
     <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.status=this.value;_renderTodoStaffFilteredList()"><option value="all">همه وضعیت‌ها</option><option value="done">انجام‌شده</option><option value="open">انجام‌نشده</option><option value="overdue">عقب‌افتاده</option></select>
   </div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px">${rows || '<div style="color:var(--text3);font-size:13px">پرسنلی ثبت نشده است.</div>'}</div><div id="todo-staff-filtered-list"></div>`;
+}
+
+function _todoStaffOverdueNoticeHtml(todayKey) {
+  if (_isTeamGuest()) return '';
+  const overdue = (_db.todos || [])
+    .filter(t => _todoCanView(t) && !t.archived && !t.done && _todoIsStaffAssignedTask(t))
+    .filter(t => {
+      const scheduled = _todoScheduledDate(t);
+      return scheduled && _jalaliKey(scheduled) < todayKey;
+    });
+  if (!overdue.length) return '';
+
+  const grouped = new Map();
+  overdue.forEach(t => {
+    const key = String(t.assignee_id || t.staff_id || t.assignee_email || 'unknown');
+    const label = _todoAssigneeLabel(t) || 'پرسنل بدون نام';
+    const current = grouped.get(key) || { label, count: 0 };
+    current.count++;
+    grouped.set(key, current);
+  });
+
+  const rows = [...grouped.values()]
+    .sort((a,b) => b.count - a.count || a.label.localeCompare(b.label))
+    .map(x => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,.055);border:1px solid rgba(239,68,68,.16)">
+        <span style="font-size:12px;color:var(--text);font-weight:800">${escapeHtml(x.label)} کار عقب‌افتاده دارد</span>
+        <span style="font-size:11px;color:var(--red);font-weight:900">${fa(x.count)} کار</span>
+      </div>
+    `).join('');
+
+  return `
+    <div style="margin:14px 0 12px;padding:10px;border-radius:12px;border:1px solid rgba(239,68,68,.28);background:rgba(239,68,68,.07)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:900;color:var(--red)">🚨 هشدار کارهای عقب‌افتاده پرسنل</div>
+        <button class="btn btn-ghost btn-sm" onclick="_setTodoTab('staff')">مشاهده کارهای پرسنل</button>
+      </div>
+      <div style="display:grid;gap:6px">${rows}</div>
+    </div>`;
 }
 
 function _todoStaffDoneToday(t, todayKey = _jalaliToday()) {
@@ -20621,9 +20663,10 @@ let _todoCalendarTasksCache = { sig: '', items: [] };
 function _todoCalendarTasksSignature() {
   return JSON.stringify({
     repeats: _todoCalendarShowRepeats ? 1 : 0,
+    scope: _isTeamGuest() ? 'guest' : 'owner-mine',
     todos: (_db.todos || []).map(t => [
       t.id, t.date_jalali, t.scheduled_date, t.time, t.repeat, t.weekdays,
-      t.done ? 1 : 0, t.archived ? 1 : 0, t.status || '', t.updated_at || '', t.done_at || ''
+      t.done ? 1 : 0, t.archived ? 1 : 0, t.assignee_id || '', t.staff_id || '', t.assignee_email || '', t.status || '', t.updated_at || '', t.done_at || ''
     ])
   });
 }
@@ -20633,7 +20676,7 @@ function _todoTasksForCalendar() {
   const sig = _todoCalendarTasksSignature();
   if (_todoCalendarTasksCache.sig === sig) return _todoCalendarTasksCache.items;
   const base = (_db.todos || [])
-    .filter(t => _todoCanView(t) && !t.archived && t.date_jalali)
+    .filter(t => _todoCanView(t) && (_isTeamGuest() || !_todoIsStaffAssignedTask(t)) && !t.archived && t.date_jalali)
     .map(t => ({ ...t, _key: _jalaliKey(t.date_jalali) }))
     .sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
   if (!_todoCalendarShowRepeats) {
@@ -21441,8 +21484,9 @@ function renderTodoList() {
 
   // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
-  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
-  const todos = [..._db.todos.filter(t => _todoCanView(t) && !t.archived), ..._todaySnapshots];
+  const mineScope = (t) => _isTeamGuest() || !_todoIsStaffAssignedTask(t);
+  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && mineScope(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
+  const todos = [..._db.todos.filter(t => _todoCanView(t) && mineScope(t) && !t.archived), ..._todaySnapshots];
   if (_todoViewMode !== 'list') {
     setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoTabsHtml()}${_todoStickyAddBoxHtml()}${_renderTodoCalendarView()}</div>`);
     _checkTodoReminders();
@@ -21612,6 +21656,7 @@ function renderTodoList() {
     completedTodayTotal,
     lateCompletedTodayCount
   });
+  html += _todoStaffOverdueNoticeHtml(todayKey);
 
   // ── عقب‌افتاده ──
   if (overdueTodos.length > 0) {
