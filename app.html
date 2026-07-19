@@ -20734,7 +20734,6 @@ function _todoStickyAddBoxHtml(stats = {}) {
       </div>
       <div style="font-size:18px;font-weight:800;color:${progress===100?'var(--green)':'var(--accent)'}">${progress}٪</div>
     </div>` : ''}
-    <div style="margin-top:12px">${_todoViewSwitcherHtml()}</div>
   </div>`;
 }
 
@@ -21811,6 +21810,10 @@ async function renderCalendar() {
 function renderTodoList() {
   _todosInit();
   const duplicateCleanupCount = _dedupeOpenTodos();
+  if (_todoViewMode !== 'list') {
+    _todoViewMode = 'list';
+    localStorage.setItem('tp_todo_view_mode', _todoViewMode);
+  }
 
   // بایگانی/ترمیم خودکار: کارهایی که روز قبل done شدن رو archive کن؛
   // تکراری‌های گیرکرده از روز قبل را هم به دوره بعدی همان روز انجام منتقل کن.
@@ -21879,11 +21882,6 @@ function renderTodoList() {
   const mineScope = (t) => _isTeamGuest() || !_todoIsStaffAssignedTask(t);
   const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && mineScope(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
   const todos = [..._db.todos.filter(t => _todoCanView(t) && mineScope(t) && !t.archived), ..._todaySnapshots];
-  if (_todoViewMode !== 'list') {
-    setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoTabsHtml()}${_todoStickyAddBoxHtml()}${_renderTodoCalendarView()}</div>`);
-    _checkTodoReminders();
-    return;
-  }
 
   // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
   // کارهای امروز حتی اگر ساعتشان رد شده باشد باید در بخش «امروز» بمانند.
