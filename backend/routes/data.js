@@ -250,9 +250,17 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
     const incoming = incomingById.get(String(oldTodo.id));
     if (!incoming) return oldTodo;
     if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)) return oldTodo;
-    const assignedToMember = todoAssignedToMember(oldTodo, memberEmail, ownStaffIds);
-    const canCompleteOwn = permissions.includes('todo_complete_own') && assignedToMember;
-    const canReportOwn = permissions.includes('todo_report_own') && assignedToMember;
+    const assignedToMember = todoAssignedToMember(oldTodo, memberEmail, ownStaffIds) || todoAssignedToMember(incoming, memberEmail, ownStaffIds);
+    const canCompleteOwn = assignedToMember && (
+      permissions.includes('todo_complete_own') ||
+      permissions.includes('todo_edit_manager') ||
+      permissions.includes('todo_manage_staff')
+    );
+    const canReportOwn = assignedToMember && (
+      permissions.includes('todo_report_own') ||
+      permissions.includes('todo_edit_manager') ||
+      permissions.includes('todo_manage_staff')
+    );
     const canEditManager = permissions.includes('todo_edit_manager');
     if (canEditManager) return { ...oldTodo, ...incoming };
     const nextDone = canCompleteOwn ? !!incoming.done : !!oldTodo.done;

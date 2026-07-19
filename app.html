@@ -6142,7 +6142,11 @@ function _todoCanView(t) {
 }
 function _todoCanComplete(t) {
   if (!_isTeamGuest()) return true;
-  return _teamPerm('todo_complete_own') && _todoIsOwnAssigned(t);
+  return _todoIsOwnAssigned(t) && (
+    _teamPerm('todo_complete_own') ||
+    _teamPerm('todo_edit_manager') ||
+    _teamPerm('todo_manage_staff')
+  );
 }
 function _todoCanReport(t) {
   if (!_isTeamGuest()) return true;
@@ -23249,6 +23253,14 @@ async function updateTodo(id) {
     updated_at: new Date().toISOString(),
   });
   _save();
+  if (_teamAccessSession()) {
+    clearTimeout(window._serverSyncTimer);
+    await _syncToServer();
+    if ((_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+      showToast('ویرایش روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
+      return;
+    }
+  }
 
   if (remindMin > 0 && time && dateJalali) {
     _scheduleTodoNotification(t.id, title, dateJalali, time, remindMin);
@@ -23256,9 +23268,9 @@ async function updateTodo(id) {
 
   // همگام‌سازی با Google Calendar
   if (syncGcalWanted && dateJalali) {
-    _gcal.upsertEvent(t); // اگه event id قبلی داشت، آپدیت می‌کنه؛ وگرنه رویداد جدید می‌سازه
+    try { _gcal.upsertEvent(t); } catch(e) { console.warn('Google Calendar sync failed:', e.message); }
   } else if (wasSynced && !syncGcalWanted && prevEventId) {
-    _gcal.deleteEvent(prevEventId);
+    try { _gcal.deleteEvent(prevEventId); } catch(e) { console.warn('Google Calendar delete failed:', e.message); }
     t.gcal_event_id = null;
     _save(false);
   }
