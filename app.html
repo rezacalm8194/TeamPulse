@@ -20052,6 +20052,7 @@ function _todoFormSections() {
   const titleGroup = byId('todo-title')?.closest('.form-group');
   const accessGroup = byId('todo-assignee')?.closest('.form-group');
   const noteGroup = byId('todo-note')?.closest('.form-group');
+  const mainTodayGroup = byId('todo-main-today-rank')?.closest('.form-group');
   const dateGroup = byId('todo-date')?.closest('.form-group');
   const timeGroup = byId('todo-time')?.closest('.form-group');
   const durationGroup = byId('todo-duration')?.closest('.form-group');
@@ -20064,6 +20065,7 @@ function _todoFormSections() {
   return {
     quick: [
       titleGroup,
+      mainTodayGroup,
       accessGroup,
       dateGroup,
     ],
@@ -22972,6 +22974,16 @@ function openEditTodo(id) {
         <div class="todo-edit-section-title"><span>زمان‌بندی</span><small>چه زمانی؟ چگونه تکرار شود؟</small></div>
         <div class="todo-edit-grid-3">
           <div class="form-group">
+            <label class="form-label">⭐ ۳ کار اصلی امروز</label>
+            <select class="form-input" id="todo-main-today-rank">
+              <option value="0" ${(+t.main_today_rank||0)===0?'selected':''}>کار اصلی امروز نیست</option>
+              <option value="1" ${(+t.main_today_rank||0)===1?'selected':''}>کار اصلی ۱ امروز</option>
+              <option value="2" ${(+t.main_today_rank||0)===2?'selected':''}>کار اصلی ۲ امروز</option>
+              <option value="3" ${(+t.main_today_rank||0)===3?'selected':''}>کار اصلی ۳ امروز</option>
+            </select>
+            <div style="font-size:10px;color:var(--text3);margin-top:5px;line-height:1.6">اگر تاریخ کار امروز باشد، بالای بخش امروز نمایش داده می‌شود.</div>
+          </div>
+          <div class="form-group">
             <label class="form-label">تاریخ</label>
             <div class="todo-date-quick-row">
               <button type="button" onclick="_setTodoDateShortcut('today')">امروز</button>
@@ -23217,6 +23229,8 @@ async function updateTodo(id) {
   const dateJalali = document.getElementById('todo-date')?.value.trim() || t.date_jalali;
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
+  const mainTodayRank = Math.max(0, Math.min(3, parseInt(document.getElementById('todo-main-today-rank')?.value || '0', 10) || 0));
+  const normalizedMainTodayRank = _jalaliKey(dateJalali) === _jalaliToday() ? mainTodayRank : 0;
   if (remindMin > 0 && !time) {
     showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
     return;
@@ -23232,6 +23246,14 @@ async function updateTodo(id) {
   const wasSynced = !!t.sync_gcal;
   const prevEventId = t.gcal_event_id;
   const originalScheduledDate = _todoScheduledDate(t);
+  if (normalizedMainTodayRank > 0) {
+    (_db.todos || []).forEach(other => {
+      if (String(other.id) !== String(t.id) && !other.archived && !other.done && _jalaliKey(other.date_jalali || other.scheduled_date || other.scheduledDate || '') === _jalaliToday() && +other.main_today_rank === normalizedMainTodayRank) {
+        other.main_today_rank = 0;
+        other.updated_at = new Date().toISOString();
+      }
+    });
+  }
   const isPastRecurringOccurrence = _isTodoRecurring(t) && originalScheduledDate && _jalaliKey(originalScheduledDate) < _jalaliToday();
   if (isPastRecurringOccurrence) {
     const editOnlyThis = confirm('این کار یک نوبت عقب‌افتاده از کار تکرارشونده است. تایید = فقط همین نوبت ویرایش شود. انصراف = کل زنجیره/قالب تکرار ویرایش شود.');
@@ -23251,6 +23273,7 @@ async function updateTodo(id) {
         weekdays: '',
         priority,
         category: category2,
+        main_today_rank: normalizedMainTodayRank,
         goal_id: goalId2 ? +goalId2 : null,
         remind_min: remindMin,
         sync_gcal: syncGcalWanted,
@@ -23285,7 +23308,7 @@ async function updateTodo(id) {
     requires_attachment: document.getElementById('todo-requires-attachment')?.value || 'none',
     requires_approval: !!document.getElementById('todo-requires-approval')?.checked,
     date_jalali: dateJalali, scheduled_date: dateJalali, scheduledDate: dateJalali, time, duration_min: durationMin, repeat, weekdays,
-    priority, category: category2, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
+    priority, category: category2, main_today_rank: normalizedMainTodayRank, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
     sync_gcal: syncGcalWanted,
     updated_at: new Date().toISOString(),
   });
