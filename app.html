@@ -20249,6 +20249,24 @@ function _todoStaffDoneToday(t, todayKey = _jalaliToday()) {
   return !!t?.done && _todoIsDoneToday(t, todayKey);
 }
 
+function _todoStaffDoneUniqueKey(t) {
+  const root = String(_todoRootId(t) || t?.id || '');
+  const date = _todoScheduledDate(t) || '';
+  const assignee = String(t?.assignee_id || t?.staff_id || t?.assignee_email || '').trim().toLowerCase();
+  const title = _todoNormalizedTitle(t?.title);
+  return [root, date, assignee, title].join('|');
+}
+
+function _uniqueTodoStaffDoneItems(items) {
+  const seen = new Set();
+  return (items || []).filter(t => {
+    const key = _todoStaffDoneUniqueKey(t);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const scheduled = _todoScheduledDate(t);
   const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
@@ -20339,11 +20357,14 @@ function _renderTodoStaffFilteredList() {
     return !scheduled || key === todayKey;
   }).sort(_sortByTime);
   const todayOpenItems = todayItems.filter(t => !t.done);
-  const doneTodayItems = list.filter(t => _todoStaffDoneToday(t, todayKey)).sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
-  const lateDoneTodayItems = doneTodayItems.filter(t => {
+  const doneTodayAllItems = _uniqueTodoStaffDoneItems(list.filter(t => _todoStaffDoneToday(t, todayKey)))
+    .sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
+  const lateDoneTodayItems = doneTodayAllItems.filter(t => {
     const scheduled = _todoScheduledDate(t);
     return scheduled && _jalaliKey(scheduled) < todayKey;
   });
+  const lateDoneTodayKeys = new Set(lateDoneTodayItems.map(_todoStaffDoneUniqueKey));
+  const doneTodayItems = doneTodayAllItems.filter(t => !lateDoneTodayKeys.has(_todoStaffDoneUniqueKey(t)));
   const tomorrowItems = list.filter(t => !t.done && t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey).sort(_sortByTime);
   const futureItems = list.filter(t => !t.done && t.date_jalali && _jalaliKey(t.date_jalali) > (tomorrowKey || todayKey)).sort(sortByDateTime);
   const noDateItems = list.filter(t => !t.done && !_todoScheduledDate(t)).sort(_sortByTime);
@@ -20368,7 +20389,7 @@ function _renderTodoStaffFilteredList() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px">
       ${statChip('امروز', totalToday, '#60a5fa')}
       ${statChip('مانده امروز', todayOpenItems.length, 'var(--amber)')}
-      ${statChip('انجام امروز', doneTodayItems.length, 'var(--green)')}
+      ${statChip('انجام امروز', doneTodayAllItems.length, 'var(--green)')}
       ${statChip('عقب‌افتاده', overdueItems.length, 'var(--red)')}
       ${statChip('همه باز', openItems.length, 'var(--text)')}
     </div>
@@ -20382,7 +20403,7 @@ function _renderTodoStaffFilteredList() {
   const rangeTitle = ({today:'امروز', week:'این هفته', month:'این ماه', year:'امسال', custom:'بازه دلخواه'})[_todoStaffFilter.range] || 'این بازه';
   const rangeList = `<div style="margin-bottom:8px;font-size:12px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span>چک‌لیست ${escapeHtml(staffName)}</span>
-      <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayItems.length)} انجام‌شده امروز</span>
+      <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayAllItems.length)} انجام‌شده امروز</span>
     </div>
     ${section('📌', 'کارهای انجام‌نشده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true)}
     ${section('✅', 'انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
@@ -21973,8 +21994,8 @@ function _completeTodoWithReport(t, report) {
   t.done_at = t.done ? new Date().toISOString() : null;
   t.completedAt = t.done_at;
   t.completed_at = t.done_at;
-  t.completed_by = _sbUser?.id || _teamEmail() || 'local';
-  t.completed_by_email = _teamEmail();
+  t.completed_by = t.done ? (_sbUser?.id || _teamEmail() || 'local') : '';
+  t.completed_by_email = t.done ? _teamEmail() : '';
   if (report) {
     t.staff_report = report;
     t.report_updated_at = new Date().toISOString();
@@ -21982,6 +22003,14 @@ function _completeTodoWithReport(t, report) {
   t.status = t.done
     ? (t.requires_approval ? 'pending_approval' : (scheduledKey && scheduledKey < todayKey ? 'late_completed' : 'completed'))
     : 'pending';
+  if (oldDone && !t.done) {
+    t.archived = false;
+    t._snapshot = false;
+    if (t._occurrence) t.repeat = 'none';
+    t.completedAt = null;
+    t.completed_at = null;
+    t.skipped_at = null;
+  }
   t.updated_at = new Date().toISOString();
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
 
