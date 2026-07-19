@@ -146,7 +146,10 @@ function getTeamGrant(req, targetId) {
     FROM team_access_grants
     WHERE owner_account_id=? AND member_email=? AND status='active'
   `).get(targetId, requesterEmail);
-  if (!grant) return null;
+  if (!grant) {
+    const permissions = memberPermissionsFromAccountData(targetId, requesterEmail);
+    return permissions.length ? { email: requesterEmail, permissions } : null;
+  }
   const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
   const currentPermissions = memberPermissionsFromAccountData(targetId, requesterEmail, grant.invite_id);
   const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
