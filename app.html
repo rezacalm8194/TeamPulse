@@ -8164,7 +8164,10 @@ async function renderSessions(search = '') {
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
       <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="renderSessions(this.value)" value="${escapeHtml(search)}">
     </div>
-    <button class="btn btn-primary" onclick="openAddSessionGeneral()">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
+    <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
+      <button class="btn btn-primary" onclick="openAddSessionGeneral()" style="border-radius:0;border:none;box-shadow:none">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
+      <button class="btn btn-ghost" onclick="openStudentModal()" style="border-radius:0;border:0;border-right:1px solid var(--border2)">+ افزودن ${META.entitySingular || 'شاگرد'}</button>
+    </div>
   `);
   allStudents = await window.api.students.getAll();
   const groups = await window.api.sessions.getAll();
@@ -21588,6 +21591,11 @@ function renderTodoList() {
   const lateCompletedTodayCount = lateDoneTodayTodos.length;
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
   const activeCount = todos.filter(t => !t.done).length;
+  const mainTodayTodos = todayTodos
+    .filter(t => !t.done && +t.main_today_rank > 0)
+    .sort((a,b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a,b))
+    .slice(0, 3);
+  const mainTodayIds = new Set(mainTodayTodos.map(t => t.id));
 
   const renderTodo = (t) => {
     const isOverdue = _isTodoOverdue(t);
@@ -21703,6 +21711,14 @@ function renderTodoList() {
     html += `</div>`;
   }
 
+  // ── مهم‌ترین کارهای امروز ──
+  if (mainTodayTodos.length > 0) {
+    html += sectionHeader('⭐', 'مهم‌ترین کارهای امروز', `${fa(mainTodayTodos.length)} از ۳ کار اصلی`, 'var(--amber)');
+    html += `<div style="background:rgba(251,191,36,.055);border:1px solid rgba(251,191,36,.22);border-radius:10px;padding:8px;margin-bottom:10px">`;
+    html += mainTodayTodos.map(renderTodo).join('');
+    html += `</div>`;
+  }
+
   // ── امروز ──
   html += sectionHeader('☀️', 'امروز', `${today} · ${fa(pending)} باقیمانده`, 'var(--text)');
   if (todayTodos.length === 0) {
@@ -21711,7 +21727,8 @@ function renderTodoList() {
     </div>`;
   } else {
     // ناتمام اول — مرتب‌شده بر اساس ساعت (زودتر = بالاتر)، بدون ساعت = آخر
-    html += todayTodos.filter(t=>!t.done).sort(_sortByTime).map(renderTodo).join('');
+    const regularTodayOpen = todayTodos.filter(t=>!t.done && !mainTodayIds.has(t.id)).sort(_sortByTime);
+    html += regularTodayOpen.length ? regularTodayOpen.map(renderTodo).join('') : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
     if (doneCnt > 0) {
       html += `<details class="todo-done-details" style="margin-top:10px">
         <summary style="font-size:12px;color:var(--green);cursor:pointer;margin-bottom:8px;
@@ -22417,6 +22434,16 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
       <label class="form-label">توضیحات</label>
       <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات..."></textarea>
     </div>
+    <div class="form-group full" style="border:1px solid rgba(251,191,36,.28);border-radius:10px;padding:10px;background:rgba(251,191,36,.045)">
+      <label class="form-label">⭐ جایگاه در مهم‌ترین کارهای امروز</label>
+      <select class="form-input" id="todo-main-today-rank">
+        <option value="0">کار اصلی امروز نیست</option>
+        <option value="1">کار اصلی ۱ امروز</option>
+        <option value="2">کار اصلی ۲ امروز</option>
+        <option value="3">کار اصلی ۳ امروز</option>
+      </select>
+      <div style="font-size:11px;color:var(--text3);margin-top:5px">اگر تاریخ کار امروز باشد، در بخش «مهم‌ترین کارهای امروز» نمایش داده می‌شود.</div>
+    </div>
     <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
       <label class="form-label">مسئول و دسترسی</label>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
@@ -22755,6 +22782,7 @@ async function saveTodo() {
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
   const goalId = document.getElementById('todo-goal')?.value || '';
+  const mainTodayRank = Math.max(0, Math.min(3, parseInt(document.getElementById('todo-main-today-rank')?.value || '0', 10) || 0));
   const syncGcal = !!document.getElementById('todo-gcal')?.checked;
   const assigneeEl = document.getElementById('todo-assignee');
   const ownStaff = _todoSessionStaff();
@@ -22786,6 +22814,7 @@ async function saveTodo() {
     weekdays,
     priority,
     category,
+    main_today_rank: _jalaliKey(dateJalali) === _jalaliToday() ? mainTodayRank : 0,
     goal_id: goalId ? +goalId : null,
     remind_min: remindMin,
     sync_gcal: syncGcal,
@@ -22794,6 +22823,14 @@ async function saveTodo() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+  if (newTodo.main_today_rank > 0) {
+    (_db.todos || []).forEach(t => {
+      if (!t.archived && !t.done && _jalaliKey(t.date_jalali || t.scheduled_date || t.scheduledDate || '') === _jalaliToday() && +t.main_today_rank === newTodo.main_today_rank) {
+        t.main_today_rank = 0;
+        t.updated_at = new Date().toISOString();
+      }
+    });
+  }
   _db.todos.push(newTodo);
   _save();
   if (_teamAccessSession()) {
@@ -25582,6 +25619,29 @@ function _goalsInit() {
   if (!_db._nextId.goal_achievements) _db._nextId.goal_achievements = 1;
 }
 
+const GOAL_PERIODS = [
+  { key:'yearly', label:'سالانه', icon:'🗓️' },
+  { key:'seasonal', label:'فصلی', icon:'🍃' },
+  { key:'monthly', label:'ماهانه', icon:'📅' },
+];
+function _goalPeriod(g) {
+  const p = g?.period || g?.period_type || 'yearly';
+  return GOAL_PERIODS.some(x => x.key === p) ? p : 'yearly';
+}
+function _goalPeriodMeta(period) {
+  return GOAL_PERIODS.find(x => x.key === period) || GOAL_PERIODS[0];
+}
+function _goalPeriodSelectHtml(prefix, value) {
+  const current = _goalPeriod({ period:value });
+  return `
+    <div class="form-group">
+      <label class="form-label">بازه هدف</label>
+      <select class="form-select" id="${prefix}-period">
+        ${GOAL_PERIODS.map(p => `<option value="${p.key}" ${current===p.key?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
 function _goalAchievementDate(g) {
   if (g.completed_date_jalali) return g.completed_date_jalali;
   if (g.completed_at) {
@@ -25615,6 +25675,7 @@ function _ensureGoalAchievement(g) {
   ach.title = g.title || '';
   ach.icon = g.icon || '🎯';
   ach.category = g.category || '';
+  ach.period = _goalPeriod(g);
   ach.why = g.why || '';
   ach.completed_at = g.completed_at;
   ach.completed_date_jalali = completedDate;
@@ -25661,6 +25722,7 @@ function _goalAchievementsHtml() {
           <div style="font-size:13px;font-weight:900;color:var(--text);line-height:1.6">${escapeHtml(a.title || 'هدف تکمیل‌شده')}</div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
             <span style="font-size:11px;color:var(--green);font-weight:800">🏆 ${DateService.disp(a.completed_date_jalali || '')}</span>
+            <span style="font-size:10px;color:var(--accent2);background:rgba(124,106,247,.12);padding:2px 8px;border-radius:999px">${_goalPeriodMeta(a.period || 'yearly').icon} ${_goalPeriodMeta(a.period || 'yearly').label}</span>
             ${a.category ? `<span style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:999px">${escapeHtml(a.category)}</span>` : ''}
           </div>
         </div>
@@ -25679,7 +25741,10 @@ function _goalAchievementsHtml() {
           <h2 style="font-size:15px;font-weight:900;color:var(--text);margin:0 0 4px">🏆 دستاوردها</h2>
           <div style="font-size:11px;color:var(--text3)">${fa(yearItems.length)} دستاورد در سال ${fa(selectedYear || '')}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">${yearButtons}</div>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <button onclick="openAddAchievementGoal()" style="padding:7px 12px;border-radius:9px;border:1px solid rgba(62,207,142,.45);background:rgba(62,207,142,.12);color:var(--green);font-family:var(--font);font-size:12px;font-weight:900;cursor:pointer">+ افزودن دستاورد</button>
+          ${yearButtons}
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${cards}</div>
     </div>`;
@@ -25865,7 +25930,7 @@ function renderGoals() {
       </div>
     </div>` : '';
 
-  const html = goals.map(g => {
+  const renderGoalCard = (g) => {
     const sc = statusColors[g.status || 'active'] || statusColors.active;
     const progress = g.progress || 0;
     const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
@@ -25912,6 +25977,7 @@ function renderGoals() {
             <span style="font-size:15px;font-weight:700;color:var(--text)">${g.title}</span>
             <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
             ${g.difficulty ? `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${diffColors[g.difficulty] || 'var(--text2)'}">⚡ ${diffLabels[g.difficulty] || g.difficulty}</span>` : ''}
+            <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(124,106,247,.10);color:var(--accent2);font-weight:700">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
           </div>
           ${g.category ? `<span style="font-size:11px;color:var(--text3)">${g.category}</span>` : ''}
         </div>
@@ -25943,6 +26009,18 @@ function renderGoals() {
         💡 ${g.why}
       </div>` : ''}
     </div>`;
+  };
+  const html = GOAL_PERIODS.map(period => {
+    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key);
+    if (!periodGoals.length) return '';
+    return `
+      <section style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
+          <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${period.icon} اهداف ${period.label}</h3>
+          <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
+        </div>
+        ${periodGoals.map(renderGoalCard).join('')}
+      </section>`;
   }).join('');
 
   setContent(`
@@ -26000,6 +26078,7 @@ function renderGoals() {
                   <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
                     <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
                     ${g.category ? `<span style="font-size:10px;color:var(--text3)">${g.category}</span>` : ''}
+                    <span style="font-size:10px;color:var(--accent2)">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
                   </div>
                 </div>
                 <div style="text-align:center;flex-shrink:0">
@@ -26199,6 +26278,7 @@ function _goalFormHtml(prefix, g) {
         <input class="form-input" id="${prefix}-title" value="${escapeHtml(g.title||'')}" placeholder="مثلاً: ساختن بدن سالم و قوی" autofocus>
       </div>
       ${_goalCategoryPickerHtml(prefix, g.category || '')}
+      ${_goalPeriodSelectHtml(prefix, g.period || 'yearly')}
       ${_goalIconPickerHtml(prefix, g.icon || '🎯')}
     </div>
 
@@ -26587,6 +26667,18 @@ function openAddGoal() {
   setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('goal'); }, 50);
 }
 
+function openAddAchievementGoal() {
+  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
+  window._goalFormVisionAssets.ach = [];
+  window._goalFormVisionMusic.ach = '';
+  openModal('🏆 دستاورد جدید', _goalFormHtml('ach', { status:'done', progress:100, period:'yearly' }), [
+    { label: 'ثبت دستاورد', cls: 'btn-primary', action: 'saveAchievementGoal()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('ach'); }, 50);
+}
+
 function saveNewGoal() {
   _goalsInit();
   const title = document.getElementById('goal-title')?.value.trim();
@@ -26596,6 +26688,7 @@ function saveNewGoal() {
     title,
     icon: document.getElementById('goal-icon')?.value || '🎯',
     category: document.getElementById('goal-category')?.value || '',
+    period: document.getElementById('goal-period')?.value || 'yearly',
     why: document.getElementById('goal-why')?.value || '',
     vision: document.getElementById('goal-vision')?.value || '',
     vision_assets: _readGoalVisionAssets('goal'),
@@ -26613,6 +26706,40 @@ function saveNewGoal() {
   _save();
   closeModal();
   showToast('هدف ذخیره شد ✓', 'success');
+  if (currentPage === 'goals') renderGoals();
+}
+
+function saveAchievementGoal() {
+  _goalsInit();
+  const title = document.getElementById('ach-title')?.value.trim();
+  if (!title) { showToast('عنوان دستاورد را وارد کنید', 'error'); return; }
+  const now = new Date().toISOString();
+  const goal = {
+    id: _db._nextId.goals++,
+    title,
+    icon: document.getElementById('ach-icon')?.value || '🏆',
+    category: document.getElementById('ach-category')?.value || '',
+    period: document.getElementById('ach-period')?.value || 'yearly',
+    why: document.getElementById('ach-why')?.value || '',
+    vision: document.getElementById('ach-vision')?.value || '',
+    vision_assets: _readGoalVisionAssets('ach'),
+    vision_images: '',
+    music_url: _readGoalMusic('ach'),
+    deadline: readCalendarDateField('ach-deadline') || '',
+    difficulty: document.getElementById('ach-difficulty')?.value || 'medium',
+    status: 'done',
+    progress: 100,
+    milestones: [],
+    notes: '',
+    created_at: now,
+    completed_at: now,
+    completed_date_jalali: _todayJalaliStr ? _todayJalaliStr() : '',
+  };
+  _db.goals.push(goal);
+  _ensureGoalAchievement(goal);
+  _save();
+  closeModal();
+  showToast('دستاورد ثبت شد ✓', 'success');
   if (currentPage === 'goals') renderGoals();
 }
 
@@ -27056,6 +27183,7 @@ function saveEditGoal(id) {
   g.title = document.getElementById('eg-title')?.value || g.title;
   g.icon = document.getElementById('eg-icon')?.value || g.icon;
   g.category = document.getElementById('eg-category')?.value || '';
+  g.period = document.getElementById('eg-period')?.value || 'yearly';
   g.deadline = readCalendarDateField('eg-deadline') || '';
   g.status = document.getElementById('eg-status')?.value || 'active';
   g.why = document.getElementById('eg-why')?.value || '';
