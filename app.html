@@ -6162,6 +6162,10 @@ function _todoCanDelete(t) {
   if (!_isTeamGuest()) return true;
   return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff');
 }
+function _todoCanOpenStaffTasksTab() {
+  if (!_isTeamGuest()) return true;
+  return _teamPerm('todo_view_team') || _teamPerm('todo_manage_staff');
+}
 function _todoSessionStaff() {
   const email = _teamEmail();
   return (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.email || '').trim().toLowerCase() === email) || null;
@@ -19829,7 +19833,7 @@ function _todoTabsHtml() {
 
 function _todoTopbarActionsHtml() {
   const tabs = [_todoTabButton('mine','کارهای من')];
-  if (!_isTeamGuest()) tabs.push(_todoTabButton('staff','کارهای پرسنل'));
+  if (_todoCanOpenStaffTasksTab()) tabs.push(_todoTabButton('staff','کارهای پرسنل'));
   return `<div class="payments-segmented todo-topbar-tabs" role="tablist" aria-label="لیست کارها">${tabs.join('')}</div>
     <button class="btn btn-ghost btn-sm todo-archive-btn" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها">📦</button>`;
 }
@@ -21850,7 +21854,7 @@ function renderTodoList() {
   });
   if (_archiveChanged) { _save(); _syncToServer(); }
 
-  if (_isTeamGuest() && _todoActiveTab !== 'mine') _todoActiveTab = 'mine';
+  if (_isTeamGuest() && _todoActiveTab !== 'mine' && !(_todoActiveTab === 'staff' && _todoCanOpenStaffTasksTab())) _todoActiveTab = 'mine';
   if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
   updateTopbarActions(_todoTopbarActionsHtml());
   if (_todoActiveTab === 'staff') {
@@ -23575,6 +23579,7 @@ async function updateTodo(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای ویرایش این کار دسترسی نداری', 'error'); return; }
   const title = document.getElementById('todo-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
   const repeat = document.getElementById('todo-repeat')?.value || 'none';
