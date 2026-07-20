@@ -6156,11 +6156,12 @@ function _todoCanReport(t) {
 }
 function _todoCanEdit(t) {
   if (!_isTeamGuest()) return true;
-  return _teamPerm('todo_edit_manager') || _teamPerm('todo_manage_staff');
+  if (_teamPerm('todo_edit_manager') || _teamPerm('todo_manage_staff')) return true;
+  return _todoIsOwnAssigned(t) && (_teamPerm('todo_create_self') || _teamPerm('todo_complete_own'));
 }
 function _todoCanDelete(t) {
   if (!_isTeamGuest()) return true;
-  return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff');
+  return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff') || (_todoIsOwnAssigned(t) && _teamPerm('todo_create_self'));
 }
 function _todoCanOpenStaffTasksTab() {
   if (!_isTeamGuest()) return true;
@@ -20281,7 +20282,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const isOverdue = !t.done && scheduledKey && scheduledKey < todayKey;
   const doneToday = _todoStaffDoneToday(t, todayKey);
   const canEdit = _todoCanEdit(t);
-  const canDelete = !_isTeamGuest() && _todoCanDelete(t);
+  const canDelete = _todoCanDelete(t);
   const todoMenuId = `staff-todo-menu-${t.id}`;
   const deleteMenuItem = canDelete
     ? `<div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>`
@@ -23701,7 +23702,7 @@ async function updateTodo(id) {
   renderTodoList();
 }
 
-function deleteTodo(id) {
+async function deleteTodo(id) {
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   if (!_todoCanDelete(t)) { showToast('برای حذف این کار دسترسی نداری', 'error'); return; }
@@ -23709,7 +23710,12 @@ function deleteTodo(id) {
   if (_isTodoRecurring(t) && scheduledDate && _jalaliKey(scheduledDate) < _jalaliToday()) {
     if (!confirm('فقط همین نوبت عقب‌افتاده حذف شود؟ قالب تکرار و نوبت امروز حذف نمی‌شود.')) return;
     _deleteTodoOccurrenceOnly(t, scheduledDate);
-    _save(); _syncToServer();
+    _save();
+    await _syncToServer();
+    if (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+      showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
+      return;
+    }
     showToast('فقط همان نوبت حذف شد؛ تکرار کار حفظ شد.', 'success');
     renderTodoList();
     return;
@@ -23720,6 +23726,12 @@ function deleteTodo(id) {
   }
   _db.todos = _db.todos.filter(x => x.id != id);
   _save();
+  await _syncToServer();
+  if (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+    showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
+    return;
+  }
+  showToast('کار حذف شد', 'success');
   renderTodoList();
 }
 
