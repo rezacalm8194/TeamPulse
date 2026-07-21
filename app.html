@@ -6127,10 +6127,31 @@ function _todoSharedWith(t) {
   return [];
 }
 function _todoIsOwnAssigned(t) {
-  const email = _teamEmail();
+  const session = _teamAccessSession();
   const ownStaff = _todoSessionStaff();
-  if (email && String(t?.assignee_email || '').trim().toLowerCase() === email) return true;
-  if (ownStaff && String(t?.assignee_id || t?.staff_id || '') === String(ownStaff.id)) return true;
+  const email = _teamEmail();
+
+  const ownStaffId = String(
+    ownStaff?.id ||
+    session?.staffId ||
+    session?.staff_id ||
+    ''
+  );
+
+  const taskStaffId = String(
+    t?.assignee_id ||
+    t?.staff_id ||
+    ''
+  );
+
+  if (ownStaffId && taskStaffId === ownStaffId) return true;
+
+  const taskEmail = String(t?.assignee_email || '')
+    .trim()
+    .toLowerCase();
+
+  if (email && taskEmail === email) return true;
+
   return false;
 }
 function _todoCanView(t) {
@@ -6168,8 +6189,34 @@ function _todoCanOpenStaffTasksTab() {
   return _teamPerm('todo_view_team') || _teamPerm('todo_manage_staff');
 }
 function _todoSessionStaff() {
+  const session = _teamAccessSession();
+  const staffId = session?.staffId || session?.staff_id || '';
+
+  if (staffId) {
+    const byId = (_db.staff || []).find(
+      s => staffIsPersonnel(s) &&
+      String(s.id) === String(staffId)
+    );
+    if (byId) return byId;
+  }
+
   const email = _teamEmail();
-  return (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.email || '').trim().toLowerCase() === email) || null;
+  if (!email) return null;
+
+  const byEmail = (_db.staff || []).find(
+    s => staffIsPersonnel(s) &&
+    String(s.email || '').trim().toLowerCase() === email
+  ) || null;
+
+  // Migration: قدیمی‌ترین دعوت‌نامه‌ها فقط ایمیل داشتند؛ به محض شناسایی، staffId را
+  // داخل Session ذخیره کن تا از این پس اتصال پایدار و مستقل از ایمیل باشد.
+  if (byEmail && session && !staffId) {
+    try {
+      localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify({ ...session, staffId: String(byEmail.id) }));
+    } catch(e) {}
+  }
+
+  return byEmail;
 }
 function _todoCanCreateForStaff(staffId) {
   if (!_isTeamGuest()) return true;
@@ -6226,6 +6273,7 @@ function _teamDecodeInvite(token) {
       ownerEmail: data.o || '',
       ownerUserId: data.u || '',
       accountId: data.a || 'default',
+      staffId: data.s || '',
       permissions: [],
       instructionFolders: [],
       compact: true
@@ -6245,6 +6293,7 @@ function _acceptTeamInviteToken(token) {
     ownerUserId: payload.ownerUserId || '',
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
+    staffId: payload.staffId || payload.staff_id || '',
     permissions,
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
@@ -6286,6 +6335,7 @@ async function _ensureTeamAccessOwner() {
         ownerEmail: session.ownerEmail,
         inviteId: session.inviteId,
         email: session.email || '',
+        staffId: session.staffId || session.staff_id || '',
         accountId: session.accountId || 'default',
         permissions: _normalizeTeamPermissions(session.permissions),
         instructionFolders: session.instructionFolders || []
@@ -6298,6 +6348,7 @@ async function _ensureTeamAccessOwner() {
       ownerUserId: resolved.ownerUserId || session.ownerUserId || '',
       ownerName: resolved.ownerName || session.ownerName || '',
       ownerEmail: resolved.ownerEmail || session.ownerEmail || '',
+      staffId: resolved.staffId || resolved.staff_id || session.staffId || '',
       permissions: _normalizeTeamPermissions(resolved.permissions?.length ? resolved.permissions : session.permissions),
       instructionFolders: resolved.instructionFolders || session.instructionFolders || []
     };
@@ -9755,6 +9806,7 @@ function _teamInviteLink(member) {
     o: ownerEmail,
     u: _sbUser?.id || '',
     a: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
+    s: member.staff_id || member.staffId || '',
   };
   const ownerPart = _teamInviteSlugPart(ownerName || ownerEmail, 'owner');
   const memberPart = _teamInviteSlugPart(member.email, 'member');
@@ -9927,9 +9979,19 @@ function _teamInstructionFolderNeedsSelection(prefix) {
   return all && !all.checked && _teamSelectedInstructionFolders(prefix).length === 0;
 }
 
+function _teamOnStaffPicked(staffId) {
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
+  const emailEl = document.getElementById('team-email');
+  if (staff?.email && emailEl && !emailEl.value.trim()) emailEl.value = staff.email;
+}
+
 function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
-  const email = (document.getElementById('team-email')?.value || '').trim().toLowerCase();
+  const staffId = (document.getElementById('team-staff-id')?.value || '').trim();
+  if (!staffId) { showToast('یک رکورد پرسنل را برای این دعوت انتخاب کن', 'error'); return; }
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
+  if (!staff) { showToast('رکورد پرسنل معتبر نیست', 'error'); return; }
+  const email = (document.getElementById('team-email')?.value || staff.email || '').trim().toLowerCase();
   const permissions = _teamSelectedPerms('new');
   if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('new')) {
     showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
@@ -9938,15 +10000,17 @@ function _createTeamInvite() {
   const instructionFolders = permissions.includes('instructions') ? _teamSelectedInstructionFolders('new') : [];
   if (!email || !email.includes('@')) { showToast('ایمیل معتبر وارد کن', 'error'); return; }
   if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
-  const existing = (_db.team_members || []).find(m => (m.email || '').toLowerCase() === email);
-  const member = existing || { id:'tm_' + Date.now(), email, created_at:new Date().toISOString(), status:'دعوت‌شده' };
+  const existing = (_db.team_members || []).find(m => (m.email || '').toLowerCase() === email || String(m.staff_id || '') === String(staffId));
+  const member = existing || { id:'tm_' + Date.now(), created_at:new Date().toISOString(), status:'دعوت‌شده' };
+  member.email = email;
+  member.staff_id = String(staffId);
   member.permissions = permissions;
   member.instruction_folders = instructionFolders;
   member.updated_at = new Date().toISOString();
   member.invite_link = _teamInviteLink(member);
   if (!existing) _db.team_members.unshift(member);
   _db.team_invites = _db.team_invites || [];
-  _db.team_invites.unshift({ id:member.id, email, permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
+  _db.team_invites.unshift({ id:member.id, email, staff_id:String(staffId), permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
   _save();
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
@@ -10059,6 +10123,14 @@ function _teamSettingsHtml() {
           <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">ایمیل فرد را وارد کن، بخش‌های مجاز را انتخاب کن و لینک دعوت را برایش بفرست.</p>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('new', true)">انتخاب همه بخش‌ها</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">رکورد پرسنل *</label>
+        <select class="form-input" id="team-staff-id" onchange="_teamOnStaffPicked(this.value)">
+          <option value="">— انتخاب پرسنل —</option>
+          ${(_db.staff || []).filter(staffIsPersonnel).map(s => `<option value="${s.id}">${escapeHtml(_todoStaffName(s))}${s.email ? ' — ' + escapeHtml(s.email) : ''}</option>`).join('')}
+        </select>
+        <small style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">لینک دعوت به همین رکورد پرسنل متصل می‌شود؛ اتصال کارها دیگر فقط به ایمیل وابسته نیست.</small>
       </div>
       <div class="form-group">
         <label class="form-label">ایمیل هم‌تیمی</label>
@@ -18313,26 +18385,26 @@ function _serverDataChanged(nextData, currentData) {
 
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
-  if (!_sbUser || !_sbSession?.token) return;
+  if (!_sbUser || !_sbSession?.token) return null;
   // block sync اگه impersonating هستیم و هنوز داده load نشده
-  if (window._impersonateLoadPending) return;
+  if (window._impersonateLoadPending) return null;
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
     if (window._impersonating && window._impersonateServerBlocked) {
       console.warn('[Impersonate] blocked sync while target data is isolated locally');
-      return;
+      return null;
     }
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey)) {
       console.warn('[Impersonate] blocked admin-like data sync for target account');
-      return;
+      return null;
     }
     if (teamSession && !teamSession.ownerUserId) {
       if (!window._teamMissingOwnerWarned) {
         window._teamMissingOwnerWarned = true;
         showToast('لینک هم‌تیمی قدیمی است؛ صاحب حساب لینک دعوت را دوباره کپی کند', 'error');
       }
-      return;
+      return null;
     }
     if (teamSession && !window._teamOwnerDataReady) {
       const localPending = _cloneData(_db);
@@ -18342,7 +18414,7 @@ async function _syncToServer() {
           window._teamOwnerDataNotReadyWarned = true;
           showToast('ذخیره انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
         }
-        return;
+        return null;
       }
       _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db);
       _migrate(_db);
@@ -18352,7 +18424,7 @@ async function _syncToServer() {
       } catch(e) {}
       window._teamOwnerDataReady = true;
     }
-    if (!accId) return;
+    if (!accId) return null;
     const forceSync = !!window._forceNextSync;
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
@@ -18373,7 +18445,8 @@ async function _syncToServer() {
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
     }
-  } catch(e) { console.warn('Server sync failed:', e.message); }
+    return res || null;
+  } catch(e) { console.warn('Server sync failed:', e.message); return null; }
 }
 
 function _syncItemTime(item) {
@@ -22765,9 +22838,16 @@ function _buildGoalSelectOptions(selectedId) {
 
 function openAddTodo(dateStr, presetAssigneeId = '') {
   if (!_todoCanCreateForStaff(presetAssigneeId)) { showToast('برای ساخت این کار دسترسی نداری', 'error'); return; }
+  const ownStaff = _todoSessionStaff();
+  if (_isTeamGuest() && !ownStaff) {
+    showToast(
+      'حساب شما به رکورد پرسنلی متصل نشده است. مدیر باید دعوت‌نامه را دوباره ایجاد کند.',
+      'error'
+    );
+    return;
+  }
   _requestNotificationPermission();
   const today = _todayJalaliStr();
-  const ownStaff = _todoSessionStaff();
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
   const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
   const isStaffTodo = !!selectedAssigneeId;
@@ -23149,7 +23229,18 @@ async function saveTodo() {
   const syncGcal = !!document.getElementById('todo-gcal')?.checked;
   const assigneeEl = document.getElementById('todo-assignee');
   const ownStaff = _todoSessionStaff();
-  const assigneeId = assigneeEl?.value || (assigneeEl?.disabled && ownStaff ? String(ownStaff.id) : '');
+
+  if (_isTeamGuest() && _teamPerm('todo_create_self') && !ownStaff) {
+    showToast('حساب پرسنلی شما شناسایی نشد', 'error');
+    return;
+  }
+
+  let assigneeId = assigneeEl?.value || (assigneeEl?.disabled && ownStaff ? String(ownStaff.id) : '');
+
+  if (_isTeamGuest() && ownStaff && !_teamPerm('todo_create_others')) {
+    assigneeId = String(ownStaff.id);
+  }
+
   if (!_todoCanCreateForStaff(assigneeId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
   const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
@@ -23158,8 +23249,12 @@ async function saveTodo() {
     id, title,
     note: document.getElementById('todo-note')?.value.trim() || '',
     manager_note: document.getElementById('todo-note')?.value.trim() || '',
-    assignee_id: assignee ? assignee.id : null,
-    assignee_email: assignee?.email || '',
+    assignee_id: assignee?.id || ownStaff?.id || null,
+    assignee_email:
+      assignee?.email ||
+      ownStaff?.email ||
+      _teamEmail() ||
+      '',
     visibility,
     shared_with: [],
     requires_report: document.getElementById('todo-requires-report')?.value || 'none',
@@ -23194,13 +23289,27 @@ async function saveTodo() {
       }
     });
   }
+  if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
+    showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
+    return;
+  }
+
   _db.todos.push(newTodo);
   _save();
   if (_teamAccessSession()) {
     clearTimeout(window._serverSyncTimer);
-    await _syncToServer();
-    if ((_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
-      showToast('کار داخل TeamPulse ذخیره نشد؛ اتصال هم‌تیمی را دوباره باز کن', 'error');
+    const res = await _syncToServer();
+    if (!res || !res.ok) {
+      // Rollback: کار موقتی که هنوز روی سرور ذخیره نشده حذف شود
+      _db.todos = _db.todos.filter(t => t.id !== id);
+      _save();
+      if (res && (res.status === 403 || res.status === 409)) {
+        showToast('ذخیره کار رد شد؛ اتصال هم‌تیمی را بررسی کن', 'error');
+      } else {
+        showToast('کار داخل TeamPulse ذخیره نشد؛ اتصال هم‌تیمی را دوباره باز کن', 'error');
+      }
+      await _loadFromServer();
+      renderTodoList();
       return;
     }
   }
