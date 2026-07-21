@@ -21981,7 +21981,7 @@ function renderTodoList() {
         _archiveChanged = true;
       }
     }
-    if (t.done && !t.archived && !t.repeat && t.done_at) {
+    if (t.done && !t.archived && (!t.repeat || t.repeat === 'none') && t.done_at) {
       const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
