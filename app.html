@@ -6079,7 +6079,7 @@ const TODO_TEAM_PERMISSIONS = [
   {key:'todo_view_team_report', label:'مشاهده گزارش عملکرد تیم', icon:'📊', desc:'گزارش عملکرد همه پرسنل مجاز'},
   {key:'todo_manage_staff', label:'مدیریت چک‌لیست پرسنل', icon:'🧩', desc:'تعریف، ویرایش و بررسی کارهای پرسنل'},
 ];
-const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report'];
+const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self'];
 let _todoActiveTab = 'mine';
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
@@ -6362,6 +6362,39 @@ async function _ensureTeamAccessOwner() {
     window._activeDBKey = _teamSessionStorageKey(session);
     return session;
   }
+}
+// وقتی داده از سرور به‌روزرسانی می‌شود (هر ۵ ثانیه)، دسترسی‌های کش‌شده هم‌تیمی را
+// از روی team_members تازه‌سینک‌شده بازسازی می‌کند تا تغییرات مدیر فوراً اعمال شود
+// (بدون نیاز به خروج و ورود دوباره یا ساخت لینک دعوت جدید).
+function _teamSyncSessionPermissions() {
+  const session = _teamAccessSession();
+  if (!session) return false;
+  const staffId = String(session.staffId || session.staff_id || '');
+  const email = String(session.email || '').trim().toLowerCase();
+  const member = (_db.team_members || []).find(m =>
+    (staffId && String(m.staff_id || '') === staffId) ||
+    (!staffId && String(m.email || '').trim().toLowerCase() === email)
+  );
+  if (!member) return false;
+
+  const newPerms = _normalizeTeamPermissions(member.permissions);
+  const newFolders = (member.instruction_folders || []).map(Number).filter(Boolean);
+  const oldPerms = _normalizeTeamPermissions(session.permissions);
+  const oldFolders = _teamInstructionFolderIds(session);
+
+  const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  if (sortedEq(newPerms, oldPerms) && sortedEq(newFolders, oldFolders)) return false;
+
+  const next = { ...session, permissions: newPerms, instructionFolders: newFolders };
+  localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify(next));
+  _applyTeamAccessToNav();
+  // اگر صفحه فعلی دیگر مجاز نیست، کاربر را به یک صفحهٔ مجاز هدایت کن
+  if (!_teamCan(currentPage)) {
+    currentPage = _teamDefaultPage();
+    location.hash = currentPage;
+  }
+  showToast('دسترسی‌های شما توسط مدیر به‌روزرسانی شد ✓', 'success');
+  return true;
 }
 function _leaveTeamAccess() {
   localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
@@ -9819,7 +9852,7 @@ function _teamPermCards(prefix, selected) {
   const picked = new Set(selected || []);
   const sectionCards = TEAM_ACCESS_SECTIONS.map(s => `
     <label style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);cursor:pointer">
-      <input type="checkbox" class="${prefix}-team-perm" value="${s.key}" ${picked.has(s.key)?'checked':''}
+      <input type="checkbox" class="${prefix}-team-perm ${prefix}-team-perm-main" value="${s.key}" ${picked.has(s.key)?'checked':''}
         ${s.key === 'instructions' ? `onchange="_teamToggleInstructionFolderPanel('${prefix}')"` : ''}
         style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px">
       <span style="display:flex;gap:9px;align-items:flex-start;flex:1">
@@ -9831,9 +9864,17 @@ function _teamPermCards(prefix, selected) {
       </span>
     </label>
   `).join('');
+  const mainSectionHeader = `
+    <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:900;color:var(--text)">بخش‌های اصلی</div>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_teamToggleGroup('${prefix}', '${prefix}-team-perm-main', true)">فعال کردن همه</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_teamToggleGroup('${prefix}', '${prefix}-team-perm-main', false)">غیرفعال کردن همه</button>
+      </div>
+    </div>`;
   const todoCards = TODO_TEAM_PERMISSIONS.map(s => `
     <label style="display:flex;gap:9px;align-items:flex-start;padding:10px;border:1px solid rgba(96,165,250,.22);border-radius:9px;background:rgba(96,165,250,.045);cursor:pointer">
-      <input type="checkbox" class="${prefix}-team-perm" value="${s.key}" ${picked.has(s.key)?'checked':''} style="width:17px;height:17px;accent-color:var(--accent);margin-top:2px">
+      <input type="checkbox" class="${prefix}-team-perm ${prefix}-team-perm-todo" value="${s.key}" ${picked.has(s.key)?'checked':''} style="width:17px;height:17px;accent-color:var(--accent);margin-top:2px">
       <span style="font-size:16px;line-height:1">${s.icon}</span>
       <span style="min-width:0">
         <b style="display:block;font-size:12px;color:var(--text)">${s.label}</b>
@@ -9841,17 +9882,26 @@ function _teamPermCards(prefix, selected) {
       </span>
     </label>
   `).join('');
-  return sectionCards + `
+  return mainSectionHeader + sectionCards + `
     <div style="grid-column:1/-1;margin-top:4px;padding:12px;border:1px solid rgba(96,165,250,.25);border-radius:12px;background:rgba(96,165,250,.035)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div>
           <div style="font-size:13px;font-weight:900;color:var(--text)">مجوزهای دقیق لیست کارها</div>
           <div style="font-size:11px;color:var(--text3);line-height:1.7">این گزینه‌ها در رابط و API اعمال می‌شوند؛ کارهای شخصی مدیر با پیش‌فرض «فقط من» خصوصی می‌مانند.</div>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="_teamSelectTodoDefaults('${prefix}')">پیش‌فرض پرسنل عادی</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_teamToggleGroup('${prefix}', '${prefix}-team-perm-todo', true)">فعال کردن همه</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_teamToggleGroup('${prefix}', '${prefix}-team-perm-todo', false)">غیرفعال کردن همه</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="_teamSelectTodoDefaults('${prefix}')">پیش‌فرض پرسنل عادی</button>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">${todoCards}</div>
     </div>`;
+}
+
+function _teamToggleGroup(prefix, groupClass, checked) {
+  document.querySelectorAll(`.${groupClass}`).forEach(x => x.checked = checked);
+  _teamToggleInstructionFolderPanel(prefix);
 }
 
 function _teamSelectedPerms(prefix) {
@@ -9982,7 +10032,17 @@ function _teamInstructionFolderNeedsSelection(prefix) {
 function _teamOnStaffPicked(staffId) {
   const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   const emailEl = document.getElementById('team-email');
-  if (staff?.email && emailEl && !emailEl.value.trim()) emailEl.value = staff.email;
+  if (!emailEl) return;
+  // ایمیل به‌محض انتخاب پرسنل خودکار پر می‌شود. اگر کاربر خودش دستی مقدار دیگری
+  // تایپ کرده باشد (نه مقداری که خودمان قبلاً خودکار پر کرده بودیم) آن را دست‌نخورده نگه می‌داریم.
+  const prevAuto = emailEl.dataset.autoFilled || '';
+  const current = emailEl.value.trim();
+  if (staff?.email && (!current || current === prevAuto)) {
+    emailEl.value = staff.email;
+    emailEl.dataset.autoFilled = staff.email;
+  } else if (!staff?.email) {
+    emailEl.dataset.autoFilled = '';
+  }
 }
 
 function _createTeamInvite() {
@@ -18544,6 +18604,7 @@ async function _loadFromServer() {
       localStorage.setItem(key, JSON.stringify(_db));
       window._teamOwnerDataReady = true;
       window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
+      _teamSyncSessionPermissions();
       console.log('[TeamPulse] Team owner data loaded from server');
       return true;
     }
