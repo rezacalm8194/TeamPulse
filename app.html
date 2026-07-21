@@ -21987,7 +21987,18 @@ function renderTodoList() {
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
   });
-  if (_archiveChanged) { _save(); _syncToServer(); }
+  if (_archiveChanged) {
+    if (_isTeamGuest()) {
+      // هم‌تیمی صاحب واقعیِ این دیتا نیست: تغییرات بایگانیِ خودکار فقط باید
+      // در همین حافظه‌ی محلی اعمال بشن تا نمایش لحظه‌ای درست باشه، بدون اینکه
+      // با _save()/_syncToServer() چیزی روی سرور نوشته بشه. اگر اینجا سینک می‌شد،
+      // چون _db محلیِ هم‌تیمی ممکنه هنوز کارهای تازه‌ی مدیر رو نگرفته باشه،
+      // همون snapshot ناقص با یه timestamp «جدیدتر» جای دیتای واقعی مدیر می‌نشست
+      // و کارهای تازه از سرور پاک می‌شدن.
+    } else {
+      _save(); _syncToServer();
+    }
+  }
 
   if (_isTeamGuest() && _todoActiveTab !== 'mine' && !(_todoActiveTab === 'staff' && _todoCanOpenStaffTasksTab())) _todoActiveTab = 'mine';
   if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
