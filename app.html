@@ -4615,6 +4615,31 @@ function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
     note:'',done:false,notified_levels:[],created_at:new Date().toISOString()});
 }
 
+function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
+  const repeatMonths = Number(pkg.repeat_months || 0);
+  const existing = _db.reminders.find(r=>r.package_id===pkgId);
+  if(!(repeatMonths>0)){
+    if(existing)_db.reminders=_db.reminders.filter(r=>r.package_id!==pkgId);
+    return;
+  }
+  const[jy,jm,jd]=_jalaliParse(startDate);
+  if(!jy)return;
+  const pt=_db.package_types.find(t=>t.id===pkg.type_id);
+  const next=_addMonths(jy,jm,jd,repeatMonths);
+  const patch = {
+    student_id:studentId,
+    package_id:pkgId,
+    title:`تجدید پکیج: ${pt?pt.label:''}`,
+    due_date_jalali:_formatJalali(...next),
+    repeat_months:repeatMonths,
+    amount:(pkg.total_amount||0)+(pkg.initial_cost||0),
+    done:false,
+    notified_levels:[],
+  };
+  if(existing)Object.assign(existing,patch);
+  else _db.reminders.push({id:_nextId('reminders'),...patch,note:'',created_at:new Date().toISOString()});
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // window.api
 // ════════════════════════════════════════════════════════════════════════════
@@ -4679,10 +4704,7 @@ window.api = {
           _db.packages.push(target);
         }
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
-        const er=_db.reminders.find(r=>r.package_id===pkgId);
-        const gt=(pkg.total_amount||0)+(pkg.initial_cost||0);
-        if(er){er.repeat_months=pkg.repeat_months||0;er.amount=gt;if(!(pkg.repeat_months>0))er.done=true;else if(er.done){er.done=false;er.notified_levels=[];}}
-        else if(pkg.repeat_months>0)_createRepeatReminder(s.id,pkgId,pkg,pkg.start_date||s.date_jalali);
+        _syncPackageReminder(s.id,pkgId,pkg,pkg.start_date||target.start_date||s.date_jalali);
       });
       _save(); return _P({ok:true});
     },
@@ -4707,7 +4729,7 @@ window.api = {
       if(!p.skip_reminder)_createRepeatReminder(p.student_id,pkgId,p,p.date);
       _save(); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_save();} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.packages=_db.packages.filter(x=>x.id!==id); _db.reminders=_db.reminders.filter(x=>x.package_id!==id); _save(); return _P({ok:true}); },
   },
 
