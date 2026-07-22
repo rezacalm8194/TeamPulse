@@ -4752,10 +4752,10 @@ window.api = {
 
   payments: {
     add: (p)=>{ _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,note:p.note??pay.note,package_id:p.package_id??pay.package_id});_save();} return _P({ok:true}); },
+    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.payments=_db.payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;return{...p,pkg_label:pt?pt.label:'عمومی'};})),
-    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);return{...p,pkg_label:pt?pt.label:'عمومی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:''};})),
+    getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;return{...p,pkg_label:pt?pt.label:'مانده فعلی'};})),
+    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:''};})),
   },
 
   sessions: {
@@ -7989,11 +7989,15 @@ function uniquePaymentPackageOptions(packages = []) {
   });
 }
 
-function paymentPackageOptionsHtml(packages = []) {
+function paymentPackageOptionsHtml(packages = [], opts = {}) {
+  const selectedId = opts.selectedId == null ? '__general__' : String(opts.selectedId);
+  const includeNew = opts.includeNew !== false;
   const options = uniquePaymentPackageOptions(packages)
-    .map(p => `<option value="${p.id}">${escapeHtml(p.type_label || 'عمومی')}</option>`)
+    .map(p => `<option value="${p.id}" ${String(p.id) === selectedId ? 'selected' : ''}>${escapeHtml(p.type_label || 'عمومی')}</option>`)
     .join('');
-  return options + '<option value="__new__">+ ثبت خدمت جدید با همین پرداخت</option>';
+  return `<option value="__general__" ${selectedId === '__general__' ? 'selected' : ''}>پرداخت بابت مانده فعلی (بدون فروش جدید)</option>` +
+    options +
+    (includeNew ? '<option value="__new__">+ فروش خدمت جدید با همین پرداخت</option>' : '');
 }
 
 function quickNewPackageFieldsHtml(prefix) {
@@ -8072,7 +8076,7 @@ async function savePayment(studentId) {
   if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
-  let packageId = +pkgId;
+  let packageId = pkgId === '__general__' ? null : +pkgId;
   if (pkgId === '__new__') {
     const newTotal = +(document.getElementById('f-new-total')?.value || 0) || amount;
     const res = await window.api.packages.add({
@@ -8250,10 +8254,15 @@ async function openEditPayment(id) {
   const payments = await window.api.payments.getAll();
   const p = payments.find(x => x.id === id);
   if (!p) return;
+  const packages = await window.api.packages.getByStudent(p.student_id);
+  const pkgOptions = paymentPackageOptionsHtml(packages, { includeNew: false, selectedId: p.package_id || null });
 
   openModal(`✏️ ویرایش پرداخت — ${p.name} ${p.lname}`, `
-    <p style="font-size:11px;color:var(--text3);margin-bottom:8px">پکیج: ${p.pkg_label}</p>
     <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">ثبت این پرداخت بابت</label>
+        <select class="form-select" id="ep-pkg">${pkgOptions}</select>
+      </div>
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی الان *</label>
         <input class="form-input amount-input" id="ep-amount" type="number" value="${p.amount}">
@@ -8289,8 +8298,10 @@ async function savePaymentEdit(id) {
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
   const payments = await window.api.payments.getAll();
   const p = payments.find(x => x.id === id);
+  const pkgValue = document.getElementById('ep-pkg')?.value;
   await window.api.payments.update({
     id, amount, date,
+    package_id: pkgValue === '__general__' ? null : +pkgValue,
     currency: document.getElementById('ep-currency')?.value,
     method: document.getElementById('ep-method')?.value,
     note: document.getElementById('ep-note')?.value,
@@ -8399,7 +8410,7 @@ async function saveGeneralPayment() {
   if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
-  let packageId = +pkgId;
+  let packageId = pkgId === '__general__' ? null : +pkgId;
   if (pkgId === '__new__') {
     const newTotal = +(document.getElementById('gp-new-total')?.value || 0) || amount;
     const res = await window.api.packages.add({
@@ -26360,7 +26371,7 @@ async function _installPWA() {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v58';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v59';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
