@@ -6122,6 +6122,14 @@ function _teamPerm(key) {
 function _teamEmail() {
   return String(_teamAccessSession()?.email || _sbUser?.email || '').trim().toLowerCase();
 }
+function _todoCurrentTeamMember() {
+  const email = _teamEmail();
+  if (!email) return null;
+  return (_db.team_members || []).find(m =>
+    String(m.email || '').trim().toLowerCase() === email &&
+    m.status !== 'حذف‌شده'
+  ) || null;
+}
 function _todoSharedWith(t) {
   if (Array.isArray(t?.shared_with)) return t.shared_with.map(String);
   if (Array.isArray(t?.sharedWith)) return t.sharedWith.map(String);
@@ -6199,6 +6207,16 @@ function _todoSessionStaff() {
       String(s.id) === String(staffId)
     );
     if (byId) return byId;
+  }
+
+  const member = _todoCurrentTeamMember();
+  const memberStaffId = member?.staff_id || member?.staffId || '';
+  if (memberStaffId) {
+    const byMemberId = (_db.staff || []).find(
+      s => staffIsPersonnel(s) &&
+      String(s.id) === String(memberStaffId)
+    );
+    if (byMemberId) return byMemberId;
   }
 
   const email = _teamEmail();
@@ -19947,7 +19965,7 @@ function _todoIsStaffAssignedTask(t) {
 }
 
 function _todoIsMineScope(t) {
-  if (_isTeamGuest()) return _todoIsOwnAssigned(t);
+  if (_isTeamGuest() || _todoCurrentTeamMember()) return _todoIsOwnAssigned(t);
   return !_todoIsStaffAssignedTask(t);
 }
 
