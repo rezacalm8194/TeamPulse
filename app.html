@@ -6083,12 +6083,14 @@ const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_co
 const TEAM_ROLE_PRESETS = {
   staff_basic: {
     label: 'پرسنل عادی',
-    desc: 'دیدن و انجام کارهای خودش، گزارش خودش و ساخت کار برای خودش',
+    desc: 'فقط کارهای خودش، انجام/گزارش خودش، ساخت کار برای خودش',
+    summary: 'لیست کارها: مشاهده، انجام و گزارش کارهای خودش؛ ساخت کار فقط برای خودش.',
     permissions: ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self']
   },
   assistant_manager: {
     label: 'منیجر / دستیار',
-    desc: 'مدیریت مشتری، جلسه، تقویم، یادآوری و کارهای عملیاتی بدون دسترسی مالی حساس',
+    desc: 'مشتری‌ها، جلسات، لیست مشتریان، تقویم، یادآوری، لیست کارها، ساخت کار برای خودش/دیگران، ویرایش کارهای مدیر. دسترسی مالی حساس، کیف پول و تنظیمات مالکیت ندارد.',
+    summary: 'امور مشتریان، جلسات، لیست شاگردان، تقویم و یادآوری؛ ساخت کار برای خودش و دیگران؛ ویرایش کارهای مدیر؛ بدون کیف پول و تنظیمات حساس.',
     permissions: [
       'students','sessions','customerlist','calendar','reminders','todolist',
       'todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report',
@@ -6097,7 +6099,8 @@ const TEAM_ROLE_PRESETS = {
   },
   task_manager: {
     label: 'مدیر کارها',
-    desc: 'مدیریت چک‌لیست پرسنل، ساخت کار برای دیگران و گزارش تیم',
+    desc: 'مدیریت کارهای پرسنل، دیدن تیم، گزارش تیم، حذف/ویرایش/ساخت کارها',
+    summary: 'لیست کارها و حساب پرسنل؛ مشاهده کارهای تیم، ساخت/ویرایش/حذف کارها، مدیریت چک‌لیست پرسنل و گزارش عملکرد تیم.',
     permissions: [
       'todolist','staff',
       'todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report',
@@ -6107,7 +6110,8 @@ const TEAM_ROLE_PRESETS = {
   },
   custom: {
     label: 'سفارشی',
-    desc: 'انتخاب دستی بخش‌ها و مجوزها',
+    desc: 'انتخاب دستی',
+    summary: 'هیچ پیش‌فرضی اعمال نمی‌شود؛ خودت بخش‌ها و مجوزهای دقیق را انتخاب می‌کنی.',
     permissions: []
   }
 };
@@ -9868,16 +9872,19 @@ function _teamRoleLabel(role) {
 
 function _teamRoleSelectHtml(prefix, selectedRole = 'staff_basic') {
   const picked = TEAM_ROLE_PRESETS[selectedRole] ? selectedRole : 'custom';
-  const options = Object.entries(TEAM_ROLE_PRESETS).map(([key, role]) =>
-    `<option value="${key}" ${picked === key ? 'selected' : ''}>${escapeHtml(role.label)}</option>`
-  ).join('');
+  const role = TEAM_ROLE_PRESETS[picked];
+  const options = Object.entries(TEAM_ROLE_PRESETS).map(([key, role]) => {
+    const optionLabel = `${role.label} — ${role.desc}`;
+    return `<option value="${key}" ${picked === key ? 'selected' : ''}>${escapeHtml(optionLabel)}</option>`;
+  }).join('');
   return `
     <div class="form-group" style="grid-column:1/-1">
       <label class="form-label">نقش دسترسی</label>
       <select class="form-input" id="${prefix}-team-role" onchange="_teamApplyRolePreset('${prefix}', this.value)">
         ${options}
       </select>
-      <small id="${prefix}-team-role-desc" style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">${escapeHtml(TEAM_ROLE_PRESETS[picked].desc)}</small>
+      <small id="${prefix}-team-role-desc" style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">${escapeHtml(role.desc)}</small>
+      <div id="${prefix}-team-role-summary" style="margin-top:8px;padding:10px 12px;border:1px solid rgba(124,106,247,.24);border-radius:10px;background:rgba(124,106,247,.07);font-size:12px;color:var(--text2);line-height:1.9">${escapeHtml(role.summary)}</div>
     </div>`;
 }
 
@@ -9885,6 +9892,8 @@ function _teamApplyRolePreset(prefix, roleKey) {
   const role = TEAM_ROLE_PRESETS[roleKey] || TEAM_ROLE_PRESETS.custom;
   const desc = document.getElementById(`${prefix}-team-role-desc`);
   if (desc) desc.textContent = role.desc;
+  const summary = document.getElementById(`${prefix}-team-role-summary`);
+  if (summary) summary.textContent = role.summary;
   if (roleKey === 'custom') return;
   const picked = new Set(_normalizeTeamPermissions(role.permissions));
   document.querySelectorAll(`.${prefix}-team-perm`).forEach(x => {
