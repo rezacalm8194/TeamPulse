@@ -4411,7 +4411,7 @@ function _markManualRestoreInProgress(durationMs = 24 * 60 * 60 * 1000) {
   try {
     const sig = typeof _serverDataSignature === 'function' ? _dataFingerprint(_serverDataSignature(_db)) : '';
     if (sig) {
-      window._manualRestoreExpectedSignature = sig;
+      window._manualRestoreExpectedSignatureValue = sig;
       localStorage.setItem(RESTORE_SIGNATURE_KEY, sig);
     }
   } catch(e) {}
@@ -4420,7 +4420,7 @@ function _markManualRestoreInProgress(durationMs = 24 * 60 * 60 * 1000) {
 
 function _clearManualRestoreProtection() {
   window._manualRestoreProtectUntil = 0;
-  window._manualRestoreExpectedSignature = '';
+  window._manualRestoreExpectedSignatureValue = '';
   try { localStorage.removeItem(RESTORE_PROTECT_KEY); } catch(e) {}
   try { localStorage.removeItem(RESTORE_SIGNATURE_KEY); } catch(e) {}
 }
@@ -4453,19 +4453,19 @@ function _isManualRestoreProtected() {
   return true;
 }
 
-function _manualRestoreExpectedSignature() {
-  if (window._manualRestoreExpectedSignature) return window._manualRestoreExpectedSignature;
+function _getManualRestoreExpectedSignature() {
+  if (window._manualRestoreExpectedSignatureValue) return window._manualRestoreExpectedSignatureValue;
   try {
-    window._manualRestoreExpectedSignature = localStorage.getItem(RESTORE_SIGNATURE_KEY) || '';
+    window._manualRestoreExpectedSignatureValue = localStorage.getItem(RESTORE_SIGNATURE_KEY) || '';
   } catch(e) {
-    window._manualRestoreExpectedSignature = '';
+    window._manualRestoreExpectedSignatureValue = '';
   }
-  return window._manualRestoreExpectedSignature;
+  return window._manualRestoreExpectedSignatureValue;
 }
 
 function _adoptManualRestoreFromLocalStorage(reason = '') {
   if (!_isManualRestoreProtected()) return false;
-  const expectedSig = _manualRestoreExpectedSignature();
+  const expectedSig = _getManualRestoreExpectedSignature();
   if (!expectedSig) return false;
   try {
     const key = window._activeDBKey || DB_KEY;
@@ -18847,7 +18847,7 @@ async function _loadFromServer() {
     const { data } = await res.json();
     if (!data) return false;
     if (_isManualRestoreProtected()) {
-      const expectedSig = _manualRestoreExpectedSignature();
+      const expectedSig = _getManualRestoreExpectedSignature();
       const localSig = _dataFingerprint(_serverDataSignature(_db));
       const serverSig = _dataFingerprint(_serverDataSignature(data));
       if (serverSig === localSig || (expectedSig && serverSig === expectedSig)) {
