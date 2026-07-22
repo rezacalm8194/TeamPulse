@@ -7990,9 +7990,33 @@ function uniquePaymentPackageOptions(packages = []) {
 }
 
 function paymentPackageOptionsHtml(packages = []) {
-  return uniquePaymentPackageOptions(packages)
+  const options = uniquePaymentPackageOptions(packages)
     .map(p => `<option value="${p.id}">${escapeHtml(p.type_label || 'عمومی')}</option>`)
     .join('');
+  return options + '<option value="__new__">+ ثبت خدمت جدید با همین پرداخت</option>';
+}
+
+function quickNewPackageFieldsHtml(prefix) {
+  const typeOptions = PKG_TYPES.map(pt => `<option value="${pt.id}">${escapeHtml(pt.label)}</option>`).join('');
+  return `
+    <div class="form-group full quick-new-package-fields" id="${prefix}-new-package-fields" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="form-label">نوع خدمت جدید</label>
+          <select class="form-select" id="${prefix}-new-type">${typeOptions}</select>
+        </div>
+        <div>
+          <label class="form-label">مبلغ قرارداد جدید</label>
+          <input class="form-input amount-input" id="${prefix}-new-total" type="number" placeholder="اگر خالی باشد، مبلغ پرداخت">
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleQuickNewPackage(prefix) {
+  const isNew = document.getElementById(prefix + '-pkg')?.value === '__new__';
+  const fields = document.getElementById(prefix + '-new-package-fields');
+  if (fields) fields.style.display = isNew ? 'block' : 'none';
 }
 
 function openAddPayment(studentId) {
@@ -8007,10 +8031,11 @@ function openAddPayment(studentId) {
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">پکیج / خدمت *</label>
-        <select class="form-select" id="f-pkg">
+        <select class="form-select" id="f-pkg" onchange="toggleQuickNewPackage('f')">
           ${pkgOptions || '<option value="">— پکیجی ثبت نشده —</option>'}
         </select>
       </div>
+      ${quickNewPackageFieldsHtml('f')}
       <div class="form-group">
         <label class="form-label">مبلغ *</label>
         <input class="form-input amount-input" id="f-pay-amount" type="number" placeholder="0">
@@ -8047,8 +8072,24 @@ async function savePayment(studentId) {
   if (!amount || amount <= 0) { showToast('مبلغ را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
+  let packageId = +pkgId;
+  if (pkgId === '__new__') {
+    const newTotal = +(document.getElementById('f-new-total')?.value || 0) || amount;
+    const res = await window.api.packages.add({
+      student_id: studentId,
+      type_id: +(document.getElementById('f-new-type')?.value || 0),
+      total_amount: newTotal,
+      initial_cost: 0,
+      current_payment: 0,
+      repeat_months: 0,
+      note: document.getElementById('f-pay-note')?.value || '',
+      date,
+    });
+    packageId = +res?.id;
+  }
+
   await window.api.payments.add({
-    package_id: +pkgId,
+    package_id: packageId,
     student_id: studentId,
     amount,
     currency: document.getElementById('f-pay-currency')?.value || 'تومان',
@@ -8305,8 +8346,9 @@ function openGeneralPaymentModal() {
       <div class="form-group full" id="gp-pkg-info" style="margin-bottom:-6px"></div>
       <div class="form-group full">
         <label class="form-label">پکیج / خدمت *</label>
-        <select class="form-select" id="gp-pkg"></select>
+        <select class="form-select" id="gp-pkg" onchange="toggleQuickNewPackage('gp')"></select>
       </div>
+      ${quickNewPackageFieldsHtml('gp')}
       <div class="form-group">
         <label class="form-label">مبلغ *</label>
         <input class="form-input amount-input" id="gp-amount" type="number" placeholder="0">
@@ -8342,6 +8384,7 @@ function updateGeneralPaymentPkgs() {
   const sel = document.getElementById('gp-pkg');
   const opts = paymentPackageOptionsHtml(s?.packages || []);
   sel.innerHTML = opts || '<option value="">— پکیجی ثبت نشده —</option>';
+  toggleQuickNewPackage('gp');
   const info = document.getElementById('gp-pkg-info');
   const pkgLabels = uniquePaymentPackageOptions(s?.packages || []).map(p=>p.type_label).join('، ') || '—';
   if (info) info.innerHTML = `<p style="font-size:11px;color:var(--text3)">خدمات فعال: ${pkgLabels} — مانده فعلی: ${balanceHtml(s?.balance||0)}</p>`;
@@ -8356,8 +8399,24 @@ async function saveGeneralPayment() {
   if (!amount || amount <= 0) { showToast('مبلغ را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
+  let packageId = +pkgId;
+  if (pkgId === '__new__') {
+    const newTotal = +(document.getElementById('gp-new-total')?.value || 0) || amount;
+    const res = await window.api.packages.add({
+      student_id: studentId,
+      type_id: +(document.getElementById('gp-new-type')?.value || 0),
+      total_amount: newTotal,
+      initial_cost: 0,
+      current_payment: 0,
+      repeat_months: 0,
+      note: document.getElementById('gp-note')?.value || '',
+      date,
+    });
+    packageId = +res?.id;
+  }
+
   await window.api.payments.add({
-    package_id: +pkgId,
+    package_id: packageId,
     student_id: studentId,
     amount,
     currency: document.getElementById('gp-currency')?.value || 'تومان',
