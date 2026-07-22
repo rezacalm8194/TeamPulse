@@ -20332,21 +20332,21 @@ function _todoFormSections() {
   return {
     quick: [
       titleGroup,
-      mainTodayGroup,
       accessGroup,
       dateGroup,
-    ],
-    schedule: [
       timeGroup,
-      durationGroup,
-      repeatGroup,
-      byId('weekdays-picker'),
       remindGroup,
       byId('notif-status'),
       gcalGroup,
     ],
+    schedule: [
+      durationGroup,
+      repeatGroup,
+      byId('weekdays-picker'),
+    ],
     details: [
       noteGroup,
+      mainTodayGroup,
       priorityGroup,
       categoryGroup,
       goalGroup,
