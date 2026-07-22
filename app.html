@@ -6335,12 +6335,7 @@ async function _ensureTeamAccessOwner() {
     return null;
   }
 
-  if (session.ownerUserId && !session.ownerEmail) {
-    window._activeDBKey = _teamSessionStorageKey(session);
-    return session;
-  }
-
-  if (!session.ownerEmail) {
+  if (!session.ownerEmail && !session.ownerUserId) {
     showToast('لینک هم‌تیمی قدیمی است؛ صاحب حساب لینک دعوت را دوباره کپی کند', 'error');
     window._activeDBKey = _teamSessionStorageKey(session);
     return session;
@@ -6351,7 +6346,7 @@ async function _ensureTeamAccessOwner() {
       method: 'POST',
       body: JSON.stringify({
         ownerUserId: session.ownerUserId || '',
-        ownerEmail: session.ownerEmail,
+        ownerEmail: session.ownerEmail || '',
         inviteId: session.inviteId,
         email: session.email || '',
         staffId: session.staffId || session.staff_id || '',
