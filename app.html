@@ -1221,6 +1221,12 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
 .form-group.full { grid-column: 1 / -1; }
 .form-label { font-size: 11px; font-weight: 600; color: var(--text2); }
+.new-purchase-hint {
+  font-size: 11px; color: var(--text3); margin-top: -8px; margin-bottom: 4px;
+  cursor: pointer; user-select: none;
+}
+.new-purchase-hint:hover { color: var(--text2); }
+.new-purchase-hint .link { color: var(--accent); text-decoration: underline; font-weight: 600; }
 .form-input, .form-select, .form-textarea {
   padding: 9px 12px; border-radius: 8px;
   border: 1px solid var(--border2);
@@ -8000,6 +8006,19 @@ function paymentPackageOptionsHtml(packages = [], opts = {}) {
     (includeNew ? '<option value="__new__">+ فروش خدمت جدید با همین پرداخت</option>' : '');
 }
 
+function newPurchaseHintHtml(studentIdExpr) {
+  return `<p class="form-group full new-purchase-hint" onclick="redirectToNewPurchase(${studentIdExpr})">
+    فقط می‌خوای خدمت جدید اضافه کنی بدون ثبت پرداخت؟ <span class="link">اینجا کلیک کن</span>
+  </p>`;
+}
+
+function redirectToNewPurchase(studentId) {
+  const id = +studentId;
+  if (!id) { showToast('ابتدا مشتری را انتخاب کنید', 'error'); return; }
+  closeModal();
+  openNewPurchase(id);
+}
+
 function quickNewPackageFieldsHtml(prefix) {
   const typeOptions = PKG_TYPES.map(pt => `<option value="${pt.id}">${escapeHtml(pt.label)}</option>`).join('');
   return `
@@ -8039,6 +8058,7 @@ function openAddPayment(studentId) {
           ${pkgOptions || '<option value="">— پکیجی ثبت نشده —</option>'}
         </select>
       </div>
+      ${newPurchaseHintHtml(studentId)}
       ${quickNewPackageFieldsHtml('f')}
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی الان *</label>
@@ -8359,6 +8379,7 @@ function openGeneralPaymentModal() {
         <label class="form-label">پکیج / خدمت *</label>
         <select class="form-select" id="gp-pkg" onchange="toggleQuickNewPackage('gp')"></select>
       </div>
+      ${newPurchaseHintHtml(`document.getElementById('gp-student')?.value`)}
       ${quickNewPackageFieldsHtml('gp')}
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی الان *</label>
