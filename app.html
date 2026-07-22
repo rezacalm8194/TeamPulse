@@ -10113,19 +10113,31 @@ function _teamInstructionFolderNeedsSelection(prefix) {
   return all && !all.checked && _teamSelectedInstructionFolders(prefix).length === 0;
 }
 
+function _teamStaffInviteEmail(staff) {
+  return String(
+    staff?.email ||
+    staff?.work_email ||
+    staff?.workEmail ||
+    staff?.username ||
+    ''
+  ).trim().toLowerCase();
+}
+
 function _teamOnStaffPicked(staffId) {
   const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   const emailEl = document.getElementById('team-email');
   if (!emailEl) return;
+  const staffEmail = _teamStaffInviteEmail(staff);
   // ایمیل به‌محض انتخاب پرسنل خودکار پر می‌شود. اگر کاربر خودش دستی مقدار دیگری
   // تایپ کرده باشد (نه مقداری که خودمان قبلاً خودکار پر کرده بودیم) آن را دست‌نخورده نگه می‌داریم.
   const prevAuto = emailEl.dataset.autoFilled || '';
   const current = emailEl.value.trim();
-  if (staff?.email && (!current || current === prevAuto)) {
-    emailEl.value = staff.email;
-    emailEl.dataset.autoFilled = staff.email;
-  } else if (!staff?.email) {
+  if (staffEmail && (!current || current === prevAuto)) {
+    emailEl.value = staffEmail;
+    emailEl.dataset.autoFilled = staffEmail;
+  } else if (!staffEmail) {
     emailEl.dataset.autoFilled = '';
+    if (staffId) showToast('برای این پرسنل ایمیلی ثبت نشده است', 'warning');
   }
 }
 
@@ -10135,7 +10147,7 @@ function _createTeamInvite() {
   if (!staffId) { showToast('یک رکورد پرسنل را برای این دعوت انتخاب کن', 'error'); return; }
   const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   if (!staff) { showToast('رکورد پرسنل معتبر نیست', 'error'); return; }
-  const email = (document.getElementById('team-email')?.value || staff.email || '').trim().toLowerCase();
+  const email = (document.getElementById('team-email')?.value || _teamStaffInviteEmail(staff)).trim().toLowerCase();
   const roleKey = document.getElementById('new-team-role')?.value || 'staff_basic';
   const permissions = _teamSelectedPerms('new');
   if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('new')) {
@@ -10280,7 +10292,10 @@ function _teamSettingsHtml() {
         <label class="form-label">رکورد پرسنل *</label>
         <select class="form-input" id="team-staff-id" onchange="_teamOnStaffPicked(this.value)">
           <option value="">— انتخاب پرسنل —</option>
-          ${(_db.staff || []).filter(staffIsPersonnel).map(s => `<option value="${s.id}">${escapeHtml(_todoStaffName(s))}${s.email ? ' — ' + escapeHtml(s.email) : ''}</option>`).join('')}
+          ${(_db.staff || []).filter(staffIsPersonnel).map(s => {
+            const email = _teamStaffInviteEmail(s);
+            return `<option value="${s.id}">${escapeHtml(_todoStaffName(s))}${email ? ' — ' + escapeHtml(email) : ''}</option>`;
+          }).join('')}
         </select>
         <small style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">لینک دعوت به همین رکورد پرسنل متصل می‌شود؛ اتصال کارها دیگر فقط به ایمیل وابسته نیست.</small>
       </div>
