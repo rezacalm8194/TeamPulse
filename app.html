@@ -6199,6 +6199,7 @@ function _todoIsOwnAssigned(t) {
   return false;
 }
 function _todoCanView(t) {
+  if (!_todoBelongsToActiveAccount(t)) return false;
   if (!_isTeamGuest()) return true;
   const email = _teamEmail();
   if (_teamPerm('todo_view_team') || _teamPerm('todo_manage_staff')) return true;
@@ -19802,9 +19803,30 @@ function _todosInit() {
     if (t.requires_attachment === undefined) t.requires_attachment = 'none';
     if (t.requires_approval === undefined) t.requires_approval = false;
     if (!t.created_by) t.created_by = _sbUser?.id || 'local-owner';
-    if (!t.owner_id) t.owner_id = _sbUser?.id || 'local-owner';
     if (!t.occurrence_date) t.occurrence_date = _todoScheduledDate(t);
   });
+}
+
+function _todoActiveOwnerId() {
+  return _teamAccessSession()?.ownerUserId || _sbUser?.id || '';
+}
+
+function _todoBelongsToActiveAccount(t) {
+  const activeOwnerId = String(_todoActiveOwnerId() || '').trim();
+  const taskOwnerId = String(t?.owner_id || t?.ownerId || '').trim();
+  const taskCreatorId = String(t?.created_by || t?.createdBy || '').trim();
+  if (!activeOwnerId) return true;
+  if (taskOwnerId && taskOwnerId !== 'local-owner' && taskOwnerId !== activeOwnerId) return false;
+  if (
+    !_isTeamGuest() &&
+    taskCreatorId &&
+    taskCreatorId !== 'local-owner' &&
+    taskCreatorId !== activeOwnerId &&
+    !_todoIsStaffAssignedTask(t)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function _todayJalaliStr() {
@@ -20068,6 +20090,7 @@ function _todoIsStaffAssignedTask(t) {
 }
 
 function _todoIsMineScope(t) {
+  if (!_todoBelongsToActiveAccount(t)) return false;
   if (_todoIsOwnAssigned(t)) return true;
   if (_isTeamGuest() || _todoCurrentTeamMember()) return false;
   return !_todoIsStaffAssignedTask(t);
@@ -20256,7 +20279,7 @@ async function _saveQuickStaffChecklist(staffId) {
       requires_report: requiresReport,
       requires_attachment:'none',
       requires_approval:false,
-      owner_id: _sbUser?.id || 'local-owner',
+      owner_id: _todoActiveOwnerId() || 'local-owner',
       created_by: _sbUser?.id || 'local-owner',
       created_by_name: _sbUser?.name || '',
       date_jalali: dateJalali,
@@ -23469,7 +23492,7 @@ async function saveTodo() {
     requires_report: document.getElementById('todo-requires-report')?.value || 'none',
     requires_attachment: document.getElementById('todo-requires-attachment')?.value || 'none',
     requires_approval: !!document.getElementById('todo-requires-approval')?.checked,
-    owner_id: _sbUser?.id || 'local-owner',
+    owner_id: _todoActiveOwnerId() || 'local-owner',
     created_by: _sbUser?.id || 'local-owner',
     created_by_name: _sbUser?.name || '',
     date_jalali: dateJalali,
