@@ -9,6 +9,7 @@ db.prepare(`
   CREATE TABLE IF NOT EXISTS team_access_grants (
     owner_account_id TEXT NOT NULL,
     member_email TEXT NOT NULL,
+    staff_id TEXT,
     invite_id TEXT,
     permissions TEXT DEFAULT '[]',
     instruction_folders TEXT DEFAULT '[]',
@@ -17,6 +18,11 @@ db.prepare(`
     PRIMARY KEY (owner_account_id, member_email)
   )
 `).run();
+try {
+  db.prepare("ALTER TABLE team_access_grants ADD COLUMN staff_id TEXT").run();
+} catch (e) {
+  if (!String(e.message || '').includes('duplicate column name')) throw e;
+}
 
 const TODO_TEAM_PERMISSION_KEYS = [
   'todo_view_assigned',
@@ -33,11 +39,24 @@ const TODO_TEAM_PERMISSION_KEYS = [
   'todo_view_team_report',
   'todo_manage_staff'
 ];
+const TODO_DEFAULT_STAFF_PERMISSIONS = [
+  'todolist',
+  'todo_view_assigned',
+  'todo_complete_own',
+  'todo_report_own',
+  'todo_view_self_report',
+  'todo_create_self'
+];
 
 function normalizeTeamPermissions(permissions) {
   const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
   if (list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key)) && !list.includes('todolist')) {
     list.unshift('todolist');
+  }
+  if (list.includes('todolist') && !list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key))) {
+    TODO_DEFAULT_STAFF_PERMISSIONS.forEach(key => {
+      if (!list.includes(key)) list.push(key);
+    });
   }
   return list;
 }
@@ -111,6 +130,12 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       const sameInvite = !inviteId || String(m.id || '').trim() === inviteId;
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';
     });
+    if (!member && inviteId) {
+      member = members.find(m =>
+        String(m.email || '').trim().toLowerCase() === memberEmail &&
+        m.status !== 'حذف‌شده'
+      );
+    }
     if (!member) {
       const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
       if (!ownerUserId || !invitedEmail || !permissions.length) {
@@ -119,19 +144,23 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       member = {
         id: inviteId,
         email: memberEmail,
+        role_key: req.body?.roleKey || req.body?.role_key || req.body?.team_role || 'staff_basic',
         permissions,
         instruction_folders: req.body?.instructionFolders || []
       };
     }
 
     const permissions = normalizeTeamPermissions(member.permissions);
+    const staffId = String(member.staff_id || member.staffId || req.body?.staffId || req.body?.staff_id || '').trim();
+    const roleKey = String(member.role_key || member.roleKey || member.team_role || req.body?.roleKey || req.body?.role_key || 'staff_basic').trim();
     member.permissions = permissions;
 
     db.prepare(`
       INSERT INTO team_access_grants
-        (owner_account_id, member_email, invite_id, permissions, instruction_folders, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
+        (owner_account_id, member_email, staff_id, invite_id, permissions, instruction_folders, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
       ON CONFLICT(owner_account_id, member_email) DO UPDATE SET
+        staff_id=excluded.staff_id,
         invite_id=excluded.invite_id,
         permissions=excluded.permissions,
         instruction_folders=excluded.instruction_folders,
@@ -140,6 +169,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
     `).run(
       owner.id,
       memberEmail,
+      staffId,
       inviteId || String(member.id || ''),
       JSON.stringify(permissions),
       JSON.stringify(member.instruction_folders || member.instructionFolders || [])
@@ -150,6 +180,8 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       ownerName: owner.name || '',
       ownerEmail: owner.email || '',
       accountId: req.body?.accountId || 'default',
+      staffId,
+      roleKey,
       permissions,
       instructionFolders: member.instruction_folders || member.instructionFolders || []
     });

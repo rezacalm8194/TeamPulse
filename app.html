@@ -6080,6 +6080,37 @@ const TODO_TEAM_PERMISSIONS = [
   {key:'todo_manage_staff', label:'مدیریت چک‌لیست پرسنل', icon:'🧩', desc:'تعریف، ویرایش و بررسی کارهای پرسنل'},
 ];
 const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self'];
+const TEAM_ROLE_PRESETS = {
+  staff_basic: {
+    label: 'پرسنل عادی',
+    desc: 'دیدن و انجام کارهای خودش، گزارش خودش و ساخت کار برای خودش',
+    permissions: ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self']
+  },
+  assistant_manager: {
+    label: 'منیجر / دستیار',
+    desc: 'مدیریت مشتری، جلسه، تقویم، یادآوری و کارهای عملیاتی بدون دسترسی مالی حساس',
+    permissions: [
+      'students','sessions','customerlist','calendar','reminders','todolist',
+      'todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report',
+      'todo_view_clients','todo_view_shared','todo_create_self','todo_create_others','todo_edit_manager'
+    ]
+  },
+  task_manager: {
+    label: 'مدیر کارها',
+    desc: 'مدیریت چک‌لیست پرسنل، ساخت کار برای دیگران و گزارش تیم',
+    permissions: [
+      'todolist','staff',
+      'todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report',
+      'todo_view_team','todo_view_team_report','todo_create_self','todo_create_others',
+      'todo_edit_manager','todo_delete','todo_manage_staff'
+    ]
+  },
+  custom: {
+    label: 'سفارشی',
+    desc: 'انتخاب دستی بخش‌ها و مجوزها',
+    permissions: []
+  }
+};
 let _todoActiveTab = 'mine';
 let _todoStaffTabExplicit = false;
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
@@ -6294,6 +6325,7 @@ function _teamDecodeInvite(token) {
       ownerUserId: data.u || '',
       accountId: data.a || 'default',
       staffId: data.s || '',
+      roleKey: data.r || 'staff_basic',
       permissions: [],
       instructionFolders: [],
       compact: true
@@ -6314,6 +6346,7 @@ function _acceptTeamInviteToken(token) {
     accountId: payload.accountId || '',
     ownerDbKey: payload.ownerDbKey || '',
     staffId: payload.staffId || payload.staff_id || '',
+    roleKey: payload.roleKey || payload.role_key || payload.team_role || 'staff_basic',
     permissions,
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
@@ -6351,6 +6384,7 @@ async function _ensureTeamAccessOwner() {
         inviteId: session.inviteId,
         email: session.email || '',
         staffId: session.staffId || session.staff_id || '',
+        roleKey: session.roleKey || session.role_key || session.team_role || 'staff_basic',
         accountId: session.accountId || 'default',
         permissions: _normalizeTeamPermissions(session.permissions),
         instructionFolders: session.instructionFolders || []
@@ -6364,6 +6398,7 @@ async function _ensureTeamAccessOwner() {
       ownerName: resolved.ownerName || session.ownerName || '',
       ownerEmail: resolved.ownerEmail || session.ownerEmail || '',
       staffId: resolved.staffId || resolved.staff_id || session.staffId || '',
+      roleKey: resolved.roleKey || resolved.role_key || resolved.team_role || session.roleKey || 'staff_basic',
       permissions: _normalizeTeamPermissions(resolved.permissions?.length ? resolved.permissions : session.permissions),
       instructionFolders: resolved.instructionFolders || session.instructionFolders || []
     };
@@ -6393,14 +6428,16 @@ function _teamSyncSessionPermissions() {
   if (!member) return false;
 
   const newPerms = _normalizeTeamPermissions(member.permissions);
+  const newRole = member.role_key || member.team_role || member.roleKey || session.roleKey || 'staff_basic';
   const newFolders = (member.instruction_folders || []).map(Number).filter(Boolean);
   const oldPerms = _normalizeTeamPermissions(session.permissions);
+  const oldRole = session.roleKey || session.role_key || session.team_role || 'staff_basic';
   const oldFolders = _teamInstructionFolderIds(session);
 
   const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  if (sortedEq(newPerms, oldPerms) && sortedEq(newFolders, oldFolders)) return false;
+  if (newRole === oldRole && sortedEq(newPerms, oldPerms) && sortedEq(newFolders, oldFolders)) return false;
 
-  const next = { ...session, permissions: newPerms, instructionFolders: newFolders };
+  const next = { ...session, roleKey: newRole, permissions: newPerms, instructionFolders: newFolders };
   localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify(next));
   _applyTeamAccessToNav();
   // اگر صفحه فعلی دیگر مجاز نیست، کاربر را به یک صفحهٔ مجاز هدایت کن
@@ -9825,6 +9862,37 @@ function _teamSectionLabel(key) {
   return TEAM_ACCESS_SECTIONS.find(s => s.key === key)?.label || key;
 }
 
+function _teamRoleLabel(role) {
+  return TEAM_ROLE_PRESETS[role]?.label || TEAM_ROLE_PRESETS.custom.label;
+}
+
+function _teamRoleSelectHtml(prefix, selectedRole = 'staff_basic') {
+  const picked = TEAM_ROLE_PRESETS[selectedRole] ? selectedRole : 'custom';
+  const options = Object.entries(TEAM_ROLE_PRESETS).map(([key, role]) =>
+    `<option value="${key}" ${picked === key ? 'selected' : ''}>${escapeHtml(role.label)}</option>`
+  ).join('');
+  return `
+    <div class="form-group" style="grid-column:1/-1">
+      <label class="form-label">نقش دسترسی</label>
+      <select class="form-input" id="${prefix}-team-role" onchange="_teamApplyRolePreset('${prefix}', this.value)">
+        ${options}
+      </select>
+      <small id="${prefix}-team-role-desc" style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">${escapeHtml(TEAM_ROLE_PRESETS[picked].desc)}</small>
+    </div>`;
+}
+
+function _teamApplyRolePreset(prefix, roleKey) {
+  const role = TEAM_ROLE_PRESETS[roleKey] || TEAM_ROLE_PRESETS.custom;
+  const desc = document.getElementById(`${prefix}-team-role-desc`);
+  if (desc) desc.textContent = role.desc;
+  if (roleKey === 'custom') return;
+  const picked = new Set(_normalizeTeamPermissions(role.permissions));
+  document.querySelectorAll(`.${prefix}-team-perm`).forEach(x => {
+    x.checked = picked.has(x.value);
+  });
+  _teamToggleInstructionFolderPanel(prefix);
+}
+
 function _teamInviteSlugPart(value, fallback = 'team') {
   const s = String(value || fallback)
     .trim()
@@ -9855,6 +9923,7 @@ function _teamInviteLink(member) {
     u: _sbUser?.id || '',
     a: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
     s: member.staff_id || member.staffId || '',
+    r: member.role_key || member.team_role || member.roleKey || 'staff_basic',
   };
   const ownerPart = _teamInviteSlugPart(ownerName || ownerEmail, 'owner');
   const memberPart = _teamInviteSlugPart(member.email, 'member');
@@ -10067,6 +10136,7 @@ function _createTeamInvite() {
   const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
   if (!staff) { showToast('رکورد پرسنل معتبر نیست', 'error'); return; }
   const email = (document.getElementById('team-email')?.value || staff.email || '').trim().toLowerCase();
+  const roleKey = document.getElementById('new-team-role')?.value || 'staff_basic';
   const permissions = _teamSelectedPerms('new');
   if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('new')) {
     showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
@@ -10079,13 +10149,14 @@ function _createTeamInvite() {
   const member = existing || { id:'tm_' + Date.now(), created_at:new Date().toISOString(), status:'دعوت‌شده' };
   member.email = email;
   member.staff_id = String(staffId);
+  member.role_key = roleKey;
   member.permissions = permissions;
   member.instruction_folders = instructionFolders;
   member.updated_at = new Date().toISOString();
   member.invite_link = _teamInviteLink(member);
   if (!existing) _db.team_members.unshift(member);
   _db.team_invites = _db.team_invites || [];
-  _db.team_invites.unshift({ id:member.id, email, staff_id:String(staffId), permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
+  _db.team_invites.unshift({ id:member.id, email, staff_id:String(staffId), role_key:roleKey, permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
   _save();
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
@@ -10114,11 +10185,13 @@ function _openEditTeamMember(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
   const permissions = _normalizeTeamPermissions(member.permissions);
+  const roleKey = member.role_key || member.team_role || member.roleKey || 'custom';
   openModal(`ویرایش دسترسی — ${escapeHtml(member.email)}`, `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
       <div style="font-size:12px;color:var(--text2)">بخش‌هایی را که این هم‌تیمی می‌تواند ببیند انتخاب کن.</div>
       <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('edit', true)">انتخاب همه</button>
     </div>
+    ${_teamRoleSelectHtml('edit', roleKey)}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px">
       ${_teamPermCards('edit', permissions)}
     </div>
@@ -10132,12 +10205,14 @@ function _openEditTeamMember(id) {
 function _saveTeamMemberEdit(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
+  const roleKey = document.getElementById('edit-team-role')?.value || member.role_key || 'custom';
   const permissions = _teamSelectedPerms('edit');
   if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
   if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('edit')) {
     showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
     return;
   }
+  member.role_key = roleKey;
   member.permissions = permissions;
   member.instruction_folders = permissions.includes('instructions') ? _teamSelectedInstructionFolders('edit') : [];
   member.updated_at = new Date().toISOString();
@@ -10153,6 +10228,7 @@ function _teamSettingsHtml() {
   if (session) {
     const sessionPermissions = _normalizeTeamPermissions(session.permissions);
     const perms = sessionPermissions.map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
+    const roleLabel = _teamRoleLabel(session.roleKey || session.role_key || session.team_role || 'custom');
     const folderIds = _teamInstructionFolderIds(session);
     const folderLabel = sessionPermissions.includes('instructions')
       ? (folderIds.length ? `${fa(folderIds.length)} پوشه مشخص در مرکز دانش` : 'تمام مرکز دانش')
@@ -10161,6 +10237,7 @@ function _teamSettingsHtml() {
       <div class="detail-section" style="border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.05)">
         <h3>👥 دسترسی هم‌تیمی</h3>
         <p style="font-size:13px;color:var(--text2);line-height:1.9">شما با ایمیل <b>${escapeHtml(session.email)}</b> به حساب <b>${escapeHtml(session.ownerName || session.ownerEmail || 'صاحب حساب')}</b> وصل شده‌اید.</p>
+        <div class="detail-row"><span class="detail-key">نقش</span><span class="detail-val">${escapeHtml(roleLabel)}</span></div>
         <div class="detail-row"><span class="detail-key">بخش‌های مجاز</span><span class="detail-val">${escapeHtml(perms)}</span></div>
         <div class="detail-row"><span class="detail-key">محدوده مرکز دانش</span><span class="detail-val">${escapeHtml(folderLabel)}</span></div>
         <button class="btn btn-danger" style="margin-top:12px" onclick="_leaveTeamAccess()">خروج از دسترسی هم‌تیمی</button>
@@ -10180,7 +10257,7 @@ function _teamSettingsHtml() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);flex-wrap:wrap">
         <div style="min-width:220px;flex:1">
           <div style="font-size:13px;font-weight:800;color:var(--text);direction:ltr;text-align:right">${escapeHtml(m.email)}</div>
-          <div style="font-size:11px;color:var(--text3);line-height:1.8">${fa(count)} بخش فعال${labels ? ` — ${escapeHtml(labels)}${count>4?' ...':''}` : ''}${folderText}</div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.8">${escapeHtml(_teamRoleLabel(m.role_key || m.team_role || m.roleKey || 'custom'))} · ${fa(count)} بخش فعال${labels ? ` — ${escapeHtml(labels)}${count>4?' ...':''}` : ''}${folderText}</div>
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" onclick="_copyTeamInvite('${m.id}')">کپی لینک</button>
@@ -10212,7 +10289,8 @@ function _teamSettingsHtml() {
         <input class="form-input" id="team-email" type="email" placeholder="name@example.com" style="direction:ltr;text-align:left">
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:12px">
-        ${_teamPermCards('new', ['students','sessions','goals','todolist'])}
+        ${_teamRoleSelectHtml('new', 'assistant_manager')}
+        ${_teamPermCards('new', TEAM_ROLE_PRESETS.assistant_manager.permissions)}
       </div>
       ${_teamInstructionFolderPicker('new', [], false)}
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">

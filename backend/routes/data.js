@@ -15,6 +15,7 @@ db.prepare(`
   CREATE TABLE IF NOT EXISTS team_access_grants (
     owner_account_id TEXT NOT NULL,
     member_email TEXT NOT NULL,
+    staff_id TEXT,
     invite_id TEXT,
     permissions TEXT DEFAULT '[]',
     instruction_folders TEXT DEFAULT '[]',
@@ -23,6 +24,11 @@ db.prepare(`
     PRIMARY KEY (owner_account_id, member_email)
   )
 `).run();
+try {
+  db.prepare("ALTER TABLE team_access_grants ADD COLUMN staff_id TEXT").run();
+} catch (e) {
+  if (!String(e.message || '').includes('duplicate column name')) throw e;
+}
 
 const DATA_ARRAY_KEYS = [
   'students',
@@ -111,29 +117,48 @@ const TODO_TEAM_PERMISSION_KEYS = [
   'todo_view_team_report',
   'todo_manage_staff'
 ];
+const TODO_DEFAULT_STAFF_PERMISSIONS = [
+  'todolist',
+  'todo_view_assigned',
+  'todo_complete_own',
+  'todo_report_own',
+  'todo_view_self_report',
+  'todo_create_self'
+];
 
 function normalizeTeamPermissions(permissions) {
   const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
   if (list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key)) && !list.includes('todolist')) {
     list.unshift('todolist');
   }
+  if (list.includes('todolist') && !list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key))) {
+    TODO_DEFAULT_STAFF_PERMISSIONS.forEach(key => {
+      if (!list.includes(key)) list.push(key);
+    });
+  }
   return list;
 }
 
-function memberPermissionsFromAccountData(targetId, memberEmail, inviteId = '') {
+function memberFromAccountData(targetId, memberEmail, inviteId = '') {
   const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
-  if (!row?.data) return [];
+  if (!row?.data) return null;
   try {
     const data = JSON.parse(row.data);
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
-    const member = members.find(m => {
+    let member = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
       const sameInvite = !inviteId || String(m.id || '').trim() === String(inviteId).trim();
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';
     });
-    return normalizeTeamPermissions(member?.permissions || []);
+    if (!member && inviteId) {
+      member = members.find(m =>
+        String(m.email || '').trim().toLowerCase() === memberEmail &&
+        m.status !== 'حذف‌شده'
+      );
+    }
+    return member || null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -142,18 +167,22 @@ function getTeamGrant(req, targetId) {
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return null;
   const grant = db.prepare(`
-    SELECT permissions, invite_id
+    SELECT permissions, invite_id, staff_id
     FROM team_access_grants
     WHERE owner_account_id=? AND member_email=? AND status='active'
   `).get(targetId, requesterEmail);
   if (!grant) {
-    const permissions = memberPermissionsFromAccountData(targetId, requesterEmail);
-    return permissions.length ? { email: requesterEmail, permissions } : null;
+    const member = memberFromAccountData(targetId, requesterEmail);
+    const permissions = normalizeTeamPermissions(member?.permissions || []);
+    const staffId = String(member?.staff_id || member?.staffId || '').trim();
+    return permissions.length ? { email: requesterEmail, permissions, staffId } : null;
   }
   const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
-  const currentPermissions = memberPermissionsFromAccountData(targetId, requesterEmail, grant.invite_id);
+  const member = memberFromAccountData(targetId, requesterEmail, grant.invite_id);
+  const currentPermissions = normalizeTeamPermissions(member?.permissions || []);
   const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
-  return { email: requesterEmail, permissions };
+  const staffId = String(member?.staff_id || member?.staffId || grant.staff_id || '').trim();
+  return { email: requesterEmail, permissions, staffId };
 }
 
 function todoSharedWith(todo) {
@@ -169,6 +198,25 @@ function staffEmail(staff) {
 function ownStaffRows(data, memberEmail) {
   const rows = Array.isArray(data?.staff) ? data.staff : [];
   return rows.filter(staff => staffEmail(staff) === memberEmail);
+}
+
+function ownStaffRowsForGrant(data, grant) {
+  const rows = Array.isArray(data?.staff) ? data.staff : [];
+  const staffId = String(grant?.staffId || grant?.staff_id || '').trim();
+  const memberEmail = String(grant?.email || '').trim().toLowerCase();
+  return rows.filter(staff => {
+    const sameId = staffId && String(staff?.id || '') === staffId;
+    const sameEmail = memberEmail && staffEmail(staff) === memberEmail;
+    return sameId || sameEmail;
+  });
+}
+
+function ownStaffIdsForGrant(data, grant) {
+  const ids = new Set();
+  ownStaffRowsForGrant(data, grant).forEach(staff => {
+    if (staff?.id != null) ids.add(String(staff.id));
+  });
+  return ids;
 }
 
 function staffRelatedToMember(row, ownStaffIds, memberEmail) {
@@ -218,8 +266,8 @@ function sanitizeDataForTeamMember(data, grant) {
   const clean = sanitizeUserDataForStorage(data);
   const permissions = grant.permissions || [];
   const memberEmail = grant.email;
-  const ownStaff = ownStaffRows(clean, memberEmail);
-  const ownStaffIds = new Set(ownStaff.map(staff => String(staff.id)).filter(Boolean));
+  const ownStaff = ownStaffRowsForGrant(clean, grant);
+  const ownStaffIds = ownStaffIdsForGrant(clean, grant);
   clean.todos = Array.isArray(clean.todos)
     ? clean.todos.filter(todo => todoVisibleToTeamMember(todo, memberEmail, permissions, ownStaffIds))
     : [];
@@ -244,7 +292,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   const permissions = grant.permissions || [];
   const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
   const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
-  const ownStaffIds = new Set(ownStaffRows(previousData, memberEmail).map(staff => String(staff.id)).filter(Boolean));
+  const ownStaffIds = ownStaffIdsForGrant(previousData, grant);
   const incomingById = new Map(incomingTodos.map(t => [String(t.id), t]));
   const nextTodos = previousTodos.map(oldTodo => {
     const incoming = incomingById.get(String(oldTodo.id));
