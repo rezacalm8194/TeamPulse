@@ -19945,6 +19945,11 @@ function _todoIsStaffAssignedTask(t) {
   return !!(t && (t.assignee_id || t.staff_id || t.assignee_email));
 }
 
+function _todoIsMineScope(t) {
+  if (_isTeamGuest()) return _todoIsOwnAssigned(t);
+  return !_todoIsStaffAssignedTask(t);
+}
+
 function _todoAssigneeLabel(t) {
   const staff = _todoTaskStaff(t);
   if (staff) return _todoStaffName(staff);
@@ -20894,7 +20899,7 @@ function _todoTasksForCalendar() {
   const sig = _todoCalendarTasksSignature();
   if (_todoCalendarTasksCache.sig === sig) return _todoCalendarTasksCache.items;
   const base = (_db.todos || [])
-    .filter(t => _todoCanView(t) && (_isTeamGuest() || !_todoIsStaffAssignedTask(t)) && !t.archived && t.date_jalali)
+    .filter(t => _todoCanView(t) && _todoIsMineScope(t) && !t.archived && t.date_jalali)
     .map(t => ({ ...t, _key: _jalaliKey(t.date_jalali) }))
     .sort((a,b) => a._key - b._key || (a.time||'').localeCompare(b.time||''));
   if (!_todoCalendarShowRepeats) {
@@ -22029,9 +22034,8 @@ function renderTodoList() {
 
   // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
-  const mineScope = (t) => _isTeamGuest() || !_todoIsStaffAssignedTask(t);
-  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && mineScope(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
-  const todos = [..._db.todos.filter(t => _todoCanView(t) && mineScope(t) && !t.archived), ..._todaySnapshots];
+  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
+  const todos = [..._db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && !t.archived), ..._todaySnapshots];
 
   // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
   // کارهای امروز حتی اگر ساعتشان رد شده باشد باید در بخش «امروز» بمانند.
@@ -23975,8 +23979,8 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
   const allArchived = _db.todos.filter(t => (t.archived || t.done) && _todoCanView(t))
     .sort((a,b) => new Date(b.done_at||0) - new Date(a.done_at||0));
   const isStaffArchiveTodo = (t) => !!(t.assignee_id || t.assignee_email || t.staff_id);
-  const mineArchived = allArchived.filter(t => !isStaffArchiveTodo(t));
-  const staffArchived = allArchived.filter(isStaffArchiveTodo);
+  const mineArchived = allArchived.filter(_todoIsMineScope);
+  const staffArchived = allArchived.filter(t => !_todoIsMineScope(t) && isStaffArchiveTodo(t));
   const archived = activeArchive === 'staff' ? staffArchived : mineArchived;
   const archiveTabs = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
