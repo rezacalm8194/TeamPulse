@@ -20567,7 +20567,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const canDelete = _todoCanDelete(t);
   const todoMenuId = `staff-todo-menu-${t.id}`;
   const deleteMenuItem = canDelete
-    ? `<div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>`
+    ? `<div class="row-menu-item" style="color:var(--red)" onclick="_deleteStaffTodoCompletely(${t.id})">🗑 حذف کامل</div>`
     : '';
   const priority = t.priority || 'medium';
   const priorityText = ({low:'پایین', medium:'متوسط', high:'بالا', urgent:'فوری'})[priority] || 'متوسط';
@@ -24076,7 +24076,7 @@ async function deleteTodo(id) {
   renderTodoList();
 }
 
-async function _deleteTodoCompletely(id) {
+async function _deleteTodoCompletely(id, options = {}) {
   if (_teamAccessSession() && !window._teamOwnerDataReady) {
     const loaded = await _loadFromServer();
     if (!loaded && !window._teamOwnerDataReady) {
@@ -24107,7 +24107,7 @@ async function _deleteTodoCompletely(id) {
   removedTodos.forEach(x => {
     document.querySelectorAll(`[data-todo-id="${CSS.escape(String(x.id))}"]`).forEach(el => el.remove());
   });
-  renderTodoList();
+  _refreshTodoAfterDelete(options.refresh);
   clearTimeout(window._serverSyncTimer);
   const res = await _syncToServer();
   if (_sbUser && (!res || !res.ok || (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)))) {
@@ -24120,6 +24120,21 @@ async function _deleteTodoCompletely(id) {
     _save(false);
   }
   showToast('کار حذف شد', 'success');
+}
+
+async function _deleteStaffTodoCompletely(id) {
+  _todoActiveTab = 'staff';
+  _todoStaffTabExplicit = true;
+  await _deleteTodoCompletely(id, { refresh: 'staff' });
+}
+
+function _refreshTodoAfterDelete(refresh = '') {
+  if (refresh === 'staff' || _todoActiveTab === 'staff') {
+    _todoActiveTab = 'staff';
+    renderTodoList();
+    return;
+  }
+  renderTodoList();
 }
 
 async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine') {
