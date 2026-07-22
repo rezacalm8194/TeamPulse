@@ -4622,6 +4622,7 @@ function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
     if(existing)_db.reminders=_db.reminders.filter(r=>r.package_id!==pkgId);
     return;
   }
+  startDate = startDate || _formatJalali(..._todayJalali());
   const[jy,jm,jd]=_jalaliParse(startDate);
   if(!jy)return;
   const pt=_db.package_types.find(t=>t.id===pkg.type_id);
@@ -4724,9 +4725,10 @@ window.api = {
     getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_db.package_types.find(x=>x.id===p.type_id);return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888'};})),
     add: (p)=>{
       const pkgId=_nextId('packages');
-      _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:p.date||'',note:p.note||''});
+      const startDate = p.date || _formatJalali(..._todayJalali());
+      _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,note:p.note||''});
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
-      if(!p.skip_reminder)_createRepeatReminder(p.student_id,pkgId,p,p.date);
+      if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       _save(); return _P({ok:true,id:pkgId});
     },
     update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
@@ -7621,7 +7623,7 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, date });
   }
   closeModal();
-  showToast('خرید جدید ثبت شد ✓', 'success');
+  showToast(repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید جدید ثبت شد ✓', 'success');
   if (currentPage === 'reminders') await renderReminders();
   else if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments();
   else if (currentPage === 'payments') await renderPayments();
