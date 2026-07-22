@@ -6194,6 +6194,7 @@ function _todoCanDelete(t) {
   return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff') || (_todoIsOwnAssigned(t) && _teamPerm('todo_create_self'));
 }
 function _todoCanOpenStaffTasksTab() {
+  if ((_db.todos || []).some(t => _todoIsOwnAssigned(t))) return false;
   if (!_isTeamGuest()) return true;
   return _teamPerm('todo_manage_staff');
 }
