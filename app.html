@@ -24081,6 +24081,10 @@ async function _deleteTodoCompletely(id) {
   }
   _db.todos = (_db.todos || []).filter(x => String(x.id) !== String(t.id) && String(_todoRootId(x)) !== rootId);
   _save();
+  removedTodos.forEach(x => {
+    document.querySelectorAll(`[data-todo-id="${CSS.escape(String(x.id))}"]`).forEach(el => el.remove());
+  });
+  renderTodoList();
   clearTimeout(window._serverSyncTimer);
   const res = await _syncToServer();
   if (_sbUser && (!res || !res.ok || (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)))) {
@@ -24093,7 +24097,6 @@ async function _deleteTodoCompletely(id) {
     _save(false);
   }
   showToast('کار حذف شد', 'success');
-  renderTodoList();
 }
 
 async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine') {
