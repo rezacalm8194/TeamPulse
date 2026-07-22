@@ -6186,7 +6186,7 @@ function _todoCanDelete(t) {
 }
 function _todoCanOpenStaffTasksTab() {
   if (!_isTeamGuest()) return true;
-  return _teamPerm('todo_view_team') || _teamPerm('todo_manage_staff');
+  return _teamPerm('todo_manage_staff');
 }
 function _todoSessionStaff() {
   const session = _teamAccessSession();
@@ -12018,7 +12018,7 @@ async function saveStaffNew() {
     _staffReturnToTodoAfterSave = false;
     currentPage = 'todolist';
     localStorage.setItem('tp_last_page', 'todolist');
-    _todoActiveTab = 'staff';
+    _todoActiveTab = _todoCanOpenStaffTasksTab() ? 'staff' : 'mine';
     updatePageTitle();
     renderTodoList();
   } else {
@@ -19991,7 +19991,7 @@ function _openStaffTodoReport(staffId) {
 
 function _openAddTodoForStaff(staffId) {
   if (!_todoCanCreateForStaff(staffId)) { showToast('برای تعریف چک‌لیست این پرسنل دسترسی نداری', 'error'); return; }
-  _todoActiveTab = 'staff';
+  _todoActiveTab = _todoCanOpenStaffTasksTab() ? 'staff' : 'mine';
   openAddTodo('', staffId);
 }
 
@@ -20169,7 +20169,7 @@ async function _saveQuickStaffChecklist(staffId) {
   await _syncToServer();
   closeModal();
   showToast(`${fa(created)} کار برای ${_todoStaffName(staff)} ساخته شد${skipped ? `؛ ${fa(skipped)} تکراری اضافه نشد` : ''} ✓`, 'success');
-  _todoActiveTab = 'staff';
+  _todoActiveTab = _todoCanOpenStaffTasksTab() ? 'staff' : 'mine';
   _todoStaffFilter.staffId = String(staff.id);
   renderTodoList();
   setTimeout(_renderTodoStaffFilteredList, 30);
