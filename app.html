@@ -4588,6 +4588,15 @@ function _studentSummary(s) {
   return{...s,packages,totalAmount,totalPaid,wallet,balance,sessionCount,otherPayments};
 }
 
+function _familySummary(f) {
+  const members=_db.students.filter(s=>s.family_id===f.id).map(_studentSummary);
+  const totalAmount=members.reduce((a,m)=>a+m.totalAmount,0);
+  const totalPaid=members.reduce((a,m)=>a+m.totalPaid,0);
+  const totalWallet=members.reduce((a,m)=>a+m.wallet,0);
+  const totalBalance=totalAmount-totalPaid-totalWallet;
+  return{...f,members,totalAmount,totalPaid,totalWallet,totalBalance};
+}
+
 // ── Staff summary ───────────────────────────────────────────────────────────
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
@@ -4665,7 +4674,7 @@ window.api = {
   },
 
   families: {
-    getAll: ()=>_P(_db.families.map(f=>{const members=_db.students.filter(s=>s.family_id===f.id).map(_studentSummary);return{...f,members,totalBalance:members.reduce((a,m)=>a+m.balance,0)};})),
+    getAll: ()=>_P(_db.families.map(_familySummary)),
     add: (p)=>{ const id=_nextId('families'); _db.families.push({id,name:p.name}); (p.member_ids||[]).forEach(mid=>{const s=_db.students.find(x=>x.id===mid);if(s)s.family_id=id;}); _save(); return _P({id,name:p.name}); },
     delete: (id)=>{ _db.students.forEach(s=>{if(s.family_id===id)s.family_id=null;}); _db.families=_db.families.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
@@ -4847,8 +4856,7 @@ window.api = {
       const[tjy,tjm]=_todayJalali();
       // Build familyGroups for dashboard
       const familyGroups = _db.families.map(f => {
-        const members = _db.students.filter(s => s.family_id === f.id).map(_studentSummary);
-        return { ...f, members, totalBalance: members.reduce((a,m) => a + m.balance, 0) };
+        return _familySummary(f);
       }).filter(f => f.members.length > 0);
       return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy});
     },
@@ -6742,6 +6750,11 @@ function balanceHtml(balance, isSupplier) {
   if (balance < 0) return `<span class="amount balance-credit">${fmt(-balance)} ت طلب</span>`;
   return `<span class="amount amount-paid">تسویه</span>`;
 }
+function familyBalanceHtml(balance) {
+  if (balance > 0) return `<span class="amount amount-debt">${fmt(balance)} ت بدهی</span>`;
+  if (balance < 0) return `<span class="amount balance-credit">${fmt(-balance)} ت اعتبار</span>`;
+  return `<span class="amount amount-paid">تسویه</span>`;
+}
 function mstuStatusLine(balance) {
   let color, label, amt = '';
   if (balance > 0)      { color = 'var(--red)';   label = 'بدهکار'; amt = fmt(balance) + ' تومان'; }
@@ -7476,7 +7489,7 @@ async function openStudentDetail(id) {
         </div>`).join('')}
       <div class="detail-row" style="border-top:1px solid var(--border2);margin-top:4px">
         <span class="detail-key" style="font-weight:700">مانده مشترک خانواده</span>
-        <span class="detail-val" style="font-weight:700">${balanceHtml(fam.totalBalance)}</span>
+        <span class="detail-val" style="font-weight:700">${familyBalanceHtml(fam.totalBalance)}</span>
       </div>
     </div>`;
   }
@@ -9318,13 +9331,20 @@ async function renderFamilies(embedded = currentPage === 'payments') {
 
   let html = prefix;
   FAMILIES.forEach(f => {
+    const familyBalanceLabel = f.totalBalance > 0 ? 'بدهی مشترک' : f.totalBalance < 0 ? 'اعتبار مشترک' : 'مانده مشترک';
     html += `
     <div class="table-card">
       <div class="table-header">
         <span class="title">👨‍👩‍👧 ${f.name}</span>
-        <span style="margin-right:auto;font-size:12px;font-weight:700">مانده مشترک: ${balanceHtml(f.totalBalance)}</span>
+        <span style="margin-right:auto;font-size:12px;font-weight:700">${familyBalanceLabel}: ${familyBalanceHtml(f.totalBalance)}</span>
         <button class="btn btn-ghost btn-sm" onclick="openAddFamilyMember(${f.id}, '${escapeHtml(f.name)}')">+ افزودن عضو</button>
         <button class="btn btn-danger btn-sm" onclick="deleteFamily(${f.id}, '${escapeHtml(f.name)}')">🗑 حذف گروه</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.015)">
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">قرارداد کل</div><div style="font-size:13px;font-weight:800;color:var(--text)">${fmt(f.totalAmount)} ت</div></div>
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">پرداخت‌شده کل</div><div style="font-size:13px;font-weight:800;color:var(--green)">${fmt(f.totalPaid)} ت</div></div>
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">کیف پول کل</div><div style="font-size:13px;font-weight:800;color:var(--blue)">${fmt(f.totalWallet)} ت</div></div>
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">${familyBalanceLabel}</div><div style="font-size:13px;font-weight:800">${familyBalanceHtml(f.totalBalance)}</div></div>
       </div>
       <table>
         <thead><tr><th>عضو</th><th>قرارداد</th><th>پرداخت‌شده</th><th>کیف پول</th><th>مانده فردی</th><th>عملیات</th></tr></thead>
@@ -9853,7 +9873,7 @@ async function renderDashboard(embedded = currentPage === 'payments') {
     ${familyGroups.map(f => `
       <div class="detail-row">
         <span class="detail-key">${f.name} (${fa(f.members.length)} نفر)</span>
-        <span class="detail-val">${balanceHtml(f.totalBalance)}</span>
+        <span class="detail-val">${familyBalanceHtml(f.totalBalance)}</span>
       </div>`).join('')}
   </div>` : ''}
 
