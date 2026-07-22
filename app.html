@@ -7979,16 +7979,31 @@ function currencyOptions(selected='تومان') {
   return CURRENCIES.map(c => `<option ${c===selected?'selected':''}>${c}</option>`).join('');
 }
 
+function uniquePaymentPackageOptions(packages = []) {
+  const seen = new Set();
+  return (packages || []).filter(p => {
+    const key = String(p.type_id || p.type_label || p.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function paymentPackageOptionsHtml(packages = []) {
+  return uniquePaymentPackageOptions(packages)
+    .map(p => `<option value="${p.id}">${escapeHtml(p.type_label || 'عمومی')}</option>`)
+    .join('');
+}
+
 function openAddPayment(studentId) {
   const s = allStudents.find(x => x.id === studentId);
   if (!s) return;
-  const pkgOptions = (s.packages || []).map(p =>
-    `<option value="${p.id}">${p.type_label} — ${fmt(p.grand_total)} ت</option>`
-  ).join('');
+  const pkgOptions = paymentPackageOptionsHtml(s.packages || []);
+  const pkgLabels = uniquePaymentPackageOptions(s.packages || []).map(p=>p.type_label).join('، ') || '—';
 
   openModal(`ثبت پرداخت — ${s.name} ${s.lname}`, `
     <p style="font-size:12px;color:var(--text2);margin-bottom:6px">مانده فعلی: ${balanceHtml(s.balance)}</p>
-    <p style="font-size:11px;color:var(--text3);margin-bottom:10px">پکیج‌های این فرد: ${(s.packages||[]).map(p=>p.type_label).join('، ') || '—'}</p>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:10px">خدمات فعال: ${pkgLabels}</p>
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">پکیج / خدمت *</label>
@@ -8325,10 +8340,11 @@ function updateGeneralPaymentPkgs() {
   const sid = +document.getElementById('gp-student')?.value;
   const s = allStudents.find(x => x.id === sid);
   const sel = document.getElementById('gp-pkg');
-  const opts = (s?.packages || []).map(p => `<option value="${p.id}">${p.type_label} — ${fmt(p.grand_total)} ت</option>`).join('');
+  const opts = paymentPackageOptionsHtml(s?.packages || []);
   sel.innerHTML = opts || '<option value="">— پکیجی ثبت نشده —</option>';
   const info = document.getElementById('gp-pkg-info');
-  if (info) info.innerHTML = `<p style="font-size:11px;color:var(--text3)">پکیج‌های این فرد: ${(s?.packages||[]).map(p=>p.type_label).join('، ') || '—'} — مانده فعلی: ${balanceHtml(s?.balance||0)}</p>`;
+  const pkgLabels = uniquePaymentPackageOptions(s?.packages || []).map(p=>p.type_label).join('، ') || '—';
+  if (info) info.innerHTML = `<p style="font-size:11px;color:var(--text3)">خدمات فعال: ${pkgLabels} — مانده فعلی: ${balanceHtml(s?.balance||0)}</p>`;
 }
 
 async function saveGeneralPayment() {
