@@ -20794,9 +20794,9 @@ function _updateTodoEndPreview() {
 }
 
 function _canAutoRefresh() {
-  // تب کارهای پرسنل یک داشبورد خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
-  // کل صفحه را rebuild کند و حس «ریلـود کوچک» بسازد.
-  if (currentPage === 'todolist' && _todoActiveTab === 'staff') return false;
+  // لیست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
+  // کل صفحه را rebuild کند و حس «ریلـود کوچک» یا پریدن کارها بسازد.
+  if (currentPage === 'todolist') return false;
   // اگه modal باز هست
   if (document.querySelector('.modal-overlay.open')) return false;
   // اگه روی input/textarea focus هست (کیبورد موبایل باز)
