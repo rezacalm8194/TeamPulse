@@ -6081,6 +6081,7 @@ const TODO_TEAM_PERMISSIONS = [
 ];
 const TODO_DEFAULT_STAFF_PERMISSIONS = ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self'];
 let _todoActiveTab = 'mine';
+let _todoStaffTabExplicit = false;
 let _todoStaffFilter = { staffId:'all', range:'today', status:'all', from:'', to:'' };
 let _todoReportFilter = { staffIds:[], range:'week', from:'', to:'' };
 let _todoStaffReportId = '';
@@ -19963,6 +19964,7 @@ function _todoTabButton(tab, label) {
 }
 
 function _setTodoTab(tab) {
+  _todoStaffTabExplicit = tab === 'staff';
   _todoActiveTab = tab;
   renderTodoList();
 }
@@ -22005,6 +22007,7 @@ function renderTodoList() {
     }
   }
 
+  if (_isTeamGuest() && _todoActiveTab === 'staff' && !_todoStaffTabExplicit) _todoActiveTab = 'mine';
   if (_isTeamGuest() && _todoActiveTab !== 'mine' && !(_todoActiveTab === 'staff' && _todoCanOpenStaffTasksTab())) _todoActiveTab = 'mine';
   if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
   updateTopbarActions(_todoTopbarActionsHtml());
