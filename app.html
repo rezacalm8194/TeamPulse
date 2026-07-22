@@ -4198,6 +4198,8 @@ function jalaliWeekdayName(dateStr) {
 // WEB API — replaces Electron IPC with localStorage + Google Drive sync
 // ═══════════════════════════════════════════════════════════════════════════
 const DB_KEY = 'coaching_reza_v3';
+const RESTORE_PROTECT_KEY = 'tp_restore_protect_until';
+const RESTORE_SIGNATURE_KEY = 'tp_restore_expected_signature';
 const _ALL_CURRENCIES = ['تومان', 'درهم', 'دلار', 'یورو'];
 
 const DEFAULT_PKG_TYPES = [
@@ -4400,6 +4402,104 @@ function _save(stamp=true) {
       window._serverSyncTimer = setTimeout(_syncToServer, 200);
     }
   }
+}
+
+function _markManualRestoreInProgress(durationMs = 24 * 60 * 60 * 1000) {
+  const until = Date.now() + durationMs;
+  window._manualRestoreProtectUntil = until;
+  try { localStorage.setItem(RESTORE_PROTECT_KEY, String(until)); } catch(e) {}
+  try {
+    const sig = typeof _serverDataSignature === 'function' ? _dataFingerprint(_serverDataSignature(_db)) : '';
+    if (sig) {
+      window._manualRestoreExpectedSignature = sig;
+      localStorage.setItem(RESTORE_SIGNATURE_KEY, sig);
+    }
+  } catch(e) {}
+  return until;
+}
+
+function _clearManualRestoreProtection() {
+  window._manualRestoreProtectUntil = 0;
+  window._manualRestoreExpectedSignature = '';
+  try { localStorage.removeItem(RESTORE_PROTECT_KEY); } catch(e) {}
+  try { localStorage.removeItem(RESTORE_SIGNATURE_KEY); } catch(e) {}
+}
+
+function _dataFingerprint(value) {
+  const str = String(value || '');
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 ^= c;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b);
+  }
+  return ((h1 >>> 0).toString(36) + ':' + (h2 >>> 0).toString(36) + ':' + str.length);
+}
+
+function _isManualRestoreProtected() {
+  let storedUntil = 0;
+  try { storedUntil = Number(localStorage.getItem(RESTORE_PROTECT_KEY) || 0); } catch(e) {}
+  const until = Math.max(
+    Number(window._manualRestoreProtectUntil || 0),
+    storedUntil
+  );
+  if (!until || Date.now() >= until) {
+    _clearManualRestoreProtection();
+    return false;
+  }
+  window._manualRestoreProtectUntil = until;
+  return true;
+}
+
+function _manualRestoreExpectedSignature() {
+  if (window._manualRestoreExpectedSignature) return window._manualRestoreExpectedSignature;
+  try {
+    window._manualRestoreExpectedSignature = localStorage.getItem(RESTORE_SIGNATURE_KEY) || '';
+  } catch(e) {
+    window._manualRestoreExpectedSignature = '';
+  }
+  return window._manualRestoreExpectedSignature;
+}
+
+function _adoptManualRestoreFromLocalStorage(reason = '') {
+  if (!_isManualRestoreProtected()) return false;
+  const expectedSig = _manualRestoreExpectedSignature();
+  if (!expectedSig) return false;
+  try {
+    const key = window._activeDBKey || DB_KEY;
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    const stored = JSON.parse(raw);
+    if (!stored || !stored._restored_at) return false;
+    const storedSig = _dataFingerprint(_serverDataSignature(stored));
+    const currentSig = _dataFingerprint(_serverDataSignature(_db));
+    if (storedSig !== expectedSig || currentSig === expectedSig) return false;
+    _db = stored;
+    _migrate(_db);
+    if (_teamAccessSession()) {
+      window._teamOwnerDataReady = true;
+      window._teamLastOwnerDataSavedAt = 0;
+    }
+    console.warn('[TeamPulse] adopted manual restore from localStorage', reason);
+    return true;
+  } catch(e) {
+    console.warn('[TeamPulse] failed to adopt manual restore:', e.message);
+    return false;
+  }
+}
+
+if (!window._manualRestoreStorageListenerReady) {
+  window._manualRestoreStorageListenerReady = true;
+  window.addEventListener('storage', e => {
+    if (e.key !== RESTORE_SIGNATURE_KEY && e.key !== RESTORE_PROTECT_KEY && e.key !== (window._activeDBKey || DB_KEY)) return;
+    if (!_adoptManualRestoreFromLocalStorage('storage')) return;
+    _forceNextServerSync();
+    clearTimeout(window._serverSyncTimer);
+    window._serverSyncTimer = setTimeout(_syncToServer, 50);
+    if (typeof _canAutoRefresh === 'function' && _canAutoRefresh()) renderPage();
+  });
 }
 
 function _nextId(t) { const id=_db._nextId[t]||1; _db._nextId[t]=id+1; return id; }
@@ -4779,9 +4879,27 @@ window.api = {
         const h = JSON.parse(localStorage.getItem(vKey) || '[]');
         const ver = h.find(v => v.file === file);
         if (!ver || !ver.data) { showToast('نسخه یافت نشد','error'); return _P({ok:false}); }
-        const creds = { _gdrive_client_id:_db._gdrive_client_id, _gdrive_token:_db._gdrive_token, _gdrive_token_expiry:_db._gdrive_token_expiry, _gdrive_file_id:_db._gdrive_file_id, _gdrive_enabled:_db._gdrive_enabled };
+        const creds = {
+          _gdrive_client_id:_db._gdrive_client_id,
+          _gdrive_token:_db._gdrive_token,
+          _gdrive_token_expiry:_db._gdrive_token_expiry,
+          _gdrive_file_id:_db._gdrive_file_id,
+          _gdrive_enabled:_db._gdrive_enabled,
+          _gcal_token:_db._gcal_token,
+          _gcal_token_expiry:_db._gcal_token_expiry,
+          _gcal_enabled:_db._gcal_enabled,
+        };
+        clearTimeout(window._serverSyncTimer);
         _db = { ...ver.data, ...creds };
-        _migrate(_db); _save(false);
+        _migrate(_db);
+        _db._restored_at = new Date().toISOString();
+        _db._lastSaved = Date.now();
+        _markManualRestoreInProgress();
+        _forceNextServerSync();
+        _save(false);
+        _syncToServer().then(res => {
+          if (!res || !res.ok) console.warn('[TeamPulse] version restore sync was not confirmed');
+        });
         showToast('بازگردانی انجام شد ✓','success');
         setTimeout(() => location.reload(), 800);
         return _P({ok:true});
@@ -5049,26 +5167,47 @@ function _importFile() {
   input.onchange=e=>{
     const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
-    reader.onload=ev=>{
+    reader.onload=async ev=>{
       try{
         const imported=JSON.parse(ev.target.result);
         if(!imported?.students){showToast('فایل پشتیبان معتبر نیست','error');return;}
         if(!confirm(`این فایل شامل ${imported.students.length} شاگرد است. وارد شود و داده‌های فعلی جایگزین شوند؟`))return;
+        _saveVersion();
+        clearTimeout(window._serverSyncTimer);
         // حفظ اعتبارنامه‌ها
         const creds={
           _gdrive_client_id:_db._gdrive_client_id,
           _gdrive_token:_db._gdrive_token,
           _gdrive_token_expiry:_db._gdrive_token_expiry,
           _gdrive_file_id:_db._gdrive_file_id,
+          _gdrive_enabled:_db._gdrive_enabled,
+          _gcal_token:_db._gcal_token,
+          _gcal_token_expiry:_db._gcal_token_expiry,
+          _gcal_enabled:_db._gcal_enabled,
         };
         // حفظ session قبل از بازنویسی
         const savedSession = localStorage.getItem('tp_session');
         _db={...imported,...creds};
         _migrate(_db);
+        _db._restored_at = new Date().toISOString();
+        _db._lastSaved = Date.now();
+        _markManualRestoreInProgress();
+        if (_teamAccessSession()) {
+          window._teamOwnerDataReady = true;
+          window._teamLastOwnerDataSavedAt = 0;
+        }
+        _forceNextServerSync();
         _save(false);
         // بازیابی session
         if (savedSession) localStorage.setItem('tp_session', savedSession);
-        showToast('وارد شد ✓ — در حال بارگذاری...','success');
+        const syncRes = await _syncToServer();
+        if (syncRes && syncRes.ok) {
+          showToast('پشتیبان وارد شد ✓ — در حال تثبیت روی سرور','success');
+        } else if (_sbUser && _sbSession?.token) {
+          showToast('پشتیبان وارد شد؛ سرور فعلاً تأیید نکرد، نسخه محلی محافظت شد','error');
+        } else {
+          showToast('پشتیبان وارد شد ✓','success');
+        }
         // بجای reload کامل، فقط re-render کن
         setTimeout(() => {
           allStudents = [];
@@ -10564,6 +10703,10 @@ async function renderSettings() {
   <div class="settings-pane ${_settingsActiveTab==='data'?'active':''}" id="pane-data">
     <div class="detail-section">
       <h3>درباره و پشتیبان‌گیری</h3>
+      <div style="margin:0 0 12px;padding:10px 12px;background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.24);border-radius:10px;font-size:12px;color:var(--text2);line-height:1.8">
+        <strong style="color:var(--green)">قانون مهم TeamPulse:</strong>
+        حفظ داده کاربران اولویت اصلی برنامه است؛ هیچ همگام‌سازی خودکاری نباید داده‌ای را که کاربر آگاهانه ذخیره یا از بکاپ بازگردانی کرده، بی‌اجازه عقب ببرد.
+      </div>
       <p style="font-size:12px;color:var(--text2);margin-bottom:10px">
         تمام اطلاعات به‌صورت خودکار و آنی پس از هر تغییر ذخیره می‌شود. همچنین هر روز یک نسخه پشتیبان خودکار گرفته می‌شود.
       </p>
@@ -10575,7 +10718,7 @@ async function renderSettings() {
         <button class="btn btn-ghost" onclick="importBackup()">📂 وارد کردن فایل پشتیبان</button>
       </div>
       <p style="font-size:11px;color:var(--text3);margin-top:8px">
-        با "وارد کردن فایل پشتیبان" می‌توانی یک فایل JSON که قبلاً ذخیره کرده‌ای را در این برنامه بار کنی — تمام داده‌های فعلی با آن جایگزین می‌شود.
+        با "وارد کردن فایل پشتیبان" فایل JSON انتخاب‌شده منبع اصلی داده می‌شود؛ داده‌های فعلی با آن جایگزین و همان نسخه روی سرور ثبت می‌شود.
       </p>
     </div>
 
@@ -18567,6 +18710,9 @@ function _serverDataChanged(nextData, currentData) {
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (!_sbUser || !_sbSession?.token) return null;
+  if (_adoptManualRestoreFromLocalStorage('before-sync')) {
+    _forceNextServerSync();
+  }
   // block sync اگه impersonating هستیم و هنوز داده load نشده
   if (window._impersonateLoadPending) return null;
   try {
@@ -18700,6 +18846,20 @@ async function _loadFromServer() {
     if (!ct.includes('application/json')) return false;
     const { data } = await res.json();
     if (!data) return false;
+    if (_isManualRestoreProtected()) {
+      const expectedSig = _manualRestoreExpectedSignature();
+      const localSig = _dataFingerprint(_serverDataSignature(_db));
+      const serverSig = _dataFingerprint(_serverDataSignature(data));
+      if (serverSig === localSig || (expectedSig && serverSig === expectedSig)) {
+        _clearManualRestoreProtection();
+      } else {
+        _forceNextServerSync();
+        clearTimeout(window._serverSyncTimer);
+        window._serverSyncTimer = setTimeout(_syncToServer, 50);
+        console.warn('[TeamPulse] ignored server data while manual restore is pending');
+        return false;
+      }
+    }
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(data, window._impersonating.adminDBKey)) {
       console.warn('[Impersonate] ignored admin-like server data during poll');
       window._impersonateServerBlocked = true;
@@ -19137,6 +19297,7 @@ async function _authOnSuccess() {
   }
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
+    _adoptManualRestoreFromLocalStorage('beforeunload');
     // sync synchronous با sendBeacon
     if (_sbUser?.id && _sbSession?.token) {
       const teamSession = _teamAccessSession();
