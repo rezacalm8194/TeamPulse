@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v47';
+const CACHE = 'team-pulse-static-v48';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
@@ -89,6 +89,10 @@ function notificationActionsFor(data) {
 
 self.addEventListener('message', event => {
   if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
   if (event.data.type === 'SHOW_NOTIFICATION') {
     const data = event.data.data || {};
     self.registration.showNotification(event.data.title, {
