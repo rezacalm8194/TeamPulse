@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v46';
+const CACHE = 'team-pulse-static-v47';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
@@ -76,16 +76,30 @@ self.addEventListener('fetch', event => {
 });
 
 const _t = new Map();
+function notificationActionsFor(data) {
+  return data?.kind === 'todo' && data?.todoId
+    ? [
+        { action: 'done', title: '✅ انجام شد' },
+        { action: 'open', title: '📋 مشاهده' },
+      ]
+    : [
+        { action: 'open', title: '📋 مشاهده' },
+      ];
+}
+
 self.addEventListener('message', event => {
   if (!event.data) return;
   if (event.data.type === 'SHOW_NOTIFICATION') {
+    const data = event.data.data || {};
     self.registration.showNotification(event.data.title, {
       body: event.data.body || '',
       icon: '/logo.png',
       tag: event.data.tag || 'tp',
+      data,
       requireInteraction: true,
       dir: 'rtl',
       vibrate: [200, 100, 200],
+      actions: notificationActionsFor(data),
     });
   }
   if (event.data.type === 'SCHEDULE_NOTIFICATIONS') {
@@ -98,13 +112,11 @@ self.addEventListener('message', event => {
             body: notification.body || '',
             icon: '/logo.png',
             tag: notification.tag,
+            data: notification.data || { todoId: notification.id, kind: 'todo' },
             requireInteraction: true,
             dir: 'rtl',
             vibrate: [300, 100, 300],
-            actions: [
-              { action: 'done', title: '✅ انجام شد' },
-              { action: 'snooze', title: '⏰ ۱۰ دقیقه دیگه' },
-            ],
+            actions: notificationActionsFor(notification.data || { todoId: notification.id, kind: 'todo' }),
           });
           _t.delete(notification.id);
         }, notification.delayMs));
@@ -117,42 +129,49 @@ self.addEventListener('push', event => {
   if (!event.data) return;
   let data;
   try { data = event.data.json(); } catch { data = { title: '⏰ یادآور', body: event.data.text() }; }
+  const notificationData = {
+    todoId: data.todoId || null,
+    kind: data.kind || '',
+    url: data.url || '/app#todolist',
+  };
   event.waitUntil(
     self.registration.showNotification(data.title || '⏰ یادآور TeamPulse', {
       body: data.body || '',
       icon: data.icon || '/logo.png',
       tag: data.tag || 'push-' + Date.now(),
+      data: notificationData,
       requireInteraction: true,
       dir: 'rtl',
       vibrate: [300, 100, 300],
-      actions: [
-        { action: 'open', title: '📋 مشاهده' },
-        { action: 'dismiss', title: '✅ فهمیدم' },
-      ],
+      actions: notificationActionsFor(notificationData),
     })
   );
 });
 
+async function focusOrOpenApp() {
+  const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const client of clientList) {
+    if (client.url.includes('/app') && 'focus' in client) {
+      await client.focus();
+      return client;
+    }
+  }
+  return clients.openWindow('/app#todolist');
+}
+
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  if (event.action === 'snooze') {
-    const notification = event.notification;
-    setTimeout(() => self.registration.showNotification(notification.title, {
-      body: notification.body,
-      icon: '/logo.png',
-      tag: notification.tag + '-s',
-      requireInteraction: true,
-      dir: 'rtl',
-    }), 600000);
-    return;
-  }
+  const data = event.notification.data || {};
+  const tag = event.notification.tag || '';
+  const todoId = data.todoId || (tag.startsWith('todo-') ? tag.slice(5) : null);
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then(clientList => {
-        for (const client of clientList) {
-          if (client.url.includes('/app') && 'focus' in client) return client.focus();
-        }
-        return clients.openWindow('/app');
-      })
+    focusOrOpenApp().then(client => {
+      if (!client || !client.postMessage) return;
+      if (event.action === 'done' && todoId) {
+        client.postMessage({ type: 'TODO_NOTIFICATION_DONE', todoId });
+        return;
+      }
+      client.postMessage({ type: 'TODO_NOTIFICATION_VIEW', todoId });
+    })
   );
 });

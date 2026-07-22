@@ -23012,18 +23012,78 @@ function _showTodoReminder(t) {
         title: '⏰ ' + t.title,
         body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
         tag: 'todo-' + t.id,
+        data: { todoId: t.id, kind: 'todo' },
       });
     } else {
       new Notification('⏰ ' + t.title, {
         body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
         icon: '/logo.png',
         tag: 'todo-' + t.id,
+        data: { todoId: t.id, kind: 'todo' },
         requireInteraction: true,
+        actions: [
+          { action: 'done', title: '✅ انجام شد' },
+          { action: 'open', title: '📋 مشاهده' },
+        ],
       });
     }
   }
   // Toast داخلی هم نشون بده
   showToast('⏰ ' + t.title + ' — ' + t.remind_min + ' دقیقه دیگه', 'success');
+}
+
+async function _openTodoListFromNotification(todoId = null) {
+  let t = todoId ? (_db.todos || []).find(x => String(x.id) === String(todoId)) : null;
+  if (todoId && !t) {
+    await _loadFromServer();
+    _todosInit();
+    t = (_db.todos || []).find(x => String(x.id) === String(todoId));
+  }
+  currentPage = 'todolist';
+  _todoActiveTab = (!_isTeamGuest() && t && _todoIsStaffAssignedTask(t) && _todoCanOpenStaffTasksTab()) ? 'staff' : 'mine';
+  updatePageTitle();
+  await renderPage();
+}
+
+async function _handleTodoNotificationDone(todoId) {
+  if (!todoId) return;
+  _todosInit();
+  let t = (_db.todos || []).find(x => String(x.id) === String(todoId));
+  if (!t) {
+    await _loadFromServer();
+    _todosInit();
+    t = (_db.todos || []).find(x => String(x.id) === String(todoId));
+  }
+  if (!t) {
+    await _openTodoListFromNotification(todoId);
+    showToast('این کار پیدا نشد؛ لیست کارها را بررسی کن', 'warning');
+    return;
+  }
+  if (!_todoCanComplete(t)) {
+    await _openTodoListFromNotification(todoId);
+    showToast('برای انجام‌کردن این کار دسترسی نداری', 'error');
+    return;
+  }
+  currentPage = 'todolist';
+  _todoActiveTab = (!_isTeamGuest() && _todoIsStaffAssignedTask(t) && _todoCanOpenStaffTasksTab()) ? 'staff' : 'mine';
+  if (!t.done) {
+    _completeTodoWithReport(t, '');
+  } else {
+    await _openTodoListFromNotification(todoId);
+    showToast('این کار قبلاً انجام شده است', 'info');
+  }
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    const data = event.data || {};
+    if (data.type === 'TODO_NOTIFICATION_VIEW') {
+      _openTodoListFromNotification(data.todoId);
+    }
+    if (data.type === 'TODO_NOTIFICATION_DONE') {
+      _handleTodoNotificationDone(data.todoId);
+    }
+  });
 }
 
 // Schedule نوتیفیکیشن‌ها برای کارهای امروز (حتی وقتی تب بسته‌ست)

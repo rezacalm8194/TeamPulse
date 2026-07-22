@@ -176,10 +176,17 @@ function iranWallTimeToUTC(gy, gm, gd, timeStr) {
   return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - IRAN_OFFSET_MS);
 }
 
-async function sendPushSubscriptions(subs, title, body) {
+async function sendPushSubscriptions(subs, title, body, options = {}) {
   if (!subs.length) return;
 
-  const payload = JSON.stringify({ title: '⏰ ' + title, body, icon: '/logo.png', tag: 'todo-' + Date.now() });
+  const payload = JSON.stringify({
+    title: '⏰ ' + title,
+    body,
+    icon: '/logo.png',
+    tag: options.tag || 'push-' + Date.now(),
+    todoId: options.todoId || null,
+    kind: options.kind || 'reminder',
+  });
   const sentEndpoints = new Set();
 
   for (const s of subs) {
@@ -230,7 +237,11 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
       allowed.push(sub);
     }
   }
-  await sendPushSubscriptions(allowed, title, body);
+  await sendPushSubscriptions(allowed, title, body, {
+    tag: todo?.id != null ? 'todo-' + todo.id : undefined,
+    todoId: todo?.id || null,
+    kind: 'todo',
+  });
 }
 
 // ── Cron: هر دقیقه ─────────────────────────────────────────────
