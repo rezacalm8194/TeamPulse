@@ -6229,9 +6229,12 @@ function _todoCanDelete(t) {
   if (!_isTeamGuest()) return true;
   return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff') || _teamPerm('todo_edit_manager') || (_todoIsOwnAssigned(t) && _teamPerm('todo_create_self'));
 }
+function _todoHasActivePersonnel() {
+  return (_db.staff || []).some(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
+}
 function _todoCanOpenStaffTasksTab() {
+  if (!_isTeamGuest()) return _todoHasActivePersonnel();
   if ((_db.todos || []).some(t => _todoIsOwnAssigned(t))) return false;
-  if (!_isTeamGuest()) return true;
   return _teamPerm('todo_manage_staff');
 }
 function _todoSessionStaff() {
