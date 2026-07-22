@@ -4662,10 +4662,22 @@ window.api = {
     update: (p)=>{
       const s=_db.students.find(x=>x.id===p.id); if(!s)return _P({ok:false});
       Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false});
-      _db.packages=_db.packages.filter(pkg=>pkg.student_id!==s.id);
-      (p.packages||[]).forEach(pkg=>{
-        const pkgId=pkg.id||_nextId('packages');
-        _db.packages.push({id:pkgId,student_id:s.id,type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||s.date_jalali||'',note:pkg.note||''});
+      const selectedPackages = p.packages || [];
+      const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
+      const removedPackageIds = _db.packages
+        .filter(pkg=>pkg.student_id===s.id&&!selectedIds.has(String(pkg.id)))
+        .map(pkg=>pkg.id);
+      _db.packages = _db.packages.filter(pkg=>pkg.student_id!==s.id || selectedIds.has(String(pkg.id)));
+      if(removedPackageIds.length)_db.reminders=_db.reminders.filter(r=>!removedPackageIds.includes(r.package_id));
+      selectedPackages.forEach(pkg=>{
+        let target = pkg.id ? _db.packages.find(x=>x.id===pkg.id&&x.student_id===s.id) : null;
+        const pkgId = target ? target.id : _nextId('packages');
+        if(target){
+          Object.assign(target,{type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||target.start_date||s.date_jalali||'',note:pkg.note||''});
+        }else{
+          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||s.date_jalali||'',note:pkg.note||''};
+          _db.packages.push(target);
+        }
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
         const er=_db.reminders.find(r=>r.package_id===pkgId);
         const gt=(pkg.total_amount||0)+(pkg.initial_cost||0);
