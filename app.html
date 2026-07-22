@@ -4634,11 +4634,12 @@ function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
     due_date_jalali:_formatJalali(...next),
     repeat_months:repeatMonths,
     amount:(pkg.total_amount||0)+(pkg.initial_cost||0),
+    note:pkg.note||'',
     done:false,
     notified_levels:[],
   };
   if(existing)Object.assign(existing,patch);
-  else _db.reminders.push({id:_nextId('reminders'),...patch,note:'',created_at:new Date().toISOString()});
+  else _db.reminders.push({id:_nextId('reminders'),...patch,created_at:new Date().toISOString()});
 }
 
 // ════════════════════════════════════════════════════════════════════════════
