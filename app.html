@@ -8006,8 +8006,8 @@ function quickNewPackageFieldsHtml(prefix) {
           <select class="form-select" id="${prefix}-new-type">${typeOptions}</select>
         </div>
         <div>
-          <label class="form-label">مبلغ قرارداد جدید</label>
-          <input class="form-input amount-input" id="${prefix}-new-total" type="number" placeholder="اگر خالی باشد، مبلغ پرداخت">
+          <label class="form-label">قیمت کل خدمت</label>
+          <input class="form-input amount-input" id="${prefix}-new-total" type="number" placeholder="اگر خالی باشد، مبلغ دریافتی الان">
         </div>
       </div>
     </div>`;
@@ -8037,7 +8037,7 @@ function openAddPayment(studentId) {
       </div>
       ${quickNewPackageFieldsHtml('f')}
       <div class="form-group">
-        <label class="form-label">مبلغ *</label>
+        <label class="form-label">مبلغ دریافتی الان *</label>
         <input class="form-input amount-input" id="f-pay-amount" type="number" placeholder="0">
       </div>
       <div class="form-group">
@@ -8069,7 +8069,7 @@ async function savePayment(studentId) {
   const amount = +(document.getElementById('f-pay-amount')?.value || 0);
   const date   = document.getElementById('f-pay-date')?.value;
   if (!pkgId) { showToast('پکیج را انتخاب کنید', 'error'); return; }
-  if (!amount || amount <= 0) { showToast('مبلغ را وارد کنید', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
   let packageId = +pkgId;
@@ -8255,7 +8255,7 @@ async function openEditPayment(id) {
     <p style="font-size:11px;color:var(--text3);margin-bottom:8px">پکیج: ${p.pkg_label}</p>
     <div class="form-grid">
       <div class="form-group">
-        <label class="form-label">مبلغ *</label>
+        <label class="form-label">مبلغ دریافتی الان *</label>
         <input class="form-input amount-input" id="ep-amount" type="number" value="${p.amount}">
       </div>
       <div class="form-group">
@@ -8285,7 +8285,7 @@ async function openEditPayment(id) {
 async function savePaymentEdit(id) {
   const amount = +(document.getElementById('ep-amount')?.value || 0);
   const date = document.getElementById('ep-date')?.value;
-  if (!amount || amount <= 0) { showToast('مبلغ را وارد کنید', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
   const payments = await window.api.payments.getAll();
   const p = payments.find(x => x.id === id);
@@ -8350,7 +8350,7 @@ function openGeneralPaymentModal() {
       </div>
       ${quickNewPackageFieldsHtml('gp')}
       <div class="form-group">
-        <label class="form-label">مبلغ *</label>
+        <label class="form-label">مبلغ دریافتی الان *</label>
         <input class="form-input amount-input" id="gp-amount" type="number" placeholder="0">
       </div>
       <div class="form-group">
@@ -8396,7 +8396,7 @@ async function saveGeneralPayment() {
   const amount = +(document.getElementById('gp-amount')?.value || 0);
   const date = document.getElementById('gp-date')?.value;
   if (!pkgId) { showToast('پکیج را انتخاب کنید', 'error'); return; }
-  if (!amount || amount <= 0) { showToast('مبلغ را وارد کنید', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
 
   let packageId = +pkgId;
@@ -26360,7 +26360,7 @@ async function _installPWA() {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v48';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v58';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
