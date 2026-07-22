@@ -20334,14 +20334,12 @@ function _todoFormSections() {
       titleGroup,
       dateGroup,
       timeGroup,
-      remindGroup,
-      byId('notif-status'),
-      gcalGroup,
-    ],
-    schedule: [
       durationGroup,
       repeatGroup,
       byId('weekdays-picker'),
+      remindGroup,
+      byId('notif-status'),
+      gcalGroup,
     ],
     details: [
       noteGroup,
@@ -20355,18 +20353,17 @@ function _todoFormSections() {
 }
 
 function _setTodoFormTab(tab) {
-  const tabs = ['quick','schedule','details'];
   document.querySelectorAll('.todo-form-tabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   const sections = _todoFormSections();
   const all = new Set();
   Object.values(sections).flat().filter(Boolean).forEach(el => all.add(el));
   all.forEach(el => { el.style.display = 'none'; });
   (sections[tab] || sections.quick).filter(Boolean).forEach(el => { el.style.display = ''; });
-  if (tab !== 'schedule') {
+  if (tab === 'quick') {
+    _onTodoRepeatChange(document.getElementById('todo-repeat')?.value || 'none');
+  } else {
     const weekdays = document.getElementById('weekdays-picker');
     if (weekdays) weekdays.style.display = 'none';
-  } else {
-    _onTodoRepeatChange(document.getElementById('todo-repeat')?.value || 'none');
   }
 }
 
@@ -20379,7 +20376,6 @@ function _initTodoFormTabs() {
   tabs.className = 'todo-form-tabs';
   tabs.innerHTML = `
     <button type="button" class="active" data-tab="quick" onclick="_setTodoFormTab('quick')">سریع</button>
-    <button type="button" data-tab="schedule" onclick="_setTodoFormTab('schedule')">زمان‌بندی</button>
     <button type="button" data-tab="details" onclick="_setTodoFormTab('details')">جزئیات</button>
   `;
   (noteGroup || title.closest('.form-group'))?.before(tabs);
