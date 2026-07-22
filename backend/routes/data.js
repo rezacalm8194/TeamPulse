@@ -251,6 +251,14 @@ function todoAssignedToMember(todo, memberEmail, ownStaffIds = new Set()) {
   return ids.some(id => ownStaffIds.has(id));
 }
 
+function todoRootId(todo) {
+  return todo?.recurrence_parent_id ||
+    todo?.recurring_parent_id ||
+    todo?.parent_todo_id ||
+    todo?.template_id ||
+    todo?.id;
+}
+
 function todoVisibleToTeamMember(todo, memberEmail, permissions, ownStaffIds = new Set()) {
   const visibility = todo?.visibility || (todo?.assignee_id ? 'assignee' : 'private');
   if (permissions.includes('todo_view_team') || permissions.includes('todo_manage_staff')) return true;
@@ -294,7 +302,22 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
   const ownStaffIds = ownStaffIdsForGrant(previousData, grant);
   const incomingById = new Map(incomingTodos.map(t => [String(t.id), t]));
+  const deletedTodoIds = new Set(
+    (Array.isArray(nextData._deletedTodoIds) ? nextData._deletedTodoIds : [])
+      .map(id => String(id))
+      .filter(Boolean)
+  );
+  const canDeleteTodos = permissions.includes('todo_delete') ||
+    permissions.includes('todo_manage_staff') ||
+    permissions.includes('todo_edit_manager');
   const nextTodos = previousTodos.map(oldTodo => {
+    if (
+      canDeleteTodos &&
+      todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds) &&
+      (deletedTodoIds.has(String(oldTodo.id)) || deletedTodoIds.has(String(todoRootId(oldTodo))))
+    ) {
+      return null;
+    }
     const incoming = incomingById.get(String(oldTodo.id));
     if (!incoming) return oldTodo;
     if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)) return oldTodo;
@@ -332,7 +355,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
       history: incoming.history || oldTodo.history,
       updated_at: incoming.updated_at || oldTodo.updated_at,
     };
-  });
+  }).filter(Boolean);
   if (permissions.includes('todo_create_self')) {
     incomingTodos.forEach(todo => {
       if (previousTodos.some(x => String(x.id) === String(todo.id))) return;

@@ -6226,7 +6226,7 @@ function _todoCanEdit(t) {
 }
 function _todoCanDelete(t) {
   if (!_isTeamGuest()) return true;
-  return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff') || (_todoIsOwnAssigned(t) && _teamPerm('todo_create_self'));
+  return _teamPerm('todo_delete') || _teamPerm('todo_manage_staff') || _teamPerm('todo_edit_manager') || (_todoIsOwnAssigned(t) && _teamPerm('todo_create_self'));
 }
 function _todoCanOpenStaffTasksTab() {
   if ((_db.todos || []).some(t => _todoIsOwnAssigned(t))) return false;
@@ -20578,7 +20578,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
       <div class="row-menu-panel" id="${todoMenuId}">
         <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_tomorrow')">↪ ببر به فردا</div>
         <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_today')">↩ ببر به امروز</div>
-        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
+        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ رد کردن این نوبت</div>
         ${deleteMenuItem}
       </div>
     </div>
@@ -22301,7 +22301,7 @@ function renderTodoList() {
         <div class="row-menu-panel" id="${todoMenuId}">
           <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_tomorrow')">↪ ببر به فردا</div>
           <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_today')">↩ ببر به امروز</div>
-          <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
+          <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ رد کردن این نوبت</div>
           <div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>
         </div>
       </div>
@@ -22684,7 +22684,7 @@ function _resolveOverdueTodo(id, action) {
       t.updated_at = t.skipped_at;
     }
     _save(); _syncToServer();
-    showToast(`نوبت ${DateService.disp(scheduledDate)} انجام‌نشده بسته شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
+    showToast(`نوبت ${DateService.disp(scheduledDate)} رد شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
     renderTodoList();
     return;
   }
@@ -22752,7 +22752,7 @@ function _resolveTodoMenuAction(id, action) {
       t.updated_at = t.skipped_at;
     }
     _save(); _syncToServer();
-    showToast('کار به عنوان انجام‌نشدنی بسته شد', 'warning');
+    showToast('این نوبت رد شد و در گزارش انجام‌نشده‌ها می‌ماند', 'warning');
     renderTodoList();
     return;
   }
@@ -22840,7 +22840,7 @@ function _openResolveAllOverdueTodos() {
     </p>
     <div style="display:grid;gap:8px">
       <button class="btn btn-success" onclick="_resolveAllOverdueTodos('done')">همه انجام شد</button>
-      <button class="btn btn-ghost" style="color:var(--amber)" onclick="_resolveAllOverdueTodos('skip')">همه انجام نمی‌دهم</button>
+      <button class="btn btn-ghost" style="color:var(--amber)" onclick="_resolveAllOverdueTodos('skip')">همه رد شوند</button>
       <button class="btn btn-danger" onclick="_resolveAllOverdueTodos('delete_occurrence')">حذف همه نوبت‌های گذشته</button>
     </div>
   `, [{label:'انصراف', cls:'btn-ghost', action:'closeModal()'}]);
@@ -22849,7 +22849,7 @@ function _openResolveAllOverdueTodos() {
 function _resolveAllOverdueTodos(action) {
   const items = _currentOverdueTodos();
   if (!items.length) { closeModal(); return; }
-  const labels = { done:'انجام‌شده', skip:'انجام‌نشده', delete_occurrence:'حذف' };
+  const labels = { done:'انجام‌شده', skip:'رد کردن', delete_occurrence:'حذف' };
   if (!confirm(`برای ${fa(items.length)} نوبت عقب‌افتاده عملیات «${labels[action] || action}» انجام شود؟`)) return;
   items.slice().forEach(t => {
     const scheduledDate = _todoScheduledDate(t);
@@ -24053,7 +24053,14 @@ async function deleteTodo(id) {
   renderTodoList();
 }
 
-function _deleteTodoCompletely(id) {
+async function _deleteTodoCompletely(id) {
+  if (_teamAccessSession() && !window._teamOwnerDataReady) {
+    const loaded = await _loadFromServer();
+    if (!loaded && !window._teamOwnerDataReady) {
+      showToast('حذف انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
+      return;
+    }
+  }
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   if (!_todoCanDelete(t)) { showToast('برای حذف این کار دسترسی نداری', 'error'); return; }
@@ -24063,12 +24070,28 @@ function _deleteTodoCompletely(id) {
     ? 'این کار تکرارشونده است. حذف کامل شود؟'
     : 'این کار حذف شود؟';
   if (!confirm(msg)) return;
-  (_db.todos || [])
-    .filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId)
-    .forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id); });
+  const removedTodos = (_db.todos || []).filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId);
+  removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id); });
+  if (_teamAccessSession()) {
+    const deletedIds = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
+    deletedIds.add(String(t.id));
+    deletedIds.add(rootId);
+    removedTodos.forEach(x => deletedIds.add(String(x.id)));
+    _db._deletedTodoIds = [...deletedIds];
+  }
   _db.todos = (_db.todos || []).filter(x => String(x.id) !== String(t.id) && String(_todoRootId(x)) !== rootId);
   _save();
-  _syncToServer();
+  clearTimeout(window._serverSyncTimer);
+  const res = await _syncToServer();
+  if (_sbUser && (!res || !res.ok || (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)))) {
+    showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
+    return;
+  }
+  if (_teamAccessSession() && Array.isArray(_db._deletedTodoIds)) {
+    const removedIds = new Set(removedTodos.map(x => String(x.id)).concat([String(t.id), rootId]));
+    _db._deletedTodoIds = _db._deletedTodoIds.filter(x => !removedIds.has(String(x)));
+    _save(false);
+  }
   showToast('کار حذف شد', 'success');
   renderTodoList();
 }
