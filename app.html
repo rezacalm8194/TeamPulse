@@ -19960,7 +19960,8 @@ function _todoIsStaffAssignedTask(t) {
 }
 
 function _todoIsMineScope(t) {
-  if (_isTeamGuest() || _todoCurrentTeamMember()) return _todoIsOwnAssigned(t);
+  if (_todoIsOwnAssigned(t)) return true;
+  if (_isTeamGuest() || _todoCurrentTeamMember()) return false;
   return !_todoIsStaffAssignedTask(t);
 }
 
