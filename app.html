@@ -19812,6 +19812,11 @@ function _todayJalaliStr() {
   return _formatJalali(y,m,d);
 }
 
+function _tomorrowJalaliStr() {
+  const [y,m,d] = _todayJalali();
+  return _formatJalali(..._addDays(y,m,d,1));
+}
+
 function _jalaliToday() { return _jalaliKey(_todayJalaliStr()); }
 
 function _todoScheduledDate(t) {
@@ -20571,7 +20576,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
     <div class="row-menu" onclick="event.stopPropagation()">
       <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
       <div class="row-menu-panel" id="${todoMenuId}">
-        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'done')">✓ انجام شد</div>
+        <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_tomorrow')">↪ ببر به فردا</div>
         <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_today')">↩ ببر به امروز</div>
         <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
         ${deleteMenuItem}
@@ -22294,7 +22299,7 @@ function renderTodoList() {
       <div class="row-menu" onclick="event.stopPropagation()">
         <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
         <div class="row-menu-panel" id="${todoMenuId}">
-          <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'done')">✓ انجام شد</div>
+          <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_tomorrow')">↪ ببر به فردا</div>
           <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'move_today')">↩ ببر به امروز</div>
           <div class="row-menu-item" onclick="_resolveTodoMenuAction(${t.id},'skip')">⏭ انجام نمی‌دهم</div>
           <div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>
@@ -22725,6 +22730,14 @@ function _resolveTodoMenuAction(id, action) {
     return;
   }
 
+  if (action === 'move_tomorrow') {
+    if (!_todoCanEdit(t)) { showToast('برای جابه‌جایی این کار دسترسی نداری', 'error'); return; }
+    const tomorrow = _tomorrowJalaliStr();
+    if (scheduledDate && _jalaliKey(scheduledDate) === _jalaliKey(tomorrow)) { showToast('این کار همین فرداست', 'info'); return; }
+    _moveTodoOccurrenceToDate(t, scheduledDate || today, tomorrow, 'فردا');
+    return;
+  }
+
   if (action === 'skip') {
     if (!_todoCanComplete(t) && !_todoCanEdit(t)) { showToast('برای تعیین تکلیف این کار دسترسی نداری', 'error'); return; }
     if (_isTodoRecurring(t)) {
@@ -22745,7 +22758,7 @@ function _resolveTodoMenuAction(id, action) {
   }
 
   if (action === 'delete') {
-    deleteTodo(id);
+    _deleteTodoCompletely(id);
   }
 }
 
@@ -22758,16 +22771,16 @@ function _deleteTodoOccurrenceOnly(t, scheduledDate = _todoScheduledDate(t)) {
   }
 }
 
-function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
+function _moveTodoOccurrenceToDate(t, scheduledDate, targetDate, targetLabel) {
   const rootId = _todoRootId(t);
-  const existingToday = _todoHasOccurrenceFor(rootId, today, t.id);
-  if (existingToday) {
-    const makeBoth = confirm('از همین کار یک نوبت برای امروز وجود دارد. تایید = هر دو نوبت امروز انجام شوند. انصراف = نوبت گذشته رد شود و فقط نوبت امروز باقی بماند.');
+  const existingTarget = _todoHasOccurrenceFor(rootId, targetDate, t.id);
+  if (existingTarget) {
+    const makeBoth = confirm(`از همین کار یک نوبت برای ${targetLabel} وجود دارد. تایید = هر دو نوبت ${targetLabel} انجام شوند. انصراف = نوبت قبلی رد شود و فقط نوبت ${targetLabel} باقی بماند.`);
     if (!makeBoth) {
       if (_isTodoRecurring(t)) _createTodoOccurrenceRecord(t, 'skipped', new Date().toISOString());
       _db.todos = _db.todos.filter(x => x.id != t.id);
       _save(); _syncToServer();
-      showToast(`نوبت ${DateService.disp(scheduledDate)} انجام‌نشده بسته شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
+      showToast(`نوبت ${DateService.disp(scheduledDate)} انجام‌نشده بسته شد؛ برنامه ${targetLabel} بدون تغییر ادامه دارد.`, 'warning');
       renderTodoList();
       return;
     }
@@ -22775,9 +22788,9 @@ function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
       ...t,
       id: (_db._nextId.todos++),
       recurrence_parent_id: rootId,
-      scheduled_date: today,
-      scheduledDate: today,
-      date_jalali: today,
+      scheduled_date: targetDate,
+      scheduledDate: targetDate,
+      date_jalali: targetDate,
       repeat: 'none',
       done: false,
       done_at: null,
@@ -22793,9 +22806,9 @@ function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
     _db.todos.push(copy);
     _db.todos = _db.todos.filter(x => x.id != t.id);
   } else {
-    t.date_jalali = today;
-    t.scheduled_date = today;
-    t.scheduledDate = today;
+    t.date_jalali = targetDate;
+    t.scheduled_date = targetDate;
+    t.scheduledDate = targetDate;
     t.status = 'pending';
     t.done = false;
     t.done_at = null;
@@ -22804,8 +22817,12 @@ function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
     t.updated_at = new Date().toISOString();
   }
   _save(); _syncToServer();
-  showToast(`نوبت ${DateService.disp(scheduledDate)} به امروز منتقل شد.`, 'success');
+  showToast(`نوبت ${DateService.disp(scheduledDate)} به ${targetLabel} منتقل شد.`, 'success');
   renderTodoList();
+}
+
+function _moveTodoOccurrenceToToday(t, scheduledDate, today) {
+  _moveTodoOccurrenceToDate(t, scheduledDate, today, 'امروز');
 }
 
 function _currentOverdueTodos() {
