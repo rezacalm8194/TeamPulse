@@ -19364,7 +19364,11 @@ async function _authOnSuccess() {
     _save(false);
   } else {
     // دستگاه جدید یا موجود — فقط اطمینان از اسم
-    if (!_db.meta?.appTitle || _db.meta.appTitle === 'TeamPulse') {
+    // نکته: در دسترسی هم‌تیمی (team access) این «حساب» متعلق به کارفرماست، نه پرسنل.
+    // اگر اینجا appTitle را با ایمیل خودِ پرسنل پر کنیم، تا قبل از رسیدن دادهٔ واقعی
+    // از سرور، بالای صفحه چند لحظه اسم/ایمیل پرسنل به‌جای نام کسب‌وکار کارفرما نشان داده
+    // می‌شود. پس برای دسترسی هم‌تیمی صبر می‌کنیم تا دادهٔ واقعی از سرور برسد.
+    if (!_teamAccessSession() && (!_db.meta?.appTitle || _db.meta.appTitle === 'TeamPulse')) {
       const emailName = _sbUser.email.split('@')[0];
       _db.meta = { ..._db.meta, appTitle: emailName };
       _save(false);
