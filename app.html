@@ -19467,11 +19467,21 @@ async function _authOnSuccess() {
       const teamSession = _teamAccessSession();
       if (teamSession && !teamSession.ownerUserId) return;
       const accId = teamSession?.ownerUserId || _sbUser.id;
-      const url = (window.location.origin || '') + '/api/data/' + accId;
+      // sendBeacon can't set an Authorization header, so pass the token
+      // as a query param — the server accepts that as a fallback.
+      const url = (window.location.origin || '') + '/api/data/' + accId +
+        '?token=' + encodeURIComponent(_sbSession.token);
       const data = JSON.stringify({ data: _db, force: !!window._forceNextSync });
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
-        navigator.sendBeacon(url, blob);
+        const sent = navigator.sendBeacon(url, blob);
+        if (!sent) {
+          // sendBeacon queue full or blocked — fall back to a fire-and-forget
+          // fetch with keepalive so we still try to save before unload.
+          fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
+        }
+      } else {
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
       }
     }
   });
@@ -20519,10 +20529,10 @@ function _openQuickStaffChecklist(staffId) {
       <div class="form-group">
         <label class="form-label">🔔 یادآوری</label>
         <select class="form-input" id="quick-staff-remind">
-          <option value="0">بدون یادآوری</option>
+          <option value="0" selected>بدون یادآوری</option>
           <option value="5">۵ دقیقه قبل</option>
           <option value="10">۱۰ دقیقه قبل</option>
-          <option value="15" selected>۱۵ دقیقه قبل</option>
+          <option value="15">۱۵ دقیقه قبل</option>
           <option value="30">۳۰ دقیقه قبل</option>
           <option value="60">۱ ساعت قبل</option>
           <option value="120">۲ ساعت قبل</option>
@@ -23582,10 +23592,10 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     <div class="form-group full">
       <label class="form-label">🔔 یادآوری</label>
       <select class="form-input" id="todo-remind">
-        <option value="0">بدون یادآوری</option>
+        <option value="0" selected>بدون یادآوری</option>
         <option value="5">۵ دقیقه قبل</option>
         <option value="10">۱۰ دقیقه قبل</option>
-        <option value="15" selected>۱۵ دقیقه قبل</option>
+        <option value="15">۱۵ دقیقه قبل</option>
         <option value="30">۳۰ دقیقه قبل</option>
         <option value="60">۱ ساعت قبل</option>
         <option value="120">۲ ساعت قبل</option>
@@ -23876,7 +23886,7 @@ async function saveTodo() {
     assignee_email:
       assignee?.email ||
       ownStaff?.email ||
-      _teamEmail() ||
+      (_isTeamGuest() ? _teamEmail() : '') ||
       '',
     visibility,
     shared_with: [],
