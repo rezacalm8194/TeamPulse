@@ -20441,6 +20441,15 @@ function _todoAssigneeLabel(t) {
   return '';
 }
 
+// نام کارفرما/کسب‌وکاری که این حساب برای آن نمایش داده می‌شود؛ وقتی پرسنل با
+// دسترسی هم‌تیمی وارد شده (ممکن است برای چند کارفرما کار کند)، این نام روی
+// هر کار نشان داده می‌شود تا مشخص باشه هر کار برای کدوم کارفرماست.
+function _todoEmployerLabel() {
+  const session = typeof _teamAccessSession === 'function' ? _teamAccessSession() : null;
+  if (session && (session.ownerName || session.ownerEmail)) return session.ownerName || session.ownerEmail;
+  return (_db && _db.meta && _db.meta.appTitle) || '';
+}
+
 function _todoTabButton(tab, label) {
   const active = _todoActiveTab === tab;
   return `<button class="${active ? 'active' : ''}" role="tab" aria-selected="${active ? 'true' : 'false'}" onclick="_setTodoTab('${tab}')">${label}</button>`;
@@ -22653,6 +22662,7 @@ function renderTodoList() {
           })()}
           ${t.remind_min>0&&!t.done?'<span style="font-size:10px;color:var(--amber)">🔔</span>':''}
           ${_todoAssigneeLabel(t)?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:700">👤 ${escapeHtml(_todoAssigneeLabel(t))}</span>`:''}
+          ${(typeof _isTeamGuest === 'function' && _isTeamGuest() && _todoEmployerLabel())?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(167,139,250,.14);color:#a78bfa;font-weight:700">🏢 ${escapeHtml(_todoEmployerLabel())}</span>`:''}
           ${t.requires_report && t.requires_report !== 'none'?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(62,207,142,.10);color:var(--green);font-weight:700">گزارش ${t.requires_report==='required'?'الزامی':'اختیاری'}</span>`:''}
         </div>
         ${t.note?`<div style="font-size:11px;color:var(--text3);line-height:1.4">${escapeHtml(t.note.slice(0,60))}${t.note.length>60?'…':''}</div>`:''}
@@ -23999,6 +24009,7 @@ function _openTodoReadonly(id) {
       <div><b style="color:var(--text)">عنوان:</b> ${escapeHtml(t.title || '')}</div>
       ${t.manager_note || t.note ? `<details open style="border:1px solid var(--border);border-radius:10px;padding:9px;background:var(--bg2)"><summary style="cursor:pointer;font-weight:800;color:var(--text)">توضیحات مدیر</summary><div style="margin-top:7px">${escapeHtml(t.manager_note || t.note || '')}</div></details>` : ''}
       <div><b style="color:var(--text)">مسئول:</b> ${escapeHtml(_todoAssigneeLabel(t) || '—')}</div>
+      ${(typeof _isTeamGuest === 'function' && _isTeamGuest() && _todoEmployerLabel()) ? `<div><b style="color:var(--text)">کارفرما:</b> 🏢 ${escapeHtml(_todoEmployerLabel())}</div>` : ''}
       <div><b style="color:var(--text)">تاریخ:</b> ${DateService.disp(_todoScheduledDate(t) || '')} ${t.time ? ' · ' + escapeHtml(_todoTimeRangeLabel(t)) : ''}</div>
       <div><b style="color:var(--text)">وضعیت:</b> ${escapeHtml(t.status || (t.done ? 'completed' : 'pending'))}</div>
       ${t.staff_report ? `<details open style="border:1px solid rgba(62,207,142,.24);border-radius:10px;padding:9px;background:rgba(62,207,142,.05)"><summary style="cursor:pointer;font-weight:800;color:var(--green)">گزارش انجام کار</summary><div style="margin-top:7px">${escapeHtml(t.staff_report)}</div></details>` : ''}
