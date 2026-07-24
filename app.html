@@ -6654,6 +6654,15 @@ function _teamSyncSessionPermissions() {
   return true;
 }
 function _leaveTeamAccess() {
+  // مهم: قبل از هر چیز جلوی sync رو بگیر. وگرنه location.reload() رویداد
+  // pagehide رو صدا می‌زنه که _syncToServer() رو اجرا می‌کنه؛ در اون لحظه
+  // TEAM_ACCESS_SESSION_KEY پاک شده (پس accId = خودِ کاربر) ولی _db هنوز
+  // داده‌ی کامل کارفرماست — یعنی داده‌ی کارفرما جای داده‌ی خودِ کاربر روی
+  // سرور نوشته می‌شه و حساب پرسنل رو خراب می‌کنه.
+  window._leavingTeamAccess = true;
+  clearInterval(window._syncInterval);
+  clearInterval(window._pollInterval);
+  clearTimeout(window._serverSyncTimer);
   localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
   showToast('دسترسی هم‌تیمی خارج شد ✓', 'success');
   setTimeout(() => location.reload(), 600);
@@ -18883,6 +18892,7 @@ function _serverDataChanged(nextData, currentData) {
 
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
+  if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
   if (_adoptManualRestoreFromLocalStorage('before-sync')) {
     _forceNextServerSync();
