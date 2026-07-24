@@ -6067,6 +6067,10 @@ window._save = function(stamp=true) {
 
 // Render account switcher
 function renderAccountSwitcher() {
+  if (typeof _teamAccessSession === 'function' && _teamAccessSession()) {
+    showToast('این بخش برای دسترسی هم‌تیمی در دسترس نیست', 'error');
+    return;
+  }
   const accounts = _getAccounts();
   const current = _currentAccountId();
   const allAccounts = [
@@ -6201,6 +6205,9 @@ function _renameAccount(id, newName) {
 function updateAccountDisplay() {
   const el = document.getElementById('account-name-display');
   if (!el) return;
+  // در دسترسی هم‌تیمی این دکمه نباید عنوان کسب‌وکار/نام کارفرما را به‌جای
+  // برچسب «هم‌تیمی» نشان بدهد. آن برچسب توسط _applyTeamAccessToNav ست می‌شود.
+  if (typeof _teamAccessSession === 'function' && _teamAccessSession()) return;
   const accounts = _getAccounts();
   const current = _currentAccountId();
   const name = current === 'default'
@@ -16228,7 +16235,10 @@ async function init() {
   // Schedule نوتیفیکیشن‌ها بعد از load
   setTimeout(_scheduleTodoNotifications, 2000);
     // Sync default account name to separate storage key
-    if (_currentAccountId() === 'default' && META.appTitle) {
+    // نکته: در دسترسی هم‌تیمی META.appTitle نام/عنوان کسب‌وکار کارفرماست، نه
+    // میزکار خودِ کاربر؛ اگر اینجا ذخیره‌اش کنیم روی حساب account-name-display
+    // (که با _applyTeamAccessToNav روی «هم‌تیمی» تنظیم شده) رو بازنویسی می‌کند.
+    if (!_teamAccessSession() && _currentAccountId() === 'default' && META.appTitle) {
       _setDefaultAccountName(META.appTitle);
     }
   } catch(e) {
