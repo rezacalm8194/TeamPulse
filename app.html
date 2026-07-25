@@ -19750,7 +19750,7 @@ async function _enablePushFromWizard() {
   const statusBox = document.getElementById('wz-push-status');
   const btn = document.getElementById('wz-push-enable-btn');
 
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     if (statusBox) { statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند'; }
     return;
   }
@@ -19791,7 +19791,7 @@ async function _checkPushStatusForWizard() {
   const statusBox = document.getElementById('wz-push-status');
   const btn = document.getElementById('wz-push-enable-btn');
   if (!statusBox) return;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند';
     return;
   }
@@ -20588,9 +20588,9 @@ function _openQuickStaffChecklist(staffId) {
       برای تکمیل، گزارش بخواهد
     </label>
     <div id="quick-staff-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:8px;
-      background:${Notification.permission==='granted'?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-      color:${Notification.permission==='granted'?'var(--green)':'var(--amber)'}">
-      ${Notification.permission==='granted'
+      background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+      color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
+      ${('Notification' in window && Notification.permission==='granted')
         ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
         : '⚠️ برای یادآوری باید اجازه نوتیفیکیشن بدهی'}
     </div>
@@ -23637,12 +23637,12 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
       </select>
     </div>
     <div id="notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
-      background:${Notification.permission==='granted'?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-      color:${Notification.permission==='granted'?'var(--green)':'var(--amber)'}">
-      ${Notification.permission==='granted'
+      background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+      color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
+      ${('Notification' in window && Notification.permission==='granted')
         ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
         : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
-      ${Notification.permission!=='granted'
+      ${!('Notification' in window && Notification.permission==='granted')
         ? '<button onclick="_requestNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
         : ''}
     </div>
@@ -23783,6 +23783,11 @@ async function _enablePushFromSettings() {
   const enableBtn = document.getElementById('push-enable-btn');
   const reBtn = document.getElementById('push-reregister-btn');
 
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    if (statusBox) { statusBox.style.background='rgba(248,113,113,.08)'; statusBox.style.borderColor='rgba(248,113,113,.3)'; statusBox.style.color='var(--red)'; statusBox.textContent='⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند'; }
+    return;
+  }
+
   if (Notification.permission !== 'granted') {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') {
@@ -23817,7 +23822,7 @@ async function _checkPushStatusForSettings() {
   const reBtn = document.getElementById('push-reregister-btn');
   if (!statusBox) return;
 
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند';
     return;
   }
@@ -28905,12 +28910,12 @@ function openAddHabit() {
         </select>
       </div>
       <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
-        background:${Notification.permission==='granted'?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-        color:${Notification.permission==='granted'?'var(--green)':'var(--amber)'}">
-        ${Notification.permission==='granted'
+        background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+        color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
+        ${('Notification' in window && Notification.permission==='granted')
           ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
           : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
-        ${Notification.permission!=='granted'
+        ${!('Notification' in window && Notification.permission==='granted')
           ? '<button onclick="_requestHabitNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
           : ''}
       </div>
@@ -28998,12 +29003,12 @@ function openEditHabit(id) {
         </select>
       </div>
       <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
-        background:${Notification.permission==='granted'?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-        color:${Notification.permission==='granted'?'var(--green)':'var(--amber)'}">
-        ${Notification.permission==='granted'
+        background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+        color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
+        ${('Notification' in window && Notification.permission==='granted')
           ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
           : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
-        ${Notification.permission!=='granted'
+        ${!('Notification' in window && Notification.permission==='granted')
           ? '<button onclick="_requestHabitNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
           : ''}
       </div>
