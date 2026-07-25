@@ -23372,31 +23372,37 @@ function _checkTodoReminders() {
   // _todoReminderTimer disabled
 }
 
-function _showTodoReminder(t) {
-  // نوتیفیکیشن از طریق Service Worker (برای موبایل)
-  if ('Notification' in window && Notification.permission === 'granted') {
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'SHOW_NOTIFICATION',
-        title: '⏰ ' + t.title,
-        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
-        tag: 'todo-' + t.id,
-        data: { todoId: t.id, kind: 'todo' },
+// نمایش نوتیفیکیشن به‌صورت امن روی همه پلتفرم‌ها.
+// نکته مهم: در اندروید (کروم موبایل) و بسیاری از مرورگرهای موبایل، ساخت مستقیم
+// `new Notification(...)` مجاز نیست و خطای «Illegal constructor» می‌دهد؛
+// باید حتماً از طریق ServiceWorkerRegistration.showNotification() نمایش داده شود.
+function _notify(title, options = {}) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+      .then(reg => reg.showNotification(title, options))
+      .catch(err => {
+        console.warn('showNotification failed, falling back:', err);
+        try { new Notification(title, options); } catch (e) { console.warn('Notification fallback failed:', e); }
       });
-    } else {
-      new Notification('⏰ ' + t.title, {
-        body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
-        icon: '/logo.png',
-        tag: 'todo-' + t.id,
-        data: { todoId: t.id, kind: 'todo' },
-        requireInteraction: true,
-        actions: [
-          { action: 'done', title: '✅ انجام شد' },
-          { action: 'open', title: '📋 مشاهده' },
-        ],
-      });
-    }
+  } else {
+    try { new Notification(title, options); } catch (e) { console.warn('Notification failed:', e); }
   }
+}
+
+function _showTodoReminder(t) {
+  // نوتیفیکیشن از طریق Service Worker (برای موبایل و دسکتاپ)
+  _notify('⏰ ' + t.title, {
+    body: (t.note ? t.note.slice(0,60) + ' — ' : '') + 'زمان ' + _todoTimeRangeLabel(t),
+    icon: '/logo.png',
+    tag: 'todo-' + t.id,
+    data: { todoId: t.id, kind: 'todo' },
+    requireInteraction: true,
+    actions: [
+      { action: 'done', title: '✅ انجام شد' },
+      { action: 'open', title: '📋 مشاهده' },
+    ],
+  });
   // Toast داخلی هم نشون بده
   showToast('⏰ ' + t.title + ' — ' + t.remind_min + ' دقیقه دیگه', 'success');
 }
@@ -24018,13 +24024,11 @@ function _scheduleTodoNotification(id, title, dateJalali, time, remindMinutes) {
     const delay = notifTime.getTime() - now.getTime();
     if (delay > 0 && delay < 7 * 24 * 3600 * 1000) { // فقط در ۷ روز آینده
       setTimeout(() => {
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('⏰ ' + title, {
-            body: 'زمان انجام کار رسیده — TeamPulse',
-            icon: '/favicon.png',
-            tag: 'todo-' + id,
-          });
-        }
+        _notify('⏰ ' + title, {
+          body: 'زمان انجام کار رسیده — TeamPulse',
+          icon: '/favicon.png',
+          tag: 'todo-' + id,
+        });
       }, delay);
     }
   } catch(e) { console.warn('Notification schedule failed:', e); }
@@ -24762,7 +24766,7 @@ function _checkKeyEventReminders() {
       // پیدا کردن نام شاگرد
       const student = _db.students.find(s => s.id === e.student_id);
       const name = student ? (student.name + ' ' + (student.lname||'')) : '';
-      new Notification('🌟 یادآوری رویداد مهم', {
+      _notify('🌟 یادآوری رویداد مهم', {
         body: (name ? name + ': ' : '') + (e.text||'').slice(0, 80),
         icon: '/favicon.png',
         tag: 'key-event-' + e.id,
@@ -29071,13 +29075,11 @@ function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
     const delay = notifDate.getTime() - now.getTime();
     if (delay > 0 && delay < 48 * 3600 * 1000) {
       setTimeout(() => {
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('🔥 ' + title, {
-            body: 'وقت انجام عادتته — TeamPulse',
-            icon: '/favicon.png',
-            tag: 'habit-' + id,
-          });
-        }
+        _notify('🔥 ' + title, {
+          body: 'وقت انجام عادتته — TeamPulse',
+          icon: '/favicon.png',
+          tag: 'habit-' + id,
+        });
       }, delay);
     }
   } catch(e) { console.warn('Habit notification schedule failed:', e); }
