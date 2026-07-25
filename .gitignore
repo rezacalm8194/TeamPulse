@@ -14,3 +14,19 @@ Thumbs.db
 *.log
 
 project for git/
+
+# Local environment files
+backend/.env*
+!backend/.env.example
+
+# Runtime and debug files
+backend/.speech-debug/
+backend/archive/
+
+# Local speech models
+backend/speech-models/
+
+# SQLite runtime files
+backend/database/*.db
+backend/database/*.db-shm
+backend/database/*.db-wal
