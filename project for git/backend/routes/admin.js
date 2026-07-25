@@ -163,51 +163,24 @@ router.post('/charge-requests/:id/reject', auth, adminOnly, (req, res) => {
   updateChargeRequestStatus(req, res, 'rejected');
 });
 
-// حذف کامل و امن یک حساب کاربری و تمام داده‌های وابسته به آن.
-// نکته حیاتی: ترتیب حذف باید طوری باشد که همیشه جدول‌های فرزند قبل از
-// جدول‌های والد پاک شوند، وگرنه SQLite به‌خاطر FOREIGN KEY جلوی حذف را
-// می‌گیرد (همین چیزی که باعث ارور 500 می‌شد). کل عملیات هم داخل یک
-// تراکنش اتمیک انجام می‌شود تا اگر جایی خطا بدهد، هیچ داده‌ای از این
-// حساب یا حساب‌های دیگر به‌صورت نصفه‌ونیمه حذف یا دست‌خورده نشود.
 router.delete('/users/:id', auth, adminOnly, (req, res) => {
   try {
-    ensureWalletTables();
     const targetId = req.params.id;
     const target = db.prepare("SELECT email FROM accounts WHERE id=?").get(targetId);
     if (!target) return res.status(404).json({ error: 'not found' });
     if (target.email === 'rezasafarinet1@gmail.com') {
       return res.status(403).json({ error: 'cannot delete main admin' });
     }
-    if (targetId === req.user.id) {
-      return res.status(403).json({ error: 'cannot delete your own account while logged in' });
-    }
-
-    const deleteAccountCascade = db.transaction((accountId) => {
-      db.prepare("DELETE FROM payments WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM sessions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM reminders WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM staff_payments WHERE account_id=?").run(accountId);
-
-      db.prepare("DELETE FROM files WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM tasks WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM wallet_transactions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM wallet_charge_requests WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM user_wallets WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM sync_events WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM push_subscriptions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM user_data WHERE account_id=?").run(accountId);
-
-      db.prepare("DELETE FROM clients WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM staff WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM accounts WHERE id=?").run(accountId);
-    });
-
-    deleteAccountCascade(targetId);
+    db.prepare("DELETE FROM clients WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM payments WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM sessions WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM tasks WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM staff WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM reminders WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM user_data WHERE account_id=?").run(targetId);
+    db.prepare("DELETE FROM accounts WHERE id=?").run(targetId);
     res.json({ success: true });
-  } catch(e) {
-    console.error('Delete user failed:', e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

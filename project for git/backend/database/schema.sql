@@ -1,0 +1,238 @@
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+
+-- حساب‌های کاربری (هر کوچ یک account)
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  role TEXT DEFAULT 'owner',
+  business_name TEXT,
+  business_type TEXT,
+  plan TEXT DEFAULT 'free',
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- پرسنل و همکاران
+CREATE TABLE IF NOT EXISTS staff (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  role TEXT DEFAULT 'staff',
+  password TEXT,
+  salary_type TEXT DEFAULT 'fixed',
+  salary_amount REAL DEFAULT 0,
+  commission_percent REAL DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+-- مشتریان / شاگردان
+CREATE TABLE IF NOT EXISTS clients (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  staff_id TEXT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  domain TEXT,
+  goal TEXT,
+  status TEXT DEFAULT 'active',
+  tags TEXT DEFAULT '[]',
+  wallet_balance REAL DEFAULT 0,
+  notes TEXT,
+  custom_fields TEXT DEFAULT '{}',
+  is_archived INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (staff_id) REFERENCES staff(id)
+);
+
+-- پرداخت‌های ورودی (از مشتری)
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  amount REAL NOT NULL,
+  type TEXT DEFAULT 'cash',
+  status TEXT DEFAULT 'paid',
+  description TEXT,
+  due_date TEXT,
+  paid_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+
+-- پرداخت‌های خروجی (به پرسنل)
+CREATE TABLE IF NOT EXISTS staff_payments (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  staff_id TEXT NOT NULL,
+  amount REAL NOT NULL,
+  type TEXT DEFAULT 'salary',
+  description TEXT,
+  paid_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (staff_id) REFERENCES staff(id)
+);
+
+-- جلسات کوچینگ
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  staff_id TEXT,
+  title TEXT,
+  session_date TEXT,
+  duration_minutes INTEGER DEFAULT 60,
+  type TEXT DEFAULT 'online',
+  status TEXT DEFAULT 'done',
+  notes TEXT,
+  homework TEXT,
+  amount REAL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+
+-- وظایف / Todo
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  client_id TEXT,
+  owner_id TEXT,
+  created_by TEXT,
+  assignee_id TEXT,
+  workspace_id TEXT,
+  visibility TEXT DEFAULT 'private',
+  shared_with TEXT DEFAULT '[]',
+  title TEXT NOT NULL,
+  description TEXT,
+  manager_note TEXT,
+  priority TEXT DEFAULT 'medium',
+  status TEXT DEFAULT 'open',
+  due_date TEXT,
+  due_time TEXT,
+  requires_report TEXT DEFAULT 'none',
+  requires_attachment TEXT DEFAULT 'none',
+  requires_approval INTEGER DEFAULT 0,
+  staff_report TEXT,
+  report_updated_at TEXT,
+  completed_by TEXT,
+  completed_at TEXT,
+  recurrence_rule TEXT,
+  occurrence_date TEXT,
+  reminder_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS task_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+-- یادآوری‌های پرداخت
+CREATE TABLE IF NOT EXISTS reminders (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  payment_id TEXT,
+  message TEXT,
+  remind_at TEXT NOT NULL,
+  is_sent INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+
+-- فایل‌های آپلودشده
+CREATE TABLE IF NOT EXISTS files (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  client_id TEXT,
+  filename TEXT NOT NULL,
+  original_name TEXT,
+  mime_type TEXT,
+  size INTEGER,
+  path TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+-- رویدادهای Sync
+CREATE TABLE IF NOT EXISTS sync_events (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  payload TEXT,
+  device_id TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  synced_at TEXT
+);
+
+-- کیف پول حساب کاربری
+CREATE TABLE IF NOT EXISTS user_wallets (
+  account_id TEXT PRIMARY KEY,
+  balance REAL DEFAULT 0,
+  daily_cost REAL DEFAULT 1000,
+  gift_given INTEGER DEFAULT 0,
+  last_charge_check INTEGER,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  updated_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  description TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_charge_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id TEXT NOT NULL,
+  amount REAL NOT NULL,
+  receipt_text TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  updated_at INTEGER DEFAULT (strftime('%s','now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
+-- ایندکس‌ها برای سرعت
+CREATE INDEX IF NOT EXISTS idx_clients_account ON clients(account_id);
+CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id);
+CREATE INDEX IF NOT EXISTS idx_payments_client ON payments(client_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_account ON tasks(account_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_occurrence ON tasks(occurrence_date);
+CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_sync_account ON sync_events(account_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_account ON wallet_transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_charge_account ON wallet_charge_requests(account_id);

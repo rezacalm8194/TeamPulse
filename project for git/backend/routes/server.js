@@ -1,0 +1,33 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const path = require('path');
+const rateLimit = require('express-rate-limit');
+const app = express();
+const PORT = process.env.PORT || 3001;
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({ origin: '*', credentials: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/clients', require('./routes/clients'));
+app.use('/api/staff', require('./routes/staff'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/files', require('./routes/files'));
+app.use('/api/backup', require('./routes/backup'));
+app.use('/api/data', require('./routes/data'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/sync', require('./routes/sync'));
+app.use('/api/reminders', require('./routes/reminders'));
+app.use('/api/share', require('./routes/share'));   // ← خط جدید
+app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
+app.get('/app', (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
+app.get('/share/:token', require('./routes/share').serveShare);   // ← خط جدید
+app.use(express.static(path.join(__dirname, '../')));
+app.use((req, res) => res.sendFile(path.join(__dirname, '../index.html')));
+app.listen(PORT, () => console.log('TeamPulse API on port ' + PORT));
+module.exports = app;
