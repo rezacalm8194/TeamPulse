@@ -129,6 +129,29 @@ function todoShouldNotifyTeamMember(todo, data, memberEmail, permissions) {
   return false;
 }
 
+function accountEmail(accountId) {
+  try {
+    const row = db.prepare('SELECT email FROM accounts WHERE id=?').get(accountId);
+    return String(row?.email || '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isOwnerSubscription(sub, accountId, ownerEmail = '') {
+  const subscriberUserId = String(sub?.subscriber_user_id || '').trim();
+  const subscriberEmail = String(sub?.subscriber_email || '').trim().toLowerCase();
+  const scope = String(sub?.scope || 'owner').trim().toLowerCase();
+
+  if (scope === 'team') return false;
+  if (subscriberUserId) return subscriberUserId === String(accountId);
+  if (subscriberEmail && ownerEmail) return subscriberEmail === ownerEmail;
+
+  // Unknown legacy rows may belong to a team member, so do not send owner-only
+  // notifications to them. Re-registering push writes subscriber metadata.
+  return false;
+}
+
 // ── تبدیل شمسی به UTC ─────────────────────────────────────────
 function jalaliToGregorian(jy, jm, jd) {
   const div = (a, b) => Math.floor(a / b);
@@ -217,17 +240,19 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
 
 // ── ارسال push فقط به صاحب حساب ───────────────────────────────
 async function pushToOwner(accountId, title, body) {
+  const ownerEmail = accountEmail(accountId);
   const subs = db.prepare(`
-    SELECT id, endpoint, subscription
+    SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, scope
     FROM push_subscriptions
     WHERE account_id=?
       AND (scope IS NULL OR scope!='team')
-  `).all(accountId);
+  `).all(accountId).filter(sub => isOwnerSubscription(sub, accountId, ownerEmail));
   await sendPushSubscriptions(subs, title, body);
 }
 
 // ── ارسال push تسک به صاحب حساب و پرسنل مرتبط ─────────────────
 async function pushTodoToRecipients(accountId, userData, todo, title, body) {
+  const ownerEmail = accountEmail(accountId);
   const subs = db.prepare(`
     SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, scope
     FROM push_subscriptions
@@ -237,7 +262,7 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
 
   const allowed = [];
   for (const sub of subs) {
-    if (sub.scope !== 'team') {
+    if (isOwnerSubscription(sub, accountId, ownerEmail)) {
       allowed.push(sub);
       continue;
     }
