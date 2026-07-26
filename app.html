@@ -6685,6 +6685,8 @@ function _leaveTeamAccess() {
   window._leavingTeamAccess = true;
   clearInterval(window._syncInterval);
   clearInterval(window._pollInterval);
+  clearTimeout(window._pollInterval);
+  window._serverPollGeneration = (window._serverPollGeneration || 0) + 1;
   clearTimeout(window._serverSyncTimer);
   localStorage.removeItem(TEAM_ACCESS_SESSION_KEY);
   showToast('دسترسی هم‌تیمی خارج شد ✓', 'success');
@@ -18915,6 +18917,13 @@ function _serverDataChanged(nextData, currentData) {
   return _serverDataSignature(nextData) !== _serverDataSignature(currentData || {});
 }
 
+function _serverTimes(data) {
+  return {
+    serverTime: Number(data?._lastSaved || 0) || 0,
+    localTime: Number(_db?._lastSaved || 0) || 0,
+  };
+}
+
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 async function _syncToServer() {
   if (window._leavingTeamAccess) return null;
@@ -18962,12 +18971,17 @@ async function _syncToServer() {
     }
     if (!accId) return null;
     const forceSync = !!window._forceNextSync;
+    const localSavedAt = Number(_db?._lastSaved || 0) || 0;
+    if (!forceSync && localSavedAt && localSavedAt <= (window._lastServerSyncSavedAt || 0)) {
+      return null;
+    }
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
       body: JSON.stringify({ data: _serverSafeData(_db), force: forceSync })
     });
     if (res && res.ok) {
       if (forceSync) window._forceNextSync = false;
+      window._lastServerSyncSavedAt = localSavedAt || Date.now();
       if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
     }
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
@@ -19075,25 +19089,31 @@ async function _loadFromServer() {
       return false;
     }
     if (teamSession) {
-      const changed = _serverDataChanged(data, _db);
-      const serverTime = data._lastSaved || 0;
-      const localTime = _db._lastSaved || 0;
-      if (changed && localTime > serverTime && localTime > (window._teamLastOwnerDataSavedAt || 0)) {
+      const { serverTime, localTime } = _serverTimes(data);
+      if (serverTime && localTime && serverTime === localTime) {
+        window._teamOwnerDataReady = true;
+        window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
+        window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, localTime);
+        return false;
+      }
+      if (localTime > serverTime && localTime > (window._teamLastOwnerDataSavedAt || 0)) {
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
         return false;
       }
-      if (!changed) {
+      if (serverTime && localTime && serverTime < localTime) {
         window._teamOwnerDataReady = true;
-        window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, data._lastSaved || 0);
+        window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
         return false;
       }
+      if (!serverTime && !localTime && !_serverDataChanged(data, _db)) return false;
       _db = data;
       _migrate(_db);
       const key = window._activeDBKey || _teamActiveDBKey();
       localStorage.setItem(key, JSON.stringify(_db));
       window._teamOwnerDataReady = true;
       window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
+      window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
       _teamSyncSessionPermissions();
       console.log('[TeamPulse] Team owner data loaded from server');
       return true;
@@ -19101,18 +19121,17 @@ async function _loadFromServer() {
     // merge: همیشه از سرور load کن اگه داده داشت
     // (اولویت با سرور چون همه دستگاه‌ها sync می‌کنن)
     if (data && Object.keys(data).length > 0) {
-      const serverTime = data._lastSaved || 0;
-      const localTime = _db._lastSaved || 0;
+      const { serverTime, localTime } = _serverTimes(data);
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
-      const changed = _serverDataChanged(data, _db);
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
-      if ((localEmpty && changed) || (serverTime > localTime && changed)) {
+      if ((localEmpty && _serverDataChanged(data, _db)) || (serverTime > localTime)) {
         _db = data;
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
         localStorage.setItem(key, JSON.stringify(_db));
         if (window._impersonating) window._impersonateServerBlocked = false;
         if (teamSession) window._teamOwnerDataReady = true;
+        window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
         console.log('[TeamPulse] Loaded from server');
         return true;
       }
@@ -19133,12 +19152,46 @@ async function _loadFromServer() {
 function _startServerSyncLoops() {
   clearInterval(window._syncInterval);
   clearInterval(window._pollInterval);
-  window._syncInterval = setInterval(_syncToServer, 5000);
-  window._pollInterval = setInterval(async () => {
-    if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
-    const updated = await _loadFromServer();
-    if (updated && _canAutoRefresh()) renderPage();
-  }, 5000);
+  clearTimeout(window._pollInterval);
+  _bindAppActivityTracking();
+  window._syncInterval = setInterval(_syncToServer, 15000);
+  const generation = (window._serverPollGeneration || 0) + 1;
+  window._serverPollGeneration = generation;
+  const poll = async () => {
+    try {
+      if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && !document.hidden) {
+        const updated = await _loadFromServer();
+        if (updated && _canAutoRefresh()) renderPage();
+      }
+    } finally {
+      if (window._serverPollGeneration === generation) {
+        window._pollInterval = setTimeout(poll, _nextServerPollDelay());
+      }
+    }
+  };
+  window._pollInterval = setTimeout(poll, 8000);
+}
+
+function _bindAppActivityTracking() {
+  if (window._appActivityTrackingBound) return;
+  window._appActivityTrackingBound = true;
+  window._lastAppActivityAt = Date.now();
+  const mark = () => { window._lastAppActivityAt = Date.now(); };
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => {
+    document.addEventListener(type, mark, { passive: true });
+  });
+  window.addEventListener('focus', mark);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) mark();
+  });
+}
+
+function _nextServerPollDelay() {
+  if (document.hidden) return 2 * 60 * 1000;
+  const idleFor = Date.now() - (window._lastAppActivityAt || Date.now());
+  if (idleFor > 5 * 60 * 1000) return 90 * 1000;
+  if (idleFor > 90 * 1000) return 45 * 1000;
+  return 15 * 1000;
 }
 
 function _startKeyEventReminderLoop() {
