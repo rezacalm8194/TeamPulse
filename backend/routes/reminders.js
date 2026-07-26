@@ -58,6 +58,28 @@ ensurePushSubscriptionColumn('subscriber_email', 'subscriber_email TEXT');
 ensurePushSubscriptionColumn('member_email', 'member_email TEXT');
 ensurePushSubscriptionColumn('scope', "scope TEXT DEFAULT 'owner'");
 
+try {
+  db.prepare(`
+    DELETE FROM push_subscriptions
+    WHERE (scope IS NULL OR scope!='team')
+      AND subscriber_user_id IS NOT NULL
+      AND subscriber_user_id!=''
+      AND subscriber_user_id!=account_id
+  `).run();
+  db.prepare(`
+    DELETE FROM push_subscriptions
+    WHERE (scope IS NULL OR scope!='team')
+      AND (subscriber_user_id IS NULL OR subscriber_user_id='')
+      AND subscriber_email IS NOT NULL
+      AND subscriber_email!=''
+      AND lower(subscriber_email) NOT IN (
+        SELECT lower(email) FROM accounts WHERE accounts.id=push_subscriptions.account_id
+      )
+  `).run();
+} catch (e) {
+  console.warn('[Push] legacy subscription cleanup skipped:', e.message);
+}
+
 function parseJsonArray(value) {
   try {
     const parsed = JSON.parse(value || '[]');

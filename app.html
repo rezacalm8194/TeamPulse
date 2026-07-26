@@ -14608,6 +14608,7 @@ function saveEvalReminder(formId, studentId) {
 
 // بررسی یادآوری‌های eval هنگام لود
 function checkEvalReminders() {
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
   if (!_db || !_db.eval_forms) return;
   const today = todayJalali();
   const todayStr = `${today[0]}/${String(today[1]).padStart(2,'0')}/${String(today[2]).padStart(2,'0')}`;
@@ -23374,6 +23375,8 @@ function _checkTodoReminders() {
 // باید حتماً از طریق ServiceWorkerRegistration.showNotification() نمایش داده شود.
 function _notify(title, options = {}) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const kind = String(options?.data?.kind || '').toLowerCase();
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest() && kind !== 'todo') return;
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.ready
       .then(reg => reg.showNotification(title, options))
@@ -24753,6 +24756,7 @@ function _requestNotificationPermission() {
 }
 
 function _checkKeyEventReminders() {
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
   if (!_db || !_db.key_events) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const today = _formatJalali(..._todayJalali());
@@ -29043,6 +29047,7 @@ function _requestHabitNotifPermission() {
 }
 
 function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (!habitTime || remindMinutes <= 0) return;
   try {
