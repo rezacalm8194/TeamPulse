@@ -4964,6 +4964,7 @@ window.api = {
           _gcal_enabled:_db._gcal_enabled,
           _gcal_calendar_id:_db._gcal_calendar_id,
           _gcal_calendars:_db._gcal_calendars,
+          _gcal_owner_calendar_email:_db._gcal_owner_calendar_email,
         };
         clearTimeout(window._serverSyncTimer);
         _db = { ...ver.data, ...creds };
@@ -5262,6 +5263,7 @@ function _importFile() {
           _gcal_enabled:_db._gcal_enabled,
           _gcal_calendar_id:_db._gcal_calendar_id,
           _gcal_calendars:_db._gcal_calendars,
+          _gcal_owner_calendar_email:_db._gcal_owner_calendar_email,
         };
         // حفظ session قبل از بازنویسی
         const savedSession = localStorage.getItem('tp_session');
@@ -5560,8 +5562,12 @@ const _gcal = {
 
   preferredTeamCalendarId() {
     const session = (typeof _teamAccessSession === 'function') ? _teamAccessSession() : null;
-    const email = String(session?.ownerEmail || '').trim().toLowerCase();
+    const email = String(_db._gcal_owner_calendar_email || session?.ownerEmail || '').trim().toLowerCase();
     return email && email.includes('@') ? email : '';
+  },
+
+  requiresTeamOwnerCalendar() {
+    return !!((typeof _teamAccessSession === 'function') && _teamAccessSession());
   },
 
   calendarId() {
@@ -5916,6 +5922,9 @@ const _gcal = {
     if(!this.enabled)return;
     try{
       const targetCalendarId=this.calendarId();
+      if(this.requiresTeamOwnerCalendar() && targetCalendarId==='primary'){
+        throw new Error('در دسترسی هم‌تیمی، ثبت در تقویم هستی مجاز نیست. در تنظیمات Google Calendar ایمیل تقویم فاطمه را وارد/انتخاب کن یا لینک دعوت را دوباره باز کن.');
+      }
       if(t.gcal_event_id && t.gcal_calendar_id && t.gcal_calendar_id!==targetCalendarId){
         await this.deleteEvent(t.gcal_event_id,t.gcal_calendar_id);
         t.gcal_event_id=null;
@@ -11029,6 +11038,16 @@ async function renderSettings() {
         ${_gcal.enabled ? `<button class="btn btn-ghost" onclick="gcalImportUI()">⬇️ وارد کردن از گوگل</button>` : ''}
       </div>
       ${_gcal.enabled ? _gcalCalendarSelectHtml() : ''}
+      ${_teamAccessSession() ? `
+        <div class="form-group full" style="margin-top:10px;max-width:520px">
+          <label>ایمیل تقویم صاحب حساب</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" id="gcal-owner-calendar-email" type="email" inputmode="email" dir="ltr"
+              value="${escapeHtml(_db._gcal_owner_calendar_email || _teamAccessSession()?.ownerEmail || '')}"
+              placeholder="fatemehasantabar7073@gmail.com" style="flex:1;min-width:220px;text-align:left">
+            <button class="btn btn-ghost" onclick="gcalSaveOwnerCalendarEmailUI()">ذخیره مقصد</button>
+          </div>
+        </div>` : ''}
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
         برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
@@ -26402,6 +26421,24 @@ async function gcalSelectCalendarUI(calendarId) {
   _save(false);
   _gcal.setStatusUI('ok','تقویم مقصد: '+_gcal.calendarName());
   showToast('تقویم مقصد ذخیره شد: '+_gcal.calendarName(),'success');
+  renderSettings();
+}
+
+function gcalSaveOwnerCalendarEmailUI() {
+  const email = String(document.getElementById('gcal-owner-calendar-email')?.value || '').trim().toLowerCase();
+  if(!email || !email.includes('@')){
+    showToast('ایمیل تقویم صاحب حساب را درست وارد کن','error');
+    return;
+  }
+  _db._gcal_owner_calendar_email=email;
+  _db._gcal_calendar_id=email;
+  if(!Array.isArray(_db._gcal_calendars))_db._gcal_calendars=[];
+  if(!_db._gcal_calendars.some(c=>c.id===email)){
+    _db._gcal_calendars.unshift({id:email,summary:'تقویم صاحب حساب ('+email+')',primary:false,accessRole:'writer',backgroundColor:''});
+  }
+  _save(false);
+  _gcal.setStatusUI('ok','تقویم مقصد: '+_gcal.calendarName());
+  showToast('تقویم مقصد ذخیره شد: '+email,'success');
   renderSettings();
 }
 
