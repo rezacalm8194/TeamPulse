@@ -16242,7 +16242,8 @@ async function init() {
     await renderPage();
     console.log('[TeamPulse] init() DONE');
   // Schedule نوتیفیکیشن‌ها بعد از load
-  setTimeout(_scheduleTodoNotifications, 2000);
+  clearTimeout(window._todoNotificationsScheduleTimer);
+  window._todoNotificationsScheduleTimer = setTimeout(_scheduleTodoNotifications, 2000);
     // Sync default account name to separate storage key
     // نکته: در دسترسی هم‌تیمی META.appTitle نام/عنوان کسب‌وکار کارفرماست، نه
     // میزکار خودِ کاربر؛ اگر اینجا ذخیره‌اش کنیم روی حساب account-name-display
@@ -19105,6 +19106,69 @@ async function _loadFromServer() {
   }
 }
 
+function _startServerSyncLoops() {
+  clearInterval(window._syncInterval);
+  clearInterval(window._pollInterval);
+  window._syncInterval = setInterval(_syncToServer, 5000);
+  window._pollInterval = setInterval(async () => {
+    if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
+    const updated = await _loadFromServer();
+    if (updated && _canAutoRefresh()) renderPage();
+  }, 5000);
+}
+
+function _startKeyEventReminderLoop() {
+  _checkKeyEventReminders();
+  clearInterval(window._keyEventReminderInterval);
+  window._keyEventReminderInterval = setInterval(_checkKeyEventReminders, 5 * 60 * 1000);
+}
+
+function _bindServerSyncLifecycleHandlers() {
+  if (window._serverSyncLifecycleBound) return;
+  window._serverSyncLifecycleBound = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(window._serverSyncTimer);
+      _syncToServer();
+    } else {
+      _loadFromServer().then(updated => { if (updated && _canAutoRefresh()) renderPage(); });
+    }
+  });
+  window.addEventListener('pagehide', () => {
+    clearTimeout(window._serverSyncTimer);
+    _syncToServer();
+  });
+  window.addEventListener('focus', async () => {
+    if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+      clearTimeout(window._serverSyncTimer);
+      await _syncToServer();
+    }
+    const updated = await _loadFromServer();
+    if (updated && _canAutoRefresh()) renderPage();
+  });
+  window.addEventListener('beforeunload', () => {
+    clearTimeout(window._serverSyncTimer);
+    _adoptManualRestoreFromLocalStorage('beforeunload');
+    if (_sbUser?.id && _sbSession?.token) {
+      const teamSession = _teamAccessSession();
+      if (teamSession && !teamSession.ownerUserId) return;
+      const accId = teamSession?.ownerUserId || _sbUser.id;
+      const url = (window.location.origin || '') + '/api/data/' + accId +
+        '?token=' + encodeURIComponent(_sbSession.token);
+      const data = JSON.stringify({ data: _db, force: !!window._forceNextSync });
+      if (navigator.sendBeacon) {
+        const blob = new Blob([data], { type: 'application/json' });
+        const sent = navigator.sendBeacon(url, blob);
+        if (!sent) {
+          fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
+        }
+      } else {
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
+      }
+    }
+  });
+}
+
 function _showAuthScreen(mode) {
   mode = mode || 'login';
   document.getElementById('app').style.display = 'none';
@@ -19445,70 +19509,9 @@ async function _authOnSuccess() {
     } else { _initUserWallet(); }
   } catch(e) { _initUserWallet(); }
 
-  // sync هر ۵ ثانیه؛ برای موبایل مهم است که تیک کارها سریع بین دستگاه‌ها برسد.
-  clearInterval(window._syncInterval);
-  window._syncInterval = setInterval(_syncToServer, 5000);
-  // poll از سرور هر ۵ ثانیه
-  clearInterval(window._pollInterval);
-  window._pollInterval = setInterval(async () => {
-    if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
-    const updated = await _loadFromServer();
-    if (updated && _canAutoRefresh()) renderPage();
-  }, 5000);
-  // چک یادآوری رویدادهای مهم هر ۵ دقیقه
-  _checkKeyEventReminders();
-  setInterval(_checkKeyEventReminders, 5 * 60 * 1000);
-
-  // Sync فوری وقتی تب مخفی میشه یا مرورگر بسته میشه
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      clearTimeout(window._serverSyncTimer);
-      _syncToServer();
-    } else {
-      _loadFromServer().then(updated => { if (updated && _canAutoRefresh()) renderPage(); });
-    }
-  });
-  window.addEventListener('pagehide', () => {
-    clearTimeout(window._serverSyncTimer);
-    _syncToServer();
-  });
-  if (!window._teamFocusRefreshBound) {
-    window._teamFocusRefreshBound = true;
-    window.addEventListener('focus', async () => {
-      if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
-        clearTimeout(window._serverSyncTimer);
-        await _syncToServer();
-      }
-      const updated = await _loadFromServer();
-      if (updated && _canAutoRefresh()) renderPage();
-    });
-  }
-  window.addEventListener('beforeunload', () => {
-    clearTimeout(window._serverSyncTimer);
-    _adoptManualRestoreFromLocalStorage('beforeunload');
-    // sync synchronous با sendBeacon
-    if (_sbUser?.id && _sbSession?.token) {
-      const teamSession = _teamAccessSession();
-      if (teamSession && !teamSession.ownerUserId) return;
-      const accId = teamSession?.ownerUserId || _sbUser.id;
-      // sendBeacon can't set an Authorization header, so pass the token
-      // as a query param — the server accepts that as a fallback.
-      const url = (window.location.origin || '') + '/api/data/' + accId +
-        '?token=' + encodeURIComponent(_sbSession.token);
-      const data = JSON.stringify({ data: _db, force: !!window._forceNextSync });
-      if (navigator.sendBeacon) {
-        const blob = new Blob([data], { type: 'application/json' });
-        const sent = navigator.sendBeacon(url, blob);
-        if (!sent) {
-          // sendBeacon queue full or blocked — fall back to a fire-and-forget
-          // fetch with keepalive so we still try to save before unload.
-          fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
-        }
-      } else {
-        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
-      }
-    }
-  });
+  _startServerSyncLoops();
+  _startKeyEventReminderLoop();
+  _bindServerSyncLifecycleHandlers();
 
   if (loadedFromServer && _db.meta?.jobId) {
     // کاربر موجود — wizard رو نشون نده، فقط applyMeta
@@ -20081,15 +20084,8 @@ async function _initAuth() {
 
         _hideAuthScreen();
         _updateAuthUI();
-        clearInterval(window._syncInterval);
-        clearInterval(window._pollInterval);
         clearTimeout(window._serverSyncTimer);
-        window._syncInterval = setInterval(_syncToServer, 5000);
-        window._pollInterval = setInterval(async () => {
-          if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
-          const updated = await _loadFromServer();
-          if (updated && _canAutoRefresh()) renderPage();
-        }, 5000);
+        _startServerSyncLoops();
         currentPage = _getInitialPage();
         await init();
         updateAccountDisplay();
@@ -25755,12 +25751,7 @@ async function _adminImpersonate(userId, userName) {
     // راه‌اندازی intervaloadPending = false;
 
     // راه‌اندازی interval های جدید
-    window._syncInterval = setInterval(_syncToServer, 5000);
-    window._pollInterval = setInterval(async () => {
-      if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
-      const updated = await _loadFromServer();
-      if (updated && _canAutoRefresh()) renderPage();
-    }, 5000);
+    _startServerSyncLoops();
 
     // نمایش نوار بازگشت
     _showImpersonateBar(userName);
@@ -25848,12 +25839,7 @@ async function _adminReturnToAdmin() {
     showToast('به حساب ادمین بازگشتید ✓', 'success');
 
     // راه‌اندازی interval های ادمین
-    window._syncInterval = setInterval(_syncToServer, 5000);
-    window._pollInterval = setInterval(async () => {
-      if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return;
-      const updated = await _loadFromServer();
-      if (updated && _canAutoRefresh()) renderPage();
-    }, 5000);
+    _startServerSyncLoops();
   } catch(e) {
     showToast('خطا در بازگشت: ' + e.message, 'error');
   }
