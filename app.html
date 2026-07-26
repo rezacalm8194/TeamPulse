@@ -4365,26 +4365,49 @@ function _load() {
   try { const s = localStorage.getItem(key); _db = s ? JSON.parse(s) : null; } catch(e) { _db = null; }
   if (!_db) _db = _freshData();
   _migrate(_db);
+  _trimStoredVersions();
 }
 
 function _saveVersion() {
   try {
-    const MAX_VER = 20;
+    const MAX_VER = 3;
+    const MIN_VERSION_INTERVAL = 10 * 60 * 1000;
     const vKey = window._activeDBKey
       ? 'teampulse_versions_' + window._activeDBKey
       : 'teampulse_versions_local';
     let history = [];
     try { history = JSON.parse(localStorage.getItem(vKey) || '[]'); } catch(e2) { history = []; }
+    const now = Date.now();
+    const last = history[0]?.mtime || 0;
+    if (last && now - last < MIN_VERSION_INTERVAL) return;
     const file = 'v_' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
-    history.unshift({ file, mtime: Date.now(), label: new Date().toLocaleString('fa-IR'), data: JSON.parse(JSON.stringify(_db)) });
+    history.unshift({ file, mtime: now, label: new Date().toLocaleString('fa-IR'), data: JSON.parse(JSON.stringify(_db)) });
     while (history.length > MAX_VER) history.pop();
     try {
       localStorage.setItem(vKey, JSON.stringify(history));
     } catch(quota) {
-      while (history.length > 5) history.pop();
+      while (history.length > 1) history.pop();
       try { localStorage.setItem(vKey, JSON.stringify(history)); } catch(e3) {}
     }
   } catch(e) { console.warn('Version save failed:', e); }
+}
+
+function _trimStoredVersions() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('teampulse_versions_')) keys.push(k);
+    }
+    if (!keys.includes('teampulse_versions_local')) keys.push('teampulse_versions_local');
+    keys.forEach(vKey => {
+      let history = [];
+      try { history = JSON.parse(localStorage.getItem(vKey) || '[]'); } catch(e) { history = []; }
+      if (history.length > 3) {
+        localStorage.setItem(vKey, JSON.stringify(history.slice(0, 3)));
+      }
+    });
+  } catch(e) {}
 }
 
 function _save(stamp=true) {
@@ -10905,7 +10928,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>↩️ بازگشت به نسخه‌های قبلی</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        با هر ذخیره، یک نسخه از اطلاعات نگه داشته می‌شود (تا ${fa(20)} نسخه آخر). اگر اشتباهی رخ داد، می‌توانی به یکی از این نسخه‌ها برگردی.
+        نسخه‌های قبلی به‌صورت سبک‌تر نگه داشته می‌شوند (حداکثر ${fa(3)} نسخه، با فاصله زمانی). اگر اشتباهی رخ داد، می‌توانی به یکی از این نسخه‌ها برگردی.
       </p>
       <div id="versions-list">در حال بارگذاری...</div>
     </div>
