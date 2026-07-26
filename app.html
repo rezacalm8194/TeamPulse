@@ -4962,6 +4962,8 @@ window.api = {
           _gcal_token:_db._gcal_token,
           _gcal_token_expiry:_db._gcal_token_expiry,
           _gcal_enabled:_db._gcal_enabled,
+          _gcal_calendar_id:_db._gcal_calendar_id,
+          _gcal_calendars:_db._gcal_calendars,
         };
         clearTimeout(window._serverSyncTimer);
         _db = { ...ver.data, ...creds };
@@ -5258,6 +5260,8 @@ function _importFile() {
           _gcal_token:_db._gcal_token,
           _gcal_token_expiry:_db._gcal_token_expiry,
           _gcal_enabled:_db._gcal_enabled,
+          _gcal_calendar_id:_db._gcal_calendar_id,
+          _gcal_calendars:_db._gcal_calendars,
         };
         // حفظ session قبل از بازنویسی
         const savedSession = localStorage.getItem('tp_session');
@@ -5552,7 +5556,29 @@ const _gcal = {
   token: null,
   tokenExpiry: 0,
   importTimer: null,
-  SCOPE: 'https://www.googleapis.com/auth/calendar.events',
+  SCOPE: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+
+  preferredTeamCalendarId() {
+    const session = (typeof _teamAccessSession === 'function') ? _teamAccessSession() : null;
+    const email = String(session?.ownerEmail || '').trim().toLowerCase();
+    return email && email.includes('@') ? email : '';
+  },
+
+  calendarId() {
+    const selected = String(_db._gcal_calendar_id || '').trim();
+    if(selected && selected !== 'primary')return selected;
+    return this.preferredTeamCalendarId() || selected || 'primary';
+  },
+
+  calendarName() {
+    const id = this.calendarId();
+    const row = (_db._gcal_calendars || []).find(c => c.id === id);
+    return row?.summary || (id === 'primary' ? 'تقویم اصلی' : id);
+  },
+
+  _calendarEventsUrl(path = '') {
+    return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.calendarId())}/events${path}`;
+  },
 
   setStatusUI(status, msg) {
     const el=document.getElementById('gcal-status');
@@ -5665,6 +5691,42 @@ const _gcal = {
     return res;
   },
 
+  async refreshCalendars({silent=false} = {}) {
+    if(!this.enabled&&!_db._gcal_enabled)return [];
+    const token=this.validTokenOrNull() || await this.ensureToken();
+    const res=await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=items(id,summary,primary,accessRole,backgroundColor)&minAccessRole=writer',{
+      headers:{'Authorization':'Bearer '+token}
+    });
+    if(res.status===401){
+      this.token=null;this.tokenExpiry=0;delete _db._gcal_token;delete _db._gcal_token_expiry;_save(false);
+      throw new Error('نیاز به ورود مجدد');
+    }
+    if(!res.ok){
+      const msg=res.status===403
+        ? 'برای انتخاب تقویم مقصد، اتصال Google Calendar را یک‌بار قطع و دوباره وصل کن'
+        : 'کد '+res.status;
+      if(!silent)this.setStatusUI('error',msg);
+      throw new Error(msg);
+    }
+    const data=await res.json();
+    const calendars=(data.items||[])
+      .filter(c=>['owner','writer'].includes(c.accessRole))
+      .map(c=>({id:c.id,summary:c.summary||c.id,primary:!!c.primary,accessRole:c.accessRole,backgroundColor:c.backgroundColor||''}));
+    const teamCalendarId=this.preferredTeamCalendarId();
+    if(teamCalendarId && !calendars.some(c=>c.id===teamCalendarId)){
+      calendars.unshift({id:teamCalendarId,summary:'تقویم صاحب حساب ('+teamCalendarId+')',primary:false,accessRole:'writer',backgroundColor:''});
+    }
+    _db._gcal_calendars=calendars;
+    if(teamCalendarId){
+      _db._gcal_calendar_id=teamCalendarId;
+    }else if(!_db._gcal_calendar_id || !calendars.some(c=>c.id===_db._gcal_calendar_id)){
+      _db._gcal_calendar_id=(calendars.find(c=>c.primary)?.id)||calendars[0]?.id||'primary';
+    }
+    _save(false);
+    if(!silent)this.setStatusUI('ok','تقویم مقصد: '+this.calendarName());
+    return calendars;
+  },
+
   async connect() {
     this.clientId=APP_GOOGLE_CLIENT_ID;
     this.setStatusUI('syncing','در حال اتصال...');
@@ -5673,7 +5735,8 @@ const _gcal = {
       this.enabled=true;
       _db._gcal_enabled=true;
       _save(false);
-      this.setStatusUI('ok','متصل شد ✓');
+      await this.refreshCalendars({silent:true});
+      this.setStatusUI('ok','متصل شد ✓ تقویم مقصد: '+this.calendarName());
       showToast('به Google Calendar متصل شدی ✓','success');
       const btn=document.getElementById('gcal-sync-btn');
       if(btn)btn.textContent='🔌 قطع Google Calendar';
@@ -5689,7 +5752,7 @@ const _gcal = {
 
   disconnect() {
     this.enabled=false;this.token=null;this.tokenExpiry=0;
-    delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;
+    delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;delete _db._gcal_calendar_id;delete _db._gcal_calendars;
     _save(false);
     this.setStatusUI('idle','متصل نشده');
     showToast('از Google Calendar قطع شدی','');
@@ -5732,7 +5795,7 @@ const _gcal = {
           fields:'items(id,summary,description,start,end,updated,status,htmlLink),nextPageToken'
         });
         if(pageToken)params.set('pageToken',pageToken);
-        const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,{
+        const res = await fetch(`${this._calendarEventsUrl()}?${params.toString()}`,{
           headers:{'Authorization':'Bearer '+token}
         });
         if(res.status===401){
@@ -5798,7 +5861,11 @@ const _gcal = {
     const title = (ev.summary || 'بدون عنوان').trim();
     const note = [ev.description || '', ev.htmlLink ? `Google Calendar: ${ev.htmlLink}` : ''].filter(Boolean).join('\n\n');
     const nowIso = new Date().toISOString();
-    const existing = (_db.todos||[]).find(t => t.gcal_event_id === ev.id || t.gcal_import_id === ev.id);
+    const calendarId = this.calendarId();
+    const existing = (_db.todos||[]).find(t =>
+      (t.gcal_event_id === ev.id || t.gcal_import_id === ev.id) &&
+      (!t.gcal_calendar_id || t.gcal_calendar_id === calendarId)
+    );
     if(existing){
       Object.assign(existing,{
         title,
@@ -5809,6 +5876,7 @@ const _gcal = {
         sync_gcal:true,
         gcal_event_id:ev.id,
         gcal_import_id:ev.id,
+        gcal_calendar_id:calendarId,
         category:existing.category || 'general',
         priority:existing.priority || 'medium',
         updated_at:ev.updated || nowIso,
@@ -5832,6 +5900,7 @@ const _gcal = {
       sync_gcal:true,
       gcal_event_id:ev.id,
       gcal_import_id:ev.id,
+      gcal_calendar_id:calendarId,
       done:false,
       done_at:null,
       archived:false,
@@ -5846,27 +5915,36 @@ const _gcal = {
   async upsertEvent(t) {
     if(!this.enabled)return;
     try{
+      const targetCalendarId=this.calendarId();
+      if(t.gcal_event_id && t.gcal_calendar_id && t.gcal_calendar_id!==targetCalendarId){
+        await this.deleteEvent(t.gcal_event_id,t.gcal_calendar_id);
+        t.gcal_event_id=null;
+      }
       const body=this._buildEventBody(t);
       const method=t.gcal_event_id?'PATCH':'POST';
       const url=t.gcal_event_id
-        ?`https://www.googleapis.com/calendar/v3/calendars/primary/events/${t.gcal_event_id}`
-        :`https://www.googleapis.com/calendar/v3/calendars/primary/events`;
+        ?this._calendarEventsUrl('/'+encodeURIComponent(t.gcal_event_id))
+        :this._calendarEventsUrl();
       const res=await this.req(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!res.ok){
         // اگه رویداد قبلی روی کلندر پاک شده بود، دوباره بسازش
         if(res.status===404&&t.gcal_event_id){t.gcal_event_id=null;return this.upsertEvent(t);}
+        if((res.status===403||res.status===404) && targetCalendarId!=='primary'){
+          throw new Error('به تقویم '+targetCalendarId+' دسترسی نوشتن نداریم؛ فاطمه باید این تقویم را با دسترسی Make changes to events برای هستی Share کند.');
+        }
         throw new Error('کد '+res.status);
       }
       const j=await res.json();
       t.gcal_event_id=j.id;
+      t.gcal_calendar_id=targetCalendarId;
       _save(false);
-      showToast('در Google Calendar ثبت شد ✓','success');
+      showToast('در Google Calendar ثبت شد ✓ ('+this.calendarName()+')','success');
     }catch(e){
       showToast('خطا در سینک با Google Calendar: '+e.message,'error');
     }
   },
 
-  async deleteEvent(eventId) {
+  async deleteEvent(eventId, calendarId=null) {
     if(!this.enabled||!eventId)return;
     try{
       const token=this.validTokenOrNull();
@@ -5874,7 +5952,8 @@ const _gcal = {
         console.warn('Calendar delete skipped: no valid token');
         return;
       }
-      const res=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,{
+      const targetCalendarId=calendarId||this.calendarId();
+      const res=await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events/${encodeURIComponent(eventId)}`,{
         method:'DELETE',
         headers:{'Authorization':'Bearer '+token}
       });
@@ -5923,8 +6002,9 @@ const _gcal = {
       if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
         this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;
       }
-      this.setStatusUI('ok','متصل');
+      this.setStatusUI('ok','متصل؛ تقویم مقصد: '+this.calendarName());
       this.startAutoImport();
+      setTimeout(()=>this.refreshCalendars({silent:true}).catch(()=>{}),500);
       setTimeout(()=>this.importEvents({silent:true}),1200);
     } else {
       this.setStatusUI('idle','متصل نشده');
@@ -5963,6 +6043,7 @@ function _consumeStoredGcalOAuthResult() {
     if(btn)btn.textContent='🔌 قطع Google Calendar';
     _refreshTodoGcalCheckboxes();
     _gcal.startAutoImport();
+    setTimeout(()=>_gcal.refreshCalendars({silent:true}).catch(()=>{}),100);
     setTimeout(()=>_gcal.importEvents({silent:false}),300);
     used=true;
   });
@@ -10938,7 +11019,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>🗓️ اتصال به Google Calendar</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم اصلی گوگل هم
+        وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم انتخاب‌شده هم
         به‌صورت خودکار وارد لیست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
       </p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
@@ -10947,9 +11028,10 @@ async function renderSettings() {
         </button>
         ${_gcal.enabled ? `<button class="btn btn-ghost" onclick="gcalImportUI()">⬇️ وارد کردن از گوگل</button>` : ''}
       </div>
+      ${_gcal.enabled ? _gcalCalendarSelectHtml() : ''}
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
-        با کلیک روی دکمه، به صفحه‌ی ورود گوگل هدایت می‌شوی و با اکانت گوگل خودت اجازه می‌دهی به تقویمت دسترسی داشته باشیم.
+        برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
       </p>
     </div>
   </div>
@@ -20739,6 +20821,7 @@ async function _saveQuickStaffChecklist(staffId) {
       remind_min:remindMin,
       sync_gcal:false,
       gcal_event_id:null,
+      gcal_calendar_id:null,
       done:false,
       done_at:null,
       completedAt:null,
@@ -23934,7 +24017,7 @@ function _todoGcalCheckboxHtml(checked) {
     <div class="form-group full" style="margin-top:4px">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
         <input type="checkbox" id="todo-gcal" onchange="_onTodoGcalToggle(this)" ${checked?'checked':''}>
-        🗓️ ذخیره در Google Calendar (تقویم اصلی)
+        🗓️ ذخیره در Google Calendar (${escapeHtml(_gcal.calendarName())})
         <span id="todo-gcal-hint" style="display:${_gcal.enabled?'none':'inline'};font-size:11px;color:var(--amber)">(با زدن این تیک یک‌بار به گوگل وصل می‌شوی)</span>
       </label>
     </div>`;
@@ -24030,6 +24113,7 @@ async function saveTodo() {
     remind_min: remindMin,
     sync_gcal: syncGcal,
     gcal_event_id: null,
+    gcal_calendar_id: syncGcal ? _gcal.calendarId() : null,
     done: false, done_at: null, completedAt: null, completed_at: null, archived: false, status: 'pending',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -24468,6 +24552,7 @@ async function updateTodo(id) {
   const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const wasSynced = !!t.sync_gcal;
   const prevEventId = t.gcal_event_id;
+  const prevCalendarId = t.gcal_calendar_id || _gcal.calendarId();
   const originalScheduledDate = _todoScheduledDate(t);
   if (normalizedMainTodayRank > 0) {
     (_db.todos || []).forEach(other => {
@@ -24501,6 +24586,7 @@ async function updateTodo(id) {
         remind_min: remindMin,
         sync_gcal: syncGcalWanted,
         gcal_event_id: null,
+        gcal_calendar_id: syncGcalWanted ? _gcal.calendarId() : null,
         done: false,
         done_at: null,
         completedAt: null,
@@ -24553,8 +24639,9 @@ async function updateTodo(id) {
   if (syncGcalWanted && dateJalali) {
     try { _gcal.upsertEvent(t); } catch(e) { console.warn('Google Calendar sync failed:', e.message); }
   } else if (wasSynced && !syncGcalWanted && prevEventId) {
-    try { _gcal.deleteEvent(prevEventId); } catch(e) { console.warn('Google Calendar delete failed:', e.message); }
+    try { _gcal.deleteEvent(prevEventId, prevCalendarId); } catch(e) { console.warn('Google Calendar delete failed:', e.message); }
     t.gcal_event_id = null;
+    t.gcal_calendar_id = null;
     _save(false);
   }
 
@@ -24583,7 +24670,7 @@ async function deleteTodo(id) {
   }
   if (!confirm('این کار حذف شود؟')) return;
   if (t && t.gcal_event_id) {
-    _gcal.deleteEvent(t.gcal_event_id);
+    _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
   }
   _db.todos = _db.todos.filter(x => x.id != id);
   _save();
@@ -24614,7 +24701,7 @@ async function _deleteTodoCompletely(id, options = {}) {
     : 'این کار حذف شود؟';
   if (!confirm(msg)) return;
   const removedTodos = (_db.todos || []).filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId);
-  removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id); });
+  removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id, x.gcal_calendar_id); });
   if (_teamAccessSession()) {
     const deletedIds = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
     deletedIds.add(String(t.id));
@@ -24819,7 +24906,7 @@ function _restoreTodo(id) {
 function _deleteTodoForever(id) {
   const t = _db.todos.find(x => x.id == id);
   if (t && t.gcal_event_id) {
-    _gcal.deleteEvent(t.gcal_event_id);
+    _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
   }
   _db.todos = _db.todos.filter(x => x.id != id);
   _save(); openTodoArchive(window._todoArchiveTab || 'mine');
@@ -26283,10 +26370,53 @@ async function gdriveConnectUI() {
 }
 
 // Google Calendar connect UI
+function _gcalCalendarSelectHtml() {
+  const calendars = _db._gcal_calendars || [];
+  const selected = _gcal.calendarId();
+  const rows = calendars.length ? calendars : [{id:selected,summary:_gcal.calendarName(),primary:selected==='primary',accessRole:''}];
+  const options = rows.map(c => {
+    const label = `${c.summary || c.id}${c.primary ? ' — اصلی' : ''}${c.accessRole==='writer' ? ' — قابل ویرایش' : ''}`;
+    return `<option value="${escapeHtml(c.id)}" ${c.id===selected?'selected':''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  return `
+    <div class="form-group full" style="margin-top:10px;max-width:520px">
+      <label>تقویم مقصد برای ثبت و وارد کردن</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select class="form-input" id="gcal-calendar-select" style="flex:1;min-width:220px" onchange="gcalSelectCalendarUI(this.value)">
+          ${options}
+        </select>
+        <button class="btn btn-ghost" onclick="gcalRefreshCalendarsUI()">↻ بروزرسانی لیست</button>
+      </div>
+    </div>`;
+}
+
 async function gcalConnectUI() {
   if (_gcal.enabled) { _gcal.disconnect(); renderSettings(); return; }
   await _gcal.connect();
   renderSettings();
+}
+
+async function gcalSelectCalendarUI(calendarId) {
+  if(!_gcal.enabled)return;
+  _db._gcal_calendar_id=calendarId||'primary';
+  _save(false);
+  _gcal.setStatusUI('ok','تقویم مقصد: '+_gcal.calendarName());
+  showToast('تقویم مقصد ذخیره شد: '+_gcal.calendarName(),'success');
+  renderSettings();
+}
+
+async function gcalRefreshCalendarsUI() {
+  if(!_gcal.enabled){
+    showToast('اول Google Calendar را وصل کن','error');
+    return;
+  }
+  try{
+    await _gcal.refreshCalendars({silent:false});
+    showToast('لیست تقویم‌ها بروزرسانی شد ✓','success');
+    renderSettings();
+  }catch(e){
+    showToast('خطا در دریافت لیست تقویم‌ها: '+e.message,'error');
+  }
 }
 
 async function gcalImportUI() {
