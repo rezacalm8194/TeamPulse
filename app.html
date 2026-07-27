@@ -5596,7 +5596,14 @@ const _gcal = {
     if(btn)btn.textContent=this.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال Google Calendar';
   },
 
-  async ensureToken() {
+  clearToken() {
+    this.token=null;this.tokenExpiry=0;
+    delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_scope;
+    _save(false);
+  },
+
+  async ensureToken({force=false} = {}) {
+    if(force)this.clearToken();
     if(this.token&&Date.now()<this.tokenExpiry)return this.token;
     if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
       this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;return this.token;
@@ -5647,6 +5654,7 @@ const _gcal = {
         this.token=data.token;
         this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
         _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
+        _db._gcal_scope=this.SCOPE;
         _save(false);
         resolve(this.token);
         return true;
@@ -5693,23 +5701,38 @@ const _gcal = {
   async req(url,opts={}) {
     const token=await this.ensureToken();
     const res=await fetch(url,{...opts,headers:{'Authorization':'Bearer '+token,...(opts.headers||{})}});
-    if(res.status===401){this.token=null;this.tokenExpiry=0;delete _db._gcal_token;delete _db._gcal_token_expiry;_save(false);throw new Error('نیاز به ورود مجدد');}
+    if(res.status===401){this.clearToken();throw new Error('نیاز به ورود مجدد');}
     return res;
   },
 
-  async refreshCalendars({silent=false} = {}) {
+  async refreshCalendars({silent=false, allowReauth=false} = {}) {
     if(!this.enabled&&!_db._gcal_enabled)return [];
-    const token=this.validTokenOrNull() || await this.ensureToken();
-    const res=await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=items(id,summary,primary,accessRole,backgroundColor)&minAccessRole=writer',{
+    const fetchCalendarList = async token => fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=items(id,summary,primary,accessRole,backgroundColor)&minAccessRole=writer',{
       headers:{'Authorization':'Bearer '+token}
     });
+    let token=this.validTokenOrNull();
+    const needsScopeUpgrade = !!token && _db._gcal_scope !== this.SCOPE;
+    if(!token || needsScopeUpgrade){
+      if(silent && !allowReauth)return [];
+      token=await this.ensureToken({force:needsScopeUpgrade && allowReauth});
+    }
+    let res=await fetchCalendarList(token);
     if(res.status===401){
-      this.token=null;this.tokenExpiry=0;delete _db._gcal_token;delete _db._gcal_token_expiry;_save(false);
+      this.clearToken();
       throw new Error('نیاز به ورود مجدد');
+    }
+    if(res.status===403 && allowReauth){
+      if(!silent)this.setStatusUI('syncing','در حال به‌روزرسانی دسترسی Google Calendar...');
+      token=await this.ensureToken({force:true});
+      res=await fetchCalendarList(token);
+      if(res.status===401){
+        this.clearToken();
+        throw new Error('نیاز به ورود مجدد');
+      }
     }
     if(!res.ok){
       const msg=res.status===403
-        ? 'برای انتخاب تقویم مقصد، اتصال Google Calendar را یک‌بار قطع و دوباره وصل کن'
+        ? 'دسترسی خواندن لیست تقویم‌ها تایید نشد؛ روی اتصال Google Calendar بزن و اجازه‌های گوگل را تایید کن'
         : 'کد '+res.status;
       if(!silent)this.setStatusUI('error',msg);
       throw new Error(msg);
@@ -5741,7 +5764,7 @@ const _gcal = {
       this.enabled=true;
       _db._gcal_enabled=true;
       _save(false);
-      await this.refreshCalendars({silent:true});
+      await this.refreshCalendars({silent:true, allowReauth:true});
       this.setStatusUI('ok','متصل شد ✓ تقویم مقصد: '+this.calendarName());
       showToast('به Google Calendar متصل شدی ✓','success');
       const btn=document.getElementById('gcal-sync-btn');
@@ -6044,6 +6067,7 @@ function _consumeStoredGcalOAuthResult() {
     _gcal.enabled=true;
     _db._gcal_token=_gcal.token;
     _db._gcal_token_expiry=_gcal.tokenExpiry;
+    _db._gcal_scope=_gcal.SCOPE;
     _db._gcal_enabled=true;
     _save(false);
     _gcal.setStatusUI('ok','متصل شد ✓');
@@ -26448,7 +26472,7 @@ async function gcalRefreshCalendarsUI() {
     return;
   }
   try{
-    await _gcal.refreshCalendars({silent:false});
+    await _gcal.refreshCalendars({silent:false, allowReauth:true});
     showToast('لیست تقویم‌ها بروزرسانی شد ✓','success');
     renderSettings();
   }catch(e){
