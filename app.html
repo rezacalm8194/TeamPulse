@@ -2936,6 +2936,8 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   body.knowledge-page .bottom-nav .bn-item.active{background:rgba(124,106,247,.08)}
   .bottom-nav .bn-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
   .bottom-nav .bn-icon svg{display:block;width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .staff-trend-picker{width:100%;margin-right:0!important;justify-content:space-between}
+  .staff-trend-picker select{flex:1;min-width:0!important;max-width:230px}
 }
 @media(max-width:360px){
   body.knowledge-page .content{padding-inline:12px}
@@ -12118,6 +12120,7 @@ async function renderArchive() {
 // ════════════════════════════════════════════════════════════════════════════
 let STAFF_ROLES = [];
 let _staffReturnToTodoAfterSave = false;
+let _staffTrendSelectedId = null;
 
 function staffIsPersonnel(s) {
   return (s?.person_type || 'personnel') === 'personnel';
@@ -12298,17 +12301,27 @@ async function renderStaff() {
   html += `</div>`;
 
   // ── Income trend chart ───────────────────────────────────────────────────
-  const trends = await window.api.staffMonthly.getTrends();
+  const allTrends = await window.api.staffMonthly.getTrends();
+  const personnelIds = new Set(staffList.filter(staffIsPersonnel).map(s => +s.id));
+  const trends = allTrends.filter(t => personnelIds.has(+t.staff_id));
+  if (!trends.some(t => +t.staff_id === +_staffTrendSelectedId)) {
+    _staffTrendSelectedId = trends.length ? trends[0].staff_id : null;
+  }
   html += `<div class="table-card">
     <div class="table-header">
-      <span class="title">📈 روند پرداخت پرسنل و اعضا</span>
-      <div class="table-search" style="max-width:260px">
-        <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input id="trend-search" placeholder="جستجو: نام، ماه یا سال..." oninput="filterTrends(this.value)">
+      <div class="title-wrap">
+        <span class="title">📈 روند پرداخت پرسنل</span>
+        <span class="subtitle">برای مشاهده نمودار و جزئیات، نام پرسنل را انتخاب کنید</span>
       </div>
+      ${trends.length ? `<label class="staff-trend-picker" style="margin-right:auto;display:flex;align-items:center;gap:8px;color:var(--text2);font-size:11px">
+        <span>انتخاب پرسنل</span>
+        <select id="staff-trend-select" onchange="_selectStaffTrend(this.value)" style="min-width:190px;height:36px;padding:0 10px;border:1px solid var(--border2);border-radius:9px;background:var(--bg3);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;outline:none">
+          ${trends.map(t => `<option value="${t.staff_id}" ${+t.staff_id===+_staffTrendSelectedId?'selected':''}>${escapeHtml(`${t.name} ${t.lname}`.trim())}</option>`).join('')}
+        </select>
+      </label>` : ''}
     </div>`;
   if (trends.length === 0) {
-    html += `<div class="empty"><span>📈</span>برای نمایش روند، حداقل ۲ ماه حقوق ثبت کنید</div>`;
+    html += `<div class="empty"><span>📈</span>برای نمایش روند پرسنل، حداقل ۲ ماه حقوق برای یک پرسنل ثبت کنید</div>`;
   } else {
     const latestTotals = trends
       .map(t => t.months && t.months.length ? t.months[t.months.length - 1].total : 0)
@@ -12316,7 +12329,7 @@ async function renderStaff() {
     const teamAvg = latestTotals.length ? Math.round(latestTotals.reduce((a, b) => a + b, 0) / latestTotals.length) : 0;
     html += `<div id="trends-container">`;
     trends.forEach(t => {
-      html += buildSalaryReportCard(t, teamAvg);
+      html += `<div class="staff-trend-panel" data-staff-id="${t.staff_id}" style="display:${+t.staff_id===+_staffTrendSelectedId?'block':'none'}">${buildSalaryReportCard(t, teamAvg)}</div>`;
     });
     html += `</div>`;
   }
@@ -12324,17 +12337,13 @@ async function renderStaff() {
 
   setContent(html);
 
-  // Trend search function (injected after setContent)
-  window.filterTrends = (q) => {
-    const blocks = document.querySelectorAll('.trend-block');
-    q = q.trim().toLowerCase();
-    blocks.forEach(b => {
-      const name = (b.dataset.name || '').toLowerCase();
-      // Also search month labels in the block text
-      const text = b.textContent.toLowerCase();
-      b.style.display = (!q || name.includes(q) || text.includes(q)) ? '' : 'none';
-    });
-  };
+}
+
+function _selectStaffTrend(staffId) {
+  _staffTrendSelectedId = staffId;
+  document.querySelectorAll('.staff-trend-panel').forEach(panel => {
+    panel.style.display = +panel.dataset.staffId === +staffId ? 'block' : 'none';
+  });
 }
 
 // ── Salary report card (financial profile + chart + insight) ───────────────────
