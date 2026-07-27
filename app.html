@@ -4206,6 +4206,7 @@ function jalaliWeekdayName(dateStr) {
 const DB_KEY = 'coaching_reza_v3';
 const RESTORE_PROTECT_KEY = 'tp_restore_protect_until';
 const RESTORE_SIGNATURE_KEY = 'tp_restore_expected_signature';
+const SERVER_SYNC_PENDING_PREFIX = 'tp_pending_server_sync_';
 const _ALL_CURRENCIES = ['تومان', 'درهم', 'دلار', 'یورو'];
 
 const DEFAULT_PKG_TYPES = [
@@ -4413,13 +4414,17 @@ function _trimStoredVersions() {
 function _save(stamp=true) {
   if (stamp) _db._lastSaved = Date.now();
   const key = window._activeDBKey || DB_KEY;
+  let localSaved = false;
   try {
     localStorage.setItem(key, JSON.stringify(_db));
+    localSaved = true;
   } catch(e) {
     // Safari Private mode یا storage پر
     console.warn('LocalStorage save failed (Safari private?):', e.message);
+    if (stamp) showToast('ذخیره روی دستگاه انجام نشد؛ حافظه مرورگر را خالی کن یا صفحه را نبند', 'error');
   }
   if (stamp) {
+    if (localSaved) _markServerSyncPending('save');
     _saveVersion();
     clearTimeout(window._serverSyncTimer);
     if (_teamAccessSession()) {
@@ -4465,6 +4470,46 @@ function _dataFingerprint(value) {
     h2 = Math.imul(h2 ^ c, 0x85ebca6b);
   }
   return ((h1 >>> 0).toString(36) + ':' + (h2 >>> 0).toString(36) + ':' + str.length);
+}
+
+function _serverSyncPendingKey() {
+  return SERVER_SYNC_PENDING_PREFIX + encodeURIComponent(window._activeDBKey || DB_KEY);
+}
+
+function _readServerSyncPending() {
+  try {
+    const raw = localStorage.getItem(_serverSyncPendingKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+function _markServerSyncPending(reason = 'save') {
+  try {
+    const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
+    localStorage.setItem(_serverSyncPendingKey(), JSON.stringify({
+      savedAt,
+      reason,
+      dbKey: window._activeDBKey || DB_KEY,
+      fingerprint: _dataFingerprint(_serverDataSignature(_db)),
+      updatedAt: Date.now()
+    }));
+    window._hasPendingServerSync = true;
+  } catch(e) {
+    console.warn('[TeamPulse] pending sync marker failed:', e.message);
+  }
+}
+
+function _clearServerSyncPending(upToSavedAt = Infinity) {
+  const pending = _readServerSyncPending();
+  if (pending && Number(pending.savedAt || 0) > upToSavedAt) return;
+  try { localStorage.removeItem(_serverSyncPendingKey()); } catch(e) {}
+  window._hasPendingServerSync = false;
+}
+
+function _hasServerSyncPending() {
+  return !!_readServerSyncPending();
 }
 
 function _isManualRestoreProtected() {
@@ -19098,15 +19143,19 @@ async function _syncToServer() {
     const forceSync = !!window._forceNextSync;
     const localSavedAt = Number(_db?._lastSaved || 0) || 0;
     if (!forceSync && localSavedAt && localSavedAt <= (window._lastServerSyncSavedAt || 0)) {
+      _clearServerSyncPending(localSavedAt);
       return null;
     }
+    const syncSavedAt = localSavedAt || Date.now();
+    const syncPayload = _serverSafeData(_db);
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: _serverSafeData(_db), force: forceSync })
+      body: JSON.stringify({ data: syncPayload, force: forceSync, client_saved_at: syncSavedAt })
     });
     if (res && res.ok) {
       if (forceSync) window._forceNextSync = false;
-      window._lastServerSyncSavedAt = localSavedAt || Date.now();
+      window._lastServerSyncSavedAt = syncSavedAt;
+      _clearServerSyncPending(syncSavedAt);
       if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
     }
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
@@ -19231,6 +19280,18 @@ async function _loadFromServer() {
         window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
         return false;
       }
+      const pendingSync = _readServerSyncPending();
+      if (pendingSync) {
+        const pendingSavedAt = Number(pendingSync.savedAt || 0) || 0;
+        if (serverTime && serverTime >= pendingSavedAt) {
+          _clearServerSyncPending(serverTime);
+        } else {
+          clearTimeout(window._serverSyncTimer);
+          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          console.warn('[TeamPulse] kept team local data while server sync is pending');
+          return false;
+        }
+      }
       if (!serverTime && !localTime && !_serverDataChanged(data, _db)) return false;
       _db = data;
       _migrate(_db);
@@ -19247,6 +19308,28 @@ async function _loadFromServer() {
     // (اولویت با سرور چون همه دستگاه‌ها sync می‌کنن)
     if (data && Object.keys(data).length > 0) {
       const { serverTime, localTime } = _serverTimes(data);
+      const pendingSync = _readServerSyncPending();
+      if (pendingSync) {
+        const pendingSavedAt = Number(pendingSync.savedAt || 0) || 0;
+        if (localTime >= serverTime || pendingSavedAt >= serverTime) {
+          clearTimeout(window._serverSyncTimer);
+          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          console.warn('[TeamPulse] kept newer local data while server sync is pending');
+          return false;
+        }
+        const localPending = _cloneData(_db);
+        const merged = _mergeLocalPendingChangesIntoOwnerData(localPending, data);
+        _db = merged;
+        _migrate(_db);
+        const key = window._activeDBKey || DB_KEY;
+        localStorage.setItem(key, JSON.stringify(_db));
+        _markServerSyncPending('merge-pending-with-server');
+        _forceNextServerSync();
+        clearTimeout(window._serverSyncTimer);
+        window._serverSyncTimer = setTimeout(_syncToServer, 50);
+        console.warn('[TeamPulse] merged pending local changes with newer server data');
+        return true;
+      }
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
       if ((localEmpty && _serverDataChanged(data, _db)) || (serverTime > localTime)) {
@@ -19357,7 +19440,8 @@ function _bindServerSyncLifecycleHandlers() {
       const accId = teamSession?.ownerUserId || _sbUser.id;
       const url = (window.location.origin || '') + '/api/data/' + accId +
         '?token=' + encodeURIComponent(_sbSession.token);
-      const data = JSON.stringify({ data: _db, force: !!window._forceNextSync });
+      const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
+      const data = JSON.stringify({ data: _serverSafeData(_db), force: !!window._forceNextSync, client_saved_at: savedAt });
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
         const sent = navigator.sendBeacon(url, blob);
