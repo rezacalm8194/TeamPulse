@@ -2861,6 +2861,90 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   }
 }
 
+/* Knowledge hub density pass */
+@media(min-width:769px){
+  body.knowledge-page ._ifcard-list-row{
+    min-height:42px!important;
+    padding-block:6px!important;
+  }
+}
+@media(max-width:768px){
+  body.knowledge-page .topbar{
+    height:calc(56px + env(safe-area-inset-top,0px))!important;
+    min-height:calc(56px + env(safe-area-inset-top,0px));
+    padding:env(safe-area-inset-top,0px) 12px 0!important;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  body.knowledge-page .topbar > *{align-self:center;margin-top:0!important;top:auto!important;transform:none!important}
+  body.knowledge-page .hamburger,
+  body.knowledge-page #account-btn{width:36px!important;height:36px!important;min-width:36px;padding:0!important;display:flex;align-items:center;justify-content:center}
+  body.knowledge-page .page-title{font-size:13px;flex:0 1 auto;max-width:94px}
+  body.knowledge-page .topbar-actions{margin-right:auto;flex:1 1 80px;justify-content:flex-end}
+  body.knowledge-page .topbar-actions .table-search{height:36px;align-items:center}
+  body.knowledge-page .topbar-actions .table-search.tb-search-open{position:absolute;inset-inline:56px 52px;width:auto;max-width:none;z-index:3}
+  body.knowledge-page .content{padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px))}
+  body.knowledge-page .instr-breadcrumb{
+    min-height:38px;
+    margin-bottom:12px;
+    padding:5px 7px;
+    gap:3px;
+    flex-wrap:nowrap;
+  }
+  body.knowledge-page .instr-crumb-back{min-height:28px;padding:3px 7px;font-size:11px}
+  body.knowledge-page .instr-crumb-link{min-height:26px;padding:3px 5px;font-size:11px}
+  body.knowledge-page .instr-toolbar{
+    height:44px;
+    margin-bottom:12px!important;
+    padding:5px!important;
+    overflow:visible;
+    justify-content:space-between;
+  }
+  body.knowledge-page .instr-toolbar-segment{min-width:0;flex:1 1 auto}
+  body.knowledge-page .instr-toolbar-segment button{padding:4px 9px!important;min-width:0;white-space:nowrap}
+  body.knowledge-page #instr-view-group{min-width:112px;flex:0 1 124px}
+  body.knowledge-page .instr-folders-section{margin-bottom:12px!important}
+  body.knowledge-page .instr-folders-section > div:first-child{margin-bottom:8px!important;color:var(--text2)!important}
+  body.knowledge-page ._ifcard-list-row{
+    grid-template-columns:40px minmax(0,1fr) auto 30px!important;
+    min-height:76px!important;
+    height:auto;
+    padding:8px 10px!important;
+    gap:8px!important;
+  }
+  body.knowledge-page ._ifcard-list-row > span:first-child{
+    grid-column:1;grid-row:1;width:40px!important;height:40px;font-size:21px!important;
+  }
+  body.knowledge-page ._ifcard-list-row > div:nth-child(2){grid-column:2;grid-row:1}
+  body.knowledge-page ._ifcard-list-row > span[style*="‹"]{
+    display:block!important;grid-column:3;grid-row:1;font-size:18px!important;color:var(--text2)!important;
+  }
+  body.knowledge-page ._ifcard-list-row > ._ifcard-more-btn,
+  body.knowledge-page ._ifcard-list-row > ._ifcard-actions{grid-column:4;grid-row:1}
+  body.knowledge-page ._ifcard-list-row ._ifcard-title-row{flex-wrap:nowrap!important;margin:0!important}
+  body.knowledge-page ._ifcard-list-row ._ifcard-title{
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+    max-width:100%!important;display:block;min-width:0;
+  }
+  body.knowledge-page ._ifcard-list-row ._instr-type-badge{font-size:9px;min-height:18px!important;padding:2px 5px}
+  body.knowledge-page ._ifcard-list-row div[style*="color:var(--text3)"]{color:var(--text2)!important}
+  body.knowledge-page .instr-fab-wrap{left:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  body.knowledge-page .instr-fab-btn{width:52px;height:52px}
+  body.knowledge-page .bottom-nav .bn-row{height:68px}
+  body.knowledge-page .bottom-nav .bn-item{padding:4px 8px;border-radius:9px;min-width:48px}
+  body.knowledge-page .bottom-nav .bn-item.active{background:rgba(124,106,247,.08)}
+  body.knowledge-page .bottom-nav .bn-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  body.knowledge-page .bottom-nav .bn-icon svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+}
+@media(max-width:360px){
+  body.knowledge-page .content{padding-inline:12px}
+  body.knowledge-page .page-title{max-width:78px;font-size:12px}
+  body.knowledge-page .topbar{gap:5px;padding-inline:10px!important}
+  body.knowledge-page .instr-toolbar-segment button{padding-inline:7px!important;font-size:10.5px!important}
+  body.knowledge-page #instr-view-group{min-width:104px;flex-basis:104px;padding-inline:6px}
+}
+
 /* ── حالت انتخاب چندتایی (نگه‌داشتن انگشت روی کارت) ──────────────────────────
    وقتی فعال است: دکمه‌های سریع هر کارت (⋮ ویرایش/پین/حذف) کنار می‌رن و به‌جاش
    یک مربع تیک‌خور بالای هر کارت نشون داده می‌شه؛ لمس/کلیک روی کارت به‌جای باز
@@ -3825,11 +3909,11 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
     <nav class="bottom-nav">
       <div class="bn-row">
-        <div class="bn-item" data-page="goals" onclick="currentPage='goals';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🎯</span><span>اهداف</span></div>
-        <div class="bn-item" data-page="habits" onclick="currentPage='habits';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon">🔥</span><span>عادت‌ها</span></div>
-        <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon">✅</span><span>کارها</span></div>
-        <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon">💡</span><span>مرکز دانش</span></div>
-        <div class="bn-item" onclick="openSidebar()"><span class="bn-icon">☰</span><span>بیشتر</span></div>
+        <div class="bn-item" data-page="goals" onclick="currentPage='goals';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l7-7M16 5h3v3"/></svg></span><span>اهداف</span></div>
+        <div class="bn-item" data-page="habits" onclick="currentPage='habits';document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));this.classList.add('active');updatePageTitle();renderPage()"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M13 3s1 4-2 6c-2-2-4-1-4-1s-3 4-1 8a7 7 0 0 0 13-1c1-4-2-7-2-7s0 4-3 5c1-5-1-8-1-10Z"/></svg></span><span>عادت‌ها</span></div>
+        <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span><span>کارها</span></div>
+        <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.9.7 1.5 1.7 1.5 2.6h4c0-.9.6-1.9 1.5-2.6A6 6 0 0 0 12 3Z"/></svg></span><span>مرکز دانش</span></div>
+        <div class="bn-item" onclick="openSidebar()"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span>بیشتر</span></div>
       </div>
       <div class="bn-safe-spacer"></div>
     </nav>
@@ -7278,6 +7362,7 @@ window.addEventListener('hashchange', () => {
 });
 
 function updatePageTitle() {
+  document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
   const titles = {
     students: 'امور مشتریان',
     payments: 'حساب مشتریان',
@@ -16683,7 +16768,31 @@ let _instrPath = []; // breadcrumb path: [{id, title, icon}]
 let _instrParentId = null; // current folder
 
 /* ── Instructions page state ──────────────────────────────────────────────── */
-let _instrView = 'gallery'; // 'gallery' | 'list' | 'compact'
+let _instrView = 'list'; // 'gallery' | 'list' | 'compact'
+let _instrViewLoaded = false;
+const INSTR_VIEW_STORAGE_KEY = 'teampulse_knowledge_view';
+function _instrLoadViewPreference() {
+  if (_instrViewLoaded) return;
+  _instrViewLoaded = true;
+  const accountValue = _db && _db.preferences && _db.preferences.knowledgeView;
+  let localValue = '';
+  try { localValue = localStorage.getItem(INSTR_VIEW_STORAGE_KEY) || ''; } catch(e) {}
+  const value = accountValue || localValue;
+  _instrView = ['gallery','list','compact'].includes(value) ? value : 'list';
+}
+function _instrSetView(value) {
+  if (!['gallery','list','compact'].includes(value)) value = 'list';
+  _instrView = value;
+  try { localStorage.setItem(INSTR_VIEW_STORAGE_KEY, value); } catch(e) {}
+  if (_db) {
+    if (!_db.preferences) _db.preferences = {};
+    if (_db.preferences.knowledgeView !== value) {
+      _db.preferences.knowledgeView = value;
+      _save();
+    }
+  }
+  renderInstructions();
+}
 let _instrFilter = 'all';   // 'all' | 'pinned' | 'folder' | 'note'
 let _instrSort = 'default'; // 'default' | 'name' | 'recent' | 'oldest'
 let _instrRecentIds = [];   // last 5 opened node ids
@@ -16825,6 +16934,7 @@ function _instrTypeBadge(item) {
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 async function renderInstructions(instrSearch) {
+  document.body.classList.add('knowledge-page');
   instrSearch = instrSearch || '';
   try {
   updateTopbarActions(`
@@ -16838,6 +16948,7 @@ async function renderInstructions(instrSearch) {
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
   _instrEnsureKnowledgeStructure();
+  _instrLoadViewPreference();
 
   const rawFlat = (_db.instructions || []).filter(n => !n.staff_id);
   if (_instrParentId && !_teamCanInstructionNode(_instrParentId)) {
@@ -17315,7 +17426,7 @@ function _filterBtn(key, label) {
 
 function _viewBtn(key, label) {
   const active = _instrView === key;
-  return `<button onclick="_instrView='${key}';renderInstructions()"
+  return `<button onclick="_instrSetView('${key}')"
     style="padding:5px 11px;border-radius:8px;border:1px solid ${active?'var(--accent)':'var(--border)'};
     background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
     font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
@@ -17350,7 +17461,7 @@ function _instrToolbarHtml() {
       <div class="instr-toolbar-divider" style="width:1px;align-self:stretch;background:var(--border);margin:0 2px"></div>
       <label id="instr-view-group" class="instr-view-select" title="انتخاب حالت نمایش مرکز دانش">
         <span>نمایش</span>
-        <select onchange="_instrView=this.value;renderInstructions()" aria-label="نمایش مرکز دانش">
+        <select onchange="_instrSetView(this.value)" aria-label="نمایش مرکز دانش">
           <option value="gallery" ${_instrView==='gallery'?'selected':''}>گالری</option>
           <option value="list" ${_instrView==='list'?'selected':''}>فهرست</option>
           <option value="compact" ${_instrView==='compact'?'selected':''}>فشرده</option>
