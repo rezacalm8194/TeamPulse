@@ -2869,7 +2869,9 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   }
 }
 @media(max-width:768px){
-  body.knowledge-page .topbar{
+  .bottom-nav{display:flex!important}
+  body.knowledge-page .topbar,
+  body.primary-mobile-page .topbar{
     height:calc(56px + env(safe-area-inset-top,0px))!important;
     min-height:calc(56px + env(safe-area-inset-top,0px));
     padding:env(safe-area-inset-top,0px) 12px 0!important;
@@ -2877,12 +2879,18 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
     align-items:center;
     gap:8px;
   }
-  body.knowledge-page .topbar > *{align-self:center;margin-top:0!important;top:auto!important;transform:none!important}
+  body.knowledge-page .topbar > *,
+  body.primary-mobile-page .topbar > *{align-self:center;margin-top:0!important;top:auto!important;transform:none!important}
   body.knowledge-page .hamburger,
-  body.knowledge-page #account-btn{width:36px!important;height:36px!important;min-width:36px;padding:0!important;display:flex;align-items:center;justify-content:center}
-  body.knowledge-page .page-title{font-size:13px;flex:0 1 auto;max-width:94px}
-  body.knowledge-page .topbar-actions{margin-right:auto;flex:1 1 80px;justify-content:flex-end}
-  body.knowledge-page .topbar-actions .table-search{height:36px;align-items:center}
+  body.knowledge-page #account-btn,
+  body.primary-mobile-page .hamburger,
+  body.primary-mobile-page #account-btn{width:36px!important;height:36px!important;min-width:36px;padding:0!important;display:flex;align-items:center;justify-content:center}
+  body.knowledge-page .page-title,
+  body.primary-mobile-page .page-title{font-size:13px;flex:0 1 auto;max-width:110px}
+  body.knowledge-page .topbar-actions,
+  body.primary-mobile-page .topbar-actions{margin-right:auto;flex:1 1 80px;justify-content:flex-end;align-items:center}
+  body.knowledge-page .topbar-actions .table-search,
+  body.primary-mobile-page .topbar-actions .table-search{height:36px;align-items:center}
   body.knowledge-page .topbar-actions .table-search.tb-search-open{position:absolute;inset-inline:56px 52px;width:auto;max-width:none;z-index:3}
   body.knowledge-page .content{padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px))}
   body.knowledge-page .instr-breadcrumb{
@@ -2934,13 +2942,15 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   body.knowledge-page .bottom-nav .bn-row{height:68px}
   body.knowledge-page .bottom-nav .bn-item{padding:4px 8px;border-radius:9px;min-width:48px}
   body.knowledge-page .bottom-nav .bn-item.active{background:rgba(124,106,247,.08)}
-  body.knowledge-page .bottom-nav .bn-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
-  body.knowledge-page .bottom-nav .bn-icon svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .bottom-nav .bn-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  .bottom-nav .bn-icon svg{display:block;width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 }
 @media(max-width:360px){
   body.knowledge-page .content{padding-inline:12px}
-  body.knowledge-page .page-title{max-width:78px;font-size:12px}
-  body.knowledge-page .topbar{gap:5px;padding-inline:10px!important}
+  body.knowledge-page .page-title,
+  body.primary-mobile-page .page-title{max-width:88px;font-size:12px}
+  body.knowledge-page .topbar,
+  body.primary-mobile-page .topbar{gap:5px;padding-inline:10px!important}
   body.knowledge-page .instr-toolbar-segment button{padding-inline:7px!important;font-size:10.5px!important}
   body.knowledge-page #instr-view-group{min-width:104px;flex-basis:104px;padding-inline:6px}
 }
@@ -7363,6 +7373,7 @@ window.addEventListener('hashchange', () => {
 
 function updatePageTitle() {
   document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
+  document.body.classList.toggle('primary-mobile-page', ['goals','habits','todolist'].includes(currentPage));
   const titles = {
     students: 'امور مشتریان',
     payments: 'حساب مشتریان',
@@ -7512,6 +7523,8 @@ function _selectGoogleTranslateLanguage(lang) {
 }
 
 async function renderPage() {
+  document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
+  document.body.classList.toggle('primary-mobile-page', ['goals','habits','todolist'].includes(currentPage));
   if (currentPage === 'sessions') {
     currentPage = 'students';
     _studentsTab = 'sessions';
