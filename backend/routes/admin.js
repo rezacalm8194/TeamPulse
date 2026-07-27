@@ -2,6 +2,9 @@ const router = require('express').Router();
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { randomUUID } = require('crypto');
+const bcrypt = require('bcryptjs');
+const webpush = require('web-push');
+webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
 function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
@@ -46,6 +49,13 @@ function ensureWalletTables() {
   `).run();
 }
 
+function ensureAdminAccountColumns() {
+  const cols = db.prepare('PRAGMA table_info(accounts)').all().map(c => c.name);
+  if (!cols.includes('subscription_until')) {
+    db.prepare('ALTER TABLE accounts ADD COLUMN subscription_until TEXT').run();
+  }
+}
+
 // ── ذخیره تنظیمات ادمین در جدول user_data با کلید ویژه ────────
 function getAdminSettings() {
   try {
@@ -66,7 +76,8 @@ function saveAdminSettings(settings) {
 router.get('/stats', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();
-    const users = db.prepare("SELECT a.id,a.name,a.email,a.role,a.plan,a.is_active,a.created_at,(SELECT COUNT(*) FROM clients WHERE account_id=a.id) as client_count,(SELECT COALESCE(SUM(amount),0) FROM payments WHERE account_id=a.id AND status='paid') as total_income FROM accounts a ORDER BY a.created_at DESC").all();
+    ensureAdminAccountColumns();
+    const users = db.prepare("SELECT a.id,a.name,a.email,a.role,a.plan,a.is_active,a.created_at,a.updated_at,a.subscription_until,(SELECT COUNT(*) FROM clients WHERE account_id=a.id) as client_count,(SELECT COALESCE(SUM(amount),0) FROM payments WHERE account_id=a.id AND status='paid') as total_income FROM accounts a ORDER BY a.created_at DESC").all();
     const settings = getAdminSettings();
     const chargeReqs = db.prepare(`
       SELECT r.id, r.account_id AS user_id, a.email, a.name, r.amount, r.receipt_text, r.status, r.created_at
@@ -95,7 +106,8 @@ router.put('/users/:id/status', auth, adminOnly, (req, res) => {
 
 router.get('/users/:id', auth, adminOnly, (req, res) => {
   try {
-    const user = db.prepare("SELECT id,name,email,role,plan,is_active,created_at FROM accounts WHERE id=?").get(req.params.id);
+    ensureAdminAccountColumns();
+    const user = db.prepare("SELECT id,name,email,role,plan,is_active,created_at,updated_at,subscription_until FROM accounts WHERE id=?").get(req.params.id);
     if (!user) return res.status(404).json({ error: 'not found' });
     const clients = db.prepare("SELECT * FROM clients WHERE account_id=? AND is_archived=0").all(req.params.id);
     const payments = db.prepare("SELECT * FROM payments WHERE account_id=? ORDER BY created_at DESC LIMIT 20").all(req.params.id);
@@ -154,6 +166,71 @@ function updateChargeRequestStatus(req, res, forcedStatus) {
 
 router.put('/charge-requests/:id', auth, adminOnly, (req, res) => {
   updateChargeRequestStatus(req, res);
+});
+
+router.put('/users/:id/profile', auth, adminOnly, (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
+    db.prepare("UPDATE accounts SET name=?,email=?,updated_at=datetime('now') WHERE id=?").run(name, email, req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/users/:id/plan', auth, adminOnly, (req, res) => {
+  try {
+    ensureAdminAccountColumns();
+    const plan = ['free','basic','pro','enterprise'].includes(req.body.plan) ? req.body.plan : 'free';
+    db.prepare("UPDATE accounts SET plan=?,updated_at=datetime('now') WHERE id=?").run(plan, req.params.id);
+    res.json({ success: true, plan });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users/:id/renew', auth, adminOnly, (req, res) => {
+  try {
+    ensureAdminAccountColumns();
+    const days = Math.max(1, Math.min(730, Number(req.body.days) || 30));
+    db.prepare(`UPDATE accounts SET subscription_until=datetime(
+      CASE WHEN subscription_until IS NOT NULL AND subscription_until > datetime('now')
+        THEN subscription_until ELSE datetime('now') END, ?),updated_at=datetime('now') WHERE id=?`)
+      .run('+' + days + ' days', req.params.id);
+    const row = db.prepare('SELECT subscription_until FROM accounts WHERE id=?').get(req.params.id);
+    res.json({ success: true, subscription_until: row?.subscription_until });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users/:id/reset-password', auth, adminOnly, (req, res) => {
+  try {
+    const password = String(req.body.password || '');
+    if (password.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
+    db.prepare("UPDATE accounts SET password=?,updated_at=datetime('now') WHERE id=?")
+      .run(bcrypt.hashSync(password, 10), req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users/notify', auth, adminOnly, async (req, res) => {
+  try {
+    const userIds = Array.isArray(req.body.user_ids) ? req.body.user_ids.filter(Boolean) : [];
+    const title = String(req.body.title || 'پیام مدیریت').slice(0, 80);
+    const body = String(req.body.body || '').slice(0, 500);
+    if (!userIds.length || !body) return res.status(400).json({ error: 'recipients and body are required' });
+    const placeholders = userIds.map(() => '?').join(',');
+    const subscriptions = db.prepare(`SELECT id,subscription FROM push_subscriptions WHERE account_id IN (${placeholders})`).all(...userIds);
+    let sent = 0;
+    for (const sub of subscriptions) {
+      try {
+        await webpush.sendNotification(JSON.parse(sub.subscription), JSON.stringify({
+          title, body, icon:'/logo.png', tag:'admin-' + Date.now(), kind:'admin'
+        }));
+        sent++;
+      } catch(e) {
+        if (e.statusCode === 404 || e.statusCode === 410) db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(sub.id);
+      }
+    }
+    res.json({ success:true, sent, subscriptions:subscriptions.length });
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 router.post('/charge-requests/:id/approve', auth, adminOnly, (req, res) => {

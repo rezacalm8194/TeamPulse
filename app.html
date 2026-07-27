@@ -649,6 +649,11 @@ button { cursor: pointer; font-family: var(--font); }
 .row-menu-item.danger { color: var(--red); }
 .row-menu-item.danger:hover { background: rgba(248,113,113,.12); }
 .row-menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
+.admin-page{width:100%;min-width:0}
+.admin-content{width:100%;max-width:1600px;margin-inline:auto;padding:20px 24px 40px;min-width:0}
+@media(max-width:768px){
+  .admin-content{padding:8px 0 28px}
+}
 .todo-overdue-menu-btn,
 .todo-overdue-menu-btn:hover {
   background: transparent !important;
@@ -13573,6 +13578,12 @@ async function openSalaryTransfer(staffId) {
     _currentMenuId = null;
   }
 
+  // Inline menu actions often stop propagation. Close explicitly after choosing
+  // an item so the cloned portal never remains floating over the next screen/modal.
+  portal.addEventListener('click', function (event) {
+    if (event.target.closest('.row-menu-item')) setTimeout(closePortal, 0);
+  });
+
   // Close on outside click
   document.addEventListener('click', closePortal);
   // Close on scroll (keeps portal aligned)
@@ -26077,7 +26088,8 @@ async function renderAdminPanel() {
   const usersHTML = _adminRenderUserList(allUsers);
 
   setContent(`
-    <div style="max-width:820px;margin:0 auto">
+    <div class="admin-page">
+    <div class="admin-content">
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;
         background:${serverOnline?'rgba(62,207,142,.08)':'rgba(248,113,113,.08)'};
         border:1px solid ${serverOnline?'rgba(62,207,142,.3)':'rgba(248,113,113,.3)'};
@@ -26165,6 +26177,7 @@ async function renderAdminPanel() {
         <div id="charge-user-info" style="font-size:11px;color:var(--text3);margin-top:6px;display:none"></div>
         <button class="btn btn-primary" style="margin-top:10px" onclick="_adminChargeWallet()">💰 شارژ کیف پول</button>
       </div>
+    </div>
     </div>`);
 
   setTimeout(() => document.getElementById('admin-user-search')?.focus(), 100);
