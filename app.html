@@ -27024,115 +27024,76 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
 
 // ── PWA Install Prompt ─────────────────────────────────────────────────────
 let _deferredInstallPrompt = null;
+const PWA_INSTALLED_KEY = 'tp_pwa_installed';
 
-// Android Chrome: ذخیره event
-window.addEventListener('beforeinstallprompt', (e) => {
+function _isPWAStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    navigator.standalone === true;
+}
+function _markPWAInstalled() {
+  try { localStorage.setItem(PWA_INSTALLED_KEY, '1'); } catch(e) {}
+}
+function _isPWAInstalled() {
+  if (_isPWAStandalone()) {
+    _markPWAInstalled();
+    return true;
+  }
+  try { return localStorage.getItem(PWA_INSTALLED_KEY) === '1'; } catch(e) { return false; }
+}
+if (_isPWAStandalone()) _markPWAInstalled();
+
+window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _deferredInstallPrompt = e;
-  setTimeout(() => _showInstallBanner(), 3000);
+  setTimeout(_showInstallBanner, 700);
 });
-
-// iOS Chrome: نمی‌تونه beforeinstallprompt داشته باشه — مستقیم نشون بده
-(function() {
-  const ua = navigator.userAgent;
-  const isIOS = /iphone|ipad|ipod/i.test(ua);
-  const isSafari = /safari/i.test(ua) && !/chrome|crios|fxios/i.test(ua);
-  const isIOSChrome = isIOS && !isSafari;
-  if (isIOSChrome) {
-    setTimeout(() => _showInstallBanner(), 3000);
-  }
-})();
-
 window.addEventListener('appinstalled', () => {
   _deferredInstallPrompt = null;
-  localStorage.setItem('tp_install_dismissed', Date.now().toString());
+  _markPWAInstalled();
   _hideInstallBanner();
-  showToast('✅ TeamPulse به صفحه اصلی اضافه شد!', 'success');
+  showToast('✅ TeamPulse با موفقیت نصب شد!', 'success');
 });
-
-// iOS Chrome: بدون نیاز به beforeinstallprompt — بعد از load نشون بده
-setTimeout(() => {
-  const ua = navigator.userAgent;
-  const isIOS = /iphone|ipad|ipod/i.test(ua);
-  const isSafari = /safari/i.test(ua) && !/chrome|crios|fxios/i.test(ua);
-  const isIOSChrome = isIOS && !isSafari;
-  if (isIOSChrome) _showInstallBanner();
-}, 3000);
+setTimeout(_showInstallBanner, 2800);
 
 function _showInstallBanner() {
-  // اگه الان standalone (نصب‌شده) هست نشون نده
-  if (window.matchMedia('(display-mode: standalone)').matches) return;
-  // اگه dismiss کرده، بعد از ۷ روز دوباره نشون بده (شاید پاک کرده)
-  const dismissed = localStorage.getItem('tp_install_dismissed');
-  if (dismissed) {
-    const dismissedTime = parseInt(dismissed);
-    const sevenDays = 7 * 24 * 60 * 60 * 1000;
-    if (!isNaN(dismissedTime) && Date.now() - dismissedTime < sevenDays) return;
-    // ۷ روز گذشته — دوباره نشون بده
-    localStorage.removeItem('tp_install_dismissed');
-  }
+  if (_isPWAInstalled() || document.getElementById('pwa-install-banner')) return;
+  try { if (sessionStorage.getItem('tp_install_hidden_session') === '1') return; } catch(e) {}
 
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isAndroid = /android/i.test(navigator.userAgent);
-  if (!isIOS && !isAndroid) return;
-
-  const isSafari = /safari/i.test(navigator.userAgent) && !/chrome|crios|fxios/i.test(navigator.userAgent);
-  const isIOSChrome = isIOS && !isSafari; // فقط موبایل
-
+  const ua = navigator.userAgent;
+  const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /android/i.test(ua);
+  const isSafari = isIOS && /safari/i.test(ua) && !/crios|fxios|edgios|opios/i.test(ua);
   const banner = document.createElement('div');
   banner.id = 'pwa-install-banner';
-  banner.style.cssText = `
-    position:fixed;bottom:0;right:0;left:0;z-index:9998;
-    background:linear-gradient(135deg,#1e2130,#2a2d45);
-    border-top:1px solid rgba(124,106,247,.3);
-    padding:16px;display:flex;flex-direction:column;gap:12px;
-    box-shadow:0 -8px 32px rgba(0,0,0,.4);
-    animation:slideUpBanner .3s ease;
-  `;
+  banner.style.cssText = 'position:fixed;bottom:0;right:0;left:0;z-index:9998;background:linear-gradient(135deg,#1e2130,#2a2d45);border-top:1px solid rgba(124,106,247,.3);padding:16px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 32px rgba(0,0,0,.4);animation:slideUpBanner .3s ease';
 
-  const iosInstructions = isIOSChrome ?
-    '<div style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px;margin-top:4px">' +
-      '<div style="font-size:12px;color:white;font-weight:700;margin-bottom:8px">📲 برای نصب روی آیفون:</div>' +
-      '<div style="font-size:11px;color:rgba(255,255,255,.7);line-height:1.9;margin-bottom:10px">' +
-        'Chrome روی iOS امکان نصب مستقیم نداره.<br>' +
-        'لینک رو کپی کن و در <strong style="color:#60a5fa">Safari</strong> باز کن، بعد از منوی Share اضافه کن.' +
-      '</div>' +
-      '<button onclick="navigator.clipboard.writeText("https://teampulse.ir/app").then(()=>{this.textContent="✅ کپی شد!";setTimeout(()=>this.textContent="📋 کپی لینک",2000)})" ' +
-        'style="width:100%;padding:10px;border-radius:10px;background:rgba(96,165,250,.2);color:#60a5fa;border:1px solid rgba(96,165,250,.3);cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600">' +
-        '📋 کپی لینک' +
-      '</button>' +
-    '</div>'
-    : isIOS ?
-    '<div style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px;margin-top:4px">' +
-      '<div style="font-size:12px;color:white;font-weight:700;margin-bottom:8px">📲 نصب روی آیفون:</div>' +
-      '<div style="font-size:11px;color:rgba(255,255,255,.7);line-height:1.9">' +
-        '<div>۱. روی آیکون <strong style="color:white">⎋ Share</strong> در پایین Safari بزن</div>' +
-        '<div>۲. گزینه <strong style="color:#60a5fa">«Add to Home Screen»</strong> رو بزن</div>' +
-      '</div>' +
-    '</div>'
-    : '';
+  const iosInstructions = isIOS && !isSafari
+    ? `<div style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px">
+        <div style="font-size:12px;color:white;font-weight:700;margin-bottom:7px">📲 نصب روی آیفون و آیپد</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.72);line-height:1.9;margin-bottom:10px">برای نصب، این صفحه را با <strong style="color:#60a5fa">Safari</strong> باز کنید؛ سپس Share و <strong style="color:#60a5fa">Add to Home Screen</strong> را انتخاب کنید.</div>
+        <button onclick="_copyPWAInstallUrl(this)" style="width:100%;padding:10px;border-radius:10px;background:rgba(96,165,250,.2);color:#60a5fa;border:1px solid rgba(96,165,250,.3);font-family:var(--font);font-weight:700">📋 کپی لینک برای Safari</button>
+      </div>`
+    : isIOS
+      ? `<div style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px">
+          <div style="font-size:12px;color:white;font-weight:700;margin-bottom:7px">📲 نصب با Safari</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.72);line-height:2">۱. روی دکمه <strong style="color:white">Share</strong> بزنید.<br>۲. گزینه <strong style="color:#60a5fa">Add to Home Screen</strong> را انتخاب کنید.<br>۳. در پایان روی <strong style="color:white">Add</strong> بزنید.</div>
+        </div>`
+      : '';
 
   banner.innerHTML = `
     <style>@keyframes slideUpBanner{from{transform:translateY(100%)}to{transform:translateY(0)}}</style>
     <div style="display:flex;align-items:center;gap:12px">
-      <img src="/logo.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;mix-blend-mode:screen">
-      <div style="flex:1">
-        <div style="color:white;font-weight:700;font-size:14px">TeamPulse رو نصب کن</div>
-        <div style="color:rgba(255,255,255,.6);font-size:12px;margin-top:2px">دسترسی سریع از صفحه اصلی گوشیت</div>
-      </div>
-      <button class="x-close-sm x-close-invert" onclick="_hideInstallBanner(true)" style="font-size:16px">×</button>
+      <img src="/logo.png" alt="" style="width:46px;height:46px;border-radius:12px;flex-shrink:0;mix-blend-mode:screen">
+      <div style="flex:1;min-width:0"><div style="color:white;font-weight:800;font-size:14px">TeamPulse را نصب کنید</div><div style="color:rgba(255,255,255,.65);font-size:12px;margin-top:2px">${isIOS?'دسترسی سریع از صفحه اصلی':'اجرای سریع‌تر و تجربه‌ای شبیه اپلیکیشن'}</div></div>
+      <button class="x-close-sm x-close-invert" onclick="_hideInstallBanner(true)" aria-label="بعداً" style="font-size:16px">×</button>
     </div>
     ${iosInstructions}
-    ${isAndroid ?
-      '<div style="display:flex;gap:8px">' +
-      '<button onclick="_installPWA()" style="flex:1;padding:11px;border-radius:10px;background:var(--accent);color:white;border:none;cursor:pointer;font-family:var(--font);font-size:14px;font-weight:700">📲 اضافه کردن به صفحه اصلی</button>' +
-      '<button onclick="_hideInstallBanner(true)" style="padding:11px 16px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;cursor:pointer;font-family:var(--font);font-size:13px">بعداً</button>' +
-      '</div>'
-      :
-      '<button onclick="_hideInstallBanner(true)" style="width:100%;padding:10px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;cursor:pointer;font-family:var(--font);font-size:13px;margin-top:4px">بستن</button>'
-    }
+    ${!isIOS ? `<div style="display:flex;gap:8px">
+      <button onclick="_installPWA()" style="flex:1;padding:11px;border-radius:10px;background:var(--accent);color:white;border:none;font-family:var(--font);font-size:14px;font-weight:800">📲 ${isAndroid?'نصب برنامه':'Install TeamPulse'}</button>
+      <button onclick="_hideInstallBanner(true)" style="padding:11px 16px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;font-family:var(--font);font-size:13px">بعداً</button>
+    </div>` : `<button onclick="_hideInstallBanner(true)" style="width:100%;padding:10px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;font-family:var(--font);font-size:13px">متوجه شدم</button>`}
   `;
-
   document.body.appendChild(banner);
 }
 
@@ -27143,24 +27104,44 @@ function _hideInstallBanner(dismiss) {
     banner.style.transform = 'translateY(100%)';
     setTimeout(() => banner.remove(), 300);
   }
-  if (dismiss) localStorage.setItem('tp_install_dismissed', Date.now().toString());
+  if (dismiss) {
+    try { sessionStorage.setItem('tp_install_hidden_session', '1'); } catch(e) {}
+  }
 }
 
 async function _installPWA() {
-  if (!_deferredInstallPrompt) return;
+  if (!_deferredInstallPrompt) {
+    showToast('از منوی مرورگر گزینه Install app یا Add to Home Screen را انتخاب کنید', 'info');
+    return;
+  }
   _deferredInstallPrompt.prompt();
   const { outcome } = await _deferredInstallPrompt.userChoice;
   _deferredInstallPrompt = null;
-  // در هر صورت dismiss کن تا دیگه نیاد
-  localStorage.setItem('tp_install_dismissed', Date.now().toString());
-  _hideInstallBanner(false);
   if (outcome === 'accepted') {
-    showToast('✅ TeamPulse به صفحه اصلی اضافه شد!', 'success');
+    _markPWAInstalled();
+    _hideInstallBanner(false);
+    showToast('✅ TeamPulse با موفقیت نصب شد!', 'success');
+  } else {
+    showToast('هر زمان آماده بودید، دوباره روی دکمه نصب بزنید', 'info');
+  }
+}
+
+async function _copyPWAInstallUrl(btn) {
+  const url = 'https://teampulse.ir/app';
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = '✅ لینک کپی شد';
+      setTimeout(() => { if (btn) btn.textContent = old; }, 2000);
+    }
+  } catch(e) {
+    window.prompt('این لینک را کپی و در Safari باز کنید:', url);
   }
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v59';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v60';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
