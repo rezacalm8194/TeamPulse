@@ -649,10 +649,80 @@ button { cursor: pointer; font-family: var(--font); }
 .row-menu-item.danger { color: var(--red); }
 .row-menu-item.danger:hover { background: rgba(248,113,113,.12); }
 .row-menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
-.admin-page{width:100%;min-width:0}
+.admin-page{
+  width:100%;min-width:0;
+  --admin-success:#34d399;
+  --admin-danger:#f87171;
+  --admin-warning:#fbbf24;
+  --admin-primary:#8b7cf8;
+  --admin-focus:rgba(139,124,248,.28);
+}
 .admin-content{width:100%;max-width:1600px;margin-inline:auto;padding:20px 24px 40px;min-width:0}
+.admin-content > * + *{margin-top:18px}
+.admin-content .detail-section{
+  padding:18px;border-color:rgba(148,163,184,.17);
+  background:linear-gradient(180deg,rgba(255,255,255,.032),rgba(255,255,255,.016));
+  box-shadow:0 8px 24px rgba(0,0,0,.10);
+}
+.admin-content .detail-section h3{font-size:14px;color:var(--text);letter-spacing:.01em}
+.admin-content .stat-card{
+  min-height:92px;padding:16px;border-color:rgba(148,163,184,.16);
+  background:linear-gradient(180deg,var(--bg2),rgba(31,37,54,.82));
+}
+.admin-content .stat-value{font-size:21px;line-height:1.25}
+.admin-content .stat-label,.admin-content .stat-sub{color:var(--text2)}
+.admin-content .form-input,
+.admin-content .form-select,
+.admin-content .form-textarea{
+  border-color:rgba(148,163,184,.24);background:rgba(14,18,28,.55);
+  transition:border-color .15s,box-shadow .15s,background .15s;
+}
+.admin-content .form-input:hover,
+.admin-content .form-select:hover,
+.admin-content .form-textarea:hover{border-color:rgba(139,124,248,.52)}
+.admin-content .form-input:focus,
+.admin-content .form-select:focus,
+.admin-content .form-textarea:focus{
+  outline:none;border-color:var(--admin-primary);
+  box-shadow:0 0 0 3px var(--admin-focus);background:var(--bg2);
+}
+.admin-content .btn{min-height:34px;font-weight:750;transition:transform .14s,filter .14s,box-shadow .14s,border-color .14s}
+.admin-content .btn-primary{background:var(--admin-primary);color:#fff;box-shadow:0 5px 14px rgba(124,106,247,.20)}
+.admin-content .btn-primary:hover{filter:brightness(1.09);box-shadow:0 7px 18px rgba(124,106,247,.30)}
+.admin-content .btn-danger{background:rgba(248,113,113,.12);color:var(--admin-danger);border:1px solid rgba(248,113,113,.36)}
+.admin-content .btn-danger:hover{background:rgba(248,113,113,.20);border-color:var(--admin-danger)}
+.admin-content .btn-ghost:hover{color:var(--text);border-color:rgba(139,124,248,.55);background:rgba(139,124,248,.10)}
+.admin-content .btn:focus-visible,
+.admin-content button:focus-visible,
+.admin-content input[type="checkbox"]:focus-visible{
+  outline:2px solid var(--admin-primary);outline-offset:2px;box-shadow:0 0 0 4px var(--admin-focus);
+}
+.admin-content [data-admin-user-id]{
+  min-height:68px!important;padding:12px 14px!important;margin-bottom:8px!important;
+  border-color:rgba(148,163,184,.13)!important;
+  background:linear-gradient(100deg,var(--bg3),rgba(34,40,61,.92))!important;
+}
+.admin-content [data-admin-user-id]:hover{
+  border-color:rgba(139,124,248,.62)!important;
+  background:linear-gradient(100deg,rgba(139,124,248,.10),var(--bg3))!important;
+  box-shadow:0 8px 20px rgba(0,0,0,.14);
+}
+.admin-content [data-admin-user-id][data-selected="true"]{
+  border-color:var(--admin-primary)!important;
+  background:linear-gradient(100deg,rgba(139,124,248,.16),var(--bg3))!important;
+  box-shadow:inset 0 0 0 1px rgba(139,124,248,.18);
+}
+.admin-content [data-admin-user-id]:focus-within{border-color:var(--admin-primary)!important;box-shadow:0 0 0 3px var(--admin-focus)}
+.admin-content .row-menu-btn:hover,.admin-content .row-menu-btn:focus-visible{
+  color:#fff;border-color:var(--admin-primary);background:rgba(139,124,248,.20);
+}
+.admin-content .status-ok{color:var(--admin-success)!important}
+.admin-content .status-debt{color:var(--admin-danger)!important}
 @media(max-width:768px){
   .admin-content{padding:8px 0 28px}
+  .admin-content > * + *{margin-top:12px}
+  .admin-content .detail-section{padding:13px}
+  .admin-content [data-admin-user-id]{padding:10px!important;gap:8px!important}
 }
 .todo-overdue-menu-btn,
 .todo-overdue-menu-btn:hover {
@@ -26198,7 +26268,7 @@ function _adminRenderUserList(users) {
     const menuId = 'admin-user-menu-' + uid;
     const selected = _adminSelectedUsers.has(String(uid));
     return [
-      '<div data-admin-user-id="' + uid + '" style="display:flex;align-items:center;gap:10px;padding:10px 12px;',
+      '<div data-admin-user-id="' + uid + '" data-selected="' + (selected?'true':'false') + '" style="display:flex;align-items:center;gap:10px;padding:10px 12px;',
       'background:var(--bg3);border-radius:10px;margin-bottom:6px;cursor:pointer;',
       'border:1px solid ' + (selected?'var(--accent2)':'transparent') + ';transition:border-color .15s" ',
       'onclick="openAdminUserDetail(\'' + uid + '\')" ',
