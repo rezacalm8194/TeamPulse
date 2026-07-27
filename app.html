@@ -4301,6 +4301,51 @@ function _detectUserLocale() {
 
 let _db = null;
 
+function _serviceLabelKey(label) {
+  return String(label || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function _isGenericStaffServiceLabel(label) {
+  return /^(پرسنل|کارمند|عضو|همکار)$/i.test(String(label || '').trim()) || /پاداش|bonus/i.test(label || '');
+}
+
+function _syncServiceCatalogs(d, { from = 'both' } = {}) {
+  if (!d || typeof d !== 'object') return false;
+  d.package_types = Array.isArray(d.package_types) ? d.package_types : [];
+  d.staff_roles = Array.isArray(d.staff_roles) && d.staff_roles.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
+  d._nextId = d._nextId || {};
+  let changed = false;
+  const pkgKeys = new Set(d.package_types.map(p => _serviceLabelKey(p.label)).filter(Boolean));
+  const roleKeys = new Set(d.staff_roles.map(r => _serviceLabelKey(r.label)).filter(Boolean));
+
+  if (from === 'both' || from === 'staff') {
+    d.staff_roles.forEach(role => {
+      const label = String(role?.label || '').trim();
+      const key = _serviceLabelKey(label);
+      if (!key || pkgKeys.has(key) || _isGenericStaffServiceLabel(label)) return;
+      const id = d._nextId.package_types || (Math.max(0, ...d.package_types.map(x => +x.id || 0)) + 1);
+      d.package_types.push({ id, key:'pt'+id, label, color:'#7c6af7' });
+      d._nextId.package_types = id + 1;
+      pkgKeys.add(key);
+      changed = true;
+    });
+  }
+
+  if (from === 'both' || from === 'package') {
+    d.package_types.forEach(pkg => {
+      const label = String(pkg?.label || '').trim();
+      const key = _serviceLabelKey(label);
+      if (!key || roleKeys.has(key)) return;
+      const id = d._nextId.staff_roles || (Math.max(0, ...d.staff_roles.map(x => +x.id || 0)) + 1);
+      d.staff_roles.push({ id, label });
+      d._nextId.staff_roles = id + 1;
+      roleKeys.add(key);
+      changed = true;
+    });
+  }
+  return changed;
+}
+
 function _freshData() {
   return {
     meta: {...DEFAULT_META},
@@ -4358,6 +4403,7 @@ function _migrate(d) {
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
   });
+  _syncServiceCatalogs(d);
   return d;
 }
 
@@ -4649,7 +4695,9 @@ const DateService = {
 function _studentSummary(s) {
   const packages=_db.packages.filter(p=>p.student_id===s.id).map(p=>{
     const pt=_db.package_types.find(t=>t.id===p.type_id);
+    const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));
     return{...p,type_label:pt?pt.label:'—',type_color:pt?pt.color:'#888',type_key:pt?pt.key:'',
+           staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():'',
            grand_total:(p.total_amount||0)+(p.initial_cost||0)};
   });
   const payments=_db.payments.filter(p=>p.student_id===s.id);
@@ -4741,8 +4789,20 @@ window.api = {
 
   packageTypes: {
     getAll: ()=>_P([..._db.package_types]),
-    add: (p)=>{ const id=_nextId('package_types'); const item={id,key:'pt'+id,label:p.label,color:p.color||'#7c6af7'}; _db.package_types.push(item); _save(); return _P(item); },
-    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id); if(pt){pt.label=p.label;pt.color=p.color;_save();} return _P({ok:true}); },
+    add: (p)=>{
+      const label = String(p.label || '').trim();
+      const existing = _db.package_types.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label));
+      const item = existing || (() => {
+        const id=_nextId('package_types');
+        const next={id,key:'pt'+id,label,color:p.color||'#7c6af7'};
+        _db.package_types.push(next);
+        return next;
+      })();
+      _syncServiceCatalogs(_db,{from:'package'});
+      _save();
+      return _P(item);
+    },
+    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id); if(pt){const oldLabel=pt.label;pt.label=p.label;pt.color=p.color;const role=_db.staff_roles.find(x=>_serviceLabelKey(x.label)===_serviceLabelKey(oldLabel));if(role&&!_isGenericStaffServiceLabel(oldLabel))role.label=p.label;_syncServiceCatalogs(_db,{from:'package'});_save();} return _P({ok:true}); },
     delete: (id)=>{ if(_db.packages.some(p=>p.type_id===id))return _P({ok:false,error:'این نوع پکیج در حال استفاده است'}); _db.package_types=_db.package_types.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     reorder: (order)=>{ const s=[]; order.forEach(id=>{const pt=_db.package_types.find(x=>x.id===id);if(pt)s.push(pt);}); _db.package_types.filter(x=>!order.includes(x.id)).forEach(x=>s.push(x)); _db.package_types=s; _save(); return _P({ok:true}); },
   },
@@ -4763,7 +4823,7 @@ window.api = {
       _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
-        _db.packages.push({id:pkgId,student_id:id,type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:p.date||'',note:pkg.note||''});
+        _db.packages.push({id:pkgId,student_id:id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:p.date||'',note:pkg.note||''});
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:id,amount:pkg.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت اولیه',created_at:new Date().toISOString()});}
         _createRepeatReminder(id,pkgId,pkg,p.date);
       });
@@ -4783,9 +4843,9 @@ window.api = {
         let target = pkg.id ? _db.packages.find(x=>x.id===pkg.id&&x.student_id===s.id) : null;
         const pkgId = target ? target.id : _nextId('packages');
         if(target){
-          Object.assign(target,{type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||target.start_date||s.date_jalali||'',note:pkg.note||''});
+          Object.assign(target,{type_id:pkg.type_id,staff_id:pkg.staff_id||target.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||target.start_date||s.date_jalali||'',note:pkg.note||''});
         }else{
-          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||s.date_jalali||'',note:pkg.note||''};
+          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:pkg.start_date||s.date_jalali||'',note:pkg.note||''};
           _db.packages.push(target);
         }
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
@@ -4805,17 +4865,17 @@ window.api = {
   },
 
   packages: {
-    getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_db.package_types.find(x=>x.id===p.type_id);return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888'};})),
-    getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_db.package_types.find(x=>x.id===p.type_id);return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888'};})),
+    getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_db.package_types.find(x=>x.id===p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
+    getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_db.package_types.find(x=>x.id===p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
-      _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,note:p.note||''});
+      _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,note:p.note||''});
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       _save(); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.packages=_db.packages.filter(x=>x.id!==id); _db.reminders=_db.reminders.filter(x=>x.package_id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -5044,8 +5104,20 @@ window.api = {
 
   staffRoles: {
     getAll: ()=>_P([..._db.staff_roles]),
-    add: (p)=>{ const id=_nextId('staff_roles'); _db.staff_roles.push({id,label:p.label}); _save(); return _P({id,label:p.label}); },
-    update: (p)=>{ const r=_db.staff_roles.find(x=>x.id===p.id); if(r){r.label=p.label;_save();} return _P({ok:true}); },
+    add: (p)=>{
+      const label = String(p.label || '').trim();
+      const existing = _db.staff_roles.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label));
+      const item = existing || (() => {
+        const id=_nextId('staff_roles');
+        const next={id,label};
+        _db.staff_roles.push(next);
+        return next;
+      })();
+      _syncServiceCatalogs(_db,{from:'staff'});
+      _save();
+      return _P(item);
+    },
+    update: (p)=>{ const r=_db.staff_roles.find(x=>x.id===p.id); if(r){const oldLabel=r.label;r.label=p.label;const pt=_db.package_types.find(x=>_serviceLabelKey(x.label)===_serviceLabelKey(oldLabel));if(pt&&!_isGenericStaffServiceLabel(p.label))pt.label=p.label;_syncServiceCatalogs(_db,{from:'staff'});_save();} return _P({ok:true}); },
     delete: (id)=>{ if(_db.staff.some(s=>s.role_id===id))return _P({ok:false,error:'این نقش در حال استفاده است'}); _db.staff_roles=_db.staff_roles.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -7647,6 +7719,7 @@ async function openStudentDetail(id) {
         <span class="detail-key">
           <span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color};font-size:10px">${p.type_label}</span>
           ${p.start_date ? ` · ${p.start_date}` : ''}
+          ${p.staff_name ? ` · <small style="color:var(--accent2)">مجری: ${escapeHtml(p.staff_name)}</small>` : ''}
           ${p.note ? ` <small style="color:var(--text3)">— ${escapeHtml(p.note)}</small>` : ''}
         </span>
         <span class="detail-val" style="display:flex;align-items:center;gap:6px">
@@ -7748,6 +7821,10 @@ async function openStudentDetail(id) {
 
 
 // نگاشت شغل به نوع پکیج پیش‌فرض
+function _packageTypesList() {
+  return (_db?.package_types?.length ? _db.package_types : PKG_TYPES) || [];
+}
+
 function _getDefaultPkgTypeId() {
   const jobId = META.jobId || '';
   const jobPkgMap = {
@@ -7762,11 +7839,74 @@ function _getDefaultPkgTypeId() {
     business: 'coaching',   // مشاور → کوچینگ
   };
   const pkgKey = jobPkgMap[jobId] || 'coaching';
-  const pt = PKG_TYPES.find(p => p.key === pkgKey) || PKG_TYPES[0];
+  const types = _packageTypesList();
+  const pt = types.find(p => p.key === pkgKey) || types[0];
   return pt ? pt.id : 1;
 }
 
 // ── New Purchase (add another package to an existing student) ────────────────
+function purchaseTypeOptionsHtml(selectedId = null) {
+  const selected = selectedId == null ? '' : String(selectedId);
+  return _packageTypesList().map(pt => `<option value="${pt.id}" ${String(pt.id)===selected?'selected':''}>${escapeHtml(pt.label)}</option>`).join('') +
+    '<option value="__new_type__">+ ساخت خدمت جدید</option>';
+}
+
+function newPurchaseServiceFieldsHtml(prefix) {
+  return `
+    <div class="form-group full" id="${prefix}-new-service-fields" style="display:none">
+      <label class="form-label">خدمت جدید</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="form-input" id="${prefix}-new-service-label" placeholder="مثلاً ادمین اینستاگرام" style="flex:1;min-width:220px">
+        <input type="color" class="color-input" id="${prefix}-new-service-color" value="#7c6af7">
+      </div>
+    </div>`;
+}
+
+function staffMatchesService(staff, typeId) {
+  const pt = _packageTypesList().find(x => String(x.id) === String(typeId));
+  const serviceKey = _serviceLabelKey(pt?.label);
+  if (!serviceKey) return false;
+  return (staff?.roles || []).some(r => {
+    const role = _db.staff_roles.find(x => String(x.id) === String(r.role_id));
+    return _serviceLabelKey(role?.label) === serviceKey;
+  });
+}
+
+function purchaseStaffOptionsHtml(typeId = '', selectedStaffId = '') {
+  const rows = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
+  const sorted = rows.slice().sort((a,b) => Number(staffMatchesService(b,typeId)) - Number(staffMatchesService(a,typeId)));
+  return '<option value="">— انتخاب نشده —</option>' + sorted.map(s => {
+    const matched = staffMatchesService(s,typeId);
+    const name = `${s.name||''} ${s.lname||''}`.trim();
+    return `<option value="${s.id}" ${String(s.id)===String(selectedStaffId)?'selected':''}>${escapeHtml(name || 'پرسنل')} ${matched ? '— هماهنگ با خدمت' : ''}</option>`;
+  }).join('');
+}
+
+function onPurchaseTypeChange(prefix) {
+  const typeVal = document.getElementById(prefix + '-type')?.value || '';
+  const fields = document.getElementById(prefix + '-new-service-fields');
+  if (fields) fields.style.display = typeVal === '__new_type__' ? 'block' : 'none';
+  const staffSel = document.getElementById(prefix + '-staff');
+  if (staffSel && typeVal !== '__new_type__') {
+    const selected = staffSel.value;
+    staffSel.innerHTML = purchaseStaffOptionsHtml(typeVal, selected);
+  }
+}
+
+async function resolvePurchaseTypeId(prefix) {
+  const typeVal = document.getElementById(prefix + '-type')?.value;
+  if (typeVal !== '__new_type__') return +typeVal;
+  const label = document.getElementById(prefix + '-new-service-label')?.value.trim();
+  const color = document.getElementById(prefix + '-new-service-color')?.value || '#7c6af7';
+  if (!label) {
+    showToast('نام خدمت جدید را وارد کنید', 'error');
+    return 0;
+  }
+  const item = await window.api.packageTypes.add({ label, color });
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  return +item.id || +(PKG_TYPES.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label))?.id || 0);
+}
+
 function openNewPurchase(studentId, preset = {}) {
   const s = allStudents.find(x => x.id === studentId);
   if (!s) return;
@@ -7778,13 +7918,18 @@ function openNewPurchase(studentId, preset = {}) {
   const date = preset.date || formatJalali(...todayJalali());
   const note = preset.note || '';
   const reminderId = preset.reminder_id ? Number(preset.reminder_id) : 0;
-  const typeOptions = PKG_TYPES.map(pt => `<option value="${pt.id}" ${pt.id===defaultPkgId?'selected':''}>${escapeHtml(pt.label)}</option>`).join('');
+  const typeOptions = purchaseTypeOptionsHtml(defaultPkgId);
 
   openModal(`🛍 ثبت خرید جدید — ${s.name} ${s.lname}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">پکیج / خدمت *</label>
-        <select class="form-select" id="np-type">${typeOptions}</select>
+        <select class="form-select" id="np-type" onchange="onPurchaseTypeChange('np')">${typeOptions}</select>
+      </div>
+      ${newPurchaseServiceFieldsHtml('np')}
+      <div class="form-group full">
+        <label class="form-label">مجری خدمت / پرسنل</label>
+        <select class="form-select" id="np-staff">${purchaseStaffOptionsHtml(defaultPkgId, preset.staff_id || '')}</select>
       </div>
       <div class="form-group">
         <label class="form-label">مبلغ کل / دوره‌ای (تومان)</label>
@@ -7822,15 +7967,18 @@ function openNewPurchase(studentId, preset = {}) {
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
+  onPurchaseTypeChange('np');
 }
 
 async function saveNewPurchase(studentId, reminderId = 0) {
-  const type_id = +document.getElementById('np-type')?.value;
+  const type_id = await resolvePurchaseTypeId('np');
   const date = document.getElementById('np-date')?.value;
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
+  if (!type_id) return;
   const res = await window.api.packages.add({
     student_id: studentId,
     type_id,
+    staff_id: document.getElementById('np-staff')?.value || null,
     total_amount: +(document.getElementById('np-amount')?.value || 0),
     initial_cost: +(document.getElementById('np-initial')?.value || 0),
     current_payment: +(document.getElementById('np-current')?.value || 0),
@@ -8354,14 +8502,15 @@ async function renderPurchases(search = '') {
   }
   let html = `<div class="table-card">
     <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span></div>
-    <table><thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
+    <table><thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>تاریخ شروع</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
   if (packages.length === 0) {
-    html += `<tr><td colspan="7"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
+    html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
   } else {
     packages.forEach(p => {
       html += `<tr>
         <td style="font-weight:500">${p.name} ${p.lname}</td>
         <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
+        <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
         <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
         <td style="color:var(--text2)">
           <div>${DateService.disp(p.start_date)||'—'}</div>
@@ -8397,7 +8546,11 @@ async function openEditPackage(id) {
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">نوع خرید</label>
-        <select class="form-select" id="ep-type">${typeOptions}</select>
+        <select class="form-select" id="ep-type" onchange="onPurchaseTypeChange('ep')">${typeOptions}</select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">مجری خدمت / پرسنل</label>
+        <select class="form-select" id="ep-staff">${purchaseStaffOptionsHtml(p.type_id, p.staff_id || '')}</select>
       </div>
       <div class="form-group">
         <label class="form-label">مبلغ کل (تومان)</label>
@@ -8430,10 +8583,12 @@ async function openEditPackage(id) {
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
+  onPurchaseTypeChange('ep');
 }
 async function saveEditPackage(id, studentId) {
   await window.api.packages.update({
     id, type_id: +(document.getElementById('ep-type')?.value||0),
+    staff_id: document.getElementById('ep-staff')?.value || null,
     total_amount: +(document.getElementById('ep-total')?.value||0),
     initial_cost: +(document.getElementById('ep-initial')?.value||0),
     start_date: readCalendarDateField('ep-start'),
