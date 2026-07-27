@@ -4949,24 +4949,38 @@ window.api = {
     markPaid: (p)=>{
       const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false});
       if(p.record_payment&&p.amount>0){_db.payments.push({id:_nextId('payments'),package_id:r.package_id||null,student_id:r.student_id,amount:p.amount,currency:'تومان',date_jalali:p.date||r.due_date_jalali,method:'',note:'پرداخت از طریق یادآوری: '+r.title,created_at:new Date().toISOString()});}
-      if(r.repeat_months>0){const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);const next=_addMonths(jy,jm,jd,r.repeat_months);r.due_date_jalali=_formatJalali(...next);r.done=false;r.notified_levels=[];}
-      else r.done=true;
+      const pkg = r.package_id ? _db.packages.find(x=>x.id===r.package_id) : null;
+      if(r.repeat_months>0){
+        const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);
+        const next=_formatJalali(..._addMonths(jy,jm,jd,r.repeat_months));
+        r.due_date_jalali=next;
+        r.done=false;
+        r.notified_levels=[];
+        if(pkg)pkg.payment_due_date=next;
+      }
+      else {
+        r.done=true;
+        if(pkg)pkg.payment_due_date=r.due_date_jalali;
+      }
       _save(); return _P({ok:true,reminder:r});
     },
     completePurchase: (p)=>{
       const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
       if(p.package_id)r.package_id=p.package_id;
+      const pkg = r.package_id ? _db.packages.find(x=>x.id===r.package_id) : null;
       const repeatMonths=Number(p.repeat_months ?? r.repeat_months ?? 0);
       r.repeat_months=repeatMonths;
       if(repeatMonths>0){
-        const baseDate=p.date||r.due_date_jalali;
+        const baseDate=p.payment_due_date||r.due_date_jalali;
         const[jy,jm,jd]=_jalaliParse(baseDate);
-        const next=_addMonths(jy,jm,jd,repeatMonths);
-        r.due_date_jalali=_formatJalali(...next);
+        const next=_formatJalali(..._addMonths(jy,jm,jd,repeatMonths));
+        r.due_date_jalali=next;
         r.done=false;
         r.notified_levels=[];
+        if(pkg)pkg.payment_due_date=next;
       }else{
         r.done=true;
+        if(pkg)pkg.payment_due_date=p.payment_due_date||r.due_date_jalali;
       }
       _save(); return _P({ok:true,reminder:r});
     },
@@ -7997,6 +8011,7 @@ function openNewPurchase(studentId, preset = {}) {
 async function saveNewPurchase(studentId, reminderId = 0) {
   const type_id = await resolvePurchaseTypeId('np');
   const date = document.getElementById('np-date')?.value;
+  const paymentDueDate = document.getElementById('np-payment-due')?.value || date;
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
   if (!type_id) return;
   const res = await window.api.packages.add({
@@ -8009,11 +8024,11 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     repeat_months,
     note: document.getElementById('np-note')?.value || '',
     date,
-    payment_due_date: document.getElementById('np-payment-due')?.value || date,
+    payment_due_date: paymentDueDate,
     skip_reminder: !!reminderId,
   });
   if (reminderId) {
-    await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, date });
+    await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, payment_due_date: paymentDueDate });
   }
   closeModal();
   showToast(repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید جدید ثبت شد ✓', 'success');
@@ -9966,10 +9981,15 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   updateReminderBadges(pending.length);
 
   if (reminders.length === 0) {
-    setContent(`${contentPrefix}<div class="table-card">
+    setContent(`${contentPrefix}<div class="detail-section" style="margin-bottom:12px;border-color:rgba(124,106,247,.28)">
+      <h3 style="margin-bottom:6px">چرخه فروش، دریافت و یادآوری</h3>
+      <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">
+        فروش دوره‌ای را در بخش فروش ثبت کن؛ TeamPulse بر اساس سررسید اولین پرداخت و دوره تکرار، یادآوری پرداخت را خودش می‌سازد. یادآوری دستی فقط برای مواردی است که فروش مشخصی پشتش نیست.
+      </p>
+    </div><div class="table-card">
       <div class="table-header"><span class="title">🔔 یادآوری‌ها</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
       <div class="empty"><span>⏰</span>
-        یادآوری‌ای ثبت نشده. برای پکیج‌های دوره‌ای (مثلاً کوچینگ ۶ ماهه) یک یادآوری بساز تا قبل از سررسید پرداخت بعدی به تو خبر بدهد.
+        یادآوری‌ای ثبت نشده. با ثبت فروش دوره‌ای، یادآوری پرداخت به‌صورت خودکار اینجا ساخته می‌شود.
       </div>
     </div>`);
     return;
@@ -9979,7 +9999,12 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     ? reminders.filter(r => (r.name + r.lname + r.title + (r.note || '')).toLowerCase().includes(search.toLowerCase()))
     : reminders;
 
-  let html = `${contentPrefix}<div class="table-card">
+  let html = `${contentPrefix}<div class="detail-section" style="margin-bottom:12px;border-color:rgba(124,106,247,.28)">
+    <h3 style="margin-bottom:6px">چرخه فروش، دریافت و یادآوری</h3>
+    <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">
+      فروش دوره‌ای را در بخش فروش ثبت کن؛ TeamPulse بر اساس سررسید اولین پرداخت و دوره تکرار، یادآوری پرداخت را خودش می‌سازد. وقتی از همین صفحه پرداخت را تأیید کنی، دریافت ثبت می‌شود و سررسید بعدی هم خودکار جلو می‌رود.
+    </p>
+  </div><div class="table-card">
     <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(filtered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
@@ -10159,6 +10184,7 @@ async function openPurchaseFromReminder(id) {
     amount: r.amount || 0,
     repeat_months: r.repeat_months || 0,
     date: formatJalali(...todayJalali()),
+    payment_due_date: r.due_date_jalali,
     note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
   });
 }
