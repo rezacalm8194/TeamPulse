@@ -2862,6 +2862,41 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
 }
 
 /* Knowledge hub density pass */
+.goal-achievements-chevron{
+  width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;background:rgba(124,106,247,.16);border:1px solid rgba(124,106,247,.34);
+  color:var(--accent2);font-size:18px;font-weight:900;transition:transform .2s ease;
+}
+.goal-achievements-shell.is-open .goal-achievements-chevron{transform:rotate(180deg)}
+.goal-achievements-more{
+  padding:3px 9px;border-radius:999px;background:rgba(62,207,142,.14);
+  border:1px solid rgba(62,207,142,.3);color:var(--green);font-size:10px;font-weight:900;white-space:nowrap;
+}
+.goal-achievements-panel{margin-top:12px;animation:goalAchievementsDrop .22s ease both}
+.goal-achievements-panel[hidden]{display:none!important}
+@keyframes goalAchievementsDrop{
+  from{opacity:0;transform:translateY(-8px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.goal-achievements-scroll-hint{
+  display:flex;align-items:center;justify-content:flex-end;gap:7px;margin-bottom:7px;
+  color:var(--text2);font-size:10px;font-weight:700;
+}
+.goal-achievements-arrows{color:var(--accent2);font-size:14px;animation:goalAchievementsHint 1.5s ease-in-out infinite}
+@keyframes goalAchievementsHint{50%{transform:translateX(-5px)}}
+.goal-achievements-viewport{position:relative;overflow:hidden}
+.goal-achievements-viewport::after{
+  content:'';position:absolute;left:0;top:0;bottom:5px;width:38px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(28,34,48,.92),rgba(28,34,48,0));
+}
+.goal-achievements-track{
+  display:flex;gap:10px;overflow-x:auto;overscroll-behavior-inline:contain;
+  scroll-snap-type:x mandatory;scrollbar-width:thin;padding:1px 1px 7px;
+  -webkit-overflow-scrolling:touch;
+}
+.goal-achievement-card{
+  flex:0 0 calc((100% - 20px)/3);min-width:240px;scroll-snap-align:start;
+}
 @media(min-width:769px){
   body.knowledge-page ._ifcard-list-row{
     min-height:42px!important;
@@ -2938,6 +2973,8 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   .bottom-nav .bn-icon svg{display:block;width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .staff-trend-picker{width:100%;margin-right:0!important;justify-content:space-between}
   .staff-trend-picker select{flex:1;min-width:0!important;max-width:230px}
+  .goal-achievement-card{flex-basis:min(82vw,280px);min-width:min(82vw,280px)}
+  .goal-achievements-scroll-hint{justify-content:center}
 }
 @media(max-width:360px){
   body.knowledge-page .content{padding-inline:12px}
@@ -27539,6 +27576,17 @@ function _goalsInit() {
   if (!_db._nextId.goals) _db._nextId.goals = 1;
   if (!_db._nextId.goal_achievements) _db._nextId.goal_achievements = 1;
 }
+let _goalAchievementsOpen = false;
+
+function toggleGoalAchievements() {
+  _goalAchievementsOpen = !_goalAchievementsOpen;
+  const panel = document.getElementById('goal-achievements-panel');
+  const chevron = document.getElementById('goal-achievements-chevron');
+  const trigger = document.getElementById('goal-achievements-trigger');
+  if (panel) panel.hidden = !_goalAchievementsOpen;
+  if (chevron) chevron.textContent = '⌄';
+  if (trigger) trigger.setAttribute('aria-expanded', String(_goalAchievementsOpen));
+}
 
 const GOAL_PERIODS = [
   { key:'yearly', label:'سالانه', icon:'🗓️' },
@@ -27633,10 +27681,10 @@ function _goalAchievementsHtml() {
   const selectedYear = localStorage.getItem('tp_goal_achievement_year') || years[0] || currentYear;
   const yearItems = list.filter(a => (a.year || _goalAchievementYear(a.completed_date_jalali)) === selectedYear);
   const yearButtons = years.map(y => `
-    <button onclick="setGoalAchievementYear('${escapeHtml(y)}')" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
+    <button onclick="event.stopPropagation();setGoalAchievementYear('${escapeHtml(y)}')" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
   `).join('');
   const cards = yearItems.length ? yearItems.map(a => `
-    <div onclick="openGoalDetail(${a.goal_id})" style="background:var(--bg3);border:1px solid rgba(62,207,142,.24);border-radius:12px;padding:12px;cursor:pointer">
+    <div class="goal-achievement-card" onclick="openGoalDetail(${a.goal_id})" style="background:var(--bg3);border:1px solid rgba(62,207,142,.24);border-radius:12px;padding:12px;cursor:pointer">
       <div style="display:flex;align-items:flex-start;gap:10px">
         <span style="font-size:24px;line-height:1">${a.icon || '🏆'}</span>
         <div style="flex:1;min-width:0">
@@ -27656,18 +27704,27 @@ function _goalAchievementsHtml() {
     </div>`;
 
   return `
-    <div style="background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(124,106,247,.08));border:1px solid rgba(62,207,142,.24);border-radius:14px;padding:14px 16px;margin-bottom:18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-        <div>
+    <div class="goal-achievements-shell ${_goalAchievementsOpen?'is-open':''}" style="background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(124,106,247,.08));border:1px solid rgba(62,207,142,.24);border-radius:14px;padding:14px 16px;margin-bottom:18px">
+      <div id="goal-achievements-trigger" role="button" tabindex="0" aria-expanded="${_goalAchievementsOpen}" onclick="toggleGoalAchievements()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGoalAchievements()}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="goal-achievements-chevron" class="goal-achievements-chevron">⌄</span>
+          <div>
           <h2 style="font-size:15px;font-weight:900;color:var(--text);margin:0 0 4px">🏆 دستاوردها</h2>
           <div style="font-size:11px;color:var(--text3)">${fa(yearItems.length)} دستاورد در سال ${fa(selectedYear || '')}</div>
+          </div>
+          ${yearItems.length > 3 ? `<span class="goal-achievements-more">+${fa(yearItems.length - 3)} بیشتر</span>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <button onclick="openAddAchievementGoal()" style="padding:7px 12px;border-radius:9px;border:1px solid rgba(62,207,142,.45);background:rgba(62,207,142,.12);color:var(--green);font-family:var(--font);font-size:12px;font-weight:900;cursor:pointer">+ افزودن دستاورد</button>
+          <button onclick="event.stopPropagation();openAddAchievementGoal()" style="padding:7px 12px;border-radius:9px;border:1px solid rgba(62,207,142,.45);background:rgba(62,207,142,.12);color:var(--green);font-family:var(--font);font-size:12px;font-weight:900;cursor:pointer">+ افزودن دستاورد</button>
           ${yearButtons}
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${cards}</div>
+      <div id="goal-achievements-panel" class="goal-achievements-panel" ${_goalAchievementsOpen?'':'hidden'}>
+        ${yearItems.length > 3 ? `<div class="goal-achievements-scroll-hint"><span>برای دیدن بقیه، افقی بکشید</span><span class="goal-achievements-arrows">‹—›</span></div>` : ''}
+        <div class="goal-achievements-viewport">
+          <div class="goal-achievements-track">${cards}</div>
+        </div>
+      </div>
     </div>`;
 }
 
