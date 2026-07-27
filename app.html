@@ -26038,6 +26038,7 @@ function _closeLoginBar() {
 // ════════════════════════════════════════════════════════════════════════════
 // ADMIN PANEL — پنل مدیریت (فقط برای رضا صفاری)
 // ════════════════════════════════════════════════════════════════════════════
+let _adminSelectedUsers = new Set();
 
 async function renderAdminPanel() {
   if (!_auth.isAdmin()) {
@@ -26070,6 +26071,8 @@ async function renderAdminPanel() {
   } catch(e) { console.log('Admin API not available'); }
 
   window._adminAllUsers = allUsers;
+  const existingAdminUserIds = new Set(allUsers.map(u => String(u.id)));
+  _adminSelectedUsers = new Set([..._adminSelectedUsers].filter(id => existingAdminUserIds.has(String(id))));
 
   const usersHTML = _adminRenderUserList(allUsers);
 
@@ -26107,7 +26110,7 @@ async function renderAdminPanel() {
             '<span style="font-weight:600;font-size:13px">' + escapeHtml(p.name) + '</span>' +
             '<button onclick="_adminImpersonate(' + JSON.stringify(p.id) + ',' + JSON.stringify(p.name) + ')" ' +
             'style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--accent2);' +
-            'background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer;font-family:var(--font)">🔑 ورود</button>' +
+            'background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer;font-family:var(--font)">🔑 ورود به‌جای کاربر</button>' +
             '<button class="x-close-sm" onclick="_adminPinAccount(' + JSON.stringify(p.id) + ',' + JSON.stringify(p.name) + ')" ' +
             'title="برداشتن پین">✕</button>' +
             '</div>'
@@ -26124,6 +26127,7 @@ async function renderAdminPanel() {
         <input class="form-input" id="admin-user-search" placeholder="🔍 جستجو در نام یا ایمیل..."
           oninput="_adminFilterUsers(this.value)"
           style="margin-bottom:12px;font-size:13px">
+        <div id="admin-bulk-actions">${_adminBulkActionsHtml()}</div>
         <div id="admin-users-list">${usersHTML}</div>
       </div>` : ''}
 
@@ -26171,20 +26175,25 @@ function _adminRenderUserList(users) {
   return users.map(u => {
     const initLetter = (u.name||u.email||'?').charAt(0).toUpperCase();
     const uid = u.id;
-    const uname = (u.name||u.email||'').replace(/'/g, '');
+    const uname = escapeHtml(u.name||u.email||'');
     const isActive = u.is_active;
     const isAdmin = u.role === 'admin';
     const bgColor = isActive ? 'rgba(62,207,142,.15)' : 'rgba(248,113,113,.15)';
     const txtColor = isActive ? 'var(--green)' : 'var(--red)';
     const statusLabel = isActive ? 'فعال' : 'غیرفعال';
     const roleLabel = isAdmin ? '👑 ادمین' : '👤 کاربر';
+    const menuId = 'admin-user-menu-' + uid;
+    const selected = _adminSelectedUsers.has(String(uid));
     return [
-      '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;',
+      '<div data-admin-user-id="' + uid + '" style="display:flex;align-items:center;gap:10px;padding:10px 12px;',
       'background:var(--bg3);border-radius:10px;margin-bottom:6px;cursor:pointer;',
-      'border:1px solid transparent;transition:border-color .15s" ',
+      'border:1px solid ' + (selected?'var(--accent2)':'transparent') + ';transition:border-color .15s" ',
       'onclick="openAdminUserDetail(\'' + uid + '\')" ',
       'onmouseover="this.style.borderColor=\'var(--accent2)\'" ',
-      'onmouseout="this.style.borderColor=\'transparent\'">',
+      'onmouseout="this.style.borderColor=\'' + (selected?'var(--accent2)':'transparent') + '\'">',
+      '<input type="checkbox" aria-label="انتخاب ' + uname + '" ' + (selected?'checked ':'') +
+        'onclick="event.stopPropagation();_adminToggleUserSelection(\'' + uid + '\',this.checked)" ' +
+        'style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">',
       '<div style="width:36px;height:36px;border-radius:50%;',
         'background:linear-gradient(135deg,var(--accent),var(--accent2));',
         'display:flex;align-items:center;justify-content:center;',
@@ -26195,25 +26204,124 @@ function _adminRenderUserList(users) {
         '<div style="font-size:11px;color:var(--text3);direction:ltr;text-align:right">' + (u.email||'—') + '</div>',
         '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + roleLabel + ' · ' + fa(u.client_count||0) + ' مشتری</div>',
       '</div>',
-      '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">',
+      '<div style="display:flex;align-items:center;gap:6px">',
         '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' + bgColor + ';color:' + txtColor + '">' + statusLabel + '</span>',
-        (u.email !== _ADMIN_EMAIL ? (
-          '<button onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',\'' + uname + '\')" ' +
-          'style="font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid var(--accent2);' +
-          'background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer;font-family:var(--font)">' +
-          '🔑 ورود</button>'
-        ) : '<span style="font-size:10px;color:var(--text3)">👑 ادمین اصلی</span>') + '',
+        '<div class="row-menu">' +
+          '<button class="row-menu-btn" aria-label="عملیات کاربر" onclick="toggleRowMenu(event,\'' + menuId + '\')">⋮</button>' +
+          '<div class="row-menu-panel" id="' + menuId + '" style="min-width:210px">' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();openAdminUserDetail(\'' + uid + '\')">👤 مشاهده پروفایل</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminEditUser(\'' + uid + '\')">✏️ ویرایش</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminChangeRole(\'' + uid + '\')">🛡 تغییر نقش</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminChangePlan([\'' + uid + '\'])">💎 تغییر پلن</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminRenewUser(\'' + uid + '\')">🔄 تمدید اشتراک</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminShowPayments(\'' + uid + '\')">💳 مشاهده پرداخت‌ها</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminShowActivity(\'' + uid + '\')">📊 مشاهده فعالیت‌ها</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminResetPassword(\'' + uid + '\')">🔐 بازنشانی رمز</div>' +
+            (u.email !== _ADMIN_EMAIL ? '<div class="row-menu-item" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🔑 ورود به‌جای کاربر</div>' : '') +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminToggleStatus(\'' + uid + '\',' + (isActive?0:1) + ')">' + (isActive?'🚫 مسدودکردن':'✅ فعال‌سازی') + '</div>' +
+            (u.email !== _ADMIN_EMAIL ? '<div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="event.stopPropagation();_adminDeleteUser(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🗑 حذف</div>' : '') +
+          '</div>' +
+        '</div>',
       '</div></div>'
     ].join('');
   }).join('');
 }
 function _adminFilterUsers(q) {
+  window._adminUserFilter = q || '';
   const users = window._adminAllUsers || [];
   const filtered = q.trim()
     ? users.filter(u => (u.name||'').includes(q) || (u.email||'').toLowerCase().includes(q.toLowerCase()))
     : users;
   const el = document.getElementById('admin-users-list');
   if (el) el.innerHTML = _adminRenderUserList(filtered);
+  const bulk = document.getElementById('admin-bulk-actions');
+  if (bulk) bulk.innerHTML = _adminBulkActionsHtml(filtered);
+}
+
+function _adminBulkActionsHtml(visibleUsers) {
+  const users = visibleUsers || window._adminAllUsers || [];
+  const count = _adminSelectedUsers.size;
+  const selectable = users.filter(u => u.email !== _ADMIN_EMAIL);
+  const allSelected = selectable.length > 0 && selectable.every(u => _adminSelectedUsers.has(String(u.id)));
+  return `<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px;padding:8px;background:${count?'rgba(124,106,247,.10)':'var(--bg3)'};border:1px solid ${count?'rgba(124,106,247,.35)':'var(--border)'};border-radius:10px">
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer">
+      <input type="checkbox" ${allSelected?'checked':''} onchange="_adminSelectAllVisible(this.checked)" style="width:17px;height:17px;accent-color:var(--accent)">
+      انتخاب همه
+    </label>
+    <span style="font-size:11px;color:${count?'var(--accent2)':'var(--text3)'};font-weight:700">${fa(count)} انتخاب‌شده</span>
+    ${count ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-right:auto">
+      <button class="btn btn-ghost btn-sm" onclick="_adminBulkStatus(1)">✅ فعال‌سازی</button>
+      <button class="btn btn-ghost btn-sm" onclick="_adminBulkStatus(0)">🚫 مسدودکردن</button>
+      <button class="btn btn-ghost btn-sm" onclick="_adminChangePlan([..._adminSelectedUsers])">💎 تغییر پلن</button>
+      <button class="btn btn-ghost btn-sm" onclick="_adminNotifySelected()">🔔 ارسال اعلان</button>
+      <button class="btn btn-ghost btn-sm" onclick="_adminExportSelected()">📊 خروجی Excel</button>
+      <button class="btn btn-danger btn-sm" onclick="_adminBulkDelete()">🗑 حذف</button>
+    </div>` : ''}
+  </div>`;
+}
+
+function _adminRefreshUserList() {
+  _adminFilterUsers(window._adminUserFilter || '');
+}
+function _adminToggleUserSelection(userId, checked) {
+  if (checked) _adminSelectedUsers.add(String(userId));
+  else _adminSelectedUsers.delete(String(userId));
+  _adminRefreshUserList();
+}
+function _adminSelectAllVisible(checked) {
+  const q = (window._adminUserFilter || '').trim().toLowerCase();
+  (window._adminAllUsers || []).filter(u => !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q))
+    .filter(u => u.email !== _ADMIN_EMAIL)
+    .forEach(u => checked ? _adminSelectedUsers.add(String(u.id)) : _adminSelectedUsers.delete(String(u.id)));
+  _adminRefreshUserList();
+}
+async function _adminBulkStatus(active) {
+  const ids = [..._adminSelectedUsers];
+  const results = await Promise.all(ids.map(id => _apiFetch('/api/admin/users/' + id + '/status', {method:'PUT',body:JSON.stringify({is_active:active})})));
+  showToast(`${fa(results.filter(r=>r.ok).length)} کاربر ${active?'فعال':'مسدود'} شد`, results.every(r=>r.ok)?'success':'error');
+  _adminSelectedUsers.clear();
+  renderAdminPanel();
+}
+function _adminChangePlan(userIds) {
+  const ids = (userIds || []).map(String);
+  if (!ids.length) return;
+  openModal('💎 تغییر پلن', `<div class="form-group"><label class="form-label">پلن جدید برای ${fa(ids.length)} کاربر</label>
+    <select class="form-select" id="admin-plan-select"><option value="free">رایگان</option><option value="basic">پایه</option><option value="pro">حرفه‌ای</option><option value="enterprise">سازمانی</option></select></div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'اعمال پلن',cls:'btn-primary',action:`_adminApplyPlan(${JSON.stringify(ids)})`}]);
+}
+async function _adminApplyPlan(ids) {
+  const plan = document.getElementById('admin-plan-select')?.value;
+  const results = await Promise.all(ids.map(id => _apiFetch('/api/admin/users/' + id + '/plan', {method:'PUT',body:JSON.stringify({plan})})));
+  if (results.every(r=>r.ok)) { showToast('پلن کاربران تغییر کرد ✓','success'); _adminSelectedUsers.clear(); closeModal(); renderAdminPanel(); }
+  else showToast('تغییر پلن بعضی کاربران ناموفق بود','error');
+}
+function _adminNotifySelected() {
+  const ids = [..._adminSelectedUsers];
+  openModal('🔔 ارسال اعلان', `<div class="form-group"><label class="form-label">عنوان</label><input class="form-input" id="admin-notify-title" value="پیام مدیریت"></div>
+    <div class="form-group"><label class="form-label">متن اعلان برای ${fa(ids.length)} کاربر</label><textarea class="form-textarea" id="admin-notify-body" rows="4"></textarea></div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${JSON.stringify(ids)})`}]);
+}
+async function _adminSendNotification(ids) {
+  const title = document.getElementById('admin-notify-title')?.value || '';
+  const body = document.getElementById('admin-notify-body')?.value || '';
+  if (!body.trim()) return showToast('متن اعلان را وارد کنید','error');
+  const res = await _apiFetch('/api/admin/users/notify',{method:'POST',body:JSON.stringify({user_ids:ids,title,body})});
+  if (res.ok) { const data=await res.json(); showToast(`اعلان به ${fa(data.sent||0)} دستگاه ارسال شد`,'success'); closeModal(); }
+  else showToast('ارسال اعلان ناموفق بود','error');
+}
+function _adminExportSelected() {
+  const selected = (window._adminAllUsers||[]).filter(u=>_adminSelectedUsers.has(String(u.id)));
+  const quote = v => '"' + String(v??'').replace(/"/g,'""') + '"';
+  const rows = [['نام','ایمیل','نقش','پلن','وضعیت','تعداد مشتری','تاریخ عضویت'], ...selected.map(u=>[u.name,u.email,u.role,u.plan,u.is_active?'فعال':'مسدود',u.client_count,u.created_at])];
+  const blob = new Blob(['\uFEFF' + rows.map(r=>r.map(quote).join(',')).join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='teampulse-users.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+async function _adminBulkDelete() {
+  const ids=[..._adminSelectedUsers];
+  if (!confirm(`حذف کامل ${fa(ids.length)} حساب انتخاب‌شده؟ این عملیات برگشت‌ناپذیر است.`)) return;
+  const results=await Promise.all(ids.map(id=>_apiFetch('/api/admin/users/'+id,{method:'DELETE'})));
+  showToast(`${fa(results.filter(r=>r.ok).length)} حساب حذف شد`,results.every(r=>r.ok)?'success':'error');
+  _adminSelectedUsers.clear();renderAdminPanel();
 }
 
 async function openAdminUserDetail(userId) {
@@ -26248,7 +26356,7 @@ async function openAdminUserDetail(userId) {
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button onclick="_adminToggleStatus(this.dataset.uid,+this.dataset.status)" data-uid="' + user.id + '" data-status="' + newStatus + '" class="btn ' + toggleCls + '" style="flex:1">' + toggleLabel + '</button>' +
-        '<button onclick="closeModal();_adminImpersonate(this.dataset.uid,this.dataset.uname)" data-uid="' + user.id + '" data-uname="' + escapeHtml(user.name||user.email||'') + '" class="btn btn-ghost" style="flex:1">🔑 ورود به حساب</button>' +
+        '<button onclick="closeModal();_adminImpersonate(this.dataset.uid,this.dataset.uname)" data-uid="' + user.id + '" data-uname="' + escapeHtml(user.name||user.email||'') + '" class="btn btn-ghost" style="flex:1">🔑 ورود به‌جای کاربر</button>' +
         '<button onclick="_adminPinAccount(this.dataset.uid,this.dataset.uname)" data-uid="' + user.id + '" data-uname="' + escapeHtml(user.name||user.email||'') + '" class="btn btn-ghost" style="flex:1">📌 پین</button>' +
       '</div>' +
       (!isMainAdmin ? (
@@ -26264,6 +26372,72 @@ async function openAdminUserDetail(userId) {
     '</div>';
     openModal('👤 ' + userName, html, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
   } catch(e) { showToast('خطا: ' + e.message, 'error'); }
+}
+
+async function _adminGetUserData(userId) {
+  const res = await _apiFetch('/api/admin/users/' + userId);
+  if (!res.ok) throw new Error('دریافت اطلاعات کاربر ناموفق بود');
+  return res.json();
+}
+async function _adminEditUser(userId) {
+  try {
+    const {user}=await _adminGetUserData(userId);
+    openModal('✏️ ویرایش کاربر', `<div class="form-group"><label class="form-label">نام</label><input class="form-input" id="admin-edit-name" value="${escapeHtml(user.name||'')}"></div>
+      <div class="form-group"><label class="form-label">ایمیل</label><input class="form-input" id="admin-edit-email" type="email" value="${escapeHtml(user.email||'')}" style="direction:ltr"></div>`,
+      [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ذخیره',cls:'btn-primary',action:`_adminSaveUserProfile('${userId}')`}]);
+  } catch(e) { showToast(e.message,'error'); }
+}
+async function _adminSaveUserProfile(userId) {
+  const name=document.getElementById('admin-edit-name')?.value||'',email=document.getElementById('admin-edit-email')?.value||'';
+  const res=await _apiFetch('/api/admin/users/'+userId+'/profile',{method:'PUT',body:JSON.stringify({name,email})});
+  if(res.ok){showToast('پروفایل ویرایش شد ✓','success');closeModal();renderAdminPanel();}else showToast('ویرایش ناموفق بود','error');
+}
+async function _adminChangeRole(userId) {
+  try {
+    const {user}=await _adminGetUserData(userId);
+    openModal('🛡 تغییر نقش', `<select class="form-select" id="admin-role-quick"><option value="owner" ${user.role==='owner'?'selected':''}>مالک</option><option value="admin" ${user.role==='admin'?'selected':''}>ادمین</option></select>`,
+      [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'اعمال',cls:'btn-primary',action:`_adminApplyRole('${userId}')`}]);
+  } catch(e){showToast(e.message,'error');}
+}
+async function _adminApplyRole(userId){
+  const role=document.getElementById('admin-role-quick')?.value;
+  const res=await _apiFetch('/api/admin/users/'+userId+'/role',{method:'PUT',body:JSON.stringify({role})});
+  if(res.ok){showToast('نقش تغییر کرد ✓','success');closeModal();renderAdminPanel();}else showToast('خطا','error');
+}
+function _adminRenewUser(userId) {
+  openModal('🔄 تمدید اشتراک', `<div class="form-group"><label class="form-label">مدت تمدید</label><select class="form-select" id="admin-renew-days"><option value="30">۳۰ روز</option><option value="90">۹۰ روز</option><option value="180">۱۸۰ روز</option><option value="365">یک سال</option></select></div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'تمدید',cls:'btn-primary',action:`_adminApplyRenew('${userId}')`}]);
+}
+async function _adminApplyRenew(userId) {
+  const days=+document.getElementById('admin-renew-days')?.value||30;
+  const res=await _apiFetch('/api/admin/users/'+userId+'/renew',{method:'POST',body:JSON.stringify({days})});
+  if(res.ok){showToast('اشتراک تمدید شد ✓','success');closeModal();renderAdminPanel();}else showToast('تمدید ناموفق بود','error');
+}
+async function _adminShowPayments(userId) {
+  try {
+    const {user,payments}=await _adminGetUserData(userId);
+    const rows=(payments||[]).map(p=>`<tr><td>${DateService.disp(p.date_jalali||p.created_at||'')}</td><td>${fmt(p.amount||0)} تومان</td><td>${escapeHtml(p.status||'—')}</td></tr>`).join('');
+    openModal('💳 پرداخت‌های '+escapeHtml(user.name||user.email||''),rows?`<div class="table-card"><table><thead><tr><th>تاریخ</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty"><span>💳</span>پرداختی ثبت نشده</div>',[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}]);
+  } catch(e){showToast(e.message,'error');}
+}
+async function _adminShowActivity(userId) {
+  try {
+    const {user,clients,payments}=await _adminGetUserData(userId);
+    openModal('📊 فعالیت‌های کاربر', `<div class="detail-section"><div class="detail-row"><span class="detail-key">تاریخ عضویت</span><span class="detail-val">${new Date(user.created_at).toLocaleDateString('fa-IR')}</span></div>
+      <div class="detail-row"><span class="detail-key">آخرین بروزرسانی</span><span class="detail-val">${user.updated_at?new Date(user.updated_at).toLocaleString('fa-IR'):'—'}</span></div>
+      <div class="detail-row"><span class="detail-key">مشتریان فعال</span><span class="detail-val">${fa(clients.length)}</span></div><div class="detail-row"><span class="detail-key">پرداخت‌ها</span><span class="detail-val">${fa(payments.length)}</span></div></div>`,
+      [{label:'بستن',cls:'btn-ghost',action:'closeModal()'}]);
+  } catch(e){showToast(e.message,'error');}
+}
+function _adminResetPassword(userId) {
+  openModal('🔐 بازنشانی رمز', `<div class="form-group"><label class="form-label">رمز موقت جدید</label><input class="form-input" id="admin-new-password" type="password" minlength="6" autocomplete="new-password"></div><div style="font-size:10px;color:var(--text3)">حداقل ۶ کاراکتر؛ رمز را فقط از مسیر امن به کاربر بدهید.</div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'بازنشانی',cls:'btn-danger',action:`_adminApplyResetPassword('${userId}')`}]);
+}
+async function _adminApplyResetPassword(userId) {
+  const password=document.getElementById('admin-new-password')?.value||'';
+  if(password.length<6)return showToast('رمز باید حداقل ۶ کاراکتر باشد','error');
+  const res=await _apiFetch('/api/admin/users/'+userId+'/reset-password',{method:'POST',body:JSON.stringify({password})});
+  if(res.ok){showToast('رمز بازنشانی شد ✓','success');closeModal();}else showToast('بازنشانی ناموفق بود','error');
 }
 
 async function _adminDeleteUser(userId, userName) {
