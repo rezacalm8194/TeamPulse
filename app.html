@@ -29339,7 +29339,7 @@ function renderHabits() {
     <div style="display:flex;align-items:stretch;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden">
       ${statItem('🔥','عادت فعال', fa(activeHabits.length), '#fb923c')}
       ${statDivider}
-      ${statItem('🏆','بهترین توالی', fa(bestStreakOverall)+' روز', 'var(--amber)')}
+      ${statItem('🏆','بهترین استمرار', fa(bestStreakOverall)+' روز', 'var(--amber)')}
       ${statDivider}
       ${statItem('📈','موفقیت این ماه', fa(avgMonthSuccess)+'٪', '#60a5fa')}
       ${statDivider}
@@ -29416,7 +29416,7 @@ function renderHabits() {
     // ── پیام انگیزشی هوشمند و پلکانی ─────────────
     let motivation;
     if (wasBroken) {
-      motivation = '💪 توالیت شکست، ولی مهم نیست. از امروز دوباره شروع کن.';
+      motivation = '💪 استمرارت قطع شد، ولی مهم نیست. از امروز دوباره شروع کن.';
     } else if (streak === 0 && !doneToday) {
       motivation = '🚀 امروز اولین قدم رو بردار.';
     } else if (bestStreak > streak && bestStreak - streak <= 5) {
@@ -29461,11 +29461,11 @@ function renderHabits() {
         ${linkedGoal ? `<span onclick="event.stopPropagation();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
       </div>
 
-      <!-- ردیف سوم: توالی (بزرگ‌تر و مهم‌تر)، رکورد (کوچک‌تر)، درصد موفقیت -->
+      <!-- ردیف سوم: استمرار (بزرگ‌تر و مهم‌تر)، رکورد (کوچک‌تر)، درصد موفقیت -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
           <div class="${justToggled ? 'habit-streak-pop' : ''}" style="font-size:20px;font-weight:800;color:${color};line-height:1.1">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:2px">روز توالی</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">روز استمرار</div>
         </div>
         <div style="flex:.7;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
           <div style="font-size:12px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)}</div>
@@ -29551,7 +29551,7 @@ function renderHabits() {
                 </div>
                 <div style="text-align:center;flex-shrink:0">
                   <div style="font-size:18px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-                  <div style="font-size:9px;color:var(--text3)">توالی</div>
+                  <div style="font-size:9px;color:var(--text3)">استمرار</div>
                 </div>
               </div>
               <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
@@ -29843,7 +29843,7 @@ function openHabitDetail(id) {
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:10px">
-        ${statBox(streak>0?'🔥':'', fa(streak), 'روز توالی', color)}
+        ${statBox(streak>0?'🔥':'', fa(streak), 'روز استمرار', color)}
         ${statBox('🏆', fa(bestStreak), 'رکورد', 'var(--amber)')}
         ${statBox('📈', fa(monthSuccess)+'٪', 'موفقیت ماه', 'var(--green)')}
       </div>
