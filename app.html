@@ -718,11 +718,35 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .admin-content .status-ok{color:var(--admin-success)!important}
 .admin-content .status-debt{color:var(--admin-danger)!important}
+.admin-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.admin-actions .btn{min-height:40px}
+.admin-stats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.admin-stat-card{
+  position:relative;display:grid;grid-template-columns:minmax(0,1fr) 92px;align-items:end;gap:12px;
+  min-height:132px;padding:16px;text-align:right;cursor:pointer;border:1px solid rgba(148,163,184,.16);
+  border-radius:14px;background:linear-gradient(155deg,var(--bg2),rgba(31,37,54,.88));
+  color:var(--text);font-family:var(--font);transition:transform .16s,border-color .16s,box-shadow .16s;
+}
+.admin-stat-card:hover{transform:translateY(-2px);border-color:rgba(139,124,248,.58);box-shadow:0 10px 24px rgba(0,0,0,.18)}
+.admin-stat-card:focus-visible{outline:2px solid var(--admin-primary);outline-offset:3px;box-shadow:0 0 0 4px var(--admin-focus)}
+.admin-stat-title{font-size:12px;color:var(--text2);margin-bottom:8px}
+.admin-stat-number{font-size:25px;line-height:1.15;font-weight:900;color:var(--text)}
+.admin-stat-change{display:inline-flex;align-items:center;gap:4px;margin-top:9px;font-size:11px;font-weight:800}
+.admin-stat-change.up{color:var(--admin-success)}.admin-stat-change.down{color:var(--admin-danger)}
+.admin-stat-change.neutral{color:var(--text2)}
+.admin-stat-compare{display:block;margin-top:4px;font-size:10px;color:var(--text3);font-weight:500}
+.admin-spark{width:92px;height:45px;overflow:visible}
+.admin-spark path{fill:none;stroke:var(--admin-primary);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.admin-spark .spark-fill{fill:rgba(139,124,248,.10);stroke:none}
 @media(max-width:768px){
   .admin-content{padding:8px 0 28px}
   .admin-content > * + *{margin-top:12px}
   .admin-content .detail-section{padding:13px}
   .admin-content [data-admin-user-id]{padding:10px!important;gap:8px!important}
+  .admin-actions{gap:6px;padding-inline:2px}.admin-actions .btn{flex:1 1 calc(50% - 6px);font-size:11px}
+  .admin-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .admin-stat-card{grid-template-columns:1fr;padding:12px;min-height:128px}
+  .admin-spark{width:100%;height:34px}
 }
 .todo-overdue-menu-btn,
 .todo-overdue-menu-btn:hover {
@@ -26121,6 +26145,37 @@ function _closeLoginBar() {
 // ════════════════════════════════════════════════════════════════════════════
 let _adminSelectedUsers = new Set();
 
+function _adminSparkline(series) {
+  const values=(series||[]).map(x=>Number(x.value)||0);
+  const data=values.length ? values : [0,0,0,0,0,0];
+  while(data.length<2)data.unshift(0);
+  const max=Math.max(1,...data),min=Math.min(...data),range=Math.max(1,max-min);
+  const pts=data.map((v,i)=>`${(i/(data.length-1))*92},${42-((v-min)/range)*36}`);
+  return `<svg class="admin-spark" viewBox="0 0 92 45" aria-hidden="true"><path class="spark-fill" d="M${pts.join(' L')} L92,45 L0,45 Z"></path><path d="M${pts.join(' L')}"></path></svg>`;
+}
+function _adminMetricCard({type,title,value,current,previous,series,inverse=false}) {
+  const change=previous ? Math.round(((current-previous)/Math.abs(previous))*100) : (current?100:0);
+  const good=inverse ? change<0 : change>0;
+  const cls=change===0?'neutral':(good?'up':'down');
+  const arrow=change>0?'▲':change<0?'▼':'●';
+  return `<button type="button" class="admin-stat-card" onclick="_adminApplyStatFilter('${type}')" aria-label="${escapeHtml(title)}؛ ${escapeHtml(String(value))}">
+    <span><span class="admin-stat-title">${title}</span><strong class="admin-stat-number">${value}</strong>
+      <span class="admin-stat-change ${cls}">${arrow} ${fa(Math.abs(change))}٪</span>
+      <span class="admin-stat-compare">در مقایسه با دوره قبل</span></span>${_adminSparkline(series)}
+  </button>`;
+}
+function _adminStatsHtml(d,users) {
+  const registrations=d?.series?.registrations||[];
+  return `<div class="admin-stats-grid">
+    ${_adminMetricCard({type:'all',title:'کل کاربران',value:fa(d.totalUsers??users.length),current:d.totalUsers??users.length,previous:d.totalUsersPrevious??0,series:registrations})}
+    ${_adminMetricCard({type:'activeToday',title:'فعال امروز',value:fa(d.activeToday||0),current:d.activeToday||0,previous:d.activeYesterday||0,series:d?.series?.activity})}
+    ${_adminMetricCard({type:'new',title:'کاربران جدید این ماه',value:fa(d.newThisMonth||0),current:d.newThisMonth||0,previous:d.newPreviousMonth||0,series:registrations})}
+    ${_adminMetricCard({type:'inactive',title:'کاربران غیرفعال',value:fa(d.inactiveUsers||0),current:d.inactiveUsers||0,previous:d.inactivePreviousPeriod||0,series:d?.series?.inactive,inverse:true})}
+    ${_adminMetricCard({type:'paid',title:'کاربران پلن پولی',value:fa(d.paidUsers||0),current:d.paidUsers||0,previous:d.paidPreviousPeriod||0,series:d?.series?.paid})}
+    ${_adminMetricCard({type:'revenue',title:'درآمد ماه',value:`${fa(d.monthlyRevenue||0)} تومان`,current:d.monthlyRevenue||0,previous:d.previousMonthlyRevenue||0,series:d?.series?.revenue})}
+  </div>`;
+}
+
 async function renderAdminPanel() {
   if (!_auth.isAdmin()) {
     setContent('<div class="empty"><span>🚫</span><p>دسترسی ندارید</p></div>');
@@ -26137,6 +26192,7 @@ async function renderAdminPanel() {
   localStorage.setItem('tp_admin_settings', JSON.stringify(localSettings));
   let allUsers = [];
   let serverOnline = false;
+  let dashboard = null;
 
   try {
     const res = await Promise.race([
@@ -26147,11 +26203,13 @@ async function renderAdminPanel() {
       const stats = await res.json();
       serverOnline = true;
       allUsers = stats.users || [];
+      dashboard = stats.dashboard || null;
       if (stats.settings) Object.assign(localSettings, stats.settings);
     }
   } catch(e) { console.log('Admin API not available'); }
 
   window._adminAllUsers = allUsers;
+  window._adminDashboard = dashboard || {};
   const existingAdminUserIds = new Set(allUsers.map(u => String(u.id)));
   _adminSelectedUsers = new Set([..._adminSelectedUsers].filter(id => existingAdminUserIds.has(String(id))));
 
@@ -26160,6 +26218,12 @@ async function renderAdminPanel() {
   setContent(`
     <div class="admin-page">
     <div class="admin-content">
+      <div class="admin-actions" aria-label="اقدامات اصلی مدیریت">
+        <button class="btn btn-primary" onclick="_adminOpenCreateUser()">＋ افزودن کاربر</button>
+        <button class="btn btn-ghost" onclick="_adminExportAll()">📊 خروجی Excel</button>
+        <button class="btn btn-ghost" onclick="_adminNotifyAll()">🔔 ارسال اعلان</button>
+        <button class="btn btn-ghost" onclick="renderAdminPanel()">↻ بروزرسانی اطلاعات</button>
+      </div>
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;
         background:${serverOnline?'rgba(62,207,142,.08)':'rgba(248,113,113,.08)'};
         border:1px solid ${serverOnline?'rgba(62,207,142,.3)':'rgba(248,113,113,.3)'};
@@ -26167,20 +26231,7 @@ async function renderAdminPanel() {
         <span>${serverOnline?'🟢':'🔴'}</span>
         <span>${serverOnline?'سرور متصل است':'سرور در دسترس نیست'}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
-        <div class="stat-card" style="text-align:center">
-          <div class="stat-value">${fa(allUsers.length)}</div>
-          <div class="stat-label">کاربر ثبت‌نام شده</div>
-        </div>
-        <div class="stat-card" style="text-align:center">
-          <div class="stat-value" style="color:var(--green)">${fa(allUsers.filter(u=>u.is_active).length)}</div>
-          <div class="stat-label">کاربر فعال</div>
-        </div>
-        <div class="stat-card" style="text-align:center">
-          <div class="stat-value" style="color:var(--accent2)">${fa(allUsers.reduce((s,u)=>s+(u.client_count||0),0))}</div>
-          <div class="stat-label">کل مشتریان</div>
-        </div>
-      </div>
+      ${_adminStatsHtml(dashboard||{},allUsers)}
 
       ${_adminGetPinnedAccounts().length ? `
       <div class="detail-section" style="margin-bottom:16px;border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.05)">
@@ -26312,13 +26363,53 @@ function _adminRenderUserList(users) {
 function _adminFilterUsers(q) {
   window._adminUserFilter = q || '';
   const users = window._adminAllUsers || [];
-  const filtered = q.trim()
+  let filtered = q.trim()
     ? users.filter(u => (u.name||'').includes(q) || (u.email||'').toLowerCase().includes(q.toLowerCase()))
     : users;
+  const mode=window._adminStatFilter||'all';
+  const now=new Date(),monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const localDate=d=>{const x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`};
+  if(mode==='activeToday')filtered=filtered.filter(u=>u.is_active&&u.updated_at&&localDate(u.updated_at)===localDate(now));
+  if(mode==='new')filtered=filtered.filter(u=>u.created_at&&new Date(u.created_at)>=monthStart);
+  if(mode==='inactive')filtered=filtered.filter(u=>!u.is_active);
+  if(mode==='paid')filtered=filtered.filter(u=>!['','free','رایگان'].includes(String(u.plan||'free').toLowerCase()));
   const el = document.getElementById('admin-users-list');
   if (el) el.innerHTML = _adminRenderUserList(filtered);
   const bulk = document.getElementById('admin-bulk-actions');
   if (bulk) bulk.innerHTML = _adminBulkActionsHtml(filtered);
+}
+function _adminApplyStatFilter(type){
+  if(type==='revenue'){
+    const d=window._adminDashboard||{};
+    return openModal('💰 درآمد ماه',`<div class="detail-section"><div class="detail-row"><span class="detail-key">ماه جاری</span><span class="detail-val">${fa(d.monthlyRevenue||0)} تومان</span></div><div class="detail-row"><span class="detail-key">ماه قبل</span><span class="detail-val">${fa(d.previousMonthlyRevenue||0)} تومان</span></div></div>`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}]);
+  }
+  window._adminStatFilter=type||'all';
+  _adminFilterUsers(window._adminUserFilter||'');
+  document.getElementById('admin-user-search')?.scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+function _adminOpenCreateUser(){
+  openModal('＋ افزودن کاربر',`<div class="form-group"><label class="form-label">نام</label><input class="form-input" id="admin-create-name"></div>
+    <div class="form-group"><label class="form-label">ایمیل</label><input class="form-input" id="admin-create-email" type="email" dir="ltr"></div>
+    <div class="form-group"><label class="form-label">رمز عبور اولیه</label><input class="form-input" id="admin-create-password" type="password" minlength="6" dir="ltr"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div class="form-group"><label class="form-label">نقش</label><select class="form-select" id="admin-create-role"><option value="user">کاربر</option><option value="admin">مدیر</option></select></div>
+    <div class="form-group"><label class="form-label">پلن</label><select class="form-select" id="admin-create-plan"><option value="free">رایگان</option><option value="basic">پایه</option><option value="pro">حرفه‌ای</option><option value="enterprise">سازمانی</option></select></div></div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ایجاد کاربر',cls:'btn-primary',action:'_adminCreateUser()'}]);
+}
+async function _adminCreateUser(){
+  const payload={name:document.getElementById('admin-create-name')?.value.trim(),email:document.getElementById('admin-create-email')?.value.trim(),password:document.getElementById('admin-create-password')?.value||'',role:document.getElementById('admin-create-role')?.value,plan:document.getElementById('admin-create-plan')?.value};
+  if(!payload.name||!payload.email||payload.password.length<6)return showToast('نام، ایمیل و رمز حداقل ۶ کاراکتری لازم است','error');
+  const res=await _apiFetch('/api/admin/users',{method:'POST',body:JSON.stringify(payload)});
+  if(res.ok){showToast('کاربر ایجاد شد ✓','success');closeModal();renderAdminPanel();return}
+  showToast(res.status===409?'این ایمیل قبلاً ثبت شده است':'ایجاد کاربر ناموفق بود','error');
+}
+function _adminExportAll(){_adminExportUsers(window._adminAllUsers||[])}
+function _adminNotifyAll(){
+  const ids=(window._adminAllUsers||[]).map(u=>String(u.id));
+  if(!ids.length)return showToast('کاربری برای ارسال اعلان وجود ندارد','error');
+  openModal('🔔 ارسال اعلان همگانی', `<div class="form-group"><label class="form-label">عنوان</label><input class="form-input" id="admin-notify-title" value="پیام مدیریت"></div>
+    <div class="form-group"><label class="form-label">متن اعلان برای ${fa(ids.length)} کاربر</label><textarea class="form-textarea" id="admin-notify-body" rows="4"></textarea></div>`,
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${JSON.stringify(ids)})`}]);
 }
 
 function _adminBulkActionsHtml(visibleUsers) {
@@ -26394,10 +26485,14 @@ async function _adminSendNotification(ids) {
 }
 function _adminExportSelected() {
   const selected = (window._adminAllUsers||[]).filter(u=>_adminSelectedUsers.has(String(u.id)));
+  _adminExportUsers(selected);
+}
+function _adminExportUsers(users) {
+  if(!users.length)return showToast('کاربری برای خروجی وجود ندارد','error');
   const quote = v => '"' + String(v??'').replace(/"/g,'""') + '"';
-  const rows = [['نام','ایمیل','نقش','پلن','وضعیت','تعداد مشتری','تاریخ عضویت'], ...selected.map(u=>[u.name,u.email,u.role,u.plan,u.is_active?'فعال':'مسدود',u.client_count,u.created_at])];
+  const rows = [['نام','ایمیل','نقش','پلن','وضعیت','تعداد مشتری','تاریخ عضویت'], ...users.map(u=>[u.name,u.email,u.role,u.plan,u.is_active?'فعال':'مسدود',u.client_count,u.created_at])];
   const blob = new Blob(['\uFEFF' + rows.map(r=>r.map(quote).join(',')).join('\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='teampulse-users.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='teampulse-users-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 async function _adminBulkDelete() {
   const ids=[..._adminSelectedUsers];
