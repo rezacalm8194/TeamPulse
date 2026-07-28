@@ -26260,16 +26260,20 @@ async function renderAdminPanel() {
 
   window._adminAllUsers = allUsers;
   window._adminDashboard = dashboard || {};
+  window._adminSettings = localSettings;
+  window._adminUsersPage = 1;
   const existingAdminUserIds = new Set(allUsers.map(u => String(u.id)));
   _adminSelectedUsers = new Set([..._adminSelectedUsers].filter(id => existingAdminUserIds.has(String(id))));
 
-  const usersHTML = _adminRenderUserList(allUsers);
+  const firstUserPage = allUsers.slice(0, 20);
+  const usersHTML = _adminRenderUserList(firstUserPage);
 
   setContent(`
     <div class="admin-page">
     <div class="admin-content">
       <div class="admin-actions" aria-label="اقدامات اصلی مدیریت">
         <button class="btn btn-primary" onclick="_adminOpenCreateUser()">＋ افزودن کاربر</button>
+        <button class="btn btn-ghost" onclick="_adminOpenFinance()">💰 مالی</button>
         <button class="btn btn-ghost" onclick="_adminExportAll()">📊 خروجی Excel</button>
         <button class="btn btn-ghost" onclick="_adminNotifyAll()">🔔 ارسال اعلان</button>
         <button class="btn btn-ghost" onclick="renderAdminPanel()">↻ بروزرسانی اطلاعات</button>
@@ -26291,7 +26295,10 @@ async function renderAdminPanel() {
               دریافت یک فایل جامع از داده‌های تمام ${fa(allUsers.length)} کاربر. پشتیبان هر کاربر نیز از منوی سه‌نقطه همان کاربر در دسترس است.
             </p>
           </div>
-          <button class="btn btn-primary" onclick="_adminBackupAllUsers(this)">دریافت پشتیبان کل کاربران</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="_adminBackupAllUsers(this)">دریافت پشتیبان کل کاربران</button>
+            <button class="btn btn-ghost" onclick="_adminImportAllUsersBackup()">📂 وارد کردن پشتیبان کل کاربران</button>
+          </div>
         </div>
       </div>
 
@@ -26322,44 +26329,10 @@ async function renderAdminPanel() {
         <input class="form-input" id="admin-user-search" placeholder="🔍 جستجو در نام یا ایمیل..."
           oninput="_adminFilterUsers(this.value)"
           style="margin-bottom:12px;font-size:13px">
-        <div id="admin-bulk-actions">${_adminBulkActionsHtml()}</div>
+        <div id="admin-bulk-actions">${_adminBulkActionsHtml(firstUserPage)}</div>
         <div id="admin-users-list">${usersHTML}</div>
+        <div id="admin-users-pagination">${_adminPaginationHtml(allUsers.length)}</div>
       </div>` : ''}
-
-      <div class="detail-section" style="margin-bottom:16px">
-        <h3 style="margin-bottom:14px">⚙️ تنظیمات سیستم</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div class="form-group">
-            <label class="form-label">هزینه روزانه (تومان)</label>
-            <input class="form-input" id="admin-daily-cost" type="number" value="${localSettings.daily_cost||1000}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">شماره کارت</label>
-            <input class="form-input" id="admin-card" value="${localSettings.card_number||''}" placeholder="6037-xxxx-xxxx-xxxx" style="direction:ltr">
-          </div>
-        </div>
-        <button class="btn btn-primary" style="margin-top:12px" onclick="_saveAdminSettings()">💾 ذخیره تنظیمات</button>
-      </div>
-
-      <div class="detail-section">
-        <h3 style="margin-bottom:12px">💰 شارژ دستی کیف پول</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-          <div class="form-group" style="position:relative">
-            <label class="form-label">ایمیل کاربر</label>
-            <input class="form-input" id="charge-email" type="email" placeholder="user@example.com"
-              style="direction:ltr" oninput="_adminEmailSuggest(this.value)" autocomplete="off">
-            <div id="email-suggestions" style="position:absolute;top:100%;right:0;left:0;z-index:100;
-              background:var(--bg2);border:1px solid var(--border2);border-radius:8px;
-              max-height:160px;overflow-y:auto;display:none;box-shadow:0 4px 16px rgba(0,0,0,.3)"></div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">مبلغ (تومان)</label>
-            <input class="form-input" id="charge-amount" type="number" placeholder="50000" class="amount-input">
-          </div>
-        </div>
-        <div id="charge-user-info" style="font-size:11px;color:var(--text3);margin-top:6px;display:none"></div>
-        <button class="btn btn-primary" style="margin-top:10px" onclick="_adminChargeWallet()">💰 شارژ کیف پول</button>
-      </div>
     </div>
     </div>`);
 
@@ -26426,11 +26399,12 @@ function _adminRenderUserList(users) {
     ].join('');
   }).join('');
 }
-function _adminFilterUsers(q) {
-  window._adminUserFilter = q || '';
+const _ADMIN_USERS_PAGE_SIZE = 20;
+function _adminGetFilteredUsers() {
   const users = window._adminAllUsers || [];
+  const q = String(window._adminUserFilter || '').trim();
   let filtered = q.trim()
-    ? users.filter(u => (u.name||'').includes(q) || (u.email||'').toLowerCase().includes(q.toLowerCase()))
+    ? users.filter(u => (u.name||'').toLowerCase().includes(q.toLowerCase()) || (u.email||'').toLowerCase().includes(q.toLowerCase()))
     : users;
   const mode=window._adminStatFilter||'all';
   const now=new Date(),monthStart=new Date(now.getFullYear(),now.getMonth(),1);
@@ -26439,10 +26413,46 @@ function _adminFilterUsers(q) {
   if(mode==='new')filtered=filtered.filter(u=>u.created_at&&new Date(u.created_at)>=monthStart);
   if(mode==='inactive')filtered=filtered.filter(u=>!u.is_active);
   if(mode==='paid')filtered=filtered.filter(u=>!['','free','رایگان'].includes(String(u.plan||'free').toLowerCase()));
+  return filtered;
+}
+function _adminPaginationHtml(total) {
+  const pages=Math.max(1,Math.ceil(total/_ADMIN_USERS_PAGE_SIZE));
+  const page=Math.min(Math.max(1,Number(window._adminUsersPage)||1),pages);
+  window._adminUsersPage=page;
+  if(total<=_ADMIN_USERS_PAGE_SIZE)return total
+    ? `<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text3)">نمایش ${fa(total)} کاربر</div>` : '';
+  const start=(page-1)*_ADMIN_USERS_PAGE_SIZE+1;
+  const end=Math.min(total,page*_ADMIN_USERS_PAGE_SIZE);
+  return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+    <button class="btn btn-ghost btn-sm" onclick="_adminGoToUsersPage(${page-1})" ${page<=1?'disabled':''}>→ قبلی</button>
+    <span style="font-size:11.5px;color:var(--text2);min-width:170px;text-align:center">
+      صفحه ${fa(page)} از ${fa(pages)} · کاربران ${fa(start)} تا ${fa(end)} از ${fa(total)}
+    </span>
+    <button class="btn btn-ghost btn-sm" onclick="_adminGoToUsersPage(${page+1})" ${page>=pages?'disabled':''}>بعدی ←</button>
+  </div>`;
+}
+function _adminRenderUsersPage() {
+  const filtered=_adminGetFilteredUsers();
+  const pages=Math.max(1,Math.ceil(filtered.length/_ADMIN_USERS_PAGE_SIZE));
+  window._adminUsersPage=Math.min(Math.max(1,Number(window._adminUsersPage)||1),pages);
+  const start=(window._adminUsersPage-1)*_ADMIN_USERS_PAGE_SIZE;
+  const pageUsers=filtered.slice(start,start+_ADMIN_USERS_PAGE_SIZE);
   const el = document.getElementById('admin-users-list');
-  if (el) el.innerHTML = _adminRenderUserList(filtered);
+  if (el) el.innerHTML = _adminRenderUserList(pageUsers);
   const bulk = document.getElementById('admin-bulk-actions');
-  if (bulk) bulk.innerHTML = _adminBulkActionsHtml(filtered);
+  if (bulk) bulk.innerHTML = _adminBulkActionsHtml(pageUsers);
+  const pagination=document.getElementById('admin-users-pagination');
+  if(pagination)pagination.innerHTML=_adminPaginationHtml(filtered.length);
+}
+function _adminFilterUsers(q,resetPage=true) {
+  window._adminUserFilter = q || '';
+  if(resetPage)window._adminUsersPage=1;
+  _adminRenderUsersPage();
+}
+function _adminGoToUsersPage(page) {
+  window._adminUsersPage=page;
+  _adminRenderUsersPage();
+  document.getElementById('admin-user-search')?.scrollIntoView({behavior:'smooth',block:'center'});
 }
 function _adminApplyStatFilter(type){
   if(type==='revenue'){
@@ -26461,6 +26471,37 @@ function _adminOpenCreateUser(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div class="form-group"><label class="form-label">نقش</label><select class="form-select" id="admin-create-role"><option value="user">کاربر</option><option value="admin">مدیر</option></select></div>
     <div class="form-group"><label class="form-label">پلن</label><select class="form-select" id="admin-create-plan"><option value="free">رایگان</option><option value="basic">پایه</option><option value="pro">حرفه‌ای</option><option value="enterprise">سازمانی</option></select></div></div>`,
     [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ایجاد کاربر',cls:'btn-primary',action:'_adminCreateUser()'}]);
+}
+function _adminOpenFinance(){
+  const settings=window._adminSettings||JSON.parse(localStorage.getItem('tp_admin_settings')||'{}');
+  openModal('💰 مدیریت مالی',`
+    <div class="detail-section" style="margin-bottom:14px">
+      <h3 style="margin-bottom:14px">⚙️ تنظیمات مالی سیستم</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">
+        <div class="form-group"><label class="form-label">هزینه روزانه (تومان)</label>
+          <input class="form-input" id="admin-daily-cost" type="number" value="${Number(settings.daily_cost)||1000}">
+        </div>
+        <div class="form-group"><label class="form-label">شماره کارت</label>
+          <input class="form-input" id="admin-card" value="${escapeHtml(settings.card_number||'')}" placeholder="6037-xxxx-xxxx-xxxx" style="direction:ltr">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="_saveAdminSettings()">💾 ذخیره تنظیمات مالی</button>
+    </div>
+    <div class="detail-section">
+      <h3 style="margin-bottom:12px">💰 شارژ دستی کیف پول</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">
+        <div class="form-group" style="position:relative"><label class="form-label">ایمیل کاربر</label>
+          <input class="form-input" id="charge-email" type="email" placeholder="user@example.com" style="direction:ltr" oninput="_adminEmailSuggest(this.value)" autocomplete="off">
+          <div id="email-suggestions" style="position:absolute;top:100%;right:0;left:0;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;max-height:160px;overflow-y:auto;display:none;box-shadow:0 4px 16px rgba(0,0,0,.3)"></div>
+        </div>
+        <div class="form-group"><label class="form-label">مبلغ (تومان)</label>
+          <input class="form-input amount-input" id="charge-amount" type="number" placeholder="50000">
+        </div>
+      </div>
+      <div id="charge-user-info" style="font-size:11px;color:var(--text3);margin-top:6px;display:none"></div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="_adminChargeWallet()">💰 شارژ کیف پول</button>
+    </div>`,
+    [{label:'بستن',cls:'btn-ghost',action:'closeModal()'}]);
 }
 async function _adminCreateUser(){
   const payload={name:document.getElementById('admin-create-name')?.value.trim(),email:document.getElementById('admin-create-email')?.value.trim(),password:document.getElementById('admin-create-password')?.value||'',role:document.getElementById('admin-create-role')?.value,plan:document.getElementById('admin-create-plan')?.value};
@@ -26524,12 +26565,14 @@ async function _adminBackupAllUsers(button){
 }
 async function _adminBackupUser(userId,userName){
   try{
+    const user=(window._adminAllUsers||[]).find(item=>String(item.id)===String(userId));
+    if(!user)return showToast('حساب کاربر در فهرست مدیریت پیدا نشد','error');
     const res=await _apiFetch('/api/data/'+encodeURIComponent(userId));
     if(!res.ok)throw new Error('backup failed');
     const payload=await res.json();
     if(!payload.data)return showToast('داده‌ای برای این کاربر ثبت نشده است','error');
     const backup={
-      meta:{product:'TeamPulse',type:'single-user-admin-backup',version:'1.0.0',exported_at:new Date().toISOString(),account_id:userId,account_name:userName||''},
+      meta:{product:'TeamPulse',type:'single-user-admin-backup',version:'1.0.0',exported_at:new Date().toISOString(),account_id:String(user.id),account_email:user.email,account_name:userName||''},
       data:payload.data
     };
     _adminDownloadJson(backup,'TeamPulse-'+_adminSafeFilename(userName)+'-'+new Date().toISOString().slice(0,10)+'.json');
@@ -26545,16 +26588,75 @@ function _adminImportUserBackup(userId,userName){
     if(!file)return;
     try{
       const parsed=JSON.parse(await file.text());
-      const data=parsed?.meta?.type==='single-user-admin-backup' ? parsed.data
-        : parsed?.app_data?.data ? parsed.app_data.data
-        : parsed?.students ? parsed : null;
-      if(!data||typeof data!=='object')return showToast('فایل پشتیبان معتبر نیست','error');
+      const target=(window._adminAllUsers||[]).find(item=>String(item.id)===String(userId));
+      if(!target)return showToast('حساب مقصد در فهرست مدیریت پیدا نشد','error');
+      const backupId=String(parsed?.meta?.account_id||'');
+      const backupEmail=String(parsed?.meta?.account_email||'').trim().toLowerCase();
+      if(parsed?.meta?.type!=='single-user-admin-backup'||!parsed?.data||typeof parsed.data!=='object'){
+        return showToast('این فایل، پشتیبان اختصاصی معتبر کاربر نیست','error');
+      }
+      if(backupId!==String(target.id)||backupEmail!==String(target.email||'').trim().toLowerCase()){
+        return showToast('این فایل متعلق به کاربر انتخاب‌شده نیست؛ عملیات متوقف شد','error');
+      }
       if(!confirm(`داده‌های فعلی «${userName||'این کاربر'}» با محتوای فایل جایگزین شود؟ پیش از جایگزینی، نسخه فعلی در تاریخچه سرور ذخیره می‌شود.`))return;
-      const res=await _apiFetch('/api/data/'+encodeURIComponent(userId),{method:'PUT',body:JSON.stringify({data,force:true})});
-      if(!res.ok)throw new Error('import failed');
+      let res=await _apiFetch('/api/admin/backup/users/'+encodeURIComponent(userId)+'/import',{method:'POST',body:JSON.stringify({backup:parsed})});
+      if(res.status===404){
+        res=await _apiFetch('/api/data/'+encodeURIComponent(userId),{method:'PUT',body:JSON.stringify({data:parsed.data,force:true})});
+      }
+      if(!res.ok){
+        const error=await res.json().catch(()=>({}));
+        if(error.error==='backup_account_mismatch')return showToast('هویت فایل با حساب مقصد تطابق ندارد','error');
+        throw new Error('import failed');
+      }
       showToast('پشتیبان کاربر با موفقیت وارد شد ✓','success');
     }catch(e){
       showToast(e instanceof SyntaxError?'ساختار فایل JSON معتبر نیست':'وارد کردن پشتیبان ناموفق بود','error');
+    }
+  };
+  input.click();
+}
+function _adminImportAllUsersBackup(){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.json,application/json';
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    if(!file)return;
+    try{
+      const backup=JSON.parse(await file.text());
+      if(backup?.meta?.type!=='all-users-admin-backup'||!Array.isArray(backup.users)||!backup.users.length){
+        return showToast('فایل پشتیبان جامع معتبر نیست','error');
+      }
+      const currentUsers=new Map((window._adminAllUsers||[]).map(user=>[String(user.id),String(user.email||'').trim().toLowerCase()]));
+      const seen=new Set();
+      for(const item of backup.users){
+        const id=String(item?.account?.id||'');
+        const email=String(item?.account?.email||'').trim().toLowerCase();
+        const appData=item?.app_data?.data;
+        if(!id||!email||seen.has(id)||(appData!=null&&typeof appData!=='object')){
+          return showToast('ساختار کاربران در فایل پشتیبان معتبر نیست','error');
+        }
+        if(!currentUsers.has(id)||currentUsers.get(id)!==email){
+          return showToast(`حساب «${item?.account?.name||email}» با کاربران فعلی تطابق ندارد؛ هیچ داده‌ای وارد نشد`,'error');
+        }
+        seen.add(id);
+      }
+      if(!confirm(`داده‌های ${fa(backup.users.length)} کاربر با این فایل جایگزین شود؟ هویت همه حساب‌ها بررسی شده و نسخه‌های فعلی در تاریخچه سرور حفظ می‌شوند.`))return;
+      const res=await _apiFetch('/api/admin/backup/all/import',{method:'POST',body:JSON.stringify({backup})});
+      if(res.status===404){
+        return showToast('برای بازیابی امن و اتمیک کل کاربران، ابتدا نسخه جدید بک‌اند را منتشر کنید','error');
+      }
+      if(!res.ok){
+        const error=await res.json().catch(()=>({}));
+        if(['backup_account_mismatch','backup_account_not_found'].includes(error.error)){
+          return showToast('یکی از حساب‌های فایل با حساب‌های سرور تطابق ندارد؛ هیچ داده‌ای وارد نشد','error');
+        }
+        throw new Error('all users import failed');
+      }
+      const result=await res.json();
+      showToast(`پشتیبان ${fa(result.imported_users||backup.users.length)} کاربر با موفقیت وارد شد ✓`,'success');
+    }catch(e){
+      showToast(e instanceof SyntaxError?'ساختار فایل JSON معتبر نیست':'وارد کردن پشتیبان کل کاربران ناموفق بود','error');
     }
   };
   input.click();
@@ -26590,7 +26692,7 @@ function _adminBulkActionsHtml(visibleUsers) {
 }
 
 function _adminRefreshUserList() {
-  _adminFilterUsers(window._adminUserFilter || '');
+  _adminFilterUsers(window._adminUserFilter || '', false);
 }
 function _adminToggleUserSelection(userId, checked) {
   if (checked) _adminSelectedUsers.add(String(userId));
@@ -26598,8 +26700,9 @@ function _adminToggleUserSelection(userId, checked) {
   _adminRefreshUserList();
 }
 function _adminSelectAllVisible(checked) {
-  const q = (window._adminUserFilter || '').trim().toLowerCase();
-  (window._adminAllUsers || []).filter(u => !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q))
+  const filtered=_adminGetFilteredUsers();
+  const start=((Number(window._adminUsersPage)||1)-1)*_ADMIN_USERS_PAGE_SIZE;
+  filtered.slice(start,start+_ADMIN_USERS_PAGE_SIZE)
     .filter(u => u.email !== _ADMIN_EMAIL)
     .forEach(u => checked ? _adminSelectedUsers.add(String(u.id)) : _adminSelectedUsers.delete(String(u.id)));
   _adminRefreshUserList();
@@ -27081,10 +27184,11 @@ async function _rejectCharge(reqId) {
 }
 
 async function _saveAdminSettings() {
+  const currentSettings=window._adminSettings||{};
   const settings = {
     daily_cost: parseInt(document.getElementById('admin-daily-cost')?.value || '1000'),
     card_number: document.getElementById('admin-card')?.value.trim() || '',
-    tutorial_video_url: document.getElementById('admin-video-url')?.value.trim() || '',
+    tutorial_video_url: document.getElementById('admin-video-url')?.value.trim() || currentSettings.tutorial_video_url || '',
   };
   // ۱. ذخیره در localStorage
   localStorage.setItem('tp_admin_settings', JSON.stringify(settings));
@@ -27097,6 +27201,7 @@ async function _saveAdminSettings() {
   try {
     await _apiFetch('/api/admin/settings', { method: 'PUT', body: JSON.stringify(settings) });
   } catch(e) {}
+  window._adminSettings={...currentSettings,...settings};
   showToast('تنظیمات ذخیره شد ✓', 'success');
 }
 

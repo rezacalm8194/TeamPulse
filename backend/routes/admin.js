@@ -142,6 +142,92 @@ router.get('/backup/all', auth, adminOnly, (req, res) => {
   }
 });
 
+function cleanImportedAppData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const clean = { ...data };
+  delete clean._gdrive_token;
+  delete clean._gdrive_token_expiry;
+  delete clean._gcal_token;
+  delete clean._gcal_token_expiry;
+  return clean;
+}
+
+function saveAdminImportedData(accountId, data) {
+  const serialized = JSON.stringify(data);
+  const existing = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(accountId);
+  if (existing) {
+    db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(accountId, existing.data);
+    db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, accountId);
+  } else {
+    db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(accountId, serialized);
+  }
+}
+
+// بازیابی یک کاربر فقط وقتی پذیرفته می‌شود که شناسه و ایمیل داخل فایل
+// دقیقاً با حساب مقصد تطابق داشته باشد؛ بنابراین فایل کاربر A هرگز روی B نمی‌نشیند.
+router.post('/backup/users/:id/import', auth, adminOnly, (req, res) => {
+  try {
+    const targetId = String(req.params.id);
+    const backup = req.body?.backup;
+    const meta = backup?.meta;
+    const data = cleanImportedAppData(backup?.data);
+    if (meta?.type !== 'single-user-admin-backup' || !data) {
+      return res.status(400).json({ error: 'invalid_single_user_backup' });
+    }
+    const account = db.prepare('SELECT id,email FROM accounts WHERE id=?').get(targetId);
+    if (!account) return res.status(404).json({ error: 'account_not_found' });
+    const backupId = String(meta.account_id || '');
+    const backupEmail = String(meta.account_email || '').trim().toLowerCase();
+    if (backupId !== String(account.id) || !backupEmail || backupEmail !== String(account.email).trim().toLowerCase()) {
+      return res.status(409).json({ error: 'backup_account_mismatch' });
+    }
+    const run = db.transaction(() => saveAdminImportedData(targetId, data));
+    run();
+    res.json({ success: true, account_id: targetId });
+  } catch(e) {
+    console.error('Admin single-user backup import failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ابتدا تمام نگاشت‌ها بررسی می‌شوند و فقط در صورت تطابق کامل شناسه+ایمیل،
+// همه داده‌ها در یک تراکنش واحد جایگزین می‌شوند.
+router.post('/backup/all/import', auth, adminOnly, (req, res) => {
+  try {
+    const backup = req.body?.backup;
+    if (backup?.meta?.type !== 'all-users-admin-backup' || !Array.isArray(backup.users) || !backup.users.length) {
+      return res.status(400).json({ error: 'invalid_all_users_backup' });
+    }
+    const seen = new Set();
+    const imports = [];
+    for (const item of backup.users) {
+      const backupAccount = item?.account;
+      const accountId = String(backupAccount?.id || '');
+      const accountEmail = String(backupAccount?.email || '').trim().toLowerCase();
+      const rawData = item?.app_data?.data;
+      const data = rawData == null ? null : cleanImportedAppData(rawData);
+      if (!accountId || !accountEmail || (rawData != null && !data) || seen.has(accountId)) {
+        return res.status(400).json({ error: 'invalid_or_duplicate_backup_user', account_id: accountId || null });
+      }
+      seen.add(accountId);
+      const current = db.prepare('SELECT id,email FROM accounts WHERE id=?').get(accountId);
+      if (!current) return res.status(409).json({ error: 'backup_account_not_found', account_id: accountId });
+      if (String(current.email).trim().toLowerCase() !== accountEmail) {
+        return res.status(409).json({ error: 'backup_account_mismatch', account_id: accountId });
+      }
+      if (data) imports.push({ accountId, data });
+    }
+    const run = db.transaction(() => {
+      for (const item of imports) saveAdminImportedData(item.accountId, item.data);
+    });
+    run();
+    res.json({ success: true, imported_users: imports.length });
+  } catch(e) {
+    console.error('Admin all-users backup import failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/stats', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();
