@@ -26270,7 +26270,6 @@ async function renderAdminPanel() {
     <div class="admin-content">
       <div class="admin-actions" aria-label="اقدامات اصلی مدیریت">
         <button class="btn btn-primary" onclick="_adminOpenCreateUser()">＋ افزودن کاربر</button>
-        <button class="btn btn-ghost" onclick="_adminBackupAllUsers(this)">💾 پشتیبان کل کاربران</button>
         <button class="btn btn-ghost" onclick="_adminExportAll()">📊 خروجی Excel</button>
         <button class="btn btn-ghost" onclick="_adminNotifyAll()">🔔 ارسال اعلان</button>
         <button class="btn btn-ghost" onclick="renderAdminPanel()">↻ بروزرسانی اطلاعات</button>
@@ -26283,6 +26282,18 @@ async function renderAdminPanel() {
         <span>${serverOnline?'سرور متصل است':'سرور در دسترس نیست'}</span>
       </div>
       ${_adminStatsHtml(dashboard||{},allUsers)}
+
+      <div class="detail-section" style="margin-bottom:16px;border:1px solid rgba(124,106,247,.28);background:linear-gradient(135deg,rgba(124,106,247,.07),rgba(96,165,250,.03))">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+          <div>
+            <h3 style="margin-bottom:5px">💾 مدیریت پشتیبان‌ها</h3>
+            <p style="margin:0;color:var(--text3);font-size:11.5px;line-height:1.8">
+              دریافت یک فایل جامع از داده‌های تمام ${fa(allUsers.length)} کاربر. پشتیبان هر کاربر نیز از منوی سه‌نقطه همان کاربر در دسترس است.
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="_adminBackupAllUsers(this)">دریافت پشتیبان کل کاربران</button>
+        </div>
+      </div>
 
       ${_adminGetPinnedAccounts().length ? `
       <div class="detail-section" style="margin-bottom:16px;border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.05)">
@@ -26401,6 +26412,10 @@ function _adminRenderUserList(users) {
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminRenewUser(\'' + uid + '\')">🔄 تمدید اشتراک</div>' +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminShowPayments(\'' + uid + '\')">💳 مشاهده پرداخت‌ها</div>' +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminShowActivity(\'' + uid + '\')">📊 مشاهده فعالیت‌ها</div>' +
+            '<div class="row-menu-divider"></div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminBackupUser(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">💾 دریافت پشتیبان</div>' +
+            '<div class="row-menu-item" onclick="event.stopPropagation();_adminImportUserBackup(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">📂 وارد کردن پشتیبان</div>' +
+            '<div class="row-menu-divider"></div>' +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminResetPassword(\'' + uid + '\')">🔐 بازنشانی رمز</div>' +
             (u.email !== _ADMIN_EMAIL ? '<div class="row-menu-item" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🔑 ورود به‌جای کاربر</div>' : '') +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminToggleStatus(\'' + uid + '\',' + (isActive?0:1) + ')">' + (isActive?'🚫 مسدودکردن':'✅ فعال‌سازی') + '</div>' +
@@ -26455,30 +26470,94 @@ async function _adminCreateUser(){
   showToast(res.status===409?'این ایمیل قبلاً ثبت شده است':'ایجاد کاربر ناموفق بود','error');
 }
 function _adminExportAll(){_adminExportUsers(window._adminAllUsers||[])}
+function _adminDownloadJson(data, filename){
+  const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function _adminSafeFilename(value){
+  return String(value||'user').trim().replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,'-').slice(0,60)||'user';
+}
+async function _adminBuildAllUsersBackup(){
+  const users=window._adminAllUsers||[];
+  const results=[];
+  for(const user of users){
+    const res=await _apiFetch('/api/data/'+encodeURIComponent(user.id));
+    if(!res.ok) throw new Error('user backup failed');
+    const payload=await res.json();
+    results.push({
+      account:{id:user.id,name:user.name,email:user.email,role:user.role,plan:user.plan,is_active:user.is_active},
+      app_data:{data:payload.data,updated_at:payload.updated_at||null}
+    });
+  }
+  return {
+    meta:{product:'TeamPulse',type:'all-users-admin-backup',version:'1.0.0',exported_at:new Date().toISOString(),user_count:results.length},
+    users:results
+  };
+}
 async function _adminBackupAllUsers(button){
   if(!confirm('از داده‌های همه کاربران یک فایل پشتیبان جامع تهیه شود؟')) return;
   const oldLabel = button?.innerHTML;
   if(button){ button.disabled=true; button.innerHTML='⏳ در حال تهیه پشتیبان...'; }
   try {
     const res = await _apiFetch('/api/admin/backup/all');
-    if(!res.ok) throw new Error('backup failed');
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const matched = disposition.match(/filename="?([^";]+)"?/i);
     const fallback = 'TeamPulse-all-users-backup-' + new Date().toISOString().slice(0,10) + '.json';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = matched?.[1] || fallback;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    if(res.ok){
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const matched = disposition.match(/filename="?([^";]+)"?/i);
+      _adminDownloadJson(await res.blob(),matched?.[1]||fallback);
+    }else if(res.status===404){
+      _adminDownloadJson(await _adminBuildAllUsersBackup(),fallback);
+    }else throw new Error('backup failed');
     showToast('پشتیبان کل کاربران ذخیره شد ✓','success');
   } catch(e) {
     showToast('تهیه پشتیبان کل کاربران ناموفق بود','error');
   } finally {
     if(button){ button.disabled=false; button.innerHTML=oldLabel; }
   }
+}
+async function _adminBackupUser(userId,userName){
+  try{
+    const res=await _apiFetch('/api/data/'+encodeURIComponent(userId));
+    if(!res.ok)throw new Error('backup failed');
+    const payload=await res.json();
+    if(!payload.data)return showToast('داده‌ای برای این کاربر ثبت نشده است','error');
+    const backup={
+      meta:{product:'TeamPulse',type:'single-user-admin-backup',version:'1.0.0',exported_at:new Date().toISOString(),account_id:userId,account_name:userName||''},
+      data:payload.data
+    };
+    _adminDownloadJson(backup,'TeamPulse-'+_adminSafeFilename(userName)+'-'+new Date().toISOString().slice(0,10)+'.json');
+    showToast('پشتیبان کاربر ذخیره شد ✓','success');
+  }catch(e){showToast('دریافت پشتیبان کاربر ناموفق بود','error')}
+}
+function _adminImportUserBackup(userId,userName){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.json,application/json';
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    if(!file)return;
+    try{
+      const parsed=JSON.parse(await file.text());
+      const data=parsed?.meta?.type==='single-user-admin-backup' ? parsed.data
+        : parsed?.app_data?.data ? parsed.app_data.data
+        : parsed?.students ? parsed : null;
+      if(!data||typeof data!=='object')return showToast('فایل پشتیبان معتبر نیست','error');
+      if(!confirm(`داده‌های فعلی «${userName||'این کاربر'}» با محتوای فایل جایگزین شود؟ پیش از جایگزینی، نسخه فعلی در تاریخچه سرور ذخیره می‌شود.`))return;
+      const res=await _apiFetch('/api/data/'+encodeURIComponent(userId),{method:'PUT',body:JSON.stringify({data,force:true})});
+      if(!res.ok)throw new Error('import failed');
+      showToast('پشتیبان کاربر با موفقیت وارد شد ✓','success');
+    }catch(e){
+      showToast(e instanceof SyntaxError?'ساختار فایل JSON معتبر نیست':'وارد کردن پشتیبان ناموفق بود','error');
+    }
+  };
+  input.click();
 }
 function _adminNotifyAll(){
   const ids=(window._adminAllUsers||[]).map(u=>String(u.id));
