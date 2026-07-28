@@ -22302,11 +22302,20 @@ function _todoEventTypeMeta(type) {
 function _todoEventMatchesDate(e, date) {
   if (!e || !date) return false;
   if (e.date_jalali === date) return true;
-  if ((e.repeat || 'none') === 'yearly' && e.date_jalali) {
-    const [,em,ed] = _jalaliParse(e.date_jalali);
-    const [,m,d] = _jalaliParse(date);
-    return em === m && ed === d;
+  if (!e.date_jalali || !e.repeat || e.repeat === 'none') return false;
+  const [ey,em,ed] = _jalaliParse(e.date_jalali);
+  const [y,m,d] = _jalaliParse(date);
+  const [egy,egm,egd] = jalaliToGregorian(ey,em,ed);
+  const [gy,gm,gd] = jalaliToGregorian(y,m,d);
+  const elapsedDays = Math.round((Date.UTC(gy,gm-1,gd) - Date.UTC(egy,egm-1,egd)) / 86400000);
+  if (elapsedDays < 0) return false;
+  if (e.repeat === 'weekly') return elapsedDays % 7 === 0;
+  if (e.repeat === 'every_days') {
+    const interval = Math.max(1, Number(e.repeat_days) || 1);
+    return elapsedDays % interval === 0;
   }
+  if (e.repeat === 'monthly') return d === ed;
+  if (e.repeat === 'yearly') return m === em && d === ed;
   return false;
 }
 
@@ -22322,19 +22331,14 @@ function _todoEventReminderDate(e, occurrenceDate) {
 }
 
 function _todoEventReminderItems(date) {
-  const [y] = _jalaliParse(date);
   const out = [];
   (_db.todo_calendar_events || []).forEach(e => {
     const days = Number(e.remind_days ?? -1);
     if (!Number.isFinite(days) || days <= 0 || !e.date_jalali) return;
-    const [,m,d] = _jalaliParse(e.date_jalali);
-    const years = (e.repeat || 'none') === 'yearly' ? [y, y + 1] : [_jalaliParse(e.date_jalali)[0]];
-    years.forEach(yy => {
-      const occurrenceDate = _formatJalali(yy,m,d);
-      if (_todoEventReminderDate(e, occurrenceDate) === date) {
-        out.push({ ...e, id:`event-reminder-${e.id}-${yy}`, title:`یادآوری: ${e.title}`, date_jalali:date, _reminder:true, _occurrence_date:occurrenceDate, system:true });
-      }
-    });
+    const occurrenceDate = _formatJalali(..._addDays(..._jalaliParse(date), days));
+    if (_todoEventMatchesDate(e, occurrenceDate)) {
+      out.push({ ...e, id:`event-reminder-${e.id}-${occurrenceDate}`, title:`یادآوری: ${e.title}`, date_jalali:date, _reminder:true, _occurrence_date:occurrenceDate, system:true });
+    }
   });
   return out;
 }
@@ -22347,6 +22351,20 @@ function _todoEventReminderLabel(e) {
   const days = Number(e?.remind_days ?? -1);
   if (!Number.isFinite(days) || days < 0) return '';
   return days === 0 ? 'یادآوری در همان روز' : `یادآوری ${fa(days)} روز قبل`;
+}
+
+function _todoEventRepeatLabel(e) {
+  const repeat = e?.repeat || 'none';
+  if (repeat === 'weekly') return 'هفتگی';
+  if (repeat === 'every_days') return `هر ${fa(Math.max(1, Number(e.repeat_days) || 1))} روز`;
+  if (repeat === 'monthly') return 'ماهانه';
+  if (repeat === 'yearly') return 'سالانه';
+  return '';
+}
+
+function _syncTodoEventRepeatDays() {
+  const wrap = document.getElementById('cal-event-repeat-days-wrap');
+  if (wrap) wrap.style.display = document.getElementById('cal-event-repeat')?.value === 'every_days' ? 'block' : 'none';
 }
 
 function _clearStudentBirthday(studentId) {
@@ -22384,10 +22402,17 @@ function openAddTodoCalendarEvent(date = _todoCalendarSelectedDate || _todayJala
       </div>
       <div class="form-group">
         <label class="form-label">تکرار</label>
-        <select class="form-input" id="cal-event-repeat">
+        <select class="form-input" id="cal-event-repeat" onchange="_syncTodoEventRepeatDays()">
           <option value="none">بدون تکرار</option>
-          <option value="yearly">هر سال</option>
+          <option value="weekly">هفتگی</option>
+          <option value="every_days">هر X روز</option>
+          <option value="monthly">ماهانه</option>
+          <option value="yearly">سالانه</option>
         </select>
+      </div>
+      <div class="form-group" id="cal-event-repeat-days-wrap" style="display:none">
+        <label class="form-label">تکرار هر چند روز؟</label>
+        <input class="form-input" id="cal-event-repeat-days" type="number" min="1" step="1" value="2" inputmode="numeric">
       </div>
       <div class="form-group">
         <label class="form-label">یادآوری</label>
@@ -22414,9 +22439,10 @@ function saveTodoCalendarEvent() {
   const date = document.getElementById('cal-event-date')?.value.trim();
   const type = document.getElementById('cal-event-type')?.value || 'custom';
   const repeat = document.getElementById('cal-event-repeat')?.value || 'none';
+  const repeatDays = repeat === 'every_days' ? Math.max(1, +(document.getElementById('cal-event-repeat-days')?.value || 1)) : null;
   const remindDays = +(document.getElementById('cal-event-remind')?.value ?? -1);
   if (!title || !date) { showToast('عنوان و تاریخ مناسبت را وارد کنید', 'error'); return; }
-  _db.todo_calendar_events.push({ id:_db._nextId.todo_calendar_events++, title, date_jalali:date, type, repeat, remind_days:remindDays, created_at:new Date().toISOString() });
+  _db.todo_calendar_events.push({ id:_db._nextId.todo_calendar_events++, title, date_jalali:date, type, repeat, repeat_days:repeatDays, remind_days:remindDays, created_at:new Date().toISOString() });
   _save();
   closeModal();
   _renderTodoSurface();
@@ -22718,7 +22744,7 @@ function _openTodoDayPopover(date) {
     ${events.length ? `<div style="background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.28);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text)">
       <div style="font-weight:800;margin-bottom:6px">📌 مناسبت‌ها</div>
       ${events.map(e => { const meta = _todoEventTypeMeta(e.type); const reminder = _todoEventReminderLabel(e); return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0">
-        <span>${e._reminder ? '🔔' : meta.icon} ${escapeHtml(e.title)} <span style="color:var(--text3);font-size:10px">(${e._reminder ? `برای ${DateService.disp(e._occurrence_date)}` : `${meta.label}${e.repeat==='yearly'?' · هر سال':''}${reminder?' · 🔔 '+reminder:''}`})</span></span>
+        <span>${e._reminder ? '🔔' : meta.icon} ${escapeHtml(e.title)} <span style="color:var(--text3);font-size:10px">(${e._reminder ? `برای ${DateService.disp(e._occurrence_date)}` : `${meta.label}${_todoEventRepeatLabel(e)?' · '+_todoEventRepeatLabel(e):''}${reminder?' · 🔔 '+reminder:''}`})</span></span>
         ${!e.system && !e._reminder ? `<button class="btn btn-ghost btn-sm" style="height:26px;font-size:10px;color:var(--red)" onclick="deleteTodoCalendarEvent(${e.id})">حذف</button>` : ''}
       </div>`; }).join('')}
     </div>` : ''}
