@@ -5158,8 +5158,8 @@ window.api = {
 
   keyEvents: {
     getByStudent: (sid)=>_P(_db.key_events.filter(x=>x.student_id===sid).slice().reverse()),
-    add: (p)=>{ _db.key_events.push({id:_nextId('key_events'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),text:p.text||'',remind_date:p.remind_date||null,remind_done:false,repeat_type:p.repeat_type||'none',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const e=_db.key_events.find(x=>x.id===p.id); if(e){if(p.text!==undefined)e.text=p.text;if(p.date_jalali!==undefined)e.date_jalali=p.date_jalali;if(p.remind_date!==undefined)e.remind_date=p.remind_date;if(p.remind_done!==undefined){if(p.remind_done&&e.repeat_type&&e.repeat_type!=='none'&&e.remind_date){e.remind_date=_nextRepeatDate(e.remind_date,e.repeat_type);e.remind_done=false;}else{e.remind_done=p.remind_done;}}if(p.repeat_type!==undefined)e.repeat_type=p.repeat_type;_save();} return _P({ok:true}); },
+    add: (p)=>{ _db.key_events.push({id:_nextId('key_events'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),text:p.text||'',remind_date:p.remind_date||null,remind_done:false,repeat_type:p.repeat_type||'none',repeat_days:p.repeat_days||null,created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const e=_db.key_events.find(x=>x.id===p.id); if(e){if(p.text!==undefined)e.text=p.text;if(p.date_jalali!==undefined)e.date_jalali=p.date_jalali;if(p.remind_date!==undefined)e.remind_date=p.remind_date;if(p.repeat_type!==undefined)e.repeat_type=p.repeat_type;if(p.repeat_days!==undefined)e.repeat_days=p.repeat_days;if(p.remind_done!==undefined){if(p.remind_done&&e.repeat_type&&e.repeat_type!=='none'&&e.remind_date){e.remind_date=_nextRepeatDate(e.remind_date,e.repeat_type,e.repeat_days);e.remind_done=false;}else{e.remind_done=p.remind_done;}}_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.key_events=_db.key_events.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -16496,11 +16496,12 @@ async function saveEditTopic(topicId, studentId, displayName) {
 // ── Key events (per-student important notes board) ───────────────────────────
 
 // محاسبه تاریخ بعدی تکرار یادآوری
-function _nextRepeatDate(dateStr, repeatType) {
+function _nextRepeatDate(dateStr, repeatType, repeatDays = null) {
   const parts = _jalaliParse(dateStr);
   if (!parts || !parts[0]) return dateStr;
   let [jy, jm, jd] = parts;
   if (repeatType === 'daily') { jd += 1; }
+  else if (repeatType === 'every_days') { return _formatJalali(..._addDays(jy, jm, jd, Math.max(1, Number(repeatDays) || 1))); }
   else if (repeatType === 'weekly') { jd += 7; }
   else if (repeatType === 'biweekly') { jd += 14; }
   else if (repeatType === 'monthly') { jm += 1; if (jm > 12) { jm = 1; jy++; } }
@@ -16511,6 +16512,17 @@ function _nextRepeatDate(dateStr, repeatType) {
   const maxDay = jm <= 6 ? 31 : (jm <= 11 ? 30 : 29);
   if (jd > maxDay) { jd -= maxDay; jm++; if (jm > 12) { jm = 1; jy++; } }
   return _formatJalali(jy, jm, jd);
+}
+
+function _syncKeyEventRepeatDays(prefix) {
+  const select = document.getElementById(prefix + '-repeat');
+  const wrap = document.getElementById(prefix + '-repeat-days-wrap');
+  if (wrap) wrap.style.display = select?.value === 'every_days' ? 'block' : 'none';
+}
+
+function _readKeyEventRepeatDays(prefix) {
+  if (document.getElementById(prefix + '-repeat')?.value !== 'every_days') return null;
+  return Math.max(1, +(document.getElementById(prefix + '-repeat-days')?.value || 1));
 }
 
 async function openKeyEvents(studentId, displayName) {
@@ -16557,9 +16569,10 @@ async function openKeyEvents(studentId, displayName) {
       </div>
       <div class="form-group">
         <label class="form-label">🔁 تکرار یادآوری</label>
-        <select class="form-select" id="f-ke-repeat">
+        <select class="form-select" id="f-ke-repeat" onchange="_syncKeyEventRepeatDays('f-ke')">
           <option value="none">بدون تکرار</option>
           <option value="daily">روزانه</option>
+          <option value="every_days">هر X روز</option>
           <option value="weekly">هفتگی</option>
           <option value="biweekly">دو هفته یک‌بار</option>
           <option value="monthly">ماهانه</option>
@@ -16567,6 +16580,10 @@ async function openKeyEvents(studentId, displayName) {
           <option value="quarterly">سه ماه یک‌بار</option>
           <option value="yearly">سالانه</option>
         </select>
+      </div>
+      <div class="form-group" id="f-ke-repeat-days-wrap" style="display:none">
+        <label class="form-label">هر چند روز؟</label>
+        <input class="form-input" id="f-ke-repeat-days" type="number" min="1" step="1" value="2" inputmode="numeric">
       </div>
     </div>
     <div style="margin-top:8px">
@@ -16588,7 +16605,8 @@ async function saveKeyEvent(studentId, displayName) {
   const remindDate = document.getElementById('f-ke-remind')?.value.trim() || null;
   const repeatType = document.getElementById('f-ke-repeat')?.value || 'none';
   if (!text) { showToast('متن رویداد را وارد کنید', 'error'); return; }
-  await window.api.keyEvents.add({ student_id: studentId, date, text, remind_date: remindDate, repeat_type: repeatType });
+  const repeatDays = _readKeyEventRepeatDays('f-ke');
+  await window.api.keyEvents.add({ student_id: studentId, date, text, remind_date: remindDate, repeat_type: repeatType, repeat_days:repeatDays });
   showToast('رویداد ثبت شد ✓', 'success');
   await openKeyEvents(studentId, displayName);
 }
@@ -16613,9 +16631,10 @@ async function openEditKeyEvent(id, studentId, displayName) {
       </div>
       <div class="form-group">
         <label class="form-label">🔁 تکرار یادآوری</label>
-        <select class="form-select" id="f-ke-edit-repeat">
+        <select class="form-select" id="f-ke-edit-repeat" onchange="_syncKeyEventRepeatDays('f-ke-edit')">
           <option value="none" ${(e.repeat_type||'none')==='none'?'selected':''}>بدون تکرار</option>
           <option value="daily" ${e.repeat_type==='daily'?'selected':''}>روزانه</option>
+          <option value="every_days" ${e.repeat_type==='every_days'?'selected':''}>هر X روز</option>
           <option value="weekly" ${e.repeat_type==='weekly'?'selected':''}>هفتگی</option>
           <option value="biweekly" ${e.repeat_type==='biweekly'?'selected':''}>دو هفته یک‌بار</option>
           <option value="monthly" ${e.repeat_type==='monthly'?'selected':''}>ماهانه</option>
@@ -16623,6 +16642,10 @@ async function openEditKeyEvent(id, studentId, displayName) {
           <option value="quarterly" ${e.repeat_type==='quarterly'?'selected':''}>سه ماه یک‌بار</option>
           <option value="yearly" ${e.repeat_type==='yearly'?'selected':''}>سالانه</option>
         </select>
+      </div>
+      <div class="form-group" id="f-ke-edit-repeat-days-wrap" style="display:${e.repeat_type==='every_days'?'block':'none'}">
+        <label class="form-label">هر چند روز؟</label>
+        <input class="form-input" id="f-ke-edit-repeat-days" type="number" min="1" step="1" value="${Math.max(1, Number(e.repeat_days) || 2)}" inputmode="numeric">
       </div>
     </div>
     ${e.remind_date && !e.remind_done ? '<div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-ke-edit-done" style="width:16px;height:16px"> یادآوری انجام شده (دوره بعدی شروع می‌شود)</label></div>' : ''}
@@ -16640,7 +16663,8 @@ async function saveEditKeyEvent(id, studentId, displayName) {
   const remindDone = document.getElementById('f-ke-edit-done')?.checked || false;
   const repeatType = document.getElementById('f-ke-edit-repeat')?.value || 'none';
   if (!text) { showToast('متن رویداد را وارد کنید', 'error'); return; }
-  await window.api.keyEvents.update({ id, text, date_jalali: dateJalali, remind_date: remindDate, remind_done: remindDone, repeat_type: repeatType });
+  const repeatDays = _readKeyEventRepeatDays('f-ke-edit');
+  await window.api.keyEvents.update({ id, text, date_jalali: dateJalali, remind_date: remindDate, remind_done: remindDone, repeat_type: repeatType, repeat_days:repeatDays });
   showToast('ویرایش ذخیره شد ✓', 'success');
   await openKeyEvents(studentId, displayName);
 }
