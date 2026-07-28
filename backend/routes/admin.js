@@ -78,6 +78,30 @@ router.get('/stats', auth, adminOnly, (req, res) => {
     ensureWalletTables();
     ensureAdminAccountColumns();
     const users = db.prepare("SELECT a.id,a.name,a.email,a.role,a.plan,a.is_active,a.created_at,a.updated_at,a.subscription_until,(SELECT COUNT(*) FROM clients WHERE account_id=a.id) as client_count,(SELECT COALESCE(SUM(amount),0) FROM payments WHERE account_id=a.id AND status='paid') as total_income FROM accounts a ORDER BY a.created_at DESC").all();
+    const one = (sql) => Number(db.prepare(sql).pluck().get() || 0);
+    const monthSeries = (table, valueSql='COUNT(*)', dateColumn='created_at', where='1=1') =>
+      db.prepare(`SELECT strftime('%Y-%m',${dateColumn}) label, ${valueSql} value FROM ${table} WHERE ${where} AND ${dateColumn}>=date('now','start of month','-5 months') GROUP BY label ORDER BY label`).all();
+    const dashboard = {
+      totalUsers: users.length,
+      totalUsersPrevious: one("SELECT COUNT(*) FROM accounts WHERE created_at < date('now','start of month')"),
+      activeToday: one("SELECT COUNT(*) FROM accounts WHERE is_active=1 AND date(updated_at)=date('now')"),
+      activeYesterday: one("SELECT COUNT(*) FROM accounts WHERE is_active=1 AND date(updated_at)=date('now','-1 day')"),
+      newThisMonth: one("SELECT COUNT(*) FROM accounts WHERE created_at>=date('now','start of month')"),
+      newPreviousMonth: one("SELECT COUNT(*) FROM accounts WHERE created_at>=date('now','start of month','-1 month') AND created_at<date('now','start of month')"),
+      inactiveUsers: one("SELECT COUNT(*) FROM accounts WHERE is_active=0"),
+      inactivePreviousPeriod: one("SELECT COUNT(*) FROM accounts WHERE is_active=0 AND created_at<date('now','start of month')"),
+      paidUsers: one("SELECT COUNT(*) FROM accounts WHERE lower(COALESCE(plan,'free')) NOT IN ('free','رایگان','')"),
+      paidPreviousPeriod: one("SELECT COUNT(*) FROM accounts WHERE lower(COALESCE(plan,'free')) NOT IN ('free','رایگان','') AND created_at<date('now','start of month')"),
+      monthlyRevenue: one("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='paid' AND created_at>=date('now','start of month')"),
+      previousMonthlyRevenue: one("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='paid' AND created_at>=date('now','start of month','-1 month') AND created_at<date('now','start of month')"),
+      series: {
+        registrations: monthSeries('accounts'),
+        activity: db.prepare("SELECT date(updated_at) label,COUNT(*) value FROM accounts WHERE is_active=1 AND updated_at>=date('now','-6 days') GROUP BY label ORDER BY label").all(),
+        inactive: monthSeries('accounts','COUNT(*)','created_at',"is_active=0"),
+        paid: monthSeries('accounts','COUNT(*)','created_at',"lower(COALESCE(plan,'free')) NOT IN ('free','رایگان','')"),
+        revenue: monthSeries('payments','COALESCE(SUM(amount),0)','created_at',"status='paid'")
+      }
+    };
     const settings = getAdminSettings();
     const chargeReqs = db.prepare(`
       SELECT r.id, r.account_id AS user_id, a.email, a.name, r.amount, r.receipt_text, r.status, r.created_at
@@ -86,7 +110,24 @@ router.get('/stats', auth, adminOnly, (req, res) => {
       ORDER BY r.created_at DESC
       LIMIT 100
     `).all();
-    res.json({ userCount: users.length, users: users.map(u=>({...u,wallet:u.total_income})), chargeReqs, settings });
+    res.json({ userCount: users.length, users: users.map(u=>({...u,wallet:u.total_income})), dashboard, chargeReqs, settings });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users', auth, adminOnly, async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    const role = req.body.role === 'admin' ? 'admin' : 'user';
+    const plan = ['free','basic','pro','enterprise'].includes(req.body.plan) ? req.body.plan : 'free';
+    if (!name || !email || password.length < 6) return res.status(400).json({ error: 'invalid user data' });
+    if (db.prepare('SELECT id FROM accounts WHERE email=?').get(email)) return res.status(409).json({ error: 'email already exists' });
+    const id = randomUUID();
+    const passwordHash = await bcrypt.hash(password, 10);
+    db.prepare("INSERT INTO accounts (id,name,email,password,role,plan,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,datetime('now'),datetime('now'))")
+      .run(id, name, email, passwordHash, role, plan);
+    res.status(201).json({ success: true, id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
