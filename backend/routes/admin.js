@@ -73,6 +73,75 @@ function saveAdminSettings(settings) {
   }
 }
 
+// نسخه پشتیبان جامع مدیر: اطلاعات احراز هویت (رمز و توکن‌ها) عمداً
+// در خروجی قرار نمی‌گیرند، اما داده اصلی برنامه و رکوردهای وابسته هر حساب
+// نگهداری می‌شوند تا فایل برای آرشیو و بازیابی فنی کامل باشد.
+router.get('/backup/all', auth, adminOnly, (req, res) => {
+  try {
+    ensureWalletTables();
+    ensureAdminAccountColumns();
+    const exportedAt = new Date().toISOString();
+    const accounts = db.prepare(`
+      SELECT id,name,email,business_name,business_type,role,plan,is_active,
+             subscription_until,created_at,updated_at
+      FROM accounts
+      ORDER BY created_at
+    `).all();
+    const appDataRows = db.prepare(`
+      SELECT account_id,data,updated_at
+      FROM user_data
+      WHERE account_id <> '__admin_settings__'
+    `).all();
+    const appDataByAccount = new Map(appDataRows.map(row => {
+      let data = null;
+      try { data = JSON.parse(row.data); } catch (_) { data = row.data; }
+      return [String(row.account_id), { data, updated_at: row.updated_at }];
+    }));
+    const accountTables = [
+      'clients', 'staff', 'payments', 'staff_payments', 'sessions', 'tasks',
+      'reminders', 'files', 'user_wallets', 'wallet_transactions',
+      'wallet_charge_requests'
+    ];
+    const existingTables = new Set(
+      db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name)
+    );
+    const records = {};
+    for (const table of accountTables) {
+      if (existingTables.has(table)) {
+        const rows = db.prepare(`SELECT * FROM ${table} ORDER BY account_id`).all();
+        records[table] = table === 'staff'
+          ? rows.map(({ password, ...safeStaff }) => safeStaff)
+          : rows;
+      }
+    }
+    const adminSettings = getAdminSettings();
+    const backup = {
+      meta: {
+        product: 'TeamPulse',
+        type: 'all-users-admin-backup',
+        version: '1.0.0',
+        exported_at: exportedAt,
+        exported_by: req.user.id,
+        user_count: accounts.length
+      },
+      users: accounts.map(account => ({
+        account,
+        app_data: appDataByAccount.get(String(account.id)) || null
+      })),
+      records,
+      admin_settings: adminSettings
+    };
+    const stamp = exportedAt.replace(/[:.]/g, '-');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `attachment; filename=TeamPulse-all-users-backup-${stamp}.json`);
+    res.send(JSON.stringify(backup, null, 2));
+  } catch(e) {
+    console.error('Admin all-users backup failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/stats', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();

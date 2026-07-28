@@ -26270,6 +26270,7 @@ async function renderAdminPanel() {
     <div class="admin-content">
       <div class="admin-actions" aria-label="اقدامات اصلی مدیریت">
         <button class="btn btn-primary" onclick="_adminOpenCreateUser()">＋ افزودن کاربر</button>
+        <button class="btn btn-ghost" onclick="_adminBackupAllUsers(this)">💾 پشتیبان کل کاربران</button>
         <button class="btn btn-ghost" onclick="_adminExportAll()">📊 خروجی Excel</button>
         <button class="btn btn-ghost" onclick="_adminNotifyAll()">🔔 ارسال اعلان</button>
         <button class="btn btn-ghost" onclick="renderAdminPanel()">↻ بروزرسانی اطلاعات</button>
@@ -26454,6 +26455,31 @@ async function _adminCreateUser(){
   showToast(res.status===409?'این ایمیل قبلاً ثبت شده است':'ایجاد کاربر ناموفق بود','error');
 }
 function _adminExportAll(){_adminExportUsers(window._adminAllUsers||[])}
+async function _adminBackupAllUsers(button){
+  if(!confirm('از داده‌های همه کاربران یک فایل پشتیبان جامع تهیه شود؟')) return;
+  const oldLabel = button?.innerHTML;
+  if(button){ button.disabled=true; button.innerHTML='⏳ در حال تهیه پشتیبان...'; }
+  try {
+    const res = await _apiFetch('/api/admin/backup/all');
+    if(!res.ok) throw new Error('backup failed');
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const matched = disposition.match(/filename="?([^";]+)"?/i);
+    const fallback = 'TeamPulse-all-users-backup-' + new Date().toISOString().slice(0,10) + '.json';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = matched?.[1] || fallback;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    showToast('پشتیبان کل کاربران ذخیره شد ✓','success');
+  } catch(e) {
+    showToast('تهیه پشتیبان کل کاربران ناموفق بود','error');
+  } finally {
+    if(button){ button.disabled=false; button.innerHTML=oldLabel; }
+  }
+}
 function _adminNotifyAll(){
   const ids=(window._adminAllUsers||[]).map(u=>String(u.id));
   if(!ids.length)return showToast('کاربری برای ارسال اعلان وجود ندارد','error');
