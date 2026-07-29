@@ -13771,11 +13771,11 @@ async function openSalaryTransfer(staffId) {
     _currentMenuId = null;
   }
 
-  // Inline menu actions often stop propagation. Close explicitly after choosing
-  // an item so the cloned portal never remains floating over the next screen/modal.
+  // Inline menu actions often stop propagation. Listen in capture phase so the
+  // close is scheduled before those handlers can stop the bubbling phase.
   portal.addEventListener('click', function (event) {
     if (event.target.closest('.row-menu-item')) setTimeout(closePortal, 0);
-  });
+  }, true);
 
   // Close on outside click
   document.addEventListener('click', closePortal);
