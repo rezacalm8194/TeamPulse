@@ -9827,6 +9827,23 @@ function _resetSessionTimer() {
   _sessionTimerStartedAt = 0;
 }
 
+function _sessionTimerTotalSeconds() {
+  return _sessionTimerElapsed + (_sessionTimerInterval
+    ? Math.floor((Date.now() - _sessionTimerStartedAt) / 1000)
+    : 0);
+}
+
+function _appendSessionTimerToNote(note) {
+  const total = _sessionTimerTotalSeconds();
+  const text = String(note || '').trimEnd();
+  if (total <= 0) return text;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  const durationLine = `مدت زمان جلسه: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const withoutPreviousDuration = text.replace(/(?:\r?\n){0,2}مدت زمان جلسه:\s*\d+:\d+\s*$/u, '').trimEnd();
+  return withoutPreviousDuration ? `${withoutPreviousDuration}\n\n${durationLine}` : durationLine;
+}
+
 function _bindSessionTextareaVisibilityGuard() {
   const ta = document.getElementById('f-ses-note');
   if (!ta || ta.dataset.visibilityGuard === '1') return;
@@ -9893,7 +9910,7 @@ async function saveSessionGeneral() {
   const date = document.getElementById('f-ses-date')?.value;
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
   const title = document.getElementById('f-ses-title')?.value || '';
-  const note = document.getElementById('f-ses-note')?.value;
+  const note = _appendSessionTimerToNote(document.getElementById('f-ses-note')?.value);
   const addAsTopic = document.getElementById('f-ses-add-topic')?.checked;
   const { formId: autoFormId, pid: autoPid } = _matchPeriodForDate(studentId, date);
   await window.api.sessions.add({
@@ -10064,7 +10081,7 @@ async function saveEditSession(sessionId) {
   const date = document.getElementById('f-ses-date')?.value;
   const { formId: autoFormId, pid: autoPid } = studentId ? _matchPeriodForDate(studentId, date) : { formId: null, pid: null };
   const title = document.getElementById('f-ses-title')?.value || '';
-  const note = document.getElementById('f-ses-note')?.value;
+  const note = _appendSessionTimerToNote(document.getElementById('f-ses-note')?.value);
   await window.api.sessions.update({
     id: sessionId,
     title,
