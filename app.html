@@ -11687,6 +11687,9 @@ async function renderSettings() {
         <button class="btn btn-ghost" id="push-reregister-btn" onclick="_enablePushFromSettings()" style="display:none">
           🔄 ثبت مجدد این دستگاه
         </button>
+        <button class="btn btn-ghost" id="push-test-btn" onclick="_testPushFromSettings()" style="display:none">
+          🧪 ارسال اعلان آزمایشی
+        </button>
         <button class="btn btn-ghost" id="push-disable-btn" onclick="_disablePushFromSettings()" style="display:none;color:var(--red);border-color:var(--red)">
           🔕 غیرفعال کردن نوتیفیکیشن
         </button>
@@ -17013,6 +17016,9 @@ async function init() {
   // Schedule نوتیفیکیشن‌ها بعد از load
   clearTimeout(window._todoNotificationsScheduleTimer);
   window._todoNotificationsScheduleTimer = setTimeout(_scheduleTodoNotifications, 2000);
+  // اشتراک موجود مرورگر را در هر ورود دوباره با سرور همگام کن؛ ممکن است
+  // رکورد سمت سرور پاک/منقضی شده باشد، درحالی‌که مرورگر هنوز آن را فعال نشان دهد.
+  setTimeout(_refreshReminderPushRegistration, 2500);
     // Sync default account name to separate storage key
     // نکته: در دسترسی هم‌تیمی META.appTitle نام/عنوان کسب‌وکار کارفرماست، نه
     // میزکار خودِ کاربر؛ اگر اینجا ذخیره‌اش کنیم روی حساب account-name-display
@@ -24657,6 +24663,26 @@ async function _ensureReminderPushEnabled(statusId) {
   }
 }
 
+async function _refreshReminderPushRegistration() {
+  if (!_sbSession?.token) return false;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
+  if (Notification.permission !== 'granted') return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return false;
+    const res = await _apiFetch('/api/reminders/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ subscription: sub, ..._pushSubscriptionContext() }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return true;
+  } catch (e) {
+    console.warn('[Push] subscription refresh failed:', e.message);
+    return false;
+  }
+}
+
 
 
 function _urlB64ToUint8Array(base64String) {
@@ -24672,6 +24698,7 @@ async function _disablePushFromSettings() {
   const enableBtn = document.getElementById('push-enable-btn');
   const reBtn = document.getElementById('push-reregister-btn');
   const disBtn = document.getElementById('push-disable-btn');
+  const testBtn = document.getElementById('push-test-btn');
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -24688,6 +24715,7 @@ async function _disablePushFromSettings() {
     if (enableBtn) enableBtn.style.display='inline-flex';
     if (reBtn) reBtn.style.display='none';
     if (disBtn) disBtn.style.display='none';
+    if (testBtn) testBtn.style.display='none';
     showToast('نوتیفیکیشن غیرفعال شد', 'error');
   } catch(e) {
     showToast('خطا: ' + e.message, 'error');
@@ -24725,7 +24753,11 @@ async function _enablePushFromSettings() {
 
     if (statusBox) { statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)'; statusBox.textContent='✅ نوتیفیکیشن روی این دستگاه فعال شد'; }
     if (enableBtn) enableBtn.style.display='none';
-    if (reBtn) reBtn.style.display='none';
+    if (reBtn) reBtn.style.display='inline-flex';
+    const testBtn = document.getElementById('push-test-btn');
+    if (testBtn) testBtn.style.display='inline-flex';
+    const disBtn = document.getElementById('push-disable-btn');
+    if (disBtn) disBtn.style.display='inline-flex';
     showToast('نوتیفیکیشن فعال شد ✓', 'success');
   } catch(e) {
     if (statusBox) { statusBox.textContent='❌ خطا: ' + e.message; }
@@ -24755,12 +24787,34 @@ async function _checkPushStatusForSettings() {
     statusBox.style.background='rgba(62,207,142,.08)'; statusBox.style.borderColor='rgba(62,207,142,.3)'; statusBox.style.color='var(--green)';
     statusBox.textContent = '✅ نوتیفیکیشن روی این دستگاه فعاله';
     if (reBtn) reBtn.style.display='inline-flex';
+    const testBtn = document.getElementById('push-test-btn');
+    if (testBtn) testBtn.style.display='inline-flex';
     const disBtn2 = document.getElementById('push-disable-btn');
     if (disBtn2) disBtn2.style.display='inline-flex';
   } else {
     statusBox.style.background='rgba(251,191,36,.08)'; statusBox.style.borderColor='rgba(251,191,36,.3)'; statusBox.style.color='var(--amber)';
     statusBox.textContent = '⚠️ نوتیفیکیشن روی این دستگاه فعال نیست';
     if (enableBtn) enableBtn.style.display='inline-flex';
+  }
+}
+
+async function _testPushFromSettings() {
+  const btn = document.getElementById('push-test-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await _apiFetch('/api/reminders/test-push', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.error === 'push_subscription_not_found') {
+        throw new Error('این دستگاه هنوز روی سرور ثبت نشده؛ «ثبت مجدد این دستگاه» را بزن');
+      }
+      throw new Error('ارسال آزمایشی ناموفق بود');
+    }
+    showToast('اعلان آزمایشی ارسال شد؛ باید تا چند لحظه دیگر نمایش داده شود ✓', 'success');
+  } catch (e) {
+    showToast(e.message || 'ارسال آزمایشی ناموفق بود', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

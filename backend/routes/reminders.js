@@ -44,6 +44,14 @@ try {
       PRIMARY KEY (owner_account_id, member_email)
     )
   `).run();
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS push_deliveries (
+      delivery_key TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      sent_at TEXT DEFAULT (datetime('now'))
+    )
+  `).run();
 } catch(e) {}
 
 function ensurePushSubscriptionColumn(name, ddl) {
@@ -234,7 +242,7 @@ function iranWallTimeToUTC(gy, gm, gd, timeStr) {
 }
 
 async function sendPushSubscriptions(subs, title, body, options = {}) {
-  if (!subs.length) return;
+  if (!subs.length) return { sent: 0, failed: 0 };
 
   const payload = JSON.stringify({
     title: '⏰ ' + title,
@@ -245,19 +253,26 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     kind: options.kind || 'reminder',
   });
   const sentEndpoints = new Set();
+  let sent = 0;
+  let failed = 0;
 
   for (const s of subs) {
     if (sentEndpoints.has(s.endpoint)) continue;
     sentEndpoints.add(s.endpoint);
     try {
       await webpush.sendNotification(JSON.parse(s.subscription), payload);
+      sent++;
     } catch (e) {
+      failed++;
       // subscription منقضی شده → پاکش کن
       if (e.statusCode === 410 || e.statusCode === 404) {
         db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(s.id);
+      } else {
+        console.error(`[Push] delivery failed (${e.statusCode || 'unknown'}):`, e.message);
       }
     }
   }
+  return { sent, failed };
 }
 
 // ── ارسال push فقط به صاحب حساب ───────────────────────────────
@@ -269,7 +284,7 @@ async function pushToOwner(accountId, title, body) {
     WHERE account_id=?
       AND (scope IS NULL OR scope!='team')
   `).all(accountId).filter(sub => isOwnerSubscription(sub, accountId, ownerEmail));
-  await sendPushSubscriptions(subs, title, body);
+  return sendPushSubscriptions(subs, title, body);
 }
 
 // ── ارسال push تسک به صاحب حساب و پرسنل مرتبط ─────────────────
@@ -280,7 +295,7 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
     FROM push_subscriptions
     WHERE account_id=?
   `).all(accountId);
-  if (!subs.length) return;
+  if (!subs.length) return { sent: 0, failed: 0 };
 
   const allowed = [];
   for (const sub of subs) {
@@ -296,7 +311,7 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
       allowed.push(sub);
     }
   }
-  await sendPushSubscriptions(allowed, title, body, {
+  return sendPushSubscriptions(allowed, title, body, {
     tag: todo?.id != null ? 'todo-' + todo.id : undefined,
     todoId: todo?.id || null,
     kind: 'todo',
@@ -304,7 +319,54 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
 }
 
 // ── Cron: هر دقیقه ─────────────────────────────────────────────
-const sentSet = new Set();
+const PUSH_CATCH_UP_MS = 6 * 60 * 60 * 1000;
+
+function isDueForPush(now, scheduledAt, catchUpMs = PUSH_CATCH_UP_MS) {
+  if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return false;
+  const lateBy = now.getTime() - scheduledAt.getTime();
+  return lateBy >= 0 && lateBy <= catchUpMs;
+}
+
+function claimPushDelivery(deliveryKey, accountId, kind) {
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO push_deliveries (delivery_key, account_id, kind)
+    VALUES (?, ?, ?)
+  `).run(deliveryKey, accountId, kind);
+  return result.changes > 0;
+}
+
+function releasePushDelivery(deliveryKey) {
+  db.prepare('DELETE FROM push_deliveries WHERE delivery_key=?').run(deliveryKey);
+}
+
+async function deliverOnce(deliveryKey, accountId, kind, send) {
+  if (!claimPushDelivery(deliveryKey, accountId, kind)) return false;
+  try {
+    const result = await send();
+    if (!result || result.sent < 1) {
+      releasePushDelivery(deliveryKey);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    releasePushDelivery(deliveryKey);
+    throw e;
+  }
+}
+
+function jalaliDayKey(value) {
+  const parts = parseJalali(value);
+  if (!parts) return null;
+  const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+  return gy * 10000 + gm * 100 + gd;
+}
+
+function reminderBody(item, personName = '') {
+  const amount = Number(item?.amount || 0);
+  const amountText = amount ? ` — مبلغ ${amount.toLocaleString('fa-IR')} تومان` : '';
+  const noteText = item?.note ? ` — ${String(item.note).slice(0, 60)}` : '';
+  return `${personName ? personName + ' — ' : ''}سررسید ${item.due_date_jalali || ''}${amountText}${noteText}`;
+}
 
 cron.schedule('* * * * *', async () => {
   try {
@@ -325,17 +387,16 @@ cron.schedule('* * * * *', async () => {
           continue;
         }
 
-        const key = `${acc.id}_${t.id}_${t.date_jalali}`;
-        if (sentSet.has(key)) continue;
-
         const taskUTC = jalaliToUTC(t.date_jalali, t.time);
         if (!taskUTC) continue;
 
         const notifUTC = new Date(taskUTC.getTime() - t.remind_min * 60000);
-        if (Math.abs(now - notifUTC) <= 60000) {
+        if (isDueForPush(now, notifUTC)) {
+          const key = `todo:${acc.id}:${t.id}:${t.date_jalali}:${t.time}:${t.remind_min}`;
           console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
-          sentSet.add(key);
-          await pushTodoToRecipients(acc.id, userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`);
+          await deliverOnce(key, acc.id, 'todo', () =>
+            pushTodoToRecipients(acc.id, userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
+          );
         }
       }
 
@@ -343,17 +404,59 @@ cron.schedule('* * * * *', async () => {
       for (const h of (userData.habits || [])) {
         if (h.archived || !h.time || !(h.remind_min > 0)) continue;
 
-        const key = `${acc.id}_habit_${h.id}_${today.key}`;
-        if (sentSet.has(key)) continue;
-
         const habitUTC = iranWallTimeToUTC(today.gy, today.gm, today.gd, h.time);
         if (!habitUTC) continue;
 
         const notifUTC = new Date(habitUTC.getTime() - h.remind_min * 60000);
-        if (Math.abs(now - notifUTC) <= 60000) {
+        if (isDueForPush(now, notifUTC)) {
+          const key = `habit:${acc.id}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
           console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
-          sentSet.add(key);
-          await pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`);
+          await deliverOnce(key, acc.id, 'habit', () =>
+            pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`)
+          );
+        }
+      }
+
+      // یادآوری‌های بدون ساعت (مالی، حقوق و رویدادهای مهم) از ساعت ۹
+      // به وقت ایران، یک‌بار برای هر سررسید ارسال می‌شوند.
+      const iranNow = new Date(now.getTime() + IRAN_OFFSET_MS);
+      if (iranNow.getUTCHours() >= 9) {
+        const todayDayKey = today.gy * 10000 + today.gm * 100 + today.gd;
+        const studentNames = new Map((userData.students || []).map(s => [
+          String(s.id), `${s.name || ''} ${s.lname || ''}`.trim(),
+        ]));
+        const staffNames = new Map((userData.staff || []).map(s => [
+          String(s.id), `${s.name || ''} ${s.lname || ''}`.trim(),
+        ]));
+
+        for (const r of (userData.reminders || [])) {
+          const dueDayKey = jalaliDayKey(r.due_date_jalali);
+          if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
+          const key = `financial:${acc.id}:${r.id}:${r.due_date_jalali}`;
+          const name = studentNames.get(String(r.student_id)) || '';
+          await deliverOnce(key, acc.id, 'financial-reminder', () =>
+            pushToOwner(acc.id, r.title || 'یادآوری پرداخت', reminderBody(r, name))
+          );
+        }
+
+        for (const r of (userData.staff_reminders || [])) {
+          const dueDayKey = jalaliDayKey(r.due_date_jalali);
+          if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
+          const key = `staff:${acc.id}:${r.id}:${r.due_date_jalali}`;
+          const name = staffNames.get(String(r.staff_id)) || '';
+          await deliverOnce(key, acc.id, 'staff-reminder', () =>
+            pushToOwner(acc.id, r.title || 'یادآوری حقوق', reminderBody(r, name))
+          );
+        }
+
+        for (const e of (userData.key_events || [])) {
+          const dueDayKey = jalaliDayKey(e.remind_date);
+          if (e.remind_done || !dueDayKey || dueDayKey > todayDayKey) continue;
+          const key = `key-event:${acc.id}:${e.id}:${e.remind_date}`;
+          const name = studentNames.get(String(e.student_id)) || '';
+          await deliverOnce(key, acc.id, 'key-event', () =>
+            pushToOwner(acc.id, '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`)
+          );
         }
       }
     }
@@ -423,11 +526,30 @@ router.get('/vapid-key', (req, res) => {
   res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
 });
 
-// ── API: تست push (فقط ادمین) ──────────────────────────────────
+// ── API: تست push برای دستگاه‌های کاربر فعلی ───────────────────
 router.post('/test-push', auth, async (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
-  await pushToOwner(req.user.id, 'تست نوتیفیکیشن TeamPulse', 'اگه این رو میبینی، Push کار می‌کنه! ✅');
-  res.json({ success: true });
+  const email = String(req.user.email || '').trim().toLowerCase();
+  const subs = db.prepare(`
+    SELECT id, endpoint, subscription
+    FROM push_subscriptions
+    WHERE subscriber_user_id=?
+       OR (
+         (subscriber_user_id IS NULL OR subscriber_user_id='')
+         AND account_id=?
+         AND lower(COALESCE(subscriber_email, ?))=?
+       )
+  `).all(req.user.id, req.user.id, email, email);
+  if (!subs.length) return res.status(409).json({ error: 'push_subscription_not_found' });
+  const result = await sendPushSubscriptions(
+    subs,
+    'تست نوتیفیکیشن TeamPulse',
+    'ارسال اعلان و یادآوری روی این دستگاه درست کار می‌کند ✅',
+    { tag: 'push-self-test', kind: 'test' }
+  );
+  if (result.sent < 1) {
+    return res.status(502).json({ error: 'push_delivery_failed', ...result });
+  }
+  res.json({ success: true, ...result });
 });
 
 module.exports = router;
