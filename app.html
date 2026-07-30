@@ -8771,17 +8771,6 @@ async function savePayment(studentId) {
 // PURCHASES PAGE (all packages history)
 // ════════════════════════════════════════════════════════════════════════════
 
-function _jalaliToGregorianStr(jalaliStr) {
-  if (!jalaliStr) return '';
-  try {
-    const p = _jalaliParse(jalaliStr);
-    if (!p || !p[0]) return '';
-    const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return gd + ' ' + months[gm-1] + ' ' + gy;
-  } catch(e) { return ''; }
-}
-
 async function renderPurchases(search = '') {
   updateTopbarActions(`
     <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -8807,7 +8796,6 @@ async function renderPurchases(search = '') {
         <td style="color:var(--text2)">
           <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
           <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date||p.start_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
-          ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${DateService.isGregorian() ? p.start_date : _jalaliToGregorianStr(p.start_date)}</div>` : ''}
         </td>
         <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
         <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -9202,7 +9190,6 @@ async function renderPayments(search = '') {
           <td style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
             <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date||p.start_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
-            ${p.start_date ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${DateService.isGregorian() ? p.start_date : _jalaliToGregorianStr(p.start_date)}</div>` : ''}
           </td>
           <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
           <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -10367,7 +10354,6 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
       <td>${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
       <td>
         <div>${DateService.disp(r.due_date_jalali)}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px;direction:ltr;text-align:right">${_jalaliToGregorianStr(r.due_date_jalali)}</div>
       </td>
       <td>${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
       <td style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? `هر ${fa(r.repeat_months)} ماه` : 'یک‌بار'}</td>
