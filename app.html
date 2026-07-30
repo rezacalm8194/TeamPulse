@@ -8811,9 +8811,11 @@ async function renderPurchases(search = '') {
         </td>
         <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
         <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
-        <td style="display:flex;gap:5px">
-          <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
-          <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
+        <td>
+          <div style="display:flex;align-items:center;gap:5px">
+            <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
+          </div>
         </td>
       </tr>`;
     });
@@ -9204,9 +9206,11 @@ async function renderPayments(search = '') {
           </td>
           <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
           <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
-          <td style="display:flex;gap:5px">
-            <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
+          <td>
+            <div style="display:flex;align-items:center;gap:5px">
+              <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
+            </div>
           </td>
         </tr>`;
       });
@@ -9235,9 +9239,11 @@ async function renderPayments(search = '') {
           <td style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
           <td>${student ? balanceHtml(student.balance) : '—'}</td>
           <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
-          <td style="display:flex;gap:5px">
-            <button class="btn btn-ghost btn-sm" onclick="openEditPayment(${p.id})">✏️</button>
-            <button class="btn btn-danger" style="font-size:14px;padding:7px 12px" onclick="deletePayment(${p.id}, 'payments')">🗑</button>
+          <td>
+            <div style="display:flex;align-items:center;gap:5px">
+              <button class="btn btn-ghost btn-sm" onclick="openEditPayment(${p.id})">✏️</button>
+              <button class="btn btn-danger" style="font-size:14px;padding:7px 12px" onclick="deletePayment(${p.id}, 'payments')">🗑</button>
+            </div>
           </td>
         </tr>`;
       });
@@ -10189,10 +10195,12 @@ async function renderFamilies(embedded = currentPage === 'payments') {
                 <td><span class="amount-paid">${fmt(m.totalPaid)}</span></td>
                 <td>${m.wallet > 0 ? fmt(m.wallet) : '—'}</td>
                 <td>${balanceHtml(m.balance)}</td>
-                <td style="display:flex;gap:4px;flex-wrap:wrap">
-                  <button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${m.id})">جزئیات</button>
-                  <button class="btn btn-ghost btn-sm" onclick="closeModal?.();openAddPayment(${m.id})">💳 پرداخت جدید</button>
-                  <button class="btn btn-ghost btn-sm" onclick="openNewPurchase(${m.id})">🛒 خرید جدید</button>
+                <td>
+                  <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+                    <button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${m.id})">جزئیات</button>
+                    <button class="btn btn-ghost btn-sm" onclick="closeModal?.();openAddPayment(${m.id})">💳 پرداخت جدید</button>
+                    <button class="btn btn-ghost btn-sm" onclick="openNewPurchase(${m.id})">🛒 خرید جدید</button>
+                  </div>
                 </td>
               </tr>`).join('')}
         </tbody>
