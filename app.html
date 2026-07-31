@@ -22429,6 +22429,7 @@ function _todoCalendarSearchResultsHtml() {
     const date = r.due_date_jalali || r.due_date || r.date_jalali || '';
     add('reminder','🔔',r.title || 'یادآوری',DateService.disp(date),`_openTodoDayPopover('${date}')`);
   });
+  (_db.key_events || []).forEach(e => add('key_event','⭐',(e.text || '').replace(/<[^>]*>/g,' '),`رویداد مهم · ${DateService.disp(e.date_jalali || e.remind_date || '')}`,`_openTodoDayPopover('${e.date_jalali || e.remind_date || ''}')`));
   (_db.students || []).forEach(s => {
     const raw = s.birth_jalali || s.birthday_jalali || s.birth_date || s.birthday || '';
     if (!raw) return;
@@ -22568,10 +22569,32 @@ function _todoBuiltInOccasions(date, force = false) {
   }
   if (_todoOccasionCategoryEnabled('religious')) {
     const [,hm,hd] = _todoOfficialIranIslamicParts(jy,gy,gm,gd);
-    (_ISLAMIC_OCCASIONS[`${hm}/${hd}`] || []).forEach(([title,category,officialHoliday]) => {
+    const next = _addDays(jy,jm,jd,1);
+    const ng = jalaliToGregorian(...next);
+    const [,nextHm] = _todoOfficialIranIslamicParts(next[0],ng[0],ng[1],ng[2]);
+    const islamicItems = [...(_ISLAMIC_OCCASIONS[`${hm}/${hd}`] || [])];
+    if (hm === 2 && nextHm === 3 && hd !== 30) islamicItems.push(...(_ISLAMIC_OCCASIONS['2/30'] || []));
+    islamicItems.forEach(([title,category,officialHoliday]) => {
       out.push({id:`islamic-${hm}-${hd}`,title,type:'holiday',category,system:true,officialHoliday, hijriDate:`${hm}/${hd}`});
     });
   }
+  return out;
+}
+
+function _todoOfficialHolidaysForDate(date) {
+  const [jy,jm,jd] = _jalaliParse(date);
+  const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+  const out = [];
+  (_IRAN_SOLAR_OCCASIONS[`${jm}/${jd}`] || []).forEach(([title,category]) => {
+    if (category === 'official') out.push(title);
+  });
+  const [,hm,hd] = _todoOfficialIranIslamicParts(jy,gy,gm,gd);
+  const next = _addDays(jy,jm,jd,1);
+  const ng = jalaliToGregorian(...next);
+  const [,nextHm] = _todoOfficialIranIslamicParts(next[0],ng[0],ng[1],ng[2]);
+  const items = [...(_ISLAMIC_OCCASIONS[`${hm}/${hd}`] || [])];
+  if (hm === 2 && nextHm === 3 && hd !== 30) items.push(...(_ISLAMIC_OCCASIONS['2/30'] || []));
+  items.filter(x => x[2]).forEach(x => out.push(x[0]));
   return out;
 }
 
@@ -22668,6 +22691,21 @@ function _todoCalendarDataFilterChipsHtml() {
 function _toggleCalendarAddMenu() {
   _calendarAddMenuOpen = !_calendarAddMenuOpen;
   _renderTodoSurface();
+}
+
+function _closeCalendarAddMenu() {
+  if (!_calendarAddMenuOpen) return;
+  _calendarAddMenuOpen = false;
+  document.querySelectorAll('.calendar-add-menu').forEach(el => el.remove());
+}
+
+if (!window._calendarAddMenuDismissBound) {
+  window._calendarAddMenuDismissBound = true;
+  document.addEventListener('pointerdown', e => {
+    if (_calendarAddMenuOpen && !e.target.closest?.('.calendar-add-wrap,.calendar-add-menu,.topbar-calendar-add')) _closeCalendarAddMenu();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') _closeCalendarAddMenu(); });
+  document.addEventListener('scroll', _closeCalendarAddMenu, true);
 }
 
 function _calendarAddMenuHtml() {
@@ -22769,6 +22807,12 @@ function _todoCalendarPaymentReminders(date, force = false) {
   return [...customer,...staff];
 }
 
+function _todoCalendarKeyEvents(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('reminders')) return [];
+  const key = _jalaliKey(date);
+  return (_db.key_events || []).filter(e => _jalaliKey(e.date_jalali || '') === key || (!e.remind_done && _jalaliKey(e.remind_date || '') === key));
+}
+
 function _todoMiniSessionHtml(s) {
   const title = s.title || s.subject || `${META.sessionSingular || 'جلسه'}`;
   return `<div class="todo-mini-session" onclick="event.stopPropagation();openSessionDetail(${s.id})" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(96,165,250,.12);border-right:3px solid #60a5fa;cursor:pointer">
@@ -22785,6 +22829,12 @@ function _todoMiniHabitHtml(h) {
 function _todoMiniReminderHtml(r) {
   return `<div class="todo-mini-reminder" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(245,158,11,.11);border-right:3px solid #f59e0b">
     <span>🔔</span><span style="font-size:10px;color:#f59e0b;font-weight:800">یادآور</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.title || 'یادآوری')}${r._personName?' · '+escapeHtml(r._personName):''}</span>
+  </div>`;
+}
+
+function _todoMiniKeyEventHtml(e) {
+  return `<div class="todo-mini-key-event" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(251,191,36,.10);border-right:3px solid #fbbf24">
+    <span>⭐</span><span style="font-size:10px;color:#fbbf24;font-weight:800">رویداد مهم</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml((e.text || '').replace(/<[^>]*>/g,' '))}</span>
   </div>`;
 }
 
@@ -23009,11 +23059,14 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-filter-row .btn{white-space:nowrap;height:36px;padding:0 10px;font-size:12px}
       .todo-calendar-repeat-toggle{white-space:nowrap;flex:0 0 auto;height:36px;padding:7px 9px!important}
       .todo-calendar-filter-panel{padding:8px;margin-top:2px}
-      .todo-calendar-filter-title{margin-bottom:7px}
-      .todo-calendar-filter-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}
-      .todo-calendar-filter-chips::-webkit-scrollbar{display:none}
-      .todo-filter-chip,.todo-filter-clear{flex:0 0 auto;height:31px}
-      .todo-filter-clear{margin-right:0}
+      .todo-calendar-filter-title{margin-bottom:8px}
+      .todo-calendar-filter-title span:last-child{font-size:9px;background:rgba(255,255,255,.045);padding:3px 7px;border-radius:999px}
+      .todo-calendar-filter-chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;padding:0}
+      .todo-filter-chip,.todo-filter-clear{width:100%;min-width:0;height:34px;padding:0 5px;justify-content:center;font-size:10px;flex:initial}
+      .todo-filter-clear{margin-right:0;grid-column:span 2}
+      .todo-filter-chip.active{box-shadow:0 3px 10px rgba(91,77,224,.16)}
+      .calendar-add-menu{position:fixed;top:74px;left:12px;right:12px;width:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:9px}
+      .calendar-add-menu button{background:rgba(255,255,255,.025);border:1px solid var(--border);padding:11px 9px}
       .todo-calendar-header{padding:12px;border-radius:12px}
       .todo-calendar-header-main{align-items:flex-start!important}
       .todo-calendar-header-main .btn{height:40px!important;min-width:104px!important;font-size:12px!important}
@@ -23027,7 +23080,7 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-month-grid .todo-day-card{min-height:58px!important;padding:6px!important;border-radius:9px!important}
       .todo-calendar-month-grid .todo-day-card [style*="font-size:9px;color:var(--text3);margin-top:3px"]{display:none!important}
       .todo-calendar-month-grid .todo-day-card [draggable="true"]{display:none!important}
-      .todo-calendar-month-grid .todo-mini-occasion,.todo-calendar-month-grid .todo-mini-birthday,.todo-calendar-month-grid .todo-mini-session,.todo-calendar-month-grid .todo-mini-habit,.todo-calendar-month-grid .todo-mini-reminder{display:none!important}
+      .todo-calendar-month-grid .todo-mini-occasion,.todo-calendar-month-grid .todo-mini-birthday,.todo-calendar-month-grid .todo-mini-session,.todo-calendar-month-grid .todo-mini-habit,.todo-calendar-month-grid .todo-mini-reminder,.todo-calendar-month-grid .todo-mini-key-event{display:none!important}
       .calendar-day-panel{width:100vw;max-width:none;border-right:0;padding:14px}
       .calendar-day-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .todo-calendar-month-grid .todo-day-card .btn{display:none!important}
@@ -23194,6 +23247,7 @@ function _openTodoDayPopover(date) {
   const sessions = _todoCalendarSessions(_todoCalendarSelectedDate, true);
   const habits = _todoCalendarHabits(_todoCalendarSelectedDate, true);
   const reminders = _todoCalendarPaymentReminders(_todoCalendarSelectedDate, true);
+  const keyEvents = _todoCalendarKeyEvents(_todoCalendarSelectedDate, true);
   const birthdays = _todoCalendarBirthdays(_todoCalendarSelectedDate, true);
   const events = _todoCalendarEvents(_todoCalendarSelectedDate, true);
   const note = (_db.todo_day_notes && _db.todo_day_notes[_todoCalendarSelectedDate]) || '';
@@ -23222,6 +23276,7 @@ function _openTodoDayPopover(date) {
     ${section('👥','جلسات',sessions,_todoMiniSessionHtml)}
     ${section('🔥','عادت‌ها',habits,_todoMiniHabitHtml)}
     ${section('🔔','یادآورها',reminders,_todoMiniReminderHtml)}
+    ${section('⭐','رویدادهای مهم',keyEvents,_todoMiniKeyEventHtml)}
     ${section('📌','مناسبت‌ها',events,_todoMiniOccasionHtml)}
     ${section('🎂','تولدها',birthdays,_todoMiniBirthdayHtml)}
     <div class="calendar-day-section">
@@ -23413,20 +23468,23 @@ function _renderGregorianTodoCalendarView() {
     const sessions = _todoCalendarSessions(date);
     const habits = _todoCalendarHabits(date);
     const paymentReminders = _todoCalendarPaymentReminders(date);
-    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length;
+    const keyEvents = _todoCalendarKeyEvents(date);
+    const officialHolidays = _todoOfficialHolidaysForDate(date);
+    const isOfficialDay = officialHolidays.length > 0 || dateObj.getDay() === 5;
+    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length + keyEvents.length;
     const hasNote = !!(_db.todo_day_notes && _db.todo_day_notes[date]);
     const hasRepeat = list.some(t => (t.repeat && t.repeat !== 'none') || t._repeatPreview);
     const doneCount = list.filter(t => t.done).length;
     const remain = Math.max(0, list.length - doneCount);
     const visibleCount = _todoViewMode === 'week' ? 6 : 2;
-    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
+    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(keyEvents.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
     const hiddenCalendarCount = Math.max(0,calendarItemsCount-shownCalendarCount);
     const faded = opts.faded ? '.38' : '1';
     return `<div class="todo-day-card" onclick="_openTodoDayPopover('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
-      style="min-height:${calendarItemsCount ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isWeekend?'rgba(96,165,250,.30)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':'1px solid '+(isWeekend?'rgba(96,165,250,.30)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isWeekend?'rgba(96,165,250,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
+      style="min-height:${calendarItemsCount ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isOfficialDay?'rgba(255,107,107,.55)':isWeekend?'rgba(96,165,250,.30)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':isOfficialDay?'3px solid var(--red)':'1px solid '+(isWeekend?'rgba(96,165,250,.30)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isOfficialDay?'rgba(255,107,107,.075)':isWeekend?'rgba(96,165,250,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:${calendarItemsCount?'7px':'0'}">
         <div>
-          <div style="font-size:12px;color:${isToday||isSelected?'var(--accent2)':isWeekend?'#60a5fa':'var(--text3)'};font-weight:900">${dateObj.getDate()} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
+          <div style="font-size:12px;color:${isOfficialDay?'var(--red)':isToday||isSelected?'var(--accent2)':isWeekend?'#60a5fa':'var(--text3)'};font-weight:900">${dateObj.getDate()} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${isOfficialDay?'🔴':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${keyEvents.length?'⭐':''} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
           ${list.length ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(list.length)} کار · ${fa(doneCount)} انجام · ${fa(remain)} مانده</div>` : ''}
         </div>
         ${list.length ? `<span title="${heat.label}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
@@ -23437,6 +23495,7 @@ function _renderGregorianTodoCalendarView() {
         ${sessions.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniSessionHtml).join('')}
         ${habits.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniHabitHtml).join('')}
         ${paymentReminders.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniReminderHtml).join('')}
+        ${keyEvents.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniKeyEventHtml).join('')}
         ${list.slice(0, visibleCount).map(_todoMiniEventHtml).join('')}
         ${hiddenCalendarCount ? `<button class="todo-more-badge" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" title="نمایش همه آیتم‌ها">+${fa(hiddenCalendarCount)}</button>` : ''}
       </div>
@@ -23519,9 +23578,10 @@ function _renderGregorianTodoCalendarView() {
       const heat = _todoCalendarHeat(list);
       const birthdays = _todoCalendarBirthdays(date);
       const events = _todoCalendarEvents(date);
+      const officialHolidays = _todoOfficialHolidaysForDate(date);
       const isSelected = date === selectedDate;
       return `<button onclick="_openTodoWeekFromDate('${date}')" title="${d.getDate()} ${months[month]} ${year} · ${fa(list.length)} کار"
-        style="width:14px;height:14px;border-radius:3px;border:1px solid ${isSelected?'var(--accent2)':heat.border};background:${heat.bg};padding:0;cursor:pointer;position:relative">
+        style="width:14px;height:14px;border-radius:3px;border:1px solid ${isSelected?'var(--accent2)':officialHolidays.length?'var(--red)':heat.border};background:${officialHolidays.length?'rgba(255,107,107,.18)':heat.bg};padding:0;cursor:pointer;position:relative">
           ${birthdays.length?'<span style="position:absolute;inset:auto -3px -7px auto;font-size:8px">🎂</span>':''}
           ${events.length?`<span style="position:absolute;inset:-8px auto auto -3px;font-size:8px">${events[0]._reminder?'🔔':_todoEventTypeMeta(events[0].type).icon}</span>`:''}
         </button>`;
@@ -23621,7 +23681,10 @@ function _renderTodoCalendarView() {
     const sessions = _todoCalendarSessions(date);
     const habits = _todoCalendarHabits(date);
     const paymentReminders = _todoCalendarPaymentReminders(date);
-    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length;
+    const keyEvents = _todoCalendarKeyEvents(date);
+    const officialHolidays = _todoOfficialHolidaysForDate(date);
+    const isOfficialDay = isFriday || officialHolidays.length > 0;
+    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length + keyEvents.length;
     const hasNote = !!(_db.todo_day_notes && _db.todo_day_notes[date]);
     const hasRepeat = list.some(t => t.repeat && t.repeat !== 'none' || t._repeatPreview);
     const faded = opts.faded ? '.38' : '1';
@@ -23629,7 +23692,7 @@ function _renderTodoCalendarView() {
     const remain = Math.max(0, list.length - doneCount);
     const hours = list.length ? Math.max(1, Math.round(list.length * .75)) : 0;
     const visibleCount = _todoViewMode === 'week' ? 6 : 2;
-    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
+    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(keyEvents.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
     const hiddenCalendarCount = Math.max(0,calendarItemsCount-shownCalendarCount);
     let shownCount = 0;
     const grouped = ['صبح','ظهر','عصر','بدون ساعت'].map(bucket => {
@@ -23641,10 +23704,10 @@ function _renderTodoCalendarView() {
       </div>`;
     }).join('');
     return `<div class="todo-day-card" onclick="_openTodoDayPopover('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
-      style="min-height:${calendarItemsCount ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isFriday?'rgba(255,107,107,.35)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':'1px solid '+(isFriday?'rgba(255,107,107,.35)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isFriday?'rgba(255,107,107,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
+      style="min-height:${calendarItemsCount ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isOfficialDay?'rgba(255,107,107,.55)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':isOfficialDay?'3px solid var(--red)':'1px solid '+heat.border};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isOfficialDay?'rgba(255,107,107,.075)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:${calendarItemsCount?'7px':'0'}">
         <div>
-          <div style="font-size:12px;color:${isToday||isSelected?'var(--accent2)':isFriday?'var(--red)':'var(--text3)'};font-weight:900">${fa(jd)} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
+          <div style="font-size:12px;color:${isOfficialDay?'var(--red)':isToday||isSelected?'var(--accent2)':'var(--text3)'};font-weight:900">${fa(jd)} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${isOfficialDay?'🔴':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${keyEvents.length?'⭐':''} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
           ${list.length ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(list.length)} کار · ${fa(doneCount)} انجام · ${fa(remain)} مانده · ${fa(hours)} ساعت</div>` : ''}
         </div>
         ${list.length ? `<span title="${heat.label}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
@@ -23655,6 +23718,7 @@ function _renderTodoCalendarView() {
         ${sessions.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniSessionHtml).join('')}
         ${habits.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniHabitHtml).join('')}
         ${paymentReminders.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniReminderHtml).join('')}
+        ${keyEvents.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniKeyEventHtml).join('')}
         ${_todoViewMode === 'week' ? grouped : list.slice(0, visibleCount).map(_todoMiniEventHtml).join('')}
         ${hiddenCalendarCount ? `<button class="todo-more-badge" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" title="نمایش همه آیتم‌ها">+${fa(hiddenCalendarCount)}</button>` : ''}
       </div>
@@ -23730,9 +23794,10 @@ function _renderTodoCalendarView() {
       const heat = _todoCalendarHeat(list);
       const birthdays = _todoCalendarBirthdays(date);
       const events = _todoCalendarEvents(date);
+      const officialHolidays = _todoOfficialHolidaysForDate(date);
       const isSelected = date === selectedDate;
       return `<button onclick="_openTodoWeekFromDate('${date}')" title="${DateService.disp(date)} · ورود به هفته · ${fa(list.length)} کار"
-        style="width:14px;height:14px;border-radius:3px;border:1px solid ${isSelected?'var(--accent2)':heat.border};background:${heat.bg};padding:0;cursor:pointer;position:relative">
+        style="width:14px;height:14px;border-radius:3px;border:1px solid ${isSelected?'var(--accent2)':officialHolidays.length?'var(--red)':heat.border};background:${officialHolidays.length?'rgba(255,107,107,.18)':heat.bg};padding:0;cursor:pointer;position:relative">
           ${birthdays.length?'<span style="position:absolute;inset:auto -3px -7px auto;font-size:8px">🎂</span>':''}
           ${events.length?`<span style="position:absolute;inset:-8px auto auto -3px;font-size:8px">${events[0]._reminder?'🔔':_todoEventTypeMeta(events[0].type).icon}</span>`:''}
         </button>`;
@@ -23771,7 +23836,7 @@ async function renderCalendar() {
     _todoViewMode = 'month';
     localStorage.setItem('tp_todo_view_mode', _todoViewMode);
   }
-  updateTopbarActions(`<button class="btn btn-primary btn-sm" onclick="_toggleCalendarAddMenu()">+ افزودن <span style="font-size:9px">⌄</span></button>`);
+  updateTopbarActions(`<button class="btn btn-primary btn-sm topbar-calendar-add" onclick="_toggleCalendarAddMenu()">+ افزودن <span style="font-size:9px">⌄</span></button>`);
   setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_calendarPageHeaderHtml()}${_renderTodoCalendarView()}</div>`);
   _checkTodoReminders();
 }
