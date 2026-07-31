@@ -22106,6 +22106,7 @@ let _todoCalendarDataFilters = (() => {
 let _todoCalendarSearch = '';
 let _todoCalendarSearchTimer = null;
 let _todoCalendarSearchOpen = false;
+let _calendarAddMenuOpen = false;
 let _todoCalendarShowRepeats = localStorage.getItem('tp_todo_calendar_show_repeats') !== '0';
 let _todoCalendarShowHolidays = localStorage.getItem('tp_todo_calendar_show_holidays') !== '0';
 let _todoCalendarSelectedDate = localStorage.getItem('tp_todo_calendar_selected_date') || _todayJalaliStr();
@@ -22266,6 +22267,7 @@ function _todoViewSwitcherHtml() {
       <div class="todo-calendar-search-box ${(_todoCalendarSearchOpen || _todoCalendarSearch) ? 'open' : ''}">
         <button type="button" class="btn btn-ghost btn-sm todo-calendar-search-trigger ${_todoCalendarSearch ? 'active' : ''}" onpointerdown="event.preventDefault();_toggleTodoCalendarSearch(event)" onclick="return false" title="جستجو" aria-label="جستجو">🔍</button>
         <input class="input" id="todo-calendar-search" value="${escapeHtml(_todoCalendarSearch)}" onfocus="_openTodoCalendarSearch()" onblur="_maybeCloseTodoCalendarSearch()" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی سریع..." style="min-width:220px;max-width:360px;height:38px">
+        ${_todoCalendarSearchResultsHtml()}
       </div>
       <label class="todo-calendar-repeat-toggle" style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
         <input type="checkbox" ${_todoCalendarShowRepeats?'checked':''} onchange="_toggleTodoCalendarRepeats(this.checked)">
@@ -22404,12 +22406,46 @@ function _todoBirthdayIndex() {
   return map;
 }
 
-function _todoCalendarBirthdays(date) {
-  if (!_db.students || !_todoCalendarFilterActive('birthdays') || !_todoOccasionCategoryEnabled('birthdays')) return [];
+function _todoCalendarBirthdays(date, force = false) {
+  if (!_db.students || (!force && !_todoCalendarFilterActive('birthdays')) || !_todoOccasionCategoryEnabled('birthdays')) return [];
   const [,m,d] = _jalaliParse(date);
   const list = _todoBirthdayIndex().get(`${m}/${d}`) || [];
   const q = (_todoCalendarSearch || '').trim().toLowerCase();
   return q ? list.filter(x => (x.name || '').toLowerCase().includes(q)) : list;
+}
+
+function _todoCalendarSearchResultsHtml() {
+  const q = (_todoCalendarSearch || '').trim().toLowerCase();
+  if (!q) return '';
+  const results = [];
+  const add = (type, icon, title, subtitle, action) => {
+    if (`${title || ''} ${subtitle || ''}`.toLowerCase().includes(q)) results.push({type,icon,title,subtitle,action});
+  };
+  (_db.todos || []).filter(t => !t.archived).forEach(t => add('task',_todoCategoryMeta(t).icon,t.title || 'کار',DateService.disp(t.date_jalali || ''),`openEditTodo(${Number(t.id)})`));
+  (_db.sessions || []).forEach(s => add('session','👥',s.title || s.subject || (META.sessionSingular || 'جلسه'),DateService.disp(s.date_jalali || ''),`openSessionDetail(${Number(s.id)})`));
+  (_db.habits || []).filter(h => !h.archived).forEach(h => add('habit',h.icon || '🔥',h.title || 'عادت',h.desc || '',`openHabitDetail(${Number(h.id)})`));
+  (_db.todo_calendar_events || []).forEach(e => add('occasion',_todoEventTypeMeta(e.type).icon,e.title || 'مناسبت',DateService.disp(e.date_jalali || ''),`_openTodoDayPopover('${e.date_jalali}')`));
+  (_db.reminders || []).filter(r => !r.done).forEach(r => {
+    const date = r.due_date_jalali || r.due_date || r.date_jalali || '';
+    add('reminder','🔔',r.title || 'یادآوری',DateService.disp(date),`_openTodoDayPopover('${date}')`);
+  });
+  (_db.students || []).forEach(s => {
+    const raw = s.birth_jalali || s.birthday_jalali || s.birth_date || s.birthday || '';
+    if (!raw) return;
+    const [,m,d] = _jalaliParse(raw);
+    const [y] = _jalaliParse(_todoCalendarCursor || _todayJalaliStr());
+    const date = _formatJalali(y,m,d);
+    add('birthday','🎂',`${s.name || ''} ${s.lname || ''}`.trim(),`تولد · ${DateService.disp(date)}`,`_openTodoDayPopover('${date}')`);
+  });
+  Object.entries(_db.todo_day_notes || {}).forEach(([date,note]) => add('note','📝',note,`یادداشت روز · ${DateService.disp(date)}`,`_openTodoDayPopover('${date}')`));
+  const shown = results.slice(0,14);
+  return `<div class="calendar-search-results">
+    ${shown.map(r => `<button type="button" class="calendar-search-result" onclick="${r.action}">
+      <span style="font-size:16px">${r.icon}</span>
+      <span style="min-width:0;flex:1"><b style="display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.title)}</b><small style="color:var(--text3)">${escapeHtml(r.subtitle || '')}</small></span>
+    </button>`).join('') || '<div style="padding:18px;text-align:center;font-size:12px;color:var(--text3)">نتیجه‌ای پیدا نشد.</div>'}
+    ${results.length > shown.length ? `<div style="padding:6px;text-align:center;font-size:10px;color:var(--text3)">و ${fa(results.length-shown.length)} نتیجه دیگر؛ عبارت دقیق‌تری بنویسید.</div>` : ''}
+  </div>`;
 }
 
 const _TODO_OCCASION_CATEGORY_DEFAULTS = {
@@ -22508,8 +22544,18 @@ function _todoIslamicParts(gy, gm, gd) {
   } catch(e) { return [0,0,0]; }
 }
 
-function _todoBuiltInOccasions(date) {
-  if (!_todoCalendarFilterActive('occasions')) return [];
+// تقویم رسمی ایران ممکن است به‌دلیل رؤیت هلال با تقویم محاسباتی مرورگر
+// یک روز اختلاف داشته باشد. این جدول، اختلاف رسمی هر سال شمسی را نگه می‌دارد.
+const _IRAN_OFFICIAL_HIJRI_DAY_OFFSETS = { 1405: 1 };
+function _todoOfficialIranIslamicParts(jy, gy, gm, gd) {
+  const offset = _IRAN_OFFICIAL_HIJRI_DAY_OFFSETS[jy] || 0;
+  const source = new Date(Date.UTC(gy,gm-1,gd));
+  source.setUTCDate(source.getUTCDate() - offset);
+  return _todoIslamicParts(source.getUTCFullYear(), source.getUTCMonth()+1, source.getUTCDate());
+}
+
+function _todoBuiltInOccasions(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('occasions')) return [];
   const [jy,jm,jd] = _jalaliParse(date);
   const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
   const out = [];
@@ -22521,7 +22567,7 @@ function _todoBuiltInOccasions(date) {
     if (title) out.push({id:`global-${gm}-${gd}`,title,type:'custom',category:'global',system:true});
   }
   if (_todoOccasionCategoryEnabled('religious')) {
-    const [,hm,hd] = _todoIslamicParts(gy,gm,gd);
+    const [,hm,hd] = _todoOfficialIranIslamicParts(jy,gy,gm,gd);
     (_ISLAMIC_OCCASIONS[`${hm}/${hd}`] || []).forEach(([title,category,officialHoliday]) => {
       out.push({id:`islamic-${hm}-${hd}`,title,type:'holiday',category,system:true,officialHoliday, hijriDate:`${hm}/${hd}`});
     });
@@ -22582,6 +22628,10 @@ function _setAllTodoCalendarDataFilters(enabled) {
   _renderTodoSurface();
 }
 
+function _toggleAllTodoCalendarDataFilters() {
+  _setAllTodoCalendarDataFilters(_todoCalendarDataFilters.size !== _TODO_CALENDAR_FILTER_KEYS.length);
+}
+
 function _todoCalendarTaskDataType(t) {
   const kind = _todoCategoryMeta(t).kind;
   if (kind === 'sessions') return 'sessions';
@@ -22605,7 +22655,7 @@ function _todoCalendarDataFilterChipsHtml() {
       <span>${fa(_todoCalendarDataFilters.size)} از ${fa(_TODO_CALENDAR_FILTER_KEYS.length)} نوع فعال</span>
     </div>
     <div class="todo-calendar-filter-chips">
-      <button type="button" class="todo-filter-chip all ${all?'active':''}" onclick="_setAllTodoCalendarDataFilters(true)" aria-pressed="${all}">همه</button>
+      <button type="button" class="todo-filter-chip all ${all?'active':''}" onclick="_toggleAllTodoCalendarDataFilters()" aria-pressed="${all}">همه</button>
       ${chips.map(([key,icon,label]) => {
         const active = _todoCalendarFilterActive(key);
         return `<button type="button" class="todo-filter-chip ${active?'active':''}" onclick="_toggleTodoCalendarDataFilter('${key}')" aria-pressed="${active}"><span>${icon}</span>${label}</button>`;
@@ -22615,12 +22665,48 @@ function _todoCalendarDataFilterChipsHtml() {
   </div>`;
 }
 
-function _todoCustomEvents(date) {
+function _toggleCalendarAddMenu() {
+  _calendarAddMenuOpen = !_calendarAddMenuOpen;
+  _renderTodoSurface();
+}
+
+function _calendarAddMenuHtml() {
+  if (!_calendarAddMenuOpen) return '';
+  const item = (kind,icon,label) => `<button type="button" onclick="_openCalendarCreate('${kind}',_todoCalendarSelectedDate||_todayJalaliStr())">${icon} ${label}</button>`;
+  return `<div class="calendar-add-menu" onclick="event.stopPropagation()">
+    ${item('task','✅','کار جدید')}
+    ${item('session','👥','جلسه')}
+    ${item('habit','🔥','عادت')}
+    ${item('reminder','🔔','یادآور')}
+    ${item('occasion','📌','مناسبت شخصی')}
+    ${item('birthday','🎂','تولد')}
+  </div>`;
+}
+
+async function _openCalendarCreate(kind, date) {
+  _calendarAddMenuOpen = false;
+  closeCalendarDayPanel();
+  if (kind === 'task') return openAddTodo(date);
+  if (kind === 'session') {
+    await openAddSessionGeneral();
+    setTimeout(() => { const input=document.getElementById('f-ses-date'); if(input){input.value=date;input.dispatchEvent(new Event('change',{bubbles:true}));} },0);
+    return;
+  }
+  if (kind === 'habit') return openAddHabit();
+  if (kind === 'reminder') {
+    openAddReminder();
+    setTimeout(() => { const input=document.getElementById('r-date'); if(input) input.value=date; },0);
+    return;
+  }
+  return openAddTodoCalendarEvent(date, kind === 'birthday' ? 'birthday' : 'custom');
+}
+
+function _todoCustomEvents(date, force = false) {
   return (_db.todo_calendar_events || []).filter(e => {
     if (!_todoEventMatchesDate(e, date)) return false;
-    if (e.type === 'birthday') return _todoCalendarFilterActive('birthdays') && _todoOccasionCategoryEnabled('birthdays');
-    if (e.type === 'wedding_anniversary' || e.type === 'anniversary') return _todoCalendarFilterActive('occasions') && _todoOccasionCategoryEnabled('anniversaries');
-    return _todoCalendarFilterActive('occasions') && _todoOccasionCategoryEnabled('personal');
+    if (e.type === 'birthday') return (force || _todoCalendarFilterActive('birthdays')) && _todoOccasionCategoryEnabled('birthdays');
+    if (e.type === 'wedding_anniversary' || e.type === 'anniversary') return (force || _todoCalendarFilterActive('occasions')) && _todoOccasionCategoryEnabled('anniversaries');
+    return (force || _todoCalendarFilterActive('occasions')) && _todoOccasionCategoryEnabled('personal');
   });
 }
 
@@ -22631,8 +22717,8 @@ function _todoEventReminderDate(e, occurrenceDate) {
   return _formatJalali(..._addDays(jy,jm,jd,-days));
 }
 
-function _todoEventReminderItems(date) {
-  if (!_todoCalendarFilterActive('reminders')) return [];
+function _todoEventReminderItems(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('reminders')) return [];
   const out = [];
   (_db.todo_calendar_events || []).forEach(e => {
     const days = Number(e.remind_days ?? -1);
@@ -22645,10 +22731,61 @@ function _todoEventReminderItems(date) {
   return out;
 }
 
-function _todoCalendarEvents(date) {
-  const list = [..._todoBuiltInOccasions(date), ..._todoCustomEvents(date), ..._todoEventReminderItems(date)];
+function _todoCalendarEvents(date, force = false) {
+  const list = [..._todoBuiltInOccasions(date, force), ..._todoCustomEvents(date, force), ..._todoEventReminderItems(date, force)];
   const q = (_todoCalendarSearch || '').trim().toLowerCase();
   return q ? list.filter(e => `${e.title || ''} ${_todoEventTypeMeta(e.type).label || ''}`.toLowerCase().includes(q)) : list;
+}
+
+function _todoCalendarSessions(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('sessions')) return [];
+  return (_db.sessions || []).filter(s => _jalaliKey(s.date_jalali || s.date || '') === _jalaliKey(date));
+}
+
+function _todoCalendarHabits(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('habits')) return [];
+  const dateKey = _jalaliKey(date);
+  return (_db.habits || []).filter(h => {
+    if (h.archived) return false;
+    if (!h.created_at) return true;
+    const created = new Date(h.created_at);
+    if (Number.isNaN(created.getTime())) return true;
+    const j = gregorianToJalali(created.getFullYear(),created.getMonth()+1,created.getDate());
+    return _jalaliKey(_formatJalali(...j)) <= dateKey;
+  }).map(h => ({ ...h, _doneOnDate:(_db.habit_logs || []).some(l => String(l.habit_id) === String(h.id) && _jalaliKey(l.date) === dateKey && l.done) }));
+}
+
+function _todoCalendarPaymentReminders(date, force = false) {
+  if (!force && !_todoCalendarFilterActive('reminders')) return [];
+  const key = _jalaliKey(date);
+  const studentName = id => {
+    const s = (_db.students || []).find(x => String(x.id) === String(id));
+    return s ? `${s.name || ''} ${s.lname || ''}`.trim() : '';
+  };
+  const customer = (_db.reminders || []).filter(r => !r.done && _jalaliKey(r.due_date_jalali || r.due_date || r.date_jalali || '') === key)
+    .map(r => ({...r,_calendarReminderKind:'customer',_personName:studentName(r.student_id)}));
+  const staff = (_db.staff_reminders || []).filter(r => !r.done && _jalaliKey(r.due_date_jalali || r.due_date || '') === key)
+    .map(r => ({...r,_calendarReminderKind:'staff'}));
+  return [...customer,...staff];
+}
+
+function _todoMiniSessionHtml(s) {
+  const title = s.title || s.subject || `${META.sessionSingular || 'جلسه'}`;
+  return `<div class="todo-mini-session" onclick="event.stopPropagation();openSessionDetail(${s.id})" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(96,165,250,.12);border-right:3px solid #60a5fa;cursor:pointer">
+    <span>👥</span><span style="font-size:10px;color:#60a5fa;font-weight:800">${escapeHtml(s.time || '')}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(title)}</span>
+  </div>`;
+}
+
+function _todoMiniHabitHtml(h) {
+  return `<div class="todo-mini-habit" onclick="event.stopPropagation();openHabitDetail(${h.id})" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${h.color || '#34d399'}18;border-right:3px solid ${h.color || '#34d399'};cursor:pointer">
+    <span>${h.icon || '🔥'}</span><span style="font-size:10px;color:${h.color || '#34d399'};font-weight:800">${h._doneOnDate?'✓':'عادت'}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.title || '')}</span>
+  </div>`;
+}
+
+function _todoMiniReminderHtml(r) {
+  return `<div class="todo-mini-reminder" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(245,158,11,.11);border-right:3px solid #f59e0b">
+    <span>🔔</span><span style="font-size:10px;color:#f59e0b;font-weight:800">یادآور</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.title || 'یادآوری')}${r._personName?' · '+escapeHtml(r._personName):''}</span>
+  </div>`;
 }
 
 function _todoEventReminderLabel(e) {
@@ -22684,7 +22821,7 @@ function _clearStudentBirthday(studentId) {
   showToast('تولد از تقویم حذف شد', 'success');
 }
 
-function openAddTodoCalendarEvent(date = _todoCalendarSelectedDate || _todayJalaliStr()) {
+function openAddTodoCalendarEvent(date = _todoCalendarSelectedDate || _todayJalaliStr(), presetType = 'custom') {
   openModal('افزودن مناسبت', `
     <div class="form-grid">
       <div class="form-group full">
@@ -22698,10 +22835,10 @@ function openAddTodoCalendarEvent(date = _todoCalendarSelectedDate || _todayJala
       <div class="form-group">
         <label class="form-label">نوع</label>
         <select class="form-input" id="cal-event-type">
-          <option value="custom">📝 مناسبت شخصی</option>
-          <option value="birthday">🎂 تولد</option>
-          <option value="wedding_anniversary">👩‍❤️‍👨 سالگرد ازدواج</option>
-          <option value="holiday">🏖️ تعطیل/مناسبت</option>
+          <option value="custom" ${presetType==='custom'?'selected':''}>📝 مناسبت شخصی</option>
+          <option value="birthday" ${presetType==='birthday'?'selected':''}>🎂 تولد</option>
+          <option value="wedding_anniversary" ${presetType==='wedding_anniversary'?'selected':''}>👩‍❤️‍👨 سالگرد ازدواج</option>
+          <option value="holiday" ${presetType==='holiday'?'selected':''}>🏖️ تعطیل/مناسبت</option>
         </select>
       </div>
       <div class="form-group">
@@ -22812,7 +22949,7 @@ function _todoCalendarResponsiveCss() {
     .todo-overview-select::before{content:'⌄';color:#8aa0c2;font-size:13px;font-weight:900;order:3;pointer-events:none}
     .todo-overview-select:focus-within{border-color:#5f789d;box-shadow:0 0 0 3px rgba(96,165,250,.10),inset 0 1px 0 rgba(255,255,255,.04)}
     .todo-calendar-search-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .todo-calendar-search-box{display:flex;align-items:center;gap:6px}
+    .todo-calendar-search-box{display:flex;align-items:center;gap:6px;position:relative}
     .todo-calendar-search-trigger{display:none}
     .todo-calendar-filter-panel{width:100%;background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:12px;padding:9px 10px}
     .todo-calendar-filter-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:10px;color:var(--text3)}
@@ -22824,6 +22961,21 @@ function _todoCalendarResponsiveCss() {
     .todo-filter-chip.all.active{background:linear-gradient(135deg,rgba(52,211,153,.75),rgba(16,185,129,.62));border-color:rgba(52,211,153,.7)}
     .todo-filter-clear{margin-right:auto;color:var(--red);border-color:rgba(255,107,107,.25);background:rgba(255,107,107,.06)}
     .todo-filter-clear:disabled{opacity:.4;cursor:not-allowed}
+    .todo-more-badge{align-self:flex-start;min-width:28px;height:24px;border:1px solid rgba(124,106,247,.42);border-radius:999px;background:rgba(124,106,247,.14);color:var(--accent2);font-family:var(--font);font-size:10px;font-weight:900;padding:0 8px;cursor:pointer}
+    .calendar-add-wrap{position:relative;display:inline-flex}
+    .calendar-add-menu{position:absolute;top:calc(100% + 7px);left:0;z-index:120;width:210px;padding:7px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px}
+    .calendar-add-menu button{border:0;background:transparent;color:var(--text2);font-family:var(--font);font-size:12px;font-weight:700;text-align:right;padding:9px 10px;border-radius:8px;cursor:pointer}
+    .calendar-add-menu button:hover{background:rgba(124,106,247,.12);color:var(--text)}
+    .calendar-search-results{position:absolute;top:calc(100% + 6px);right:0;left:0;z-index:110;max-height:340px;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:6px;box-shadow:0 18px 48px rgba(0,0,0,.34)}
+    .calendar-search-result{width:100%;display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--text2);font-family:var(--font);text-align:right;padding:8px;border-radius:8px;cursor:pointer}
+    .calendar-search-result:hover{background:rgba(124,106,247,.11);color:var(--text)}
+    .calendar-day-panel-overlay{position:fixed;inset:0;z-index:10000;background:rgba(4,7,14,.58);backdrop-filter:blur(2px);display:flex;justify-content:flex-start}
+    .calendar-day-panel{width:min(440px,94vw);height:100%;background:var(--bg);border-right:1px solid var(--border2);box-shadow:18px 0 60px rgba(0,0,0,.42);padding:18px;overflow:auto;animation:calendarPanelIn .2s ease}
+    @keyframes calendarPanelIn{from{transform:translateX(-25px);opacity:.65}to{transform:none;opacity:1}}
+    .calendar-day-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:-18px;z-index:3;background:var(--bg);padding:16px 0 12px;border-bottom:1px solid var(--border);margin-bottom:12px}
+    .calendar-day-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:9px}
+    .calendar-day-section-title{font-size:11px;font-weight:900;color:var(--text2);margin-bottom:8px;display:flex;justify-content:space-between}
+    .calendar-day-create-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0}
     .todo-calendar-header{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
     .todo-calendar-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px}
     .todo-calendar-week-layout,.todo-calendar-month-layout,.todo-calendar-year-layout{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}
@@ -22875,7 +23027,9 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-month-grid .todo-day-card{min-height:58px!important;padding:6px!important;border-radius:9px!important}
       .todo-calendar-month-grid .todo-day-card [style*="font-size:9px;color:var(--text3);margin-top:3px"]{display:none!important}
       .todo-calendar-month-grid .todo-day-card [draggable="true"]{display:none!important}
-      .todo-calendar-month-grid .todo-mini-occasion,.todo-calendar-month-grid .todo-mini-birthday{display:none!important}
+      .todo-calendar-month-grid .todo-mini-occasion,.todo-calendar-month-grid .todo-mini-birthday,.todo-calendar-month-grid .todo-mini-session,.todo-calendar-month-grid .todo-mini-habit,.todo-calendar-month-grid .todo-mini-reminder{display:none!important}
+      .calendar-day-panel{width:100vw;max-width:none;border-right:0;padding:14px}
+      .calendar-day-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .todo-calendar-month-grid .todo-day-card .btn{display:none!important}
       .todo-calendar-week-grid .todo-day-card{min-height:94px!important}
       .todo-calendar-side{gap:8px}
@@ -23036,50 +23190,51 @@ function _todoMiniEventHtml(t) {
 function _openTodoDayPopover(date) {
   _todoCalendarSelectedDate = date || _todayJalaliStr();
   localStorage.setItem('tp_todo_calendar_selected_date', _todoCalendarSelectedDate);
-  const list = _todoFilteredCalendarTasks(_todoTasksForCalendar()).filter(t => t.date_jalali === _todoCalendarSelectedDate);
-  const done = list.filter(t => t.done).length;
-  const remain = Math.max(0, list.length - done);
-  const birthdays = _todoCalendarBirthdays(_todoCalendarSelectedDate);
-  const events = _todoCalendarEvents(_todoCalendarSelectedDate);
+  const list = _todoTasksForCalendar().filter(t => t.date_jalali === _todoCalendarSelectedDate);
+  const sessions = _todoCalendarSessions(_todoCalendarSelectedDate, true);
+  const habits = _todoCalendarHabits(_todoCalendarSelectedDate, true);
+  const reminders = _todoCalendarPaymentReminders(_todoCalendarSelectedDate, true);
+  const birthdays = _todoCalendarBirthdays(_todoCalendarSelectedDate, true);
+  const events = _todoCalendarEvents(_todoCalendarSelectedDate, true);
   const note = (_db.todo_day_notes && _db.todo_day_notes[_todoCalendarSelectedDate]) || '';
-  const body = `
-    ${_todoCalendarHasTaskFilters() ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px">
-      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">همه</div>
-        <div style="font-size:17px;font-weight:900;color:var(--accent2)">${fa(list.length)}</div>
-      </div>
-      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">انجام‌شده</div>
-        <div style="font-size:17px;font-weight:900;color:var(--green)">${fa(done)}</div>
-      </div>
-      <div style="background:rgba(255,255,255,.035);border:1px solid var(--border);border-radius:10px;padding:9px">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">مانده</div>
-        <div style="font-size:17px;font-weight:900;color:var(--amber)">${fa(remain)}</div>
-      </div>
-    </div>` : ''}
-    ${birthdays.length ? `<div style="background:rgba(236,72,153,.12);border:1px solid rgba(236,72,153,.35);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text)">
-      <div style="font-weight:800;margin-bottom:6px">🎂 تولدها</div>
-      ${birthdays.map(b => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0">
-        <span>${escapeHtml(b.name)}</span>
-        <button class="btn btn-ghost btn-sm" style="height:26px;font-size:10px;color:var(--red)" onclick="_clearStudentBirthday(${b.id})">حذف تولد</button>
-      </div>`).join('')}
-    </div>` : ''}
-    ${events.length ? `<div style="background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.28);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text)">
-      <div style="font-weight:800;margin-bottom:6px">📌 مناسبت‌ها</div>
-      ${events.map(e => { const meta = _todoEventTypeMeta(e.type); const reminder = _todoEventReminderLabel(e); return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0">
-        <span>${e._reminder ? '🔔' : meta.icon} ${escapeHtml(e.title)} <span style="color:var(--text3);font-size:10px">(${e._reminder ? `برای ${DateService.disp(e._occurrence_date)}` : `${meta.label}${_todoEventRepeatLabel(e)?' · '+_todoEventRepeatLabel(e):''}${reminder?' · 🔔 '+reminder:''}`})</span></span>
-        ${!e.system && !e._reminder ? `<button class="btn btn-ghost btn-sm" style="height:26px;font-size:10px;color:var(--red)" onclick="deleteTodoCalendarEvent(${e.id})">حذف</button>` : ''}
-      </div>`; }).join('')}
-    </div>` : ''}
-    ${note ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.28);border-radius:10px;padding:8px;margin-bottom:10px;font-size:12px;color:var(--text2);line-height:1.8">📝 ${escapeHtml(note)}</div>` : ''}
-    ${_todoCalendarHasTaskFilters() ? `<div style="display:flex;flex-direction:column;gap:7px;max-height:58vh;overflow:auto;padding-left:2px">
-      ${list.map(_todoMiniEventHtml).join('') || '<div style="font-size:13px;color:var(--text3);text-align:center;padding:24px">برای این روز کاری ثبت نشده است.</div>'}
-    </div>` : (!birthdays.length && !events.length ? '<div style="font-size:13px;color:var(--text3);text-align:center;padding:24px">در فیلترهای انتخاب‌شده داده‌ای برای این روز وجود ندارد.</div>' : '')}`;
-  openModal(`تقویم ${DateService.disp(_todoCalendarSelectedDate)}`, body, [
-    { label:'افزودن کار', cls:'btn-primary', action:`closeModal();openAddTodo('${_todoCalendarSelectedDate}')` },
-    { label:'افزودن مناسبت', cls:'btn-ghost', action:`closeModal();openAddTodoCalendarEvent('${_todoCalendarSelectedDate}')` },
-    { label:'بستن', cls:'btn-ghost', action:'closeModal()' },
-  ]);
+  const section = (icon,title,items,render,empty='موردی ثبت نشده است.') => `<div class="calendar-day-section">
+    <div class="calendar-day-section-title"><span>${icon} ${title}</span><span>${fa(items.length)}</span></div>
+    <div style="display:flex;flex-direction:column;gap:6px">${items.map(render).join('') || `<span style="font-size:11px;color:var(--text3)">${empty}</span>`}</div>
+  </div>`;
+  const panel = document.createElement('div');
+  panel.className = 'calendar-day-panel-overlay';
+  panel.id = 'calendar-day-panel-overlay';
+  panel.onclick = e => { if (e.target === panel) closeCalendarDayPanel(); };
+  panel.innerHTML = `<aside class="calendar-day-panel" role="dialog" aria-label="جزئیات روز">
+    <div class="calendar-day-panel-head">
+      <div><b style="font-size:15px;color:var(--text)">جزئیات روز</b><div style="font-size:11px;color:var(--accent2);margin-top:3px">${DateService.disp(_todoCalendarSelectedDate)} · ${jalaliWeekdayName(_todoCalendarSelectedDate)}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="closeCalendarDayPanel()">✕</button>
+    </div>
+    <div class="calendar-day-create-grid">
+      <button class="btn btn-primary btn-sm" onclick="_openCalendarCreate('task','${_todoCalendarSelectedDate}')">✅ کار</button>
+      <button class="btn btn-ghost btn-sm" onclick="_openCalendarCreate('session','${_todoCalendarSelectedDate}')">👥 جلسه</button>
+      <button class="btn btn-ghost btn-sm" onclick="_openCalendarCreate('habit','${_todoCalendarSelectedDate}')">🔥 عادت</button>
+      <button class="btn btn-ghost btn-sm" onclick="_openCalendarCreate('reminder','${_todoCalendarSelectedDate}')">🔔 یادآور</button>
+      <button class="btn btn-ghost btn-sm" onclick="_openCalendarCreate('occasion','${_todoCalendarSelectedDate}')">📌 مناسبت</button>
+      <button class="btn btn-ghost btn-sm" onclick="_openCalendarCreate('birthday','${_todoCalendarSelectedDate}')">🎂 تولد</button>
+    </div>
+    ${section('✅','کارها',list,_todoMiniEventHtml)}
+    ${section('👥','جلسات',sessions,_todoMiniSessionHtml)}
+    ${section('🔥','عادت‌ها',habits,_todoMiniHabitHtml)}
+    ${section('🔔','یادآورها',reminders,_todoMiniReminderHtml)}
+    ${section('📌','مناسبت‌ها',events,_todoMiniOccasionHtml)}
+    ${section('🎂','تولدها',birthdays,_todoMiniBirthdayHtml)}
+    <div class="calendar-day-section">
+      <div class="calendar-day-section-title"><span>📝 یادداشت روز</span><span style="font-weight:500">ذخیره خودکار</span></div>
+      <textarea class="form-textarea" id="todo-day-note" rows="4" oninput="_saveTodoDayNote('${_todoCalendarSelectedDate}')" placeholder="یادداشت این روز...">${escapeHtml(note)}</textarea>
+    </div>
+  </aside>`;
+  closeCalendarDayPanel();
+  document.body.appendChild(panel);
+}
+
+function closeCalendarDayPanel() {
+  document.getElementById('calendar-day-panel-overlay')?.remove();
 }
 
 function _calendarDateFromJalali(date = _todoCalendarCursor || _todayJalaliStr()) {
@@ -23133,7 +23288,10 @@ function _calendarPageHeaderHtml() {
         <div style="font-size:18px;font-weight:900;color:var(--text);margin-bottom:5px">تقویم ${_calendarModeLabel()} 📅</div>
         <div style="font-size:12px;color:var(--text3);line-height:1.8">کارها، مناسبت‌ها، تولدها و یادآوری‌های تکرارشونده در یک نما</div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="openAddTodoCalendarEvent(_todoCalendarSelectedDate || _todayJalaliStr())">+ افزودن مناسبت</button>
+      <div class="calendar-add-wrap">
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();_toggleCalendarAddMenu()">+ افزودن <span style="font-size:9px">⌄</span></button>
+        ${_calendarAddMenuHtml()}
+      </div>
     </div>
     <div class="todo-calendar-toolbar" style="margin-top:12px;margin-bottom:0">
       <div class="todo-calendar-toolbar-row">
@@ -23158,6 +23316,7 @@ function _calendarPageHeaderHtml() {
         <div class="todo-calendar-search-box ${(_todoCalendarSearchOpen || _todoCalendarSearch) ? 'open' : ''}">
           <button type="button" class="btn btn-ghost btn-sm todo-calendar-search-trigger ${_todoCalendarSearch ? 'active' : ''}" onpointerdown="event.preventDefault();_toggleTodoCalendarSearch(event)" onclick="return false" title="جستجو" aria-label="جستجو">🔍</button>
           <input class="input" id="todo-calendar-search" value="${escapeHtml(_todoCalendarSearch)}" onfocus="_openTodoCalendarSearch()" onblur="_maybeCloseTodoCalendarSearch()" oninput="_setTodoCalendarSearch(this.value)" placeholder="جستجوی کار یا مناسبت..." style="min-width:220px;max-width:360px;height:38px">
+          ${_todoCalendarSearchResultsHtml()}
         </div>
         <label class="todo-calendar-repeat-toggle" style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
           <input type="checkbox" ${_todoCalendarShowRepeats?'checked':''} onchange="_toggleTodoCalendarRepeats(this.checked)">
@@ -23251,12 +23410,17 @@ function _renderGregorianTodoCalendarView() {
     const heat = _todoCalendarHeat(list);
     const birthdays = _todoCalendarBirthdays(date);
     const events = _todoCalendarEvents(date);
-    const calendarItemsCount = list.length + birthdays.length + events.length;
+    const sessions = _todoCalendarSessions(date);
+    const habits = _todoCalendarHabits(date);
+    const paymentReminders = _todoCalendarPaymentReminders(date);
+    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length;
     const hasNote = !!(_db.todo_day_notes && _db.todo_day_notes[date]);
     const hasRepeat = list.some(t => (t.repeat && t.repeat !== 'none') || t._repeatPreview);
     const doneCount = list.filter(t => t.done).length;
     const remain = Math.max(0, list.length - doneCount);
     const visibleCount = _todoViewMode === 'week' ? 6 : 2;
+    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
+    const hiddenCalendarCount = Math.max(0,calendarItemsCount-shownCalendarCount);
     const faded = opts.faded ? '.38' : '1';
     return `<div class="todo-day-card" onclick="_openTodoDayPopover('${date}')" ondragover="event.preventDefault()" ondrop="_todoDropOnDate(event,'${date}')"
       style="min-height:${calendarItemsCount ? (_todoViewMode==='week'?'154px':'96px') : (_todoViewMode==='week'?'76px':'58px')};padding:8px;border:1px solid ${isSelected?'var(--accent2)':isToday?'var(--accent2)':isWeekend?'rgba(96,165,250,.30)':heat.border};border-top:${isToday?'3px solid var(--accent2)':isSelected?'3px solid var(--accent2)':'1px solid '+(isWeekend?'rgba(96,165,250,.30)':heat.border)};border-radius:10px;background:${isSelected?'rgba(124,106,247,.18)':isToday?'rgba(124,106,247,.16)':isWeekend?'rgba(96,165,250,.055)':heat.bg};opacity:${faded};overflow:hidden;cursor:pointer">
@@ -23270,8 +23434,11 @@ function _renderGregorianTodoCalendarView() {
       <div style="display:flex;flex-direction:column;gap:4px">
         ${events.slice(0, _todoViewMode==='week'?3:1).map(_todoMiniOccasionHtml).join('')}
         ${birthdays.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniBirthdayHtml).join('')}
+        ${sessions.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniSessionHtml).join('')}
+        ${habits.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniHabitHtml).join('')}
+        ${paymentReminders.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniReminderHtml).join('')}
         ${list.slice(0, visibleCount).map(_todoMiniEventHtml).join('')}
-        ${list.length > visibleCount ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" style="height:26px;font-size:10px;justify-content:center">مشاهده ${fa(list.length-visibleCount)} کار دیگر</button>` : ''}
+        ${hiddenCalendarCount ? `<button class="todo-more-badge" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" title="نمایش همه آیتم‌ها">+${fa(hiddenCalendarCount)}</button>` : ''}
       </div>
     </div>`;
   };
@@ -23451,7 +23618,10 @@ function _renderTodoCalendarView() {
     const heat = _todoCalendarHeat(list);
     const birthdays = _todoCalendarBirthdays(date);
     const events = _todoCalendarEvents(date);
-    const calendarItemsCount = list.length + birthdays.length + events.length;
+    const sessions = _todoCalendarSessions(date);
+    const habits = _todoCalendarHabits(date);
+    const paymentReminders = _todoCalendarPaymentReminders(date);
+    const calendarItemsCount = list.length + birthdays.length + events.length + sessions.length + habits.length + paymentReminders.length;
     const hasNote = !!(_db.todo_day_notes && _db.todo_day_notes[date]);
     const hasRepeat = list.some(t => t.repeat && t.repeat !== 'none' || t._repeatPreview);
     const faded = opts.faded ? '.38' : '1';
@@ -23459,6 +23629,8 @@ function _renderTodoCalendarView() {
     const remain = Math.max(0, list.length - doneCount);
     const hours = list.length ? Math.max(1, Math.round(list.length * .75)) : 0;
     const visibleCount = _todoViewMode === 'week' ? 6 : 2;
+    const shownCalendarCount = Math.min(events.length,_todoViewMode==='week'?3:1) + Math.min(birthdays.length,_todoViewMode==='week'?2:1) + Math.min(sessions.length,_todoViewMode==='week'?2:1) + Math.min(habits.length,_todoViewMode==='week'?2:1) + Math.min(paymentReminders.length,_todoViewMode==='week'?2:1) + Math.min(list.length,visibleCount);
+    const hiddenCalendarCount = Math.max(0,calendarItemsCount-shownCalendarCount);
     let shownCount = 0;
     const grouped = ['صبح','ظهر','عصر','بدون ساعت'].map(bucket => {
       const items = list.filter(t => _todoTimeBucket(t) === bucket).filter(() => shownCount++ < visibleCount);
@@ -23480,9 +23652,11 @@ function _renderTodoCalendarView() {
       <div style="display:flex;flex-direction:column;gap:4px">
         ${events.slice(0, _todoViewMode==='week'?3:1).map(_todoMiniOccasionHtml).join('')}
         ${birthdays.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniBirthdayHtml).join('')}
+        ${sessions.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniSessionHtml).join('')}
+        ${habits.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniHabitHtml).join('')}
+        ${paymentReminders.slice(0, _todoViewMode==='week'?2:1).map(_todoMiniReminderHtml).join('')}
         ${_todoViewMode === 'week' ? grouped : list.slice(0, visibleCount).map(_todoMiniEventHtml).join('')}
-        ${list.length > visibleCount && _todoViewMode !== 'week' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" style="height:26px;font-size:10px;justify-content:center">مشاهده ${fa(list.length-visibleCount)} کار دیگر</button>` : ''}
-        ${list.length > 6 && _todoViewMode === 'week' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" style="height:26px;font-size:10px;justify-content:center">مشاهده ${fa(list.length-6)} کار دیگر</button>` : ''}
+        ${hiddenCalendarCount ? `<button class="todo-more-badge" onclick="event.stopPropagation();_openTodoDayPopover('${date}')" title="نمایش همه آیتم‌ها">+${fa(hiddenCalendarCount)}</button>` : ''}
       </div>
     </div>`;
   };
@@ -23597,7 +23771,7 @@ async function renderCalendar() {
     _todoViewMode = 'month';
     localStorage.setItem('tp_todo_view_mode', _todoViewMode);
   }
-  updateTopbarActions(`<button class="btn btn-primary btn-sm" onclick="openAddTodoCalendarEvent(_todoCalendarSelectedDate || _todayJalaliStr())">+ افزودن مناسبت</button>`);
+  updateTopbarActions(`<button class="btn btn-primary btn-sm" onclick="_toggleCalendarAddMenu()">+ افزودن <span style="font-size:9px">⌄</span></button>`);
   setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_calendarPageHeaderHtml()}${_renderTodoCalendarView()}</div>`);
   _checkTodoReminders();
 }
