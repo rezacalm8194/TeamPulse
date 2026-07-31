@@ -22810,7 +22810,20 @@ function _todoCalendarPaymentReminders(date, force = false) {
 function _todoCalendarKeyEvents(date, force = false) {
   if (!force && !_todoCalendarFilterActive('reminders')) return [];
   const key = _jalaliKey(date);
-  return (_db.key_events || []).filter(e => _jalaliKey(e.date_jalali || '') === key || (!e.remind_done && _jalaliKey(e.remind_date || '') === key));
+  return (_db.key_events || [])
+    .filter(e => _jalaliKey(e.date_jalali || '') === key || (!e.remind_done && _jalaliKey(e.remind_date || '') === key))
+    .map(e => {
+      const person = (_db.students || []).find(s => String(s.id) === String(e.student_id));
+      return {...e,_personName:person ? `${person.name || ''} ${person.lname || ''}`.trim() : ''};
+    });
+}
+
+function _openTodoCalendarKeyEvent(id) {
+  const event = (_db.key_events || []).find(e => String(e.id) === String(id));
+  if (!event) return;
+  const person = (_db.students || []).find(s => String(s.id) === String(event.student_id));
+  const name = person ? `${person.name || ''} ${person.lname || ''}`.trim() : '';
+  if (typeof openKeyEvents === 'function' && event.student_id != null) openKeyEvents(event.student_id, name);
 }
 
 function _todoMiniSessionHtml(s) {
@@ -22833,8 +22846,13 @@ function _todoMiniReminderHtml(r) {
 }
 
 function _todoMiniKeyEventHtml(e) {
-  return `<div class="todo-mini-key-event" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(251,191,36,.10);border-right:3px solid #fbbf24">
-    <span>⭐</span><span style="font-size:10px;color:#fbbf24;font-weight:800">رویداد مهم</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml((e.text || '').replace(/<[^>]*>/g,' '))}</span>
+  const personName = e._personName || (() => {
+    const person = (_db.students || []).find(s => String(s.id) === String(e.student_id));
+    return person ? `${person.name || ''} ${person.lname || ''}`.trim() : '';
+  })();
+  const plainText = (e.text || '').replace(/<[^>]*>/g,' ');
+  return `<div class="todo-mini-key-event" onclick="event.stopPropagation();_openTodoCalendarKeyEvent(${JSON.stringify(e.id)})" title="${escapeHtml(personName ? personName + ' · ' + plainText : plainText)}" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(251,191,36,.10);border-right:3px solid #fbbf24;cursor:${personName?'pointer':'default'}">
+    <span>⭐</span><span style="font-size:10px;color:#fbbf24;font-weight:800;flex-shrink:0">رویداد مهم</span>${personName?`<span style="font-size:10px;color:#fde68a;font-weight:900;flex-shrink:0;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.22);border-radius:999px;padding:1px 6px">👤 ${escapeHtml(personName)}</span>`:''}<span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(plainText)}</span>
   </div>`;
 }
 
@@ -22983,7 +23001,7 @@ function _todoDropOnDate(event, date) {
 
 function _todoCalendarResponsiveCss() {
   return `<style>
-    .todo-calendar-shell{max-width:920px;margin:0 auto;padding:0 8px 70px}
+    .todo-calendar-shell{width:100%;max-width:1480px;margin:0 auto;padding:0 8px 70px}
     .todo-sticky-add-box{position:sticky;top:0;z-index:60;background:var(--bg)!important;border:none;border-radius:0;padding:0 0 12px!important;margin-bottom:14px;box-shadow:0 10px 24px rgba(0,0,0,.22)}
     .todo-calendar-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
     .todo-calendar-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
@@ -23032,6 +23050,8 @@ function _todoCalendarResponsiveCss() {
     .todo-calendar-week-grid{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));gap:8px;overflow:auto;padding-bottom:4px}
     .todo-calendar-month-grid{display:grid;grid-template-columns:repeat(7,minmax(72px,1fr));gap:7px;overflow:auto}
     .todo-calendar-side{display:flex;flex-direction:column;gap:10px}
+    .todo-calendar-report-section{margin-top:12px;animation:todoCalendarSectionIn .18s ease-out both}
+    @keyframes todoCalendarSectionIn{from{opacity:.65;transform:translateY(4px)}to{opacity:1;transform:none}}
     .todo-calendar-mobile-range-list{display:none}
     .todo-calendar-year-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
     .todo-calendar-year-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px}
@@ -23074,6 +23094,7 @@ function _todoCalendarResponsiveCss() {
       .todo-calendar-stats>div{min-width:0!important;padding:7px!important}
       .todo-calendar-stats div[style*="font-size:16px"]{font-size:14px!important}
       .todo-calendar-week-layout,.todo-calendar-month-layout,.todo-calendar-year-layout{grid-template-columns:1fr!important;gap:10px}
+      .todo-calendar-report-section{margin-top:10px}
       .todo-calendar-week-grid{grid-template-columns:1fr!important;overflow:visible!important;gap:8px}
       .todo-calendar-week-day-label{text-align:right!important;margin:0 2px 5px!important;font-size:12px!important}
       .todo-calendar-month-grid{grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:5px!important;overflow:visible!important}
@@ -23743,10 +23764,10 @@ function _renderTodoCalendarView() {
       </div>
       ${mobileRangeList('لیست کارهای این هفته', weekTasks, rawWeekTasks)}
       <div class="todo-calendar-side">
-        ${_todoPerformanceReportHtml('گزارش عملکرد هفته', weekPerf)}
         ${listPreview('کارهای امروز', stats.todayTasks, 'امروز کاری ندارید.')}
         ${listPreview('عقب‌افتاده‌ها', stats.overdue, 'کار عقب‌افتاده‌ای نیست.')}
         ${listPreview('نزدیک‌ترین موعد', nearest, 'موعد نزدیکی وجود ندارد.')}
+        <div class="todo-calendar-report-section">${_todoPerformanceReportHtml('گزارش عملکرد هفته', weekPerf)}</div>
       </div>
     </div>`;
   }
@@ -23770,12 +23791,12 @@ function _renderTodoCalendarView() {
     return header + `<div class="todo-calendar-month-layout">
       <div>
         <div style="font-size:15px;font-weight:800;color:var(--text);margin:2px 0 10px">${JMONTHS[cm-1]} ${fa(cy)}</div>
-        ${_todoPerformanceReportHtml('گزارش عملکرد ماه', monthPerf)}
         <div class="todo-calendar-month-grid">
           ${weekDays.map(w=>`<div style="font-size:10px;color:var(--text3);font-weight:700;text-align:center;padding-bottom:2px">${w}</div>`).join('')}
           ${cells.map((x,i)=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded,weekIndex:i%7})).join('')}
         </div>
         ${mobileRangeList('لیست کارهای این ماه', monthTasks, rawMonthTasks)}
+        <div class="todo-calendar-report-section">${_todoPerformanceReportHtml('گزارش عملکرد ماه', monthPerf)}</div>
       </div>
     </div>`;
   }
@@ -23823,11 +23844,11 @@ function _renderTodoCalendarView() {
       <span>سنگین</span><span style="width:14px;height:14px;border-radius:3px;background:rgba(239,68,68,.16);border:1px solid rgba(239,68,68,.55)"></span>
     </div>
   </div>
-  ${_todoPerformanceReportHtml('گزارش عملکرد سال', yearPerf)}
   <div class="todo-calendar-year-layout">
     <div class="todo-calendar-year-grid">${monthCards}</div>
     ${mobileRangeList('لیست کارهای امسال', yearTasks, rawYearTasks)}
-  </div>`;
+  </div>
+  <div class="todo-calendar-report-section">${_todoPerformanceReportHtml('گزارش عملکرد سال', yearPerf)}</div>`;
 }
 
 async function renderCalendar() {
