@@ -5090,7 +5090,7 @@ window.api = {
     setFamily: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.family_id=p.family_id;_save();} return _P({ok:true}); },
     add: (p)=>{
       const id=_nextId('students');
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'',organization_name:p.organization_name||'',address:p.address||'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -5102,7 +5102,7 @@ window.api = {
     },
     update: (p)=>{
       const s=_db.students.find(x=>x.id===p.id); if(!s)return _P({ok:false});
-      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false});
+      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',organization_name:p.organization_name||'',address:p.address||'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false});
       const selectedPackages = p.packages || [];
       const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
       const removedPackageIds = _db.packages
@@ -8072,6 +8072,9 @@ async function openStudentDetail(id) {
       <div class="detail-row"><span class="detail-key">نام</span><span class="detail-val">${s.name} ${s.lname}</span></div>
       <div class="detail-row"><span class="detail-key">تاریخ رزرو/ثبت‌نام</span><span class="detail-val">${DateService.disp(s.date_jalali) || '—'}</span></div>
       <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${s.phone || '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">دسته‌بندی مشتری</span><span class="detail-val">${s.customer_category || '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">نام مجموعه</span><span class="detail-val">${s.organization_name || '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">آدرس</span><span class="detail-val">${s.address || '—'}</span></div>
       <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${s.note || '—'}</span></div>
     </div>
     <div class="detail-section">
@@ -8417,6 +8420,18 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
       <div class="form-group">
         ${calendarDateFieldHtml('f-date', s?.date_jalali, 'تاریخ رزرو / ثبت‌نام')}
       </div>
+      <div class="form-group">
+        <label class="form-label">دسته‌بندی مشتری</label>
+        <input class="form-input" id="f-customer-category" placeholder="مثلاً: ویژه، سازمانی، عادی" value="${s?.customer_category || ''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">نام مجموعه</label>
+        <input class="form-input" id="f-organization-name" placeholder="نام شرکت یا مجموعه" value="${s?.organization_name || ''}">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">آدرس</label>
+        <textarea class="form-textarea" id="f-address" rows="2" placeholder="آدرس مشتری یا مجموعه">${s?.address || ''}</textarea>
+      </div>
       <div class="form-group full">
         <label class="form-label">این شخص:</label>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
@@ -8581,6 +8596,9 @@ async function saveStudentNew() {
     name, lname,
     phone: document.getElementById('f-phone')?.value || '',
     date: readCalendarDateField('f-date'),
+    customer_category: document.getElementById('f-customer-category')?.value.trim() || '',
+    organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
+    address: document.getElementById('f-address')?.value.trim() || '',
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplier,
@@ -8606,6 +8624,9 @@ async function saveStudentEdit(id) {
     id, name, lname,
     phone: document.getElementById('f-phone')?.value || '',
     date: readCalendarDateField('f-date'),
+    customer_category: document.getElementById('f-customer-category')?.value.trim() || '',
+    organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
+    address: document.getElementById('f-address')?.value.trim() || '',
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplierEdit,
