@@ -9013,7 +9013,7 @@ async function openEditPayment(id) {
       </div>
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی الان *</label>
-        <input class="form-input amount-input" id="ep-amount" type="number" value="${p.amount}">
+        <input class="form-input amount-input" id="ep-amount" type="number" min="0" value="${p.amount}">
       </div>
       <div class="form-group">
         <label class="form-label">واحد پول</label>
@@ -9040,9 +9040,10 @@ async function openEditPayment(id) {
 }
 
 async function savePaymentEdit(id) {
-  const amount = +(document.getElementById('ep-amount')?.value || 0);
+  const amountRaw = document.getElementById('ep-amount')?.value?.trim() ?? '';
+  const amount = Number(amountRaw);
   const date = document.getElementById('ep-date')?.value;
-  if (!amount || amount <= 0) { showToast('مبلغ دریافتی را وارد کنید', 'error'); return; }
+  if (amountRaw === '' || !Number.isFinite(amount) || amount < 0) { showToast('مبلغ معتبر وارد کنید (صفر مجاز است)', 'error'); return; }
   if (!date) { showToast('تاریخ را وارد کنید', 'error'); return; }
   const payments = await window.api.payments.getAll();
   const p = payments.find(x => x.id === id);
