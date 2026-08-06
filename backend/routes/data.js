@@ -1,6 +1,11 @@
 const router = require('express').Router();
 const db = require('../config/database');
 const auth = require('../middleware/auth');
+const { createHash } = require('crypto');
+
+function dataEtag(serialized) {
+  return createHash('sha256').update(String(serialized || '')).digest('hex');
+}
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS user_data_versions (
@@ -408,13 +413,25 @@ function handleSaveData(req, res) {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const grant = getTeamGrant(req, targetId);
-    const { force } = req.body;
+    const { force, base_etag: baseEtag } = req.body;
     let data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(targetId);
     if (existing) {
       let previousData = null;
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
+      const currentEtag = dataEtag(existing.data);
+      // Team-member writes are merged field-by-field below. Owner/admin writes
+      // replace the full account document, so protect them from stale tabs or
+      // another device silently overwriting a newer server version.
+      if (!grant && !force && baseEtag && baseEtag !== currentEtag) {
+        return res.status(409).json({
+          error: 'sync_conflict',
+          message: 'Server data changed since this client loaded it.',
+          data: sanitizeUserDataForStorage(previousData),
+          etag: currentEtag,
+        });
+      }
       if (grant) {
         data = mergeAllowedTeamTodos(previousData, data, grant);
       } else {
@@ -452,7 +469,8 @@ function handleSaveData(req, res) {
     } else {
       db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(targetId, JSON.stringify(data));
     }
-    res.json({ success: true });
+    const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
+    res.json({ success: true, updated_at: saved?.updated_at || null, etag: dataEtag(saved?.data) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
 
@@ -472,7 +490,11 @@ router.get('/:accountId', auth, (req, res) => {
     if (!row) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId);
     const data = JSON.parse(row.data);
-    res.json({ data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data), updated_at: row.updated_at });
+    res.json({
+      data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data),
+      updated_at: row.updated_at,
+      etag: dataEtag(row.data),
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

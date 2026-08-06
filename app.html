@@ -2445,6 +2445,25 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-card:not(.tbl-responsive) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .table-card:not(.tbl-responsive) table { min-width: 480px; }
 
+  .staff-accounts-table tbody tr,
+  .staff-accounts-table tbody td { height:auto; }
+  .staff-accounts-table .staff-role-cell { max-width:none; }
+  .staff-accounts-table .staff-role-cell-inner {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:4px;
+    overflow:visible;
+  }
+  .staff-accounts-table .staff-actions-cell {
+    width:100%;
+    text-align:initial;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .staff-accounts-table .staff-actions-cell::before { margin-bottom:0; }
+
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
   .table-header .table-search{width:100%;max-width:none!important}
   .table-header .table-search input{width:100%}
@@ -12447,7 +12466,7 @@ async function renderStaff() {
     </div>
   </div>
 
-  <div class="table-card staff-accounts-table">
+  <div class="table-card staff-accounts-table tbl-responsive">
     <div class="table-header">
       <div class="title-wrap">
         <span class="title">لیست پرسنل و اعضا</span>
@@ -12484,19 +12503,19 @@ async function renderStaff() {
 
       const rowMenuId = `staff-menu-${s.id}`;
       html += `<tr>
-        <td>
+        <td data-label="نام">
           <div class="name-cell">
             ${avatar(s.name, i)}
             <div><div style="font-weight:500">${s.name} ${s.lname}</div><div class="name-cell-sub">${s.phone||'—'}</div></div>
           </div>
         </td>
-        <td><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
-        <td class="staff-role-cell"><div class="staff-role-cell-inner">${staffIsPersonnel(s) ? roleTags : '<span style="color:var(--text3)">عضو پرداختی</span>'}</div></td>
-        <td>${cardMasked}</td>
-        <td><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
-        <td><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
-        <td style="font-size:12px;color:var(--text2)">${dueDateCell}</td>
-        <td class="staff-actions-cell">
+        <td data-label="نوع"><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
+        <td data-label="نقش‌ها" class="staff-role-cell"><div class="staff-role-cell-inner">${staffIsPersonnel(s) ? roleTags : '<span style="color:var(--text3)">عضو پرداختی</span>'}</div></td>
+        <td data-label="شماره کارت">${cardMasked}</td>
+        <td data-label="حقوق این ماه"><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
+        <td data-label="جمع پرداختی"><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
+        <td data-label="سررسید این ماه" style="font-size:12px;color:var(--text2)">${dueDateCell}</td>
+        <td data-label="عملیات" class="staff-actions-cell">
           <div class="row-menu">
             <button class="row-menu-btn" onclick="toggleRowMenu(event,'${rowMenuId}')">⋮</button>
             <div class="row-menu-panel" id="${rowMenuId}">
@@ -19746,7 +19765,41 @@ function _serverTimes(data) {
 }
 
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
-async function _syncToServer() {
+function _scheduleServerSyncRetry() {
+  clearTimeout(window._serverSyncRetryTimer);
+  const attempt = Math.min(6, Number(window._serverSyncRetryAttempt || 0) + 1);
+  window._serverSyncRetryAttempt = attempt;
+  const delay = Math.min(60000, 1500 * Math.pow(2, attempt - 1));
+  window._serverSyncRetryTimer = setTimeout(() => _syncToServer(), delay);
+}
+
+function _notifyRecentCreatedTodos(accountId) {
+  if (!accountId || !_sbSession?.token) return;
+  window._todoCreatedNotifyRequests = window._todoCreatedNotifyRequests || new Set();
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  (_db?.todos || [])
+    .filter(todo => {
+      const createdAt = Date.parse(todo?.created_at || '') || 0;
+      return todo && todo.id != null && !todo.archived && createdAt >= cutoff;
+    })
+    .slice(-20)
+    .forEach(todo => {
+      const requestKey = `${accountId}:${todo.id}:${todo.created_at || ''}`;
+      if (window._todoCreatedNotifyRequests.has(requestKey)) return;
+      window._todoCreatedNotifyRequests.add(requestKey);
+      _apiFetch('/api/reminders/notify-todo-created', {
+        method: 'POST',
+        body: JSON.stringify({ ownerAccountId: accountId, todoId: todo.id }),
+      }).then(res => {
+        if (res.status >= 500) window._todoCreatedNotifyRequests.delete(requestKey);
+      }).catch(e => {
+        window._todoCreatedNotifyRequests.delete(requestKey);
+        console.warn('[Push] todo-created request failed:', e.message);
+      });
+    });
+}
+
+async function _syncToServer(conflictAttempt = 0) {
   if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
   if (_adoptManualRestoreFromLocalStorage('before-sync')) {
@@ -19793,7 +19846,13 @@ async function _syncToServer() {
     if (!accId) return null;
     const forceSync = !!window._forceNextSync;
     const localSavedAt = Number(_db?._lastSaved || 0) || 0;
-    if (!forceSync && localSavedAt && localSavedAt <= (window._lastServerSyncSavedAt || 0)) {
+    const localFingerprint = _dataFingerprint(_serverDataSignature(_db));
+    if (
+      !forceSync &&
+      localSavedAt &&
+      localSavedAt <= (window._lastServerSyncSavedAt || 0) &&
+      localFingerprint === window._lastServerSyncFingerprint
+    ) {
       _clearServerSyncPending(localSavedAt);
       return null;
     }
@@ -19801,13 +19860,35 @@ async function _syncToServer() {
     const syncPayload = _serverSafeData(_db);
     const res = await _apiFetch('/api/data/' + accId, {
       method: 'PUT',
-      body: JSON.stringify({ data: syncPayload, force: forceSync, client_saved_at: syncSavedAt })
+      body: JSON.stringify({
+        data: syncPayload,
+        force: forceSync,
+        client_saved_at: syncSavedAt,
+        base_etag: window._serverDataEtag || null,
+      })
     });
+    let responseData = null;
+    try { responseData = await res.clone().json(); } catch(e) {}
+
+    if (res.status === 409 && responseData?.error === 'sync_conflict' && responseData.data && conflictAttempt < 2) {
+      const localPending = _cloneData(_db);
+      _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data);
+      _migrate(_db);
+      window._serverDataEtag = responseData.etag || null;
+      try { localStorage.setItem(window._activeDBKey || DB_KEY, JSON.stringify(_db)); } catch(e) {}
+      _markServerSyncPending('conflict-merged');
+      return _syncToServer(conflictAttempt + 1);
+    }
     if (res && res.ok) {
       if (forceSync) window._forceNextSync = false;
       window._lastServerSyncSavedAt = syncSavedAt;
+      window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
+      window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+      window._serverSyncRetryAttempt = 0;
+      clearTimeout(window._serverSyncRetryTimer);
       _clearServerSyncPending(syncSavedAt);
       if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
+      setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
     }
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
       window._teamSyncForbiddenWarned = true;
@@ -19820,8 +19901,27 @@ async function _syncToServer() {
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
     }
+    if (res && !res.ok) {
+      _markServerSyncPending('http-' + res.status);
+      _scheduleServerSyncRetry();
+      if (!window._serverSyncFailureWarned) {
+        window._serverSyncFailureWarned = true;
+        showToast('ذخیره روی دستگاه انجام شد؛ ارتباط سرور برقرار شود خودکار دوباره ارسال می‌شود', 'error');
+        setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
+      }
+    }
     return res || null;
-  } catch(e) { console.warn('Server sync failed:', e.message); return null; }
+  } catch(e) {
+    console.warn('Server sync failed:', e.message);
+    _markServerSyncPending('network-error');
+    _scheduleServerSyncRetry();
+    if (!window._serverSyncFailureWarned) {
+      window._serverSyncFailureWarned = true;
+      showToast('اینترنت یا سرور در دسترس نیست؛ داده روی دستگاه محفوظ است و خودکار دوباره ارسال می‌شود', 'error');
+      setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
+    }
+    return null;
+  }
 }
 
 function _syncItemTime(item) {
@@ -19892,7 +19992,9 @@ async function _loadFromServer() {
     if (!res.ok) return false;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
-    const { data } = await res.json();
+    const payload = await res.json();
+    const { data } = payload;
+    window._serverDataEtag = payload.etag || window._serverDataEtag || null;
     if (!data) return false;
     if (_isManualRestoreProtected()) {
       const expectedSig = _getManualRestoreExpectedSignature();
@@ -20092,7 +20194,12 @@ function _bindServerSyncLifecycleHandlers() {
       const url = (window.location.origin || '') + '/api/data/' + accId +
         '?token=' + encodeURIComponent(_sbSession.token);
       const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
-      const data = JSON.stringify({ data: _serverSafeData(_db), force: !!window._forceNextSync, client_saved_at: savedAt });
+      const data = JSON.stringify({
+        data: _serverSafeData(_db),
+        force: !!window._forceNextSync,
+        client_saved_at: savedAt,
+        base_etag: window._serverDataEtag || null,
+      });
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
         const sent = navigator.sendBeacon(url, blob);
@@ -25440,22 +25547,17 @@ async function saveTodo() {
 
   _db.todos.push(newTodo);
   _save();
-  if (_teamAccessSession()) {
-    clearTimeout(window._serverSyncTimer);
-    const res = await _syncToServer();
-    if (!res || !res.ok) {
-      // Rollback: کار موقتی که هنوز روی سرور ذخیره نشده حذف شود
+  clearTimeout(window._serverSyncTimer);
+  const syncRes = await _syncToServer();
+  if (syncRes && syncRes.status === 403 && _teamAccessSession()) {
+      // A definitive permission rejection must be rolled back. Transient
+      // network/server failures stay local and are retried automatically.
       _db.todos = _db.todos.filter(t => t.id !== id);
       _save();
-      if (res && (res.status === 403 || res.status === 409)) {
-        showToast('ذخیره کار رد شد؛ اتصال هم‌تیمی را بررسی کن', 'error');
-      } else {
-        showToast('کار داخل TeamPulse ذخیره نشد؛ اتصال هم‌تیمی را دوباره باز کن', 'error');
-      }
+      showToast('ذخیره کار رد شد؛ دسترسی هم‌تیمی را بررسی کن', 'error');
       await _loadFromServer();
       renderTodoList();
       return;
-    }
   }
 
   // Schedule notification
@@ -25469,7 +25571,7 @@ async function saveTodo() {
   }
 
   closeModal();
-  showToast('کار اضافه شد ✓', 'success');
+  showToast(syncRes?.ok ? 'کار اضافه و روی سرور ذخیره شد ✓' : 'کار روی دستگاه ذخیره شد و در صف ارسال به سرور است', syncRes?.ok ? 'success' : 'error');
   renderTodoList();
 }
 

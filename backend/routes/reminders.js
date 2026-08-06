@@ -275,6 +275,10 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
   return { sent, failed };
 }
 
+function todoScheduledDate(todo) {
+  return todo?.scheduled_date || todo?.scheduledDate || todo?.date_jalali || '';
+}
+
 // ── ارسال push فقط به صاحب حساب ───────────────────────────────
 async function pushToOwner(accountId, title, body) {
   const ownerEmail = accountEmail(accountId);
@@ -381,18 +385,19 @@ cron.schedule('* * * * *', async () => {
       try { userData = JSON.parse(row.data); } catch { continue; }
 
       for (const t of (userData.todos || [])) {
-        if (t.done || t.archived || !t.time || !t.date_jalali || !(t.remind_min > 0)) continue;
+        const scheduledDate = todoScheduledDate(t);
+        if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
         if (!todoBelongsToAccount(t, acc.id)) {
           console.warn(`[Push] skipped foreign todo "${t.title}" (belongs to ${t.owner_id}, not account ${acc.id})`);
           continue;
         }
 
-        const taskUTC = jalaliToUTC(t.date_jalali, t.time);
+        const taskUTC = jalaliToUTC(scheduledDate, t.time);
         if (!taskUTC) continue;
 
         const notifUTC = new Date(taskUTC.getTime() - t.remind_min * 60000);
         if (isDueForPush(now, notifUTC)) {
-          const key = `todo:${acc.id}:${t.id}:${t.date_jalali}:${t.time}:${t.remind_min}`;
+          const key = `todo:${acc.id}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
           console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
           await deliverOnce(key, acc.id, 'todo', () =>
             pushTodoToRecipients(acc.id, userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
@@ -550,6 +555,49 @@ router.post('/test-push', auth, async (req, res) => {
     return res.status(502).json({ error: 'push_delivery_failed', ...result });
   }
   res.json({ success: true, ...result });
+});
+
+// Send an immediate notification after a newly-created task is confirmed on
+// the server. Scheduled reminders continue to be handled by the cron above.
+router.post('/notify-todo-created', auth, async (req, res) => {
+  try {
+    const accountId = String(req.body?.ownerAccountId || req.user.id || '').trim();
+    const todoId = String(req.body?.todoId || '').trim();
+    if (!accountId || !todoId) return res.status(400).json({ error: 'invalid_todo' });
+
+    const requesterEmail = String(req.user.email || '').trim().toLowerCase();
+    const isOwner = String(req.user.id) === accountId || req.user.role === 'admin';
+    if (!isOwner && !getActiveTeamGrant(accountId, requesterEmail)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(accountId);
+    if (!row?.data) return res.status(404).json({ error: 'account_data_not_found' });
+    const userData = JSON.parse(row.data);
+    const todo = (userData.todos || []).find(item => String(item?.id) === todoId);
+    if (!todo || !todoBelongsToAccount(todo, accountId)) {
+      return res.status(404).json({ error: 'todo_not_found' });
+    }
+    const createdAt = Date.parse(todo.created_at || '');
+    if (!Number.isFinite(createdAt) || Date.now() - createdAt > 30 * 60 * 1000) {
+      return res.status(409).json({ error: 'todo_notification_window_expired' });
+    }
+    const createdBy = String(todo.created_by || todo.createdBy || '').trim();
+    if (!isOwner && createdBy && createdBy !== String(req.user.id)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const deliveryKey = `todo-created:${accountId}:${todoId}:${todo.created_at || ''}`;
+    const schedule = [todoScheduledDate(todo), todo.time].filter(Boolean).join(' ساعت ');
+    const body = `${schedule ? schedule + ' — ' : ''}${todo.note ? String(todo.note).slice(0, 80) : 'یک کار جدید ثبت شد'}`;
+    const delivered = await deliverOnce(deliveryKey, accountId, 'todo-created', () =>
+      pushTodoToRecipients(accountId, userData, todo, `کار جدید: ${todo.title || 'بدون عنوان'}`, body)
+    );
+    res.json({ success: true, delivered });
+  } catch (e) {
+    console.error('[Push] todo-created failed:', e.message);
+    res.status(500).json({ error: 'todo_notification_failed' });
+  }
 });
 
 module.exports = router;
