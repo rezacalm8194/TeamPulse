@@ -3974,7 +3974,18 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .stu-tools-row{padding:8px 10px 0}
   .mstu-actions{display:none}
   .archive-search{min-width:100%;max-width:none}
-  .archive-sheet{max-height:none}
+  .archive-toolbar{padding:12px 10px;gap:9px}
+  .archive-toolbar>div:first-child{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .archive-toolbar-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .archive-toolbar-actions .btn{width:100%;min-height:40px;justify-content:center;font-size:11.5px}
+  .archive-sheet{max-height:calc(100dvh - 345px);min-height:260px;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:max(8px,env(safe-area-inset-bottom,8px))}
+  .archive-sheet::before{content:'برای دیدن همه ستون‌ها، جدول را به چپ و راست بکشید ↔';display:block;position:sticky;right:0;width:calc(100vw - 38px);box-sizing:border-box;padding:7px 10px;background:rgba(124,106,247,.1);color:var(--accent2);font-size:10.5px;border-bottom:1px solid rgba(124,106,247,.2);z-index:4}
+  .archive-sheet table{min-width:1000px;font-size:11px}
+  .archive-sheet th,.archive-sheet td{padding:9px 10px}
+  .archive-sheet tbody tr{min-height:46px}
+  .archive-preview{max-height:42dvh;-webkit-overflow-scrolling:touch}
+  .archive-preview table{min-width:820px;font-size:10.5px}
+  #archive-file{min-height:48px;padding:10px;font-size:11px}
 }
 
   </style>
