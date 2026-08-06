@@ -3934,6 +3934,19 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 }
 .stu-tools-row .chip-bar{padding:0}
 .stu-table-actions{display:flex;justify-content:center}
+.archive-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:14px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.archive-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
+.archive-search{min-width:260px;max-width:420px;flex:1}
+.archive-sheet{overflow:auto;max-height:calc(100vh - 285px)}
+.archive-sheet table{min-width:1120px;border-collapse:separate;border-spacing:0}
+.archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
+.archive-sheet td{white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
+.archive-sheet .archive-actions{display:flex;gap:5px;cursor:default}
+.archive-sheet-count{font-size:12px;color:var(--text3)}
+.archive-import-help{font-size:12px;color:var(--text2);line-height:2;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.archive-preview{max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.archive-preview table{min-width:900px}
 @media(max-width:768px){
   .stu-table-wrap{display:none}
   .dashboard-debtors-wrap{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -3960,10 +3973,13 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .stu-stats-row .stat-value{font-size:14px!important}
   .stu-tools-row{padding:8px 10px 0}
   .mstu-actions{display:none}
+  .archive-search{min-width:100%;max-width:none}
+  .archive-sheet{max-height:none}
 }
 
   </style>
 <link rel="apple-touch-icon" href="/app-icon-192-v3.png">
+<script src="xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -5106,6 +5122,17 @@ window.api = {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(_studentSummary).reverse()),
     getArchived: ()=>_P(_db.students.filter(s=>s.archived).map(_studentSummary).reverse()),
     setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;_save();} return _P({ok:true}); },
+    addArchivedBulk: (rows)=>{
+      const added=[];
+      (rows||[]).forEach(p=>{
+        const name=String(p.name||'').trim(), lname=String(p.lname||'').trim();
+        if(!name&&!lname)return;
+        const id=_nextId('students');
+        const item={id,name,lname,phone:String(p.phone||''),date_jalali:String(p.date||''),customer_category:String(p.customer_category||''),organization_name:String(p.organization_name||''),address:String(p.address||''),note:String(p.note||''),family_id:null,is_supplier:false,wallet:0,archived:true,created_at:new Date().toISOString()};
+        _db.students.push(item); added.push(item);
+      });
+      _save(); return _P({ok:true,count:added.length});
+    },
     setFamily: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.family_id=p.family_id;_save();} return _P({ok:true}); },
     add: (p)=>{
       const id=_nextId('students');
@@ -12369,51 +12396,53 @@ async function archiveStudent(id, name) {
 
 async function unarchiveStudent(id, name) {
   await window.api.students.setArchived({ id, archived: false });
-  showToast(`${name} به لیست فعال برگشت ✓`, 'success');
+  showToast(`${name} به مشتری تبدیل و به پرونده‌ها منتقل شد ✓`, 'success');
   await renderArchive();
 }
 
+let archiveStudents = [];
+
 async function renderArchive() {
-  updateTopbarActions('');
-  const archived = await window.api.students.getArchived();
-
-  if (archived.length === 0) {
-    setContent(`${studentSectionNav('archive')}<div class="table-card"><div class="empty"><span>📦</span>
-      بایگانی خالی است. ${META.entitySingular||'شاگردانی'} که کارشان تمام شده را می‌توانی از صفحه "${META.sessionPlural||'جلسات'}" به بایگانی منتقل کنی.
-    </div></div>`);
-    return;
-  }
-
-  let html = `${studentSectionNav('archive')}<div class="table-card">
-    <div class="table-header"><span class="title">🗃 بایگانی ${META.entityPlural || 'شاگردان'}</span></div>
-    <table>
-      <thead><tr><th>نام</th><th>پکیج‌ها</th><th>قرارداد کل</th><th>پرداخت‌شده</th><th>مانده حساب</th><th>عملیات</th></tr></thead>
-      <tbody>`;
-
-  archived.forEach((s, i) => {
-    html += `<tr>
-      <td>
-        <div class="name-cell">
-          ${avatar(s.name, i)}
-          <div>
-            <div style="font-weight:500">${s.name} ${s.lname}</div>
-            <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
-          </div>
-        </div>
-      </td>
-      <td>${(s.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
-      <td><span class="amount amount-neutral">${fmt(s.totalAmount)}</span></td>
-      <td><span class="amount amount-paid">${fmt(s.totalPaid)}</span></td>
-      <td>${balanceHtml(s.balance)}</td>
-      <td>
-        <button class="btn btn-primary btn-sm" onclick="unarchiveStudent(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">↩️ بازگرداندن به لیست</button>
-      </td>
-    </tr>`;
-  });
-
-  html += `</tbody></table></div>`;
-  setContent(html);
+  updateTopbarActions(`<button class="btn btn-primary" onclick="openArchiveImport()">📥 افزودن با اکسل</button><button class="btn btn-ghost" onclick="openArchivePersonModal()">＋ افزودن فرد</button>`);
+  archiveStudents = await window.api.students.getArchived();
+  const html = `${studentSectionNav('archive')}<div class="table-card">
+    <div class="archive-toolbar">
+      <div><div class="title">🗃 فهرست بایگانی</div><div class="archive-sheet-count" id="archive-count">${fa(archiveStudents.length)} نفر</div></div>
+      <input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در نام، تماس، مجموعه، دسته‌بندی یا آدرس..." oninput="filterArchiveTable(this.value)">
+      <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button></div>
+    </div>
+    <div class="archive-sheet"><table><thead><tr><th>ردیف</th><th>نام</th><th>نام خانوادگی</th><th>شماره تماس</th><th>تاریخ رزرو / شروع همکاری</th><th>دسته‌بندی</th><th>نام مجموعه</th><th>آدرس</th><th>عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
+  </div>`;
+  setContent(html); paintArchiveRows(archiveStudents);
 }
+
+function paintArchiveRows(rows) {
+  const body=document.getElementById('archive-tbody'); if(!body)return;
+  document.getElementById('archive-count').textContent=`${fa(rows.length)} نفر`;
+  body.innerHTML=rows.length?rows.map((s,i)=>`<tr onclick="openArchivePersonDetail(${s.id})">
+    <td>${fa(i+1)}</td><td style="font-weight:600">${escapeHtml(s.name||'—')}</td><td>${escapeHtml(s.lname||'—')}</td>
+    <td style="direction:ltr;text-align:right">${escapeHtml(s.phone||'—')}</td><td>${escapeHtml(DateService.disp(s.date_jalali)||'—')}</td>
+    <td>${escapeHtml(s.customer_category||'—')}</td><td>${escapeHtml(s.organization_name||'—')}</td><td title="${escapeHtml(s.address||'')}">${escapeHtml(s.address||'—')}</td>
+    <td onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
+    :`<tr><td colspan="9"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
+}
+
+function filterArchiveTable(value){const q=String(value||'').trim().toLowerCase();paintArchiveRows(!q?archiveStudents:archiveStudents.filter(s=>[s.name,s.lname,s.phone,s.date_jalali,s.customer_category,s.organization_name,s.address].some(v=>String(v||'').toLowerCase().includes(q))));}
+
+function archiveFormHtml(s={}){return `<div class="form-grid"><div class="form-group"><label class="form-label">نام *</label><input class="form-input" id="ar-name" value="${escapeHtml(s.name||'')}"></div><div class="form-group"><label class="form-label">نام خانوادگی *</label><input class="form-input" id="ar-lname" value="${escapeHtml(s.lname||'')}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group">${calendarDateFieldHtml('ar-date',s.date_jalali,'تاریخ رزرو / شروع همکاری')}</div><div class="form-group"><label class="form-label">دسته‌بندی</label><input class="form-input" id="ar-category" value="${escapeHtml(s.customer_category||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div><div class="form-group full"><label class="form-label">آدرس</label><textarea class="form-textarea" id="ar-address" rows="3">${escapeHtml(s.address||'')}</textarea></div></div>`;}
+
+function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id===id):{};openModal(id?'ویرایش فرد بایگانی‌شده':'افزودن فرد به بایگانی',archiveFormHtml(s),[{label:'ذخیره',cls:'btn-primary',action:`saveArchivePerson(${id||'null'})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);initDatePickers();}
+async function saveArchivePerson(id){const data={name:document.getElementById('ar-name').value.trim(),lname:document.getElementById('ar-lname').value.trim(),phone:document.getElementById('ar-phone').value.trim(),date:readCalendarDateField('ar-date'),customer_category:document.getElementById('ar-category').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),address:document.getElementById('ar-address').value.trim(),packages:[]};if(!data.name&&!data.lname){showToast('نام یا نام خانوادگی را وارد کنید','error');return;}if(id){const old=archiveStudents.find(x=>x.id===id);await window.api.students.update({...data,id,packages:old?.packages||[]});}else await window.api.students.addArchivedBulk([data]);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
+function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;openModal(`${escapeHtml(s.name)} ${escapeHtml(s.lname)}`,`<div class="detail-section"><div class="detail-row"><span class="detail-key">شماره تماس</span><span class="detail-val">${escapeHtml(s.phone||'—')}</span></div><div class="detail-row"><span class="detail-key">تاریخ رزرو / شروع همکاری</span><span class="detail-val">${escapeHtml(DateService.disp(s.date_jalali)||'—')}</span></div><div class="detail-row"><span class="detail-key">دسته‌بندی</span><span class="detail-val">${escapeHtml(s.customer_category||'—')}</span></div><div class="detail-row"><span class="detail-key">نام مجموعه</span><span class="detail-val">${escapeHtml(s.organization_name||'—')}</span></div><div class="detail-row"><span class="detail-key">آدرس</span><span class="detail-val">${escapeHtml(s.address||'—')}</span></div></div>`,[{label:'✓ تبدیل به مشتری',cls:'btn-primary',action:`closeModal();convertArchiveToCustomer(${id})`},{label:'✏️ ویرایش',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف کامل',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`}]);}
+async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!confirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
+async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!confirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
+
+let archiveImportRows=[];
+function openArchiveImport(){openModal('📥 افزودن گروهی با Excel',`<div class="archive-import-help">فایل Excel یا CSV را انتخاب کنید. عنوان ستون‌ها می‌تواند فارسی باشد: <b>نام، نام خانوادگی، شماره تماس، تاریخ رزرو یا تاریخ شروع همکاری، دسته‌بندی، نام مجموعه، آدرس</b>.<br>ردیف اول باید عنوان ستون‌ها باشد؛ پیش از ثبت، پیش‌نمایش داده‌ها نمایش داده می‌شود.</div><input type="file" id="archive-file" class="form-input" accept=".xlsx,.xls,.csv" onchange="readArchiveImportFile(this.files[0])"><div id="archive-import-status" style="margin-top:12px"></div>`,[{label:'ثبت افراد معتبر',cls:'btn-primary',action:'commitArchiveImport()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);archiveImportRows=[];}
+function archiveHeaderKey(v){return String(v||'').trim().replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/[\s‌_\-\/]/g,'').toLowerCase();}
+function mapArchiveImportRow(row){const normalized={};Object.keys(row||{}).forEach(k=>normalized[archiveHeaderKey(k)]=row[k]);const pick=(...keys)=>{for(const k of keys){const v=normalized[archiveHeaderKey(k)];if(v!==undefined&&v!==null&&String(v).trim()!=='')return String(v).trim();}return '';};return {name:pick('نام','firstname','first name'),lname:pick('نام خانوادگی','نام‌خانوادگی','فامیلی','lastname','last name'),phone:enDigits(pick('شماره تماس','شمارهتلفن','موبایل','تلفن','phone','mobile')).replace(/\.0$/,''),date:pick('تاریخ رزرو','تاریخ شروع همکاری','تاریخ','date','startdate'),customer_category:pick('دسته بندی','دسته‌بندی','دسته','category'),organization_name:pick('نام مجموعه','مجموعه','شرکت','organization','company'),address:pick('آدرس','نشانی','address')};}
+async function readArchiveImportFile(file){if(!file)return;const status=document.getElementById('archive-import-status');status.innerHTML='در حال خواندن فایل...';try{const buffer=await file.arrayBuffer();let raw=[];if(/\.csv$/i.test(file.name)){const text=new TextDecoder('utf-8').decode(buffer).replace(/^\uFEFF/,'');const wb=XLSX.read(text,{type:'string'});raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});}else{if(typeof XLSX==='undefined')throw new Error('کتابخانه Excel بارگذاری نشده');const wb=XLSX.read(buffer,{type:'array',cellDates:false});raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:'',raw:false});}archiveImportRows=raw.map(mapArchiveImportRow).filter(r=>r.name||r.lname);status.innerHTML=`<div style="margin-bottom:8px;color:var(--green)">${fa(archiveImportRows.length)} ردیف معتبر آماده ثبت است.</div><div class="archive-preview"><table><thead><tr><th>نام</th><th>نام خانوادگی</th><th>تماس</th><th>تاریخ</th><th>دسته‌بندی</th><th>مجموعه</th><th>آدرس</th></tr></thead><tbody>${archiveImportRows.slice(0,100).map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.lname)}</td><td>${escapeHtml(r.phone)}</td><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.customer_category)}</td><td>${escapeHtml(r.organization_name)}</td><td>${escapeHtml(r.address)}</td></tr>`).join('')}</tbody></table></div>${archiveImportRows.length>100?'<div style="margin-top:6px;color:var(--text3)">فقط ۱۰۰ ردیف اول در پیش‌نمایش نشان داده شده است.</div>':''}`;}catch(e){archiveImportRows=[];status.innerHTML=`<div style="color:var(--red)">خواندن فایل ممکن نشد: ${escapeHtml(e.message||'فرمت نامعتبر')}</div>`;}}
+async function commitArchiveImport(){if(!archiveImportRows.length){showToast('ابتدا یک فایل معتبر انتخاب کنید','error');return;}const result=await window.api.students.addArchivedBulk(archiveImportRows);closeModal();showToast(`${fa(result.count)} نفر به بایگانی افزوده شد ✓`,'success');await renderArchive();}
 
 // ════════════════════════════════════════════════════════════════════════════
 // STAFF / MEMBER ACCOUNTS — separate from students
