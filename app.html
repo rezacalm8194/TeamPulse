@@ -3944,6 +3944,10 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
 .archive-sheet .archive-actions{display:flex;gap:5px;cursor:default}
 .archive-sheet-count{font-size:12px;color:var(--text3)}
+.archive-bulkbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2)}
+.archive-bulkbar.active{display:flex}
+.archive-bulkbar .archive-selected-count{font-size:12px;font-weight:700;color:var(--accent2);margin-left:auto}
+.archive-check{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
 .archive-import-help{font-size:12px;color:var(--text2);line-height:2;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .archive-preview{max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:10px}
 .archive-preview table{min-width:900px}
@@ -3978,6 +3982,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .archive-toolbar>div:first-child{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px}
   .archive-toolbar-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7px}
   .archive-toolbar-actions .btn:nth-child(3){grid-column:1/-1}
+  .archive-bulkbar{padding:9px 10px;gap:6px}
+  .archive-bulkbar .archive-selected-count{width:100%;margin:0}
   .archive-toolbar-actions .btn{width:100%;min-height:40px;justify-content:center;font-size:11.5px}
   .archive-sheet{max-height:calc(100dvh - 345px);min-height:260px;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:max(8px,env(safe-area-inset-bottom,8px))}
   .archive-sheet::before{content:'برای دیدن همه ستون‌ها، جدول را به چپ و راست بکشید ↔';display:block;position:sticky;right:0;width:calc(100vw - 38px);box-sizing:border-box;padding:7px 10px;background:rgba(124,106,247,.1);color:var(--accent2);font-size:10.5px;border-bottom:1px solid rgba(124,106,247,.2);z-index:4}
@@ -5147,6 +5153,21 @@ window.api = {
     setArchiveColumns: (columns)=>{_db.archive_columns=(columns||[]).map(x=>String(x||'').trim()).filter(Boolean);_save();return _P({ok:true});},
     getArchiveOptions: ()=>_P({categories:[...(_db.archive_categories||[])],statuses:[...(_db.archive_relationship_statuses||[])]}),
     addArchiveOption: (p)=>{const key=p?.kind==='status'?'archive_relationship_statuses':'archive_categories';const value=String(p?.value||'').trim();_db[key]=Array.isArray(_db[key])?_db[key]:[];if(value&&!_db[key].some(x=>String(x).trim()===value))_db[key].push(value);_save();return _P({ok:true,value});},
+    bulkArchiveAction: (p)=>{
+      const ids=new Set((p?.ids||[]).map(Number));
+      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.archived=false;});
+      if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.customer_category=String(p.value||'شخصی');});
+      if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.relationship_status=String(p.value||'');});
+      if(p?.action==='delete'){
+        _db.students=_db.students.filter(s=>!ids.has(Number(s.id)));
+        _db.packages=_db.packages.filter(x=>!ids.has(Number(x.student_id)));
+        _db.payments=_db.payments.filter(x=>!ids.has(Number(x.student_id)));
+        _db.sessions=_db.sessions.filter(x=>!ids.has(Number(x.student_id)));
+        _db.wallet_tx=_db.wallet_tx.filter(x=>!ids.has(Number(x.student_id)));
+        _db.reminders=_db.reminders.filter(x=>!ids.has(Number(x.student_id)));
+      }
+      _save();return _P({ok:true,count:ids.size});
+    },
     setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;_save();} return _P({ok:true}); },
     addArchivedBulk: (payload)=>{
       const rows=Array.isArray(payload)?payload:(payload?.rows||[]);
@@ -12433,6 +12454,8 @@ async function unarchiveStudent(id, name) {
 
 let archiveStudents = [];
 let archiveColumns = [];
+let archiveVisibleRows = [];
+const archiveSelectedIds = new Set();
 let archiveCategoryOptions = ['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'];
 let archiveStatusOptions = ['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'];
 const ARCHIVE_DEFAULT_COLUMNS = ['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','آدرس','نیاز یا مشکل اصلی','وضعیت ارتباط','تاریخ شروع همکاری'];
@@ -12451,7 +12474,7 @@ function archiveFieldForHeader(label){
 function archiveColumnValue(s,label){const field=archiveFieldForHeader(label);if(field)return field==='date_jalali'?(DateService.disp(s[field])||''):String(s[field]??'');return String(s.archive_data?.[archiveHeaderKey(label)]??'');}
 
 async function renderArchive() {
-  updateTopbarActions(`<button class="btn btn-primary" onclick="openArchiveImport()">📥 افزودن با اکسل</button><button class="btn btn-ghost" onclick="openArchivePersonModal()">＋ افزودن فرد</button><button class="btn btn-ghost" onclick="exportArchiveExcel()">⬇ دانلود فهرست</button>`);
+  updateTopbarActions('');
   const archiveData = await Promise.all([window.api.students.getArchived(),window.api.students.getArchiveColumns(),window.api.students.getArchiveOptions()]);
   archiveStudents=archiveData[0];archiveColumns=archiveData[1];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
   if(!archiveColumns.length)archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];
@@ -12461,26 +12484,43 @@ async function renderArchive() {
       <input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در تمام ستون‌های بایگانی..." oninput="filterArchiveTable(this.value)">
       <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button><button class="btn btn-ghost btn-sm" onclick="exportArchiveExcel()">⬇ دانلود Excel</button></div>
     </div>
-    <div class="archive-sheet"><table dir="rtl"><thead><tr>${archiveColumns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}<th>عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
+    <div class="archive-bulkbar" id="archive-bulkbar"><span class="archive-selected-count" id="archive-selected-count"></span><button class="btn btn-ghost btn-sm" onclick="selectAllArchiveRows()">☑ انتخاب همه</button><button class="btn btn-primary btn-sm" onclick="bulkConvertArchive()">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveCategory()">🏷 دسته‌بندی</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveStatus()">📞 وضعیت ارتباط</button><button class="btn btn-danger btn-sm" onclick="bulkDeleteArchive()">🗑 حذف کامل</button><button class="btn btn-ghost btn-sm" onclick="clearArchiveSelection()">لغو انتخاب</button></div>
+    <div class="archive-sheet"><table dir="rtl"><thead><tr><th><input class="archive-check" id="archive-check-all" type="checkbox" aria-label="انتخاب همه" onchange="toggleArchiveSelectAll(this.checked)"></th>${archiveColumns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}<th>عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
   </div>`;
   setContent(html); paintArchiveRows(archiveStudents);
 }
 
 function paintArchiveRows(rows) {
   const body=document.getElementById('archive-tbody'); if(!body)return;
+  archiveVisibleRows=rows;
   document.getElementById('archive-count').textContent=`${fa(rows.length)} نفر`;
   body.innerHTML=rows.length?rows.map(s=>`<tr onclick="openArchivePersonDetail(${s.id})">
+    <td onclick="event.stopPropagation()"><input class="archive-check" type="checkbox" ${archiveSelectedIds.has(Number(s.id))?'checked':''} aria-label="انتخاب این فرد" onchange="toggleArchiveSelection(${s.id},this.checked)"></td>
     ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c);return `<td title="${escapeHtml(v)}">${escapeHtml(v||'—')}</td>`;}).join('')}
     <td onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
-    :`<tr><td colspan="${archiveColumns.length+1}"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
+    :`<tr><td colspan="${archiveColumns.length+2}"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
+  updateArchiveBulkbar();
 }
 
 function filterArchiveTable(value){const q=String(value||'').trim().toLowerCase();paintArchiveRows(!q?archiveStudents:archiveStudents.filter(s=>archiveColumns.some(c=>archiveColumnValue(s,c).toLowerCase().includes(q))));}
 
-function archiveComboField(id,label,value,options,kind,placeholder=''){return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><input class="form-input" style="flex:1;min-width:0" id="${id}" list="${id}-list" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value||'')}"><datalist id="${id}-list">${options.map(x=>`<option value="${escapeHtml(x)}"></option>`).join('')}</datalist><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
+function updateArchiveBulkbar(){const bar=document.getElementById('archive-bulkbar'),count=document.getElementById('archive-selected-count'),all=document.getElementById('archive-check-all');const n=archiveSelectedIds.size;if(bar)bar.classList.toggle('active',n>0);if(count)count.textContent=`${fa(n)} مورد انتخاب شده`;if(all){const visibleIds=archiveVisibleRows.map(s=>Number(s.id));const selectedVisible=visibleIds.filter(id=>archiveSelectedIds.has(id)).length;all.checked=visibleIds.length>0&&selectedVisible===visibleIds.length;all.indeterminate=selectedVisible>0&&selectedVisible<visibleIds.length;}}
+function toggleArchiveSelection(id,checked){if(checked)archiveSelectedIds.add(Number(id));else archiveSelectedIds.delete(Number(id));updateArchiveBulkbar();}
+function toggleArchiveSelectAll(checked){archiveVisibleRows.forEach(s=>checked?archiveSelectedIds.add(Number(s.id)):archiveSelectedIds.delete(Number(s.id)));paintArchiveRows(archiveVisibleRows);}
+function selectAllArchiveRows(){archiveStudents.forEach(s=>archiveSelectedIds.add(Number(s.id)));paintArchiveRows(archiveVisibleRows);showToast(`${fa(archiveSelectedIds.size)} مورد انتخاب شد`,'success');}
+function clearArchiveSelection(){archiveSelectedIds.clear();paintArchiveRows(archiveVisibleRows);}
+function selectedArchiveIds(){return [...archiveSelectedIds];}
+async function bulkConvertArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!confirm(`${fa(ids.length)} مورد انتخاب‌شده به پرونده‌های مشتریان منتقل شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'convert'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد به مشتری تبدیل شد ✓`,'success');await renderArchive();}
+function bulkSetArchiveCategory(){if(!archiveSelectedIds.size)return;openModal('تغییر دسته‌بندی گروهی',`<div class="form-group"><label class="form-label">دسته‌بندی جدید</label><select class="form-select" id="archive-bulk-category">${archiveCategoryOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveCategory()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
+async function applyBulkArchiveCategory(){const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-category')?.value;if(!ids.length||!value)return;await window.api.students.bulkArchiveAction({ids,action:'category',value});closeModal();archiveSelectedIds.clear();showToast('دسته‌بندی گروهی اعمال شد ✓','success');await renderArchive();}
+function bulkSetArchiveStatus(){if(!archiveSelectedIds.size)return;openModal('تغییر گروهی وضعیت ارتباط',`<div class="form-group"><label class="form-label">وضعیت ارتباط جدید</label><select class="form-select" id="archive-bulk-status">${archiveStatusOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveStatus()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
+async function applyBulkArchiveStatus(){const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-status')?.value;if(!ids.length||!value)return;await window.api.students.bulkArchiveAction({ids,action:'status',value});closeModal();archiveSelectedIds.clear();showToast('وضعیت ارتباط گروهی اعمال شد ✓','success');await renderArchive();}
+async function bulkDeleteArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!confirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'delete'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد حذف شد`,'error');await renderArchive();}
+
+function archiveComboField(id,label,value,options,kind,placeholder=''){const selected=String(value||'');const choices=[...options];if(selected&&!choices.includes(selected))choices.unshift(selected);return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><select class="form-select" style="flex:1;min-width:0" id="${id}">${kind==='status'?`<option value="">${escapeHtml(placeholder||'— انتخاب کنید —')}</option>`:''}${choices.map(x=>`<option value="${escapeHtml(x)}" ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
 function archiveFormHtml(s={}){return `<div class="form-grid"><div class="form-group"><label class="form-label">نام</label><input class="form-input" id="ar-name" value="${escapeHtml(s.name||'')}"></div><div class="form-group"><label class="form-label">نام خانوادگی</label><input class="form-input" id="ar-lname" value="${escapeHtml(s.lname||'')}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group full"><label class="form-label">آدرس</label><textarea class="form-textarea" id="ar-address" rows="2">${escapeHtml(s.address||'')}</textarea></div><div class="form-group full"><label class="form-label">نیاز یا مشکل اصلی</label><textarea class="form-textarea" id="ar-main-need" rows="2">${escapeHtml(s.main_need||'')}</textarea></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group">${calendarDateFieldHtml('ar-date',s.date_jalali,'تاریخ شروع همکاری',false)}</div></div>`;}
 
-async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=prompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const list=document.getElementById(inputId+'-list');if(list&&!Array.from(list.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;list.appendChild(option);}const input=document.getElementById(inputId);if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
+async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=prompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const input=document.getElementById(inputId);if(input&&!Array.from(input.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;option.textContent=value;input.appendChild(option);}if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
 
 function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id===id):{};openModal(id?'ویرایش فرد بایگانی‌شده':'افزودن فرد به بایگانی',archiveFormHtml(s),[{label:'ذخیره',cls:'btn-primary',action:`saveArchivePerson(${id||'null'})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);initDatePickers();}
 async function saveArchivePerson(id){const data={name:document.getElementById('ar-name').value.trim(),lname:document.getElementById('ar-lname').value.trim(),phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',address:document.getElementById('ar-address').value.trim(),main_need:document.getElementById('ar-main-need').value.trim(),relationship_status:document.getElementById('ar-relationship-status').value.trim(),date:readCalendarDateField('ar-date'),packages:[]};if(id){const old=archiveStudents.find(x=>x.id===id);await window.api.students.update({...data,id,archive_data:old?.archive_data||{},packages:old?.packages||[]});}else await window.api.students.addArchivedBulk([data]);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
