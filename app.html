@@ -4252,20 +4252,20 @@ function isoToJalaliStr(iso) {
 }
 // Render a date field that respects META.calendarType: jalali picker or native Gregorian picker.
 // Returns HTML; use readCalendarDateField(fieldId) to read the value back as our internal jalali string.
-function calendarDateFieldHtml(fieldId, jalaliValue, label) {
+function calendarDateFieldHtml(fieldId, jalaliValue, label, defaultToday = true) {
   const isGregorian = META.calendarType === 'gregorian';
   const lbl = label || 'تاریخ';
   if (isGregorian) {
     const gToday = _appTodayGregorianParts();
     const todayIso = `${gToday.year}-${String(gToday.month).padStart(2,'0')}-${String(gToday.day).padStart(2,'0')}`;
-    const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : todayIso;
+    const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : (defaultToday ? todayIso : '');
     return `
       <label class="form-label">${lbl} (میلادی)</label>
       <input class="form-input" type="date" id="${fieldId}" data-cal="gregorian" value="${iso}">`;
   }
   return `
     <label class="form-label">${lbl} (شمسی)</label>
-    <input class="form-input jdate" id="${fieldId}" placeholder="انتخاب تاریخ" value="${jalaliValue || formatJalali(...todayJalali())}">`;
+    <input class="form-input jdate" id="${fieldId}" placeholder="انتخاب تاریخ" value="${jalaliValue || (defaultToday ? formatJalali(...todayJalali()) : '')}">`;
 }
 function readCalendarDateField(fieldId) {
   const el = document.getElementById(fieldId);
@@ -4657,7 +4657,7 @@ function _freshData() {
     instructions:[],
     guide_categories:[], guide_items:[],
     archive_columns:['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','آدرس','نیاز یا مشکل اصلی','وضعیت ارتباط','تاریخ شروع همکاری'],
-    archive_categories:['شخصی','تولیدی','تعمیراتی','فروشگاه'],
+    archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
     _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
              wallet_tx:1,reminders:1,key_events:1,topics:1,staff_roles:2,todo_calendar_events:1,
@@ -4684,7 +4684,9 @@ function _migrate(d) {
   d.archive_columns = Array.isArray(d.archive_columns) && d.archive_columns.length
     ? d.archive_columns
     : ['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','آدرس','نیاز یا مشکل اصلی','وضعیت ارتباط','تاریخ شروع همکاری'];
-  d.archive_categories = Array.isArray(d.archive_categories) && d.archive_categories.length ? d.archive_categories : ['شخصی','تولیدی','تعمیراتی','فروشگاه'];
+  const requiredArchiveCategories=['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'];
+  const savedArchiveCategories=Array.isArray(d.archive_categories)?d.archive_categories.filter(x=>x&&x!=='فروشگاه'):[];
+  d.archive_categories=[...requiredArchiveCategories,...savedArchiveCategories.filter(x=>!requiredArchiveCategories.includes(x))];
   d.archive_relationship_statuses = Array.isArray(d.archive_relationship_statuses) && d.archive_relationship_statuses.length ? d.archive_relationship_statuses : ['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'];
   if (!d.eval_forms) d.eval_forms = {};
   d.topics.forEach(t=>{if(!t.checklist)t.checklist=[];});
@@ -12431,7 +12433,7 @@ async function unarchiveStudent(id, name) {
 
 let archiveStudents = [];
 let archiveColumns = [];
-let archiveCategoryOptions = ['شخصی','تولیدی','تعمیراتی','فروشگاه'];
+let archiveCategoryOptions = ['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'];
 let archiveStatusOptions = ['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'];
 const ARCHIVE_DEFAULT_COLUMNS = ['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','آدرس','نیاز یا مشکل اصلی','وضعیت ارتباط','تاریخ شروع همکاری'];
 
@@ -12476,7 +12478,7 @@ function paintArchiveRows(rows) {
 function filterArchiveTable(value){const q=String(value||'').trim().toLowerCase();paintArchiveRows(!q?archiveStudents:archiveStudents.filter(s=>archiveColumns.some(c=>archiveColumnValue(s,c).toLowerCase().includes(q))));}
 
 function archiveComboField(id,label,value,options,kind,placeholder=''){return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><input class="form-input" style="flex:1;min-width:0" id="${id}" list="${id}-list" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value||'')}"><datalist id="${id}-list">${options.map(x=>`<option value="${escapeHtml(x)}"></option>`).join('')}</datalist><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
-function archiveFormHtml(s={}){return `<div class="form-grid"><div class="form-group"><label class="form-label">نام</label><input class="form-input" id="ar-name" value="${escapeHtml(s.name||'')}"></div><div class="form-group"><label class="form-label">نام خانوادگی</label><input class="form-input" id="ar-lname" value="${escapeHtml(s.lname||'')}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group full"><label class="form-label">آدرس</label><textarea class="form-textarea" id="ar-address" rows="2">${escapeHtml(s.address||'')}</textarea></div><div class="form-group full"><label class="form-label">نیاز یا مشکل اصلی</label><textarea class="form-textarea" id="ar-main-need" rows="2">${escapeHtml(s.main_need||'')}</textarea></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group">${calendarDateFieldHtml('ar-date',s.date_jalali,'تاریخ شروع همکاری')}</div></div>`;}
+function archiveFormHtml(s={}){return `<div class="form-grid"><div class="form-group"><label class="form-label">نام</label><input class="form-input" id="ar-name" value="${escapeHtml(s.name||'')}"></div><div class="form-group"><label class="form-label">نام خانوادگی</label><input class="form-input" id="ar-lname" value="${escapeHtml(s.lname||'')}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group full"><label class="form-label">آدرس</label><textarea class="form-textarea" id="ar-address" rows="2">${escapeHtml(s.address||'')}</textarea></div><div class="form-group full"><label class="form-label">نیاز یا مشکل اصلی</label><textarea class="form-textarea" id="ar-main-need" rows="2">${escapeHtml(s.main_need||'')}</textarea></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group">${calendarDateFieldHtml('ar-date',s.date_jalali,'تاریخ شروع همکاری',false)}</div></div>`;}
 
 async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=prompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const list=document.getElementById(inputId+'-list');if(list&&!Array.from(list.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;list.appendChild(option);}const input=document.getElementById(inputId);if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
 
