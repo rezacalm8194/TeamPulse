@@ -19889,8 +19889,28 @@ function _useLocalImpersonatedFallback(userName, targetKey) {
   _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
   _db._lastSaved = Date.now();
   _migrate(_db);
-  localStorage.setItem(targetKey, JSON.stringify(_db));
+  _cacheImpersonatedData(targetKey, _db);
   window._impersonateServerBlocked = true;
+}
+
+function _cacheImpersonatedData(targetKey, data) {
+  const serialized = JSON.stringify(data);
+  try {
+    localStorage.setItem(targetKey, serialized);
+    return true;
+  } catch(e) {
+    // کش حساب مقصد برای ورود مدیریتی ضروری نیست؛ ابتدا کش حساب‌های قبلی را پاک و یک‌بار تکرار کن.
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('tp_impersonate_') && key !== targetKey) localStorage.removeItem(key);
+      });
+      localStorage.setItem(targetKey, serialized);
+      return true;
+    } catch(retryError) {
+      console.warn('[Impersonate] target cache skipped:', retryError.message);
+      return false;
+    }
+  }
 }
 
 function _loadSafeImpersonatedCache(targetKey, adminDBKey) {
@@ -21282,7 +21302,7 @@ async function _initAuth() {
                 } else {
                   _db = json.data;
                   _migrate(_db);
-                  localStorage.setItem(targetKey, JSON.stringify(_db));
+                  _cacheImpersonatedData(targetKey, _db);
                   window._impersonateServerBlocked = false;
                   loadedImpersonatedData = true;
                 }
@@ -21293,7 +21313,7 @@ async function _initAuth() {
         if (!loadedImpersonatedData) {
           _db = _freshData();
           _migrate(_db);
-          localStorage.setItem(targetKey, JSON.stringify(_db));
+          _cacheImpersonatedData(targetKey, _db);
           window._impersonateServerBlocked = false;
         }
         window._impersonateLoadPending = false;
@@ -27314,6 +27334,7 @@ function _adminRenderUserList(users) {
       '</div>',
       '<div style="display:flex;align-items:center;gap:6px">',
         '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' + bgColor + ';color:' + txtColor + '">' + statusLabel + '</span>',
+        (u.email !== _ADMIN_EMAIL ? '<button type="button" class="btn btn-ghost btn-sm" style="min-height:34px;padding:5px 10px" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '" aria-label="ورود به حساب ' + uname + '">🔑 ورود</button>' : ''),
         '<div class="row-menu">' +
           '<button class="row-menu-btn" aria-label="عملیات کاربر" onclick="toggleRowMenu(event,\'' + menuId + '\')">⋮</button>' +
           '<div class="row-menu-panel" id="' + menuId + '" style="min-width:210px">' +
@@ -27936,7 +27957,7 @@ async function _adminImpersonate(userId, userName) {
             } else {
               _db = json.data;
               _migrate(_db);
-              localStorage.setItem(targetKey, JSON.stringify(_db));
+              _cacheImpersonatedData(targetKey, _db);
               window._impersonateServerBlocked = false;
               loaded = true;
             }
@@ -27949,7 +27970,7 @@ async function _adminImpersonate(userId, userName) {
     if (!loaded) {
       _db = _freshData();
       _migrate(_db);
-      localStorage.setItem(targetKey, JSON.stringify(_db));
+      _cacheImpersonatedData(targetKey, _db);
       window._impersonateServerBlocked = false;
     }
 
