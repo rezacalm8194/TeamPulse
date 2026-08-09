@@ -485,6 +485,71 @@ router.put('/:accountId', auth, handleSaveData);
 // never see).
 router.post('/:accountId', auth, handleSaveData);
 
+// نسخه‌های سرور فقط با درخواست صریح کاربر فهرست/بازیابی می‌شوند؛ هیچ مسیر
+// همگام‌سازی عادی اجازه ندارد خودکار یکی از این نسخه‌ها را برگرداند.
+router.get('/:accountId/versions', auth, (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25)));
+    const rows = db.prepare(`
+      SELECT id,data,created_at FROM user_data_versions
+      WHERE account_id=? ORDER BY id DESC LIMIT ?
+    `).all(targetId, limit);
+    const versions = rows.map(row => {
+      let data = {};
+      try { data = JSON.parse(row.data || '{}'); } catch {}
+      return {
+        id: row.id,
+        created_at: row.created_at ? String(row.created_at).replace(' ', 'T') + 'Z' : null,
+        size: Buffer.byteLength(row.data || '', 'utf8'),
+        summary: {
+          todos: Array.isArray(data.todos) ? data.todos.length : 0,
+          students: Array.isArray(data.students) ? data.students.length : 0,
+          staff: Array.isArray(data.staff) ? data.staff.length : 0,
+          instructions: Array.isArray(data.instructions) ? data.instructions.length : 0,
+        }
+      };
+    });
+    res.json({ versions });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    // هم‌تیمی می‌تواند داده مجاز را ویرایش کند، اما بازگردانی کل حساب فقط برای
+    // صاحب حساب یا مدیر و فقط با همین درخواست صریح مجاز است.
+    if (req.user.id !== targetId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'restore_forbidden' });
+    }
+    const selected = db.prepare(
+      'SELECT id,data FROM user_data_versions WHERE id=? AND account_id=?'
+    ).get(req.params.versionId, targetId);
+    if (!selected) return res.status(404).json({ error: 'version_not_found' });
+    const current = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(targetId);
+    if (!current) return res.status(404).json({ error: 'data_not_found' });
+    let restored;
+    try { restored = JSON.parse(selected.data); }
+    catch { return res.status(422).json({ error: 'invalid_version_data' }); }
+    restored = sanitizeUserDataForStorage(restored);
+    restored._restored_at = new Date().toISOString();
+    restored._lastSaved = Date.now();
+    const serialized = JSON.stringify(restored);
+    const run = db.transaction(() => {
+      db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(targetId, current.data);
+      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, targetId);
+      db.prepare(`
+        DELETE FROM user_data_versions WHERE account_id=? AND id NOT IN (
+          SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC LIMIT 50
+        )
+      `).run(targetId, targetId);
+    });
+    run();
+    res.json({ success: true, data: restored, etag: dataEtag(serialized) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;

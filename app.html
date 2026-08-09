@@ -5497,22 +5497,77 @@ window.api = {
   },
 
   versions: {
-    list: () => {
+    list: async () => {
+      const combined = [];
+      const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
+      if (accId && _sbSession?.token) {
+        try {
+          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=25');
+          if (res.ok) {
+            const payload = await res.json();
+            (payload.versions || []).forEach(v => combined.push({
+              source:'server', ref:String(v.id), mtime:Date.parse(v.created_at || '') || 0,
+              label:v.created_at, summary:v.summary || {}, size:Number(v.size || 0)
+            }));
+          }
+        } catch(e) { console.warn('[TeamPulse] server versions list failed:', e.message); }
+      }
       try {
         const vKey = window._activeDBKey
           ? 'teampulse_versions_' + window._activeDBKey
           : 'teampulse_versions_local';
         const h = JSON.parse(localStorage.getItem(vKey) || '[]');
-        return _P(h);
-      } catch(e) { return _P([]); }
+        h.forEach(v => combined.push({
+          source:'device', ref:v.file, file:v.file, mtime:Number(v.mtime || 0),
+          label:v.label, data:v.data,
+          summary:{
+            todos:Array.isArray(v.data?.todos)?v.data.todos.length:0,
+            students:Array.isArray(v.data?.students)?v.data.students.length:0,
+            staff:Array.isArray(v.data?.staff)?v.data.staff.length:0,
+            instructions:Array.isArray(v.data?.instructions)?v.data.instructions.length:0,
+          },
+          size:JSON.stringify(v.data || {}).length
+        }));
+      } catch(e) {}
+      const seen = new Set();
+      return combined.sort((a,b)=>b.mtime-a.mtime).filter(v => {
+        const key = v.source + ':' + v.ref;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
     },
-    restore: (file) => {
+    restore: async (source, ref) => {
+      if (source === 'server') {
+        try {
+          const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
+          if (!accId) return {ok:false,error:'حساب کاربری مشخص نیست'};
+          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions/' + encodeURIComponent(ref) + '/restore', {method:'POST',body:'{}'});
+          const payload = await res.json().catch(()=>({}));
+          if (!res.ok) return {ok:false,error:res.status===403?'فقط صاحب حساب می‌تواند نسخه قبلی را بازیابی کند':'نسخه سرور بازیابی نشد'};
+          const creds = {
+            _gdrive_client_id:_db._gdrive_client_id,_gdrive_token:_db._gdrive_token,_gdrive_token_expiry:_db._gdrive_token_expiry,
+            _gdrive_file_id:_db._gdrive_file_id,_gdrive_enabled:_db._gdrive_enabled,
+            _gcal_token:_db._gcal_token,_gcal_token_expiry:_db._gcal_token_expiry,_gcal_enabled:_db._gcal_enabled,
+            _gcal_calendar_id:_db._gcal_calendar_id,_gcal_calendars:_db._gcal_calendars,
+            _gcal_owner_calendar_email:_db._gcal_owner_calendar_email,
+          };
+          _db = {...(payload.data || {}),...creds};
+          _migrate(_db);
+          _markManualRestoreInProgress();
+          const key = window._activeDBKey || DB_KEY;
+          localStorage.setItem(key, JSON.stringify(_db));
+          window._serverDataEtag = payload.etag || null;
+          _writeServerSyncBaseline(_db, window._serverDataEtag);
+          _clearServerSyncPending(_db._lastSaved || Date.now());
+          return {ok:true};
+        } catch(e) { return {ok:false,error:'ارتباط با سرور برقرار نشد'}; }
+      }
       try {
         const vKey = window._activeDBKey
           ? 'teampulse_versions_' + window._activeDBKey
           : 'teampulse_versions_local';
         const h = JSON.parse(localStorage.getItem(vKey) || '[]');
-        const ver = h.find(v => v.file === file);
+        const ver = h.find(v => v.file === ref);
         if (!ver || !ver.data) { showToast('نسخه یافت نشد','error'); return _P({ok:false}); }
         const creds = {
           _gdrive_client_id:_db._gdrive_client_id,
@@ -5539,9 +5594,8 @@ window.api = {
           if (!res || !res.ok) console.warn('[TeamPulse] version restore sync was not confirmed');
         });
         showToast('بازگردانی انجام شد ✓','success');
-        setTimeout(() => location.reload(), 800);
-        return _P({ok:true});
-      } catch(e) { showToast('خطا در بازگردانی','error'); return _P({ok:false}); }
+        return {ok:true};
+      } catch(e) { showToast('خطا در بازگردانی','error'); return {ok:false}; }
     },
   },
 
@@ -11866,7 +11920,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>↩️ بازگشت به نسخه‌های قبلی</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        نسخه‌های قبلی به‌صورت سبک‌تر نگه داشته می‌شوند (حداکثر ${fa(3)} نسخه، با فاصله زمانی). اگر اشتباهی رخ داد، می‌توانی به یکی از این نسخه‌ها برگردی.
+        تا ${fa(25)} نسخه اخیر سرور به‌همراه نسخه‌های همین دستگاه نمایش داده می‌شود. تاریخ و خلاصه هر نسخه را ببین، سپس آگاهانه نسخه موردنظر را انتخاب کن؛ هیچ نسخه‌ای خودکار بازیابی نمی‌شود.
       </p>
       <div id="versions-list">در حال بارگذاری...</div>
     </div>
@@ -12002,25 +12056,46 @@ async function loadVersionsList() {
     wrap.innerHTML = `<p style="font-size:12px;color:var(--text3)">هنوز نسخه‌ای ثبت نشده</p>`;
     return;
   }
-  wrap.innerHTML = versions.map((v,i) => {
-    const d = new Date(v.mtime);
-    const dateStr = d.toLocaleString('fa-IR');
-    return `
-    <div class="detail-row">
-      <span class="detail-key">${i===0?'<b>آخرین نسخه</b> — ':''}${dateStr}</span>
-      <span class="detail-val">
-        <button class="btn btn-ghost btn-sm" onclick="restoreVersion('${v.file}')">بازگشت به این نسخه</button>
-      </span>
-    </div>`;
+  window._availableRestoreVersions = versions;
+  const options = versions.map((v,i) => {
+    const dateStr = new Date(v.mtime).toLocaleString('fa-IR', {dateStyle:'medium',timeStyle:'medium'});
+    const source = v.source === 'server' ? 'سرور' : 'این دستگاه';
+    return `<option value="${i}">${i===0?'جدیدترین · ':''}${dateStr} — ${source}</option>`;
   }).join('');
+  wrap.innerHTML = `
+    <div class="form-group" style="max-width:720px;margin-bottom:10px">
+      <label>نسخه موردنظر را انتخاب کنید (${fa(versions.length)} نسخه در دسترس)</label>
+      <select class="form-select" id="restore-version-select" onchange="_renderVersionChoice(this.value)">${options}</select>
+    </div>
+    <div id="restore-version-preview"></div>`;
+  _renderVersionChoice(0);
 }
 
-async function restoreVersion(file) {
-  if (!confirm('با بازگشت به این نسخه، تغییرات بعد از این تاریخ از بین می‌روند (اما خودشان هم به‌عنوان یک نسخه ذخیره می‌شوند). ادامه می‌دهی؟')) return;
-  const result = await window.api.versions.restore(file);
+function _renderVersionChoice(index) {
+  const v = (window._availableRestoreVersions || [])[Number(index)];
+  const wrap = document.getElementById('restore-version-preview');
+  if (!v || !wrap) return;
+  const s = v.summary || {};
+  const dateStr = new Date(v.mtime).toLocaleString('fa-IR', {dateStyle:'full',timeStyle:'medium'});
+  const size = v.size ? `${(v.size/1024/1024).toLocaleString('fa-IR',{maximumFractionDigits:2})} مگابایت` : '—';
+  wrap.innerHTML = `
+    <div style="padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="font-size:11px;color:var(--text2);line-height:2">
+        <div><b style="color:var(--text)">${dateStr}</b> · ${v.source==='server'?'☁️ نسخه سرور':'💻 نسخه این دستگاه'}</div>
+        <div>کارها: ${fa(s.todos||0)} · مراجعین: ${fa(s.students||0)} · پرسنل: ${fa(s.staff||0)} · یادداشت‌ها: ${fa(s.instructions||0)} · حجم: ${size}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="restoreVersion('${v.source}','${escapeHtml(String(v.ref))}')">بازگشت به نسخه انتخاب‌شده</button>
+    </div>`;
+}
+
+async function restoreVersion(source, ref) {
+  const selected = (window._availableRestoreVersions || []).find(v => v.source===source && String(v.ref)===String(ref));
+  const label = selected ? new Date(selected.mtime).toLocaleString('fa-IR') : '';
+  if (!confirm(`نسخه ${label} جایگزین داده فعلی شود؟ نسخه فعلی ابتدا در تاریخچه سرور محفوظ می‌ماند. این عملیات فقط با تأیید شما انجام می‌شود.`)) return;
+  const result = await window.api.versions.restore(source, ref);
   if (!result.ok) { showToast(result.error || 'خطا', 'error'); return; }
   showToast('بازگردانی شد ✓ — برنامه دوباره بارگذاری می‌شود', 'success');
-  await reloadAllData();
+  setTimeout(() => location.reload(), 900);
 }
 
 async function importBackup() {
