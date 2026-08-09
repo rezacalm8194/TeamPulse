@@ -5306,7 +5306,7 @@ window.api = {
   },
 
   sessions: {
-    getAll: ()=>_P(_db.students.map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
+    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
     add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[])});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_save();}} return _P({ok:true}); },
@@ -5315,7 +5315,7 @@ window.api = {
     getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali}));}); return _P(open); },
     getRecentAchievements: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid&&x.achievements&&x.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
     delete: (id)=>{ _db.sessions=_db.sessions.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
-    keyOnes: ()=>{ const r=[]; _db.students.forEach(s=>{_db.sessions.filter(x=>x.student_id===s.id&&x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
+    keyOnes: ()=>{ const r=[]; _db.students.filter(s=>!s.archived).forEach(s=>{_db.sessions.filter(x=>x.student_id===s.id&&x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
     getOrder: ()=>_P([..._db.session_order||[]]),
     setOrder: (o)=>{ _db.session_order=o; _save(); return _P({ok:true}); },
   },
