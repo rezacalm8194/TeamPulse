@@ -24991,15 +24991,24 @@ function _completeTodoWithReport(t, report) {
     }
     // کارهای غیر تکراری: در renderTodoList روز بعد archive میشن
   }
-  _save();
-  _syncToServer();
-  // نگه داشتن وضعیت details (باز/بسته) بعد از render
+  // ابتدا نتیجه کلیک را فوراً نشان بده. ذخیره چندمگابایتی localStorage و شبکه
+  // نباید پاسخ بصری دکمه تیک را متوقف کند.
   const detailsWasOpen = document.querySelector('.todo-done-details')?.open || false;
   renderTodoList();
   if (t.done) {
     const details = document.querySelector('.todo-done-details');
     if (details) details.open = true;
   }
+  // _save خودش همگام‌سازی سرور را زمان‌بندی می‌کند؛ فراخوانی مستقیم دوم باعث
+  // درخواست‌های هم‌زمان، تعارض ETag و برگشت ظاهری تیک می‌شد.
+  clearTimeout(window._todoPersistTimer);
+  window._todoPersistTimer = setTimeout(() => {
+    try { _save(); }
+    catch(e) {
+      console.error('[TeamPulse] todo persist failed:', e);
+      showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
+    }
+  }, 0);
 }
 
 function _resolveOverdueTodo(id, action) {
@@ -29015,7 +29024,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v65';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v66';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
