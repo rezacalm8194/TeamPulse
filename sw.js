@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v63';
+const CACHE = 'team-pulse-static-v64';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',

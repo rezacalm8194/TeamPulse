@@ -28683,7 +28683,8 @@ function _isPWAInstalled() {
     _markPWAInstalled();
     return true;
   }
-  try { return localStorage.getItem(PWA_INSTALLED_KEY) === '1'; } catch(e) { return false; }
+  // localStorage مدرک نصب نیست؛ ممکن است برنامه حذف شده باشد ولی این کلید باقی بماند.
+  return false;
 }
 if (_isPWAStandalone()) _markPWAInstalled();
 
@@ -28754,8 +28755,15 @@ function _hideInstallBanner(dismiss) {
 }
 
 async function _installPWA() {
+  // در بعضی مرورگرهای اندروید رویداد نصب کمی بعد از آماده‌شدن SW صادر می‌شود.
+  if (!_deferredInstallPrompt && 'serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.ready;
+      await new Promise(resolve => setTimeout(resolve, 700));
+    } catch(e) {}
+  }
   if (!_deferredInstallPrompt) {
-    showToast('از منوی مرورگر گزینه Install app یا Add to Home Screen را انتخاب کنید', 'info');
+    _showAndroidInstallHelp();
     return;
   }
   _deferredInstallPrompt.prompt();
@@ -28768,6 +28776,28 @@ async function _installPWA() {
   } else {
     showToast('هر زمان آماده بودید، دوباره روی دکمه نصب بزنید', 'info');
   }
+}
+
+function _showAndroidInstallHelp() {
+  const ua = navigator.userAgent || '';
+  const samsung = /SamsungBrowser/i.test(ua);
+  const firefox = /Firefox|FxiOS/i.test(ua);
+  const browserName = samsung ? 'Samsung Internet' : (firefox ? 'Firefox' : 'مرورگر');
+  const steps = samsung
+    ? '۱. روی منوی <b>سه‌خط یا سه‌نقطه</b> مرورگر بزنید.<br>۲. گزینه <b>Add page to / افزودن صفحه به</b> را انتخاب کنید.<br>۳. <b>Home screen / صفحه اصلی</b> را بزنید.<br>۴. در پایان <b>Add / افزودن</b> را تأیید کنید.'
+    : firefox
+      ? '۱. منوی مرورگر را باز کنید.<br>۲. گزینه <b>Install / نصب</b> را انتخاب کنید.<br>۳. نصب را تأیید کنید.'
+      : '۱. منوی سه‌نقطه مرورگر را باز کنید.<br>۲. گزینه <b>Install app / نصب برنامه</b> یا <b>Add to Home screen / افزودن به صفحه اصلی</b> را انتخاب کنید.<br>۳. نصب را تأیید کنید.';
+  openModal('📲 نصب TeamPulse روی اندروید', `
+    <div class="detail-section" style="line-height:2">
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">روش نصب در ${browserName}</div>
+      <div style="font-size:12px;color:var(--text2)">${steps}</div>
+    </div>
+    ${samsung ? '<div style="font-size:11px;color:var(--text3);line-height:1.8">اگر گزینه «افزودن به صفحه اصلی» نمایش داده نشد، همین آدرس را در Google Chrome باز کنید و از منوی سه‌نقطه «نصب برنامه» را بزنید.</div>' : ''}
+  `,[
+    {label:'متوجه شدم',cls:'btn-primary',action:'closeModal()'},
+    {label:'📋 کپی لینک نصب',cls:'btn-ghost',action:'_copyPWAInstallUrl(this)'},
+  ]);
 }
 
 async function _copyPWAInstallUrl(btn) {
@@ -28785,7 +28815,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v63';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v64';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
