@@ -6683,8 +6683,8 @@ function _getAccounts() {
 }
 
 function _getDefaultAccountName() {
-  // اسم حساب default رو از یه key مجزا بخون
-  return localStorage.getItem('teampulse_default_name') || (_db?.meta?.appTitle) || 'TeamPulse';
+  // نام دکمه حساب باید هویت کاربر باشد، نه عنوان برنامه یا کسب‌وکار.
+  return (_sbUser?.name || (_sbUser?.email ? _sbUser.email.split('@')[0] : '')) || localStorage.getItem('teampulse_default_name') || 'حساب من';
 }
 
 function _setDefaultAccountName(name) {
@@ -6892,7 +6892,7 @@ function updateAccountDisplay() {
   const accounts = _getAccounts();
   const current = _currentAccountId();
   const name = current === 'default'
-    ? (_db?.meta?.appTitle || 'پیش‌فرض')
+    ? (_sbUser?.name || (_sbUser?.email ? _sbUser.email.split('@')[0] : '') || _getDefaultAccountName())
     : (accounts.find(a => a.id === current)?.name || 'ناشناس');
   el.textContent = name;
 }
@@ -17268,8 +17268,8 @@ async function init() {
     // نکته: در دسترسی هم‌تیمی META.appTitle نام/عنوان کسب‌وکار کارفرماست، نه
     // میزکار خودِ کاربر؛ اگر اینجا ذخیره‌اش کنیم روی حساب account-name-display
     // (که با _applyTeamAccessToNav روی «هم‌تیمی» تنظیم شده) رو بازنویسی می‌کند.
-    if (!_teamAccessSession() && _currentAccountId() === 'default' && META.appTitle) {
-      _setDefaultAccountName(META.appTitle);
+    if (!_teamAccessSession() && _currentAccountId() === 'default' && (_sbUser?.name || _sbUser?.email)) {
+      _setDefaultAccountName(_sbUser.name || _sbUser.email.split('@')[0]);
     }
   } catch(e) {
     console.error('[TeamPulse] init() ERROR:', e);
