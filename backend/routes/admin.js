@@ -277,7 +277,7 @@ router.post('/users', auth, adminOnly, async (req, res) => {
     const role = req.body.role === 'admin' ? 'admin' : 'user';
     const plan = ['free','basic','pro','enterprise'].includes(req.body.plan) ? req.body.plan : 'free';
     if (!name || !email || password.length < 6) return res.status(400).json({ error: 'invalid user data' });
-    if (db.prepare('SELECT id FROM accounts WHERE email=?').get(email)) return res.status(409).json({ error: 'email already exists' });
+    if (db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email)) return res.status(409).json({ error: 'email already exists' });
     const id = randomUUID();
     const passwordHash = await bcrypt.hash(password, 10);
     db.prepare("INSERT INTO accounts (id,name,email,password,role,plan,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,datetime('now'),datetime('now'))")

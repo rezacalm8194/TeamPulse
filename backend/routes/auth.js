@@ -63,10 +63,11 @@ function normalizeTeamPermissions(permissions) {
 
 router.post('/register', (req, res) => {
   try {
-    const { name, email, password, business_name, business_type } = req.body;
+    const { name, password, business_name, business_type } = req.body;
+    const email = String(req.body.email || '').trim().toLowerCase();
     if (!name || !email || !password)
       return res.status(400).json({ error: 'name, email, password required' });
-    const exists = db.prepare('SELECT id FROM accounts WHERE email=?').get(email);
+    const exists = db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email);
     if (exists) return res.status(409).json({ error: 'email already exists' });
     const id = randomUUID();
     const hash = bcrypt.hashSync(password, 10);
@@ -80,10 +81,11 @@ router.post('/register', (req, res) => {
 
 router.post('/login', (req, res) => {
   try {
-    const { email, password } = req.body;
+    const password = req.body.password;
+    const email = String(req.body.email || '').trim().toLowerCase();
     if (!email || !password)
       return res.status(400).json({ error: 'email and password required' });
-    const user = db.prepare('SELECT * FROM accounts WHERE email=? AND is_active=1').get(email);
+    const user = db.prepare('SELECT * FROM accounts WHERE lower(email)=? AND is_active=1').get(email);
     if (!user || !bcrypt.compareSync(password, user.password))
       return res.status(401).json({ error: 'invalid credentials' });
     const token = sign({ id: user.id, email: user.email, role: user.role });

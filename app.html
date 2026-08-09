@@ -19915,6 +19915,7 @@ function _getApiAuthToken() {
 
 const _auth = {
   async signUp(email, password, name) {
+    email = String(email || '').trim().toLowerCase();
     const res = await _apiFetch('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, name: name || '' })
@@ -19929,6 +19930,7 @@ const _auth = {
   },
 
   async signIn(email, password) {
+    email = String(email || '').trim().toLowerCase();
     const res = await _apiFetch('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password })
@@ -29024,7 +29026,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v66';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v67';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
