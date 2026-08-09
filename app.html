@@ -27476,9 +27476,29 @@ function _adminOpenFinance(){
 async function _adminCreateUser(){
   const payload={name:document.getElementById('admin-create-name')?.value.trim(),email:document.getElementById('admin-create-email')?.value.trim(),password:document.getElementById('admin-create-password')?.value||'',role:document.getElementById('admin-create-role')?.value,plan:document.getElementById('admin-create-plan')?.value};
   if(!payload.name||!payload.email||payload.password.length<6)return showToast('نام، ایمیل و رمز حداقل ۶ کاراکتری لازم است','error');
-  const res=await _apiFetch('/api/admin/users',{method:'POST',body:JSON.stringify(payload)});
+  let res=await _apiFetch('/api/admin/users',{method:'POST',body:JSON.stringify(payload)});
+
+  // سازگاری با پردازش‌های قدیمی Backend که هنوز route مستقیم ایجاد کاربر را بارگذاری نکرده‌اند.
+  if(res.status===404){
+    const registerRes=await _apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({name:payload.name,email:payload.email,password:payload.password})});
+    if(registerRes.status===409)return showToast('این ایمیل قبلاً ثبت شده است','error');
+    if(!registerRes.ok)return showToast('ایجاد کاربر در سرور ناموفق بود','error');
+    const created=await registerRes.json();
+    const userId=created?.user?.id;
+    if(!userId)return showToast('شناسه کاربر جدید از سرور دریافت نشد','error');
+
+    const roleRes=await _apiFetch('/api/admin/users/'+userId+'/role',{method:'PUT',body:JSON.stringify({role:payload.role})});
+    const planRes=await _apiFetch('/api/admin/users/'+userId+'/plan',{method:'PUT',body:JSON.stringify({plan:payload.plan})});
+    if(!roleRes.ok||!planRes.ok){
+      // از باقی‌ماندن حساب ناقص جلوگیری کن؛ اگر سرور قدیمی حذف را هم نداشت، پنل با Refresh آن را نشان می‌دهد.
+      await _apiFetch('/api/admin/users/'+userId,{method:'DELETE'}).catch(()=>{});
+      return showToast('ساخت حساب کامل نشد؛ نقش یا پلن در سرور ثبت نشد','error');
+    }
+    res={ok:true,status:201};
+  }
+
   if(res.ok){showToast('کاربر ایجاد شد ✓','success');closeModal();renderAdminPanel();return}
-  showToast(res.status===409?'این ایمیل قبلاً ثبت شده است':'ایجاد کاربر ناموفق بود','error');
+  showToast(res.status===409?'این ایمیل قبلاً ثبت شده است':'ایجاد کاربر ناموفق بود (کد '+res.status+')','error');
 }
 function _adminExportAll(){_adminExportUsers(window._adminAllUsers||[])}
 function _adminDownloadJson(data, filename){
