@@ -3938,16 +3938,40 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
 .archive-search{min-width:260px;max-width:420px;flex:1}
 .archive-sheet{overflow:auto;max-height:calc(100vh - 285px)}
-.archive-sheet table{min-width:1120px;border-collapse:separate;border-spacing:0}
+.archive-sheet table{min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
-.archive-sheet td{white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.archive-sheet th,.archive-sheet td{padding-inline:9px}
+.archive-sheet td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.archive-sheet .archive-col-address{width:92px;max-width:92px}
+.archive-sheet .archive-col-need{width:112px;max-width:112px}
+.archive-sheet .archive-col-name{width:78px;max-width:78px}
+.archive-sheet .archive-col-phone{width:108px;max-width:108px}
+.archive-sheet .archive-col-org{width:150px;max-width:150px}
+.archive-sheet .archive-col-category{width:82px;max-width:82px}
+.archive-sheet .archive-col-status{width:105px;max-width:105px}
+.archive-sheet .archive-col-date{width:118px;max-width:118px}
+.archive-sheet .archive-select-col{width:42px;max-width:42px;text-align:center;position:sticky;right:0;z-index:3;background:var(--bg2)}
+.archive-sheet thead .archive-select-col{z-index:5;background:var(--bg3)}
+.archive-sheet .archive-operation-col{width:205px;max-width:205px}
 .archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
 .archive-sheet .archive-actions{display:flex;gap:5px;cursor:default}
 .archive-sheet-count{font-size:12px;color:var(--text3)}
-.archive-bulkbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2)}
-.archive-bulkbar.active{display:flex}
+.archive-bulkbar{display:flex;min-height:52px;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2);visibility:hidden;pointer-events:none}
+.archive-bulkbar.active{visibility:visible;pointer-events:auto}
 .archive-bulkbar .archive-selected-count{font-size:12px;font-weight:700;color:var(--accent2);margin-left:auto}
 .archive-check{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+.archive-mobile-list{display:none}
+.archive-mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:9px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.archive-mobile-card.selected{border-color:var(--accent);background:rgba(124,106,247,.07)}
+.archive-mobile-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.archive-mobile-title{min-width:0;flex:1;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archive-mobile-sub{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archive-mobile-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px}
+.archive-mobile-field{min-width:0}
+.archive-mobile-field small{display:block;color:var(--text3);font-size:10px;margin-bottom:2px}
+.archive-mobile-field span{display:block;color:var(--text2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archive-mobile-actions{display:grid;grid-template-columns:1fr 44px 44px;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid var(--border)}
+.archive-mobile-actions .btn{min-height:42px;justify-content:center;padding:7px}
 .archive-import-help{font-size:12px;color:var(--text2);line-height:2;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .archive-preview{max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:10px}
 .archive-preview table{min-width:900px}
@@ -3982,14 +4006,13 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .archive-toolbar>div:first-child{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px}
   .archive-toolbar-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7px}
   .archive-toolbar-actions .btn:nth-child(3){grid-column:1/-1}
-  .archive-bulkbar{padding:9px 10px;gap:6px}
+  .archive-bulkbar{display:none;visibility:visible;min-height:0}
+  .archive-bulkbar.active{display:flex;position:fixed;z-index:120;inset-inline:8px;bottom:calc(64px + env(safe-area-inset-bottom,0px));padding:9px;border:1px solid rgba(124,106,247,.35);border-radius:14px;background:var(--bg2);box-shadow:0 12px 35px rgba(0,0,0,.45)}
   .archive-bulkbar .archive-selected-count{width:100%;margin:0}
+  .archive-bulkbar .btn{min-height:40px;flex:1;justify-content:center}
   .archive-toolbar-actions .btn{width:100%;min-height:40px;justify-content:center;font-size:11.5px}
-  .archive-sheet{max-height:calc(100dvh - 345px);min-height:260px;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:max(8px,env(safe-area-inset-bottom,8px))}
-  .archive-sheet::before{content:'برای دیدن همه ستون‌ها، جدول را به چپ و راست بکشید ↔';display:block;position:sticky;right:0;width:calc(100vw - 38px);box-sizing:border-box;padding:7px 10px;background:rgba(124,106,247,.1);color:var(--accent2);font-size:10.5px;border-bottom:1px solid rgba(124,106,247,.2);z-index:4}
-  .archive-sheet table{min-width:1000px;font-size:11px}
-  .archive-sheet th,.archive-sheet td{padding:9px 10px}
-  .archive-sheet tbody tr{min-height:46px}
+  .archive-sheet{display:none}
+  .archive-mobile-list{display:block;padding:10px 8px calc(82px + env(safe-area-inset-bottom,0px))}
   .archive-preview{max-height:42dvh;-webkit-overflow-scrolling:touch}
   .archive-preview table{min-width:820px;font-size:10.5px}
   #archive-file{min-height:48px;padding:10px;font-size:11px}
@@ -12472,6 +12495,7 @@ function archiveFieldForHeader(label){
   return Object.keys(aliases).find(field=>aliases[field].includes(k))||'';
 }
 function archiveColumnValue(s,label){const field=archiveFieldForHeader(label);if(field)return field==='date_jalali'?(DateService.disp(s[field])||''):String(s[field]??'');return String(s.archive_data?.[archiveHeaderKey(label)]??'');}
+function archiveColumnClass(label){const field=archiveFieldForHeader(label);return ({name:'archive-col-name',lname:'archive-col-name',phone:'archive-col-phone',organization_name:'archive-col-org',customer_category:'archive-col-category',address:'archive-col-address',main_need:'archive-col-need',relationship_status:'archive-col-status',date_jalali:'archive-col-date'})[field]||'';}
 
 async function renderArchive() {
   updateTopbarActions('');
@@ -12485,27 +12509,29 @@ async function renderArchive() {
       <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button><button class="btn btn-ghost btn-sm" onclick="exportArchiveExcel()">⬇ دانلود Excel</button></div>
     </div>
     <div class="archive-bulkbar" id="archive-bulkbar"><span class="archive-selected-count" id="archive-selected-count"></span><button class="btn btn-ghost btn-sm" onclick="selectAllArchiveRows()">☑ انتخاب همه</button><button class="btn btn-primary btn-sm" onclick="bulkConvertArchive()">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveCategory()">🏷 دسته‌بندی</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveStatus()">📞 وضعیت ارتباط</button><button class="btn btn-danger btn-sm" onclick="bulkDeleteArchive()">🗑 حذف کامل</button><button class="btn btn-ghost btn-sm" onclick="clearArchiveSelection()">لغو انتخاب</button></div>
-    <div class="archive-sheet"><table dir="rtl"><thead><tr><th><input class="archive-check" id="archive-check-all" type="checkbox" aria-label="انتخاب همه" onchange="toggleArchiveSelectAll(this.checked)"></th>${archiveColumns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}<th>عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
+    <div class="archive-sheet"><table dir="rtl"><thead><tr><th class="archive-select-col"><input class="archive-check" id="archive-check-all" type="checkbox" aria-label="انتخاب همه" onchange="toggleArchiveSelectAll(this.checked)"></th>${archiveColumns.map(c=>`<th class="${archiveColumnClass(c)}">${escapeHtml(c)}</th>`).join('')}<th class="archive-operation-col">عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
+    <div class="archive-mobile-list" id="archive-mobile-list"></div>
   </div>`;
   setContent(html); paintArchiveRows(archiveStudents);
 }
 
 function paintArchiveRows(rows) {
-  const body=document.getElementById('archive-tbody'); if(!body)return;
+  const body=document.getElementById('archive-tbody'),mobile=document.getElementById('archive-mobile-list'); if(!body)return;
   archiveVisibleRows=rows;
   document.getElementById('archive-count').textContent=`${fa(rows.length)} نفر`;
   body.innerHTML=rows.length?rows.map(s=>`<tr onclick="openArchivePersonDetail(${s.id})">
-    <td onclick="event.stopPropagation()"><input class="archive-check" type="checkbox" ${archiveSelectedIds.has(Number(s.id))?'checked':''} aria-label="انتخاب این فرد" onchange="toggleArchiveSelection(${s.id},this.checked)"></td>
-    ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c);return `<td title="${escapeHtml(v)}">${escapeHtml(v||'—')}</td>`;}).join('')}
-    <td onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
+    <td class="archive-select-col" onclick="event.stopPropagation()"><input class="archive-check" type="checkbox" ${archiveSelectedIds.has(Number(s.id))?'checked':''} aria-label="انتخاب این فرد" onchange="toggleArchiveSelection(${s.id},this.checked)"></td>
+    ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c);return `<td class="${archiveColumnClass(c)}" title="${escapeHtml(v)}">${escapeHtml(v||'—')}</td>`;}).join('')}
+    <td class="archive-operation-col" onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
     :`<tr><td colspan="${archiveColumns.length+2}"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
+  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const selected=archiveSelectedIds.has(Number(s.id));const fullName=`${s.name||''} ${s.lname||''}`.trim()||'بدون نام';return `<article class="archive-mobile-card ${selected?'selected':''}" onclick="openArchivePersonDetail(${s.id})"><div class="archive-mobile-head" onclick="event.stopPropagation()"><input class="archive-check" type="checkbox" ${selected?'checked':''} aria-label="انتخاب ${escapeHtml(fullName)}" onchange="toggleArchiveSelection(${s.id},this.checked)"><div style="min-width:0;flex:1" onclick="openArchivePersonDetail(${s.id})"><div class="archive-mobile-title">${escapeHtml(fullName)}</div><div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div></div></div><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>شماره تماس</small><span>${escapeHtml(s.phone||'—')}</span></div><div class="archive-mobile-field"><small>دسته‌بندی</small><span>${escapeHtml(s.customer_category||'—')}</span></div><div class="archive-mobile-field"><small>وضعیت ارتباط</small><span>${escapeHtml(s.relationship_status||'—')}</span></div><div class="archive-mobile-field"><small>تاریخ شروع</small><span>${escapeHtml(DateService.disp(s.date_jalali)||'—')}</span></div><div class="archive-mobile-field"><small>آدرس</small><span>${escapeHtml(s.address||'—')}</span></div><div class="archive-mobile-field"><small>نیاز / مشکل اصلی</small><span>${escapeHtml(s.main_need||'—')}</span></div></div><div class="archive-mobile-actions" onclick="event.stopPropagation()"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" aria-label="ویرایش" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" aria-label="حذف" onclick="deleteArchivePerson(${s.id})">🗑</button></div></article>`;}).join(''):`<div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده</div>`;
   updateArchiveBulkbar();
 }
 
 function filterArchiveTable(value){const q=String(value||'').trim().toLowerCase();paintArchiveRows(!q?archiveStudents:archiveStudents.filter(s=>archiveColumns.some(c=>archiveColumnValue(s,c).toLowerCase().includes(q))));}
 
 function updateArchiveBulkbar(){const bar=document.getElementById('archive-bulkbar'),count=document.getElementById('archive-selected-count'),all=document.getElementById('archive-check-all');const n=archiveSelectedIds.size;if(bar)bar.classList.toggle('active',n>0);if(count)count.textContent=`${fa(n)} مورد انتخاب شده`;if(all){const visibleIds=archiveVisibleRows.map(s=>Number(s.id));const selectedVisible=visibleIds.filter(id=>archiveSelectedIds.has(id)).length;all.checked=visibleIds.length>0&&selectedVisible===visibleIds.length;all.indeterminate=selectedVisible>0&&selectedVisible<visibleIds.length;}}
-function toggleArchiveSelection(id,checked){if(checked)archiveSelectedIds.add(Number(id));else archiveSelectedIds.delete(Number(id));updateArchiveBulkbar();}
+function toggleArchiveSelection(id,checked){if(checked)archiveSelectedIds.add(Number(id));else archiveSelectedIds.delete(Number(id));paintArchiveRows(archiveVisibleRows);}
 function toggleArchiveSelectAll(checked){archiveVisibleRows.forEach(s=>checked?archiveSelectedIds.add(Number(s.id)):archiveSelectedIds.delete(Number(s.id)));paintArchiveRows(archiveVisibleRows);}
 function selectAllArchiveRows(){archiveStudents.forEach(s=>archiveSelectedIds.add(Number(s.id)));paintArchiveRows(archiveVisibleRows);showToast(`${fa(archiveSelectedIds.size)} مورد انتخاب شد`,'success');}
 function clearArchiveSelection(){archiveSelectedIds.clear();paintArchiveRows(archiveVisibleRows);}
@@ -20303,6 +20329,7 @@ function _bindServerSyncLifecycleHandlers() {
       clearTimeout(window._serverSyncTimer);
       _syncToServer();
     } else {
+      _refreshReminderPushRegistration();
       _loadFromServer().then(updated => { if (updated && _canAutoRefresh()) renderPage(); });
     }
   });
@@ -20311,6 +20338,7 @@ function _bindServerSyncLifecycleHandlers() {
     _syncToServer();
   });
   window.addEventListener('focus', async () => {
+    _refreshReminderPushRegistration();
     if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
       clearTimeout(window._serverSyncTimer);
       await _syncToServer();
@@ -25409,15 +25437,28 @@ async function _refreshReminderPushRegistration() {
   if (!_sbSession?.token) return false;
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
   if (Notification.permission !== 'granted') return false;
+  const pushContextKey=`${_sbUser?.id||''}:${_pushSubscriptionContext().ownerAccountId||'owner'}`;
+  if(window._lastPushRefreshKey===pushContextKey&&Date.now()-(window._lastPushRefreshAt||0)<6*60*60*1000)return true;
   try {
     const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (!sub) return false;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const keyRes = await fetch('/api/reminders/vapid-key', { cache:'no-store' });
+      if (!keyRes.ok) throw new Error(`VAPID HTTP ${keyRes.status}`);
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) throw new Error('VAPID key missing');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlB64ToUint8Array(publicKey),
+      });
+    }
     const res = await _apiFetch('/api/reminders/subscribe', {
       method: 'POST',
       body: JSON.stringify({ subscription: sub, ..._pushSubscriptionContext() }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    window._lastPushRefreshKey=pushContextKey;
+    window._lastPushRefreshAt=Date.now();
     return true;
   } catch (e) {
     console.warn('[Push] subscription refresh failed:', e.message);
@@ -25445,7 +25486,7 @@ async function _disablePushFromSettings() {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
-      await _apiFetch('/api/reminders/subscribe', { method: 'DELETE' });
+      await _apiFetch('/api/reminders/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) });
       await sub.unsubscribe();
     }
     if (statusBox) {
@@ -28641,7 +28682,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v60';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v63';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -517,11 +517,20 @@ router.post('/subscribe', auth, (req, res) => {
 // ── API: حذف push subscription (غیرفعال‌سازی) ────────────────
 router.delete('/subscribe', auth, (req, res) => {
   try {
-    db.prepare(`
-      DELETE FROM push_subscriptions
-      WHERE subscriber_user_id=?
-         OR (subscriber_user_id IS NULL AND account_id=?)
-    `).run(req.user.id, req.user.id);
+    const endpoint = String(req.body?.endpoint || '').trim();
+    if (endpoint) {
+      db.prepare(`
+        DELETE FROM push_subscriptions
+        WHERE endpoint=?
+          AND (subscriber_user_id=? OR account_id=?)
+      `).run(endpoint, req.user.id, req.user.id);
+    } else {
+      db.prepare(`
+        DELETE FROM push_subscriptions
+        WHERE subscriber_user_id=?
+           OR (subscriber_user_id IS NULL AND account_id=?)
+      `).run(req.user.id, req.user.id);
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

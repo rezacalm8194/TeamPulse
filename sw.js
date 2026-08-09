@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v62';
+const CACHE = 'team-pulse-static-v63';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
@@ -95,16 +95,19 @@ self.addEventListener('message', event => {
   }
   if (event.data.type === 'SHOW_NOTIFICATION') {
     const data = event.data.data || {};
-    self.registration.showNotification(event.data.title, {
+    event.waitUntil(self.registration.showNotification(event.data.title, {
       body: event.data.body || '',
       icon: '/logo.png',
+      badge: '/app-icon-192-v3.png',
       tag: event.data.tag || 'tp',
       data,
       requireInteraction: true,
+      renotify: true,
+      silent: false,
       dir: 'rtl',
       vibrate: [200, 100, 200],
       actions: notificationActionsFor(data),
-    });
+    }));
   }
   if (event.data.type === 'SCHEDULE_NOTIFICATIONS') {
     _t.forEach(timer => clearTimeout(timer));
@@ -115,9 +118,12 @@ self.addEventListener('message', event => {
           self.registration.showNotification(notification.title, {
             body: notification.body || '',
             icon: '/logo.png',
+            badge: '/app-icon-192-v3.png',
             tag: notification.tag,
             data: notification.data || { todoId: notification.id, kind: 'todo' },
             requireInteraction: true,
+            renotify: true,
+            silent: false,
             dir: 'rtl',
             vibrate: [300, 100, 300],
             actions: notificationActionsFor(notification.data || { todoId: notification.id, kind: 'todo' }),
@@ -142,9 +148,12 @@ self.addEventListener('push', event => {
     self.registration.showNotification(data.title || '⏰ یادآور TeamPulse', {
       body: data.body || '',
       icon: data.icon || '/logo.png',
+      badge: data.badge || '/app-icon-192-v3.png',
       tag: data.tag || 'push-' + Date.now(),
       data: notificationData,
       requireInteraction: true,
+      renotify: true,
+      silent: false,
       dir: 'rtl',
       vibrate: [300, 100, 300],
       actions: notificationActionsFor(notificationData),
