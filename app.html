@@ -5327,7 +5327,7 @@ window.api = {
     setFamily: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.family_id=p.family_id;_save();} return _P({ok:true}); },
     add: (p)=>{
       const id=_nextId('students');
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',address:p.address||'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',address:p.address||'',main_need:p.main_need||'',relationship_status:p.relationship_status||'مشتری شد',archive_data:{...(p.archive_data||{})},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -8677,7 +8677,13 @@ function openStudentModal(id = null) {
 }
 
 async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
-  FAMILIES = await window.api.families.getAll();
+  const [families, archiveOptions] = await Promise.all([
+    window.api.families.getAll(),
+    window.api.students.getArchiveOptions(),
+  ]);
+  FAMILIES = families;
+  archiveCategoryOptions = archiveOptions.categories;
+  archiveStatusOptions = archiveOptions.statuses;
 
   const familyOptions = FAMILIES.map(f =>
     `<option value="${f.id}" ${s?.family_id===f.id?'selected':''}>${f.name}</option>`
@@ -8745,19 +8751,22 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         <input class="form-input" id="f-phone" placeholder="09xxxxxxxxx" value="${s?.phone || ''}">
       </div>
       <div class="form-group">
-        ${calendarDateFieldHtml('f-date', s?.date_jalali, 'تاریخ رزرو / ثبت‌نام')}
-      </div>
-      <div class="form-group">
-        <label class="form-label">دسته‌بندی مشتری</label>
-        <input class="form-input" id="f-customer-category" placeholder="مثلاً: ویژه، سازمانی، عادی" value="${s?.customer_category || ''}">
-      </div>
-      <div class="form-group">
         <label class="form-label">نام مجموعه</label>
         <input class="form-input" id="f-organization-name" placeholder="نام شرکت یا مجموعه" value="${s?.organization_name || ''}">
       </div>
+      ${archiveComboField('f-customer-category','دسته‌بندی',s?.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید')}
+      <div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="f-referral-source" value="${escapeHtml(s?.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>
       <div class="form-group full">
         <label class="form-label">آدرس</label>
         <textarea class="form-textarea" id="f-address" rows="2" placeholder="آدرس مشتری یا مجموعه">${s?.address || ''}</textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">نیاز یا مشکل اصلی</label>
+        <textarea class="form-textarea" id="f-main-need" rows="2" placeholder="نیاز، مسئله یا هدف اصلی مشتری">${s?.main_need || ''}</textarea>
+      </div>
+      ${archiveComboField('f-relationship-status','وضعیت ارتباط',s?.relationship_status||'مشتری شد',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}
+      <div class="form-group">
+        ${calendarDateFieldHtml('f-date', s?.date_jalali, 'شروع همکاری')}
       </div>
       <div class="form-group full">
         <label class="form-label">این شخص:</label>
@@ -8923,9 +8932,12 @@ async function saveStudentNew() {
     name, lname,
     phone: document.getElementById('f-phone')?.value || '',
     date: readCalendarDateField('f-date'),
-    customer_category: document.getElementById('f-customer-category')?.value.trim() || '',
+    customer_category: document.getElementById('f-customer-category')?.value.trim() || 'شخصی',
+    referral_source: document.getElementById('f-referral-source')?.value.trim() || 'متفرقه',
     organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
     address: document.getElementById('f-address')?.value.trim() || '',
+    main_need: document.getElementById('f-main-need')?.value.trim() || '',
+    relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplier,
@@ -8951,9 +8963,12 @@ async function saveStudentEdit(id) {
     id, name, lname,
     phone: document.getElementById('f-phone')?.value || '',
     date: readCalendarDateField('f-date'),
-    customer_category: document.getElementById('f-customer-category')?.value.trim() || '',
+    customer_category: document.getElementById('f-customer-category')?.value.trim() || 'شخصی',
+    referral_source: document.getElementById('f-referral-source')?.value.trim() || 'متفرقه',
     organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
     address: document.getElementById('f-address')?.value.trim() || '',
+    main_need: document.getElementById('f-main-need')?.value.trim() || '',
+    relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
     note: document.getElementById('f-note')?.value || '',
     family_id,
     is_supplier: isSupplierEdit,
