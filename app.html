@@ -718,6 +718,16 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .admin-content .status-ok{color:var(--admin-success)!important}
 .admin-content .status-debt{color:var(--admin-danger)!important}
+.password-field-wrap{position:relative;width:100%}
+.password-field-wrap>.form-input{width:100%;padding-left:48px!important}
+.password-visibility-toggle{
+  position:absolute;left:7px;top:50%;transform:translateY(-50%);z-index:2;
+  width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;
+  padding:0;border:0;border-radius:9px;background:transparent;color:var(--text2);
+  cursor:pointer;font-size:17px;line-height:1;transition:background .15s,color .15s;
+}
+.password-visibility-toggle:hover{background:rgba(139,124,248,.12);color:var(--text)}
+.password-visibility-toggle:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
 .admin-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
 .admin-actions .btn{min-height:40px}
 .admin-status-summary{margin-bottom:16px;border:1px solid rgba(139,124,248,.28);border-radius:14px;background:linear-gradient(155deg,var(--bg2),rgba(31,37,54,.88));overflow:hidden}
@@ -28898,6 +28908,61 @@ document.addEventListener('focusout', (e) => {
     }, 300);
   }
 });
+
+// ── نمایش/مخفی‌کردن رمز برای تمام فیلدهای فعلی و مودال‌های پویا ──────────
+function _enhancePasswordVisibility(root=document) {
+  const fields = root.querySelectorAll?.('input[type="password"]:not([data-password-visibility-ready])') || [];
+  fields.forEach(input => {
+    input.dataset.passwordVisibilityReady = '1';
+    const parent = input.parentElement;
+    if (!parent) return;
+
+    let button = Array.from(parent.children).find(el =>
+      el.tagName === 'BUTTON' && input.id && String(el.getAttribute('onclick') || '').includes(input.id)
+    );
+    if (button) {
+      button.removeAttribute('onclick');
+      button.classList.add('password-visibility-toggle');
+    } else {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'password-field-wrap';
+      parent.insertBefore(wrapper, input);
+      wrapper.appendChild(input);
+      button = document.createElement('button');
+      button.className = 'password-visibility-toggle';
+      wrapper.appendChild(button);
+    }
+
+    button.type = 'button';
+    button.textContent = '👁️';
+    button.title = 'نمایش رمز عبور';
+    button.setAttribute('aria-label', 'نمایش رمز عبور');
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const revealing = input.type === 'password';
+      input.type = revealing ? 'text' : 'password';
+      button.textContent = revealing ? '🙈' : '👁️';
+      button.title = revealing ? 'مخفی‌کردن رمز عبور' : 'نمایش رمز عبور';
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-pressed', revealing ? 'true' : 'false');
+      input.focus({ preventScroll:true });
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch(e) {}
+    });
+  });
+}
+
+const _passwordVisibilityObserver = new MutationObserver(() => {
+  clearTimeout(window._passwordVisibilityTimer);
+  window._passwordVisibilityTimer = setTimeout(() => _enhancePasswordVisibility(document), 30);
+});
+function _initPasswordVisibility() {
+  _enhancePasswordVisibility(document);
+  _passwordVisibilityObserver.observe(document.body, { childList:true, subtree:true });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initPasswordVisibility, { once:true });
+else _initPasswordVisibility();
 
 // ── Responsive table → card conversion (mobile) ──────────────────────────
 function _applyResponsiveTableLabels() {
