@@ -11883,17 +11883,6 @@ async function renderSettings() {
       </div>
     </div>
 
-    <div class="detail-section">
-      <h3>☰ ترتیب منوی اصلی</h3>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
-        ترتیب نمایش منو در کل برنامه را مشخص کن. برای جابه‌جایی، آیتم‌ها را بکش و رها کن.
-      </p>
-      <div id="nav-order-list" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-primary btn-sm" onclick="saveNavOrder()">💾 ذخیره ترتیب</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetNavOrder()">↩️ بازگشت به پیش‌فرض</button>
-      </div>
-    </div>
   </div>
 
   <div class="settings-pane ${_settingsActiveTab==='advanced'?'active':''}" id="pane-advanced">
@@ -11913,7 +11902,6 @@ async function renderSettings() {
   setContent(html);
   loadVersionsList();
   initPkgTypesDragDrop();
-  renderNavOrderEditor();
   _syncThemeToggleUI();
   setTimeout(_checkPushStatusForSettings, 100);
 }
