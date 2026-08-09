@@ -4551,6 +4551,7 @@ const DB_KEY = 'coaching_reza_v3';
 const RESTORE_PROTECT_KEY = 'tp_restore_protect_until';
 const RESTORE_SIGNATURE_KEY = 'tp_restore_expected_signature';
 const SERVER_SYNC_PENDING_PREFIX = 'tp_pending_server_sync_';
+const SERVER_SYNC_BASELINE_PREFIX = 'tp_server_sync_baseline_';
 const _ALL_CURRENCIES = ['تومان', 'درهم', 'دلار', 'یورو'];
 
 const DEFAULT_PKG_TYPES = [
@@ -4874,6 +4875,34 @@ function _dataFingerprint(value) {
 
 function _serverSyncPendingKey() {
   return SERVER_SYNC_PENDING_PREFIX + encodeURIComponent(window._activeDBKey || DB_KEY);
+}
+
+function _serverSyncBaselineKey() {
+  return SERVER_SYNC_BASELINE_PREFIX + encodeURIComponent(window._activeDBKey || DB_KEY);
+}
+
+function _readServerSyncBaseline() {
+  try {
+    const raw = localStorage.getItem(_serverSyncBaselineKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+function _writeServerSyncBaseline(data, etag = null) {
+  try {
+    localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify({
+      fingerprint: _dataFingerprint(_serverDataSignature(data || {})),
+      etag: etag || window._serverDataEtag || null,
+      savedAt: Number(data?._lastSaved || 0) || 0,
+      updatedAt: Date.now()
+    }));
+  } catch(e) { console.warn('[TeamPulse] sync baseline save failed:', e.message); }
+}
+
+function _localDataDivergedFromServerBaseline() {
+  const baseline = _readServerSyncBaseline();
+  if (!baseline?.fingerprint) return null;
+  return baseline.fingerprint !== _dataFingerprint(_serverDataSignature(_db || {}));
 }
 
 function _readServerSyncPending() {
@@ -20126,6 +20155,7 @@ async function _syncToServer(conflictAttempt = 0) {
       window._lastServerSyncSavedAt = syncSavedAt;
       window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
       window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+      _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
       window._serverSyncRetryAttempt = 0;
       clearTimeout(window._serverSyncRetryTimer);
       _clearServerSyncPending(syncSavedAt);
@@ -20287,6 +20317,20 @@ async function _loadFromServer() {
           return false;
         }
       }
+      const teamLocalHasData = !!(_db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length);
+      const teamLocalDiverged = _localDataDivergedFromServerBaseline();
+      if (teamLocalHasData && _serverDataChanged(data, _db) && teamLocalDiverged !== false) {
+        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+        _migrate(_db);
+        const key = window._activeDBKey || _teamActiveDBKey();
+        try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) {}
+        window._teamOwnerDataReady = true;
+        _markServerSyncPending(teamLocalDiverged ? 'team-local-diverged' : 'team-legacy-safe-merge');
+        clearTimeout(window._serverSyncTimer);
+        window._serverSyncTimer = setTimeout(_syncToServer, 50);
+        console.warn('[TeamPulse] prevented team data rollback and merged local changes');
+        return true;
+      }
       if (!serverTime && !localTime && !_serverDataChanged(data, _db)) return false;
       _db = data;
       _migrate(_db);
@@ -20295,6 +20339,7 @@ async function _loadFromServer() {
       window._teamOwnerDataReady = true;
       window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
       window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
+      _writeServerSyncBaseline(_db, window._serverDataEtag);
       _teamSyncSessionPermissions();
       console.log('[TeamPulse] Team owner data loaded from server');
       return true;
@@ -20325,6 +20370,26 @@ async function _loadFromServer() {
         console.warn('[TeamPulse] merged pending local changes with newer server data');
         return true;
       }
+      // زمان دستگاه‌ها قابل اعتماد نیست. اگر داده محلی از آخرین نسخه‌ای که واقعاً
+      // با سرور همگام شده متفاوت است، هرگز آن را با پاسخ سرور جایگزین نکن.
+      // برای نصب‌های قدیمی که هنوز baseline ندارند نیز در صورت اختلاف، یک‌بار
+      // محافظه‌کارانه ادغام می‌کنیم تا هیچ داده‌ای از کاربر از دست نرود.
+      const localHasMeaningfulData = !!(
+        _db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length ||
+        _db.packages?.length || _db.payments?.length || _db.sessions?.length
+      );
+      const localDiverged = _localDataDivergedFromServerBaseline();
+      if (localHasMeaningfulData && _serverDataChanged(data, _db) && localDiverged !== false) {
+        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+        _migrate(_db);
+        const key = window._activeDBKey || DB_KEY;
+        try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) {}
+        _markServerSyncPending(localDiverged ? 'local-diverged-from-baseline' : 'legacy-safe-merge');
+        clearTimeout(window._serverSyncTimer);
+        window._serverSyncTimer = setTimeout(_syncToServer, 50);
+        console.warn('[TeamPulse] prevented automatic rollback and merged local data with server');
+        return true;
+      }
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
       if ((localEmpty && _serverDataChanged(data, _db)) || (serverTime > localTime)) {
@@ -20335,6 +20400,7 @@ async function _loadFromServer() {
         if (window._impersonating) window._impersonateServerBlocked = false;
         if (teamSession) window._teamOwnerDataReady = true;
         window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
+        _writeServerSyncBaseline(_db, window._serverDataEtag);
         console.log('[TeamPulse] Loaded from server');
         return true;
       }

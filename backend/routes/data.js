@@ -424,7 +424,10 @@ function handleSaveData(req, res) {
       // Team-member writes are merged field-by-field below. Owner/admin writes
       // replace the full account document, so protect them from stale tabs or
       // another device silently overwriting a newer server version.
-      if (!grant && !force && baseEtag && baseEtag !== currentEtag) {
+      // برای سند موجود، صاحب حساب باید دقیقاً مشخص کند تغییرات را روی کدام
+      // نسخه سرور انجام داده است. نبودن base_etag هم مثل نسخه قدیمی است؛ وگرنه
+      // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
+      if (!grant && !force && (!baseEtag || baseEtag !== currentEtag)) {
         return res.status(409).json({
           error: 'sync_conflict',
           message: 'Server data changed since this client loaded it.',
