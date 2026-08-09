@@ -720,7 +720,15 @@ button { cursor: pointer; font-family: var(--font); }
 .admin-content .status-debt{color:var(--admin-danger)!important}
 .admin-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
 .admin-actions .btn{min-height:40px}
-.admin-stats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.admin-status-summary{margin-bottom:16px;border:1px solid rgba(139,124,248,.28);border-radius:14px;background:linear-gradient(155deg,var(--bg2),rgba(31,37,54,.88));overflow:hidden}
+.admin-status-summary>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 15px;color:var(--text);font-weight:800;cursor:pointer;list-style:none;user-select:none}
+.admin-status-summary>summary::-webkit-details-marker{display:none}
+.admin-status-summary>summary::after{content:'⌄';font-size:20px;color:var(--admin-primary);transition:transform .2s ease}
+.admin-status-summary[open]>summary::after{transform:rotate(180deg)}
+.admin-status-summary>summary:hover{background:rgba(139,124,248,.08)}
+.admin-status-summary>summary:focus-visible{outline:2px solid var(--admin-primary);outline-offset:-3px}
+.admin-status-summary[open]>summary{border-bottom:1px solid rgba(139,124,248,.22)}
+.admin-stats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px;margin:0}
 .admin-stat-card{
   position:relative;display:grid;grid-template-columns:minmax(0,1fr) 92px;align-items:end;gap:12px;
   min-height:132px;padding:16px;text-align:right;cursor:pointer;border:1px solid rgba(148,163,184,.16);
@@ -744,6 +752,8 @@ button { cursor: pointer; font-family: var(--font); }
   .admin-content .detail-section{padding:13px}
   .admin-content [data-admin-user-id]{padding:10px!important;gap:8px!important}
   .admin-actions{gap:6px;padding-inline:2px}.admin-actions .btn{flex:1 1 calc(50% - 6px);font-size:11px}
+  .admin-status-summary{margin-inline:2px;margin-bottom:12px}
+  .admin-status-summary>summary{min-height:46px;padding:9px 12px;font-size:12px}
   .admin-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .admin-stat-card{grid-template-columns:1fr;padding:12px;min-height:128px}
   .admin-spark{width:100%;height:34px}
@@ -27145,14 +27155,14 @@ function _adminMetricCard({type,title,value,current,previous,series,inverse=fals
 }
 function _adminStatsHtml(d,users) {
   const registrations=d?.series?.registrations||[];
-  return `<div class="admin-stats-grid">
+  return `<details class="admin-status-summary"><summary>خلاصه وضعیت</summary><div class="admin-stats-grid">
     ${_adminMetricCard({type:'all',title:'کل کاربران',value:fa(d.totalUsers??users.length),current:d.totalUsers??users.length,previous:d.totalUsersPrevious??0,series:registrations})}
     ${_adminMetricCard({type:'activeToday',title:'فعال امروز',value:fa(d.activeToday||0),current:d.activeToday||0,previous:d.activeYesterday||0,series:d?.series?.activity})}
     ${_adminMetricCard({type:'new',title:'کاربران جدید این ماه',value:fa(d.newThisMonth||0),current:d.newThisMonth||0,previous:d.newPreviousMonth||0,series:registrations})}
     ${_adminMetricCard({type:'inactive',title:'کاربران غیرفعال',value:fa(d.inactiveUsers||0),current:d.inactiveUsers||0,previous:d.inactivePreviousPeriod||0,series:d?.series?.inactive,inverse:true})}
     ${_adminMetricCard({type:'paid',title:'کاربران پلن پولی',value:fa(d.paidUsers||0),current:d.paidUsers||0,previous:d.paidPreviousPeriod||0,series:d?.series?.paid})}
     ${_adminMetricCard({type:'revenue',title:'درآمد ماه',value:`${fa(d.monthlyRevenue||0)} تومان`,current:d.monthlyRevenue||0,previous:d.previousMonthlyRevenue||0,series:d?.series?.revenue})}
-  </div>`;
+  </div></details>`;
 }
 
 async function renderAdminPanel() {
