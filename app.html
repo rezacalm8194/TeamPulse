@@ -5499,18 +5499,26 @@ window.api = {
   versions: {
     list: async () => {
       const combined = [];
+      let serverAvailable = false;
+      let serverError = '';
       const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
       if (accId && _sbSession?.token) {
         try {
           const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=25');
           if (res.ok) {
+            serverAvailable = true;
             const payload = await res.json();
             (payload.versions || []).forEach(v => combined.push({
               source:'server', ref:String(v.id), mtime:Date.parse(v.created_at || '') || 0,
               label:v.created_at, summary:v.summary || {}, size:Number(v.size || 0)
             }));
+          } else {
+            serverError = res.status === 404 ? 'مسیر تاریخچه نسخه‌ها هنوز روی سرور منتشر نشده است' : `خطای سرور (${res.status})`;
           }
-        } catch(e) { console.warn('[TeamPulse] server versions list failed:', e.message); }
+        } catch(e) {
+          serverError = 'ارتباط با تاریخچه سرور برقرار نشد';
+          console.warn('[TeamPulse] server versions list failed:', e.message);
+        }
       }
       try {
         const vKey = window._activeDBKey
@@ -5530,11 +5538,14 @@ window.api = {
         }));
       } catch(e) {}
       const seen = new Set();
-      return combined.sort((a,b)=>b.mtime-a.mtime).filter(v => {
+      const result = combined.sort((a,b)=>b.mtime-a.mtime).filter(v => {
         const key = v.source + ':' + v.ref;
         if (seen.has(key)) return false;
         seen.add(key); return true;
       });
+      result.serverAvailable = serverAvailable;
+      result.serverError = serverError;
+      return result;
     },
     restore: async (source, ref) => {
       if (source === 'server') {
@@ -6823,9 +6834,8 @@ _load();
 // _load already uses window._activeDBKey
 const _origSave = _save;
 window._save = function(stamp=true) {
-  if (stamp) _db._lastSaved = Date.now();
-  const key = window._activeDBKey || 'coaching_reza_v3';
-  try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) { console.error('Save failed', e); }
+  // مسیر دوم ذخیره نباید منطق اصلی نسخه‌سازی و همگام‌سازی سرور را دور بزند.
+  _origSave(stamp);
   if (stamp && _gdrive.enabled) _gdrive.schedulePush();
 };
 
@@ -12063,6 +12073,7 @@ async function loadVersionsList() {
     return `<option value="${i}">${i===0?'جدیدترین · ':''}${dateStr} — ${source}</option>`;
   }).join('');
   wrap.innerHTML = `
+    ${!versions.serverAvailable ? `<div style="margin-bottom:10px;padding:10px 12px;border-radius:9px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);color:var(--red);font-size:11px;line-height:1.8">⚠️ ${escapeHtml(versions.serverError || 'تاریخچه سرور در دسترس نیست')}؛ موارد زیر فقط نسخه‌های قدیمی همین مرورگر هستند.</div>` : ''}
     <div class="form-group" style="max-width:720px;margin-bottom:10px">
       <label>نسخه موردنظر را انتخاب کنید (${fa(versions.length)} نسخه در دسترس)</label>
       <select class="form-select" id="restore-version-select" onchange="_renderVersionChoice(this.value)">${options}</select>
