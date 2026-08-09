@@ -4767,6 +4767,13 @@ function _load() {
   try { const s = localStorage.getItem(key); _db = s ? JSON.parse(s) : null; } catch(e) { _db = null; }
   if (!_db) _db = _freshData();
   _migrate(_db);
+  // در اولین بارگذاری نسخه جدید نیز فوراً کپی‌های قدیمی و حجیم را آزاد کن؛
+  // لازم نیست کاربر تا تغییر بعدی و بروز خطای Quota صبر کند.
+  try {
+    if (JSON.stringify(_db || {}).length > 700 * 1024) {
+      _releaseLocalStorageForPrimaryData(key);
+    }
+  } catch(e) {}
   _trimStoredVersions();
 }
 
@@ -4777,6 +4784,14 @@ function _saveVersion() {
     const vKey = window._activeDBKey
       ? 'teampulse_versions_' + window._activeDBKey
       : 'teampulse_versions_local';
+    // برای حساب‌های بزرگ، یک کپی کامل دیگر در localStorage باعث عبور از سقف
+    // ۵ مگابایتی مرورگر و شکست ذخیره داده اصلی می‌شود. تاریخچه کامل این حساب‌ها
+    // روی سرور نگه داشته می‌شود و نسخه محلی حجیم باید حذف شود.
+    const serializedSize = JSON.stringify(_db || {}).length;
+    if (serializedSize > 700 * 1024) {
+      try { localStorage.removeItem(vKey); } catch(e) {}
+      return;
+    }
     let history = [];
     try { history = JSON.parse(localStorage.getItem(vKey) || '[]'); } catch(e2) { history = []; }
     const now = Date.now();
@@ -4792,6 +4807,26 @@ function _saveVersion() {
       try { localStorage.setItem(vKey, JSON.stringify(history)); } catch(e3) {}
     }
   } catch(e) { console.warn('Version save failed:', e); }
+}
+
+function _releaseLocalStorageForPrimaryData(activeDataKey) {
+  let released = false;
+  try {
+    const removable = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key === activeDataKey) continue;
+      if (
+        key.startsWith('teampulse_versions_') ||
+        key.startsWith('tp_impersonate_') ||
+        key.startsWith('teampulse_oauth_result_')
+      ) removable.push(key);
+    }
+    removable.forEach(key => {
+      try { localStorage.removeItem(key); released = true; } catch(e) {}
+    });
+  } catch(e) {}
+  return released;
 }
 
 function _trimStoredVersions() {
@@ -4820,9 +4855,21 @@ function _save(stamp=true) {
     localStorage.setItem(key, JSON.stringify(_db));
     localSaved = true;
   } catch(e) {
-    // Safari Private mode یا storage پر
-    console.warn('LocalStorage save failed (Safari private?):', e.message);
-    if (stamp) showToast('ذخیره روی دستگاه انجام نشد؛ حافظه مرورگر را خالی کن یا صفحه را نبند', 'error');
+    // فقط کش نسخه‌ها و داده‌های موقت را آزاد کن؛ نشست و داده اصلی کاربر هرگز
+    // پاک نمی‌شوند. سپس ذخیره داده اصلی را یک‌بار دیگر امتحان کن.
+    console.warn('LocalStorage save failed; releasing non-essential caches:', e.message);
+    if (_releaseLocalStorageForPrimaryData(key)) {
+      try {
+        localStorage.setItem(key, JSON.stringify(_db));
+        localSaved = true;
+        console.info('[TeamPulse] primary data saved after cache cleanup');
+      } catch(retryError) {
+        console.warn('LocalStorage retry failed:', retryError.message);
+      }
+    }
+    if (!localSaved && stamp) {
+      showToast('حافظه دستگاه ظرفیت کافی ندارد؛ داده در حال ارسال امن به سرور است. تا نمایش تأیید ذخیره صفحه را نبندید.', 'error');
+    }
   }
   if (stamp) {
     if (localSaved) _markServerSyncPending('save');
@@ -28968,7 +29015,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v64';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v65';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
