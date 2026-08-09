@@ -28708,6 +28708,7 @@ function _showInstallBanner() {
   const ua = navigator.userAgent;
   const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isAndroid = /android/i.test(ua);
+  const isFirefoxAndroid = isAndroid && /firefox/i.test(ua);
   const isSafari = isIOS && /safari/i.test(ua) && !/crios|fxios|edgios|opios/i.test(ua);
   const banner = document.createElement('div');
   banner.id = 'pwa-install-banner';
@@ -28730,12 +28731,12 @@ function _showInstallBanner() {
     <style>@keyframes slideUpBanner{from{transform:translateY(100%)}to{transform:translateY(0)}}</style>
     <div style="display:flex;align-items:center;gap:12px">
       <img src="/logo.png" alt="" style="width:46px;height:46px;border-radius:12px;flex-shrink:0;mix-blend-mode:screen">
-      <div style="flex:1;min-width:0"><div style="color:white;font-weight:800;font-size:14px">TeamPulse را نصب کنید</div><div style="color:rgba(255,255,255,.65);font-size:12px;margin-top:2px">${isIOS?'دسترسی سریع از صفحه اصلی':'اجرای سریع‌تر و تجربه‌ای شبیه اپلیکیشن'}</div></div>
+      <div style="flex:1;min-width:0"><div style="color:white;font-weight:800;font-size:14px">${isFirefoxAndroid?'TeamPulse را به صفحه اصلی اضافه کنید':'TeamPulse را نصب کنید'}</div><div style="color:rgba(255,255,255,.65);font-size:12px;margin-top:2px">${isIOS?'دسترسی سریع از صفحه اصلی':(isFirefoxAndroid?'دسترسی سریع از آیکن صفحه اصلی':'اجرای سریع‌تر و تجربه‌ای شبیه اپلیکیشن')}</div></div>
       <button class="x-close-sm x-close-invert" onclick="_hideInstallBanner(true)" aria-label="بعداً" style="font-size:16px">×</button>
     </div>
     ${iosInstructions}
     ${!isIOS ? `<div style="display:flex;gap:8px">
-      <button onclick="_installPWA()" style="flex:1;padding:11px;border-radius:10px;background:var(--accent);color:white;border:none;font-family:var(--font);font-size:14px;font-weight:800">📲 ${isAndroid?'نصب برنامه':'Install TeamPulse'}</button>
+      <button onclick="_installPWA()" style="flex:1;padding:11px;border-radius:10px;background:var(--accent);color:white;border:none;font-family:var(--font);font-size:14px;font-weight:800">📲 ${isFirefoxAndroid?'راهنمای افزودن':(isAndroid?'نصب برنامه':'Install TeamPulse')}</button>
       <button onclick="_hideInstallBanner(true)" style="padding:11px 16px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;font-family:var(--font);font-size:13px">بعداً</button>
     </div>` : `<button onclick="_hideInstallBanner(true)" style="width:100%;padding:10px;border-radius:10px;background:rgba(255,255,255,.1);color:white;border:none;font-family:var(--font);font-size:13px">متوجه شدم</button>`}
   `;
@@ -28786,14 +28787,14 @@ function _showAndroidInstallHelp() {
   const steps = samsung
     ? '۱. روی منوی <b>سه‌خط یا سه‌نقطه</b> مرورگر بزنید.<br>۲. گزینه <b>Add page to / افزودن صفحه به</b> را انتخاب کنید.<br>۳. <b>Home screen / صفحه اصلی</b> را بزنید.<br>۴. در پایان <b>Add / افزودن</b> را تأیید کنید.'
     : firefox
-      ? '۱. منوی مرورگر را باز کنید.<br>۲. گزینه <b>Install / نصب</b> را انتخاب کنید.<br>۳. نصب را تأیید کنید.'
+      ? '۱. منوی سه‌نقطه Firefox را باز کنید.<br>۲. گزینه <b>Install / نصب</b> را انتخاب کنید.<br>۳. در پنجره <b>Add to Home screen</b>، گزینه <b>Add automatically / افزودن خودکار</b> را بزنید.<br>۴. آیکن TeamPulse روی صفحه اصلی اندروید ایجاد می‌شود.'
       : '۱. منوی سه‌نقطه مرورگر را باز کنید.<br>۲. گزینه <b>Install app / نصب برنامه</b> یا <b>Add to Home screen / افزودن به صفحه اصلی</b> را انتخاب کنید.<br>۳. نصب را تأیید کنید.';
   openModal('📲 نصب TeamPulse روی اندروید', `
     <div class="detail-section" style="line-height:2">
       <div style="font-size:13px;font-weight:800;margin-bottom:8px">روش نصب در ${browserName}</div>
       <div style="font-size:12px;color:var(--text2)">${steps}</div>
     </div>
-    ${samsung ? '<div style="font-size:11px;color:var(--text3);line-height:1.8">اگر گزینه «افزودن به صفحه اصلی» نمایش داده نشد، همین آدرس را در Google Chrome باز کنید و از منوی سه‌نقطه «نصب برنامه» را بزنید.</div>' : ''}
+    ${(samsung || firefox) ? `<div style="font-size:11px;color:var(--text3);line-height:1.8">${firefox?'توجه: Firefox ممکن است TeamPulse را فقط روی صفحه اصلی اضافه کند و آن را در فهرست برنامه‌های نصب‌شده نشان ندهد. برای نصب کامل و نمایش در فهرست Apps، لینک را در Google Chrome باز کنید و «نصب برنامه» را بزنید.':'اگر گزینه «افزودن به صفحه اصلی» نمایش داده نشد، همین آدرس را در Google Chrome باز کنید و از منوی سه‌نقطه «نصب برنامه» را بزنید.'}</div>` : ''}
   `,[
     {label:'متوجه شدم',cls:'btn-primary',action:'closeModal()'},
     {label:'📋 کپی لینک نصب',cls:'btn-ghost',action:'_copyPWAInstallUrl(this)'},
