@@ -672,6 +672,7 @@ router.get('/:accountId', auth, (req, res) => {
     const data = JSON.parse(row.data);
     res.json({
       data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data),
+      workspace_id: workspace.workspaceId,
       updated_at: row.updated_at,
       etag: dataEtag(row.data),
     });

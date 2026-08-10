@@ -7232,6 +7232,19 @@ async function _switchAccount(id) {
   try { await _idbPutDatabaseSnapshot(window._activeDBKey, _db, 'account-switch'); } catch(e) {}
   location.reload();
 }
+
+async function _initializeEmptyWorkspace(id, name) {
+  const key = _localWorkspaceDBKey(id);
+  const empty = _freshData();
+  empty.meta = { ...empty.meta, appTitle: name || 'میزکار جدید' };
+  empty._workspaceId = id;
+  empty._lastSaved = Date.now();
+  _migrate(empty);
+  try { _persistDatabaseSnapshot(key, empty); } catch(e) {}
+  try { await _idbPutDatabaseSnapshot(key, empty, 'workspace-created-empty'); } catch(e) {}
+  return empty;
+}
+
 async function _createAccount(name) {
   const accounts = _getAccounts();
   if (accounts.length + 1 >= MAX_WORKSPACES) {
@@ -7240,6 +7253,12 @@ async function _createAccount(name) {
   }
   const id = 'acc_' + Date.now();
   const ownerId = _workspaceOwnerId();
+  const finishCreation = async (pendingSync = false) => {
+    accounts.push({ id, name, created: new Date().toISOString(), pendingSync });
+    _saveAccounts(accounts);
+    await _initializeEmptyWorkspace(id, name);
+    return id;
+  };
   if (_sbSession?.token && ownerId !== 'guest') {
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces', {
       method:'POST', body:JSON.stringify({ id, name })
@@ -7260,19 +7279,17 @@ async function _createAccount(name) {
           try {
             const payload = await check.json();
             if ((payload.workspaces || []).some(workspace => workspace.id === id)) {
-              accounts.push({ id, name, created: new Date().toISOString() });
-              _saveAccounts(accounts);
-              return id;
+              window._workspaceServerSupported = true;
+              return finishCreation(false);
             }
           } catch(e) {}
         }
         // Workspaces are local-first. Keep the new workspace usable during an
         // outage or while an older backend is still running. The registry sync
         // will register this same id after the backend update becomes available.
-        accounts.push({ id, name, created: new Date().toISOString(), pendingSync: true });
-        _saveAccounts(accounts);
+        window._workspaceServerSupported = false;
         showToast('میزکار ساخته شد؛ پس از وصل‌شدن سرور همگام می‌شود', 'warning');
-        return id;
+        return finishCreation(true);
       }
       const message = errorCode === 'workspace_limit'
         ? 'حداکثر ۵ میزکار قابل ایجاد است'
@@ -7280,10 +7297,9 @@ async function _createAccount(name) {
       showToast(message, 'error');
       return null;
     }
+    window._workspaceServerSupported = true;
   }
-  accounts.push({ id, name, created: new Date().toISOString() });
-  _saveAccounts(accounts);
-  return id;
+  return finishCreation(false);
 }
 async function _deleteAccount(id) {
   if (id === 'default') { showToast('میزکار پیش‌فرض قابل حذف نیست', 'error'); return; }
@@ -7329,7 +7345,11 @@ async function _refreshWorkspacesFromServer() {
   if (!_sbSession?.token || ownerId === 'guest') return _getAccounts();
   try {
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
-    if (!res.ok) return _getAccounts();
+    if (!res.ok) {
+      window._workspaceServerSupported = false;
+      return _getAccounts();
+    }
+    window._workspaceServerSupported = true;
     const payload = await res.json();
     const remote = Array.isArray(payload.workspaces) ? payload.workspaces : [];
     const local = _getAccounts();
@@ -20834,6 +20854,16 @@ async function _syncToServer(conflictAttempt = 0) {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    // An older backend ignores ?workspace= and would write this document over
+    // the owner's default workspace. Never sync a secondary workspace until
+    // the registry endpoint has positively confirmed workspace support.
+    if (!teamSession && _currentAccountId() !== 'default' && window._workspaceServerSupported !== true) {
+      await _refreshWorkspacesFromServer();
+      if (window._workspaceServerSupported !== true) {
+        _markServerSyncPending('workspace-api-unavailable');
+        return null;
+      }
+    }
     if (window._impersonating && window._impersonateServerBlocked) {
       console.warn('[Impersonate] blocked sync while target data is isolated locally');
       return null;
@@ -21002,6 +21032,12 @@ async function _loadFromServer() {
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
+    // Likewise, an old backend returns the default document even when the
+    // workspace query is present. Ignoring it preserves strict isolation.
+    if (!teamSession && _currentAccountId() !== 'default' && window._workspaceServerSupported !== true) {
+      await _refreshWorkspacesFromServer();
+      if (window._workspaceServerSupported !== true) return false;
+    }
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery());
