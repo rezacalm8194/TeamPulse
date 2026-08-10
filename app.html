@@ -11307,12 +11307,42 @@ function toggleTopEarners(button) {
   button.textContent = shouldExpand ? 'نمایش کمتر' : 'مشاهده ادامه';
 }
 
+function toggleMonthlyIncome(button) {
+  const section = button?.closest('.detail-section');
+  if (!section) return;
+  const shouldExpand = button.getAttribute('aria-expanded') !== 'true';
+  section.querySelectorAll('[data-monthly-income-extra]').forEach(row => {
+    row.style.display = shouldExpand ? '' : 'none';
+  });
+  button.setAttribute('aria-expanded', String(shouldExpand));
+  button.textContent = shouldExpand ? 'نمایش کمتر' : 'مشاهده ادامه';
+}
+
+function changeDashboardIncomeYear(value) {
+  window._dashboardIncomeYear = Number(value) || null;
+  renderDashboard();
+}
+
 async function renderDashboard() {
   updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
   const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const collected = totalAmount > 0 ? Math.round(totalPaid / totalAmount * 100) : 0;
+  const incomeMonthNames = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const incomeYears = [...new Set([currentJalaliYear, ...monthlyIncome.map(m => Number(m.jy)).filter(Boolean)])].sort((a,b) => b-a);
+  let selectedIncomeYear = Number(window._dashboardIncomeYear || currentJalaliYear);
+  if (!incomeYears.includes(selectedIncomeYear)) selectedIncomeYear = currentJalaliYear;
+  window._dashboardIncomeYear = selectedIncomeYear;
+  const currentJalaliMonth = _todayJalali()[1];
+  const incomeMonthLimit = selectedIncomeYear === currentJalaliYear ? currentJalaliMonth : 12;
+  const incomeByMonth = new Map(monthlyIncome.filter(m => Number(m.jy) === selectedIncomeYear).map(m => [Number(m.jm), Number(m.total || 0)]));
+  const selectedYearMonths = Array.from({length: incomeMonthLimit}, (_, index) => {
+    const jm = index + 1;
+    return { jy: selectedIncomeYear, jm, label: `${incomeMonthNames[index]} ${fa(selectedIncomeYear)}`, total: incomeByMonth.get(jm) || 0 };
+  }).reverse();
+  const selectedYearTotal = selectedYearMonths.reduce((sum, month) => sum + month.total, 0);
+  const selectedFocusMonth = selectedYearMonths[0] || { label: `سال ${fa(selectedIncomeYear)}`, total: 0, jm: 0 };
 
   const html = `<div class="stats-row">
     <div class="stat-card s-accent">
@@ -11417,26 +11447,36 @@ async function renderDashboard() {
   </div>` : ''}
 
   <div class="detail-section" style="margin-top:14px">
-    <h3>📅 گزارش درآمد ماهانه</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <h3 style="margin:0">📅 گزارش درآمد ماهانه</h3>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text2)">
+        <span>انتخاب سال</span>
+        <select class="form-select" aria-label="انتخاب سال گزارش درآمد" onchange="changeDashboardIncomeYear(this.value)" style="width:auto;min-width:108px;padding:7px 30px 7px 10px">
+          ${incomeYears.map(year => `<option value="${year}" ${year===selectedIncomeYear?'selected':''}>${fa(year)}</option>`).join('')}
+        </select>
+      </label>
+    </div>
     <div class="stats-row" style="margin-bottom:14px">
       <div class="stat-card s-green">
-        <div class="stat-label">درآمد ${currentMonthLabel} (ماه جاری)</div>
-        <div class="stat-value">${fmt(currentMonthIncome)}</div>
+        <div class="stat-label">درآمد ${selectedFocusMonth.label}${selectedIncomeYear===currentJalaliYear?' (ماه جاری)':''}</div>
+        <div class="stat-value">${fmt(selectedFocusMonth.total)}</div>
         <div class="stat-sub">تومان</div>
       </div>
       <div class="stat-card s-accent">
-        <div class="stat-label">جمع درآمد سال ${fa(currentJalaliYear)}</div>
-        <div class="stat-value">${fmt(currentYearTotal)}</div>
+        <div class="stat-label">جمع درآمد سال ${fa(selectedIncomeYear)}</div>
+        <div class="stat-value">${fmt(selectedYearTotal)}</div>
         <div class="stat-sub">تومان — مناسب گزارش پایان سال</div>
       </div>
     </div>
-    ${monthlyIncome.length === 0
-      ? '<p style="font-size:12px;color:var(--text3)">هنوز پرداختی ثبت نشده</p>'
-      : monthlyIncome.map(m => `
-        <div class="detail-row">
-          <span class="detail-key">${m.label}${m.jy===currentJalaliYear && m.label===currentMonthLabel ? ' <span style="color:var(--accent2);font-size:10px">(ماه جاری)</span>' : ''}</span>
+    ${selectedYearMonths.map((m, index) => `
+        <div class="detail-row" ${index >= 6 ? 'data-monthly-income-extra style="display:none"' : ''}>
+          <span class="detail-key">${m.label}${selectedIncomeYear===currentJalaliYear && m.jm===currentJalaliMonth ? ' <span style="color:var(--accent2);font-size:10px">(ماه جاری)</span>' : ''}</span>
           <span class="detail-val amount-paid">${fmt(m.total)} تومان</span>
         </div>`).join('')}
+    ${selectedYearMonths.length > 6 ? `
+      <div style="display:flex;justify-content:center;padding-top:12px">
+        <button type="button" class="btn btn-ghost btn-sm" aria-expanded="false" onclick="toggleMonthlyIncome(this)">مشاهده ادامه</button>
+      </div>` : ''}
   </div>
   `;
   setContent(html);
