@@ -5497,9 +5497,9 @@ function _packagePaymentDueDate(pkg) {
 }
 
 function _isPackageChargeable(pkg) {
-  const due = _packagePaymentDueDate(pkg);
-  if (!due) return true;
-  return _jalaliKey(due) <= _jalaliToday();
+  // A saved purchase is already a financial commitment. Its payment due date
+  // controls reminders, not whether the contract contributes to customer debt.
+  return true;
 }
 
 // ── Staff summary ───────────────────────────────────────────────────────────
@@ -5781,7 +5781,9 @@ window.api = {
         r.due_date_jalali=next;
         r.done=false;
         r.notified_levels=[];
-        if(pkg)pkg.payment_due_date=next;
+        // Keep the completed purchase on its original due date. Only the
+        // reminder moves forward to the next renewal cycle.
+        if(pkg)pkg.payment_due_date=baseDate;
       }else{
         r.done=true;
         if(pkg)pkg.payment_due_date=p.payment_due_date||r.due_date_jalali;
