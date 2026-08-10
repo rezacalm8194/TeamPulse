@@ -5020,6 +5020,99 @@ async function _seedIndexedDBFromLocalStorage(key) {
   }
 }
 
+const TP_IDB_MIGRATION_PREFIX = 'tp_idb_primary_v1:';
+
+function _isUsableDatabaseSnapshot(data) {
+  return !!(data && typeof data === 'object' && !Array.isArray(data) &&
+    ['students','todos','staff','instructions'].some(key => Array.isArray(data[key])));
+}
+
+function _databaseSnapshotFingerprint(data) {
+  try { return _dataFingerprint(JSON.stringify(data || {})); }
+  catch(e) { return ''; }
+}
+
+async function _loadPrimaryDatabase() {
+  _purgeLegacyImpersonationCaches();
+  const key = window._activeDBKey || DB_KEY;
+  if (String(key).startsWith('tp_impersonate_')) {
+    _load();
+    return { source: 'impersonation-memory', key };
+  }
+
+  let localData = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (_isUsableDatabaseSnapshot(parsed)) localData = parsed;
+    }
+  } catch(e) {
+    console.warn('[TeamPulse] legacy local database read failed:', e.message);
+  }
+
+  let idbRecord = null;
+  try { idbRecord = await _idbGetDatabaseSnapshot(key); }
+  catch(error) {
+    if (!window._tpIndexedDBWarningShown) {
+      window._tpIndexedDBWarningShown = true;
+      console.warn('[TeamPulse] IndexedDB primary read failed; using local fallback:', error.message);
+    }
+  }
+  const idbData = _isUsableDatabaseSnapshot(idbRecord?.data) ? idbRecord.data : null;
+  const localSavedAt = Number(localData?._lastSaved || 0) || 0;
+  const idbSavedAt = Number(idbRecord?.savedAt || idbData?._lastSaved || 0) || 0;
+
+  let source = 'fresh';
+  if (idbData && (!localData || idbSavedAt >= localSavedAt)) {
+    _db = _cloneData(idbData);
+    source = 'indexeddb';
+  } else if (localData) {
+    _db = _cloneData(localData);
+    source = 'local-fallback';
+  } else {
+    _db = _freshData();
+  }
+  _migrate(_db);
+
+  let idbVerified = false;
+  try {
+    const selectedFingerprint = _databaseSnapshotFingerprint(_db);
+    await _idbPutDatabaseSnapshot(key, _db, source === 'local-fallback' ? 'verified-migration' : 'primary-load');
+    const verification = await _idbGetDatabaseSnapshot(key);
+    idbVerified = !!selectedFingerprint && selectedFingerprint === _databaseSnapshotFingerprint(verification?.data);
+    if (idbVerified) {
+      window._tpIndexedDBReady = true;
+      try {
+        localStorage.setItem(TP_IDB_MIGRATION_PREFIX + encodeURIComponent(key), JSON.stringify({
+          verifiedAt: Date.now(),
+          savedAt: Number(_db._lastSaved || 0) || 0,
+          fingerprint: selectedFingerprint,
+        }));
+      } catch(e) {
+        // The verification itself succeeded; a full localStorage must not
+        // incorrectly mark IndexedDB as unavailable.
+      }
+    }
+  } catch(error) {
+    window._tpIndexedDBReady = false;
+    console.warn('[TeamPulse] IndexedDB verification failed; local fallback retained:', error.message);
+  }
+
+  // During the transition release, keep a rollback mirror. It will only be
+  // removed after every synchronous legacy load path has been retired.
+  if (source === 'indexeddb') {
+    try { localStorage.setItem(key, JSON.stringify(_db)); }
+    catch(error) {
+      _releaseLocalStorageForPrimaryData(key);
+      try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) {}
+    }
+  }
+  window._tpPrimaryDatabaseSource = source;
+  window._tpPrimaryDatabaseKey = key;
+  return { source, key, idbVerified };
+}
+
 function _persistDatabaseSnapshot(key, data) {
   _queueIndexedDBSnapshot(key, data, String(key || '').startsWith('tp_impersonate_') ? 'impersonation-memory-shadow' : 'local-shadow');
   // Impersonation is an online administrative view. Keep its database only in
@@ -21130,7 +21223,7 @@ async function _authOnSuccess() {
   window._teamOwnerDataReady = false;
   await _ensureTeamAccessOwner();
   window._activeDBKey = _teamActiveDBKey();
-  _load(); // load از localStorage (ممکنه خالی باشه)
+  await _loadPrimaryDatabase();
   let loadedFromServer = false;
   const hasLocalDataAtStart = (_db.students?.length > 0) || (_db.todos?.length > 0) || (_db.instructions?.length > 0) || (_db.staff?.length > 0) || (_db.meta?.jobId) || (_db.meta?.appTitle && _db.meta.appTitle !== 'TeamPulse');
 
@@ -28550,8 +28643,8 @@ async function _adminReturnToAdmin() {
     clearTimeout(window._serverSyncTimer);
     window._impersonateLoadPending = false;
 
-    // لود داده ادمین از localStorage
-    _load();
+    // بارگذاری نسخه تأییدشده ادمین از IndexedDB با fallback محلی
+    await _loadPrimaryDatabase();
 
     // آپدیت META به حالت ادمین
     try {
