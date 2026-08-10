@@ -3986,15 +3986,6 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-status-badge.is-failed{color:#ff8f99;background:rgba(248,75,91,.13);border-color:rgba(248,75,91,.27)}
 .archive-status-badge.is-neutral{color:var(--text2);background:rgba(255,255,255,.07);border-color:var(--border)}
 .archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
-.archive-sheet tbody tr.archive-status-followup td{background:rgba(126,255,58,.13);border-block-color:rgba(126,255,58,.36)}
-.archive-sheet tbody tr.archive-status-followup td:first-child{box-shadow:inset -3px 0 #7eff3a}
-.archive-sheet tbody tr.archive-status-failed td{background:rgba(248,75,91,.13);border-block-color:rgba(248,75,91,.34)}
-.archive-sheet tbody tr.archive-status-failed td:first-child{box-shadow:inset -3px 0 #f84b5b}
-.archive-sheet tbody tr.archive-status-contacted td{background:rgba(55,148,255,.13);border-block-color:rgba(55,148,255,.34)}
-.archive-sheet tbody tr.archive-status-contacted td:first-child{box-shadow:inset -3px 0 #3794ff}
-.archive-sheet tbody tr.archive-status-meeting td{background:rgba(255,205,55,.14);border-block-color:rgba(255,205,55,.36)}
-.archive-sheet tbody tr.archive-status-meeting td:first-child{box-shadow:inset -3px 0 #ffcd37}
-.archive-sheet tbody tr[class*="archive-status-"]:hover td{filter:brightness(1.08)}
 .archive-sheet .archive-actions{display:flex;justify-content:center;gap:5px;cursor:default}
 .archive-sheet-count{font-size:12px;color:var(--text3)}
 .archive-bulkbar{display:flex;min-height:52px;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2);visibility:hidden;pointer-events:none}
@@ -4002,22 +3993,30 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-bulkbar .archive-selected-count{font-size:12px;font-weight:700;color:var(--accent2);margin-left:auto}
 .archive-check{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
 .archive-mobile-list{display:none}
-.archive-mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:9px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.archive-mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:13px;padding:10px 11px;margin-bottom:8px;box-shadow:0 3px 12px rgba(0,0,0,.11)}
 .archive-mobile-card.selected{border-color:var(--accent);background:rgba(124,106,247,.07)}
-.archive-mobile-card.archive-status-followup{border-color:#7eff3a;background:rgba(126,255,58,.10);box-shadow:inset -3px 0 #7eff3a,0 4px 14px rgba(0,0,0,.12)}
-.archive-mobile-card.archive-status-failed{border-color:#f84b5b;background:rgba(248,75,91,.10);box-shadow:inset -3px 0 #f84b5b,0 4px 14px rgba(0,0,0,.12)}
-.archive-mobile-card.archive-status-contacted{border-color:#3794ff;background:rgba(55,148,255,.10);box-shadow:inset -3px 0 #3794ff,0 4px 14px rgba(0,0,0,.12)}
-.archive-mobile-card.archive-status-meeting{border-color:#ffcd37;background:rgba(255,205,55,.10);box-shadow:inset -3px 0 #ffcd37,0 4px 14px rgba(0,0,0,.12)}
 .archive-row-number{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:8px;background:var(--bg3);color:var(--text2);font-size:11px;font-weight:800}
-.archive-mobile-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.archive-mobile-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
 .archive-mobile-title{min-width:0;flex:1;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.archive-mobile-sub{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archive-mobile-sub{font-size:11.5px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:3px}
+.archive-mobile-phone{font-size:11.5px;color:var(--text2);direction:ltr;text-align:right;margin-bottom:3px}
+.archive-mobile-meta{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.archive-details-toggle{display:inline-flex;align-items:center;margin-top:5px;padding:2px 0;border:0;background:none;color:var(--accent2);font:700 10.5px var(--font);cursor:pointer}
+.archive-mobile-quick-actions{display:grid;grid-template-columns:.8fr .95fr 1.35fr 34px;gap:5px;margin-top:6px}
+.archive-mobile-quick-actions .btn{min-width:0;min-height:31px;padding:4px 5px;font-size:9.8px;justify-content:center;white-space:nowrap}
+.archive-mobile-quick-actions .archive-more-btn{padding:4px;font-size:17px;line-height:1}
+.archive-mobile-expand{display:none;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}
+.archive-mobile-card.expanded .archive-mobile-expand{display:block}
+.archive-mobile-card.expanded .archive-details-chevron{transform:rotate(180deg)}
+.archive-details-chevron{display:inline-block;margin-right:4px;transition:transform .2s ease}
 .archive-mobile-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px}
 .archive-mobile-field{min-width:0}
+.archive-mobile-field.full{grid-column:1/-1}
 .archive-mobile-field small{display:block;color:var(--text3);font-size:10px;margin-bottom:2px}
 .archive-mobile-field span{display:block;color:var(--text2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.archive-mobile-actions{display:grid;grid-template-columns:1fr 44px 44px;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid var(--border)}
-.archive-mobile-actions .btn{min-height:42px;justify-content:center;padding:7px}
+.archive-mobile-field.full span{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.8}
+.archive-mobile-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:9px}
+.archive-mobile-actions .btn{min-height:34px;justify-content:center;padding:6px}
 .archive-import-help{font-size:12px;color:var(--text2);line-height:2;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .archive-preview{max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:10px}
 .archive-preview table{min-width:900px}
@@ -12829,9 +12828,13 @@ function paintArchiveRows(rows) {
     ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c),isStatus=archiveFieldForHeader(c)==='relationship_status';return `<td class="${archiveColumnClass(c)}" title="${escapeHtml(v)}">${isStatus?archiveStatusBadge(v):escapeHtml(v||'—')}</td>`;}).join('')}
     <td class="archive-operation-col" onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
     :`<tr><td colspan="${archiveColumns.length+3}"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
-  if(mobile)mobile.innerHTML=rows.length?rows.map((s,index)=>{const selected=archiveSelectedIds.has(Number(s.id));const fullName=`${s.name||''} ${s.lname||''}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—';return `<article class="archive-mobile-card ${selected?'selected':''} ${archiveStatusClass(s.relationship_status)}" onclick="openArchivePersonDetail(${s.id})"><div class="archive-mobile-head" onclick="event.stopPropagation()"><input class="archive-check" type="checkbox" ${selected?'checked':''} aria-label="انتخاب ${escapeHtml(fullName)}" onchange="toggleArchiveSelection(${s.id},this.checked)"><span class="archive-row-number" aria-label="ردیف ${index+1}">${fa(index+1)}</span><div style="min-width:0;flex:1" onclick="openArchivePersonDetail(${s.id})"><div class="archive-mobile-title">${escapeHtml(fullName)}</div><div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div></div></div><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>شماره تماس</small><span>${escapeHtml(s.phone||'—')}</span></div><div class="archive-mobile-field"><small>دسته‌بندی</small><span>${escapeHtml(s.customer_category||'—')}</span></div><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(s.referral_source||'متفرقه')}</span></div><div class="archive-mobile-field"><small>وضعیت ارتباط</small>${archiveStatusBadge(s.relationship_status)}</div><div class="archive-mobile-field"><small>شهر</small><span>${escapeHtml(city)}</span></div><div class="archive-mobile-field"><small>توضیحات</small><span>${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions" onclick="event.stopPropagation()"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" aria-label="ویرایش" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" aria-label="حذف" onclick="deleteArchivePerson(${s.id})">🗑</button></div></article>`;}).join(''):`<div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده</div>`;
+  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const fullName=`${s.name||''} ${s.lname||''}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—',category=s.customer_category||'—',referral=s.referral_source||'متفرقه',startDate=DateService.disp(s.date_jalali)||'—',phone=String(s.phone||'').trim(),tel=phone.replace(/[^\d+]/g,'');return `<article class="archive-mobile-card" data-archive-mobile-id="${s.id}"><div class="archive-mobile-head"><div class="archive-mobile-title">${escapeHtml(fullName)}</div>${archiveStatusBadge(s.relationship_status)}</div><div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><div class="archive-mobile-phone">☎ ${escapeHtml(phone||'—')}</div><div class="archive-mobile-meta">${escapeHtml(category)} · ${escapeHtml(city)} · ${escapeHtml(referral)}</div><button type="button" class="archive-details-toggle" aria-expanded="false" onclick="toggleArchiveMobileCard(${s.id},this)">جزئیات <span class="archive-details-chevron">⌄</span></button><div class="archive-mobile-quick-actions">${tel?`<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(tel)}">☎ تماس</a>`:'<button class="btn btn-ghost btn-sm" disabled>☎ تماس</button>'}<button type="button" class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button type="button" class="btn btn-ghost btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button><button type="button" class="btn btn-ghost btn-sm archive-more-btn" aria-label="عملیات بیشتر" onclick="openArchiveMobileMore(${s.id})">⋮</button></div><div class="archive-mobile-expand"><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(referral)}</span></div><div class="archive-mobile-field"><small>تاریخ شروع همکاری</small><span>${escapeHtml(startDate)}</span></div><div class="archive-mobile-field full"><small>توضیحات</small><span title="${escapeHtml(s.description||'')}">${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions"><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️ ویرایش اطلاعات</button></div></div></article>`;}).join(''):`<div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده</div>`;
   updateArchiveBulkbar();
 }
+
+function toggleArchiveMobileCard(id,button){const card=document.querySelector(`[data-archive-mobile-id="${id}"]`);if(!card)return;const expanded=card.classList.toggle('expanded');button?.setAttribute('aria-expanded',String(expanded));}
+async function markArchiveFollowup(id){const person=archiveStudents.find(x=>Number(x.id)===Number(id));if(!person)return;if(archiveHeaderKey(person.relationship_status)==='نیازمندپیگیری'){showToast('این مخاطب از قبل نیازمند پیگیری است','info');return;}await window.api.students.bulkArchiveAction({ids:[id],action:'status',value:'نیازمند پیگیری'});showToast('وضعیت به «نیازمند پیگیری» تغییر کرد ✓','success');await renderArchive();}
+function openArchiveMobileMore(id){const person=archiveStudents.find(x=>Number(x.id)===Number(id));if(!person)return;const fullName=[person.name,person.lname].filter(Boolean).join(' ').trim()||'این مخاطب';openModal('عملیات بیشتر',`<div style="font-size:12px;color:var(--text2)">${escapeHtml(fullName)}</div>`,[{label:'✏️ ویرایش اطلاعات',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف مخاطب',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
 
 function filterArchiveTable(value){const q=String(value||'').trim().toLowerCase();paintArchiveRows(!q?archiveStudents:archiveStudents.filter(s=>archiveColumns.some(c=>archiveColumnValue(s,c).toLowerCase().includes(q))));}
 
