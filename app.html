@@ -5806,7 +5806,7 @@ window.api = {
         totalAmount:s.totalAmount,
         debt:s.balance
       })).sort((a,b)=>b.debt-a.debt);
-      const earnerCandidates=summaries.filter(s=>s.totalPaid>0).map(s=>{
+      const earnerCandidates=summaries.map(s=>{
         const sp=_db.payments.filter(p=>p.student_id===s.id&&(p.currency||'تومان')==='تومان');
         const pkg=_db.packages.filter(p=>p.student_id===s.id);
         const startDays=pkg.map(p=>_jalaliApproxDays(p.start_date)).filter(d=>d!=null);
@@ -5816,7 +5816,7 @@ window.api = {
       });
       const maxPaid=Math.max(1,...earnerCandidates.map(e=>e.paid));
       const maxDelay=Math.max(1,...earnerCandidates.map(e=>e.delay).filter(d=>d!=null));
-      const topEarners=earnerCandidates.map(e=>{const an=e.paid/maxPaid;const sn=e.delay==null?0.5:1-(e.delay/maxDelay);return{...e,score:0.7*an+0.3*sn};}).sort((a,b)=>b.score-a.score).slice(0,10);
+      const topEarners=earnerCandidates.map(e=>{const an=e.paid/maxPaid;const sn=e.paid<=0?0:(e.delay==null?0.5:1-(e.delay/maxDelay));return{...e,score:0.7*an+0.3*sn};}).sort((a,b)=>b.score-a.score);
       const pkgDistribution=_db.package_types.map(pt=>({label:pt.label,color:pt.color,count:_db.packages.filter(p=>p.type_id===pt.id).length}));
       const upcomingReminders=_db.reminders.filter(r=>!r.done).length;
       const monthMap={};
@@ -11296,6 +11296,17 @@ async function exportCustomerList() {
 // ════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ════════════════════════════════════════════════════════════════════════════
+function toggleTopEarners(button) {
+  const section = button?.closest('.detail-section');
+  if (!section) return;
+  const shouldExpand = button.getAttribute('aria-expanded') !== 'true';
+  section.querySelectorAll('[data-top-earner-extra]').forEach(row => {
+    row.hidden = !shouldExpand;
+  });
+  button.setAttribute('aria-expanded', String(shouldExpand));
+  button.textContent = shouldExpand ? 'نمایش کمتر' : 'مشاهده ادامه';
+}
+
 async function renderDashboard() {
   updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
@@ -11395,10 +11406,14 @@ async function renderDashboard() {
   <div class="detail-section" style="margin-top:14px">
     <h3>💰 پول‌سازترین ${META.entityPlural || 'شاگردان'} <span style="font-size:10px;color:var(--text3);font-weight:400">(۷۰٪ میزان پرداختی + ۳۰٪ سرعت پرداخت)</span></h3>
     ${topEarners.map((e,i) => `
-      <div class="detail-row">
+      <div class="detail-row" ${i >= 10 ? 'data-top-earner-extra hidden' : ''}>
         <span class="detail-key">${fa(i+1)}. ${e.name} ${e.lname}</span>
         <span class="detail-val amount-paid">${fmt(e.paid)} تومان</span>
       </div>`).join('')}
+    ${topEarners.length > 10 ? `
+      <div style="display:flex;justify-content:center;padding-top:12px">
+        <button type="button" class="btn btn-ghost btn-sm" aria-expanded="false" onclick="toggleTopEarners(this)">مشاهده ادامه</button>
+      </div>` : ''}
   </div>` : ''}
 
   <div class="detail-section" style="margin-top:14px">
