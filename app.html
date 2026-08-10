@@ -7245,7 +7245,34 @@ async function _createAccount(name) {
       method:'POST', body:JSON.stringify({ id, name })
     });
     if (!res.ok) {
-      showToast(res.status === 409 ? 'حداکثر ۵ میزکار قابل ایجاد است' : 'ایجاد میزکار روی سرور انجام نشد', 'error');
+      let errorCode = '';
+      try { errorCode = (await res.clone().json()).error || ''; } catch(e) {}
+      // A disconnected POST can reach the server even though the browser never
+      // receives its response. Reconcile once before telling the user it failed.
+      if (errorCode === 'network_unavailable') {
+        const check = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
+        if (check.ok) {
+          try {
+            const payload = await check.json();
+            if ((payload.workspaces || []).some(workspace => workspace.id === id)) {
+              accounts.push({ id, name, created: new Date().toISOString() });
+              _saveAccounts(accounts);
+              return id;
+            }
+          } catch(e) {}
+        }
+        // Workspaces are local-first. Keep the new workspace usable during an
+        // outage; _refreshWorkspacesFromServer will register this same id once
+        // the API is reachable again.
+        accounts.push({ id, name, created: new Date().toISOString(), pendingSync: true });
+        _saveAccounts(accounts);
+        showToast('میزکار ساخته شد؛ پس از وصل‌شدن سرور همگام می‌شود', 'warning');
+        return id;
+      }
+      const message = errorCode === 'workspace_limit'
+        ? 'حداکثر ۵ میزکار قابل ایجاد است'
+        : 'ایجاد میزکار روی سرور انجام نشد';
+      showToast(message, 'error');
       return null;
     }
   }
@@ -20420,8 +20447,29 @@ async function _apiFetch(path, opts = {}) {
   if (_sbSession?.token) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
-  const res = await fetch(url, { ...opts, headers });
-  return res;
+  const method = String(opts.method || 'GET').toUpperCase();
+  const attempts = method === 'GET' ? 2 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fetch(url, { ...opts, headers });
+    } catch (error) {
+      if (attempt + 1 < attempts) {
+        await new Promise(resolve => setTimeout(resolve, 450));
+        continue;
+      }
+      // fetch rejects on DNS/proxy/server disconnects. Returning an HTTP-like
+      // response keeps fire-and-forget callers from producing unhandled promise
+      // rejections and lets every existing caller use its normal !res.ok path.
+      console.warn('[TeamPulse API] request unavailable:', method, path, error?.message || error);
+      return new Response(JSON.stringify({
+        error: 'network_unavailable',
+        message: 'ارتباط با سرور برقرار نشد. اینترنت را بررسی کنید و دوباره تلاش کنید.'
+      }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
 }
 
 function _getApiAuthToken() {
