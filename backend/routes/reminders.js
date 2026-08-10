@@ -244,13 +244,27 @@ function iranWallTimeToUTC(gy, gm, gd, timeStr) {
 async function sendPushSubscriptions(subs, title, body, options = {}) {
   if (!subs.length) return { sent: 0, failed: 0 };
 
+  const kind = options.kind || 'reminder';
+  const prefixByKind = {
+    todo: '📋',
+    habit: '🔥',
+    'financial-reminder': '💳',
+    'staff-reminder': '💼',
+    'key-event': '🌟',
+    test: '🔔',
+    reminder: '⏰',
+  };
+  const cleanTitle = String(title || 'یادآوری').replace(/^[⏰📋🔥💳💼🌟🔔]\s*/u, '');
+
   const payload = JSON.stringify({
-    title: '⏰ ' + title,
+    title: `${prefixByKind[kind] || '🔔'} ${cleanTitle}`,
     body,
-    icon: '/logo.png',
+    icon: '/app-icon-192-v3.png',
+    badge: '/notification-badge.svg',
     tag: options.tag || 'push-' + Date.now(),
     todoId: options.todoId || null,
-    kind: options.kind || 'reminder',
+    kind,
+    url: options.url || '/app',
   });
   const sentEndpoints = new Set();
   let sent = 0;
@@ -280,7 +294,7 @@ function todoScheduledDate(todo) {
 }
 
 // ── ارسال push فقط به صاحب حساب ───────────────────────────────
-async function pushToOwner(accountId, title, body) {
+async function pushToOwner(accountId, title, body, options = {}) {
   const ownerEmail = accountEmail(accountId);
   const subs = db.prepare(`
     SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, scope
@@ -288,7 +302,7 @@ async function pushToOwner(accountId, title, body) {
     WHERE account_id=?
       AND (scope IS NULL OR scope!='team')
   `).all(accountId).filter(sub => isOwnerSubscription(sub, accountId, ownerEmail));
-  return sendPushSubscriptions(subs, title, body);
+  return sendPushSubscriptions(subs, title, body, options);
 }
 
 // ── ارسال push تسک به صاحب حساب و پرسنل مرتبط ─────────────────
@@ -319,6 +333,7 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
     tag: todo?.id != null ? 'todo-' + todo.id : undefined,
     todoId: todo?.id || null,
     kind: 'todo',
+    url: '/app#todolist',
   });
 }
 
@@ -417,7 +432,9 @@ cron.schedule('* * * * *', async () => {
           const key = `habit:${acc.id}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
           console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
           await deliverOnce(key, acc.id, 'habit', () =>
-            pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`)
+            pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
+              kind: 'habit', tag: `habit-${h.id}`, url: '/app#habits',
+            })
           );
         }
       }
@@ -440,7 +457,9 @@ cron.schedule('* * * * *', async () => {
           const key = `financial:${acc.id}:${r.id}:${r.due_date_jalali}`;
           const name = studentNames.get(String(r.student_id)) || '';
           await deliverOnce(key, acc.id, 'financial-reminder', () =>
-            pushToOwner(acc.id, r.title || 'یادآوری پرداخت', reminderBody(r, name))
+            pushToOwner(acc.id, r.title || 'یادآوری پرداخت', reminderBody(r, name), {
+              kind: 'financial-reminder', tag: `financial-${r.id}`, url: '/app#reminders',
+            })
           );
         }
 
@@ -450,7 +469,9 @@ cron.schedule('* * * * *', async () => {
           const key = `staff:${acc.id}:${r.id}:${r.due_date_jalali}`;
           const name = staffNames.get(String(r.staff_id)) || '';
           await deliverOnce(key, acc.id, 'staff-reminder', () =>
-            pushToOwner(acc.id, r.title || 'یادآوری حقوق', reminderBody(r, name))
+            pushToOwner(acc.id, r.title || 'یادآوری حقوق', reminderBody(r, name), {
+              kind: 'staff-reminder', tag: `staff-reminder-${r.id}`, url: '/app#staff',
+            })
           );
         }
 
@@ -460,7 +481,9 @@ cron.schedule('* * * * *', async () => {
           const key = `key-event:${acc.id}:${e.id}:${e.remind_date}`;
           const name = studentNames.get(String(e.student_id)) || '';
           await deliverOnce(key, acc.id, 'key-event', () =>
-            pushToOwner(acc.id, '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`)
+            pushToOwner(acc.id, '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
+              kind: 'key-event', tag: `key-event-${e.id}`, url: '/app#students',
+            })
           );
         }
       }

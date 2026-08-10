@@ -1,10 +1,11 @@
-const CACHE = 'team-pulse-static-v68';
+const CACHE = 'team-pulse-static-v69';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
   '/app-icon-512-v3.png',
+  '/notification-badge.svg',
   '/logo.png',
   '/sw.js',
 ];
@@ -76,6 +77,8 @@ self.addEventListener('fetch', event => {
 });
 
 const _t = new Map();
+const NOTIFICATION_ICON = '/app-icon-192-v3.png';
+const NOTIFICATION_BADGE = '/notification-badge.svg';
 function notificationActionsFor(data) {
   return data?.kind === 'todo' && data?.todoId
     ? [
@@ -97,8 +100,8 @@ self.addEventListener('message', event => {
     const data = event.data.data || {};
     event.waitUntil(self.registration.showNotification(event.data.title, {
       body: event.data.body || '',
-      icon: '/logo.png',
-      badge: '/app-icon-192-v3.png',
+      icon: NOTIFICATION_ICON,
+      badge: NOTIFICATION_BADGE,
       tag: event.data.tag || 'tp',
       data,
       requireInteraction: true,
@@ -117,8 +120,8 @@ self.addEventListener('message', event => {
         _t.set(notification.id, setTimeout(() => {
           self.registration.showNotification(notification.title, {
             body: notification.body || '',
-            icon: '/logo.png',
-            badge: '/app-icon-192-v3.png',
+            icon: NOTIFICATION_ICON,
+            badge: NOTIFICATION_BADGE,
             tag: notification.tag,
             data: notification.data || { todoId: notification.id, kind: 'todo' },
             requireInteraction: true,
@@ -147,8 +150,8 @@ self.addEventListener('push', event => {
   event.waitUntil(
     self.registration.showNotification(data.title || '⏰ یادآور TeamPulse', {
       body: data.body || '',
-      icon: data.icon || '/logo.png',
-      badge: data.badge || '/app-icon-192-v3.png',
+      icon: data.icon || NOTIFICATION_ICON,
+      badge: data.badge || NOTIFICATION_BADGE,
       tag: data.tag || 'push-' + Date.now(),
       data: notificationData,
       requireInteraction: true,
@@ -161,15 +164,17 @@ self.addEventListener('push', event => {
   );
 });
 
-async function focusOrOpenApp() {
+async function focusOrOpenApp(targetUrl = '/app', navigateExisting = true) {
+  const absoluteUrl = new URL(targetUrl, self.location.origin).href;
   const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const client of clientList) {
     if (client.url.includes('/app') && 'focus' in client) {
+      if (navigateExisting && 'navigate' in client && client.url !== absoluteUrl) await client.navigate(absoluteUrl);
       await client.focus();
       return client;
     }
   }
-  return clients.openWindow('/app#todolist');
+  return clients.openWindow(absoluteUrl);
 }
 
 self.addEventListener('notificationclick', event => {
@@ -177,14 +182,15 @@ self.addEventListener('notificationclick', event => {
   const data = event.notification.data || {};
   const tag = event.notification.tag || '';
   const todoId = data.todoId || (tag.startsWith('todo-') ? tag.slice(5) : null);
+  const targetUrl = data.url || (data.kind === 'todo' ? '/app#todolist' : '/app');
   event.waitUntil(
-    focusOrOpenApp().then(client => {
+    focusOrOpenApp(targetUrl, data.kind !== 'todo').then(client => {
       if (!client || !client.postMessage) return;
-      if (event.action === 'done' && todoId) {
+      if (data.kind === 'todo' && event.action === 'done' && todoId) {
         client.postMessage({ type: 'TODO_NOTIFICATION_DONE', todoId });
         return;
       }
-      client.postMessage({ type: 'TODO_NOTIFICATION_VIEW', todoId });
+      if (data.kind === 'todo') client.postMessage({ type: 'TODO_NOTIFICATION_VIEW', todoId });
     })
   );
 });

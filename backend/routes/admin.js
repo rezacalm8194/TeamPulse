@@ -418,7 +418,9 @@ router.post('/users/notify', auth, adminOnly, async (req, res) => {
     for (const sub of subscriptions) {
       try {
         await webpush.sendNotification(JSON.parse(sub.subscription), JSON.stringify({
-          title, body, icon:'/logo.png', tag:'admin-' + Date.now(), kind:'admin'
+          title, body,
+          icon:'/app-icon-192-v3.png', badge:'/notification-badge.svg',
+          tag:'admin-' + Date.now(), kind:'admin', url:'/app'
         }));
         sent++;
       } catch(e) {

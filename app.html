@@ -21658,6 +21658,11 @@ async function _enablePushFromWizard() {
   const statusBox = document.getElementById('wz-push-status');
   const btn = document.getElementById('wz-push-enable-btn');
 
+  if (typeof _iosPushNeedsHomeScreen === 'function' && _iosPushNeedsHomeScreen()) {
+    if (statusBox) statusBox.textContent = '📲 در آیفون ابتدا TeamPulse را به Home Screen اضافه کن و سپس از آیکن برنامه ادامه بده';
+    return;
+  }
+
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     if (statusBox) { statusBox.textContent = '⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند'; }
     return;
@@ -25767,10 +25772,6 @@ function _addDays(jy,jm,jd,days) {
 let _todoReminderTimer = null;
 function _checkTodoReminders() {
   clearInterval(_todoReminderTimer);
-  // درخواست مجوز نوتیفیکیشن اگه هنوز نگرفتیم
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
   // سیستم client-side غیرفعاله — Web Push سرور انجام میده
   // _todoReminderTimer disabled
 }
@@ -26105,8 +26106,23 @@ function _pushSubscriptionContext() {
   return { scope: 'owner' };
 }
 
+function _isIOSDeviceForPush() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function _iosPushNeedsHomeScreen() {
+  return _isIOSDeviceForPush() && typeof _isPWAStandalone === 'function' && !_isPWAStandalone();
+}
+
 async function _ensureReminderPushEnabled(statusId) {
   const el = statusId ? document.getElementById(statusId) : null;
+  if (_iosPushNeedsHomeScreen()) {
+    const message = 'در آیفون ابتدا از Share گزینه Add to Home Screen را بزن، سپس TeamPulse را از آیکن صفحه اصلی باز کن و نوتیفیکیشن را فعال کن';
+    if (el) el.textContent = '📲 ' + message;
+    showToast(message, 'error');
+    return false;
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     showToast('این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند', 'error');
     return false;
@@ -26228,6 +26244,13 @@ async function _enablePushFromSettings() {
   const statusBox = document.getElementById('push-status-box');
   const enableBtn = document.getElementById('push-enable-btn');
   const reBtn = document.getElementById('push-reregister-btn');
+
+  if (_iosPushNeedsHomeScreen()) {
+    const message = '📲 در آیفون ابتدا TeamPulse را با Add to Home Screen نصب کن؛ سپس آن را از آیکن صفحه اصلی باز کن و این دکمه را بزن';
+    if (statusBox) statusBox.textContent = message;
+    showToast(message, 'error');
+    return;
+  }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     if (statusBox) { statusBox.style.background='rgba(248,113,113,.08)'; statusBox.style.borderColor='rgba(248,113,113,.3)'; statusBox.style.color='var(--red)'; statusBox.textContent='⚠️ این مرورگر از نوتیفیکیشن پشتیبانی نمی‌کند'; }
@@ -27222,6 +27245,9 @@ function _requestNotificationPermission() {
 }
 
 function _checkKeyEventReminders() {
+  // Server Web Push is the single notification source. A second foreground
+  // notifier caused duplicate alerts whenever the app was opened.
+  return;
   if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
   if (!_db || !_db.key_events) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -29488,7 +29514,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v68';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v69';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
