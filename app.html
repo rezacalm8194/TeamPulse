@@ -20392,12 +20392,83 @@ function _dataSignatureForIsolation(data) {
   return JSON.stringify(pick);
 }
 
+const _ISOLATION_COLLECTIONS = [
+  'students','packages','payments','sessions','families','todos','staff','instructions',
+  'wallet_tx','reminders','key_events','topics','staff_roles','staff_payments',
+  'staff_reminders','staff_adjustments','staff_monthly'
+];
+
+function _isolationItemHash(value) {
+  const text = JSON.stringify(value || null);
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function _buildDataIsolationProbe(data) {
+  const collections = {};
+  _ISOLATION_COLLECTIONS.forEach(key => {
+    collections[key] = (Array.isArray(data?.[key]) ? data[key] : []).map(_isolationItemHash);
+  });
+  return { version: 1, collections };
+}
+
+function _adminCopyStats(data, probe) {
+  if (!data || !probe?.collections) return { shared: 0, target: 0, admin: 0, byKey: {} };
+  let shared = 0, target = 0, admin = 0;
+  const byKey = {};
+  _ISOLATION_COLLECTIONS.forEach(key => {
+    const adminHashes = new Set(probe.collections[key] || []);
+    const targetItems = Array.isArray(data[key]) ? data[key] : [];
+    const matched = targetItems.reduce((n, item) => n + (adminHashes.has(_isolationItemHash(item)) ? 1 : 0), 0);
+    byKey[key] = { matched, target: targetItems.length, admin: adminHashes.size };
+    shared += matched;
+    target += targetItems.length;
+    admin += adminHashes.size;
+  });
+  return { shared, target, admin, byKey };
+}
+
+function _hasAdminCopiesInTarget(data, probe) {
+  const stats = _adminCopyStats(data, probe);
+  const students = stats.byKey.students || {};
+  const instructions = stats.byKey.instructions || {};
+  const strongStudentMatch = students.matched >= 3 && students.matched >= Math.min(students.target, students.admin) * 0.5;
+  const strongInstructionMatch = instructions.matched >= 3 && instructions.matched >= Math.min(instructions.target, instructions.admin) * 0.5;
+  const broadMatch = stats.shared >= 8 && stats.shared >= Math.min(stats.target, stats.admin) * 0.5;
+  return strongStudentMatch || strongInstructionMatch || broadMatch;
+}
+
+function _removeAdminCopiesFromTargetData(data, probe) {
+  if (!probe?.collections) {
+    const removed = _ISOLATION_COLLECTIONS.reduce((sum, key) => sum + (Array.isArray(data?.[key]) ? data[key].length : 0), 0);
+    const fresh = _freshData();
+    fresh._lastSaved = Date.now();
+    return { data: fresh, removed };
+  }
+  const cleaned = _cloneData(data);
+  let removed = 0;
+  _ISOLATION_COLLECTIONS.forEach(key => {
+    const adminHashes = new Set(probe?.collections?.[key] || []);
+    if (!adminHashes.size || !Array.isArray(cleaned[key])) return;
+    const before = cleaned[key].length;
+    cleaned[key] = cleaned[key].filter(item => !adminHashes.has(_isolationItemHash(item)));
+    removed += before - cleaned[key].length;
+  });
+  cleaned._lastSaved = Date.now();
+  return { data: cleaned, removed };
+}
+
 function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
   if (!data || !adminDBKey) return false;
   try {
     const incomingSignature = _dataSignatureForIsolation(data);
     const expectedAdminSignature = window._impersonating?.adminDataSignature || '';
     if (expectedAdminSignature && incomingSignature === expectedAdminSignature) return true;
+    if (_hasAdminCopiesInTarget(data, window._impersonating?.adminIsolationProbe)) return true;
     const adminRaw = localStorage.getItem(adminDBKey);
     if (!adminRaw) return false;
     const adminData = JSON.parse(adminRaw);
@@ -21872,6 +21943,7 @@ async function _initAuth() {
           userName: impersonatingState.userName,
           adminSession, adminUser, adminDBKey,
           adminDataSignature: impersonatingState.adminDataSignature || '',
+          adminIsolationProbe: impersonatingState.adminIsolationProbe || null,
         };
         window._impersonateServerBlocked = false;
 
@@ -21889,12 +21961,13 @@ async function _initAuth() {
               const json = await dataRes.json();
               if (json.data && Object.keys(json.data).length > 0) {
                 if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-                  console.warn('[Impersonate restore] blocked admin-like server data for target account');
-                  if (!_loadSafeImpersonatedCache(targetKey, adminDBKey)) {
-                    _useLocalImpersonatedFallback(impersonatingState.userName, targetKey);
-                  } else {
-                    window._impersonateServerBlocked = true;
-                  }
+                  const cleanup = _removeAdminCopiesFromTargetData(json.data, window._impersonating?.adminIsolationProbe);
+                  console.warn('[Impersonate restore] removed copied admin records from target account:', cleanup.removed);
+                  _db = cleanup.data;
+                  _migrate(_db);
+                  _cacheImpersonatedData(targetKey, _db);
+                  window._impersonateServerBlocked = false;
+                  window._impersonateCleanupPending = cleanup.removed;
                   loadedImpersonatedData = true;
                 } else {
                   _db = json.data;
@@ -21915,6 +21988,13 @@ async function _initAuth() {
           showToast('داده حساب مقصد از سرور دریافت نشد؛ همگام‌سازی این حساب برای ایمنی مسدود است', 'error');
         }
         window._impersonateLoadPending = false;
+        if (window._impersonateCleanupPending > 0) {
+          const removed = window._impersonateCleanupPending;
+          window._impersonateCleanupPending = 0;
+          _forceNextServerSync();
+          setTimeout(() => _syncToServer(), 50);
+          showToast(`${fa(removed)} رکورد کپی‌شده از حساب مدیر پاک‌سازی شد`, 'success');
+        }
 
         _hideAuthScreen();
         _updateAuthUI();
@@ -28538,6 +28618,7 @@ async function _adminImpersonate(userId, userName) {
     // IndexedDB migration. Keep a lightweight in-memory/session signature so
     // target data can still be checked for accidental admin-data contamination.
     const adminDataSignature = _dataSignatureForIsolation(_db);
+    const adminIsolationProbe = _buildDataIsolationProbe(_db);
     localStorage.setItem('tp_admin_backup_session', adminSession);
     localStorage.setItem('tp_admin_backup_user', JSON.stringify(adminUser));
     localStorage.setItem('tp_admin_backup_dbkey', adminDBKey);
@@ -28548,11 +28629,11 @@ async function _adminImpersonate(userId, userName) {
     // تنظیم DB key برای کاربر هدف
     const targetKey = 'tp_impersonate_' + userId;
     window._activeDBKey = targetKey;
-    window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey, adminDataSignature };
+    window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey, adminDataSignature, adminIsolationProbe };
     window._impersonateServerBlocked = false;
     // ذخیره وضعیت impersonate در localStorage تا با رفرش صفحه از بین نره
     try {
-      localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey, adminDataSignature }));
+      localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey, adminDataSignature, adminIsolationProbe }));
       localStorage.setItem('tp_impersonating_user', JSON.stringify(user));
     } catch(e) {}
 
@@ -28578,12 +28659,13 @@ async function _adminImpersonate(userId, userName) {
           const json = await dataRes.json();
           if (json.data && Object.keys(json.data).length > 0) {
             if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-              console.warn('[Impersonate] blocked admin-like server data for target account');
-              if (!_loadSafeImpersonatedCache(targetKey, adminDBKey)) {
-                _useLocalImpersonatedFallback(userName, targetKey);
-              } else {
-                window._impersonateServerBlocked = true;
-              }
+              const cleanup = _removeAdminCopiesFromTargetData(json.data, window._impersonating?.adminIsolationProbe);
+              console.warn('[Impersonate] removed copied admin records from target account:', cleanup.removed);
+              _db = cleanup.data;
+              _migrate(_db);
+              _cacheImpersonatedData(targetKey, _db);
+              window._impersonateServerBlocked = false;
+              window._impersonateCleanupPending = cleanup.removed;
               loaded = true;
             } else {
               _db = json.data;
@@ -28608,6 +28690,13 @@ async function _adminImpersonate(userId, userName) {
 
     // حالا sync مجاز است
     window._impersonateLoadPending = false;
+    if (window._impersonateCleanupPending > 0) {
+      const removed = window._impersonateCleanupPending;
+      window._impersonateCleanupPending = 0;
+      _forceNextServerSync();
+      setTimeout(() => _syncToServer(), 50);
+      showToast(`${fa(removed)} رکورد کپی‌شده از حساب مدیر پاک‌سازی شد`, 'success');
+    }
 
     // آپدیت META از _db کاربر هدف
     try {
@@ -28658,6 +28747,7 @@ async function _adminReturnToAdmin() {
           adminUser: JSON.parse(localStorage.getItem('tp_admin_backup_user') || 'null'),
           adminDBKey: savedState.adminDBKey || localStorage.getItem('tp_admin_backup_dbkey'),
           adminDataSignature: savedState.adminDataSignature || '',
+          adminIsolationProbe: savedState.adminIsolationProbe || null,
         };
       }
     } catch(e) {}
