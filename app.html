@@ -3965,17 +3965,18 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-sheet .archive-col-address{width:92px;max-width:92px}
 .archive-sheet .archive-col-need{width:auto;max-width:none;min-width:114px}
 .archive-sheet .archive-col-name{width:101px;max-width:101px}
-.archive-sheet .archive-col-phone{width:90px;max-width:90px}
+.archive-sheet .archive-col-phone{width:104px;max-width:104px}
 .archive-sheet .archive-col-org{width:99px;max-width:99px}
 .archive-sheet .archive-col-category{width:82px;max-width:82px}
 .archive-sheet .archive-col-referral{width:72px;max-width:72px}
 .archive-sheet .archive-col-status{width:79px;max-width:79px}
 .archive-sheet .archive-col-city{width:54px;max-width:54px}
 .archive-sheet .archive-col-date{width:118px;max-width:118px}
-.archive-sheet .archive-number-col{width:44px;max-width:44px;text-align:center;color:var(--text3);font-variant-numeric:tabular-nums}
+.archive-sheet .archive-number-col{width:35px;max-width:35px;text-align:center;color:var(--text3);font-variant-numeric:tabular-nums}
 .archive-sheet .archive-select-col{width:42px;max-width:42px;text-align:center;position:sticky;right:0;z-index:3;background:var(--bg2)}
 .archive-sheet thead .archive-select-col{z-index:5;background:var(--bg3)}
 .archive-sheet .archive-operation-col{width:205px;max-width:205px;text-align:center}
+.archive-sheet .archive-operation-title{display:inline-block;position:relative;left:62px}
 .archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
 .archive-sheet tbody tr.archive-status-followup td{background:rgba(126,255,58,.13);border-block-color:rgba(126,255,58,.36)}
 .archive-sheet tbody tr.archive-status-followup td:first-child{box-shadow:inset -3px 0 #7eff3a}
@@ -12803,7 +12804,7 @@ async function renderArchive() {
       <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button><button class="btn btn-ghost btn-sm" onclick="exportArchiveExcel()">⬇ دانلود Excel</button></div>
     </div>
     <div class="archive-bulkbar" id="archive-bulkbar"><span class="archive-selected-count" id="archive-selected-count"></span><button class="btn btn-ghost btn-sm" onclick="selectAllArchiveRows()">☑ انتخاب همه</button><button class="btn btn-primary btn-sm" onclick="bulkConvertArchive()">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveCategory()">🏷 دسته‌بندی</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveStatus()">📞 وضعیت ارتباط</button><button class="btn btn-danger btn-sm" onclick="bulkDeleteArchive()">🗑 حذف کامل</button><button class="btn btn-ghost btn-sm" onclick="clearArchiveSelection()">لغو انتخاب</button></div>
-    <div class="archive-sheet"><table dir="rtl"><thead><tr><th class="archive-select-col"><input class="archive-check" id="archive-check-all" type="checkbox" aria-label="انتخاب همه" onchange="toggleArchiveSelectAll(this.checked)"></th><th class="archive-number-col">ردیف</th>${archiveColumns.map(c=>`<th class="${archiveColumnClass(c)}">${escapeHtml(c)}</th>`).join('')}<th class="archive-operation-col">عملیات</th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
+    <div class="archive-sheet"><table dir="rtl"><thead><tr><th class="archive-select-col"><input class="archive-check" id="archive-check-all" type="checkbox" aria-label="انتخاب همه" onchange="toggleArchiveSelectAll(this.checked)"></th><th class="archive-number-col">ردیف</th>${archiveColumns.map(c=>`<th class="${archiveColumnClass(c)}">${escapeHtml(c)}</th>`).join('')}<th class="archive-operation-col"><span class="archive-operation-title">عملیات</span></th></tr></thead><tbody id="archive-tbody"></tbody></table></div>
     <div class="archive-mobile-list" id="archive-mobile-list"></div>
   </div>`;
   setContent(html); paintArchiveRows(archiveStudents);
