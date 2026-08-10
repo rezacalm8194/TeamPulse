@@ -7249,9 +7249,14 @@ async function _createAccount(name) {
       try { errorCode = (await res.clone().json()).error || ''; } catch(e) {}
       // A disconnected POST can reach the server even though the browser never
       // receives its response. Reconcile once before telling the user it failed.
-      if (errorCode === 'network_unavailable') {
-        const check = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
-        if (check.ok) {
+      const serverCannotManageWorkspaces = errorCode === 'network_unavailable' ||
+        errorCode === 'api_route_not_found' || res.status === 404;
+      if (serverCannotManageWorkspaces) {
+        // Only reconcile an ambiguous network failure. A 404 definitively means
+        // the currently running backend predates the workspace registry route.
+        const check = res.status === 404 ? null :
+          await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
+        if (check?.ok) {
           try {
             const payload = await check.json();
             if ((payload.workspaces || []).some(workspace => workspace.id === id)) {
@@ -7262,8 +7267,8 @@ async function _createAccount(name) {
           } catch(e) {}
         }
         // Workspaces are local-first. Keep the new workspace usable during an
-        // outage; _refreshWorkspacesFromServer will register this same id once
-        // the API is reachable again.
+        // outage or while an older backend is still running. The registry sync
+        // will register this same id after the backend update becomes available.
         accounts.push({ id, name, created: new Date().toISOString(), pendingSync: true });
         _saveAccounts(accounts);
         showToast('میزکار ساخته شد؛ پس از وصل‌شدن سرور همگام می‌شود', 'warning');
