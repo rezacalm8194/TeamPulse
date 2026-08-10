@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="app-build" content="todo-staff-tabs-2026-07-16">
   <title>TeamPulse</title>
-  <link rel="manifest" href="manifest.json?v=3">
+  <link rel="manifest" href="manifest.json?v=4">
   <meta name="theme-color" content="#7c6af7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -28959,12 +28959,22 @@ function _isPWAStandalone() {
 function _markPWAInstalled() {
   try { localStorage.setItem(PWA_INSTALLED_KEY, '1'); } catch(e) {}
 }
-function _isPWAInstalled() {
+async function _isPWAInstalled() {
   if (_isPWAStandalone()) {
     _markPWAInstalled();
     return true;
   }
-  // localStorage مدرک نصب نیست؛ ممکن است برنامه حذف شده باشد ولی این کلید باقی بماند.
+  // Chrome/Edge can detect an installed copy even when this page is opened in a browser tab.
+  if (typeof navigator.getInstalledRelatedApps === 'function') {
+    try {
+      const relatedApps = await navigator.getInstalledRelatedApps();
+      if (relatedApps.some(app => app.platform === 'webapp')) {
+        _markPWAInstalled();
+        return true;
+      }
+    } catch(e) {}
+  }
+  // localStorage alone is not proof: the app may have been removed later.
   return false;
 }
 if (_isPWAStandalone()) _markPWAInstalled();
@@ -28980,10 +28990,18 @@ window.addEventListener('appinstalled', () => {
   _hideInstallBanner();
   showToast('✅ TeamPulse با موفقیت نصب شد!', 'success');
 });
-setTimeout(_showInstallBanner, 2800);
+// iOS and Firefox don't emit beforeinstallprompt, so only those manual-install
+// browsers need a delayed fallback. Install-capable Chromium browsers wait for
+// beforeinstallprompt; an installed app therefore never receives a false banner.
+setTimeout(() => {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isFirefoxAndroid = /android/i.test(ua) && /firefox/i.test(ua);
+  if (isIOS || isFirefoxAndroid) _showInstallBanner();
+}, 2800);
 
-function _showInstallBanner() {
-  if (_isPWAInstalled() || document.getElementById('pwa-install-banner')) return;
+async function _showInstallBanner() {
+  if (await _isPWAInstalled() || document.getElementById('pwa-install-banner')) return;
   try { if (sessionStorage.getItem('tp_install_hidden_session') === '1') return; } catch(e) {}
 
   const ua = navigator.userAgent;
@@ -29052,9 +29070,9 @@ async function _installPWA() {
   const { outcome } = await _deferredInstallPrompt.userChoice;
   _deferredInstallPrompt = null;
   if (outcome === 'accepted') {
-    _markPWAInstalled();
     _hideInstallBanner(false);
-    showToast('✅ TeamPulse با موفقیت نصب شد!', 'success');
+    // appinstalled is the authoritative success signal and shows the success toast.
+    showToast('نصب TeamPulse در حال تکمیل است…', 'info');
   } else {
     showToast('هر زمان آماده بودید، دوباره روی دکمه نصب بزنید', 'info');
   }

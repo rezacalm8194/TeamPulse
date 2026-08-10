@@ -9,6 +9,13 @@
   "lang": "fa",
   "dir": "rtl",
   "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "/manifest.json",
+      "id": "https://teampulse.ir/teampulse-app-v3"
+    }
+  ],
   "background_color": "#0d0f14",
   "theme_color": "#7c6af7",
   "orientation": "portrait",
