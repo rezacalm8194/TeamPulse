@@ -470,7 +470,9 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
       db.prepare("DELETE FROM user_wallets WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM sync_events WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM push_subscriptions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM user_data WHERE account_id=?").run(accountId);
+      db.prepare("DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
+      db.prepare("DELETE FROM user_data WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
+      db.prepare("DELETE FROM account_workspaces WHERE owner_account_id=?").run(accountId);
 
       db.prepare("DELETE FROM clients WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM staff WHERE account_id=?").run(accountId);

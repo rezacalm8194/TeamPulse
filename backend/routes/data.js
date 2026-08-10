@@ -17,6 +17,17 @@ db.prepare(`
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_user_data_versions_account ON user_data_versions(account_id, created_at)").run();
 db.prepare(`
+  CREATE TABLE IF NOT EXISTS account_workspaces (
+    owner_account_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (owner_account_id, workspace_id)
+  )
+`).run();
+db.prepare("CREATE INDEX IF NOT EXISTS idx_account_workspaces_owner ON account_workspaces(owner_account_id, created_at)").run();
+db.prepare(`
   CREATE TABLE IF NOT EXISTS team_access_grants (
     owner_account_id TEXT NOT NULL,
     member_email TEXT NOT NULL,
@@ -97,6 +108,42 @@ function canAccessAccount(req, targetId) {
   } catch {
     return false;
   }
+}
+
+const MAX_WORKSPACES_PER_ACCOUNT = 5; // default + at most four additional businesses
+
+function requestedWorkspaceId(req) {
+  const value = String(req.query.workspace || req.body?.workspace || 'default').trim();
+  if (!value || value === 'default') return 'default';
+  // Client-generated IDs are acc_<timestamp>. Keep the validation deliberately
+  // strict so a workspace can never escape into another account's storage key.
+  return /^acc_[a-zA-Z0-9_-]{6,80}$/.test(value) ? value : null;
+}
+
+function workspaceStorageKey(ownerAccountId, workspaceId) {
+  return workspaceId === 'default'
+    ? ownerAccountId
+    : `${ownerAccountId}::workspace::${workspaceId}`;
+}
+
+function workspaceExists(ownerAccountId, workspaceId) {
+  if (workspaceId === 'default') return true;
+  return !!db.prepare(`
+    SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?
+  `).get(ownerAccountId, workspaceId);
+}
+
+function resolveWorkspace(req, res, targetId) {
+  const workspaceId = requestedWorkspaceId(req);
+  if (!workspaceId) {
+    res.status(400).json({ error: 'invalid_workspace' });
+    return null;
+  }
+  if (!workspaceExists(targetId, workspaceId)) {
+    res.status(404).json({ error: 'workspace_not_found' });
+    return null;
+  }
+  return { workspaceId, storageKey: workspaceStorageKey(targetId, workspaceId) };
 }
 
 function parseJsonArray(value) {
@@ -412,11 +459,14 @@ function handleSaveData(req, res) {
   try {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    const storageKey = workspace.storageKey;
     const grant = getTeamGrant(req, targetId);
     const { force, base_etag: baseEtag } = req.body;
     let data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
-    const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(targetId);
+    const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
     if (existing) {
       let previousData = null;
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
@@ -455,8 +505,8 @@ function handleSaveData(req, res) {
       }
       const nextData = JSON.stringify(data);
       const run = db.transaction(() => {
-        db.prepare("INSERT INTO user_data_versions (account_id,data) VALUES (?,?)").run(targetId, existing.data);
-        db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, targetId);
+        db.prepare("INSERT INTO user_data_versions (account_id,data) VALUES (?,?)").run(storageKey, existing.data);
+        db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
         db.prepare(`
           DELETE FROM user_data_versions
           WHERE account_id=?
@@ -466,13 +516,13 @@ function handleSaveData(req, res) {
               ORDER BY id DESC
               LIMIT 50
             )
-        `).run(targetId, targetId);
+        `).run(storageKey, storageKey);
       });
       run();
     } else {
-      db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(targetId, JSON.stringify(data));
+      db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
     }
-    const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
+    const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
     res.json({ success: true, updated_at: saved?.updated_at || null, etag: dataEtag(saved?.data) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
@@ -485,17 +535,74 @@ router.put('/:accountId', auth, handleSaveData);
 // never see).
 router.post('/:accountId', auth, handleSaveData);
 
+router.get('/:accountId/workspaces', auth, (req, res) => {
+  const targetId = req.params.accountId;
+  if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
+  const rows = db.prepare(`
+    SELECT workspace_id AS id,name,created_at AS created
+    FROM account_workspaces WHERE owner_account_id=? ORDER BY created_at,id
+  `).all(targetId);
+  res.json({ workspaces: rows, limit: MAX_WORKSPACES_PER_ACCOUNT });
+});
+
+router.post('/:accountId/workspaces', auth, (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+    const workspaceId = String(req.body?.id || '').trim();
+    const name = String(req.body?.name || '').trim().slice(0, 80);
+    if (!/^acc_[a-zA-Z0-9_-]{6,80}$/.test(workspaceId) || !name) return res.status(400).json({ error: 'invalid_workspace' });
+    const count = db.prepare('SELECT COUNT(*) AS n FROM account_workspaces WHERE owner_account_id=?').get(targetId).n;
+    if (count >= MAX_WORKSPACES_PER_ACCOUNT - 1) return res.status(409).json({ error: 'workspace_limit', limit: MAX_WORKSPACES_PER_ACCOUNT });
+    db.prepare(`INSERT INTO account_workspaces(owner_account_id,workspace_id,name) VALUES (?,?,?)`).run(targetId, workspaceId, name);
+    res.status(201).json({ workspace: { id: workspaceId, name } });
+  } catch(e) {
+    if (String(e.message || '').includes('UNIQUE')) return res.status(409).json({ error: 'workspace_exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
+  const targetId = req.params.accountId;
+  if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+  const name = String(req.body?.name || '').trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: 'invalid_name' });
+  const result = db.prepare(`UPDATE account_workspaces SET name=?,updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=?`).run(name, targetId, req.params.workspaceId);
+  if (!result.changes) return res.status(404).json({ error: 'workspace_not_found' });
+  res.json({ success: true });
+});
+
+router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
+  const targetId = req.params.accountId;
+  if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+  const workspaceId = String(req.params.workspaceId || '');
+  if (workspaceId === 'default') return res.status(400).json({ error: 'default_workspace' });
+  const storageKey = workspaceStorageKey(targetId, workspaceId);
+  const run = db.transaction(() => {
+    const result = db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
+    if (!result.changes) return false;
+    db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
+    db.prepare('DELETE FROM user_data WHERE account_id=?').run(storageKey);
+    return true;
+  });
+  if (!run()) return res.status(404).json({ error: 'workspace_not_found' });
+  res.json({ success: true });
+});
+
 // نسخه‌های سرور فقط با درخواست صریح کاربر فهرست/بازیابی می‌شوند؛ هیچ مسیر
 // همگام‌سازی عادی اجازه ندارد خودکار یکی از این نسخه‌ها را برگرداند.
 router.get('/:accountId/versions', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    const storageKey = workspace.storageKey;
     const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25)));
     const rows = db.prepare(`
       SELECT id,data,created_at FROM user_data_versions
       WHERE account_id=? ORDER BY id DESC LIMIT ?
-    `).all(targetId, limit);
+    `).all(storageKey, limit);
     const versions = rows.map(row => {
       let data = {};
       try { data = JSON.parse(row.data || '{}'); } catch {}
@@ -523,11 +630,14 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     if (req.user.id !== targetId && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'restore_forbidden' });
     }
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    const storageKey = workspace.storageKey;
     const selected = db.prepare(
       'SELECT id,data FROM user_data_versions WHERE id=? AND account_id=?'
-    ).get(req.params.versionId, targetId);
+    ).get(req.params.versionId, storageKey);
     if (!selected) return res.status(404).json({ error: 'version_not_found' });
-    const current = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(targetId);
+    const current = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(storageKey);
     if (!current) return res.status(404).json({ error: 'data_not_found' });
     let restored;
     try { restored = JSON.parse(selected.data); }
@@ -537,13 +647,13 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     restored._lastSaved = Date.now();
     const serialized = JSON.stringify(restored);
     const run = db.transaction(() => {
-      db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(targetId, current.data);
-      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, targetId);
+      db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(storageKey, current.data);
+      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
       db.prepare(`
         DELETE FROM user_data_versions WHERE account_id=? AND id NOT IN (
           SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC LIMIT 50
         )
-      `).run(targetId, targetId);
+      `).run(storageKey, storageKey);
     });
     run();
     res.json({ success: true, data: restored, etag: dataEtag(serialized) });
@@ -554,7 +664,9 @@ router.get('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
     if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
-    const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(targetId);
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(workspace.storageKey);
     if (!row) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId);
     const data = JSON.parse(row.data);

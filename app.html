@@ -5885,7 +5885,7 @@ window.api = {
       const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
       if (accId && _sbSession?.token) {
         try {
-          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=25');
+          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=25' + _workspaceQuery('&'));
           if (res.ok) {
             serverAvailable = true;
             const payload = await res.json();
@@ -5933,7 +5933,7 @@ window.api = {
         try {
           const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
           if (!accId) return {ok:false,error:'حساب کاربری مشخص نیست'};
-          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions/' + encodeURIComponent(ref) + '/restore', {method:'POST',body:'{}'});
+          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions/' + encodeURIComponent(ref) + '/restore' + _workspaceQuery(), {method:'POST',body:'{}'});
           const payload = await res.json().catch(()=>({}));
           if (!res.ok) return {ok:false,error:res.status===403?'فقط صاحب حساب می‌تواند نسخه قبلی را بازیابی کند':'نسخه سرور بازیابی نشد'};
           const creds = {
@@ -7152,28 +7152,73 @@ function _refreshTodoGcalCheckboxes() {
 // MULTI-ACCOUNT SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 const ACCOUNTS_KEY = 'teampulse_accounts';
+const MAX_WORKSPACES = 5;
+
+function _workspaceAuthUser() {
+  try { return _sbUser || null; } catch(e) { return null; }
+}
+function _workspaceOwnerId() {
+  let team = null;
+  try { team = typeof _teamAccessSession === 'function' ? _teamAccessSession() : null; } catch(e) {}
+  return String(team?.ownerUserId || _workspaceAuthUser()?.id || 'guest');
+}
+function _accountsStorageKey() { return ACCOUNTS_KEY + ':' + _workspaceOwnerId(); }
+function _currentAccountStorageKey() { return 'teampulse_current_account:' + _workspaceOwnerId(); }
 
 function _getAccounts() {
-  try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]'); } catch(e) { return []; }
+  try {
+    const scopedKey = _accountsStorageKey();
+    let raw = localStorage.getItem(scopedKey);
+    if (!raw && _workspaceAuthUser()?.id && localStorage.getItem(ACCOUNTS_KEY)) {
+      raw = localStorage.getItem(ACCOUNTS_KEY);
+      localStorage.setItem(scopedKey, raw);
+      localStorage.removeItem(ACCOUNTS_KEY);
+    }
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_WORKSPACES - 1) : [];
+  } catch(e) { return []; }
 }
 
 function _getDefaultAccountName() {
   // نام دکمه حساب باید هویت کاربر باشد، نه عنوان برنامه یا کسب‌وکار.
-  return (_sbUser?.name || (_sbUser?.email ? _sbUser.email.split('@')[0] : '')) || localStorage.getItem('teampulse_default_name') || 'حساب من';
+  const user = _workspaceAuthUser();
+  return (user?.name || (user?.email ? user.email.split('@')[0] : '')) || localStorage.getItem('teampulse_default_name:' + _workspaceOwnerId()) || 'حساب من';
 }
 
 function _setDefaultAccountName(name) {
-  localStorage.setItem('teampulse_default_name', name);
+  localStorage.setItem('teampulse_default_name:' + _workspaceOwnerId(), name);
 }
 function _saveAccounts(accounts) {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  localStorage.setItem(_accountsStorageKey(), JSON.stringify((accounts || []).slice(0, MAX_WORKSPACES - 1)));
 }
 function _currentAccountId() {
-  return localStorage.getItem('teampulse_current_account') || 'default';
+  const team = typeof _teamAccessSession === 'function' ? _teamAccessSession() : null;
+  if (team) return team.workspaceId || 'default';
+  const key = _currentAccountStorageKey();
+  let value = localStorage.getItem(key);
+  if (!value && _workspaceAuthUser()?.id) {
+    value = localStorage.getItem('teampulse_current_account');
+    if (value) {
+      localStorage.setItem(key, value);
+      localStorage.removeItem('teampulse_current_account');
+    }
+  }
+  return value || 'default';
+}
+function _workspaceQuery(separator='?') {
+  return separator + 'workspace=' + encodeURIComponent(_currentAccountId());
+}
+function _localWorkspaceDBKey(id=_currentAccountId()) {
+  const uid = String(_workspaceAuthUser()?.id || '').slice(0, 8) || 'guest';
+  return id === 'default' ? 'tp_' + uid + '_v3' : 'tp_' + uid + '_v3_' + id;
 }
 async function _switchAccount(id) {
-  localStorage.setItem('teampulse_current_account', id);
-  window._activeDBKey = id === 'default' ? 'coaching_reza_v3' : 'coaching_reza_v3_' + id;
+  if (id !== 'default' && !_getAccounts().some(account => account.id === id)) {
+    showToast('این میزکار در حساب شما وجود ندارد', 'error');
+    return;
+  }
+  localStorage.setItem(_currentAccountStorageKey(), id);
+  window._activeDBKey = _localWorkspaceDBKey(id);
   await _loadPrimaryDatabase();
   // اگر میزکار جدید و خالیه، اسمش رو از لیست حساب‌ها بخون و توی meta بذار
   if (id !== 'default' && (!_db.meta || !_db.meta.appTitle || _db.meta.appTitle === 'TeamPulse')) {
@@ -7187,28 +7232,51 @@ async function _switchAccount(id) {
   try { await _idbPutDatabaseSnapshot(window._activeDBKey, _db, 'account-switch'); } catch(e) {}
   location.reload();
 }
-function _createAccount(name) {
-  const id = 'acc_' + Date.now();
+async function _createAccount(name) {
   const accounts = _getAccounts();
+  if (accounts.length + 1 >= MAX_WORKSPACES) {
+    showToast('حداکثر ۵ میزکار (با احتساب میزکار اصلی) قابل ایجاد است', 'error');
+    return null;
+  }
+  const id = 'acc_' + Date.now();
+  const ownerId = _workspaceOwnerId();
+  if (_sbSession?.token && ownerId !== 'guest') {
+    const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces', {
+      method:'POST', body:JSON.stringify({ id, name })
+    });
+    if (!res.ok) {
+      showToast(res.status === 409 ? 'حداکثر ۵ میزکار قابل ایجاد است' : 'ایجاد میزکار روی سرور انجام نشد', 'error');
+      return null;
+    }
+  }
   accounts.push({ id, name, created: new Date().toISOString() });
   _saveAccounts(accounts);
   return id;
 }
-function _deleteAccount(id) {
+async function _deleteAccount(id) {
   if (id === 'default') { showToast('میزکار پیش‌فرض قابل حذف نیست', 'error'); return; }
-  const deletedKey = 'coaching_reza_v3_' + id;
+  const ownerId = _workspaceOwnerId();
+  if (_sbSession?.token && ownerId !== 'guest') {
+    const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {method:'DELETE'});
+    if (!res.ok && res.status !== 404) {
+      showToast('حذف میزکار روی سرور انجام نشد؛ دوباره تلاش کنید', 'error');
+      return false;
+    }
+  }
+  const deletedKey = _localWorkspaceDBKey(id);
   localStorage.removeItem(deletedKey);
   void _idbDeleteDatabaseSnapshot(deletedKey).catch(() => {});
   const accounts = _getAccounts().filter(a => a.id !== id);
   _saveAccounts(accounts);
   if (_currentAccountId() === id) _switchAccount('default');
+  return true;
 }
 
 // Override DB_KEY based on current account
 // Set the correct DB key for the current account FIRST
 window._activeDBKey = (() => {
   const id = _currentAccountId();
-  return id === 'default' ? 'coaching_reza_v3' : 'coaching_reza_v3_' + id;
+  return _localWorkspaceDBKey(id);
 })();
 
 // Authentication performs the authoritative async IndexedDB load. Keep only a
@@ -7224,12 +7292,41 @@ window._save = function(stamp=true) {
   if (stamp && _gdrive.enabled) _gdrive.schedulePush();
 };
 
+async function _refreshWorkspacesFromServer() {
+  const ownerId = _workspaceOwnerId();
+  if (!_sbSession?.token || ownerId === 'guest') return _getAccounts();
+  try {
+    const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
+    if (!res.ok) return _getAccounts();
+    const payload = await res.json();
+    const remote = Array.isArray(payload.workspaces) ? payload.workspaces : [];
+    const local = _getAccounts();
+    for (const account of local) {
+      if (remote.some(item => item.id === account.id) || remote.length >= MAX_WORKSPACES - 1) continue;
+      const created = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces', {
+        method:'POST', body:JSON.stringify({ id:account.id, name:account.name })
+      });
+      if (created.ok) remote.push(account);
+    }
+    if (remote.length || !local.length) _saveAccounts(remote);
+    const current = _currentAccountId();
+    if (current !== 'default' && !remote.some(item => item.id === current)) {
+      localStorage.setItem(_currentAccountStorageKey(), 'default');
+    }
+    return _getAccounts();
+  } catch(e) {
+    console.warn('[Workspace] registry sync failed:', e.message);
+    return _getAccounts();
+  }
+}
+
 // Render account switcher
-function renderAccountSwitcher() {
+async function renderAccountSwitcher() {
   if (typeof _teamAccessSession === 'function' && _teamAccessSession()) {
     showToast('این بخش برای دسترسی هم‌تیمی در دسترس نیست', 'error');
     return;
   }
+  await _refreshWorkspacesFromServer();
   const accounts = _getAccounts();
   const current = _currentAccountId();
   const allAccounts = [
@@ -7260,7 +7357,7 @@ function renderAccountSwitcher() {
           allAccounts.map(makeRow).join('') +
         '</div>' +
         '<div style="background:var(--bg3);border-radius:10px;padding:14px;border:1px solid var(--border2)">' +
-          '<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ میزکار جدید</div>' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ میزکار جدید <span style="color:var(--text3)">(' + allAccounts.length + '/۵)</span></div>' +
           '<div style="display:flex;gap:8px">' +
             '<input class="form-input" id="new-acc-name" placeholder="مثلاً: کوچینگ علی..." style="flex:1" onkeydown="if(event.key===\'Enter\')_doCreateAccount()">' +
             '<button class="btn btn-ghost" onclick="_doCreateAccount()">ایجاد</button>' +
@@ -7272,11 +7369,12 @@ function renderAccountSwitcher() {
     '</div>';
 }
 
-function _doCreateAccount() {
+async function _doCreateAccount() {
   const inp = document.getElementById('new-acc-name');
   const n = inp ? inp.value.trim() : '';
   if (!n) { showToast('نام میزکار را وارد کنید', 'error'); return; }
-  const id = _createAccount(n);
+  const id = await _createAccount(n);
+  if (!id) return;
   // اضافه کردن ردیف به لیست بدون reload
   const list = document.getElementById('accounts-list');
   if (list) {
@@ -7294,18 +7392,20 @@ function _doCreateAccount() {
   showToast('میزکار «' + n + '» ساخته شد ✓', 'success');
 }
 
-function _doCreateAndSwitch() {
+async function _doCreateAndSwitch() {
   const inp = document.getElementById('new-acc-name');
   const n = inp ? inp.value.trim() : '';
   if (!n) { showToast('نام میزکار را وارد کنید', 'error'); return; }
-  const id = _createAccount(n);
+  const id = await _createAccount(n);
+  if (!id) return;
   closeModal();
   _switchAccount(id);
 }
 
-function _confirmDeleteAccount(id, name) {
+async function _confirmDeleteAccount(id, name) {
   if (confirm('میزکار «' + name + '» حذف شود؟ تمام داده\u200cهایش پاک می\u200cشود.')) {
-    _deleteAccount(id);
+    const deleted = await _deleteAccount(id);
+    if (!deleted) return;
     const row = document.getElementById('acc-row-' + id);
     if (row) row.remove();
     showToast('حذف شد', 'error');
@@ -7342,7 +7442,7 @@ function _startRenameAccount(id, btnOrName) {
   };
 }
 
-function _renameAccount(id, newName) {
+async function _renameAccount(id, newName) {
   if (id === 'default') {
     _db.meta.appTitle = newName;
     _setDefaultAccountName(newName);
@@ -7353,6 +7453,13 @@ function _renameAccount(id, newName) {
     const accs = _getAccounts();
     const a = accs.find(x => x.id === id);
     if (a) { a.name = newName; _saveAccounts(accs); }
+    const ownerId = _workspaceOwnerId();
+    if (_sbSession?.token && ownerId !== 'guest') {
+      const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {
+        method:'PATCH', body:JSON.stringify({ name:newName })
+      });
+      if (!res.ok) showToast('تغییر نام روی سرور ذخیره نشد', 'error');
+    }
   }
   const el = document.getElementById('acc-name-display-' + id);
   if (el) el.textContent = newName;
@@ -7715,7 +7822,7 @@ function _acceptTeamInviteToken(token) {
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
   }));
-  if (payload.accountId) localStorage.setItem('teampulse_current_account', payload.accountId);
+  if (payload.accountId) localStorage.setItem(_currentAccountStorageKey(), payload.accountId);
   if (payload.ownerDbKey) window._activeDBKey = payload.ownerDbKey;
   localStorage.removeItem(TEAM_PENDING_INVITE_KEY);
   currentPage = permissions.find(p => _SAFE_RESTORE_PAGES.includes(p)) || 'todolist';
@@ -20424,11 +20531,7 @@ function _authLoadSession() {
 
 function _userDBKey() {
   if (!_sbUser) return 'coaching_reza_v3';
-  // از user.id برای ایزوله کردن داده هر کاربر
-  const uid = String(_sbUser.id || '').slice(0, 8) || 'guest';
-  const accId = localStorage.getItem('teampulse_current_account') || 'default';
-  if (accId === 'default') return 'tp_' + uid + '_v3';
-  return 'tp_' + uid + '_v3_' + accId;
+  return _localWorkspaceDBKey();
 }
 
 function _dataSignatureForIsolation(data) {
@@ -20726,7 +20829,7 @@ async function _syncToServer(conflictAttempt = 0) {
     }
     const syncSavedAt = localSavedAt || Date.now();
     const syncPayload = _serverSafeData(_db);
-    const res = await _apiFetch('/api/data/' + accId, {
+    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
       method: 'PUT',
       body: JSON.stringify({
         data: syncPayload,
@@ -20848,7 +20951,7 @@ async function _loadFromServer() {
     const accId = teamSession?.ownerUserId || _sbUser.id;
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
-    const res = await _apiFetch('/api/data/' + accId);
+    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery());
     if (res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
       return false;
@@ -21099,7 +21202,7 @@ function _bindServerSyncLifecycleHandlers() {
       if (teamSession && !teamSession.ownerUserId) return;
       const accId = teamSession?.ownerUserId || _sbUser.id;
       const url = (window.location.origin || '') + '/api/data/' + accId +
-        '?token=' + encodeURIComponent(_sbSession.token);
+        '?token=' + encodeURIComponent(_sbSession.token) + _workspaceQuery('&');
       const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
       const data = JSON.stringify({
         data: _serverSafeData(_db),
@@ -21383,6 +21486,7 @@ async function _authOnSuccess() {
   }
   window._teamOwnerDataReady = false;
   await _ensureTeamAccessOwner();
+  if (!_teamAccessSession()) await _refreshWorkspacesFromServer();
   window._activeDBKey = _teamActiveDBKey();
   await _loadPrimaryDatabase();
   let loadedFromServer = false;
