@@ -20395,10 +20395,13 @@ function _dataSignatureForIsolation(data) {
 function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
   if (!data || !adminDBKey) return false;
   try {
+    const incomingSignature = _dataSignatureForIsolation(data);
+    const expectedAdminSignature = window._impersonating?.adminDataSignature || '';
+    if (expectedAdminSignature && incomingSignature === expectedAdminSignature) return true;
     const adminRaw = localStorage.getItem(adminDBKey);
     if (!adminRaw) return false;
     const adminData = JSON.parse(adminRaw);
-    return _dataSignatureForIsolation(data) === _dataSignatureForIsolation(adminData);
+    return incomingSignature === _dataSignatureForIsolation(adminData);
   } catch(e) {
     return false;
   }
@@ -21868,6 +21871,7 @@ async function _initAuth() {
           userId: impersonatingState.userId,
           userName: impersonatingState.userName,
           adminSession, adminUser, adminDBKey,
+          adminDataSignature: impersonatingState.adminDataSignature || '',
         };
         window._impersonateServerBlocked = false;
 
@@ -28530,6 +28534,10 @@ async function _adminImpersonate(userId, userName) {
     const adminSession = localStorage.getItem('tp_session');
     const adminUser = { ..._sbUser };
     const adminDBKey = window._activeDBKey || _userDBKey();
+    // The primary database may already be retired from localStorage after the
+    // IndexedDB migration. Keep a lightweight in-memory/session signature so
+    // target data can still be checked for accidental admin-data contamination.
+    const adminDataSignature = _dataSignatureForIsolation(_db);
     localStorage.setItem('tp_admin_backup_session', adminSession);
     localStorage.setItem('tp_admin_backup_user', JSON.stringify(adminUser));
     localStorage.setItem('tp_admin_backup_dbkey', adminDBKey);
@@ -28540,11 +28548,11 @@ async function _adminImpersonate(userId, userName) {
     // تنظیم DB key برای کاربر هدف
     const targetKey = 'tp_impersonate_' + userId;
     window._activeDBKey = targetKey;
-    window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey };
+    window._impersonating = { userId, userName, adminSession, adminUser, adminDBKey, adminDataSignature };
     window._impersonateServerBlocked = false;
     // ذخیره وضعیت impersonate در localStorage تا با رفرش صفحه از بین نره
     try {
-      localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey }));
+      localStorage.setItem('tp_impersonating_state', JSON.stringify({ userId, userName, adminDBKey, adminDataSignature }));
       localStorage.setItem('tp_impersonating_user', JSON.stringify(user));
     } catch(e) {}
 
@@ -28649,6 +28657,7 @@ async function _adminReturnToAdmin() {
           adminSession: localStorage.getItem('tp_admin_backup_session'),
           adminUser: JSON.parse(localStorage.getItem('tp_admin_backup_user') || 'null'),
           adminDBKey: savedState.adminDBKey || localStorage.getItem('tp_admin_backup_dbkey'),
+          adminDataSignature: savedState.adminDataSignature || '',
         };
       }
     } catch(e) {}
