@@ -4821,6 +4821,7 @@ function _migrate(d) {
 }
 
 function _load() {
+  _purgeLegacyImpersonationCaches();
   const key = window._activeDBKey || DB_KEY;
   try { const s = localStorage.getItem(key); _db = s ? JSON.parse(s) : null; } catch(e) { _db = null; }
   if (!_db) _db = _freshData();
@@ -4887,6 +4888,26 @@ function _releaseLocalStorageForPrimaryData(activeDataKey) {
   return released;
 }
 
+function _purgeLegacyImpersonationCaches() {
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('tp_impersonate_')) localStorage.removeItem(key);
+    });
+  } catch(e) {}
+}
+
+function _persistDatabaseSnapshot(key, data) {
+  // Impersonation is an online administrative view. Keep its database only in
+  // memory and on the server; duplicating full target databases in localStorage
+  // quickly exhausts the origin's small Web Storage quota.
+  if (String(key || '').startsWith('tp_impersonate_')) {
+    try { localStorage.removeItem(key); } catch(e) {}
+    return true;
+  }
+  localStorage.setItem(key, JSON.stringify(data));
+  return true;
+}
+
 function _trimStoredVersions() {
   try {
     const keys = [];
@@ -4910,16 +4931,14 @@ function _save(stamp=true) {
   const key = window._activeDBKey || DB_KEY;
   let localSaved = false;
   try {
-    localStorage.setItem(key, JSON.stringify(_db));
-    localSaved = true;
+    localSaved = _persistDatabaseSnapshot(key, _db);
   } catch(e) {
     // فقط کش نسخه‌ها و داده‌های موقت را آزاد کن؛ نشست و داده اصلی کاربر هرگز
     // پاک نمی‌شوند. سپس ذخیره داده اصلی را یک‌بار دیگر امتحان کن.
     console.warn('LocalStorage save failed; releasing non-essential caches:', e.message);
     if (_releaseLocalStorageForPrimaryData(key)) {
       try {
-        localStorage.setItem(key, JSON.stringify(_db));
-        localSaved = true;
+        localSaved = _persistDatabaseSnapshot(key, _db);
         console.info('[TeamPulse] primary data saved after cache cleanup');
       } catch(retryError) {
         console.warn('LocalStorage retry failed:', retryError.message);
@@ -5674,7 +5693,7 @@ window.api = {
           _migrate(_db);
           _markManualRestoreInProgress();
           const key = window._activeDBKey || DB_KEY;
-          localStorage.setItem(key, JSON.stringify(_db));
+          _persistDatabaseSnapshot(key, _db);
           window._serverDataEtag = payload.etag || null;
           _writeServerSyncBaseline(_db, window._serverDataEtag);
           _clearServerSyncPending(_db._lastSaved || Date.now());
@@ -20189,43 +20208,20 @@ function _useLocalImpersonatedFallback(userName, targetKey) {
   _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
   _db._lastSaved = Date.now();
   _migrate(_db);
-  _cacheImpersonatedData(targetKey, _db);
+  _purgeLegacyImpersonationCaches();
   window._impersonateServerBlocked = true;
 }
 
 function _cacheImpersonatedData(targetKey, data) {
-  const serialized = JSON.stringify(data);
-  try {
-    localStorage.setItem(targetKey, serialized);
-    return true;
-  } catch(e) {
-    // کش حساب مقصد برای ورود مدیریتی ضروری نیست؛ ابتدا کش حساب‌های قبلی را پاک و یک‌بار تکرار کن.
-    try {
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('tp_impersonate_') && key !== targetKey) localStorage.removeItem(key);
-      });
-      localStorage.setItem(targetKey, serialized);
-      return true;
-    } catch(retryError) {
-      console.warn('[Impersonate] target cache skipped:', retryError.message);
-      return false;
-    }
-  }
+  // Kept as a compatibility hook for existing call sites. Target data is
+  // intentionally memory/server-only until the IndexedDB phase is introduced.
+  _purgeLegacyImpersonationCaches();
+  return true;
 }
 
 function _loadSafeImpersonatedCache(targetKey, adminDBKey) {
-  try {
-    const raw = localStorage.getItem(targetKey);
-    if (!raw) return false;
-    const cached = JSON.parse(raw);
-    if (!cached || _looksLikeAdminDataDuringImpersonation(cached, adminDBKey)) return false;
-    _db = cached;
-    _migrate(_db);
-    return true;
-  } catch(e) {
-    console.warn('[Impersonate] safe cache load failed:', e.message);
-    return false;
-  }
+  _purgeLegacyImpersonationCaches();
+  return false;
 }
 
 function _serverSafeData(data) {
@@ -20329,7 +20325,7 @@ async function _syncToServer(conflictAttempt = 0) {
       _migrate(_db);
       try {
         const key = window._activeDBKey || _teamActiveDBKey();
-        localStorage.setItem(key, JSON.stringify(_db));
+        _persistDatabaseSnapshot(key, _db);
       } catch(e) {}
       window._teamOwnerDataReady = true;
     }
@@ -20365,7 +20361,7 @@ async function _syncToServer(conflictAttempt = 0) {
       _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data);
       _migrate(_db);
       window._serverDataEtag = responseData.etag || null;
-      try { localStorage.setItem(window._activeDBKey || DB_KEY, JSON.stringify(_db)); } catch(e) {}
+      try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
       _markServerSyncPending('conflict-merged');
       return _syncToServer(conflictAttempt + 1);
     }
@@ -20455,7 +20451,7 @@ function _mergeServerTodosIntoLocal(serverData) {
     _migrate(_db);
     try {
       const key = window._activeDBKey || DB_KEY;
-      localStorage.setItem(key, JSON.stringify(_db));
+      _persistDatabaseSnapshot(key, _db);
     } catch(e) {}
   }
   return changed;
@@ -20542,7 +20538,7 @@ async function _loadFromServer() {
         _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
         _migrate(_db);
         const key = window._activeDBKey || _teamActiveDBKey();
-        try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) {}
+        try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
         window._teamOwnerDataReady = true;
         _markServerSyncPending(teamLocalDiverged ? 'team-local-diverged' : 'team-legacy-safe-merge');
         clearTimeout(window._serverSyncTimer);
@@ -20554,7 +20550,7 @@ async function _loadFromServer() {
       _db = data;
       _migrate(_db);
       const key = window._activeDBKey || _teamActiveDBKey();
-      localStorage.setItem(key, JSON.stringify(_db));
+      _persistDatabaseSnapshot(key, _db);
       window._teamOwnerDataReady = true;
       window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
       window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
@@ -20581,7 +20577,7 @@ async function _loadFromServer() {
         _db = merged;
         _migrate(_db);
         const key = window._activeDBKey || DB_KEY;
-        localStorage.setItem(key, JSON.stringify(_db));
+        _persistDatabaseSnapshot(key, _db);
         _markServerSyncPending('merge-pending-with-server');
         _forceNextServerSync();
         clearTimeout(window._serverSyncTimer);
@@ -20602,7 +20598,7 @@ async function _loadFromServer() {
         _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
         _migrate(_db);
         const key = window._activeDBKey || DB_KEY;
-        try { localStorage.setItem(key, JSON.stringify(_db)); } catch(e) {}
+        try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
         _markServerSyncPending(localDiverged ? 'local-diverged-from-baseline' : 'legacy-safe-merge');
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
@@ -20615,7 +20611,7 @@ async function _loadFromServer() {
         _db = data;
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
-        localStorage.setItem(key, JSON.stringify(_db));
+        _persistDatabaseSnapshot(key, _db);
         if (window._impersonating) window._impersonateServerBlocked = false;
         if (teamSession) window._teamOwnerDataReady = true;
         window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
@@ -21650,8 +21646,9 @@ async function _initAuth() {
         if (!loadedImpersonatedData) {
           _db = _freshData();
           _migrate(_db);
-          _cacheImpersonatedData(targetKey, _db);
-          window._impersonateServerBlocked = false;
+          _purgeLegacyImpersonationCaches();
+          window._impersonateServerBlocked = true;
+          showToast('داده حساب مقصد از سرور دریافت نشد؛ همگام‌سازی این حساب برای ایمنی مسدود است', 'error');
         }
         window._impersonateLoadPending = false;
 
@@ -26720,7 +26717,7 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
           if (json.data && Object.keys(json.data).length > 0) {
             _db = json.data;
             _migrate(_db);
-            localStorage.setItem(window._activeDBKey, JSON.stringify(_db));
+            _persistDatabaseSnapshot(window._activeDBKey, _db);
           }
         }
       }
@@ -28336,8 +28333,9 @@ async function _adminImpersonate(userId, userName) {
     if (!loaded) {
       _db = _freshData();
       _migrate(_db);
-      _cacheImpersonatedData(targetKey, _db);
-      window._impersonateServerBlocked = false;
+      _purgeLegacyImpersonationCaches();
+      window._impersonateServerBlocked = true;
+      showToast('داده حساب مقصد از سرور دریافت نشد؛ برای جلوگیری از بازنویسی، همگام‌سازی مسدود شد', 'error');
     }
 
     // حالا sync مجاز است
