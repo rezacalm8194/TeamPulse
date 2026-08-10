@@ -4834,6 +4834,10 @@ function _load() {
     }
   } catch(e) {}
   _trimStoredVersions();
+  if (_readIdbMigrationState(key)?.retired) {
+    const vKey = window._activeDBKey ? 'teampulse_versions_' + window._activeDBKey : 'teampulse_versions_local';
+    try { localStorage.removeItem(vKey); } catch(e) {}
+  }
   void _seedIndexedDBFromLocalStorage(key);
 }
 
@@ -4844,6 +4848,11 @@ function _saveVersion() {
     const vKey = window._activeDBKey
       ? 'teampulse_versions_' + window._activeDBKey
       : 'teampulse_versions_local';
+    const activeDataKey = window._activeDBKey || DB_KEY;
+    if (_readIdbMigrationState(activeDataKey)?.retired) {
+      try { localStorage.removeItem(vKey); } catch(e) {}
+      return;
+    }
     // برای حساب‌های بزرگ، یک کپی کامل دیگر در localStorage باعث عبور از سقف
     // ۵ مگابایتی مرورگر و شکست ذخیره داده اصلی می‌شود. تاریخچه کامل این حساب‌ها
     // روی سرور نگه داشته می‌شود و نسخه محلی حجیم باید حذف شود.
@@ -5022,6 +5031,15 @@ async function _seedIndexedDBFromLocalStorage(key) {
 
 const TP_IDB_MIGRATION_PREFIX = 'tp_idb_primary_v1:';
 
+function _idbMigrationStateKey(key) {
+  return TP_IDB_MIGRATION_PREFIX + encodeURIComponent(String(key || DB_KEY));
+}
+
+function _readIdbMigrationState(key) {
+  try { return JSON.parse(localStorage.getItem(_idbMigrationStateKey(key)) || 'null'); }
+  catch(e) { return null; }
+}
+
 function _isUsableDatabaseSnapshot(data) {
   return !!(data && typeof data === 'object' && !Array.isArray(data) &&
     ['students','todos','staff','instructions'].some(key => Array.isArray(data[key])));
@@ -5035,8 +5053,9 @@ function _databaseSnapshotFingerprint(data) {
 async function _loadPrimaryDatabase() {
   _purgeLegacyImpersonationCaches();
   const key = window._activeDBKey || DB_KEY;
+  const previousMigration = _readIdbMigrationState(key);
   if (String(key).startsWith('tp_impersonate_')) {
-    _load();
+    if (!_db) { _db = _freshData(); _migrate(_db); }
     return { source: 'impersonation-memory', key };
   }
 
@@ -5084,11 +5103,26 @@ async function _loadPrimaryDatabase() {
     if (idbVerified) {
       window._tpIndexedDBReady = true;
       try {
-        localStorage.setItem(TP_IDB_MIGRATION_PREFIX + encodeURIComponent(key), JSON.stringify({
+        const verifiedCount = Math.min(10, Number(previousMigration?.verifiedCount || 0) + 1);
+        const migrationState = {
           verifiedAt: Date.now(),
           savedAt: Number(_db._lastSaved || 0) || 0,
           fingerprint: selectedFingerprint,
-        }));
+          verifiedCount,
+          retired: !!previousMigration?.retired,
+          retiredAt: previousMigration?.retiredAt || null,
+        };
+        if (
+          source === 'indexeddb' &&
+          verifiedCount >= 2 &&
+          !migrationState.retired &&
+          !_hasServerSyncPending()
+        ) {
+          localStorage.removeItem(key);
+          migrationState.retired = true;
+          migrationState.retiredAt = Date.now();
+        }
+        localStorage.setItem(_idbMigrationStateKey(key), JSON.stringify(migrationState));
       } catch(e) {
         // The verification itself succeeded; a full localStorage must not
         // incorrectly mark IndexedDB as unavailable.
@@ -5099,9 +5133,8 @@ async function _loadPrimaryDatabase() {
     console.warn('[TeamPulse] IndexedDB verification failed; local fallback retained:', error.message);
   }
 
-  // During the transition release, keep a rollback mirror. It will only be
-  // removed after every synchronous legacy load path has been retired.
-  if (source === 'indexeddb') {
+  // Keep the rollback mirror only until the two-pass verification retires it.
+  if (source === 'indexeddb' && !_readIdbMigrationState(key)?.retired) {
     try { localStorage.setItem(key, JSON.stringify(_db)); }
     catch(error) {
       _releaseLocalStorageForPrimaryData(key);
@@ -5122,6 +5155,7 @@ function _persistDatabaseSnapshot(key, data) {
     try { localStorage.removeItem(key); } catch(e) {}
     return true;
   }
+  if (_readIdbMigrationState(key)?.retired) return true;
   localStorage.setItem(key, JSON.stringify(data));
   return true;
 }
@@ -7135,10 +7169,10 @@ function _saveAccounts(accounts) {
 function _currentAccountId() {
   return localStorage.getItem('teampulse_current_account') || 'default';
 }
-function _switchAccount(id) {
+async function _switchAccount(id) {
   localStorage.setItem('teampulse_current_account', id);
   window._activeDBKey = id === 'default' ? 'coaching_reza_v3' : 'coaching_reza_v3_' + id;
-  _load();
+  await _loadPrimaryDatabase();
   // اگر میزکار جدید و خالیه، اسمش رو از لیست حساب‌ها بخون و توی meta بذار
   if (id !== 'default' && (!_db.meta || !_db.meta.appTitle || _db.meta.appTitle === 'TeamPulse')) {
     const accs = _getAccounts();
@@ -7148,6 +7182,7 @@ function _switchAccount(id) {
       _save(false);
     }
   }
+  try { await _idbPutDatabaseSnapshot(window._activeDBKey, _db, 'account-switch'); } catch(e) {}
   location.reload();
 }
 function _createAccount(name) {
@@ -7174,8 +7209,9 @@ window._activeDBKey = (() => {
   return id === 'default' ? 'coaching_reza_v3' : 'coaching_reza_v3_' + id;
 })();
 
-// NOW load the correct account's data
-_load();
+// Authentication performs the authoritative async IndexedDB load. Keep only a
+// temporary in-memory shape while scripts finish parsing.
+if (!_db) { _db = _freshData(); _migrate(_db); }
 
 // Patch _load and _save to use dynamic key
 // _load already uses window._activeDBKey
@@ -8062,20 +8098,20 @@ window.addEventListener('unhandledrejection', (e) => {
       .map(function(n){return Object.assign({},n,{items:_eTree(flat,n.id)});});
   }
   window.api.instructions = {
-    getAll: function() {
-      if (!_db) _load();
+    getAll: async function() {
+      if (!_db) await _loadPrimaryDatabase();
       if (!_db.instructions) _db.instructions = [];
-      return Promise.resolve(_eTree(_db.instructions, null));
+      return _eTree(_db.instructions, null);
     },
-    getChildren: function(pid) {
-      if (!_db) _load();
+    getChildren: async function(pid) {
+      if (!_db) await _loadPrimaryDatabase();
       var tree = _eTree(_db.instructions||[], null);
-      if (!pid) return Promise.resolve(tree);
+      if (!pid) return tree;
       var node = tree.find(function(n){return n.id==pid;});
-      return Promise.resolve(node ? (node.items||[]) : []);
+      return node ? (node.items||[]) : [];
     },
-    add: function(p) {
-      if (!_db) _load();
+    add: async function(p) {
+      if (!_db) await _loadPrimaryDatabase();
       if (typeof _teamCanCreateInstruction === 'function' && !_teamCanCreateInstruction(p.parent_id || null)) return Promise.resolve({ok:false,error:'به این پوشه دسترسی نداری'});
       if (!_db.instructions) _db.instructions = [];
       if (!_db._nextId) _db._nextId = {};
@@ -17997,7 +18033,10 @@ async function renderInstructions(instrSearch) {
     </div>
   `);
 
-  if (!_db) { _load(); }
+  if (!_db) {
+    void _loadPrimaryDatabase().then(() => renderInstructions(instrSearch));
+    return;
+  }
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
   _instrEnsureKnowledgeStructure();
