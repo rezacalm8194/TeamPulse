@@ -3958,18 +3958,19 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
 .archive-search{min-width:260px;max-width:420px;flex:1}
 .archive-sheet{overflow:auto;max-height:calc(100vh - 285px)}
-.archive-sheet table{min-width:980px;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.archive-sheet table{min-width:1420px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
 .archive-sheet th,.archive-sheet td{padding-inline:9px}
 .archive-sheet td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .archive-sheet .archive-col-address{width:92px;max-width:92px}
-.archive-sheet .archive-col-need{width:112px;max-width:112px}
-.archive-sheet .archive-col-name{width:78px;max-width:78px}
-.archive-sheet .archive-col-phone{width:108px;max-width:108px}
-.archive-sheet .archive-col-org{width:150px;max-width:150px}
+.archive-sheet .archive-col-need{width:260px;max-width:260px}
+.archive-sheet .archive-col-name{width:170px;max-width:170px}
+.archive-sheet .archive-col-phone{width:120px;max-width:120px}
+.archive-sheet .archive-col-org{width:180px;max-width:180px}
 .archive-sheet .archive-col-category{width:82px;max-width:82px}
 .archive-sheet .archive-col-referral{width:96px;max-width:96px}
 .archive-sheet .archive-col-status{width:105px;max-width:105px}
+.archive-sheet .archive-col-city{width:90px;max-width:90px}
 .archive-sheet .archive-col-date{width:118px;max-width:118px}
 .archive-sheet .archive-number-col{width:44px;max-width:44px;text-align:center;color:var(--text3);font-variant-numeric:tabular-nums}
 .archive-sheet .archive-select-col{width:42px;max-width:42px;text-align:center;position:sticky;right:0;z-index:3;background:var(--bg2)}
@@ -12786,7 +12787,7 @@ function archiveFieldForHeader(label){
 }
 function normalizeArchiveColumns(columns){const result=[];let hasDescription=false;(columns||[]).map(x=>String(x||'').trim()).filter(Boolean).forEach(label=>{if(archiveFieldForHeader(label)==='description'){if(hasDescription)return;hasDescription=true;result.push('توضیحات');return;}result.push(label);});return result;}
 function archiveColumnValue(s,label){const field=archiveFieldForHeader(label);if(field==='full_name')return [s.name,s.lname].filter(Boolean).join(' ').trim();if(field)return field==='date_jalali'?(DateService.disp(s[field])||''):String(s[field]??'');return String(s.archive_data?.[archiveHeaderKey(label)]??'');}
-function archiveColumnClass(label){const field=archiveFieldForHeader(label);return ({full_name:'archive-col-name',name:'archive-col-name',lname:'archive-col-name',phone:'archive-col-phone',organization_name:'archive-col-org',customer_category:'archive-col-category',referral_source:'archive-col-referral',description:'archive-col-need',relationship_status:'archive-col-status',date_jalali:'archive-col-date'})[field]||'';}
+function archiveColumnClass(label){const field=archiveFieldForHeader(label);if(archiveHeaderKey(label)==='شهر')return 'archive-col-city';return ({full_name:'archive-col-name',name:'archive-col-name',lname:'archive-col-name',phone:'archive-col-phone',organization_name:'archive-col-org',customer_category:'archive-col-category',referral_source:'archive-col-referral',description:'archive-col-need',relationship_status:'archive-col-status',date_jalali:'archive-col-date'})[field]||'';}
 function archiveStatusClass(value){const k=archiveHeaderKey(value);return ({'نیازمندپیگیری':'archive-status-followup','ناموفق':'archive-status-failed','تماسگرفتهشد':'archive-status-contacted','جلسه':'archive-status-meeting'})[k]||'';}
 function archiveExtraFieldsHtml(s={},scope='archive',excluded=[]){const excludedKeys=excluded.map(archiveHeaderKey);return archiveColumns.filter(c=>!archiveFieldForHeader(c)&&!excludedKeys.includes(archiveHeaderKey(c))).map(c=>{const key=archiveHeaderKey(c),value=String(s.archive_data?.[key]??'');return `<div class="form-group"><label class="form-label">${escapeHtml(c)}</label><input class="form-input" data-archive-extra data-archive-scope="${scope}" data-archive-key="${escapeHtml(key)}" value="${escapeHtml(value)}"></div>`;}).join('');}
 function collectArchiveExtraData(scope,base={}){const data={...(base||{})};document.querySelectorAll(`[data-archive-extra][data-archive-scope="${scope}"]`).forEach(input=>{data[input.dataset.archiveKey]=input.value.trim();});return data;}
