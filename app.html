@@ -12319,6 +12319,27 @@ async function _deleteTeamGrant(member) {
   });
 }
 
+async function _verifyTeamGrantStored(member) {
+  if (!member || !_sbUser?.id || !_sbSession?.token) return false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 700));
+    try {
+      const res = await _apiFetch('/api/data/' + encodeURIComponent(_sbUser.id) + _workspaceQuery());
+      if (!res.ok) continue;
+      const payload = await res.json();
+      const stored = (payload?.data?.team_members || []).find(item =>
+        String(item.id || '') === String(member.id || '') &&
+        String(item.email || '').trim().toLowerCase() === String(member.email || '').trim().toLowerCase()
+      );
+      if (!stored) continue;
+      const expected = new Set(_normalizeTeamPermissions(member.permissions));
+      const actual = new Set(_normalizeTeamPermissions(stored.permissions));
+      if ([...expected].every(permission => actual.has(permission))) return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
 async function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
   const staffId = (document.getElementById('team-staff-id')?.value || '').trim();
@@ -12356,7 +12377,8 @@ async function _createTeamInvite() {
   const syncRes = await _syncToServer();
   // Legacy servers do not have the dedicated grant endpoint yet. A successful
   // full data sync still persists team_members for their resolve route.
-  if (!grantRes?.ok && !syncRes?.ok) {
+  const legacyStored = grantRes?.ok ? true : await _verifyTeamGrantStored(member);
+  if (!grantRes?.ok && !legacyStored) {
     showToast('لینک کپی شد اما مجوز هنوز روی سرور ذخیره نشده؛ اتصال یا نسخه بک‌اند را بررسی کنید', 'warning');
   }
 }
@@ -12369,7 +12391,8 @@ async function _copyTeamInvite(id) {
   copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
   const grantRes = await _saveTeamGrant(member);
   const syncRes = await _syncToServer();
-  if (!grantRes?.ok && !syncRes?.ok) {
+  const legacyStored = grantRes?.ok ? true : await _verifyTeamGrantStored(member);
+  if (!grantRes?.ok && !legacyStored) {
     showToast('لینک کپی شد اما مجوز هنوز روی سرور ذخیره نشده؛ اتصال یا نسخه بک‌اند را بررسی کنید', 'warning');
   }
 }
