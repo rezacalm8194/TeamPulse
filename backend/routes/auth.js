@@ -128,23 +128,13 @@ router.post('/team-invite/resolve', auth, (req, res) => {
         m.status !== 'حذف‌شده'
       );
     }
-    if (!member) {
-      const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
-      if (!ownerUserId || !invitedEmail || !permissions.length) {
-        return res.status(403).json({ error: 'team access not allowed' });
-      }
-      member = {
-        id: inviteId,
-        email: memberEmail,
-        role_key: req.body?.roleKey || req.body?.role_key || req.body?.team_role || 'staff_basic',
-        permissions,
-        instruction_folders: req.body?.instructionFolders || []
-      };
-    }
+    // The owner document is the only authority for team access. Never create a
+    // grant from permissions supplied by the invitee's browser.
+    if (!member) return res.status(403).json({ error: 'team access not allowed' });
 
     const permissions = normalizeTeamPermissions(member.permissions);
-    const staffId = String(member.staff_id || member.staffId || req.body?.staffId || req.body?.staff_id || '').trim();
-    const roleKey = String(member.role_key || member.roleKey || member.team_role || req.body?.roleKey || req.body?.role_key || 'staff_basic').trim();
+    const staffId = String(member.staff_id || member.staffId || '').trim();
+    const roleKey = String(member.role_key || member.roleKey || member.team_role || 'staff_basic').trim();
     member.permissions = permissions;
 
     db.prepare(`

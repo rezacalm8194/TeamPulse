@@ -7942,6 +7942,21 @@ function _teamDecodeInvite(token) {
   const normalized = packed.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
   const data = JSON.parse(decodeURIComponent(escape(atob(padded))));
+  if (data && data.v === 3) {
+    return {
+      inviteId: data.i,
+      email: '',
+      ownerName: '',
+      ownerEmail: '',
+      ownerUserId: data.u || '',
+      accountId: data.a || 'default',
+      staffId: '',
+      roleKey: 'staff_basic',
+      permissions: [],
+      instructionFolders: [],
+      compact: true
+    };
+  }
   if (data && data.v === 2) {
     return {
       inviteId: data.i,
@@ -7961,11 +7976,15 @@ function _teamDecodeInvite(token) {
 }
 function _acceptTeamInviteToken(token) {
   const payload = _teamDecodeInvite(token);
-  if (!payload || !payload.email) throw new Error('دعوت‌نامه معتبر نیست');
+  if (!payload || !payload.inviteId || (!payload.email && !payload.ownerUserId)) {
+    throw new Error('دعوت‌نامه معتبر نیست');
+  }
+  const inviteEmail = String(payload.email || _sbUser?.email || '').trim().toLowerCase();
+  if (!inviteEmail) throw new Error('برای پذیرش دعوت ابتدا وارد حساب خود شوید');
   const permissions = _normalizeTeamPermissions(payload.permissions);
   localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify({
     inviteId: payload.inviteId,
-    email: payload.email,
+    email: inviteEmail,
     ownerName: payload.ownerName || '',
     ownerEmail: payload.ownerEmail || '',
     ownerUserId: payload.ownerUserId || '',
@@ -12053,23 +12072,16 @@ function _teamEncodeInviteCompact(data) {
 }
 
 function _teamInviteLink(member) {
-  const ownerName = _sbUser?.name || _db?.meta?.appTitle || 'TeamPulse';
-  const ownerEmail = _sbUser?.email || '';
+  // Version 3 deliberately carries only stable identifiers. Permissions and
+  // the invited email are resolved server-side against the authenticated user.
+  // Keeping the URL short prevents chat apps from splitting the clickable link.
   const compact = {
-    v: 2,
+    v: 3,
     i: member.id,
-    e: member.email,
-    n: ownerName,
-    o: ownerEmail,
     u: _sbUser?.id || '',
     a: typeof _currentAccountId === 'function' ? _currentAccountId() : 'default',
-    s: member.staff_id || member.staffId || '',
-    r: member.role_key || member.team_role || member.roleKey || 'staff_basic',
   };
-  const ownerPart = _teamInviteSlugPart(ownerName || ownerEmail, 'owner');
-  const memberPart = _teamInviteSlugPart(member.email, 'member');
-  const shortId = String(member.id || Date.now()).replace(/^tm_/, '').slice(-6);
-  const token = `${ownerPart}-${memberPart}-${shortId}~${_teamEncodeInviteCompact(compact)}`;
+  const token = _teamEncodeInviteCompact(compact);
   return `${location.origin}${location.pathname}?team_invite=${encodeURIComponent(token)}`;
 }
 
