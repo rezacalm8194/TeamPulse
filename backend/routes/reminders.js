@@ -279,7 +279,10 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     } catch (e) {
       failed++;
       // subscription منقضی شده → پاکش کن
-      if (e.statusCode === 410 || e.statusCode === 404) {
+      // 401/403 normally means this endpoint was created with a different
+      // VAPID key. Keeping it makes every later delivery fail forever; the
+      // client will create and register a fresh subscription on next launch.
+      if ([401, 403, 404, 410].includes(e.statusCode)) {
         db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(s.id);
       } else {
         console.error(`[Push] delivery failed (${e.statusCode || 'unknown'}):`, e.message);
