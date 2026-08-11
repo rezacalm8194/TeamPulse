@@ -9996,7 +9996,7 @@ function accountCustomerTabsHtml(tab, search = '') {
 
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
-    return `<button class="btn btn-primary" onclick="openNewFamily()"><span class="btn-icon">+</span><span> ایجاد میزکار مشترک</span></button>`;
+    return `<button class="btn btn-primary" onclick="openNewFamily()"><span class="btn-icon">+</span><span> افزودن گروه جدید</span></button>`;
   }
   if (!['purchases', 'payments', 'reminders'].includes(tab)) return '';
   const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
@@ -11050,7 +11050,7 @@ document.addEventListener('keydown', event => {
 });
 
 async function renderFamilies(embedded = currentPage === 'payments') {
-  if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ ایجاد میزکار مشترک</button>`);
+  if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ افزودن گروه جدید</button>`);
   else updateTopbarActions(accountCustomerTopbarHtml('families'));
   FAMILIES = await window.api.families.getAll();
   allStudents = await window.api.students.getAll();
@@ -11103,14 +11103,14 @@ async function renderFamilies(embedded = currentPage === 'payments') {
 
 function openNewFamily() {
   const membersChecklist = allStudents.map(x => `
-    <label class="pkg-check" style="width:100%;justify-content:flex-start" onclick="this.classList.toggle('checked')">
-      <input type="checkbox" class="fam-member-cb" value="${x.id}"> ${x.name} ${x.lname}
+    <label class="pkg-check" for="fam-new-member-${x.id}" style="width:100%;justify-content:flex-start">
+      <input type="checkbox" id="fam-new-member-${x.id}" class="fam-member-cb" value="${x.id}" onchange="this.closest('.pkg-check')?.classList.toggle('checked', this.checked)"> ${escapeHtml(`${x.name} ${x.lname}`.trim())}
     </label>`).join('');
 
-  openModal('ایجاد میزکار مشترک جدید', `
+  openModal('افزودن گروه جدید', `
     <div class="form-group full">
       <label class="form-label">نام گروه *</label>
-      <input class="form-input" id="f-fam-name" placeholder="مثلاً: خانواده حسن‌تبار">
+      <input class="form-input" id="f-fam-name" placeholder="مثلاً: خانواده محمدی">
     </div>
     <div class="form-section">اعضای گروه</div>
     <div class="pkg-row" style="flex-direction:column;align-items:stretch">${membersChecklist || '<span style="color:var(--text3);font-size:12px">موردی ثبت نشده</span>'}</div>
