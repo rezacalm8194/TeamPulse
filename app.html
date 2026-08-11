@@ -7228,7 +7228,9 @@ function _saveAccounts(accounts) {
 }
 function _currentAccountId() {
   const team = typeof _teamAccessSession === 'function' ? _teamAccessSession() : null;
-  if (team) return team.workspaceId || 'default';
+  // Team invites store the selected workspace as `accountId`. Older sessions
+  // may use `workspaceId`, so accept both instead of silently loading default.
+  if (team) return team.accountId || team.workspaceId || 'default';
   const key = _currentAccountStorageKey();
   let value = localStorage.getItem(key);
   if (!value && _workspaceAuthUser()?.id) {
@@ -12294,7 +12296,7 @@ function _teamOnStaffPicked(staffId) {
   }
 }
 
-function _createTeamInvite() {
+async function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
   const staffId = (document.getElementById('team-staff-id')?.value || '').trim();
   if (!staffId) { showToast('یک رکورد پرسنل را برای این دعوت انتخاب کن', 'error'); return; }
@@ -12323,15 +12325,25 @@ function _createTeamInvite() {
   _db.team_invites = _db.team_invites || [];
   _db.team_invites.unshift({ id:member.id, email, staff_id:String(staffId), role_key:roleKey, permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
   _save();
+  const syncRes = await _syncToServer();
+  if (!syncRes?.ok) {
+    showToast('دعوت ذخیره شد اما هنوز به سرور نرسیده؛ پس از اتصال دوباره تلاش کنید', 'error');
+    return;
+  }
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
 }
 
-function _copyTeamInvite(id) {
+async function _copyTeamInvite(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
   member.invite_link = _teamInviteLink(member);
   _save();
+  const syncRes = await _syncToServer();
+  if (!syncRes?.ok) {
+    showToast('مجوزهای دعوت هنوز روی سرور ذخیره نشده‌اند؛ دوباره تلاش کنید', 'error');
+    return;
+  }
   copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
 }
 
