@@ -12353,12 +12353,11 @@ async function _createTeamInvite() {
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
   const grantRes = await _saveTeamGrant(member);
-  if (!grantRes?.ok) {
-    showToast('لینک کپی شد اما ثبت مجوز روی سرور انجام نشد؛ دوباره کپی لینک را بزنید', 'warning');
-  }
   const syncRes = await _syncToServer();
-  if (syncRes && !syncRes.ok) {
-    showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
+  // Legacy servers do not have the dedicated grant endpoint yet. A successful
+  // full data sync still persists team_members for their resolve route.
+  if (!grantRes?.ok && !syncRes?.ok) {
+    showToast('لینک کپی شد اما مجوز هنوز روی سرور ذخیره نشده؛ اتصال یا نسخه بک‌اند را بررسی کنید', 'warning');
   }
 }
 
@@ -12369,12 +12368,9 @@ async function _copyTeamInvite(id) {
   _save();
   copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
   const grantRes = await _saveTeamGrant(member);
-  if (!grantRes?.ok) {
-    showToast('لینک کپی شد اما ثبت مجوز روی سرور انجام نشد؛ دوباره تلاش کنید', 'warning');
-  }
   const syncRes = await _syncToServer();
-  if (syncRes && !syncRes.ok) {
-    showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
+  if (!grantRes?.ok && !syncRes?.ok) {
+    showToast('لینک کپی شد اما مجوز هنوز روی سرور ذخیره نشده؛ اتصال یا نسخه بک‌اند را بررسی کنید', 'warning');
   }
 }
 
