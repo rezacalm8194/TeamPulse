@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT COLLATE NOCASE UNIQUE NOT NULL,
+  phone TEXT UNIQUE,
   password TEXT NOT NULL,
   role TEXT DEFAULT 'owner',
   business_name TEXT,

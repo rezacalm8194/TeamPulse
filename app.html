@@ -12473,6 +12473,60 @@ function _teamSettingsHtml() {
     </div>`;
 }
 
+async function _changeOwnPassword() {
+  const currentPassword = document.getElementById('security-current-password')?.value || '';
+  const newPassword = document.getElementById('security-new-password')?.value || '';
+  const confirmPassword = document.getElementById('security-confirm-password')?.value || '';
+  if (!currentPassword) return showToast('رمز فعلی را وارد کنید', 'error');
+  if (newPassword.length < 8) return showToast('رمز جدید باید حداقل ۸ کاراکتر باشد', 'error');
+  if (newPassword !== confirmPassword) return showToast('تکرار رمز جدید یکسان نیست', 'error');
+  const button = document.getElementById('security-change-password-btn');
+  if (button) { button.disabled = true; button.textContent = 'در حال تغییر...'; }
+  try {
+    const res = await _apiFetch('/api/auth/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = res.status === 401 ? 'رمز فعلی اشتباه است' : (payload.error || 'تغییر رمز انجام نشد');
+      throw new Error(message);
+    }
+    if (_sbUser?.email) _authSaveCredentials(_sbUser.email, newPassword);
+    ['security-current-password','security-new-password','security-confirm-password'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    showToast('رمز عبور با موفقیت تغییر کرد ✓', 'success');
+  } catch(e) {
+    showToast(e.message || 'تغییر رمز انجام نشد', 'error');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'تغییر رمز عبور'; }
+  }
+}
+
+async function _saveRecoveryPhone() {
+  const phone = enDigits(document.getElementById('security-phone')?.value || '').replace(/\s+/g, '');
+  const currentPassword = document.getElementById('security-phone-password')?.value || '';
+  if (!/^09\d{9}$/.test(phone)) return showToast('شماره تماس باید ۱۱ رقم و با ۰۹ شروع شود', 'error');
+  if (!currentPassword) return showToast('برای ثبت شماره، رمز فعلی را وارد کنید', 'error');
+  try {
+    const res = await _apiFetch('/api/auth/phone', {
+      method: 'PUT', body: JSON.stringify({ phone, current_password: currentPassword })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = res.status === 401 ? 'رمز فعلی اشتباه است'
+        : res.status === 409 ? 'این شماره برای حساب دیگری ثبت شده است'
+        : (payload.error || 'ثبت شماره انجام نشد');
+      throw new Error(message);
+    }
+    _sbUser = { ..._sbUser, phone: payload.phone || phone };
+    _authSaveSession({ token: _sbSession?.token, user: _sbUser });
+    const pass = document.getElementById('security-phone-password'); if (pass) pass.value = '';
+    showToast('شماره تماس ذخیره شد ✓', 'success');
+  } catch(e) { showToast(e.message || 'ثبت شماره انجام نشد', 'error'); }
+}
+
 async function renderSettings() {
   updateTopbarActions('');
   PKG_TYPES = await window.api.packageTypes.getAll();
@@ -12481,9 +12535,30 @@ async function renderSettings() {
     setContent(`
       <div class="settings-tabs">
         <button class="settings-tab active" data-tab="team" onclick="switchSettingsTab('team')">👥 دسترسی من</button>
+        <button class="settings-tab" data-tab="security" onclick="switchSettingsTab('security')">🔐 امنیت حساب</button>
       </div>
       <div class="settings-pane active" id="pane-team">
         ${_teamSettingsHtml()}
+      </div>
+      <div class="settings-pane" id="pane-security">
+        <div class="detail-section" style="border-color:rgba(124,106,247,.35)">
+          <h3>🔐 تغییر رمز عبور</h3>
+          <p style="font-size:11px;color:var(--text3);margin-bottom:12px;direction:ltr;text-align:right">${escapeHtml(_sbUser?.email || '')}</p>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label" for="security-current-password">رمز فعلی</label><input class="form-input" id="security-current-password" type="password" autocomplete="current-password"></div>
+            <div class="form-group"><label class="form-label" for="security-new-password">رمز جدید</label><input class="form-input" id="security-new-password" type="password" autocomplete="new-password" minlength="8" placeholder="حداقل ۸ کاراکتر"></div>
+            <div class="form-group"><label class="form-label" for="security-confirm-password">تکرار رمز جدید</label><input class="form-input" id="security-confirm-password" type="password" autocomplete="new-password" minlength="8"></div>
+          </div>
+          <div class="modal-actions" style="justify-content:flex-start;margin-top:12px"><button class="btn btn-primary" id="security-change-password-btn" onclick="_changeOwnPassword()">تغییر رمز عبور</button></div>
+          <div style="height:1px;background:var(--border);margin:20px 0"></div>
+          <h3 style="font-size:14px">📱 شماره تماس بازیابی</h3>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label" for="security-phone">شماره تماس</label><input class="form-input" id="security-phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" value="${escapeHtml(_sbUser?.phone || '')}" placeholder="09123456789"></div>
+            <div class="form-group"><label class="form-label" for="security-phone-password">رمز فعلی برای تأیید</label><input class="form-input" id="security-phone-password" type="password" autocomplete="current-password"></div>
+          </div>
+          <div class="modal-actions" style="justify-content:flex-start;margin-top:12px"><button class="btn btn-ghost" onclick="_saveRecoveryPhone()">ذخیره شماره تماس</button></div>
+          <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-top:10px">بازیابی با شماره پس از راه‌اندازی و تأیید کد یک‌بارمصرف پیامکی فعال می‌شود.</p>
+        </div>
       </div>
     `);
     return;
@@ -12566,6 +12641,48 @@ async function renderSettings() {
   </div>
 
   <div class="settings-pane ${_settingsActiveTab==='general'?'active':''}" id="pane-general">
+    <div class="detail-section" style="border-color:rgba(124,106,247,.35)">
+      <h3>🔐 امنیت حساب و رمز عبور</h3>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:14px">
+        حساب واردشده: <strong style="direction:ltr;display:inline-block;color:var(--text2)">${escapeHtml(_sbUser?.email || '')}</strong>
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="security-current-password">رمز عبور فعلی</label>
+          <input class="form-input" id="security-current-password" type="password" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="security-new-password">رمز عبور جدید</label>
+          <input class="form-input" id="security-new-password" type="password" autocomplete="new-password" minlength="8" placeholder="حداقل ۸ کاراکتر">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="security-confirm-password">تکرار رمز عبور جدید</label>
+          <input class="form-input" id="security-confirm-password" type="password" autocomplete="new-password" minlength="8">
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:12px">
+        <button class="btn btn-primary" id="security-change-password-btn" onclick="_changeOwnPassword()">تغییر رمز عبور</button>
+      </div>
+      <div style="height:1px;background:var(--border);margin:20px 0"></div>
+      <h3 style="font-size:14px">📱 شماره تماس بازیابی</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="security-phone">شماره تماس</label>
+          <input class="form-input" id="security-phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" value="${escapeHtml(_sbUser?.phone || '')}" placeholder="09123456789">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="security-phone-password">رمز فعلی برای تأیید شماره</label>
+          <input class="form-input" id="security-phone-password" type="password" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:12px">
+        <button class="btn btn-ghost" onclick="_saveRecoveryPhone()">ذخیره شماره تماس</button>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:11px;color:var(--text2);line-height:1.8">
+        بازیابی رمز با شماره تنها پس از تأیید کد یک‌بارمصرف پیامکی فعال می‌شود. صرف دانستن شماره برای تغییر رمز کافی نیست.
+      </div>
+    </div>
+
     <div class="detail-section">
       <h3>برچسب‌های برنامه</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
@@ -20731,11 +20848,11 @@ function _getApiAuthToken() {
 }
 
 const _auth = {
-  async signUp(email, password, name) {
+  async signUp(email, password, name, phone) {
     email = String(email || '').trim().toLowerCase();
     const res = await _apiFetch('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name: name || '' })
+      body: JSON.stringify({ email, password, name: name || '', phone: phone || '' })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'خطا در ثبت‌نام');
@@ -21639,12 +21756,15 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doAuth(&#39;' + mode + '&#39;)" style="display:flex;flex-direction:column;gap:14px">' +
     (!isLogin ? '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">نام و نام خانوادگی</label>' +
     '<input class="form-input" id="auth-name" name="name" type="text" placeholder="مثلاً: رضا صفری" ' +
-    'autocomplete="name" style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
+    'autocomplete="name" style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-phone\').focus()"></div>' +
+    '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">شماره تماس</label>' +
+    '<input class="form-input" id="auth-phone" name="tel" autocomplete="tel" inputmode="tel" type="tel" placeholder="09123456789" ' +
+    'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
     '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" ' +
     'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-pass\').focus()"></div>' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور</label>' +
-    '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="حداقل ۶ کاراکتر" value="' + savedPass + '" ' +
+    '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="' + (isLogin ? 'رمز عبور' : 'حداقل ۸ کاراکتر') + '" value="' + savedPass + '" ' +
     'style="width:100%;padding-left:44px;font-size:14px">' +
     '<button type="button" onclick="const i=document.getElementById(&#39;auth-pass&#39;);i.type=i.type===&#39;password&#39;?&#39;text&#39;:&#39;password&#39;" ' +
     'style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px">👁</button></div></div>' +
@@ -21730,13 +21850,18 @@ async function _doAuth(mode) {
   const email = (document.getElementById('auth-email')?.value || '').trim();
   const pass = document.getElementById('auth-pass')?.value || '';
   const name = (document.getElementById('auth-name')?.value || '').trim();
+  const phone = enDigits(document.getElementById('auth-phone')?.value || '').replace(/\s+/g, '');
 
   if (!email || !pass) { _authMsg('ایمیل و رمز عبور را وارد کنید'); return; }
   if (!email.includes('@')) { _authMsg('ایمیل معتبر نیست'); return; }
-  if (pass.length < 6) { _authMsg('رمز عبور باید حداقل ۶ کاراکتر باشد'); return; }
+  if ((mode === 'register' && pass.length < 8) || (mode === 'login' && pass.length < 6)) {
+    _authMsg(mode === 'register' ? 'رمز عبور باید حداقل ۸ کاراکتر باشد' : 'رمز عبور معتبر نیست');
+    return;
+  }
 
   if (mode === 'register') {
     if (!name) { _authMsg('نام را وارد کنید'); return; }
+    if (!/^09\d{9}$/.test(phone)) { _authMsg('شماره تماس باید ۱۱ رقم و با ۰۹ شروع شود'); return; }
     const pass2 = document.getElementById('auth-pass2')?.value || '';
     if (pass !== pass2) { _authMsg('رمزهای عبور یکسان نیستند'); return; }
     const userAns = parseInt(document.getElementById('captcha-answer')?.value || '');
@@ -21753,7 +21878,7 @@ async function _doAuth(mode) {
       await _auth.signIn(email, pass);
       await _authOnSuccess();
     } else {
-      const data = await _auth.signUp(email, pass, name);
+      const data = await _auth.signUp(email, pass, name, phone);
       if (data.token) {
         // ذخیره خودکار منطقه زمانی در اولین ثبت‌نام
         const loc = _detectUserLocale();

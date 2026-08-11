@@ -7,6 +7,16 @@ const auth = require('../middleware/auth');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 
 ensureTeamAccessSchema(db);
+try { db.exec('ALTER TABLE accounts ADD COLUMN phone TEXT'); } catch {}
+try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_unique ON accounts(phone) WHERE phone IS NOT NULL AND phone<>''"); } catch {}
+
+function normalizeIranPhone(value) {
+  let phone = String(value || '').trim().replace(/[^0-9+]/g, '');
+  if (phone.startsWith('+98')) phone = '0' + phone.slice(3);
+  else if (phone.startsWith('0098')) phone = '0' + phone.slice(4);
+  else if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
+  return /^09\d{9}$/.test(phone) ? phone : '';
+}
 
 const TODO_TEAM_PERMISSION_KEYS = [
   'todo_view_assigned',
@@ -49,15 +59,17 @@ router.post('/register', (req, res) => {
   try {
     const { name, password, business_name, business_type } = req.body;
     const email = String(req.body.email || '').trim().toLowerCase();
-    if (!name || !email || !password)
-      return res.status(400).json({ error: 'name, email, password required' });
+    const phone = normalizeIranPhone(req.body.phone);
+    if (!name || !email || !password || !phone)
+      return res.status(400).json({ error: 'name, email, phone, password required' });
+    if (password.length < 8) return res.status(400).json({ error: 'password too short' });
     const exists = db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email);
     if (exists) return res.status(409).json({ error: 'email already exists' });
     const id = randomUUID();
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO accounts (id,name,email,password,business_name,business_type) VALUES (?,?,?,?,?,?)').run(id, name, email, hash, business_name||null, business_type||null);
+    db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
     const token = sign({ id, email, role: 'owner' });
-    res.status(201).json({ token, user: { id, name, email, business_name, role: 'owner' } });
+    res.status(201).json({ token, user: { id, name, email, phone, business_name, role: 'owner' } });
   } catch (e) {
     if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
       return res.status(409).json({ error: 'email already exists' });
@@ -76,7 +88,7 @@ router.post('/login', (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password))
       return res.status(401).json({ error: 'invalid credentials' });
     const token = sign({ id: user.id, email: user.email, role: user.role });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, business_name: user.business_name, role: user.role } });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '', business_name: user.business_name, role: user.role } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -84,7 +96,7 @@ router.post('/login', (req, res) => {
 
 router.get('/me', auth, (req, res) => {
   try {
-    const user = db.prepare('SELECT id,name,email,business_name,business_type,role,plan,created_at FROM accounts WHERE id=?').get(req.user.id);
+    const user = db.prepare('SELECT id,name,email,phone,business_name,business_type,role,plan,created_at FROM accounts WHERE id=?').get(req.user.id);
     if (!user) return res.status(404).json({ error: 'not found' });
     res.json(user);
   } catch (e) {
@@ -182,13 +194,36 @@ router.post('/team-invite/resolve', auth, (req, res) => {
 router.put('/password', auth, (req, res) => {
   try {
     const { current_password, new_password } = req.body;
+    if (!current_password || String(new_password || '').length < 8) {
+      return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
     const user = db.prepare('SELECT * FROM accounts WHERE id=?').get(req.user.id);
+    if (!user) return res.status(404).json({ error: 'not found' });
     if (!bcrypt.compareSync(current_password, user.password))
       return res.status(401).json({ error: 'current password wrong' });
     const hash = bcrypt.hashSync(new_password, 10);
     db.prepare('UPDATE accounts SET password=?, updated_at=datetime("now") WHERE id=?').run(hash, req.user.id);
     res.json({ success: true });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/phone', auth, (req, res) => {
+  try {
+    const phone = normalizeIranPhone(req.body.phone);
+    const currentPassword = String(req.body.current_password || '');
+    if (!phone) return res.status(400).json({ error: 'invalid phone' });
+    const user = db.prepare('SELECT password FROM accounts WHERE id=?').get(req.user.id);
+    if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
+      return res.status(401).json({ error: 'current password wrong' });
+    }
+    db.prepare('UPDATE accounts SET phone=?,updated_at=datetime("now") WHERE id=?').run(phone, req.user.id);
+    res.json({ success: true, phone });
+  } catch (e) {
+    if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ error: 'phone already exists' });
+    }
     res.status(500).json({ error: e.message });
   }
 });
