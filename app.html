@@ -12296,6 +12296,29 @@ function _teamOnStaffPicked(staffId) {
   }
 }
 
+async function _saveTeamGrant(member) {
+  if (!member || !_sbSession?.token) return null;
+  return _apiFetch('/api/auth/team-invite/grant', {
+    method: 'POST',
+    body: JSON.stringify({
+      accountId: _currentAccountId(),
+      inviteId: member.id,
+      email: member.email,
+      staffId: member.staff_id || member.staffId || '',
+      permissions: _normalizeTeamPermissions(member.permissions),
+      instructionFolders: member.instruction_folders || member.instructionFolders || []
+    })
+  });
+}
+
+async function _deleteTeamGrant(member) {
+  if (!member || !_sbSession?.token) return null;
+  return _apiFetch('/api/auth/team-invite/grant', {
+    method: 'DELETE',
+    body: JSON.stringify({ accountId: _currentAccountId(), email: member.email })
+  });
+}
+
 async function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
   const staffId = (document.getElementById('team-staff-id')?.value || '').trim();
@@ -12329,6 +12352,10 @@ async function _createTeamInvite() {
   // user activation. Waiting for the network first makes Chrome reject copy.
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
+  const grantRes = await _saveTeamGrant(member);
+  if (!grantRes?.ok) {
+    showToast('لینک کپی شد اما ثبت مجوز روی سرور انجام نشد؛ دوباره کپی لینک را بزنید', 'warning');
+  }
   const syncRes = await _syncToServer();
   if (syncRes && !syncRes.ok) {
     showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
@@ -12341,21 +12368,26 @@ async function _copyTeamInvite(id) {
   member.invite_link = _teamInviteLink(member);
   _save();
   copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
+  const grantRes = await _saveTeamGrant(member);
+  if (!grantRes?.ok) {
+    showToast('لینک کپی شد اما ثبت مجوز روی سرور انجام نشد؛ دوباره تلاش کنید', 'warning');
+  }
   const syncRes = await _syncToServer();
   if (syncRes && !syncRes.ok) {
     showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
   }
 }
 
-function _deleteTeamMember(id) {
+async function _deleteTeamMember(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
   if (!confirm(`دسترسی ${member.email} حذف شود؟`)) return;
   _db.team_members = (_db.team_members || []).filter(m => m.id !== id);
   _db.team_invites = (_db.team_invites || []).filter(m => m.id !== id);
   _save();
+  const grantRes = await _deleteTeamGrant(member);
   renderSettings().then(() => switchSettingsTab('team'));
-  showToast('دسترسی حذف شد', 'error');
+  showToast(grantRes?.ok ? 'دسترسی حذف شد' : 'دسترسی محلی حذف شد؛ لغو سرور دوباره تلاش شود', grantRes?.ok ? 'success' : 'warning');
 }
 
 function _openEditTeamMember(id) {
@@ -12379,7 +12411,7 @@ function _openEditTeamMember(id) {
   ]);
 }
 
-function _saveTeamMemberEdit(id) {
+async function _saveTeamMemberEdit(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
   const roleKey = document.getElementById('edit-team-role')?.value || member.role_key || 'custom';
@@ -12395,9 +12427,10 @@ function _saveTeamMemberEdit(id) {
   member.updated_at = new Date().toISOString();
   member.invite_link = _teamInviteLink(member);
   _save();
+  const grantRes = await _saveTeamGrant(member);
   closeModal();
   renderSettings().then(() => switchSettingsTab('team'));
-  showToast('دسترسی ذخیره شد ✓', 'success');
+  showToast(grantRes?.ok ? 'دسترسی ذخیره شد ✓' : 'دسترسی محلی ذخیره شد؛ ارتباط سرور را بررسی کنید', grantRes?.ok ? 'success' : 'warning');
 }
 
 function _teamSettingsHtml() {
