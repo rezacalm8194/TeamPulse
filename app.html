@@ -7199,6 +7199,16 @@ function _workspaceOwnerId() {
 function _accountsStorageKey() { return ACCOUNTS_KEY + ':' + _workspaceOwnerId(); }
 function _currentAccountStorageKey() { return 'teampulse_current_account:' + _workspaceOwnerId(); }
 
+function _normalizeSecondaryAccounts(accounts) {
+  const seen = new Set();
+  return (Array.isArray(accounts) ? accounts : []).filter(account => {
+    const id = String(account?.id || '').trim();
+    if (!id || id === 'default' || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, MAX_WORKSPACES - 1);
+}
+
 function _getAccounts() {
   try {
     const scopedKey = _accountsStorageKey();
@@ -7209,7 +7219,7 @@ function _getAccounts() {
       localStorage.removeItem(ACCOUNTS_KEY);
     }
     const parsed = JSON.parse(raw || '[]');
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_WORKSPACES - 1) : [];
+    return _normalizeSecondaryAccounts(parsed);
   } catch(e) { return []; }
 }
 
@@ -7223,7 +7233,7 @@ function _setDefaultAccountName(name) {
   localStorage.setItem('teampulse_default_name:' + _workspaceOwnerId(), name);
 }
 function _saveAccounts(accounts) {
-  localStorage.setItem(_accountsStorageKey(), JSON.stringify((accounts || []).slice(0, MAX_WORKSPACES - 1)));
+  localStorage.setItem(_accountsStorageKey(), JSON.stringify(_normalizeSecondaryAccounts(accounts)));
 }
 function _currentAccountId() {
   const team = typeof _teamAccessSession === 'function' ? _teamAccessSession() : null;
@@ -7429,7 +7439,10 @@ async function _refreshWorkspacesFromServer() {
     }
     window._workspaceServerSupported = true;
     const payload = await res.json();
-    const remote = Array.isArray(payload.workspaces) ? payload.workspaces : [];
+    // The registry may include the built-in `default` workspace. The UI adds
+    // that row itself using the signed-in user's name, so keep only secondary
+    // workspaces here to avoid showing and persisting a duplicate default row.
+    const remote = _normalizeSecondaryAccounts(payload.workspaces);
     const local = _getAccounts();
     for (const account of local) {
       if (remote.some(item => item.id === account.id) || remote.length >= MAX_WORKSPACES - 1) continue;
