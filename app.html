@@ -26592,14 +26592,27 @@ async function _refreshReminderPushRegistration() {
   try {
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
+    // The browser can keep an apparently valid subscription after the server's
+    // VAPID key has changed. Such subscriptions never receive anything. Always
+    // compare the key and transparently replace stale subscriptions.
+    const keyRes = await fetch('/api/reminders/vapid-key', { cache:'no-store' });
+    if (!keyRes.ok) throw new Error(`VAPID HTTP ${keyRes.status}`);
+    const { publicKey } = await keyRes.json();
+    if (!publicKey) throw new Error('VAPID key missing');
+    const applicationServerKey = _urlB64ToUint8Array(publicKey);
+    const subscribedKey = sub?.options?.applicationServerKey
+      ? new Uint8Array(sub.options.applicationServerKey)
+      : null;
+    const keyMatches = subscribedKey && subscribedKey.length === applicationServerKey.length &&
+      subscribedKey.every((value, index) => value === applicationServerKey[index]);
+    if (sub && subscribedKey && !keyMatches) {
+      await sub.unsubscribe();
+      sub = null;
+    }
     if (!sub) {
-      const keyRes = await fetch('/api/reminders/vapid-key', { cache:'no-store' });
-      if (!keyRes.ok) throw new Error(`VAPID HTTP ${keyRes.status}`);
-      const { publicKey } = await keyRes.json();
-      if (!publicKey) throw new Error('VAPID key missing');
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: _urlB64ToUint8Array(publicKey),
+        applicationServerKey,
       });
     }
     const res = await _apiFetch('/api/reminders/subscribe', {
