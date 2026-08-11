@@ -5532,6 +5532,23 @@ function _isPackageChargeable(pkg) {
   return true;
 }
 
+function _nextFuturePaymentReminderDate(baseDate, repeatMonths) {
+  const months = Math.max(0, Number(repeatMonths || 0));
+  const parsed = _jalaliParse(baseDate || '');
+  if (!months || !parsed || parsed.length !== 3 || parsed.some(Number.isNaN)) return '';
+  let nextParts = _addMonths(parsed[0], parsed[1], parsed[2], months);
+  let next = _formatJalali(...nextParts);
+  const todayKey = _jalaliKey(_formatJalali(..._todayJalali()));
+  // A purchase consumes the current reminder. If it was several cycles
+  // overdue, skip every expired occurrence and land on the next real cycle.
+  let guard = 0;
+  while (_jalaliKey(next) <= todayKey && guard++ < 240) {
+    nextParts = _addMonths(nextParts[0], nextParts[1], nextParts[2], months);
+    next = _formatJalali(...nextParts);
+  }
+  return next;
+}
+
 // ── Staff summary ───────────────────────────────────────────────────────────
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
@@ -5781,12 +5798,12 @@ window.api = {
     update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.reminders=_db.reminders.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     markPaid: (p)=>{
-      const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false});
+      const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
+      const next = r.repeat_months>0 ? _nextFuturePaymentReminderDate(r.due_date_jalali,r.repeat_months) : '';
+      if(r.repeat_months>0&&!next)return _P({ok:false,error:'تاریخ سررسید یادآوری معتبر نیست'});
       if(p.record_payment&&p.amount>0){_db.payments.push({id:_nextId('payments'),package_id:r.package_id||null,student_id:r.student_id,amount:p.amount,currency:'تومان',date_jalali:p.date||r.due_date_jalali,method:'',note:'پرداخت از طریق یادآوری: '+r.title,created_at:new Date().toISOString()});}
-      const pkg = r.package_id ? _db.packages.find(x=>x.id===r.package_id) : null;
+      const pkg = r.package_id ? _db.packages.find(x=>String(x.id)===String(r.package_id)) : null;
       if(r.repeat_months>0){
-        const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);
-        const next=_formatJalali(..._addMonths(jy,jm,jd,r.repeat_months));
         r.due_date_jalali=next;
         r.done=false;
         r.notified_levels=[];
@@ -5799,15 +5816,15 @@ window.api = {
       _save(); return _P({ok:true,reminder:r});
     },
     completePurchase: (p)=>{
-      const r=_db.reminders.find(x=>x.id===p.id); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
-      if(p.package_id)r.package_id=p.package_id;
-      const pkg = r.package_id ? _db.packages.find(x=>x.id===r.package_id) : null;
+      const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
       const repeatMonths=Number(p.repeat_months ?? r.repeat_months ?? 0);
+      const baseDate=p.payment_due_date||r.due_date_jalali;
+      const next=repeatMonths>0?_nextFuturePaymentReminderDate(baseDate,repeatMonths):'';
+      if(repeatMonths>0&&!next)return _P({ok:false,error:'تاریخ سررسید خرید معتبر نیست'});
+      if(p.package_id)r.package_id=p.package_id;
+      const pkg = r.package_id ? _db.packages.find(x=>String(x.id)===String(r.package_id)) : null;
       r.repeat_months=repeatMonths;
       if(repeatMonths>0){
-        const baseDate=p.payment_due_date||r.due_date_jalali;
-        const[jy,jm,jd]=_jalaliParse(baseDate);
-        const next=_formatJalali(..._addMonths(jy,jm,jd,repeatMonths));
         r.due_date_jalali=next;
         r.done=false;
         r.notified_levels=[];
@@ -9237,6 +9254,10 @@ async function saveNewPurchase(studentId, reminderId = 0) {
   const paymentDueDate = document.getElementById('np-payment-due')?.value || date;
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
   if (!type_id) return;
+  if (reminderId && repeat_months > 0 && !_nextFuturePaymentReminderDate(paymentDueDate, repeat_months)) {
+    showToast('تاریخ سررسید معتبر نیست؛ تاریخ را اصلاح کنید', 'error');
+    return;
+  }
   const res = await window.api.packages.add({
     student_id: studentId,
     type_id,
@@ -9251,7 +9272,13 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     skip_reminder: !!reminderId,
   });
   if (reminderId) {
-    await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, payment_due_date: paymentDueDate });
+    const completed = await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, payment_due_date: paymentDueDate });
+    if (!completed?.ok) {
+      closeModal();
+      showToast(completed?.error || 'خرید ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
+      await refreshReminderSurface();
+      return;
+    }
   }
   closeModal();
   showToast(repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید جدید ثبت شد ✓', 'success');
