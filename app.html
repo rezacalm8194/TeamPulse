@@ -7287,7 +7287,26 @@ async function _createAccount(name) {
   const finishCreation = async (pendingSync = false) => {
     accounts.push({ id, name, created: new Date().toISOString(), pendingSync });
     _saveAccounts(accounts);
-    await _initializeEmptyWorkspace(id, name);
+    const emptyWorkspace = await _initializeEmptyWorkspace(id, name);
+    // ثبت رجیستری به‌تنهایی کافی نیست: سند اولیه میزکار نیز همان لحظه روی
+    // سرور ساخته شود تا دستگاه دوم (مثلاً موبایل) بعد از دیدن نام میزکار،
+    // دقیقاً همان میزکار را با عنوان و داده مستقل خودش بارگیری کند.
+    if (!pendingSync && _sbSession?.token && ownerId !== 'guest') {
+      const seed = await _apiFetch(
+        '/api/data/' + encodeURIComponent(ownerId) + '?workspace=' + encodeURIComponent(id),
+        {
+          method: 'PUT',
+          body: JSON.stringify({ data: _serverSafeData(emptyWorkspace), force: true })
+        }
+      );
+      if (!seed.ok) {
+        const savedAccounts = _getAccounts();
+        const saved = savedAccounts.find(account => account.id === id);
+        if (saved) saved.pendingSync = true;
+        _saveAccounts(savedAccounts);
+        showToast('میزکار ساخته شد؛ همگام‌سازی داده اولیه در انتظار اتصال است', 'warning');
+      }
+    }
     return id;
   };
   if (_sbSession?.token && ownerId !== 'guest') {
@@ -7391,6 +7410,32 @@ async function _refreshWorkspacesFromServer() {
       });
       if (created.ok) remote.push(account);
     }
+    // میزکارهایی که قبلاً در حالت آفلاین ساخته شده‌اند، بعد از در دسترس شدن
+    // سرور فقط به رجیستری اضافه نشوند؛ سند اولیه‌شان را نیز یک‌بار منتقل کن.
+    for (const account of local.filter(item => item.pendingSync && remote.some(r => r.id === item.id))) {
+      const dataUrl = '/api/data/' + encodeURIComponent(ownerId) + '?workspace=' + encodeURIComponent(account.id);
+      const serverDocument = await _apiFetch(dataUrl);
+      let hasServerData = false;
+      if (serverDocument.ok) {
+        try { hasServerData = !!(await serverDocument.json()).data; } catch(e) {}
+      }
+      let synced = hasServerData;
+      if (!hasServerData) {
+        let localData = null;
+        try { localData = (await _idbGetDatabaseSnapshot(_localWorkspaceDBKey(account.id)))?.data || null; } catch(e) {}
+        if (!localData) {
+          try { localData = JSON.parse(localStorage.getItem(_localWorkspaceDBKey(account.id)) || 'null'); } catch(e) {}
+        }
+        if (localData) {
+          const seeded = await _apiFetch(dataUrl, {
+            method:'PUT', body:JSON.stringify({ data:_serverSafeData(localData), force:true })
+          });
+          synced = seeded.ok;
+        }
+      }
+      if (synced) account.pendingSync = false;
+    }
+    _saveAccounts(local);
     if (remote.length || !local.length) _saveAccounts(remote);
     const current = _currentAccountId();
     if (current !== 'default' && !remote.some(item => item.id === current)) {
