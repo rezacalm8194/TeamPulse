@@ -7305,6 +7305,19 @@ async function _supportsWorkspaceApi() {
       supported = payload?.capabilities?.workspaces === true;
     }
   } catch(e) {}
+  // Some deployed backends gained the workspace routes before their health
+  // response advertised the capability. Probe the read-only registry once so
+  // those servers can still load the selected workspace instead of leaving a
+  // stale default-workspace cache on screen.
+  if (!supported && _sbSession?.token) {
+    const ownerId = _workspaceOwnerId();
+    if (ownerId !== 'guest') {
+      try {
+        const registry = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
+        supported = registry.ok;
+      } catch(e) {}
+    }
+  }
   _workspaceCapabilityCache = { value: supported, checkedAt: now };
   window._workspaceServerSupported = supported;
   return supported;
@@ -21339,16 +21352,29 @@ async function _syncToServer(conflictAttempt = 0) {
     if (!accId) return null;
     const activeWorkspaceId = _currentAccountId();
     if (!teamSession && activeWorkspaceId !== 'default' && String(_db?._workspaceId || '') !== activeWorkspaceId) {
+      // A stale/legacy cache can belong to the default workspace and have no
+      // identity marker. Before blocking the save, fetch the authoritative
+      // document for the selected workspace. _loadFromServer replaces this
+      // mismatched cache without merging it, so no cross-workspace data leaks.
+      if (!window._workspaceIdentityRepairPending) {
+        window._workspaceIdentityRepairPending = true;
+        try { await _loadFromServer(); }
+        finally { window._workspaceIdentityRepairPending = false; }
+      }
+      if (String(_db?._workspaceId || '') === activeWorkspaceId) {
+        window._workspaceIdentityMismatchWarned = false;
+      } else {
       _markServerSyncPending('workspace-data-identity-mismatch');
       if (!window._workspaceIdentityMismatchWarned) {
         window._workspaceIdentityMismatchWarned = true;
-        showToast('برای جلوگیری از جابه‌جایی داده‌ها، ذخیره این میزکار متوقف شد؛ صفحه را رفرش کنید', 'error');
+        showToast('داده صحیح این میزکار از سرور دریافت نشد؛ ذخیره برای جلوگیری از جابه‌جایی اطلاعات متوقف ماند', 'error');
       }
-      console.error('[Workspace] blocked cross-workspace sync', {
+      console.warn('[Workspace] blocked cross-workspace sync', {
         activeWorkspaceId,
         dataWorkspaceId: _db?._workspaceId || null,
       });
       return null;
+      }
     }
     const forceSync = !!window._forceNextSync;
     const localSavedAt = Number(_db?._lastSaved || 0) || 0;
