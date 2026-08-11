@@ -4096,7 +4096,6 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 
   </style>
 <link rel="apple-touch-icon" href="/app-icon-192-v3.png">
-<script src="xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -13741,10 +13740,29 @@ function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);
 async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!confirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
 async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!confirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
 
-function exportArchiveExcel(){
+let _xlsxLoaderPromise=null;
+function loadXlsxLibrary(){
+  if(typeof XLSX!=='undefined')return Promise.resolve(XLSX);
+  if(_xlsxLoaderPromise)return _xlsxLoaderPromise;
+  _xlsxLoaderPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='/xlsx.full.min.js';
+    script.async=true;
+    script.onload=()=>typeof XLSX!=='undefined'?resolve(XLSX):reject(new Error('کتابخانه Excel بارگذاری نشد'));
+    script.onerror=()=>reject(new Error('دانلود کتابخانه Excel ممکن نشد'));
+    document.head.appendChild(script);
+  }).catch(error=>{_xlsxLoaderPromise=null;throw error;});
+  return _xlsxLoaderPromise;
+}
+
+// Keep Excel out of the critical startup path, then warm it quietly for imports.
+setTimeout(()=>loadXlsxLibrary().catch(()=>{}),5000);
+
+async function exportArchiveExcel(){
   if(!archiveStudents.length){showToast('فهرست بایگانی خالی است','error');return;}
   const rows=[archiveColumns,...archiveStudents.map(s=>archiveColumns.map(c=>archiveColumnValue(s,c)))];
   try{
+    await loadXlsxLibrary();
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.aoa_to_sheet(rows);
     ws['!cols']=archiveColumns.map((c,i)=>({wch:Math.min(45,Math.max(12,String(c).length+3,...archiveStudents.slice(0,100).map(s=>String(archiveColumnValue(s,c)||'').length+2)))}));
@@ -30183,7 +30201,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v69';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v71';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
