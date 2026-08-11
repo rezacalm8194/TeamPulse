@@ -59,6 +59,9 @@ router.post('/register', (req, res) => {
     const token = sign({ id, email, role: 'owner' });
     res.status(201).json({ token, user: { id, name, email, business_name, role: 'owner' } });
   } catch (e) {
+    if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ error: 'email already exists' });
+    }
     res.status(500).json({ error: e.message });
   }
 });
@@ -169,6 +172,9 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       instructionFolders: member.instruction_folders || member.instructionFolders || []
     });
   } catch (e) {
+    if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ error: 'email already exists' });
+    }
     res.status(500).json({ error: e.message });
   }
 });

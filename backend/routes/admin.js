@@ -283,7 +283,12 @@ router.post('/users', auth, adminOnly, async (req, res) => {
     db.prepare("INSERT INTO accounts (id,name,email,password,role,plan,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,datetime('now'),datetime('now'))")
       .run(id, name, email, passwordHash, role, plan);
     res.status(201).json({ success: true, id });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) {
+    if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ error:'email already exists' });
+    }
+    res.status(500).json({ error:e.message });
+  }
 });
 
 router.put('/users/:id/role', auth, adminOnly, (req, res) => {
@@ -428,7 +433,12 @@ router.post('/users/notify', auth, adminOnly, async (req, res) => {
       }
     }
     res.json({ success:true, sent, subscriptions:subscriptions.length });
-  } catch(e) { res.status(500).json({ error:e.message }); }
+  } catch(e) {
+    if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ error:'email already exists' });
+    }
+    res.status(500).json({ error:e.message });
+  }
 });
 
 router.post('/charge-requests/:id/approve', auth, adminOnly, (req, res) => {
@@ -480,6 +490,9 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
     });
 
     deleteAccountCascade(targetId);
+    // If this was the last legacy case-only duplicate, enforce uniqueness
+    // immediately without waiting for another server restart.
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(lower(trim(email)))');
     res.json({ success: true });
   } catch(e) {
     console.error('Delete user failed:', e);

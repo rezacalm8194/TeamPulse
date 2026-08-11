@@ -5,7 +5,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT COLLATE NOCASE UNIQUE NOT NULL,
   password TEXT NOT NULL,
   role TEXT DEFAULT 'owner',
   business_name TEXT,
@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase
+  ON accounts(lower(trim(email)));
 
 CREATE TABLE IF NOT EXISTS task_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

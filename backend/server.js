@@ -3,10 +3,19 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const db = require('./config/database');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
+try {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(lower(trim(email)))');
+} catch (error) {
+  // A legacy case-only duplicate must be removed once by an admin before the
+  // database can enforce the new invariant. Registration still performs its
+  // normalized lookup in the meantime.
+  console.error('[accounts] case-insensitive email index pending:', error.message);
+}
 const allowedCorsOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGINS || '')
   .split(',')
   .map(origin => origin.trim())
