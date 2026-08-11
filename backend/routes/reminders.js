@@ -8,6 +8,9 @@ const auth = require('../middleware/auth');
 const cron = require('node-cron');
 const webpush = require('web-push');
 const { randomUUID } = require('crypto');
+const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
+
+ensureTeamAccessSchema(db);
 
 // ── VAPID تنظیمات ──────────────────────────────────────────────
 webpush.setVapidDetails(
@@ -28,20 +31,9 @@ try {
       subscriber_user_id TEXT,
       subscriber_email TEXT,
       member_email TEXT,
+      workspace_id TEXT DEFAULT 'default',
       scope TEXT DEFAULT 'owner',
       created_at TEXT DEFAULT (datetime('now'))
-    )
-  `).run();
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS team_access_grants (
-      owner_account_id TEXT NOT NULL,
-      member_email TEXT NOT NULL,
-      invite_id TEXT,
-      permissions TEXT DEFAULT '[]',
-      instruction_folders TEXT DEFAULT '[]',
-      status TEXT DEFAULT 'active',
-      updated_at TEXT DEFAULT (datetime('now')),
-      PRIMARY KEY (owner_account_id, member_email)
     )
   `).run();
   db.prepare(`
@@ -64,6 +56,7 @@ function ensurePushSubscriptionColumn(name, ddl) {
 ensurePushSubscriptionColumn('subscriber_user_id', 'subscriber_user_id TEXT');
 ensurePushSubscriptionColumn('subscriber_email', 'subscriber_email TEXT');
 ensurePushSubscriptionColumn('member_email', 'member_email TEXT');
+ensurePushSubscriptionColumn('workspace_id', "workspace_id TEXT DEFAULT 'default'");
 ensurePushSubscriptionColumn('scope', "scope TEXT DEFAULT 'owner'");
 
 try {
@@ -97,14 +90,26 @@ function parseJsonArray(value) {
   }
 }
 
-function getActiveTeamGrant(ownerAccountId, memberEmail) {
+function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
   if (!ownerAccountId || !memberEmail) return null;
   const grant = db.prepare(`
     SELECT permissions
     FROM team_access_grants
-    WHERE owner_account_id=? AND member_email=? AND status='active'
-  `).get(ownerAccountId, memberEmail);
-  return grant ? { permissions: parseJsonArray(grant.permissions) } : null;
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+  `).get(ownerAccountId, workspaceId, memberEmail);
+  if (!grant) return null;
+  const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(workspaceStorageKey(ownerAccountId, workspaceId));
+  if (!row?.data) return { permissions: parseJsonArray(grant.permissions) };
+  try {
+    const data = JSON.parse(row.data);
+    const member = (data.team_members || []).find(item =>
+      String(item.email || '').trim().toLowerCase() === memberEmail &&
+      item.status !== 'حذف‌شده'
+    );
+    return member ? { permissions: Array.isArray(member.permissions) ? member.permissions : [] } : null;
+  } catch {
+    return null;
+  }
 }
 
 function staffEmail(staff) {
@@ -297,25 +302,25 @@ function todoScheduledDate(todo) {
 }
 
 // ── ارسال push فقط به صاحب حساب ───────────────────────────────
-async function pushToOwner(accountId, title, body, options = {}) {
+async function pushToOwner(accountId, workspaceId, title, body, options = {}) {
   const ownerEmail = accountEmail(accountId);
   const subs = db.prepare(`
     SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, scope
     FROM push_subscriptions
-    WHERE account_id=?
+    WHERE account_id=? AND COALESCE(workspace_id,'default')=?
       AND (scope IS NULL OR scope!='team')
-  `).all(accountId).filter(sub => isOwnerSubscription(sub, accountId, ownerEmail));
+  `).all(accountId, workspaceId).filter(sub => isOwnerSubscription(sub, accountId, ownerEmail));
   return sendPushSubscriptions(subs, title, body, options);
 }
 
 // ── ارسال push تسک به صاحب حساب و پرسنل مرتبط ─────────────────
-async function pushTodoToRecipients(accountId, userData, todo, title, body) {
+async function pushTodoToRecipients(accountId, workspaceId, userData, todo, title, body) {
   const ownerEmail = accountEmail(accountId);
   const subs = db.prepare(`
     SELECT id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, scope
     FROM push_subscriptions
-    WHERE account_id=?
-  `).all(accountId);
+    WHERE account_id=? AND COALESCE(workspace_id,'default')=?
+  `).all(accountId, workspaceId);
   if (!subs.length) return { sent: 0, failed: 0 };
 
   const allowed = [];
@@ -326,7 +331,7 @@ async function pushTodoToRecipients(accountId, userData, todo, title, body) {
     }
 
     const memberEmail = String(sub.member_email || sub.subscriber_email || '').trim().toLowerCase();
-    const grant = getActiveTeamGrant(accountId, memberEmail);
+    const grant = getActiveTeamGrant(accountId, workspaceId, memberEmail);
     if (!grant) continue;
     if (todoShouldNotifyTeamMember(todo, userData, memberEmail, grant.permissions)) {
       allowed.push(sub);
@@ -418,7 +423,7 @@ cron.schedule('* * * * *', async () => {
           const key = `todo:${acc.id}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
           console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
           await deliverOnce(key, acc.id, 'todo', () =>
-            pushTodoToRecipients(acc.id, userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
+            pushTodoToRecipients(acc.id, 'default', userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
           );
         }
       }
@@ -435,7 +440,7 @@ cron.schedule('* * * * *', async () => {
           const key = `habit:${acc.id}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
           console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
           await deliverOnce(key, acc.id, 'habit', () =>
-            pushToOwner(acc.id, '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
+            pushToOwner(acc.id, 'default', '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
               kind: 'habit', tag: `habit-${h.id}`, url: '/app#habits',
             })
           );
@@ -460,7 +465,7 @@ cron.schedule('* * * * *', async () => {
           const key = `financial:${acc.id}:${r.id}:${r.due_date_jalali}`;
           const name = studentNames.get(String(r.student_id)) || '';
           await deliverOnce(key, acc.id, 'financial-reminder', () =>
-            pushToOwner(acc.id, r.title || 'یادآوری پرداخت', reminderBody(r, name), {
+            pushToOwner(acc.id, 'default', r.title || 'یادآوری پرداخت', reminderBody(r, name), {
               kind: 'financial-reminder', tag: `financial-${r.id}`, url: '/app#reminders',
             })
           );
@@ -472,7 +477,7 @@ cron.schedule('* * * * *', async () => {
           const key = `staff:${acc.id}:${r.id}:${r.due_date_jalali}`;
           const name = staffNames.get(String(r.staff_id)) || '';
           await deliverOnce(key, acc.id, 'staff-reminder', () =>
-            pushToOwner(acc.id, r.title || 'یادآوری حقوق', reminderBody(r, name), {
+            pushToOwner(acc.id, 'default', r.title || 'یادآوری حقوق', reminderBody(r, name), {
               kind: 'staff-reminder', tag: `staff-reminder-${r.id}`, url: '/app#staff',
             })
           );
@@ -484,7 +489,7 @@ cron.schedule('* * * * *', async () => {
           const key = `key-event:${acc.id}:${e.id}:${e.remind_date}`;
           const name = studentNames.get(String(e.student_id)) || '';
           await deliverOnce(key, acc.id, 'key-event', () =>
-            pushToOwner(acc.id, '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
+            pushToOwner(acc.id, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
               kind: 'key-event', tag: `key-event-${e.id}`, url: '/app#students',
             })
           );
@@ -502,7 +507,9 @@ console.log('[Push] Cron started — checking every minute');
 router.post('/subscribe', auth, (req, res) => {
   try {
     const { subscription, ownerAccountId } = req.body;
+    const workspaceId = normalizeWorkspaceId(req.body?.workspaceId || 'default');
     if (!subscription?.endpoint) return res.status(400).json({ error: 'invalid' });
+    if (!workspaceId) return res.status(400).json({ error: 'invalid_workspace' });
 
     const requesterEmail = String(req.user.email || '').trim().toLowerCase();
     const requestedOwnerId = String(ownerAccountId || '').trim();
@@ -511,7 +518,7 @@ router.post('/subscribe', auth, (req, res) => {
     let memberEmail = null;
 
     if (requestedOwnerId && requestedOwnerId !== req.user.id) {
-      const grant = getActiveTeamGrant(requestedOwnerId, requesterEmail);
+      const grant = getActiveTeamGrant(requestedOwnerId, workspaceId, requesterEmail);
       if (!grant) return res.status(403).json({ error: 'team access not allowed' });
       accountId = requestedOwnerId;
       scope = 'team';
@@ -519,21 +526,21 @@ router.post('/subscribe', auth, (req, res) => {
     }
 
     // چک کن قبلاً همین endpoint نباشه
-    const exists = db.prepare('SELECT id FROM push_subscriptions WHERE account_id=? AND endpoint=?')
-      .get(accountId, subscription.endpoint);
+    const exists = db.prepare("SELECT id FROM push_subscriptions WHERE account_id=? AND COALESCE(workspace_id,'default')=? AND endpoint=?")
+      .get(accountId, workspaceId, subscription.endpoint);
 
     if (exists) {
       db.prepare(`
         UPDATE push_subscriptions
-        SET subscription=?, subscriber_user_id=?, subscriber_email=?, member_email=?, scope=?, created_at=datetime('now')
+        SET subscription=?, subscriber_user_id=?, subscriber_email=?, member_email=?, workspace_id=?, scope=?, created_at=datetime('now')
         WHERE id=?
-      `).run(JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, scope, exists.id);
+      `).run(JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, workspaceId, scope, exists.id);
     } else {
       db.prepare(`
         INSERT INTO push_subscriptions
-          (id, account_id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, scope)
-        VALUES (?,?,?,?,?,?,?,?)
-      `).run(randomUUID(), accountId, subscription.endpoint, JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, scope);
+          (id, account_id, endpoint, subscription, subscriber_user_id, subscriber_email, member_email, workspace_id, scope)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(randomUUID(), accountId, subscription.endpoint, JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, workspaceId, scope);
     }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -597,16 +604,17 @@ router.post('/test-push', auth, async (req, res) => {
 router.post('/notify-todo-created', auth, async (req, res) => {
   try {
     const accountId = String(req.body?.ownerAccountId || req.user.id || '').trim();
+    const workspaceId = normalizeWorkspaceId(req.body?.workspaceId || 'default');
     const todoId = String(req.body?.todoId || '').trim();
-    if (!accountId || !todoId) return res.status(400).json({ error: 'invalid_todo' });
+    if (!accountId || !workspaceId || !todoId) return res.status(400).json({ error: 'invalid_todo' });
 
     const requesterEmail = String(req.user.email || '').trim().toLowerCase();
     const isOwner = String(req.user.id) === accountId || req.user.role === 'admin';
-    if (!isOwner && !getActiveTeamGrant(accountId, requesterEmail)) {
+    if (!isOwner && !getActiveTeamGrant(accountId, workspaceId, requesterEmail)) {
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(accountId);
+    const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(workspaceStorageKey(accountId, workspaceId));
     if (!row?.data) return res.status(404).json({ error: 'account_data_not_found' });
     const userData = JSON.parse(row.data);
     const todo = (userData.todos || []).find(item => String(item?.id) === todoId);
@@ -622,11 +630,11 @@ router.post('/notify-todo-created', auth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    const deliveryKey = `todo-created:${accountId}:${todoId}:${todo.created_at || ''}`;
+    const deliveryKey = `todo-created:${accountId}:${workspaceId}:${todoId}:${todo.created_at || ''}`;
     const schedule = [todoScheduledDate(todo), todo.time].filter(Boolean).join(' ساعت ');
     const body = `${schedule ? schedule + ' — ' : ''}${todo.note ? String(todo.note).slice(0, 80) : 'یک کار جدید ثبت شد'}`;
     const delivered = await deliverOnce(deliveryKey, accountId, 'todo-created', () =>
-      pushTodoToRecipients(accountId, userData, todo, `کار جدید: ${todo.title || 'بدون عنوان'}`, body)
+      pushTodoToRecipients(accountId, workspaceId, userData, todo, `کار جدید: ${todo.title || 'بدون عنوان'}`, body)
     );
     res.json({ success: true, delivered });
   } catch (e) {

@@ -8000,6 +8000,7 @@ async function _ensureTeamAccessOwner() {
       ownerUserId: resolved.ownerUserId || session.ownerUserId || '',
       ownerName: resolved.ownerName || session.ownerName || '',
       ownerEmail: resolved.ownerEmail || session.ownerEmail || '',
+      accountId: resolved.accountId || session.accountId || 'default',
       staffId: resolved.staffId || resolved.staff_id || session.staffId || '',
       roleKey: resolved.roleKey || resolved.role_key || resolved.team_role || session.roleKey || 'staff_basic',
       permissions: _normalizeTeamPermissions(resolved.permissions?.length ? resolved.permissions : session.permissions),
@@ -13459,13 +13460,14 @@ function archiveColumnValue(s,label){const field=archiveFieldForHeader(label);if
 function archiveColumnClass(label){const field=archiveFieldForHeader(label);if(archiveHeaderKey(label)==='شهر')return 'archive-col-city';return ({full_name:'archive-col-name',name:'archive-col-name',lname:'archive-col-name',phone:'archive-col-phone',organization_name:'archive-col-org',customer_category:'archive-col-category',referral_source:'archive-col-referral',description:'archive-col-need',relationship_status:'archive-col-status',date_jalali:'archive-col-date'})[field]||'';}
 function archiveStatusClass(value){const k=archiveHeaderKey(value);return ({'نیازمندپیگیری':'archive-status-followup','ناموفق':'archive-status-failed','تماسگرفتهشد':'archive-status-contacted','جلسه':'archive-status-meeting'})[k]||'';}
 function archiveStatusBadge(value){const label=String(value||'').trim();if(!label)return '<span class="archive-status-badge is-neutral">—</span>';const k=archiveHeaderKey(label),cls=({'تماسنگرفته':'is-uncontacted','تماسگرفتهشد':'is-contacted','جلسه':'is-meeting','نیازمندپیگیری':'is-followup','مشتریشد':'is-customer','ناموفق':'is-failed'})[k]||'is-neutral';return `<span class="archive-status-badge ${cls}">${escapeHtml(label)}</span>`;}
+function sortArchiveFieldReferralsFirst(rows){return [...(rows||[])].sort((a,b)=>Number(archiveHeaderKey(b.referral_source)==='میدانی')-Number(archiveHeaderKey(a.referral_source)==='میدانی'));}
 function archiveExtraFieldsHtml(s={},scope='archive',excluded=[]){const excludedKeys=excluded.map(archiveHeaderKey);return archiveColumns.filter(c=>!archiveFieldForHeader(c)&&!excludedKeys.includes(archiveHeaderKey(c))).map(c=>{const key=archiveHeaderKey(c),value=String(s.archive_data?.[key]??'');return `<div class="form-group"><label class="form-label">${escapeHtml(c)}</label><input class="form-input" data-archive-extra data-archive-scope="${scope}" data-archive-key="${escapeHtml(key)}" value="${escapeHtml(value)}"></div>`;}).join('');}
 function collectArchiveExtraData(scope,base={}){const data={...(base||{})};document.querySelectorAll(`[data-archive-extra][data-archive-scope="${scope}"]`).forEach(input=>{data[input.dataset.archiveKey]=input.value.trim();});return data;}
 
 async function renderArchive() {
   updateTopbarActions('');
   const archiveData = await Promise.all([window.api.students.getArchived(),window.api.students.getArchiveColumns(),window.api.students.getArchiveOptions()]);
-  archiveStudents=archiveData[0];archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
+  archiveStudents=sortArchiveFieldReferralsFirst(archiveData[0]);archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
   const html = `${studentSectionNav('archive')}<div class="table-card">
     <div class="archive-toolbar">
       <div><div class="title">🗃 فهرست بایگانی</div><div class="archive-sheet-count" id="archive-count">${fa(archiveStudents.length)} نفر</div></div>
@@ -21023,7 +21025,7 @@ function _notifyRecentCreatedTodos(accountId) {
       window._todoCreatedNotifyRequests.add(requestKey);
       _apiFetch('/api/reminders/notify-todo-created', {
         method: 'POST',
-        body: JSON.stringify({ ownerAccountId: accountId, todoId: todo.id }),
+        body: JSON.stringify({ ownerAccountId: accountId, workspaceId: _currentAccountId(), todoId: todo.id }),
       }).then(res => {
         if (res.status >= 500) window._todoCreatedNotifyRequests.delete(requestKey);
       }).catch(e => {
@@ -26529,10 +26531,11 @@ function _pushSubscriptionContext() {
   if (teamSession?.ownerUserId) {
     return {
       ownerAccountId: teamSession.ownerUserId,
+      workspaceId: teamSession.accountId || 'default',
       scope: 'team',
     };
   }
-  return { scope: 'owner' };
+  return { workspaceId: _currentAccountId(), scope: 'owner' };
 }
 
 function _isIOSDeviceForPush() {

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { createHash } = require('crypto');
+const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -27,24 +28,7 @@ db.prepare(`
   )
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_account_workspaces_owner ON account_workspaces(owner_account_id, created_at)").run();
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS team_access_grants (
-    owner_account_id TEXT NOT NULL,
-    member_email TEXT NOT NULL,
-    staff_id TEXT,
-    invite_id TEXT,
-    permissions TEXT DEFAULT '[]',
-    instruction_folders TEXT DEFAULT '[]',
-    status TEXT DEFAULT 'active',
-    updated_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (owner_account_id, member_email)
-  )
-`).run();
-try {
-  db.prepare("ALTER TABLE team_access_grants ADD COLUMN staff_id TEXT").run();
-} catch (e) {
-  if (!String(e.message || '').includes('duplicate column name')) throw e;
-}
+ensureTeamAccessSchema(db);
 
 const DATA_ARRAY_KEYS = [
   'students',
@@ -87,43 +71,24 @@ function sanitizeUserDataForStorage(data) {
   return clean;
 }
 
-function canAccessAccount(req, targetId) {
+function canAccessWorkspace(req, targetId, workspaceId) {
   if (req.user.id === targetId || req.user.role === 'admin') return true;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return false;
+  const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail);
+  if (member !== undefined) return !!member;
   const grant = db.prepare(`
     SELECT owner_account_id
     FROM team_access_grants
-    WHERE owner_account_id=? AND member_email=? AND status='active'
-  `).get(targetId, requesterEmail);
-  if (grant) return true;
-  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
-  if (!row?.data) return false;
-  try {
-    const data = JSON.parse(row.data);
-    return (data.team_members || []).some(member =>
-      String(member.email || '').trim().toLowerCase() === requesterEmail &&
-      member.status !== 'حذف‌شده'
-    );
-  } catch {
-    return false;
-  }
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+  `).get(targetId, workspaceId, requesterEmail);
+  return !!grant;
 }
 
 const MAX_WORKSPACES_PER_ACCOUNT = 5; // default + at most four additional businesses
 
 function requestedWorkspaceId(req) {
-  const value = String(req.query.workspace || req.body?.workspace || 'default').trim();
-  if (!value || value === 'default') return 'default';
-  // Client-generated IDs are acc_<timestamp>. Keep the validation deliberately
-  // strict so a workspace can never escape into another account's storage key.
-  return /^acc_[a-zA-Z0-9_-]{6,80}$/.test(value) ? value : null;
-}
-
-function workspaceStorageKey(ownerAccountId, workspaceId) {
-  return workspaceId === 'default'
-    ? ownerAccountId
-    : `${ownerAccountId}::workspace::${workspaceId}`;
+  return normalizeWorkspaceId(req.query.workspace || req.body?.workspace || 'default');
 }
 
 function workspaceExists(ownerAccountId, workspaceId) {
@@ -192,9 +157,9 @@ function normalizeTeamPermissions(permissions) {
   return list;
 }
 
-function memberFromAccountData(targetId, memberEmail, inviteId = '') {
-  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(targetId);
-  if (!row?.data) return null;
+function memberFromWorkspaceData(targetId, workspaceId, memberEmail, inviteId = '') {
+  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(workspaceStorageKey(targetId, workspaceId));
+  if (!row?.data) return undefined;
   try {
     const data = JSON.parse(row.data);
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
@@ -211,27 +176,28 @@ function memberFromAccountData(targetId, memberEmail, inviteId = '') {
     }
     return member || null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
-function getTeamGrant(req, targetId) {
+function getTeamGrant(req, targetId, workspaceId) {
   if (req.user.id === targetId || req.user.role === 'admin') return null;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return null;
   const grant = db.prepare(`
     SELECT permissions, invite_id, staff_id
     FROM team_access_grants
-    WHERE owner_account_id=? AND member_email=? AND status='active'
-  `).get(targetId, requesterEmail);
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+  `).get(targetId, workspaceId, requesterEmail);
   if (!grant) {
-    const member = memberFromAccountData(targetId, requesterEmail);
+    const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail);
     const permissions = normalizeTeamPermissions(member?.permissions || []);
     const staffId = String(member?.staff_id || member?.staffId || '').trim();
     return permissions.length ? { email: requesterEmail, permissions, staffId } : null;
   }
   const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
-  const member = memberFromAccountData(targetId, requesterEmail, grant.invite_id);
+  const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
+  if (member === null) return null;
   const currentPermissions = normalizeTeamPermissions(member?.permissions || []);
   const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
   const staffId = String(member?.staff_id || member?.staffId || grant.staff_id || '').trim();
@@ -458,11 +424,11 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
 function handleSaveData(req, res) {
   try {
     const targetId = req.params.accountId;
-    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const storageKey = workspace.storageKey;
-    const grant = getTeamGrant(req, targetId);
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     const { force, base_etag: baseEtag } = req.body;
     let data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
@@ -537,11 +503,20 @@ router.post('/:accountId', auth, handleSaveData);
 
 router.get('/:accountId/workspaces', auth, (req, res) => {
   const targetId = req.params.accountId;
-  if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
-  const rows = db.prepare(`
-    SELECT workspace_id AS id,name,created_at AS created
-    FROM account_workspaces WHERE owner_account_id=? ORDER BY created_at,id
-  `).all(targetId);
+  const isOwner = req.user.id === targetId || req.user.role === 'admin';
+  const requesterEmail = String(req.user.email || '').trim().toLowerCase();
+  const rows = isOwner
+    ? db.prepare('SELECT workspace_id AS id,name,created_at AS created FROM account_workspaces WHERE owner_account_id=? ORDER BY created_at,id').all(targetId)
+    : db.prepare(`
+        SELECT w.workspace_id AS id,w.name,w.created_at AS created
+        FROM account_workspaces w
+        JOIN team_access_grants g ON g.owner_account_id=w.owner_account_id AND g.workspace_id=w.workspace_id
+        WHERE w.owner_account_id=? AND g.member_email=? AND g.status='active'
+        ORDER BY w.created_at,w.workspace_id
+      `).all(targetId, requesterEmail);
+  const hasDefault = isOwner || !!db.prepare(`SELECT 1 FROM team_access_grants WHERE owner_account_id=? AND workspace_id='default' AND member_email=? AND status='active'`).get(targetId, requesterEmail);
+  if (!isOwner && !hasDefault && !rows.length) return res.status(403).json({ error: 'forbidden' });
+  if (hasDefault) rows.unshift({ id:'default', name:'میزکار اصلی', created:null });
   res.json({ workspaces: rows, limit: MAX_WORKSPACES_PER_ACCOUNT });
 });
 
@@ -581,6 +556,8 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
   const run = db.transaction(() => {
     const result = db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
     if (!result.changes) return false;
+    db.prepare('DELETE FROM team_access_grants WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
+    try { db.prepare("DELETE FROM push_subscriptions WHERE account_id=? AND COALESCE(workspace_id,'default')=?").run(targetId, workspaceId); } catch {}
     db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data WHERE account_id=?').run(storageKey);
     return true;
@@ -594,9 +571,9 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
 router.get('/:accountId/versions', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
-    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const storageKey = workspace.storageKey;
     const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25)));
     const rows = db.prepare(`
@@ -663,12 +640,12 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
 router.get('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
-    if (!canAccessAccount(req, targetId)) return res.status(403).json({ error: 'forbidden' });
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(workspace.storageKey);
     if (!row) return res.json({ data: null });
-    const grant = getTeamGrant(req, targetId);
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     const data = JSON.parse(row.data);
     res.json({
       data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data),

@@ -4,25 +4,9 @@ const { randomUUID } = require('crypto');
 const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const auth = require('../middleware/auth');
+const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS team_access_grants (
-    owner_account_id TEXT NOT NULL,
-    member_email TEXT NOT NULL,
-    staff_id TEXT,
-    invite_id TEXT,
-    permissions TEXT DEFAULT '[]',
-    instruction_folders TEXT DEFAULT '[]',
-    status TEXT DEFAULT 'active',
-    updated_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (owner_account_id, member_email)
-  )
-`).run();
-try {
-  db.prepare("ALTER TABLE team_access_grants ADD COLUMN staff_id TEXT").run();
-} catch (e) {
-  if (!String(e.message || '').includes('duplicate column name')) throw e;
-}
+ensureTeamAccessSchema(db);
 
 const TODO_TEAM_PERMISSION_KEYS = [
   'todo_view_assigned',
@@ -112,7 +96,9 @@ router.post('/team-invite/resolve', auth, (req, res) => {
     const inviteId = String(req.body?.inviteId || '').trim();
     const invitedEmail = String(req.body?.email || '').trim().toLowerCase();
     const memberEmail = String(req.user.email || '').trim().toLowerCase();
+    const workspaceId = normalizeWorkspaceId(req.body?.accountId || 'default');
     if ((!ownerEmail && !ownerUserId) || !memberEmail) return res.status(400).json({ error: 'owner required' });
+    if (!workspaceId) return res.status(400).json({ error: 'invalid_workspace' });
     if (invitedEmail && invitedEmail !== memberEmail) return res.status(403).json({ error: 'invite email mismatch' });
 
     const owner = ownerUserId
@@ -122,8 +108,12 @@ router.post('/team-invite/resolve', auth, (req, res) => {
     if (ownerEmail && String(owner.email || '').trim().toLowerCase() !== ownerEmail) {
       return res.status(403).json({ error: 'owner email mismatch' });
     }
+    if (workspaceId !== 'default') {
+      const workspace = db.prepare('SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').get(owner.id, workspaceId);
+      if (!workspace) return res.status(404).json({ error: 'workspace_not_found' });
+    }
 
-    const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(owner.id);
+    const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(workspaceStorageKey(owner.id, workspaceId));
     let data = null;
     try { data = row?.data ? JSON.parse(row.data) : null; } catch {}
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
@@ -159,9 +149,9 @@ router.post('/team-invite/resolve', auth, (req, res) => {
 
     db.prepare(`
       INSERT INTO team_access_grants
-        (owner_account_id, member_email, staff_id, invite_id, permissions, instruction_folders, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
-      ON CONFLICT(owner_account_id, member_email) DO UPDATE SET
+        (owner_account_id, workspace_id, member_email, staff_id, invite_id, permissions, instruction_folders, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+      ON CONFLICT(owner_account_id, workspace_id, member_email) DO UPDATE SET
         staff_id=excluded.staff_id,
         invite_id=excluded.invite_id,
         permissions=excluded.permissions,
@@ -170,6 +160,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
         updated_at=datetime('now')
     `).run(
       owner.id,
+      workspaceId,
       memberEmail,
       staffId,
       inviteId || String(member.id || ''),
@@ -181,7 +172,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       ownerUserId: owner.id,
       ownerName: owner.name || '',
       ownerEmail: owner.email || '',
-      accountId: req.body?.accountId || 'default',
+      accountId: workspaceId,
       staffId,
       roleKey,
       permissions,
