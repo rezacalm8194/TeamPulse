@@ -21337,6 +21337,19 @@ async function _syncToServer(conflictAttempt = 0) {
       window._teamOwnerDataReady = true;
     }
     if (!accId) return null;
+    const activeWorkspaceId = _currentAccountId();
+    if (!teamSession && activeWorkspaceId !== 'default' && String(_db?._workspaceId || '') !== activeWorkspaceId) {
+      _markServerSyncPending('workspace-data-identity-mismatch');
+      if (!window._workspaceIdentityMismatchWarned) {
+        window._workspaceIdentityMismatchWarned = true;
+        showToast('برای جلوگیری از جابه‌جایی داده‌ها، ذخیره این میزکار متوقف شد؛ صفحه را رفرش کنید', 'error');
+      }
+      console.error('[Workspace] blocked cross-workspace sync', {
+        activeWorkspaceId,
+        dataWorkspaceId: _db?._workspaceId || null,
+      });
+      return null;
+    }
     const forceSync = !!window._forceNextSync;
     const localSavedAt = Number(_db?._lastSaved || 0) || 0;
     const localFingerprint = _dataFingerprint(_serverDataSignature(_db));
@@ -21494,8 +21507,24 @@ async function _loadFromServer() {
     if (!ct.includes('application/json')) return false;
     const payload = await res.json();
     const { data } = payload;
+    const activeWorkspaceId = _currentAccountId();
+    if (payload.workspace_id && String(payload.workspace_id) !== activeWorkspaceId) {
+      console.error('[Workspace] ignored response for a different workspace', {
+        activeWorkspaceId,
+        responseWorkspaceId: payload.workspace_id,
+      });
+      return false;
+    }
+    if (activeWorkspaceId !== 'default' && data?._workspaceId && String(data._workspaceId) !== activeWorkspaceId) {
+      console.error('[Workspace] ignored data carrying a different workspace identity', {
+        activeWorkspaceId,
+        dataWorkspaceId: data._workspaceId,
+      });
+      return false;
+    }
     window._serverDataEtag = payload.etag || window._serverDataEtag || null;
     if (!data) return false;
+    if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
     if (_isManualRestoreProtected()) {
       const expectedSig = _getManualRestoreExpectedSignature();
       const localSig = _dataFingerprint(_serverDataSignature(_db));
@@ -21575,6 +21604,23 @@ async function _loadFromServer() {
     // merge: همیشه از سرور load کن اگه داده داشت
     // (اولویت با سرور چون همه دستگاه‌ها sync می‌کنن)
     if (data && Object.keys(data).length > 0) {
+      // A secondary workspace created by this app always carries its own id.
+      // If the local cache does not, it may be a copy of the default workspace;
+      // replace that cache from the workspace-scoped server document instead of
+      // merging unrelated personnel and business data into it.
+      const localWorkspaceMismatch = activeWorkspaceId !== 'default' &&
+        String(_db?._workspaceId || '') !== activeWorkspaceId;
+      if (localWorkspaceMismatch) {
+        _db = data;
+        _migrate(_db);
+        const key = window._activeDBKey || DB_KEY;
+        _persistDatabaseSnapshot(key, _db);
+        window._lastServerSyncSavedAt = Number(_db._lastSaved || 0) || 0;
+        _writeServerSyncBaseline(_db, window._serverDataEtag);
+        _clearServerSyncPending(_db._lastSaved || Date.now());
+        console.warn('[Workspace] replaced mismatched local cache with scoped server data');
+        return true;
+      }
       const { serverTime, localTime } = _serverTimes(data);
       const pendingSync = _readServerSyncPending();
       if (pendingSync) {
