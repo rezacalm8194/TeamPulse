@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v71';
+const CACHE = 'team-pulse-static-v72';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
@@ -78,7 +78,9 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   if (shouldSkip(request)) return;
   if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(networkFirst(request));
+    // Render the cached application immediately and refresh it in the
+    // background. Network-first made every navigation wait for a slow host.
+    event.respondWith(staleWhileRevalidate(request));
     return;
   }
   event.respondWith(staleWhileRevalidate(request));

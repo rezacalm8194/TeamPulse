@@ -395,13 +395,24 @@ function reminderBody(item, personName = '') {
   return `${personName ? personName + ' — ' : ''}سررسید ${item.due_date_jalali || ''}${amountText}${noteText}`;
 }
 
+let pushCronRunning = false;
+const activeAccountsStmt = db.prepare('SELECT id FROM accounts WHERE is_active=1');
+const accountDataStmt = db.prepare('SELECT data FROM user_data WHERE account_id=?');
+
 cron.schedule('* * * * *', async () => {
+  // node-cron does not wait for a previous async run. Avoid piling up full
+  // account scans when push delivery or the host is temporarily slow.
+  if (pushCronRunning) return;
+  pushCronRunning = true;
   try {
     const now = new Date();
-    const accounts = db.prepare('SELECT id FROM accounts WHERE is_active=1').all();
+    const accounts = activeAccountsStmt.all();
 
     for (const acc of accounts) {
-      const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(acc.id);
+      // Yield between accounts so static files and API requests are not held
+      // behind a long reminder scan in Node's single event loop.
+      await new Promise(resolve => setImmediate(resolve));
+      const row = accountDataStmt.get(acc.id);
       if (!row || !row.data) continue;
 
       let userData;
@@ -411,7 +422,8 @@ cron.schedule('* * * * *', async () => {
         const scheduledDate = todoScheduledDate(t);
         if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
         if (!todoBelongsToAccount(t, acc.id)) {
-          console.warn(`[Push] skipped foreign todo "${t.title}" (belongs to ${t.owner_id}, not account ${acc.id})`);
+          // This is an expected ownership guard, not an operational warning.
+          // Logging every skipped item each minute caused excessive PM2 disk I/O.
           continue;
         }
 
@@ -498,6 +510,8 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (e) {
     console.error('[Push Cron] Error:', e.message);
+  } finally {
+    pushCronRunning = false;
   }
 });
 
