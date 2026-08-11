@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v69';
+const CACHE = 'team-pulse-static-v70';
 const CORE_ASSETS = [
   '/app',
   '/manifest.json',
@@ -62,7 +62,15 @@ async function staleWhileRevalidate(request) {
       if (cacheableResponse(response)) cache.put(request, response.clone());
       return response;
     })
-    .catch(() => cached);
+    // event.respondWith() must always resolve to an actual Response. When the
+    // browser is offline and this asset has never been cached, `cached` is
+    // undefined; returning it makes Chrome report:
+    // "Failed to convert value to 'Response'".
+    .catch(() => cached || new Response('', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    }));
   return cached || fresh;
 }
 
