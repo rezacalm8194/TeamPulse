@@ -45,9 +45,8 @@ function securityHeaders(req, res, next) {
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   next();
 }
-function reportOnlyCsp(req, res, next) {
+function applyCsp(req, res, next) {
   res.setHeader('Content-Security-Policy', cspValue);
-  res.setHeader('Content-Security-Policy-Report-Only', cspValue);
   next();
 }
 function noStoreApi(req, res, next) {
@@ -122,9 +121,13 @@ app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/speech', speechLimiter, require('./routes/speech'));
 console.log('Speech API loaded');
-app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
+app.get('/api/health', (req, res) => res.json({
+  status: 'ok',
+  version: '1.0.0',
+  capabilities: { workspaces: true },
+}));
 app.get('/share/:token', require('./routes/share').serveShare);
-app.get('/app', reportOnlyCsp, (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
+app.get('/app', applyCsp, (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
 app.use('/api', (req, res) => res.status(404).json({
   error: 'api_route_not_found',
   path: req.originalUrl,
@@ -145,7 +148,6 @@ function setStaticCacheHeaders(res, filePath) {
   if (ext === '.html') {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Content-Security-Policy', cspValue);
-    res.setHeader('Content-Security-Policy-Report-Only', cspValue);
   } else if (/\.(?:css|js|png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
     res.setHeader('Cache-Control', 'public, max-age=86400');
   }
@@ -157,6 +159,6 @@ app.use(express.static(path.join(__dirname, '../'), {
   fallthrough: true,
   setHeaders: setStaticCacheHeaders,
 }));
-app.use(reportOnlyCsp, (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
+app.use(applyCsp, (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 app.listen(PORT, () => console.log('TeamPulse API on port ' + PORT));
 module.exports = app;

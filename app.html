@@ -7280,6 +7280,25 @@ async function _initializeEmptyWorkspace(id, name) {
   return empty;
 }
 
+let _workspaceCapabilityCache = { value: null, checkedAt: 0 };
+async function _supportsWorkspaceApi() {
+  const now = Date.now();
+  if (_workspaceCapabilityCache.value !== null && now - _workspaceCapabilityCache.checkedAt < 60000) {
+    return _workspaceCapabilityCache.value;
+  }
+  let supported = false;
+  try {
+    const res = await _apiFetch('/api/health');
+    if (res.ok) {
+      const payload = await res.json();
+      supported = payload?.capabilities?.workspaces === true;
+    }
+  } catch(e) {}
+  _workspaceCapabilityCache = { value: supported, checkedAt: now };
+  window._workspaceServerSupported = supported;
+  return supported;
+}
+
 async function _createAccount(name) {
   const accounts = _getAccounts();
   if (accounts.length + 1 >= MAX_WORKSPACES) {
@@ -7313,7 +7332,10 @@ async function _createAccount(name) {
     }
     return id;
   };
-  if (_sbSession?.token && ownerId !== 'guest') {
+  const canSyncWorkspace = _sbSession?.token && ownerId !== 'guest'
+    ? await _supportsWorkspaceApi()
+    : false;
+  if (canSyncWorkspace) {
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces', {
       method:'POST', body:JSON.stringify({ id, name })
     });
@@ -7353,12 +7375,12 @@ async function _createAccount(name) {
     }
     window._workspaceServerSupported = true;
   }
-  return finishCreation(false);
+  return finishCreation(!!(_sbSession?.token && ownerId !== 'guest' && !canSyncWorkspace));
 }
 async function _deleteAccount(id) {
   if (id === 'default') { showToast('میزکار پیش‌فرض قابل حذف نیست', 'error'); return; }
   const ownerId = _workspaceOwnerId();
-  if (_sbSession?.token && ownerId !== 'guest') {
+  if (_sbSession?.token && ownerId !== 'guest' && await _supportsWorkspaceApi()) {
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {method:'DELETE'});
     if (!res.ok && res.status !== 404) {
       showToast('حذف میزکار روی سرور انجام نشد؛ دوباره تلاش کنید', 'error');
@@ -7397,6 +7419,7 @@ window._save = function(stamp=true) {
 async function _refreshWorkspacesFromServer() {
   const ownerId = _workspaceOwnerId();
   if (!_sbSession?.token || ownerId === 'guest') return _getAccounts();
+  if (!await _supportsWorkspaceApi()) return _getAccounts();
   try {
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces');
     if (!res.ok) {
@@ -7586,7 +7609,7 @@ async function _renameAccount(id, newName) {
     const a = accs.find(x => x.id === id);
     if (a) { a.name = newName; _saveAccounts(accs); }
     const ownerId = _workspaceOwnerId();
-    if (_sbSession?.token && ownerId !== 'guest') {
+    if (_sbSession?.token && ownerId !== 'guest' && await _supportsWorkspaceApi()) {
       const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {
         method:'PATCH', body:JSON.stringify({ name:newName })
       });
