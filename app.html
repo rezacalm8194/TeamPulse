@@ -6065,20 +6065,24 @@ window.api = {
     },
     add: (p)=>{
       const id=_nextId('staff');
-      _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||'',card_number:p.card_number||'',person_type:p.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',note:p.note||'',created_at:new Date().toISOString()});
+      const paymentTiming=p.payment_timing==='start'?'start':'end';
+      _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||'',card_number:p.card_number||'',person_type:p.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',payment_timing:paymentTiming,note:p.note||'',created_at:new Date().toISOString()});
       const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const repeatMonths = p.repeat_months ?? 1;
-      if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const next=_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...next),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
+      if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const firstDue=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...firstDue),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
       _save(); return _P({id});
     },
     update: (p)=>{
       const s=_db.staff.find(x=>x.id===p.id); if(!s)return _P({ok:false});
-      Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||s.email||'',card_number:p.card_number||'',person_type:p.person_type||s.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,note:p.note||''});
+      const oldStart=s.start_date||'';
+      const oldTiming=s.payment_timing==='start'?'start':'end';
+      const paymentTiming=p.payment_timing==='start'?'start':'end';
+      Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||s.email||'',card_number:p.card_number||'',person_type:p.person_type||s.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,payment_timing:paymentTiming,note:p.note||''});
       if(p.start_date)s.start_date=p.start_date;
       const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const er=_db.staff_reminders.find(r=>r.staff_id===s.id);
       const rm=p.repeat_months!==undefined?p.repeat_months:(er?.repeat_months??1);
-      if(rm>0){if(er){er.repeat_months=rm;er.amount=totalSalary;}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const next=_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...next),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
+      if(rm>0){if(er){er.repeat_months=rm;er.amount=totalSalary;if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
       else if(rm===0&&er)_db.staff_reminders=_db.staff_reminders.filter(r=>r.staff_id!==s.id);
       _save(); return _P({ok:true});
     },
@@ -14214,6 +14218,14 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
       <div class="form-group">
         ${calendarDateFieldHtml('st-start', s?.start_date || '', 'تاریخ شروع همکاری')}
       </div>
+      <div class="form-group full">
+        <label class="form-label">زمان پرداخت حقوق</label>
+        <select class="form-select" id="st-payment-timing">
+          <option value="end" ${(s?.payment_timing||'end')==='end'?'selected':''}>پرداخت انتهای برج (پیش‌فرض)</option>
+          <option value="start" ${s?.payment_timing==='start'?'selected':''}>پرداخت ابتدای برج</option>
+        </select>
+        <div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:4px">مثال: برای شروع همکاری در ۱۸ مرداد، پرداخت ابتدای برج سررسید را ۱۸ مرداد و پرداخت انتهای برج سررسید را ۱۸ شهریور ثبت می‌کند.</div>
+      </div>
     </div>
 
     ${isPersonnel ? `
@@ -14383,6 +14395,7 @@ async function saveStaffNew() {
     roles: personType === 'personnel' ? roles : [],
     salary: +(document.getElementById('st-salary')?.value||0),
     start_date: readCalendarDateField('st-start'),
+    payment_timing: document.getElementById('st-payment-timing')?.value || 'end',
     repeat_months: +(document.getElementById('st-repeat')?.value||0),
     note: document.getElementById('st-note')?.value||'',
   });
@@ -14416,6 +14429,7 @@ async function saveStaffEdit(id) {
     roles: personType === 'personnel' ? roles : [],
     salary: +(document.getElementById('st-salary')?.value||0),
     start_date: readCalendarDateField('st-start'),
+    payment_timing: document.getElementById('st-payment-timing')?.value || 'end',
     note: document.getElementById('st-note')?.value||'',
     repeat_months: repeat, // pass to backend for reminder handling
   });
