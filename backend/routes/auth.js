@@ -84,8 +84,16 @@ router.post('/login', (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     if (!email || !password)
       return res.status(400).json({ error: 'email and password required' });
-    const user = db.prepare('SELECT * FROM accounts WHERE lower(email)=? AND is_active=1').get(email);
-    if (!user || !bcrypt.compareSync(password, user.password))
+    // Legacy databases may contain case-only duplicate emails because the old
+    // UNIQUE constraint was case-sensitive. Check each candidate's existing
+    // hash and prefer the oldest matching account; never rewrite a password.
+    const candidates = db.prepare(`
+      SELECT * FROM accounts
+      WHERE lower(trim(email))=? AND is_active=1
+      ORDER BY datetime(created_at) ASC, rowid ASC
+    `).all(email);
+    const user = candidates.find(candidate => bcrypt.compareSync(password, candidate.password));
+    if (!user)
       return res.status(401).json({ error: 'invalid credentials' });
     const token = sign({ id: user.id, email: user.email, role: user.role });
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '', business_name: user.business_name, role: user.role } });
@@ -99,6 +107,58 @@ router.get('/me', auth, (req, res) => {
     const user = db.prepare('SELECT id,name,email,phone,business_name,business_type,role,plan,created_at FROM accounts WHERE id=?').get(req.user.id);
     if (!user) return res.status(404).json({ error: 'not found' });
     res.json(user);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/team-invite/grant', auth, (req, res) => {
+  try {
+    const workspaceId = normalizeWorkspaceId(req.body?.accountId || 'default');
+    const memberEmail = String(req.body?.email || '').trim().toLowerCase();
+    const inviteId = String(req.body?.inviteId || '').trim();
+    const staffId = String(req.body?.staffId || '').trim();
+    const permissions = normalizeTeamPermissions(req.body?.permissions);
+    const instructionFolders = Array.isArray(req.body?.instructionFolders) ? req.body.instructionFolders : [];
+    if (!workspaceId || !memberEmail.includes('@') || !inviteId || !permissions.length) {
+      return res.status(400).json({ error: 'invalid team grant' });
+    }
+    if (workspaceId !== 'default') {
+      const workspace = db.prepare('SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').get(req.user.id, workspaceId);
+      if (!workspace) return res.status(404).json({ error: 'workspace_not_found' });
+    }
+    db.prepare(`
+      INSERT INTO team_access_grants
+        (owner_account_id, workspace_id, member_email, staff_id, invite_id, permissions, instruction_folders, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+      ON CONFLICT(owner_account_id, workspace_id, member_email) DO UPDATE SET
+        staff_id=excluded.staff_id,
+        invite_id=excluded.invite_id,
+        permissions=excluded.permissions,
+        instruction_folders=excluded.instruction_folders,
+        status='active',
+        updated_at=datetime('now')
+    `).run(req.user.id, workspaceId, memberEmail, staffId, inviteId,
+      JSON.stringify(permissions), JSON.stringify(instructionFolders));
+    res.json({ success: true, permissions, instructionFolders });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/team-invite/grant', auth, (req, res) => {
+  try {
+    const workspaceId = normalizeWorkspaceId(req.body?.accountId || 'default');
+    const memberEmail = String(req.body?.email || '').trim().toLowerCase();
+    if (!workspaceId || !memberEmail) return res.status(400).json({ error: 'invalid team grant' });
+    db.prepare(`
+      INSERT INTO team_access_grants
+        (owner_account_id,workspace_id,member_email,permissions,instruction_folders,status,updated_at)
+      VALUES (?, ?, ?, '[]', '[]', 'revoked', datetime('now'))
+      ON CONFLICT(owner_account_id,workspace_id,member_email) DO UPDATE SET
+        status='revoked', updated_at=datetime('now')
+    `).run(req.user.id, workspaceId, memberEmail);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -128,11 +188,25 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       if (!workspace) return res.status(404).json({ error: 'workspace_not_found' });
     }
 
+    const storedGrant = db.prepare(`
+      SELECT member_email,staff_id,invite_id,permissions,instruction_folders
+      FROM team_access_grants
+      WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+    `).get(owner.id, workspaceId, memberEmail);
+    if (storedGrant && inviteId && storedGrant.invite_id && String(storedGrant.invite_id) !== inviteId) {
+      return res.status(403).json({ error: 'team access not allowed' });
+    }
     const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(workspaceStorageKey(owner.id, workspaceId));
     let data = null;
     try { data = row?.data ? JSON.parse(row.data) : null; } catch {}
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
-    let member = members.find(m => {
+    let member = storedGrant ? {
+      id: storedGrant.invite_id,
+      email: storedGrant.member_email,
+      staff_id: storedGrant.staff_id,
+      permissions: (() => { try { return JSON.parse(storedGrant.permissions || '[]'); } catch { return []; } })(),
+      instruction_folders: (() => { try { return JSON.parse(storedGrant.instruction_folders || '[]'); } catch { return []; } })()
+    } : members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
       const sameInvite = !inviteId || String(m.id || '').trim() === inviteId;
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';

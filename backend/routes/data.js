@@ -75,14 +75,14 @@ function canAccessWorkspace(req, targetId, workspaceId) {
   if (req.user.id === targetId || req.user.role === 'admin') return true;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return false;
+  const explicitGrant = db.prepare(`
+    SELECT status FROM team_access_grants
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=?
+  `).get(targetId, workspaceId, requesterEmail);
+  if (explicitGrant) return explicitGrant.status === 'active';
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail);
   if (member !== undefined) return !!member;
-  const grant = db.prepare(`
-    SELECT owner_account_id
-    FROM team_access_grants
-    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
-  `).get(targetId, workspaceId, requesterEmail);
-  return !!grant;
+  return false;
 }
 
 const MAX_WORKSPACES_PER_ACCOUNT = 5; // default + at most four additional businesses
@@ -197,7 +197,6 @@ function getTeamGrant(req, targetId, workspaceId) {
   }
   const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
-  if (member === null) return null;
   const currentPermissions = normalizeTeamPermissions(member?.permissions || []);
   const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
   const staffId = String(member?.staff_id || member?.staffId || grant.staff_id || '').trim();
