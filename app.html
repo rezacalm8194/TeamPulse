@@ -12325,13 +12325,14 @@ async function _createTeamInvite() {
   _db.team_invites = _db.team_invites || [];
   _db.team_invites.unshift({ id:member.id, email, staff_id:String(staffId), role_key:roleKey, permissions, instruction_folders:instructionFolders, created_at:member.created_at, status:member.status });
   _save();
-  const syncRes = await _syncToServer();
-  if (!syncRes?.ok) {
-    showToast('دعوت ذخیره شد اما هنوز به سرور نرسیده؛ پس از اتصال دوباره تلاش کنید', 'error');
-    return;
-  }
+  // Clipboard access must happen while the original click still has browser
+  // user activation. Waiting for the network first makes Chrome reject copy.
   copyToClipboard(member.invite_link, 'لینک دعوت ساخته و کپی شد ✓');
   renderSettings().then(() => switchSettingsTab('team'));
+  const syncRes = await _syncToServer();
+  if (syncRes && !syncRes.ok) {
+    showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
+  }
 }
 
 async function _copyTeamInvite(id) {
@@ -12339,12 +12340,11 @@ async function _copyTeamInvite(id) {
   if (!member) return;
   member.invite_link = _teamInviteLink(member);
   _save();
-  const syncRes = await _syncToServer();
-  if (!syncRes?.ok) {
-    showToast('مجوزهای دعوت هنوز روی سرور ذخیره نشده‌اند؛ دوباره تلاش کنید', 'error');
-    return;
-  }
   copyToClipboard(member.invite_link, 'لینک دعوت کپی شد ✓');
+  const syncRes = await _syncToServer();
+  if (syncRes && !syncRes.ok) {
+    showToast('لینک کپی شد؛ همگام‌سازی مجوز روی سرور دوباره تلاش می‌شود', 'warning');
+  }
 }
 
 function _deleteTeamMember(id) {
