@@ -8333,6 +8333,17 @@ function renderRich(str, opts) {
   s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
   s = s.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, '<u>$1</u>');
+  // Markdown images must be handled before ordinary links; otherwise the
+  // `[alt](url)` part becomes a link and the leading `!` is left as text.
+  s = s.replace(/!\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<figure style="margin:14px 0;text-align:center">' +
+      '<img src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer" ' +
+        'style="display:block;max-width:100%;height:auto;max-height:70vh;margin:0 auto;border-radius:10px;border:1px solid var(--border2);object-fit:contain;background:var(--bg3)" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">' +
+      '<figcaption style="display:none;padding:12px;border:1px dashed var(--border2);border-radius:9px;color:var(--text3);font-size:12px">تصویر بارگذاری نشد' +
+        '$1' +
+      '</figcaption>' +
+    '</figure>');
   s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent2);text-decoration:underline">$1</a>');
   s = s.replace(/^\s*(#{1,6})\s+(.+)$/gm, function(_, hashes, title) {
     const level = hashes.length;
