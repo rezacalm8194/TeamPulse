@@ -21790,6 +21790,21 @@ async function _apiFetch(path, opts = {}) {
   }
 }
 
+async function _compressedJsonRequestBody(value) {
+  const json = typeof value === 'string' ? value : JSON.stringify(value);
+  if (json.length < 450 * 1024 || typeof CompressionStream === 'undefined') {
+    return { body: json, headers: {} };
+  }
+  const stream = new Blob([json], { type: 'application/json' })
+    .stream()
+    .pipeThrough(new CompressionStream('gzip'));
+  const compressed = await new Response(stream).blob();
+  return {
+    body: compressed,
+    headers: { 'Content-Encoding': 'gzip', 'Content-Type': 'application/json' },
+  };
+}
+
 function _getApiAuthToken() {
   if (_sbSession?.token) return _sbSession.token;
   const saved = (typeof _authLoadSession === 'function') ? _authLoadSession() : null;
@@ -22231,14 +22246,17 @@ async function _syncToServer(conflictAttempt = 0) {
     }
     const syncSavedAt = localSavedAt || Date.now();
     const syncPayload = _serverSafeData(_db);
+    const requestPayload = {
+      data: syncPayload,
+      force: forceSync,
+      client_saved_at: syncSavedAt,
+      base_etag: window._serverDataEtag || null,
+    };
+    const encodedRequest = await _compressedJsonRequestBody(requestPayload);
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
       method: 'PUT',
-      body: JSON.stringify({
-        data: syncPayload,
-        force: forceSync,
-        client_saved_at: syncSavedAt,
-        base_etag: window._serverDataEtag || null,
-      })
+      body: encodedRequest.body,
+      headers: encodedRequest.headers,
     });
     let responseData = null;
     try { responseData = await res.clone().json(); } catch(e) {}
@@ -22274,6 +22292,16 @@ async function _syncToServer(conflictAttempt = 0) {
     }
     if (res && res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
+    }
+    if (res && res.status === 413) {
+      clearTimeout(window._serverSyncRetryTimer);
+      window._serverSyncRetryAttempt = 0;
+      _markServerSyncPending('payload-too-large');
+      if (!window._serverPayloadTooLargeWarned) {
+        window._serverPayloadTooLargeWarned = true;
+        showToast('حجم داده از سقف سرور بیشتر است؛ تلاش تکراری متوقف شد تا نسخه به‌روز برنامه بارگذاری شود.', 'error');
+      }
+      return res;
     }
     if (res && !res.ok) {
       _markServerSyncPending('http-' + res.status);
@@ -31127,7 +31155,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v73';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v74';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
