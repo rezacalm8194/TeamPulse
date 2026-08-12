@@ -8297,15 +8297,15 @@ function excerpt(str, len=70) {
 }
 
 // ── Rich text: **bold** and ==highlight== + simple sticker emojis ────────────
-function _renderChecklist(text, checked, interactive, noteId, field) {
-  const bs = 'margin-top:3px;width:16px;height:16px;flex-shrink:0;accent-color:var(--accent2)';
+function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, textareaId) {
+  const bs = 'margin-top:3px;width:18px;height:18px;flex-shrink:0;accent-color:var(--accent2)';
   const chk = checked ? 'checked ' : '';
   const ts = checked ? 'text-decoration:line-through;color:var(--text3)' : '';
-  if (interactive && noteId != null) {
-    const handler = 'onchange="_toggleChecklistItem(' + noteId + ',' + JSON.stringify(field) + ',this)"';
-    return '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:3px 0"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
+  if (interactive && (noteId != null || textareaId)) {
+    const handler = 'onchange="_toggleChecklistItem(' + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ')"';
+    return '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:40px;padding:8px 4px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
-  return '<label style="display:flex;align-items:flex-start;gap:8px;margin:3px 0"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
+  return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
 }
 
 // پاک‌سازی لایه‌های تودرتوی نشانه‌ی رنگ که در نسخه‌ی قدیمی applyTextColor ذخیره می‌شدند
@@ -8324,6 +8324,8 @@ function renderRich(str, opts) {
   const interactive = !!(opts && opts.interactive);
   const noteId = (opts && opts.noteId != null) ? opts.noteId : null;
   const field = (opts && opts.field) ? opts.field : '';
+  const textareaId = (opts && opts.textareaId) ? opts.textareaId : '';
+  let checklistIndex = 0;
   let s = escapeHtml(str);
   // پاک‌سازی لایه‌های تودرتوی رنگ که با نسخه‌ی قبلیِ باگ‌دار ذخیره شده بودند
   // (مثل {{c:x}}{{c:y}}متن{{/c}}{{/c}}) — رنگ بیرونی (آخرین رنگ انتخاب‌شده) نگه داشته می‌شود.
@@ -8370,9 +8372,12 @@ function renderRich(str, opts) {
   s = s.replace(/^\s*&gt;\s?(.+)$/gm, '<blockquote style="margin:8px 0;padding:7px 12px;border-right:3px solid var(--accent);background:rgba(124,106,247,.07);color:var(--text2)">$1</blockquote>');
   s = s.replace(/^\s*---\s*$/gm, '<hr style="border:none;border-top:1px solid var(--border2);width:100%;margin:14px 0">');
   s = s.replace(/^(\d+)\. (.+)$/gm, '<span style="display:flex;gap:6px;margin:2px 0"><span style="color:var(--accent2);font-weight:600;flex-shrink:0">$1.</span><span>$2</span></span>');
+  // Task-list syntax is accepted both with and without a Markdown list marker:
+  // [ ] item, - [ ] item, * [x] item, + [X] item.
+  s = s.replace(/^\s*(?:[-+*]\s+)?\[([ xX])\]\s+(.+)$/gm, function(_,state,t){
+    return _renderChecklist(t,state.toLowerCase()==='x',interactive,noteId,field,checklistIndex++,textareaId);
+  });
   s = s.replace(/^\s*[-+]\s+(.+)$/gm, '<span style="display:flex;gap:8px;margin:2px 0"><span style="color:var(--accent2);font-weight:800">•</span><span>$1</span></span>');
-  s = s.replace(/^\[ \] (.+)$/gm, function(_,t){ return _renderChecklist(t,false,interactive,noteId,field); });
-  s = s.replace(/^\[x\] (.+)$/gm, function(_,t){ return _renderChecklist(t,true,interactive,noteId,field); });
   s = s.replace(/((?:^\|.+\|\n?)+)/gm, function(tb) {
     const rows = tb.trim().split('\n').filter(function(r){ return r.trim().startsWith('|'); });
     if (rows.length < 2) return tb;
@@ -8393,19 +8398,29 @@ function renderRich(str, opts) {
   return s;
 }
 
-async function _toggleChecklistItem(noteId, field, checkbox) {
-  const note = (_db.instructions||[]).find(function(n){ return n.id === noteId; });
-  if (!note) return;
-  const text = checkbox.nextElementSibling ? checkbox.nextElementSibling.textContent : '';
-  const fieldVal = note[field] || '';
-  let newVal;
-  if (checkbox.checked) {
-    newVal = fieldVal.replace('[ ] ' + text, '[x] ' + text);
+async function _toggleChecklistItem(noteId, field, checkbox, itemIndex, textareaId) {
+  const textarea = textareaId ? document.getElementById(textareaId) : null;
+  const note = noteId == null ? null : (_db.instructions||[]).find(function(n){ return n.id === +noteId; });
+  if (!textarea && !note) return;
+  const source = textarea ? textarea.value : (note[field] || '');
+  let seen = -1;
+  const updated = source.replace(/^(\s*(?:[-+*]\s+)?)\[([ xX])\](\s+.+)$/gm, function(line, prefix, state, rest) {
+    seen += 1;
+    if (seen !== Number(itemIndex)) return line;
+    return prefix + (checkbox.checked ? '[x]' : '[ ]') + rest;
+  });
+  if (textarea) {
+    textarea.value = updated;
+    textarea.dispatchEvent(new Event('input', { bubbles:true }));
   } else {
-    newVal = fieldVal.replace('[x] ' + text, '[ ] ' + text);
+    note[field] = updated;
+    _save();
+    showToast(checkbox.checked ? 'انجام شد ✓' : 'به حالت انجام‌نشده برگشت', 'success');
   }
-  note[field] = newVal;
-  _save();
+  const label = checkbox.closest('label');
+  const textEl = checkbox.nextElementSibling;
+  if (textEl) textEl.style.cssText = checkbox.checked ? 'text-decoration:line-through;color:var(--text3)' : '';
+  if (label) label.setAttribute('aria-label', checkbox.checked ? 'انجام‌شده' : 'انجام‌نشده');
 }
 
 // ── Global error guard: never let a stray error silently freeze the UI ──────
@@ -13503,7 +13518,7 @@ function _toggleRichPreview(textareaId, button) {
     preview.style.cssText = 'flex:1;min-height:220px;max-height:52vh;overflow:auto;padding:18px;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);color:var(--text);font-size:14px;line-height:2;direction:rtl;text-align:right';
     textarea.insertAdjacentElement('afterend', preview);
   }
-  preview.innerHTML = renderRich(textarea.value);
+  preview.innerHTML = renderRich(textarea.value, { interactive:true, textareaId:textareaId });
   textarea.style.display = 'none';
   preview.style.display = 'block';
   button?.classList.add('active');
@@ -19993,12 +20008,12 @@ function openNoteDetail(id) {
     </div>
     <div class="detail-section">
       <h3>📄 محتوا</h3>
-      <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.content) || '<span style="color:var(--text3)">محتوایی ثبت نشده</span>'}</div>
+      <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.content, {interactive:true,noteId:numId,field:'content'}) || '<span style="color:var(--text3)">محتوایی ثبت نشده</span>'}</div>
     </div>
     ${node.extra_note ? `
     <div class="detail-section">
       <h3>📎 یادداشت تکمیلی</h3>
-      <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.extra_note)}</div>
+      <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.extra_note, {interactive:true,noteId:numId,field:'extra_note'})}</div>
     </div>` : ''}
     <div class="detail-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -20348,6 +20363,14 @@ function openEditInstruction(id) {
         const fmap2 = {'ei-content':'content','ei-extra':'extra_note'};
         if (ta) ta.addEventListener('dblclick', function(){ _openFocusMode(ta, numId, fmap2[fid]); });
       });
+      // Existing checklists open in their usable, clickable form by default.
+      // The eye button becomes a pencil and still lets the user return to the
+      // raw Markdown whenever the labels themselves need editing.
+      const contentTa = document.getElementById('ei-content');
+      if (contentTa && /^(?:\s*[-+*]\s+)?\[[ xX]\]\s+.+$/m.test(contentTa.value)) {
+        const previewBtn = contentTa.closest('.note-content-wrap')?.querySelector('button[aria-label="پیش‌نمایش Markdown"]');
+        if (previewBtn) _toggleRichPreview('ei-content', previewBtn);
+      }
     }, 80);
   }
 }
