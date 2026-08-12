@@ -8372,7 +8372,7 @@ function renderRich(str, opts) {
   // line remains in raw Markdown as the field marker but is hidden in preview.
   const plainFields = [];
   let plainFieldIndex = 0;
-  s = s.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|\s*([^:\n]{1,80}[:：])\s*([^\n]*?)\n\s*[.…·_ـ-]{3,}\s*)$/gm, function(_, markedLabel, markedAnswer, legacyLabel, legacyAnswer) {
+  s = s.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|[ \t]*([^:\n]{1,80}[:：])[ \t]*([^\n]*?)[ \t]*\n(?:[ \t]*\n)*[ \t]*[.…·_ـ-]{3,}[ \t]*)$/gm, function(_, markedLabel, markedAnswer, legacyLabel, legacyAnswer) {
     const label = markedLabel || legacyLabel;
     const answer = markedLabel ? markedAnswer : legacyAnswer;
     const index = plainFieldIndex++;
@@ -8501,7 +8501,7 @@ function _updatePlainFieldAnswer(noteId, field, input, itemIndex, textareaId) {
   const source = textarea ? textarea.value : (note[field] || '');
   let seen = -1;
   const cleanAnswer = String(input.value || '').replace(/\r/g, '').trimStart().replace(/\n+/g, ' ⏎ ');
-  const updated = source.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|\s*([^:\n]{1,80}[:：])\s*([^\n]*?)\n\s*[.…·_ـ-]{3,}\s*)$/gm, function(line, markedLabel, markedAnswer, legacyLabel) {
+  const updated = source.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|[ \t]*([^:\n]{1,80}[:：])[ \t]*([^\n]*?)[ \t]*\n(?:[ \t]*\n)*[ \t]*[.…·_ـ-]{3,}[ \t]*)$/gm, function(line, markedLabel, markedAnswer, legacyLabel) {
     seen += 1;
     if (seen !== Number(itemIndex)) return line;
     const label = markedLabel || legacyLabel;
@@ -20461,14 +20461,6 @@ function openEditInstruction(id) {
         const fmap2 = {'ei-content':'content','ei-extra':'extra_note'};
         if (ta) ta.addEventListener('dblclick', function(){ _openFocusMode(ta, numId, fmap2[fid]); });
       });
-      // Existing checklists open in their usable, clickable form by default.
-      // The eye button becomes a pencil and still lets the user return to the
-      // raw Markdown whenever the labels themselves need editing.
-      const contentTa = document.getElementById('ei-content');
-      if (contentTa && /^(?:\s*[-+*]\s+)?\[[ xX]\]\s+.+$/m.test(contentTa.value)) {
-        const previewBtn = contentTa.closest('.note-content-wrap')?.querySelector('button[aria-label="پیش‌نمایش Markdown"]');
-        if (previewBtn) _toggleRichPreview('ei-content', previewBtn);
-      }
     }, 80);
   }
 }
