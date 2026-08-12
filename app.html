@@ -20128,9 +20128,24 @@ function openNoteDetail(id) {
     </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px;box-shadow:none' },
+    { label: '📋 کپی', cls: 'btn-ghost', action: `copyInstructionText(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteInstruction(${id})`, style: 'margin-left:auto' },
   ]);
+}
+
+function copyInstructionText(id) {
+  const node = (_db.instructions || []).find(function(item) { return +item.id === +id; });
+  if (!node) { showToast('متن برای کپی پیدا نشد', 'error'); return; }
+  const parts = [];
+  if (node.title) parts.push('# ' + node.title.trim());
+  if (node.content && node.content.trim()) parts.push(node.content.trim());
+  if (node.extra_note && node.extra_note.trim()) {
+    parts.push('یادداشت تکمیلی:\n' + node.extra_note.trim());
+  }
+  const text = parts.join('\n\n');
+  if (!text) { showToast('متنی برای کپی وجود ندارد', 'error'); return; }
+  copyToClipboard(text, 'متن و فرم کپی شد ✓');
 }
 
 async function _toggleNoteSticker(id, sticker, btn) {
