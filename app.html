@@ -4760,7 +4760,7 @@ function _freshData() {
     staff_role_entries:[],
     _user_wallet:null,
     instructions:[],
-    guide_categories:[], guide_items:[],
+    guide_categories:[], guide_items:[], case_forms:[],
     archive_columns:['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','نحوه آشنایی','توضیحات','وضعیت ارتباط','شروع همکاری'],
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
@@ -4783,7 +4783,7 @@ function _migrate(d) {
   d.package_types = d.package_types || [];
   ['families','students','packages','payments','sessions','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
-   'instructions','guide_categories','guide_items','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
+   'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
   d.session_order = d.session_order||[];
   d.archive_columns = Array.isArray(d.archive_columns) && d.archive_columns.length
@@ -8904,13 +8904,132 @@ function studentSectionNav(active) {
   </div>`;
 }
 
+function renderCaseFormsSection() {
+  const forms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
+  if (!forms.length) return `
+    <div class="table-card" style="margin-bottom:16px">
+      <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">فرم آماده‌ای ساخته نشده است</span></div></div>
+      <div class="empty" style="padding:22px"><span>▣</span>با دکمه «افزودن فرم» یک فرم بسازید یا متن فرم آماده را وارد کنید</div>
+    </div>`;
+  return `
+    <div class="table-card" style="margin-bottom:16px">
+      <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">${fa(forms.length)} فرم ساخته‌شده</span></div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;padding:14px">
+        ${forms.map(form => {
+          const menuId = 'case-form-menu-' + form.id;
+          const fieldCount = (String(form.content||'').match(/^(?:\s*[-+*]\s+)?\[[ xX]\]/gm)||[]).length +
+            (String(form.content||'').match(/^[^:\n]{1,80}[:：][ \t]*\n(?:[ \t]*\n)*[ \t]*[.…·_ـ-]{3,}/gm)||[]).length;
+          return `<div style="position:relative;padding:14px;border:1px solid var(--border);border-radius:11px;background:var(--bg2);min-height:112px;cursor:pointer" onclick="openCaseFormDetail(${form.id})">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="width:38px;height:38px;border-radius:10px;background:rgba(124,106,247,.14);color:var(--accent2);display:grid;place-items:center;font-size:20px;flex-shrink:0">▣</div>
+              <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.7">${escapeHtml(form.title)}</div><div style="font-size:10px;color:var(--text3);margin-top:5px">${fa(fieldCount)} مورد · ویرایش ${DateService.disp(form.updated_at || form.created_at || '') || 'اکنون'}</div></div>
+              <div class="row-menu" onclick="event.stopPropagation()"><button class="row-menu-btn" aria-label="عملیات فرم" onclick="toggleRowMenu(event,'${menuId}')">⋮</button><div class="row-menu-panel" id="${menuId}"><div class="row-menu-item" onclick="openCaseFormDetail(${form.id})">مشاهده</div><div class="row-menu-item" onclick="openCaseFormBuilder(${form.id})">ویرایش</div><div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="deleteCaseForm(${form.id})">حذف</div></div></div>
+            </div>
+            ${form.description ? `<div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.7">${escapeHtml(form.description)}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function _caseFormSetMode(mode) {
+  const imported = document.getElementById('case-form-import-panel');
+  const manual = document.getElementById('case-form-manual-panel');
+  if (imported) imported.style.display = mode === 'import' ? 'block' : 'none';
+  if (manual) manual.style.display = mode === 'manual' ? 'block' : 'none';
+  document.querySelectorAll('.case-form-mode').forEach(btn => {
+    const active = btn.dataset.mode === mode;
+    btn.style.background = active ? 'var(--accent)' : 'var(--bg3)';
+    btn.style.color = active ? 'white' : 'var(--text2)';
+  });
+}
+
+function _caseFormRowHtml(type = 'field', label = '') {
+  return `<div class="case-form-builder-row" style="display:grid;grid-template-columns:140px 1fr 40px;gap:8px;align-items:center;margin-bottom:8px">
+    <select class="form-select case-form-row-type" aria-label="نوع ردیف"><option value="field" ${type==='field'?'selected':''}>فیلد کوتاه</option><option value="textarea" ${type==='textarea'?'selected':''}>توضیح چندخطی</option><option value="check" ${type==='check'?'selected':''}>چک‌باکس</option><option value="heading" ${type==='heading'?'selected':''}>عنوان بخش</option><option value="text" ${type==='text'?'selected':''}>متن راهنما</option></select>
+    <input class="form-input case-form-row-label" value="${escapeHtml(label)}" placeholder="عنوان یا متن ردیف" aria-label="عنوان ردیف">
+    <button type="button" class="btn btn-ghost" title="حذف ردیف" aria-label="حذف ردیف" onclick="this.closest('.case-form-builder-row').remove()" style="padding:7px;min-width:40px;color:var(--red)">×</button>
+  </div>`;
+}
+
+function addCaseFormBuilderRow(type = 'field', label = '') {
+  document.getElementById('case-form-builder-rows')?.insertAdjacentHTML('beforeend', _caseFormRowHtml(type, label));
+}
+
+function openCaseFormBuilder(id = null) {
+  const form = id == null ? null : (_db.case_forms || []).find(item => +item.id === +id);
+  const initialRows = form ? '' : _caseFormRowHtml('field','نام و نام خانوادگی') + _caseFormRowHtml('field','شماره تماس') + _caseFormRowHtml('textarea','توضیحات');
+  openModal(form ? 'ویرایش فرم پرونده' : 'افزودن فرم پرونده', `
+    <div class="form-group full"><label class="form-label">عنوان فرم</label><input class="form-input" id="case-form-title" value="${escapeHtml(form?.title||'')}" placeholder="مثلاً: فرم پذیرش اولیه"></div>
+    <div class="form-group full" style="margin-top:8px"><label class="form-label">توضیح کوتاه (اختیاری)</label><input class="form-input" id="case-form-description" value="${escapeHtml(form?.description||'')}" placeholder="کاربرد این فرم"></div>
+    <div style="display:flex;gap:6px;margin:14px 0" role="tablist" aria-label="روش ایجاد فرم"><button type="button" class="case-form-mode" data-mode="import" onclick="_caseFormSetMode('import')" style="flex:1;padding:9px;border:0;border-radius:8px;background:var(--accent);color:white;font-family:var(--font);font-weight:700;cursor:pointer">وارد کردن فرم</button><button type="button" class="case-form-mode" data-mode="manual" onclick="_caseFormSetMode('manual')" style="flex:1;padding:9px;border:0;border-radius:8px;background:var(--bg3);color:var(--text2);font-family:var(--font);font-weight:700;cursor:pointer">ساخت فرم</button></div>
+    <div id="case-form-import-panel"><label class="form-label">متن فرم را از هرجا کپی و اینجا Paste کنید</label><textarea class="form-textarea" id="case-form-import" rows="12" placeholder="# عنوان بخش&#10;[ ] مورد قابل انجام&#10;[ ] نام مشتری:&#10;توضیحات مشتری:&#10;........................">${escapeHtml(form?.content||'')}</textarea><div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:5px">چک‌باکس‌ها، فیلدهای دارای «:»، تیترها و توضیحات به‌صورت خودکار تشخیص داده می‌شوند.</div></div>
+    <div id="case-form-manual-panel" style="display:none"><div id="case-form-builder-rows">${initialRows}</div><button type="button" class="btn btn-ghost btn-sm" onclick="addCaseFormBuilderRow()">+ افزودن ردیف</button></div>
+  `, [
+    { label: form ? 'ذخیره تغییرات' : 'ایجاد فرم', cls:'btn-primary', action:`saveCaseForm(${form?.id || 'null'})` },
+    { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
+  ]);
+}
+
+function _caseFormManualContent() {
+  return [...document.querySelectorAll('.case-form-builder-row')].map(row => {
+    const type = row.querySelector('.case-form-row-type')?.value;
+    const label = row.querySelector('.case-form-row-label')?.value.trim();
+    if (!label) return '';
+    if (type === 'heading') return '## ' + label;
+    if (type === 'check') return '[ ] ' + label;
+    if (type === 'field') return '[ ] ' + label.replace(/[:：]\s*$/,'') + ':';
+    if (type === 'textarea') return label.replace(/[:：]\s*$/,'') + ':\n........................';
+    return label;
+  }).filter(Boolean).join('\n\n');
+}
+
+function saveCaseForm(id) {
+  const title = document.getElementById('case-form-title')?.value.trim();
+  if (!title) { showToast('عنوان فرم را وارد کنید','error'); return; }
+  const importVisible = document.getElementById('case-form-import-panel')?.style.display !== 'none';
+  const content = importVisible ? document.getElementById('case-form-import')?.value.trim() : _caseFormManualContent();
+  if (!content) { showToast('حداقل یک مورد برای فرم وارد کنید','error'); return; }
+  _db.case_forms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
+  const existing = id == null ? null : _db.case_forms.find(item => +item.id === +id);
+  const now = formatJalali(...todayJalali());
+  if (existing) Object.assign(existing,{title,description:document.getElementById('case-form-description')?.value.trim()||'',content,updated_at:now});
+  else _db.case_forms.unshift({id:genEvalId(),title,description:document.getElementById('case-form-description')?.value.trim()||'',content,created_at:now,updated_at:now});
+  _save(); closeModal(); showToast(existing?'فرم ویرایش شد ✓':'فرم ساخته شد ✓','success'); renderStudents();
+}
+
+function openCaseFormDetail(id) {
+  const form = (_db.case_forms || []).find(item => +item.id === +id);
+  if (!form) return;
+  openModal(escapeHtml(form.title), `<div class="detail-section">${form.description?`<p style="font-size:12px;color:var(--text2);margin-bottom:12px">${escapeHtml(form.description)}</p>`:''}<div style="font-size:13px;line-height:1.9">${renderRich(form.content)}</div></div>`, [
+    {label:'ویرایش',cls:'btn-primary',action:`closeModal();openCaseFormBuilder(${id})`},
+    {label:'کپی',cls:'btn-ghost',action:`copyCaseForm(${id})`},
+    {label:'بستن',cls:'btn-ghost',action:'closeModal()'},
+  ]);
+}
+
+function copyCaseForm(id) {
+  const form = (_db.case_forms || []).find(item => +item.id === +id);
+  if (!form) return;
+  copyToClipboard(('# ' + form.title + '\n\n' + form.content).trim(), 'فرم کپی شد ✓');
+}
+
+function deleteCaseForm(id) {
+  if (!confirm('این فرم حذف شود؟')) return;
+  _db.case_forms = (_db.case_forms || []).filter(item => +item.id !== +id);
+  _save(); showToast('فرم حذف شد','error'); renderStudents();
+}
+
 async function renderStudents(search = '') {
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
       <input placeholder="جستجوی ${META.entitySingular || 'شاگرد'}..." oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
     </div>
-    <button class="btn btn-primary" onclick="openStudentModal()"><span class="btn-icon">+</span><span> افزودن ${META.entitySingular || 'شاگرد'}</span></button>
+    <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
+      <button class="btn btn-primary" onclick="openCaseFormBuilder()" style="border-radius:0;border:none;box-shadow:none"><span class="btn-icon">+</span><span> افزودن فرم</span></button>
+      <button class="btn btn-ghost" onclick="openStudentModal()" style="border-radius:0;border:0;border-right:1px solid var(--border2)"><span class="btn-icon">+</span><span> افزودن ${META.entitySingular || 'شاگرد'}</span></button>
+    </div>
   `);
 
   allStudents = await window.api.students.getAll();
@@ -8935,6 +9054,7 @@ async function renderStudents(search = '') {
 
   let html = `
   ${studentSectionNav('students')}
+  ${renderCaseFormsSection()}
   <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
       <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
