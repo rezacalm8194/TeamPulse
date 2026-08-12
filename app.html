@@ -10739,7 +10739,7 @@ function _sessionCaseFormOptions(selectedId) {
   ).join('');
 }
 
-function _sessionCaseFormFieldsHtml(formId, responses = []) {
+function _sessionCaseFormFieldsHtml(formId, responses = [], sessionId = null) {
   const form = (_db.case_forms || []).find(item => +item.id === +formId);
   if (!form) return '';
   const saved = new Map((responses || []).map(item => [String(item.key), item]));
@@ -10749,11 +10749,11 @@ function _sessionCaseFormFieldsHtml(formId, responses = []) {
       const value = saved.get(String(item.key));
       if (item.type === 'heading') return `<h4 style="font-size:13px;color:var(--text);margin:16px 0 8px">${escapeHtml(item.label)}</h4>`;
       if (item.type === 'guide') return `<div style="font-size:11px;color:var(--text2);line-height:1.8;margin:7px 0">${escapeHtml(item.label)}</div>`;
-      if (item.type === 'check') return `<label style="display:flex;align-items:center;gap:9px;padding:9px 10px;margin:6px 0;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer"><input class="session-case-response" data-key="${item.key}" data-type="check" data-label="${escapeHtml(item.label)}" type="checkbox" ${value?.checked?'checked':''} style="width:18px;height:18px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0"><span style="font-size:12px;color:var(--text)">${escapeHtml(item.label)}</span></label>`;
+      if (item.type === 'check') return `<label style="display:flex;align-items:center;gap:9px;padding:9px 10px;margin:6px 0;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer"><input class="session-case-response" data-key="${item.key}" data-type="check" data-label="${escapeHtml(item.label)}" type="checkbox" ${value?.checked?'checked':''} ${sessionId?`onchange="_saveSessionCaseResponse(${sessionId},this)"`:''} style="width:18px;height:18px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0"><span style="font-size:12px;color:var(--text);${value?.checked?'text-decoration:line-through;color:var(--text3)':''}">${escapeHtml(item.label)}</span></label>`;
       const textarea = item.type === 'textarea';
       return `<div class="form-group full" style="margin:9px 0"><label class="form-label">${escapeHtml(item.label)}</label>${textarea
-        ? `<textarea class="form-textarea session-case-response" data-key="${item.key}" data-type="textarea" data-label="${escapeHtml(item.label)}" rows="3" placeholder="اینجا بنویسید...">${escapeHtml(value?.value||'')}</textarea>`
-        : `<input class="form-input session-case-response" data-key="${item.key}" data-type="text" data-label="${escapeHtml(item.label)}" value="${escapeHtml(value?.value||'')}" placeholder="اینجا بنویسید...">`}</div>`;
+        ? `<textarea class="form-textarea session-case-response" data-key="${item.key}" data-type="textarea" data-label="${escapeHtml(item.label)}" rows="3" placeholder="اینجا بنویسید..." ${sessionId?`oninput="_saveSessionCaseResponse(${sessionId},this)"`:''}>${escapeHtml(value?.value||'')}</textarea>`
+        : `<input class="form-input session-case-response" data-key="${item.key}" data-type="text" data-label="${escapeHtml(item.label)}" value="${escapeHtml(value?.value||'')}" placeholder="اینجا بنویسید..." ${sessionId?`oninput="_saveSessionCaseResponse(${sessionId},this)"`:''}>`}</div>`;
     }).join('')}
   </div>`;
 }
@@ -10777,11 +10777,46 @@ function _collectSessionCaseForm() {
 }
 
 function _sessionCaseFormReadOnlyHtml(session) {
-  if (!session.case_form_id || !(session.case_form_responses || []).length) return '';
-  const answered = session.case_form_responses.filter(item => item.type === 'check' || String(item.value || '').trim());
-  return `<div class="detail-section"><h3>فرم جلسه — ${escapeHtml(session.case_form_title || 'فرم پرونده')}</h3><div style="margin-top:8px">${answered.map(item => item.type === 'check'
-    ? `<div style="padding:6px 0;font-size:12px;color:${item.checked?'var(--green)':'var(--text3)'}">${item.checked?'☑':'☐'} ${escapeHtml(item.label)}</div>`
-    : `<div class="detail-row"><span class="detail-key">${escapeHtml(item.label)}</span><span class="detail-val">${escapeHtml(item.value) || '—'}</span></div>`).join('')}</div></div>`;
+  if (!session.case_form_id) return '';
+  return `<div class="detail-section"><h3>فرم جلسه</h3>${_sessionCaseFormFieldsHtml(session.case_form_id,session.case_form_responses||[],session.id)}</div>`;
+}
+
+function _saveSessionCaseResponse(sessionId, control) {
+  const session = (_db.sessions || []).find(item => +item.id === +sessionId);
+  if (!session) return;
+  session.case_form_responses = session.case_form_responses || [];
+  const key = +control.dataset.key;
+  let response = session.case_form_responses.find(item => +item.key === key);
+  if (!response) {
+    response = { key, type:control.dataset.type, label:control.dataset.label || '' };
+    session.case_form_responses.push(response);
+  }
+  if (control.type === 'checkbox') {
+    response.checked = control.checked;
+    const label = control.nextElementSibling;
+    if (label) label.style.cssText = control.checked ? 'font-size:12px;text-decoration:line-through;color:var(--text3)' : 'font-size:12px;color:var(--text)';
+  } else response.value = control.value;
+  clearTimeout(control._sessionFormSaveTimer);
+  control._sessionFormSaveTimer = setTimeout(() => _save(), 400);
+}
+
+function _interactiveSessionNoteHtml(session) {
+  const note = String(session.note || '');
+  if (!note) return '<span style="color:var(--text3)">—</span>';
+  const sourceId = `session-note-source-${session.id}`;
+  return `<textarea id="${sourceId}" aria-hidden="true" tabindex="-1" style="display:none" oninput="_saveInteractiveSessionNote(${session.id},this.value)">${escapeHtml(note)}</textarea>
+    <div style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(note,{interactive:true,textareaId:sourceId})}</div>`;
+}
+
+function _saveInteractiveSessionNote(sessionId, value) {
+  const session = (_db.sessions || []).find(item => +item.id === +sessionId);
+  if (!session) return;
+  session.note = value;
+  clearTimeout(window._interactiveSessionNoteSaveTimer);
+  window._interactiveSessionNoteSaveTimer = setTimeout(() => {
+    _save();
+    showToast('پاسخ فرم ذخیره شد ✓', 'success');
+  }, 450);
 }
 
 async function openSessionDetail(sessionId) {
@@ -10802,7 +10837,7 @@ async function openSessionDetail(sessionId) {
     </div>
     <div class="detail-section">
       <h3>توضیحات کامل</h3>
-      <p style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(session.note) || '—'}</p>
+      ${_interactiveSessionNoteHtml(session)}
     </div>
     ${session.extra_note ? `
     <div class="detail-section">
