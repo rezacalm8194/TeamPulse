@@ -8303,6 +8303,17 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   const ts = checked ? 'text-decoration:line-through;color:var(--text3)' : '';
   if (interactive && (noteId != null || textareaId)) {
     const handler = 'onchange="_toggleChecklistItem(' + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ')"';
+    const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
+    if (answerMatch) {
+      const answerHandler = 'oninput="_updateChecklistAnswer(' + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ')"';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;margin:4px 0;min-height:44px;padding:7px 8px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
+        '<input type="checkbox" ' + chk + handler + ' aria-label="وضعیت ' + answerMatch[1] + '" style="' + bs + ';cursor:pointer">' +
+        '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;flex:1;min-width:0">' +
+          '<span data-checklist-label style="' + ts + ';font-weight:600">' + answerMatch[1] + '</span>' +
+          '<input type="text" value="' + answerMatch[2] + '" ' + answerHandler + ' onclick="event.stopPropagation()" placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
+            'style="width:100%;min-width:0;height:38px;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px">' +
+        '</div></div>';
+    }
     return '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:40px;padding:8px 4px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
   return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
@@ -8418,9 +8429,37 @@ async function _toggleChecklistItem(noteId, field, checkbox, itemIndex, textarea
     showToast(checkbox.checked ? 'انجام شد ✓' : 'به حالت انجام‌نشده برگشت', 'success');
   }
   const label = checkbox.closest('label');
-  const textEl = checkbox.nextElementSibling;
+  const textEl = checkbox.parentElement?.querySelector('[data-checklist-label]') || checkbox.nextElementSibling;
   if (textEl) textEl.style.cssText = checkbox.checked ? 'text-decoration:line-through;color:var(--text3)' : '';
   if (label) label.setAttribute('aria-label', checkbox.checked ? 'انجام‌شده' : 'انجام‌نشده');
+}
+
+function _updateChecklistAnswer(noteId, field, input, itemIndex, textareaId) {
+  const textarea = textareaId ? document.getElementById(textareaId) : null;
+  const note = noteId == null ? null : (_db.instructions||[]).find(function(n){ return n.id === +noteId; });
+  if (!textarea && !note) return;
+  const source = textarea ? textarea.value : (note[field] || '');
+  let seen = -1;
+  const cleanAnswer = String(input.value || '').replace(/[\r\n]+/g, ' ').trimStart();
+  const updated = source.replace(/^(\s*(?:[-+*]\s+)?)\[([ xX])\](\s+)(.+)$/gm, function(line, prefix, state, spacing, rest) {
+    seen += 1;
+    if (seen !== Number(itemIndex)) return line;
+    const parts = rest.match(/^(.*?[:：])\s*(.*)$/);
+    if (!parts) return line;
+    return prefix + '[' + state + ']' + spacing + parts[1] + (cleanAnswer ? ' ' + cleanAnswer : '');
+  });
+  if (textarea) {
+    textarea.value = updated;
+    textarea.dispatchEvent(new Event('input', { bubbles:true }));
+    return;
+  }
+  note[field] = updated;
+  clearTimeout(input._checklistSaveTimer);
+  input._checklistSaveTimer = setTimeout(function() {
+    _save();
+    input.style.borderColor = 'var(--green)';
+    setTimeout(function(){ input.style.borderColor = 'var(--border2)'; }, 700);
+  }, 450);
 }
 
 // ── Global error guard: never let a stray error silently freeze the UI ──────
