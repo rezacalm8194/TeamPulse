@@ -539,6 +539,40 @@ button { cursor: pointer; font-family: var(--font); }
 @media (max-width: 640px) {
   .family-actions-menu { position: fixed; top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; }
 }
+@media (max-width: 768px) {
+  .session-form-detail-modal.modal-overlay,
+  body.modal-keyboard-open .session-form-detail-modal.modal-overlay {
+    align-items:stretch !important; padding:0 !important; height:var(--modal-vh,100dvh) !important;
+  }
+  .session-form-detail-modal .modal,
+  body.modal-keyboard-open .session-form-detail-modal .modal {
+    width:100vw !important; max-width:100vw !important; height:var(--modal-vh,100dvh) !important;
+    max-height:var(--modal-vh,100dvh) !important; margin:0 !important; border-radius:0 !important;
+    display:flex !important; flex-direction:column !important; overflow:hidden !important;
+  }
+  .session-form-detail-modal .modal-header { flex:0 0 auto; padding-top:max(18px,env(safe-area-inset-top,0px)) !important; }
+  .session-form-detail-modal .modal-body {
+    flex:1 1 auto !important; min-height:0 !important; overflow-y:auto !important; overflow-x:hidden !important;
+    -webkit-overflow-scrolling:touch; overscroll-behavior:contain; scroll-padding-bottom:180px;
+    padding:12px 14px 24px !important;
+  }
+  .session-form-detail-modal .modal-actions {
+    position:sticky !important; bottom:0 !important; flex:0 0 auto !important; z-index:20 !important;
+    padding:8px 14px calc(8px + env(safe-area-inset-bottom,0px)) !important; background:var(--bg2) !important;
+  }
+  body.modal-keyboard-open .session-form-detail-modal .modal-actions { display:none !important; }
+  .session-form-detail-modal .interactive-form-field {
+    display:flex !important; flex-direction:column !important; align-items:stretch !important; gap:7px !important;
+  }
+  .session-form-detail-modal .interactive-form-field input,
+  .session-form-detail-modal .interactive-form-field textarea,
+  .session-form-detail-modal .session-case-response {
+    width:100% !important; min-width:0 !important; min-height:46px !important; font-size:16px !important;
+  }
+  .session-form-detail-modal .interactive-checklist-item { min-height:48px !important; padding:11px 8px !important; }
+  .session-form-detail-modal .interactive-checklist-item input[type="checkbox"],
+  .session-form-detail-modal .session-case-response[type="checkbox"] { width:22px !important; height:22px !important; min-height:22px !important; flex:0 0 22px !important; }
+}
 .staff-accounts-table tbody tr { height: 72px; }
 .staff-accounts-table tbody td {
   height: 72px;
@@ -8320,7 +8354,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
   if (answerMatch && interactive && (noteId != null || textareaId)) {
     const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-    return '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;margin:4px 0;min-height:52px;padding:7px 10px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
+    return '<div class="interactive-form-field" style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;margin:4px 0;min-height:52px;padding:7px 10px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
       '<label style="font-weight:600" for="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '">' + answerMatch[1] + '</label>' +
       '<input id="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '" type="text" value="' + _cleanPlaceholderAnswer(answerMatch[2]) + '" ' + answerHandler + ' placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
         'style="width:100%;min-width:0;height:40px;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px">' +
@@ -8331,7 +8365,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   }
   if (interactive && (noteId != null || textareaId)) {
     const handler = "onchange='_toggleChecklistItem(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-    return '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:40px;padding:8px 4px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
+    return '<label class="interactive-checklist-item" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:44px;padding:10px 6px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
   return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
 }
@@ -8388,7 +8422,7 @@ function renderRich(str, opts) {
     const displayAnswer = _cleanPlaceholderAnswer(answer).replace(/\s*⏎\s*/g, '\n');
     if (interactive && (noteId != null || textareaId)) {
       const handler = "oninput='_updatePlainFieldAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + index + ',' + JSON.stringify(textareaId || '') + ")'";
-      plainFields.push('<div style="margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg3)">' +
+      plainFields.push('<div class="interactive-form-field interactive-form-textarea" style="margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg3)">' +
         '<label for="plain-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + index + '" style="display:block;margin-bottom:7px;font-weight:700;color:var(--text)">' + label + '</label>' +
         '<textarea id="plain-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + index + '" rows="3" ' + handler + ' placeholder="توضیحات را اینجا وارد کنید…" ' +
           'style="display:block;width:100%;min-height:88px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.8;resize:vertical">' + displayAnswer + '</textarea></div>');
@@ -10876,7 +10910,18 @@ async function openSessionDetail(sessionId) {
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditSession(${sessionId})`, style: 'min-width:160px;font-size:14px;padding:12px 28px;box-shadow:0 4px 16px rgba(124,106,247,.45)' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()', style: 'opacity:.85;font-size:11px;padding:7px 12px;box-shadow:none' },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteSession(${sessionId})`, style: 'margin-left:auto' },
-  ]);
+  ], { fullPage: true, overlayClass: 'session-form-detail-modal' });
+  setTimeout(() => _bindInteractiveSessionMobileFocus(), 0);
+}
+
+function _bindInteractiveSessionMobileFocus() {
+  const body = document.querySelector('.session-form-detail-modal .modal-body');
+  if (!body || body.dataset.mobileFocusBound === '1') return;
+  body.dataset.mobileFocusBound = '1';
+  body.addEventListener('focusin', event => {
+    if (!event.target.matches('input,textarea,select')) return;
+    setTimeout(() => event.target.scrollIntoView({ block:'center', behavior:'smooth' }), 260);
+  });
 }
 
 async function openStudentFollowups(studentId, displayName) {
