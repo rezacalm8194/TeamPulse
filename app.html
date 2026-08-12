@@ -5762,8 +5762,8 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[])});_save();} return _P({ok:true}); },
+    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[])});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_save();}} return _P({ok:true}); },
     addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});_save();} return _P({ok:true}); },
     deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);_save();} return _P({ok:true}); },
@@ -10690,6 +10690,92 @@ async function deleteSession(sessionId) {
   await renderSessions();
 }
 
+function _parseSessionCaseForm(content) {
+  const lines = String(content || '').replace(/\r/g, '').split('\n');
+  const items = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim();
+    if (!raw) continue;
+    const heading = raw.match(/^#{1,6}\s+(.+)$/);
+    if (heading) { items.push({ type:'heading', label:heading[1].trim() }); continue; }
+    const check = raw.match(/^(?:[-+*]\s+)?\[[ xX]\]\s+(.+)$/);
+    if (check) {
+      const label = check[1].trim();
+      if (/[:：]\s*$/.test(label)) items.push({ type:'text', label:label.replace(/[:：]\s*$/,'').trim() });
+      else items.push({ type:'check', label });
+      continue;
+    }
+    const field = raw.match(/^([^:：]{1,100})[:：]\s*(.*)$/);
+    if (field) {
+      const label = field[1].trim();
+      const answer = field[2].trim();
+      const next = String(lines[i + 1] || '').trim();
+      if (!answer && /^[.…·_ـ-]{3,}$/.test(next)) { items.push({ type:'textarea', label }); i++; continue; }
+      if (!answer && !next) { items.push({ type:'text', label }); continue; }
+      if (!answer && next && !/^#{1,6}\s+/.test(next) && !/^(?:[-+*]\s+)?\[[ xX]\]/.test(next)) {
+        items.push({ type:'guide', label:`${label}: ${next}` }); i++; continue;
+      }
+      if (!answer) { items.push({ type:'text', label }); continue; }
+      items.push({ type:'guide', label:`${label}: ${answer}` });
+      continue;
+    }
+    if (/^[.…·_ـ-]{3,}$/.test(raw)) continue;
+    items.push({ type:'guide', label:raw.replace(/^[-+*]\s+/, '') });
+  }
+  return items.map((item, index) => ({ ...item, key:index + 1 }));
+}
+
+function _sessionCaseFormOptions(selectedId) {
+  return `<option value="">— بدون فرم —</option>` + (_db.case_forms || []).map(form =>
+    `<option value="${form.id}" ${+selectedId===+form.id?'selected':''}>${escapeHtml(form.title)}</option>`
+  ).join('');
+}
+
+function _sessionCaseFormFieldsHtml(formId, responses = []) {
+  const form = (_db.case_forms || []).find(item => +item.id === +formId);
+  if (!form) return '';
+  const saved = new Map((responses || []).map(item => [String(item.key), item]));
+  return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg2)">
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">${escapeHtml(form.title)}</div>
+    ${_parseSessionCaseForm(form.content).map(item => {
+      const value = saved.get(String(item.key));
+      if (item.type === 'heading') return `<h4 style="font-size:13px;color:var(--text);margin:16px 0 8px">${escapeHtml(item.label)}</h4>`;
+      if (item.type === 'guide') return `<div style="font-size:11px;color:var(--text2);line-height:1.8;margin:7px 0">${escapeHtml(item.label)}</div>`;
+      if (item.type === 'check') return `<label style="display:flex;align-items:center;gap:9px;padding:9px 10px;margin:6px 0;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer"><input class="session-case-response" data-key="${item.key}" data-type="check" data-label="${escapeHtml(item.label)}" type="checkbox" ${value?.checked?'checked':''} style="width:18px;height:18px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0"><span style="font-size:12px;color:var(--text)">${escapeHtml(item.label)}</span></label>`;
+      const textarea = item.type === 'textarea';
+      return `<div class="form-group full" style="margin:9px 0"><label class="form-label">${escapeHtml(item.label)}</label>${textarea
+        ? `<textarea class="form-textarea session-case-response" data-key="${item.key}" data-type="textarea" data-label="${escapeHtml(item.label)}" rows="3" placeholder="اینجا بنویسید...">${escapeHtml(value?.value||'')}</textarea>`
+        : `<input class="form-input session-case-response" data-key="${item.key}" data-type="text" data-label="${escapeHtml(item.label)}" value="${escapeHtml(value?.value||'')}" placeholder="اینجا بنویسید...">`}</div>`;
+    }).join('')}
+  </div>`;
+}
+
+function _onSessionCaseFormChange(select) {
+  const container = document.getElementById('session-case-form-fields');
+  if (container) container.innerHTML = select.value ? _sessionCaseFormFieldsHtml(+select.value) : '';
+}
+
+function _collectSessionCaseForm() {
+  const select = document.getElementById('f-ses-case-form');
+  const formId = +(select?.value || 0);
+  const form = (_db.case_forms || []).find(item => +item.id === formId);
+  const responses = [...document.querySelectorAll('.session-case-response')].map(control => ({
+    key:+control.dataset.key,
+    type:control.dataset.type,
+    label:control.dataset.label || '',
+    ...(control.type === 'checkbox' ? { checked:control.checked } : { value:control.value })
+  }));
+  return { case_form_id:formId || null, case_form_title:form?.title || '', case_form_responses:responses };
+}
+
+function _sessionCaseFormReadOnlyHtml(session) {
+  if (!session.case_form_id || !(session.case_form_responses || []).length) return '';
+  const answered = session.case_form_responses.filter(item => item.type === 'check' || String(item.value || '').trim());
+  return `<div class="detail-section"><h3>فرم جلسه — ${escapeHtml(session.case_form_title || 'فرم پرونده')}</h3><div style="margin-top:8px">${answered.map(item => item.type === 'check'
+    ? `<div style="padding:6px 0;font-size:12px;color:${item.checked?'var(--green)':'var(--text3)'}">${item.checked?'☑':'☐'} ${escapeHtml(item.label)}</div>`
+    : `<div class="detail-row"><span class="detail-key">${escapeHtml(item.label)}</span><span class="detail-val">${escapeHtml(item.value) || '—'}</span></div>`).join('')}</div></div>`;
+}
+
 async function openSessionDetail(sessionId) {
   const groups = await window.api.sessions.getAll();
   let session = null, student = null;
@@ -10715,6 +10801,7 @@ async function openSessionDetail(sessionId) {
       <h3>توضیحات تکمیلی</h3>
       <p style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(session.extra_note)}</p>
     </div>` : ''}
+    ${_sessionCaseFormReadOnlyHtml(session)}
     ${(session.followups && session.followups.length > 0) ? `
     <div class="detail-section">
       <h3>📌 اقدامات تا جلسه بعد</h3>
@@ -10910,6 +10997,12 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
         <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
+      </div>
+
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+        <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
+        <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(null)}</select>
+        <div id="session-case-form-fields" style="margin-top:10px"></div>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -11164,6 +11257,7 @@ async function saveSessionGeneral() {
   const title = document.getElementById('f-ses-title')?.value || '';
   const note = _appendSessionTimerToNote(document.getElementById('f-ses-note')?.value);
   const addAsTopic = document.getElementById('f-ses-add-topic')?.checked;
+  const caseFormData = _collectSessionCaseForm();
   const { formId: autoFormId, pid: autoPid } = _matchPeriodForDate(studentId, date);
   await window.api.sessions.add({
     student_id: studentId, date,
@@ -11176,6 +11270,7 @@ async function saveSessionGeneral() {
     eval_form_id: autoFormId || null,
     eval_period_id: autoPid || null,
     achievement_tags: _getCheckedAchievementTags(),
+    ...caseFormData,
   });
   window._pendingFollowups = [];
   // ذخیره پیوست‌ها در جلسه جدید
@@ -11257,6 +11352,12 @@ async function openEditSession(sessionId) {
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
 
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+        <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
+        <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(session.case_form_id)}</select>
+        <div id="session-case-form-fields" style="margin-top:10px">${_sessionCaseFormFieldsHtml(session.case_form_id, session.case_form_responses || [])}</div>
+      </div>
+
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
@@ -11334,6 +11435,7 @@ async function saveEditSession(sessionId) {
   const { formId: autoFormId, pid: autoPid } = studentId ? _matchPeriodForDate(studentId, date) : { formId: null, pid: null };
   const title = document.getElementById('f-ses-title')?.value || '';
   const note = _appendSessionTimerToNote(document.getElementById('f-ses-note')?.value);
+  const caseFormData = _collectSessionCaseForm();
   await window.api.sessions.update({
     id: sessionId,
     title,
@@ -11345,6 +11447,7 @@ async function saveEditSession(sessionId) {
     eval_form_id: autoFormId || null,
     eval_period_id: autoPid || null,
     achievement_tags: _getCheckedAchievementTags(),
+    ...caseFormData,
   });
   if (document.getElementById('f-ses-add-topic')?.checked && studentId) {
     await window.api.topics.add({ student_id: studentId, date, title, text: note });
