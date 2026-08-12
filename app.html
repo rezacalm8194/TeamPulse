@@ -8367,12 +8367,14 @@ function renderRich(str, opts) {
     inlineCodes.push('<code style="direction:ltr;display:inline-block;padding:1px 6px;border-radius:5px;background:var(--bg3);color:var(--accent2);font-family:monospace;font-size:.92em">' + code + '</code>');
     return token;
   });
-  // Standalone labels ending in ':' are fillable fields even when they were
-  // not authored as checklist items. A following dotted placeholder line is
-  // consumed as part of the same field.
+  // ':' alone is ambiguous (it is also used by headings such as "نکته:").
+  // A plain-text field therefore needs the dotted writing line below it. The
+  // line remains in raw Markdown as the field marker but is hidden in preview.
   const plainFields = [];
   let plainFieldIndex = 0;
-  s = s.replace(/^(?!\s*(?:[-+*]\s+)?\[[ xX]\])(?!\s*[#&|])\s*([^:\n]{1,80}[:：])\s*(.*?)(?:\n\s*[.…·_ـ-]{3,}\s*)?$/gm, function(_, label, answer) {
+  s = s.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|\s*([^:\n]{1,80}[:：])\s*([^\n]*?)\n\s*[.…·_ـ-]{3,}\s*)$/gm, function(_, markedLabel, markedAnswer, legacyLabel, legacyAnswer) {
+    const label = markedLabel || legacyLabel;
+    const answer = markedLabel ? markedAnswer : legacyAnswer;
     const index = plainFieldIndex++;
     const token = '\uE004FIELD' + plainFields.length + '\uE005';
     const displayAnswer = _cleanPlaceholderAnswer(answer).replace(/\s*⏎\s*/g, '\n');
@@ -8499,10 +8501,11 @@ function _updatePlainFieldAnswer(noteId, field, input, itemIndex, textareaId) {
   const source = textarea ? textarea.value : (note[field] || '');
   let seen = -1;
   const cleanAnswer = String(input.value || '').replace(/\r/g, '').trimStart().replace(/\n+/g, ' ⏎ ');
-  const updated = source.replace(/^(?!\s*(?:[-+*]\s+)?\[[ xX]\])(?!\s*[#>|])\s*([^:\n]{1,80}[:：])\s*(.*?)(?:\n\s*[.…·_ـ-]{3,}\s*)?$/gm, function(line, label) {
+  const updated = source.replace(/^(?:\s*\{\{field\}\}\s*([^:\n]{1,80}[:：])\s*(.*?)|\s*([^:\n]{1,80}[:：])\s*([^\n]*?)\n\s*[.…·_ـ-]{3,}\s*)$/gm, function(line, markedLabel, markedAnswer, legacyLabel) {
     seen += 1;
     if (seen !== Number(itemIndex)) return line;
-    return label + (cleanAnswer ? ' ' + cleanAnswer : '');
+    const label = markedLabel || legacyLabel;
+    return label + (cleanAnswer ? ' ' + cleanAnswer : '') + '\n........................';
   });
   if (textarea) {
     textarea.value = updated;
