@@ -16406,20 +16406,21 @@ function _evalSaveByKey(key, forms) {
 // Checklist items and text fields are meaningful indicators; headings and guide text are not.
 function _caseFormEvalRows(caseForm) {
   const content = String(caseForm?.content || '').replace(/\r/g, '');
-  const labels = [];
-  const addLabel = raw => {
+  const rows = [];
+  const addRow = (raw, type) => {
     let label = String(raw || '').trim()
       .replace(/^\*\*(.*?)\*\*$/, '$1')
       .replace(/[:：]\s*$/, '')
       .replace(/[.…·_ـ-]{3,}\s*$/, '')
       .trim();
-    if (label && !labels.includes(label)) labels.push(label);
+    if (label && !rows.some(row => row.label === label && row.type === type)) rows.push({ label, type });
   };
 
   content.split('\n').forEach((line, index, lines) => {
     const checklist = line.match(/^\s*(?:[-+*]\s+)?\[[ xX]\]\s+(.+?)\s*$/);
     if (checklist) {
-      addLabel(checklist[1]);
+      const hasColon = /[:：]\s*$/.test(checklist[1]);
+      addRow(checklist[1], hasColon ? 'description' : 'checklist');
       return;
     }
 
@@ -16428,10 +16429,10 @@ function _caseFormEvalRows(caseForm) {
     if (!field) return;
     const answer = field[2].trim();
     const next = String(lines[index + 1] || '').trim();
-    if ((!answer && !next) || /^[.…·_ـ-]{3,}$/.test(answer) || /^[.…·_ـ-]{3,}$/.test(next)) addLabel(field[1]);
+    if ((!answer && !next) || /^[.…·_ـ-]{3,}$/.test(answer) || /^[.…·_ـ-]{3,}$/.test(next)) addRow(field[1], 'description');
   });
 
-  return labels.map((label, index) => ({ id: index + 1, label, type:'score', maxScore: 10, weight: 1 }));
+  return rows.map((row, index) => ({ id: index + 1, label:row.label, type:row.type, maxScore:10, weight:1 }));
 }
 
 function _studentEvalDisplayName(studentId) {
@@ -16642,6 +16643,7 @@ function _evalBuilderRowHtml(row = {}, existingId = '') {
       <option value="score" ${type==='score'?'selected':''}>امتیاز</option>
       <option value="description" ${type==='description'?'selected':''}>توضیحات</option>
       <option value="goal" ${type==='goal'?'selected':''}>هدف</option>
+      <option value="checklist" ${type==='checklist'?'selected':''}>چک‌لیست</option>
     </select>
     <input class="form-input eval-builder-label" value="${escapeHtml(row.label || '')}" placeholder="عنوان المان، مثلاً کیفیت اجرا" aria-label="عنوان المان">
     <input class="form-input eval-builder-max" type="number" min="1" max="100" value="${row.maxScore || 10}" aria-label="حداکثر امتیاز" style="${type==='score'?'':'visibility:hidden'}" title="حداکثر امتیاز">
@@ -16678,6 +16680,7 @@ function openEditEvalRows(studentId, displayName, formId) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('checklist')">+ چک‌لیست</button>
     </div>
     <div style="padding:10px 12px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:8px;font-size:11px;color:var(--text2);margin-top:10px;line-height:1.8">
       ⚠️ امتیازهای ثبت‌شده برای شاخص‌های موجود حفظ می‌شن. شاخص‌های جدید از صفر شروع می‌کنن.
@@ -16715,6 +16718,7 @@ function openNewEvalForm(studentId, displayName) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('checklist')">+ چک‌لیست</button>
     </div>
     <div class="form-grid"><div class="form-group full">
         <label class="form-label">توضیحات فرم (اختیاری)</label>
@@ -16955,6 +16959,7 @@ function buildEvalTable(form, periodIdx, studentId) {
   const scores = period ? period.scores : {};
   const notes = period ? period.notes : {};
   const targets = period ? (period.targets || {}) : {};
+  const checks = period ? (period.checks || {}) : {};
 
   // editable date header (closed period) vs. "still open" banner with an end-period button
   const dateRow = period ? (period.date ? `
@@ -16990,6 +16995,7 @@ function buildEvalTable(form, periodIdx, studentId) {
     const target = targets[row.id] !== undefined ? targets[row.id] : '';
     if (rowType === 'description') return `<tr><td style="padding:9px 10px;font-size:12px;color:var(--text);font-weight:600;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td><td colspan="3" style="padding:8px 6px;border-bottom:1px solid var(--border)">${period?`<textarea rows="2" placeholder="توضیحات را بنویسید..." style="width:100%;padding:7px 9px;font-size:12px;border:1px solid var(--border);border-radius:7px;background:var(--bg3);color:var(--text);font-family:inherit;resize:vertical" onchange="updateEvalNote(${form.id},${row.id},this.value,${periodIdx})">${escapeHtml(note)}</textarea>`:'<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>'}</td></tr>`;
     if (rowType === 'goal') return `<tr><td style="padding:9px 10px;font-size:12px;color:var(--text);font-weight:600;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td><td colspan="3" style="padding:8px 6px;border-bottom:1px solid var(--border)">${period?`<input type="text" value="${escapeHtml(target)}" placeholder="هدف را بنویسید..." style="width:100%;padding:7px 9px;font-size:12px;border:1px solid rgba(96,165,250,.35);border-radius:7px;background:rgba(96,165,250,.05);color:var(--text)" onchange="updateEvalTarget(${form.id},${row.id},this.value,${periodIdx})">`:'<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>'}</td></tr>`;
+    if (rowType === 'checklist') return `<tr><td colspan="4" style="padding:8px 10px;border-bottom:1px solid var(--border)">${period?`<label style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" ${checks[row.id]?'checked':''} onchange="updateEvalCheck(${form.id},${row.id},this.checked,${periodIdx},this)" style="width:18px;height:18px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0"><span style="font-size:12px;color:var(--text);${checks[row.id]?'text-decoration:line-through;color:var(--text3)':''}">${escapeHtml(row.label)}</span></label>`:`<span style="font-size:11px;color:var(--text3)">${escapeHtml(row.label)} — ابتدا دوره شروع کن</span>`}</td></tr>`;
     const pct = score !== '' ? Math.round((parseFloat(score) / row.maxScore) * 100) : 0;
     const barColor = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'rgba(251,191,36,1)' : 'var(--red)';
     return `
@@ -18574,6 +18580,19 @@ function _nextRepeatDate(dateStr, repeatType, repeatDays = null) {
   const maxDay = jm <= 6 ? 31 : (jm <= 11 ? 30 : 29);
   if (jd > maxDay) { jd -= maxDay; jm++; if (jm > 12) { jm = 1; jy++; } }
   return _formatJalali(jy, jm, jd);
+}
+
+function updateEvalCheck(formId, rowId, checked, periodIdx, control) {
+  const key = evalFindKey(formId);
+  if (!key) return;
+  const forms = _evalLoadByKey(key);
+  const form = forms.find(f => f.id === formId);
+  if (!form || !form.periods[periodIdx]) return;
+  if (!form.periods[periodIdx].checks) form.periods[periodIdx].checks = {};
+  form.periods[periodIdx].checks[rowId] = !!checked;
+  _evalSaveByKey(key, forms);
+  const label = control?.closest('label')?.querySelector('span');
+  if (label) label.style.cssText = checked ? 'font-size:12px;text-decoration:line-through;color:var(--text3)' : 'font-size:12px;color:var(--text)';
 }
 
 function _syncKeyEventRepeatDays(prefix) {
