@@ -16287,9 +16287,99 @@ function _evalSaveByKey(key, forms) {
   saveEvalForms(sid, forms);
 }
 
+// Convert a reusable case-form template into evaluation indicators.
+// Checklist items and text fields are meaningful indicators; headings and guide text are not.
+function _caseFormEvalRows(caseForm) {
+  const content = String(caseForm?.content || '').replace(/\r/g, '');
+  const labels = [];
+  const addLabel = raw => {
+    let label = String(raw || '').trim()
+      .replace(/^\*\*(.*?)\*\*$/, '$1')
+      .replace(/[:：]\s*$/, '')
+      .replace(/[.…·_ـ-]{3,}\s*$/, '')
+      .trim();
+    if (label && !labels.includes(label)) labels.push(label);
+  };
+
+  content.split('\n').forEach((line, index, lines) => {
+    const checklist = line.match(/^\s*(?:[-+*]\s+)?\[[ xX]\]\s+(.+?)\s*$/);
+    if (checklist) {
+      addLabel(checklist[1]);
+      return;
+    }
+
+    // A label followed by a blank/dotted answer area is a free-text field.
+    const field = line.match(/^\s*([^#\n]{1,100}?)\s*[:：]\s*(.*)$/);
+    if (!field) return;
+    const answer = field[2].trim();
+    const next = String(lines[index + 1] || '').trim();
+    if ((!answer && !next) || /^[.…·_ـ-]{3,}$/.test(answer) || /^[.…·_ـ-]{3,}$/.test(next)) addLabel(field[1]);
+  });
+
+  return labels.map((label, index) => ({ id: index + 1, label, maxScore: 10, weight: 1 }));
+}
+
+function _studentEvalDisplayName(studentId) {
+  const student = (allStudents || []).find(item => +item.id === +studentId);
+  return student ? `${student.name || ''} ${student.lname || ''}`.trim() : (META.entitySingular || 'شاگرد');
+}
+
+function selectCaseFormForEvaluation(studentId, caseFormId) {
+  const displayName = _studentEvalDisplayName(studentId);
+  const template = (_db.case_forms || []).find(item => +item.id === +caseFormId);
+  if (!template) { showToast('فرم پرونده پیدا نشد', 'error'); return; }
+
+  const forms = loadEvalForms(studentId);
+  const alreadySelected = forms.find(form => +form.source_case_form_id === +caseFormId);
+  if (alreadySelected) {
+    showToast('این فرم قبلاً برای این فرد انتخاب شده است');
+    openEvalFormDetail(studentId, displayName, alreadySelected.id);
+    return;
+  }
+
+  const rows = _caseFormEvalRows(template);
+  if (!rows.length) {
+    showToast('در این فرم فیلد یا چک‌باکسی برای تبدیل به شاخص پیدا نشد', 'error');
+    return;
+  }
+
+  const newForm = {
+    id: genEvalId(),
+    title: template.title,
+    desc: template.description || 'ساخته‌شده از فرم پرونده',
+    rows,
+    periods: [],
+    created: formatJalali(...todayJalali()),
+    source_case_form_id: template.id,
+  };
+  forms.push(newForm);
+  saveEvalForms(studentId, forms);
+  showToast('فرم برای این فرد انتخاب شد ✓', 'success');
+  openEvalFormDetail(studentId, displayName, newForm.id);
+}
+
 // ── LIST of forms for a student ──
 function openEvaluation(studentId, displayName) {
   const forms = loadEvalForms(studentId);
+  const caseForms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
+  const caseFormsPickerHtml = caseForms.length ? `
+    <section style="margin-bottom:14px;padding:12px;background:rgba(124,106,247,.06);border:1px solid rgba(124,106,247,.22);border-radius:11px" aria-label="انتخاب فرم از پرونده‌ها">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px">
+        <div><div style="font-size:12px;font-weight:700;color:var(--text)">انتخاب از فرم‌های پرونده</div><div style="font-size:10px;color:var(--text3);margin-top:2px">یک نسخه مستقل برای ${escapeHtml(displayName)} ساخته می‌شود</div></div>
+        <span style="font-size:10px;color:var(--accent2);white-space:nowrap">${fa(caseForms.length)} فرم آماده</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px">
+        ${caseForms.map(template => {
+          const selected = forms.find(form => +form.source_case_form_id === +template.id);
+          const rowCount = _caseFormEvalRows(template).length;
+          return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--bg2);border:1px solid ${selected?'rgba(62,207,142,.35)':'var(--border)'};border-radius:9px">
+            <div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(template.title)}">${escapeHtml(template.title)}</div><div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(rowCount)} شاخص قابل ارزیابی</div></div>
+            <button type="button" class="btn ${selected?'btn-ghost':'btn-primary'} btn-sm" style="min-height:36px;white-space:nowrap;${selected?'color:var(--green)':''}" onclick="${selected?`openEvalFormDetail(${studentId},_studentEvalDisplayName(${studentId}),${selected.id})`:`selectCaseFormForEvaluation(${studentId},${template.id})`}">${selected?'✓ انتخاب‌شده':'انتخاب'}</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </section>` : `
+    <div style="margin-bottom:12px;padding:10px 12px;border:1px dashed var(--border2);border-radius:9px;color:var(--text3);font-size:10px;line-height:1.8">فرم آماده‌ای در بخش «پرونده‌ها» ساخته نشده است.</div>`;
   const formsHtml = forms.length === 0
     ? `<div style="text-align:center;padding:24px 0;color:var(--text3);font-size:12px">هنوز فرمی ایجاد نشده<br><span style="font-size:11px">از دکمه زیر یک فرم ارزیابی جدید بساز</span></div>`
     : forms.map(f => {
@@ -16348,6 +16438,7 @@ function openEvaluation(studentId, displayName) {
       <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تاریخچه دستاوردها (${fa(allSessions.length)})</button>
     </div>
     <div id="eval-panel-forms" style="max-height:55vh;overflow-y:auto">
+      ${caseFormsPickerHtml}
       <div id="eval-forms-list">${formsHtml}</div>
     </div>
     <div id="eval-panel-ach" style="display:none;max-height:55vh;overflow-y:auto">
