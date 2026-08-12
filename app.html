@@ -11134,12 +11134,6 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
       </div>
 
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
-        <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(null)}</select>
-        <div id="session-case-form-fields" style="margin-top:10px"></div>
-      </div>
-
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
@@ -11186,6 +11180,11 @@ async function openAddSessionGeneral(presetStudentId = null) {
             <div id="ses-attach-preview" style="margin-bottom:8px"></div>
             <button type="button" class="btn btn-ghost btn-sm" onclick="_pickSessionFiles()">📎 افزودن فایل یا عکس</button>
             <div id="ses-attach-count" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
+          </div>
+          <div class="form-group full" style="margin:0 0 12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+            <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
+            <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(null)}</select>
+            <div id="session-case-form-fields" style="margin-top:10px"></div>
           </div>
       </div>
       </div>
@@ -11487,12 +11486,6 @@ async function openEditSession(sessionId) {
         <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
       </div>
 
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
-        <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(session.case_form_id)}</select>
-        <div id="session-case-form-fields" style="margin-top:10px">${_sessionCaseFormFieldsHtml(session.case_form_id, session.case_form_responses || [])}</div>
-      </div>
-
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
@@ -11540,6 +11533,11 @@ async function openEditSession(sessionId) {
           <div class="form-group full" style="flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap;margin-top:0">
             <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
             <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
+          </div>
+          <div class="form-group full" style="margin:12px 0 0;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+            <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
+            <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(session.case_form_id)}</select>
+            <div id="session-case-form-fields" style="margin-top:10px">${_sessionCaseFormFieldsHtml(session.case_form_id, session.case_form_responses || [])}</div>
           </div>
         </div>
       </div>
@@ -16442,11 +16440,13 @@ function _renderAchievementTagPicker(formId, selectedTags) {
   const forms = key ? _evalLoadByKey(key) : [];
   const form = forms.find(f => f.id === formId);
   if (!form) { container.innerHTML = ''; return; }
+  const progressRows = (form.rows || []).filter(row => row.progress_indicator === true);
+  if (!progressRows.length) { container.innerHTML = ''; return; }
   const sel = (selectedTags || []).map(String);
   container.innerHTML = `
     <div style="font-size:10px;color:var(--text3);margin:8px 0 4px">این دستاورد به کدام شاخص(ها) مربوط است؟ (اختیاری)</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
-      ${form.rows.map(r => `
+      ${progressRows.map(r => `
         <label style="display:flex;align-items:center;gap:4px;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer">
           <input type="checkbox" value="${r.id}" class="ses-ach-tag-cb" ${sel.includes(String(r.id)) ? 'checked' : ''} style="width:13px;height:13px;accent-color:var(--accent2)">
           ${escapeHtml(r.label)}
@@ -16803,6 +16803,7 @@ function _evalBuilderRowHtml(row = {}, existingId = '') {
     <input class="form-input eval-builder-label" value="${escapeHtml(row.label || '')}" placeholder="عنوان المان، مثلاً کیفیت اجرا" aria-label="عنوان المان">
     <input class="form-input eval-builder-max" type="number" min="1" max="100" value="${row.maxScore || 10}" aria-label="حداکثر امتیاز" style="${type==='score'?'':'visibility:hidden'}" title="حداکثر امتیاز">
     <button type="button" class="btn btn-ghost" onclick="this.closest('.eval-builder-row').remove()" aria-label="حذف المان" title="حذف" style="min-width:42px;padding:8px;color:var(--red)">×</button>
+    <label style="grid-column:1/-1;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text2);cursor:pointer"><input type="checkbox" class="eval-builder-progress" ${row.progress_indicator?'checked':''} style="width:17px;height:17px;accent-color:var(--green)"><span>این المان به‌عنوان «شاخص پیشرفت» در ثبت جلسه نمایش داده شود</span></label>
   </div>`;
 }
 
@@ -16821,6 +16822,7 @@ function _collectEvalBuilderRows() {
     type:row.querySelector('.eval-builder-type')?.value || 'score',
     label:row.querySelector('.eval-builder-label')?.value.trim() || '',
     maxScore:parseInt(row.querySelector('.eval-builder-max')?.value) || 10,
+    progress_indicator:!!row.querySelector('.eval-builder-progress')?.checked,
   })).filter(row => row.label);
 }
 
@@ -16869,7 +16871,7 @@ function saveEditEvalRows(studentId, displayName, formId) {
   if (!form) return;
 
   let nextId = Math.max(0, ...form.rows.map(row => +row.id || 0)) + 1;
-  form.rows = builderRows.map(row => ({ id:row.existingId || nextId++, label:row.label, type:row.type, maxScore:row.maxScore, weight:1 }));
+  form.rows = builderRows.map(row => ({ id:row.existingId || nextId++, label:row.label, type:row.type, maxScore:row.maxScore,weight:1,progress_indicator:row.progress_indicator }));
 
   saveEvalForms(studentId, forms);
   showToast('شاخص‌ها ذخیره شدند ✅');
@@ -16889,6 +16891,7 @@ function openNewEvalForm(studentId, displayName) {
     </div>
     <div id="ef-default-panel">
       <div class="form-group full"><label class="form-label">شاخص‌های ارزیابی؛ هر خط یک شاخص</label><textarea class="form-textarea" id="ef-default-rows" rows="9" placeholder="آرامش&#10;نظم و استمرار&#10;کیفیت باورها&#10;عزت نفس&#10;اعتماد به نفس&#10;سلامتی&#10;انرژی"></textarea><div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:5px">برای هر شاخص چهار ستون «شاخص، امتیاز، توضیحات و هدف» ساخته می‌شود.</div></div>
+      <div class="form-group full" style="margin-top:10px"><label class="form-label">شاخص‌های پیشرفت برای نمایش در ثبت جلسه (اختیاری)</label><textarea class="form-textarea" id="ef-default-progress" rows="3" placeholder="فقط نام شاخص‌هایی را بنویسید که می‌خواهید هنگام ثبت دستاورد قابل انتخاب باشند؛ هر خط یک مورد"></textarea></div>
       <div class="form-group" style="margin-top:10px"><label class="form-label">حداکثر امتیاز هر شاخص</label><input class="form-input" id="ef-default-maxscore" type="number" value="10" min="1" max="100"></div>
     </div>
     <div id="ef-custom-panel" style="display:none">
@@ -16915,11 +16918,12 @@ function saveNewEvalForm(studentId, displayName) {
     const labels = (document.getElementById('ef-default-rows')?.value || '').split('\n').map(value => value.trim()).filter(Boolean);
     const maxScore = parseInt(document.getElementById('ef-default-maxscore')?.value) || 10;
     if (!labels.length) { showToast('حداقل یک شاخص وارد کنید','error'); return; }
-    rows = labels.map((label,index) => ({id:index+1,label,type:'score',maxScore,weight:1}));
+    const progressLabels = (document.getElementById('ef-default-progress')?.value || '').split('\n').map(value => value.trim()).filter(Boolean);
+    rows = labels.map((label,index) => ({id:index+1,label,type:'score',maxScore,weight:1,progress_indicator:progressLabels.includes(label)}));
   } else {
     const builderRows = _collectEvalBuilderRows();
     if (!builderRows.length) { showToast('حداقل یک المان اضافه کنید','error'); return; }
-    rows = builderRows.map((row,index) => ({id:index+1,label:row.label,type:row.type,maxScore:row.maxScore,weight:1}));
+    rows = builderRows.map((row,index) => ({id:index+1,label:row.label,type:row.type,maxScore:row.maxScore,weight:1,progress_indicator:row.progress_indicator}));
   }
   const newForm = { id:genEvalId(), title, desc, rows, periods:[], form_mode:mode, created:formatJalali(...todayJalali()) };
   const forms = loadEvalForms(studentId);
