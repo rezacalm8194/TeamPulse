@@ -8297,6 +8297,14 @@ function excerpt(str, len=70) {
 }
 
 // ── Rich text: **bold** and ==highlight== + simple sticker emojis ────────────
+function _cleanPlaceholderAnswer(value) {
+  const text = String(value || '').trim();
+  // Legacy templates used dotted/dashed lines as a visual writing area. They
+  // are placeholders, not user-entered answers, so never show them in inputs.
+  if (text.length >= 3 && /^[-.…·_ـ\s]+$/.test(text)) return '';
+  return String(value || '');
+}
+
 function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, textareaId) {
   const bs = 'margin-top:3px;width:18px;height:18px;flex-shrink:0;accent-color:var(--accent2)';
   const chk = checked ? 'checked ' : '';
@@ -8306,7 +8314,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
     const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
     return '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;margin:4px 0;min-height:52px;padding:7px 10px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
       '<label style="font-weight:600" for="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '">' + answerMatch[1] + '</label>' +
-      '<input id="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '" type="text" value="' + answerMatch[2] + '" ' + answerHandler + ' placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
+      '<input id="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '" type="text" value="' + _cleanPlaceholderAnswer(answerMatch[2]) + '" ' + answerHandler + ' placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
         'style="width:100%;min-width:0;height:40px;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px">' +
       '</div>';
   }
@@ -8367,7 +8375,7 @@ function renderRich(str, opts) {
   s = s.replace(/^(?!\s*(?:[-+*]\s+)?\[[ xX]\])(?!\s*[#&|])\s*([^:\n]{1,80}[:：])\s*(.*?)(?:\n\s*[.…·_ـ-]{3,}\s*)?$/gm, function(_, label, answer) {
     const index = plainFieldIndex++;
     const token = '\uE004FIELD' + plainFields.length + '\uE005';
-    const displayAnswer = String(answer || '').replace(/\s*⏎\s*/g, '\n');
+    const displayAnswer = _cleanPlaceholderAnswer(answer).replace(/\s*⏎\s*/g, '\n');
     if (interactive && (noteId != null || textareaId)) {
       const handler = "oninput='_updatePlainFieldAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + index + ',' + JSON.stringify(textareaId || '') + ")'";
       plainFields.push('<div style="margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg3)">' +
