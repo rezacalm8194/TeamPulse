@@ -1897,6 +1897,14 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   transition: transform .1s, border-color .1s;
 }
 .session-card:hover { transform: translateY(-1px); border-color: var(--accent2); }
+.eval-builder-row { min-width:0; }
+@media (max-width: 640px) {
+  .eval-builder-row { grid-template-columns:1fr 1fr 42px !important; }
+  .eval-builder-row .eval-builder-label { grid-column:1 / -1; grid-row:1; }
+  .eval-builder-row .eval-builder-type { grid-column:1; grid-row:2; }
+  .eval-builder-row .eval-builder-max { grid-column:2; grid-row:2; }
+  .eval-builder-row > button { grid-column:3; grid-row:2; }
+}
 .session-card.key { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.06); }
 .session-card .sc-date { font-size: 10px; color: var(--accent2); font-weight: 600; margin-bottom: 3px; }
 .session-card .sc-title { font-size: 12px; font-weight: 600; color: var(--text); }
@@ -16346,9 +16354,10 @@ function _onSesPeriodChange(selectEl) {
 
 // ── helper: compute weighted total for one period ──
 function evalPeriodTotal(form, period) {
-  if (!period || !form.rows.length) return null;
+  const scoreRows = (form.rows || []).filter(row => !row.type || row.type === 'score');
+  if (!period || !scoreRows.length) return null;
   let ws = 0, wt = 0;
-  form.rows.forEach(row => {
+  scoreRows.forEach(row => {
     const s = parseFloat(period.scores[row.id]);
     if (!isNaN(s)) { ws += (s / row.maxScore) * (row.weight||1); wt += (row.weight||1); }
   });
@@ -16419,7 +16428,7 @@ function _caseFormEvalRows(caseForm) {
     if ((!answer && !next) || /^[.…·_ـ-]{3,}$/.test(answer) || /^[.…·_ـ-]{3,}$/.test(next)) addLabel(field[1]);
   });
 
-  return labels.map((label, index) => ({ id: index + 1, label, maxScore: 10, weight: 1 }));
+  return labels.map((label, index) => ({ id: index + 1, label, type:'score', maxScore: 10, weight: 1 }));
 }
 
 function _studentEvalDisplayName(studentId) {
@@ -16623,23 +16632,49 @@ function deleteEvalForm(studentId, displayName, formId) {
 
 // ── CREATE new form ──
 // ── EDIT ROWS ──────────────────────────────────────────────────────────────
+function _evalBuilderRowHtml(row = {}, existingId = '') {
+  const type = row.type || 'score';
+  return `<div class="eval-builder-row" data-existing-id="${existingId || ''}" style="display:grid;grid-template-columns:130px 1fr 90px 42px;gap:8px;align-items:center;margin-bottom:8px;padding:9px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+    <select class="form-select eval-builder-type" aria-label="نوع المان فرم" onchange="_syncEvalBuilderRow(this)">
+      <option value="score" ${type==='score'?'selected':''}>امتیاز</option>
+      <option value="description" ${type==='description'?'selected':''}>توضیحات</option>
+      <option value="goal" ${type==='goal'?'selected':''}>هدف</option>
+    </select>
+    <input class="form-input eval-builder-label" value="${escapeHtml(row.label || '')}" placeholder="عنوان المان، مثلاً کیفیت اجرا" aria-label="عنوان المان">
+    <input class="form-input eval-builder-max" type="number" min="1" max="100" value="${row.maxScore || 10}" aria-label="حداکثر امتیاز" style="${type==='score'?'':'visibility:hidden'}" title="حداکثر امتیاز">
+    <button type="button" class="btn btn-ghost" onclick="this.closest('.eval-builder-row').remove()" aria-label="حذف المان" title="حذف" style="min-width:42px;padding:8px;color:var(--red)">×</button>
+  </div>`;
+}
+
+function _syncEvalBuilderRow(select) {
+  const max = select.closest('.eval-builder-row')?.querySelector('.eval-builder-max');
+  if (max) max.style.visibility = select.value === 'score' ? 'visible' : 'hidden';
+}
+
+function addEvalBuilderRow(type = 'score') {
+  document.getElementById('eval-builder-rows')?.insertAdjacentHTML('beforeend', _evalBuilderRowHtml({ type }));
+}
+
+function _collectEvalBuilderRows() {
+  return [...document.querySelectorAll('.eval-builder-row')].map(row => ({
+    existingId:+row.dataset.existingId || null,
+    type:row.querySelector('.eval-builder-type')?.value || 'score',
+    label:row.querySelector('.eval-builder-label')?.value.trim() || '',
+    maxScore:parseInt(row.querySelector('.eval-builder-max')?.value) || 10,
+  })).filter(row => row.label);
+}
+
 function openEditEvalRows(studentId, displayName, formId) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) return;
 
-  const rowsText = form.rows.map(r => r.label).join('\n');
-  const maxScore = form.rows[0]?.maxScore || 10;
-
-  openModal(`✏️ ویرایش شاخص‌ها — ${escapeHtml(form.title)}`, `
-    <div class="form-group full">
-      <label class="form-label">شاخص‌های ارزیابی (هر خط یک شاخص)</label>
-      <textarea class="form-textarea" id="er-rows" rows="8" style="font-size:13px;line-height:1.9">${escapeHtml(rowsText)}</textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">برای افزودن: یه خط جدید اضافه کن · برای حذف: خط رو پاک کن · ترتیب خطوط = ترتیب شاخص‌ها</div>
-    </div>
-    <div class="form-group" style="margin-top:10px">
-      <label class="form-label">حداکثر امتیاز (برای شاخص‌های جدید)</label>
-      <input class="form-input" id="er-maxscore" type="number" value="${maxScore}" min="1" max="100" style="width:100px">
+  openModal(`ویرایش المان‌های فرم — ${escapeHtml(form.title)}`, `
+    <div class="form-group full"><label class="form-label">المان‌های فرم ارزیابی</label><div id="eval-builder-rows">${form.rows.map(row => _evalBuilderRowHtml(row, row.id)).join('')}</div></div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button>
     </div>
     <div style="padding:10px 12px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:8px;font-size:11px;color:var(--text2);margin-top:10px;line-height:1.8">
       ⚠️ امتیازهای ثبت‌شده برای شاخص‌های موجود حفظ می‌شن. شاخص‌های جدید از صفر شروع می‌کنن.
@@ -16651,25 +16686,15 @@ function openEditEvalRows(studentId, displayName, formId) {
 }
 
 function saveEditEvalRows(studentId, displayName, formId) {
-  const rowsRaw = document.getElementById('er-rows').value.trim();
-  const newMaxScore = parseInt(document.getElementById('er-maxscore').value) || 10;
-  if (!rowsRaw) { alert('حداقل یک شاخص وارد کنید'); return; }
+  const builderRows = _collectEvalBuilderRows();
+  if (!builderRows.length) { showToast('حداقل یک المان اضافه کنید','error'); return; }
 
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) return;
 
-  // build new rows — preserve existing row data by matching labels
-  const oldRowMap = {};
-  form.rows.forEach(r => { oldRowMap[r.label] = r; });
-
-  const newLabels = rowsRaw.split('\n').map(r => r.trim()).filter(Boolean);
-  form.rows = newLabels.map((label, i) => {
-    const existing = oldRowMap[label];
-    return existing
-      ? { ...existing, id: i + 1 }                          // preserve maxScore of existing
-      : { id: i + 1, label, maxScore: newMaxScore, weight: 1 }; // new row
-  });
+  let nextId = Math.max(0, ...form.rows.map(row => +row.id || 0)) + 1;
+  form.rows = builderRows.map(row => ({ id:row.existingId || nextId++, label:row.label, type:row.type, maxScore:row.maxScore, weight:1 }));
 
   saveEvalForms(studentId, forms);
   showToast('شاخص‌ها ذخیره شدند ✅');
@@ -16682,20 +16707,16 @@ function openNewEvalForm(studentId, displayName) {
       <label class="form-label">عنوان فرم ارزیابی</label>
       <input class="form-input" id="ef-title" placeholder="مثلاً: ارزیابی تعهد و انگیزه">
     </div>
-    <div class="form-group full" style="margin-top:10px">
-      <label class="form-label">شاخص‌های ارزیابی (هر خط یک شاخص)</label>
-      <textarea class="form-textarea" id="ef-rows" rows="5" placeholder="تعهد به تکالیف&#10;انگیزه و پیگیری&#10;نظم&#10;صداقت با خود&#10;اجرا"></textarea>
+    <div class="form-group full" style="margin-top:10px"><label class="form-label">المان‌های فرم ارزیابی</label><div id="eval-builder-rows">${_evalBuilderRowHtml({type:'score',label:''})}</div></div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button>
     </div>
-    <div class="form-grid" style="margin-top:10px">
-      <div class="form-group">
-        <label class="form-label">حداکثر امتیاز هر شاخص</label>
-        <input class="form-input" id="ef-maxscore" type="number" value="10" min="1" max="100">
-      </div>
-      <div class="form-group">
+    <div class="form-grid"><div class="form-group full">
         <label class="form-label">توضیحات فرم (اختیاری)</label>
         <input class="form-input" id="ef-desc" placeholder="هدف این ارزیابی...">
-      </div>
-    </div>
+      </div></div>
   `, [
     { label: 'ایجاد فرم', cls: 'btn-primary', action: `saveNewEvalForm(${studentId},'${escapeHtml(displayName)}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
@@ -16704,12 +16725,11 @@ function openNewEvalForm(studentId, displayName) {
 
 function saveNewEvalForm(studentId, displayName) {
   const title = document.getElementById('ef-title').value.trim();
-  const rowsRaw = document.getElementById('ef-rows').value.trim();
-  const maxScore = parseInt(document.getElementById('ef-maxscore').value) || 10;
+  const builderRows = _collectEvalBuilderRows();
   const desc = document.getElementById('ef-desc').value.trim();
   if (!title) { alert('عنوان فرم را وارد کنید'); return; }
-  if (!rowsRaw) { alert('حداقل یک شاخص وارد کنید'); return; }
-  const rows = rowsRaw.split('\n').map(r=>r.trim()).filter(Boolean).map((label,i) => ({ id: i+1, label, maxScore, weight: 1 }));
+  if (!builderRows.length) { showToast('حداقل یک المان اضافه کنید','error'); return; }
+  const rows = builderRows.map((row,i) => ({ id:i+1, label:row.label, type:row.type, maxScore:row.maxScore, weight:1 }));
   const newForm = { id: genEvalId(), title, desc, rows, periods: [], created: formatJalali(...todayJalali()) };
   const forms = loadEvalForms(studentId);
   forms.push(newForm);
@@ -16961,17 +16981,14 @@ function buildEvalTable(form, periodIdx, studentId) {
     </div>`) : '';
 
   const rows = form.rows.map(row => {
+    const rowType = row.type || 'score';
     const score = scores[row.id] !== undefined ? scores[row.id] : '';
     const note = notes[row.id] || '';
     const target = targets[row.id] !== undefined ? targets[row.id] : '';
+    if (rowType === 'description') return `<tr><td style="padding:9px 10px;font-size:12px;color:var(--text);font-weight:600;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td><td colspan="3" style="padding:8px 6px;border-bottom:1px solid var(--border)">${period?`<textarea rows="2" placeholder="توضیحات را بنویسید..." style="width:100%;padding:7px 9px;font-size:12px;border:1px solid var(--border);border-radius:7px;background:var(--bg3);color:var(--text);font-family:inherit;resize:vertical" onchange="updateEvalNote(${form.id},${row.id},this.value,${periodIdx})">${escapeHtml(note)}</textarea>`:'<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>'}</td></tr>`;
+    if (rowType === 'goal') return `<tr><td style="padding:9px 10px;font-size:12px;color:var(--text);font-weight:600;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td><td colspan="3" style="padding:8px 6px;border-bottom:1px solid var(--border)">${period?`<input type="text" value="${escapeHtml(target)}" placeholder="هدف را بنویسید..." style="width:100%;padding:7px 9px;font-size:12px;border:1px solid rgba(96,165,250,.35);border-radius:7px;background:rgba(96,165,250,.05);color:var(--text)" onchange="updateEvalTarget(${form.id},${row.id},this.value,${periodIdx})">`:'<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>'}</td></tr>`;
     const pct = score !== '' ? Math.round((parseFloat(score) / row.maxScore) * 100) : 0;
-    const tgtPct = target !== '' ? Math.round((parseFloat(target) / row.maxScore) * 100) : null;
     const barColor = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'rgba(251,191,36,1)' : 'var(--red)';
-    const gapBadge = tgtPct !== null && score !== '' ? (() => {
-      const gap = tgtPct - pct;
-      if (gap <= 0) return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(62,207,142,.15);color:var(--green)">✓ هدف</span>`;
-      return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(251,191,36,.15);color:rgba(251,191,36,1)">${fa(gap)}٪ مانده</span>`;
-    })() : '';
     return `
       <tr>
         <td style="padding:8px 10px;font-size:12px;color:var(--text);font-weight:500;border-bottom:1px solid var(--border)">${escapeHtml(row.label)}</td>
@@ -16985,20 +17002,10 @@ function buildEvalTable(form, periodIdx, studentId) {
               <div style="width:34px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
                 <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px"></div>
               </div>
-              ${gapBadge}
             </div>` : `<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>`}
         </td>
-        <td style="padding:8px 6px;border-bottom:1px solid var(--border)">
-          ${period ? `<input type="text" value="${escapeHtml(note)}" placeholder="توضیح..."
-            style="width:100%;padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--text)"
-            onchange="updateEvalNote(${form.id},${row.id},this.value,${periodIdx})">` : ''}
-        </td>
-        <td style="padding:8px 6px;border-bottom:1px solid var(--border)">
-          ${period ? `<input type="number" min="0" max="${row.maxScore}" value="${target}" placeholder="هدف"
-            style="width:46px;padding:3px 5px;font-size:11px;border:1px solid rgba(96,165,250,.3);border-radius:5px;background:rgba(96,165,250,.05);color:var(--blue);text-align:center"
-            title="هدف این شاخص"
-            onchange="updateEvalTarget(${form.id},${row.id},this.value,${periodIdx})">` : ''}
-        </td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px">—</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px">—</td>
       </tr>`;
   }).join('');
 
@@ -17362,7 +17369,7 @@ function updateEvalTarget(formId, rowId, value, periodIdx) {
   const form = forms.find(f => f.id === formId);
   if (!form || !form.periods[periodIdx]) return;
   if (!form.periods[periodIdx].targets) form.periods[periodIdx].targets = {};
-  form.periods[periodIdx].targets[rowId] = value === '' ? '' : parseFloat(value);
+  form.periods[periodIdx].targets[rowId] = value;
   _evalSaveByKey(key, forms);
 }
 
