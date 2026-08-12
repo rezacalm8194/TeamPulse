@@ -21805,6 +21805,27 @@ async function _compressedJsonRequestBody(value) {
   };
 }
 
+async function _sendChunkedWorkspacePayload(accId, payload) {
+  const json = JSON.stringify(payload);
+  const chunkSize = 300 * 1024;
+  const total = Math.ceil(json.length / chunkSize);
+  const uploadId = `sync_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  let response = null;
+  for (let index = 0; index < total; index++) {
+    response = await _apiFetch('/api/data/' + accId + '/chunks' + _workspaceQuery(), {
+      method: 'POST',
+      body: JSON.stringify({
+        upload_id: uploadId,
+        index,
+        total,
+        chunk: json.slice(index * chunkSize, (index + 1) * chunkSize),
+      }),
+    });
+    if (!response.ok) return response;
+  }
+  return response;
+}
+
 function _getApiAuthToken() {
   if (_sbSession?.token) return _sbSession.token;
   const saved = (typeof _authLoadSession === 'function') ? _authLoadSession() : null;
@@ -22252,12 +22273,18 @@ async function _syncToServer(conflictAttempt = 0) {
       client_saved_at: syncSavedAt,
       base_etag: window._serverDataEtag || null,
     };
-    const encodedRequest = await _compressedJsonRequestBody(requestPayload);
-    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
-      method: 'PUT',
-      body: encodedRequest.body,
-      headers: encodedRequest.headers,
-    });
+    const rawRequestSize = JSON.stringify(requestPayload).length;
+    let res;
+    if (rawRequestSize > 700 * 1024) {
+      res = await _sendChunkedWorkspacePayload(accId, requestPayload);
+    } else {
+      const encodedRequest = await _compressedJsonRequestBody(requestPayload);
+      res = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
+        method: 'PUT',
+        body: encodedRequest.body,
+        headers: encodedRequest.headers,
+      });
+    }
     let responseData = null;
     try { responseData = await res.clone().json(); } catch(e) {}
 
@@ -31155,7 +31182,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v74';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v75';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

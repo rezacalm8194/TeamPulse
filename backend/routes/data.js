@@ -8,6 +8,19 @@ function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
 }
 
+// Large workspaces can exceed an upstream proxy's body-size limit before the
+// request reaches Express. Receive them as small authenticated JSON chunks and
+// pass the reconstructed request through the exact same save validation.
+const pendingChunkUploads = new Map();
+const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
+
+function cleanExpiredChunkUploads() {
+  const cutoff = Date.now() - CHUNK_UPLOAD_TTL_MS;
+  for (const [key, upload] of pendingChunkUploads) {
+    if (upload.updatedAt < cutoff) pendingChunkUploads.delete(key);
+  }
+}
+
 db.prepare(`
   CREATE TABLE IF NOT EXISTS user_data_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -512,6 +525,40 @@ function handleSaveData(req, res) {
 }
 
 router.put('/:accountId', auth, handleSaveData);
+router.post('/:accountId/chunks', auth, (req, res) => {
+  cleanExpiredChunkUploads();
+  const accountId = String(req.params.accountId || '');
+  const uploadId = String(req.body?.upload_id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
+  const index = Number(req.body?.index);
+  const total = Number(req.body?.total);
+  const chunk = typeof req.body?.chunk === 'string' ? req.body.chunk : '';
+  if (!uploadId || !Number.isInteger(index) || !Number.isInteger(total) || index < 0 || total < 1 || total > 200 || index >= total || chunk.length > 600000) {
+    return res.status(400).json({ error: 'invalid_chunk' });
+  }
+  const ownerKey = String(req.user?.id || req.user?.accountId || 'unknown');
+  const key = `${ownerKey}:${accountId}:${uploadId}`;
+  let upload = pendingChunkUploads.get(key);
+  if (!upload) {
+    upload = { total, chunks: new Array(total), updatedAt: Date.now() };
+    pendingChunkUploads.set(key, upload);
+  }
+  if (upload.total !== total) {
+    pendingChunkUploads.delete(key);
+    return res.status(409).json({ error: 'chunk_total_mismatch' });
+  }
+  upload.chunks[index] = chunk;
+  upload.updatedAt = Date.now();
+  if (upload.chunks.filter(part => typeof part === 'string').length !== total) {
+    return res.json({ success: true, complete: false, received: index });
+  }
+  pendingChunkUploads.delete(key);
+  try {
+    req.body = JSON.parse(upload.chunks.join(''));
+  } catch (_) {
+    return res.status(400).json({ error: 'invalid_chunked_json' });
+  }
+  return handleSaveData(req, res);
+});
 // navigator.sendBeacon() only ever issues a POST, so the same save logic
 // must also be reachable via POST for the "closing the tab" fallback save
 // to actually reach the server (previously only PUT was registered here,
