@@ -5932,7 +5932,7 @@ window.api = {
       const accId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
       if (accId && _sbSession?.token) {
         try {
-          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=25' + _workspaceQuery('&'));
+          const res = await _apiFetch('/api/data/' + encodeURIComponent(accId) + '/versions?limit=72' + _workspaceQuery('&'));
           if (res.ok) {
             serverAvailable = true;
             const payload = await res.json();
@@ -12993,7 +12993,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>↩️ بازگشت به نسخه‌های قبلی</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        تا ${fa(25)} نسخه اخیر سرور به‌همراه نسخه‌های همین دستگاه نمایش داده می‌شود. تاریخ و خلاصه هر نسخه را ببین، سپس آگاهانه نسخه موردنظر را انتخاب کن؛ هیچ نسخه‌ای خودکار بازیابی نمی‌شود.
+        نسخه‌های ساعتی سه روز اخیر سرور، به‌همراه نسخه‌های همین دستگاه نمایش داده می‌شود. تاریخ و خلاصه هر نسخه را ببین، سپس آگاهانه نسخه موردنظر را انتخاب کن؛ هیچ نسخه‌ای خودکار بازیابی نمی‌شود.
       </p>
       <div id="versions-list">در حال بارگذاری...</div>
     </div>

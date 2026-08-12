@@ -17,6 +17,35 @@ db.prepare(`
   )
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_user_data_versions_account ON user_data_versions(account_id, created_at)").run();
+
+// Ordinary clients sync every few seconds. Saving a full backup on every sync
+// used to consume the whole retention window in a very short time. Keep at
+// most one automatic snapshot per hour, ignore identical snapshots, and retain
+// three days of hourly recovery points. Explicit restore operations can still
+// force a snapshot of the current state immediately.
+const VERSION_MIN_INTERVAL_MS = 60 * 60 * 1000;
+const MAX_VERSIONS_PER_WORKSPACE = 72;
+
+function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
+  const latest = db.prepare(`
+    SELECT id,data,created_at FROM user_data_versions
+    WHERE account_id=? ORDER BY id DESC LIMIT 1
+  `).get(accountId);
+  if (latest?.data === serializedData) return false;
+  if (!force && latest?.created_at) {
+    const latestAt = Date.parse(String(latest.created_at).replace(' ', 'T') + 'Z');
+    if (Number.isFinite(latestAt) && Date.now() - latestAt < VERSION_MIN_INTERVAL_MS) return false;
+  }
+  db.prepare("INSERT INTO user_data_versions (account_id,data) VALUES (?,?)").run(accountId, serializedData);
+  db.prepare(`
+    DELETE FROM user_data_versions
+    WHERE account_id=? AND id NOT IN (
+      SELECT id FROM user_data_versions
+      WHERE account_id=? ORDER BY id DESC LIMIT ?
+    )
+  `).run(accountId, accountId, MAX_VERSIONS_PER_WORKSPACE);
+  return true;
+}
 db.prepare(`
   CREATE TABLE IF NOT EXISTS account_workspaces (
     owner_account_id TEXT NOT NULL,
@@ -470,18 +499,8 @@ function handleSaveData(req, res) {
       }
       const nextData = JSON.stringify(data);
       const run = db.transaction(() => {
-        db.prepare("INSERT INTO user_data_versions (account_id,data) VALUES (?,?)").run(storageKey, existing.data);
+        saveVersionSnapshot(storageKey, existing.data);
         db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
-        db.prepare(`
-          DELETE FROM user_data_versions
-          WHERE account_id=?
-            AND id NOT IN (
-              SELECT id FROM user_data_versions
-              WHERE account_id=?
-              ORDER BY id DESC
-              LIMIT 50
-            )
-        `).run(storageKey, storageKey);
       });
       run();
     } else {
@@ -574,7 +593,7 @@ router.get('/:accountId/versions', auth, (req, res) => {
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const storageKey = workspace.storageKey;
-    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 25)));
+    const limit = Math.min(MAX_VERSIONS_PER_WORKSPACE, Math.max(1, Number(req.query.limit || MAX_VERSIONS_PER_WORKSPACE)));
     const rows = db.prepare(`
       SELECT id,data,created_at FROM user_data_versions
       WHERE account_id=? ORDER BY id DESC LIMIT ?
@@ -623,13 +642,8 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     restored._lastSaved = Date.now();
     const serialized = JSON.stringify(restored);
     const run = db.transaction(() => {
-      db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(storageKey, current.data);
+      saveVersionSnapshot(storageKey, current.data, { force:true });
       db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
-      db.prepare(`
-        DELETE FROM user_data_versions WHERE account_id=? AND id NOT IN (
-          SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC LIMIT 50
-        )
-      `).run(storageKey, storageKey);
     });
     run();
     res.json({ success: true, data: restored, etag: dataEtag(serialized) });
