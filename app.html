@@ -16824,6 +16824,20 @@ function _collectEvalBuilderRows() {
   })).filter(row => row.label);
 }
 
+function _setNewEvalFormMode(mode) {
+  const defaultPanel = document.getElementById('ef-default-panel');
+  const customPanel = document.getElementById('ef-custom-panel');
+  const hidden = document.getElementById('ef-mode');
+  if (hidden) hidden.value = mode;
+  if (defaultPanel) defaultPanel.style.display = mode === 'default' ? 'block' : 'none';
+  if (customPanel) customPanel.style.display = mode === 'custom' ? 'block' : 'none';
+  document.querySelectorAll('.ef-mode-btn').forEach(button => {
+    const active = button.dataset.mode === mode;
+    button.style.background = active ? 'var(--accent)' : 'var(--bg3)';
+    button.style.color = active ? 'white' : 'var(--text2)';
+  });
+}
+
 function openEditEvalRows(studentId, displayName, formId) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
@@ -16864,16 +16878,22 @@ function saveEditEvalRows(studentId, displayName, formId) {
 
 function openNewEvalForm(studentId, displayName) {
   openModal(`📊 فرم ارزیابی جدید — ${displayName}`, `
+    <input type="hidden" id="ef-mode" value="default">
     <div class="form-group full">
       <label class="form-label">عنوان فرم ارزیابی</label>
-      <input class="form-input" id="ef-title" placeholder="مثلاً: ارزیابی تعهد و انگیزه">
+      <input class="form-input" id="ef-title" value="فرم ارزیابی پیش‌فرض" placeholder="مثلاً: ارزیابی عملکرد">
     </div>
-    <div class="form-group full" style="margin-top:10px"><label class="form-label">المان‌های فرم ارزیابی</label><div id="eval-builder-rows">${_evalBuilderRowHtml({type:'score',label:''})}</div></div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('checklist')">+ چک‌لیست</button>
+    <div style="display:flex;gap:7px;margin:12px 0" role="tablist" aria-label="نوع فرم ارزیابی">
+      <button type="button" class="ef-mode-btn" data-mode="default" onclick="_setNewEvalFormMode('default')" style="flex:1;min-height:44px;border:0;border-radius:9px;background:var(--accent);color:white;font-family:var(--font);font-weight:700;cursor:pointer">فرم ارزیابی پیش‌فرض</button>
+      <button type="button" class="ef-mode-btn" data-mode="custom" onclick="_setNewEvalFormMode('custom')" style="flex:1;min-height:44px;border:0;border-radius:9px;background:var(--bg3);color:var(--text2);font-family:var(--font);font-weight:700;cursor:pointer">فرم سفارشی</button>
+    </div>
+    <div id="ef-default-panel">
+      <div class="form-group full"><label class="form-label">شاخص‌های ارزیابی؛ هر خط یک شاخص</label><textarea class="form-textarea" id="ef-default-rows" rows="9" placeholder="آرامش&#10;نظم و استمرار&#10;کیفیت باورها&#10;عزت نفس&#10;اعتماد به نفس&#10;سلامتی&#10;انرژی"></textarea><div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:5px">برای هر شاخص چهار ستون «شاخص، امتیاز، توضیحات و هدف» ساخته می‌شود.</div></div>
+      <div class="form-group" style="margin-top:10px"><label class="form-label">حداکثر امتیاز هر شاخص</label><input class="form-input" id="ef-default-maxscore" type="number" value="10" min="1" max="100"></div>
+    </div>
+    <div id="ef-custom-panel" style="display:none">
+      <div class="form-group full"><label class="form-label">المان‌های فرم ارزیابی</label><div id="eval-builder-rows">${_evalBuilderRowHtml({type:'score',label:''})}</div></div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px"><button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('score')">+ امتیاز</button><button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('description')">+ توضیحات</button><button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('goal')">+ هدف</button><button type="button" class="btn btn-ghost btn-sm" onclick="addEvalBuilderRow('checklist')">+ چک‌لیست</button></div>
     </div>
     <div class="form-grid"><div class="form-group full">
         <label class="form-label">توضیحات فرم (اختیاری)</label>
@@ -16887,12 +16907,21 @@ function openNewEvalForm(studentId, displayName) {
 
 function saveNewEvalForm(studentId, displayName) {
   const title = document.getElementById('ef-title').value.trim();
-  const builderRows = _collectEvalBuilderRows();
+  const mode = document.getElementById('ef-mode')?.value || 'default';
   const desc = document.getElementById('ef-desc').value.trim();
   if (!title) { alert('عنوان فرم را وارد کنید'); return; }
-  if (!builderRows.length) { showToast('حداقل یک المان اضافه کنید','error'); return; }
-  const rows = builderRows.map((row,i) => ({ id:i+1, label:row.label, type:row.type, maxScore:row.maxScore, weight:1 }));
-  const newForm = { id: genEvalId(), title, desc, rows, periods: [], created: formatJalali(...todayJalali()) };
+  let rows;
+  if (mode === 'default') {
+    const labels = (document.getElementById('ef-default-rows')?.value || '').split('\n').map(value => value.trim()).filter(Boolean);
+    const maxScore = parseInt(document.getElementById('ef-default-maxscore')?.value) || 10;
+    if (!labels.length) { showToast('حداقل یک شاخص وارد کنید','error'); return; }
+    rows = labels.map((label,index) => ({id:index+1,label,type:'score',maxScore,weight:1}));
+  } else {
+    const builderRows = _collectEvalBuilderRows();
+    if (!builderRows.length) { showToast('حداقل یک المان اضافه کنید','error'); return; }
+    rows = builderRows.map((row,index) => ({id:index+1,label:row.label,type:row.type,maxScore:row.maxScore,weight:1}));
+  }
+  const newForm = { id:genEvalId(), title, desc, rows, periods:[], form_mode:mode, created:formatJalali(...todayJalali()) };
   const forms = loadEvalForms(studentId);
   forms.push(newForm);
   saveEvalForms(studentId, forms);
@@ -17217,8 +17246,8 @@ function buildEvalTable(form, periodIdx, studentId) {
               </div>
             </div>` : `<span style="font-size:11px;color:var(--text3)">— ابتدا دوره شروع کن</span>`}
         </td>
-        <td style="padding:8px 6px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px">—</td>
-        <td style="padding:8px 6px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px">—</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--border)">${period ? `<input type="text" value="${escapeHtml(note)}" placeholder="توضیحات..." style="width:100%;padding:5px 7px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text)" onchange="updateEvalNote(${form.id},${row.id},this.value,${periodIdx})">` : ''}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid var(--border)">${period ? `<input type="number" min="0" max="${row.maxScore}" value="${target}" placeholder="هدف" style="width:58px;padding:5px 6px;font-size:11px;border:1px solid rgba(96,165,250,.35);border-radius:6px;background:rgba(96,165,250,.05);color:var(--blue);text-align:center" onchange="updateEvalTarget(${form.id},${row.id},this.value,${periodIdx})">` : ''}</td>
       </tr>`;
   }).join('');
 
