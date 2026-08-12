@@ -8301,19 +8301,20 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   const bs = 'margin-top:3px;width:18px;height:18px;flex-shrink:0;accent-color:var(--accent2)';
   const chk = checked ? 'checked ' : '';
   const ts = checked ? 'text-decoration:line-through;color:var(--text3)' : '';
+  const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
+  if (answerMatch && interactive && (noteId != null || textareaId)) {
+    const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
+    return '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;margin:4px 0;min-height:52px;padding:7px 10px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
+      '<label style="font-weight:600" for="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '">' + answerMatch[1] + '</label>' +
+      '<input id="checklist-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + itemIndex + '" type="text" value="' + answerMatch[2] + '" ' + answerHandler + ' placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
+        'style="width:100%;min-width:0;height:40px;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px">' +
+      '</div>';
+  }
+  if (answerMatch) {
+    return '<div style="display:flex;gap:10px;margin:4px 0;padding:8px"><strong>' + answerMatch[1] + '</strong><span>' + (answerMatch[2] || '—') + '</span></div>';
+  }
   if (interactive && (noteId != null || textareaId)) {
     const handler = "onchange='_toggleChecklistItem(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-    const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
-    if (answerMatch) {
-      const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-      return '<div style="display:flex;align-items:flex-start;gap:10px;margin:4px 0;min-height:44px;padding:7px 8px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
-        '<input type="checkbox" ' + chk + handler + ' aria-label="وضعیت ' + answerMatch[1] + '" style="' + bs + ';cursor:pointer">' +
-        '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;flex:1;min-width:0">' +
-          '<span data-checklist-label style="' + ts + ';font-weight:600">' + answerMatch[1] + '</span>' +
-          '<input type="text" value="' + answerMatch[2] + '" ' + answerHandler + ' onclick="event.stopPropagation()" placeholder="اینجا وارد کنید…" aria-label="مقدار ' + answerMatch[1] + '" ' +
-            'style="width:100%;min-width:0;height:38px;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px">' +
-        '</div></div>';
-    }
     return '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:40px;padding:8px 4px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
   return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
