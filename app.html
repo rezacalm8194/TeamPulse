@@ -16132,7 +16132,10 @@ function loadEvalForms(studentId) {
   }
   // اطمینان از این‌که هر دوره یک id ثابت دارد (برای اتصال دستاوردها به دوره)
   let anyChanged = false;
-  forms.forEach(f => { if (_ensurePeriodIds(f)) anyChanged = true; });
+  forms.forEach(f => {
+    if (_ensurePeriodIds(f)) anyChanged = true;
+    (f.rows || []).forEach(row => { if (!row.type) { row.type = 'score'; anyChanged = true; } });
+  });
   if (anyChanged) saveEvalForms(studentId, forms);
   return forms;
 }
@@ -16508,7 +16511,7 @@ function openEvaluation(studentId, displayName) {
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(f.title)}</div>
               <div style="font-size:10px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:8px">
-                <span>${fa(f.rows.length)} شاخص · ${fa(f.periods.length)} دوره</span>
+                <span>${fa(f.rows.length)} المان · ${fa(f.periods.length)} دوره</span>
                 ${lastTotal!==null?`<span style="color:var(--green);font-weight:600">آخرین: ${fa(lastTotal)}٪</span>`:''}
                 ${trendHtml}
               </div>
@@ -16778,7 +16781,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const analysisHtml = form.periods.length >= 2 ? (() => {
     const last = form.periods[form.periods.length - 1];
     const prev = form.periods[form.periods.length - 2];
-    const growthData = form.rows.map(row => {
+    const growthData = form.rows.filter(row => !row.type || row.type === 'score').map(row => {
       const s1 = prev.scores[row.id] !== undefined ? parseFloat(prev.scores[row.id]) : null;
       const s2 = last.scores[row.id] !== undefined ? parseFloat(last.scores[row.id]) : null;
       const pct2 = s2 !== null ? Math.round((s2 / row.maxScore) * 100) : null;
@@ -17476,7 +17479,7 @@ function buildEvalCompareHtml(form, aIdx, bIdx) {
     </div>`;
 
   // per-row comparison table
-  const rowsHtml = form.rows.map(row => {
+  const rowsHtml = form.rows.filter(row => !row.type || row.type === 'score').map(row => {
     const sA = pA.scores[row.id] !== undefined ? parseFloat(pA.scores[row.id]) : null;
     const sB = pB.scores[row.id] !== undefined ? parseFloat(pB.scores[row.id]) : null;
     const pctA = sA !== null ? Math.round((sA / row.maxScore) * 100) : null;
