@@ -16985,6 +16985,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
       </div>`;
 
   const tableHtml = buildEvalTable(form, curIdx, studentId);
+  const formAttachmentsHtml = _evalFormAttachmentsHtml(form, studentId, displayName, curIdx);
 
   // ── تحلیل خودکار: سرعت رشد + نقاط قوت/ضعف ──
   const analysisHtml = !_isImportedEvalForm(form) && form.periods.length >= 2 ? (() => {
@@ -17128,6 +17129,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
       ${periodTabsHtml}
       <div id="eval-table-container" data-student="${escapeHtml(displayName)}">${tableHtml}</div>
       ${analysisHtml}
+      ${formAttachmentsHtml}
       ${reminderHtml}
     </div>
   `, [
@@ -17160,6 +17162,75 @@ function evalSwitchTab(studentId, displayName, formId, periodIdx) {
   setTimeout(() => {
     document.querySelectorAll('#eval-table-container .jdate').forEach(el => attachJalaliDatePicker(el));
   }, 0);
+}
+
+function _evalFormAttachmentsHtml(form, studentId, displayName, activePeriodIdx) {
+  const attachments = form.attachments || [];
+  const safeDisplayName = String(displayName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `
+    <div style="margin-top:12px;padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text)">📎 فایل‌های پیوست فرم</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">هر فایل می‌تواند یادداشت مستقل داشته باشد.</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="addEvalFormAttachments(${studentId},'${safeDisplayName}',${form.id},${activePeriodIdx})">+ افزودن فایل</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px;margin-top:12px">
+        ${attachments.length ? attachments.map(a => `
+          <div style="padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;min-width:0">
+            <div style="display:flex;align-items:center;gap:9px;min-width:0">
+              <button type="button" onclick="_openAttachment('${a.id}',decodeURIComponent('${encodeURIComponent(a.name || '')}'),decodeURIComponent('${encodeURIComponent(a.type || '')}'))"
+                style="width:42px;height:42px;flex:0 0 42px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);cursor:pointer;font-size:21px;overflow:hidden;padding:0">
+                ${a.type?.startsWith('image/') && a.thumb ? `<img src="${a.thumb}" style="width:100%;height:100%;object-fit:cover">` : _fileIcon(a.type)}
+              </button>
+              <button type="button" onclick="_openAttachment('${a.id}',decodeURIComponent('${encodeURIComponent(a.name || '')}'),decodeURIComponent('${encodeURIComponent(a.type || '')}'))"
+                style="min-width:0;flex:1;text-align:right;border:0;background:none;color:var(--text);cursor:pointer;font-family:var(--font)">
+                <div style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.name)}</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">${_formatSize(a.size || 0)} · بازکردن فایل</div>
+              </button>
+              <button type="button" title="حذف پیوست" aria-label="حذف پیوست" onclick="deleteEvalFormAttachment(${studentId},'${safeDisplayName}',${form.id},'${a.id}',${activePeriodIdx})"
+                style="width:30px;height:30px;flex:0 0 30px;border:1px solid rgba(248,113,113,.35);border-radius:7px;background:rgba(248,113,113,.08);color:var(--red);cursor:pointer">×</button>
+            </div>
+            <label style="display:block;font-size:10px;color:var(--text3);margin:9px 1px 5px" for="eval-attachment-note-${a.id}">یادداشت این پیوست</label>
+            <textarea id="eval-attachment-note-${a.id}" class="form-textarea" rows="2" placeholder="توضیح مربوط به این فایل را بنویسید..."
+              onblur="saveEvalFormAttachmentNote(${studentId},${form.id},'${a.id}',this.value)" style="min-height:58px;font-size:11px">${escapeHtml(a.note || '')}</textarea>
+          </div>
+        `).join('') : '<div style="grid-column:1/-1;padding:14px;text-align:center;border:1px dashed var(--border);border-radius:9px;font-size:11px;color:var(--text3)">هنوز فایلی به این فرم پیوست نشده است.</div>'}
+      </div>
+    </div>`;
+}
+
+async function addEvalFormAttachments(studentId, displayName, formId, activePeriodIdx) {
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(item => +item.id === +formId);
+  if (!form) return;
+  const beforeCount = (form.attachments || []).length;
+  form.attachments = await attachFiles('eval_form', formId, form.attachments || []);
+  if (form.attachments.length === beforeCount) return;
+  saveEvalForms(studentId, forms);
+  showToast('پیوست فرم اضافه شد ✓', 'success');
+  openEvalFormDetail(studentId, displayName, formId, activePeriodIdx);
+}
+
+function saveEvalFormAttachmentNote(studentId, formId, attachmentId, note) {
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(item => +item.id === +formId);
+  const attachment = form?.attachments?.find(item => item.id === attachmentId);
+  if (!attachment) return;
+  attachment.note = String(note || '');
+  saveEvalForms(studentId, forms);
+}
+
+async function deleteEvalFormAttachment(studentId, displayName, formId, attachmentId, activePeriodIdx) {
+  const forms = loadEvalForms(studentId);
+  const form = forms.find(item => +item.id === +formId);
+  if (!form) return;
+  form.attachments = (form.attachments || []).filter(item => item.id !== attachmentId);
+  saveEvalForms(studentId, forms);
+  try { await _IDB.delete(attachmentId); } catch (_) {}
+  showToast('پیوست فرم حذف شد', 'success');
+  openEvalFormDetail(studentId, displayName, formId, activePeriodIdx);
 }
 
 function _buildImportedEvalForm(form, period, periodIdx) {
