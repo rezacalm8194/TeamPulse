@@ -14008,20 +14008,33 @@ async function renderStaff() {
   }
   html += `</div>`;
 
-  // ── Salary payment history (3 columns) ──────────────────────────────────
+  // ── Salary payment history ───────────────────────────────────────────────
   const paidHistory = await window.api.staffMonthly.getAllPaid();
   html += `<div class="table-card"><div class="table-header"><div class="title-wrap"><span class="title">📜 تاریخچه پرداخت‌های حقوق</span><span class="subtitle">${fa(paidHistory.length)} پرداخت ثبت‌شده</span></div></div>`;
   if (paidHistory.length === 0) {
     html += `<div class="empty"><span>📜</span>هنوز پرداختی ثبت نشده</div>`;
   } else {
-    html += `<table><thead><tr><th>نام و نام‌خانوادگی</th><th>ماه و سال</th><th>حقوق آن ماه</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>نام و نام‌خانوادگی</th><th>ماه و سال</th><th>حقوق آن ماه</th><th>عملیات</th></tr></thead><tbody>`;
     paidHistory.forEach(m => {
+      const historyMenuId = `salary-history-menu-${m.id}`;
+      const staffFullName = escapeHtml(`${m.name} ${m.lname}`.trim());
       html += `<tr>
         <td style="font-weight:500">${m.name} ${m.lname}</td>
         <td>${m.label}</td>
         <td>
           <span class="amount amount-paid">${fmt(m.grand_total)} تومان</span>
           ${m.adj_total !== 0 ? `<div style="font-size:10px;color:${m.adj_total>0?'var(--green)':'var(--red)'};margin-top:2px">(حقوق: ${fmt(m.total)} ${m.adj_total>0?'+ پاداش':'- جریمه'}: ${fmt(Math.abs(m.adj_total))})</div>` : ''}
+        </td>
+        <td data-label="عملیات">
+          <div class="row-menu">
+            <button class="row-menu-btn" type="button" aria-label="عملیات پرداخت ${staffFullName}" aria-haspopup="menu" onclick="toggleRowMenu(event,'${historyMenuId}')">⋮</button>
+            <div class="row-menu-panel" id="${historyMenuId}" role="menu">
+              <div class="row-menu-item" role="menuitem" onclick="openStaffDetail(${m.staff_id})">📊 جزئیات</div>
+              <div class="row-menu-item" role="menuitem" onclick="openFixMonthlyMonth(${m.id}, ${m.staff_id}, '${staffFullName}', ${m.jy}, ${m.jm}, true)">✏️ ویرایش</div>
+              <div class="row-menu-divider"></div>
+              <div class="row-menu-item danger" role="menuitem" onclick="deleteSalaryHistory(${m.id})">🗑 حذف</div>
+            </div>
+          </div>
         </td>
       </tr>`;
     });
@@ -14774,7 +14787,7 @@ async function updateStaffRole(id, label) {
   showToast('ذخیره شد ✓', 'success');
 }
 // ── اصلاح ماه یک رکورد حقوق ماهانه (وقتی پرداخت زودتر/دیرتر از موعد ثبت شده) ──
-function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm) {
+function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm, returnToStaffPage = false) {
   const monthOptions = JMONTHS.map((mn, i) =>
     `<option value="${i+1}" ${i+1===curJm?'selected':''}>${mn}</option>`).join('');
 
@@ -14791,17 +14804,26 @@ function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm) {
       </div>
     </div>
   `, [
-    { label: 'ذخیره اصلاح', cls: 'btn-primary', action: `confirmFixMonthlyMonth(${monthlyId},${staffId},'${escapeHtml(name)}')` },
+    { label: 'ذخیره اصلاح', cls: 'btn-primary', action: `confirmFixMonthlyMonth(${monthlyId},${staffId},'${escapeHtml(name)}',${returnToStaffPage})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
 }
-async function confirmFixMonthlyMonth(monthlyId, staffId, name) {
+async function confirmFixMonthlyMonth(monthlyId, staffId, name, returnToStaffPage = false) {
   const jm = parseInt(document.getElementById('fmm-month')?.value);
   const jy = parseInt(document.getElementById('fmm-year')?.value);
   const res = await window.api.staffMonthly.updateMonth({ id: monthlyId, jy, jm });
   if (!res.ok) { showToast(res.error || 'خطا در اصلاح', 'error'); return; }
+  closeModal();
   showToast('ماه رکورد اصلاح شد ✅', 'success');
-  await openStaffDetail(staffId);
+  if (returnToStaffPage) await renderStaff();
+  else await openStaffDetail(staffId);
+}
+
+async function deleteSalaryHistory(monthlyId) {
+  if (!confirm('این رکورد از تاریخچه پرداخت‌های حقوق حذف شود؟')) return;
+  await window.api.staffMonthly.delete(monthlyId);
+  showToast('رکورد پرداخت حذف شد', 'error');
+  await renderStaff();
 }
 
 async function deleteStaffRole(id) {
