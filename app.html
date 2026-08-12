@@ -1932,12 +1932,26 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .session-card:hover { transform: translateY(-1px); border-color: var(--accent2); }
 .eval-builder-row { min-width:0; }
+.case-form-import-workspace { display:grid;grid-template-columns:minmax(280px,.85fr) minmax(340px,1.15fr);gap:12px;align-items:start; }
+.case-form-import-pane { min-width:0; }
+.case-form-live-preview { min-height:340px;max-height:52vh;overflow:auto;padding:14px;border:1px solid var(--border2);border-radius:11px;background:var(--bg2);-webkit-overflow-scrolling:touch;overscroll-behavior:contain; }
 @media (max-width: 640px) {
   .eval-builder-row { grid-template-columns:1fr 1fr 42px !important; }
   .eval-builder-row .eval-builder-label { grid-column:1 / -1; grid-row:1; }
   .eval-builder-row .eval-builder-type { grid-column:1; grid-row:2; }
   .eval-builder-row .eval-builder-max { grid-column:2; grid-row:2; }
   .eval-builder-row > button { grid-column:3; grid-row:2; }
+  .case-form-builder-modal.modal-overlay { align-items:stretch !important;padding:0 !important;height:var(--modal-vh,100dvh) !important; }
+  .case-form-builder-modal .modal { width:100vw !important;max-width:100vw !important;height:var(--modal-vh,100dvh) !important;max-height:var(--modal-vh,100dvh) !important;margin:0 !important;border-radius:0 !important;display:flex !important;flex-direction:column !important;overflow:hidden !important; }
+  .case-form-builder-modal .modal-body { flex:1 1 auto !important;min-height:0 !important;overflow-y:auto !important;padding:12px !important;-webkit-overflow-scrolling:touch;scroll-padding-bottom:160px; }
+  .case-form-builder-modal .modal-actions { position:sticky !important;bottom:0 !important;z-index:20 !important;flex:0 0 auto !important;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px)) !important;background:var(--bg2) !important; }
+  body.modal-keyboard-open .case-form-builder-modal .modal-actions { display:none !important; }
+  .case-form-import-workspace { grid-template-columns:1fr; }
+  .case-form-import-pane textarea { min-height:220px !important;font-size:16px !important; }
+  .case-form-live-preview { min-height:360px;max-height:none;padding:10px; }
+  .case-form-live-preview .interactive-form-field { display:flex !important;flex-direction:column !important;align-items:stretch !important; }
+  .case-form-live-preview input,.case-form-live-preview textarea { width:100% !important;min-width:0 !important;min-height:46px !important;font-size:16px !important; }
+  .case-form-live-preview input[type="checkbox"] { width:22px !important;height:22px !important;min-height:22px !important;flex:0 0 22px !important; }
 }
 .session-card.key { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.06); }
 .session-card .sc-date { font-size: 10px; color: var(--accent2); font-weight: 600; margin-bottom: 3px; }
@@ -8998,6 +9012,18 @@ function addCaseFormBuilderRow(type = 'field', label = '') {
   document.getElementById('case-form-builder-rows')?.insertAdjacentHTML('beforeend', _caseFormRowHtml(type, label));
 }
 
+function _updateCaseFormImportPreview(textarea) {
+  const preview = document.getElementById('case-form-import-preview');
+  if (!preview) return;
+  // An interactive preview field updates the hidden source textarea itself.
+  // Do not rebuild the preview during that keystroke, otherwise Android loses focus.
+  if (preview.contains(document.activeElement)) return;
+  const content = textarea?.value || '';
+  preview.innerHTML = content.trim()
+    ? renderRich(content,{interactive:true,textareaId:'case-form-import'})
+    : '<div style="min-height:280px;display:grid;place-items:center;text-align:center;color:var(--text3);font-size:12px;line-height:1.9">متن فرم را در کادر مقابل Paste کنید<br>پیش‌نمایش کامل فرم اینجا نمایش داده می‌شود</div>';
+}
+
 function openCaseFormBuilder(id = null) {
   const form = id == null ? null : (_db.case_forms || []).find(item => +item.id === +id);
   const initialRows = form ? '' : _caseFormRowHtml('field','نام و نام خانوادگی') + _caseFormRowHtml('field','شماره تماس') + _caseFormRowHtml('textarea','توضیحات');
@@ -9005,12 +9031,25 @@ function openCaseFormBuilder(id = null) {
     <div class="form-group full"><label class="form-label">عنوان فرم</label><input class="form-input" id="case-form-title" value="${escapeHtml(form?.title||'')}" placeholder="مثلاً: فرم پذیرش اولیه"></div>
     <div class="form-group full" style="margin-top:8px"><label class="form-label">توضیح کوتاه (اختیاری)</label><input class="form-input" id="case-form-description" value="${escapeHtml(form?.description||'')}" placeholder="کاربرد این فرم"></div>
     <div style="display:flex;gap:6px;margin:14px 0" role="tablist" aria-label="روش ایجاد فرم"><button type="button" class="case-form-mode" data-mode="import" onclick="_caseFormSetMode('import')" style="flex:1;padding:9px;border:0;border-radius:8px;background:var(--accent);color:white;font-family:var(--font);font-weight:700;cursor:pointer">وارد کردن فرم</button><button type="button" class="case-form-mode" data-mode="manual" onclick="_caseFormSetMode('manual')" style="flex:1;padding:9px;border:0;border-radius:8px;background:var(--bg3);color:var(--text2);font-family:var(--font);font-weight:700;cursor:pointer">ساخت فرم</button></div>
-    <div id="case-form-import-panel"><label class="form-label">متن فرم را از هرجا کپی و اینجا Paste کنید</label><textarea class="form-textarea" id="case-form-import" rows="12" placeholder="# عنوان بخش&#10;[ ] مورد قابل انجام&#10;[ ] نام مشتری:&#10;توضیحات مشتری:&#10;........................">${escapeHtml(form?.content||'')}</textarea><div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:5px">چک‌باکس‌ها، فیلدهای دارای «:»، تیترها و توضیحات به‌صورت خودکار تشخیص داده می‌شوند.</div></div>
+    <div id="case-form-import-panel">
+      <div class="case-form-import-workspace">
+        <div class="case-form-import-pane"><label class="form-label" for="case-form-import">متن فرم را از هرجا کپی و اینجا Paste کنید</label><textarea class="form-textarea" id="case-form-import" rows="16" oninput="_updateCaseFormImportPreview(this)" placeholder="# عنوان بخش&#10;- [ ] مورد قابل انجام&#10;- [ ] نام مشتری:&#10;توضیحات مشتری:&#10;........................">${escapeHtml(form?.content||'')}</textarea><div style="font-size:10px;color:var(--text3);line-height:1.8;margin-top:5px">موارد بدون «:» چک‌باکس می‌شوند؛ موارد دارای «:» ورودی نوشتاری خواهند داشت.</div></div>
+        <div class="case-form-import-pane"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><label class="form-label" style="margin:0">پیش‌نمایش فرم کامل</label><span style="font-size:10px;color:var(--green)">زنده و قابل آزمایش</span></div><div class="case-form-live-preview" id="case-form-import-preview" aria-live="polite"></div></div>
+      </div>
+    </div>
     <div id="case-form-manual-panel" style="display:none"><div id="case-form-builder-rows">${initialRows}</div><button type="button" class="btn btn-ghost btn-sm" onclick="addCaseFormBuilderRow()">+ افزودن ردیف</button></div>
   `, [
     { label: form ? 'ذخیره تغییرات' : 'ایجاد فرم', cls:'btn-primary', action:`saveCaseForm(${form?.id || 'null'})` },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
-  ]);
+  ], { fullPage:true, overlayClass:'case-form-builder-modal' });
+  setTimeout(() => {
+    _updateCaseFormImportPreview(document.getElementById('case-form-import'));
+    const body = document.querySelector('.case-form-builder-modal .modal-body');
+    body?.addEventListener('focusin', event => {
+      if (window.innerWidth > 640 || !event.target.matches('input,textarea,select')) return;
+      setTimeout(() => event.target.scrollIntoView({block:'center',behavior:'smooth'}),260);
+    });
+  },0);
 }
 
 function _caseFormManualContent() {
