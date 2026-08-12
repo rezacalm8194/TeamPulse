@@ -8302,10 +8302,10 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   const chk = checked ? 'checked ' : '';
   const ts = checked ? 'text-decoration:line-through;color:var(--text3)' : '';
   if (interactive && (noteId != null || textareaId)) {
-    const handler = 'onchange="_toggleChecklistItem(' + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ')"';
+    const handler = "onchange='_toggleChecklistItem(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
     const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
     if (answerMatch) {
-      const answerHandler = 'oninput="_updateChecklistAnswer(' + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ')"';
+      const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
       return '<div style="display:flex;align-items:flex-start;gap:10px;margin:4px 0;min-height:44px;padding:7px 8px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
         '<input type="checkbox" ' + chk + handler + ' aria-label="وضعیت ' + answerMatch[1] + '" style="' + bs + ';cursor:pointer">' +
         '<div style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;flex:1;min-width:0">' +
