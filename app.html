@@ -8359,6 +8359,26 @@ function renderRich(str, opts) {
     inlineCodes.push('<code style="direction:ltr;display:inline-block;padding:1px 6px;border-radius:5px;background:var(--bg3);color:var(--accent2);font-family:monospace;font-size:.92em">' + code + '</code>');
     return token;
   });
+  // Standalone labels ending in ':' are fillable fields even when they were
+  // not authored as checklist items. A following dotted placeholder line is
+  // consumed as part of the same field.
+  const plainFields = [];
+  let plainFieldIndex = 0;
+  s = s.replace(/^(?!\s*(?:[-+*]\s+)?\[[ xX]\])(?!\s*[#&|])\s*([^:\n]{1,80}[:：])\s*(.*?)(?:\n\s*[.…·_ـ-]{3,}\s*)?$/gm, function(_, label, answer) {
+    const index = plainFieldIndex++;
+    const token = '\uE004FIELD' + plainFields.length + '\uE005';
+    const displayAnswer = String(answer || '').replace(/\s*⏎\s*/g, '\n');
+    if (interactive && (noteId != null || textareaId)) {
+      const handler = "oninput='_updatePlainFieldAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + index + ',' + JSON.stringify(textareaId || '') + ")'";
+      plainFields.push('<div style="margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg3)">' +
+        '<label for="plain-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + index + '" style="display:block;margin-bottom:7px;font-weight:700;color:var(--text)">' + label + '</label>' +
+        '<textarea id="plain-answer-' + (noteId == null ? 'draft' : noteId) + '-' + field + '-' + index + '" rows="3" ' + handler + ' placeholder="توضیحات را اینجا وارد کنید…" ' +
+          'style="display:block;width:100%;min-height:88px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;background:var(--bg2);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.8;resize:vertical">' + displayAnswer + '</textarea></div>');
+    } else {
+      plainFields.push('<div style="margin:8px 0"><strong>' + label + '</strong> ' + (displayAnswer || '—').replace(/\n/g,'<br>') + '</div>');
+    }
+    return token;
+  });
   s = s.replace(/==(.+?)==/g, '<mark>$1</mark>');
   s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
@@ -8407,6 +8427,7 @@ function renderRich(str, opts) {
   s = s.replace(/\n/g, '<br>');
   s = s.replace(/\uE002INLINE(\d+)\uE003/g, function(_, i){ return inlineCodes[+i] || ''; });
   s = s.replace(/\uE000CODE(\d+)\uE001/g, function(_, i){ return codeBlocks[+i] || ''; });
+  s = s.replace(/\uE004FIELD(\d+)\uE005/g, function(_, i){ return plainFields[+i] || ''; });
   return s;
 }
 
@@ -8457,6 +8478,32 @@ function _updateChecklistAnswer(noteId, field, input, itemIndex, textareaId) {
   note[field] = updated;
   clearTimeout(input._checklistSaveTimer);
   input._checklistSaveTimer = setTimeout(function() {
+    _save();
+    input.style.borderColor = 'var(--green)';
+    setTimeout(function(){ input.style.borderColor = 'var(--border2)'; }, 700);
+  }, 450);
+}
+
+function _updatePlainFieldAnswer(noteId, field, input, itemIndex, textareaId) {
+  const textarea = textareaId ? document.getElementById(textareaId) : null;
+  const note = noteId == null ? null : (_db.instructions||[]).find(function(n){ return n.id === +noteId; });
+  if (!textarea && !note) return;
+  const source = textarea ? textarea.value : (note[field] || '');
+  let seen = -1;
+  const cleanAnswer = String(input.value || '').replace(/\r/g, '').trimStart().replace(/\n+/g, ' ⏎ ');
+  const updated = source.replace(/^(?!\s*(?:[-+*]\s+)?\[[ xX]\])(?!\s*[#>|])\s*([^:\n]{1,80}[:：])\s*(.*?)(?:\n\s*[.…·_ـ-]{3,}\s*)?$/gm, function(line, label) {
+    seen += 1;
+    if (seen !== Number(itemIndex)) return line;
+    return label + (cleanAnswer ? ' ' + cleanAnswer : '');
+  });
+  if (textarea) {
+    textarea.value = updated;
+    textarea.dispatchEvent(new Event('input', { bubbles:true }));
+    return;
+  }
+  note[field] = updated;
+  clearTimeout(input._plainFieldSaveTimer);
+  input._plainFieldSaveTimer = setTimeout(function() {
     _save();
     input.style.borderColor = 'var(--green)';
     setTimeout(function(){ input.style.borderColor = 'var(--border2)'; }, 700);
