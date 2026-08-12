@@ -16937,6 +16937,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form) { openEvaluation(studentId, displayName); return; }
+  setTimeout(() => _ensureEvalFormAttachmentsShared(studentId, formId), 0);
 
   // Imported case forms are immediately usable like Knowledge Center forms.
   // Keep a separate content snapshot per period so filling one period never changes the template.
@@ -17229,6 +17230,7 @@ async function deleteEvalFormAttachment(studentId, displayName, formId, attachme
   form.attachments = (form.attachments || []).filter(item => item.id !== attachmentId);
   saveEvalForms(studentId, forms);
   try { await _IDB.delete(attachmentId); } catch (_) {}
+  try { await _apiFetch('/api/files/' + encodeURIComponent(attachmentId), {method:'DELETE'}); } catch (_) {}
   showToast('پیوست فرم حذف شد', 'success');
   openEvalFormDetail(studentId, displayName, formId, activePeriodIdx);
 }
@@ -21517,7 +21519,8 @@ async function attachFiles(entityType, entityId, existingAttachments) {
           const dataURL = await _readFileAsDataURL(file);
           await _IDB.save(id, dataURL);
           const thumb = await _makeThumbnail(file);
-          newAttachments.push({ id, name: file.name, type: file.type, size: file.size, thumb, created: new Date().toISOString() });
+          const serverStored = await _uploadSharedAttachment(id, file);
+          newAttachments.push({ id, name: file.name, type: file.type, size: file.size, thumb, server_stored:serverStored, created: new Date().toISOString() });
         } catch(e) { showToast('خطا: ' + file.name, 'error'); }
       }
       done(newAttachments);
@@ -21532,6 +21535,10 @@ async function attachFiles(entityType, entityId, existingAttachments) {
     input.click();
   });
 }
+
+async function _uploadSharedAttachment(id,fileOrBlob,name=''){if(!_sbSession?.token||!fileOrBlob)return false;try{const fd=new FormData();fd.append('id',id);fd.append('owner_account_id',_teamAccessSession()?.ownerUserId||_sbUser?.id||'');fd.append('workspace_id',_currentAccountId());fd.append('file',fileOrBlob,name||fileOrBlob.name||'file');return(await _apiFetch('/api/files',{method:'POST',body:fd})).ok;}catch(_){return false;}}
+async function _attachmentDataURL(id){let data=await _IDB.get(id);if(data)return data;if(!_sbSession?.token)return null;try{const res=await _apiFetch('/api/files/'+encodeURIComponent(id));if(!res.ok)return null;data=await _readFileAsDataURL(await res.blob());await _IDB.save(id,data);return data;}catch(_){return null;}}
+async function _ensureEvalFormAttachmentsShared(studentId,formId){const forms=loadEvalForms(studentId),form=forms.find(x=>+x.id===+formId);if(!form?.attachments?.length)return;let changed=false;for(const a of form.attachments){if(a.server_stored)continue;const data=await _IDB.get(a.id);if(!data)continue;const blob=await(await fetch(data)).blob();if(await _uploadSharedAttachment(a.id,blob,a.name)){a.server_stored=true;changed=true;}}if(changed)saveEvalForms(studentId,forms);}
 
 // ── Render attachments grid ───────────────────────────────────────────────────
 function renderAttachmentsGrid(attachments, onDelete) {
@@ -21572,7 +21579,7 @@ function renderAttachmentsGrid(attachments, onDelete) {
 async function _openAttachment(id, name, type) {
   try {
     showToast('در حال بارگذاری...', '');
-    const dataURL = await _IDB.get(id);
+    const dataURL = await _attachmentDataURL(id);
     if (!dataURL) { showToast('فایل یافت نشد', 'error'); return; }
 
     if (type && type.startsWith('image/')) {
@@ -21602,7 +21609,7 @@ async function _openAttachment(id, name, type) {
 }
 
 async function _downloadAttachment(id, name, dataURL) {
-  if (!dataURL) dataURL = await _IDB.get(id);
+  if (!dataURL) dataURL = await _attachmentDataURL(id);
   if (!dataURL) { showToast('فایل یافت نشد', 'error'); return; }
   const a = document.createElement('a');
   a.href = dataURL;
@@ -31182,7 +31189,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v75';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v76';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
