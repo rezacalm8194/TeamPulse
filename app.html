@@ -1935,6 +1935,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .case-form-import-workspace { display:grid;grid-template-columns:minmax(280px,.85fr) minmax(340px,1.15fr);gap:12px;align-items:start; }
 .case-form-import-pane { min-width:0; }
 .case-form-live-preview { min-height:340px;max-height:52vh;overflow:auto;padding:14px;border:1px solid var(--border2);border-radius:11px;background:var(--bg2);-webkit-overflow-scrolling:touch;overscroll-behavior:contain; }
+.imported-eval-form-content input,.imported-eval-form-content textarea { max-width:100%; }
 @media (max-width: 640px) {
   .eval-builder-row { grid-template-columns:1fr 1fr 42px !important; }
   .eval-builder-row .eval-builder-label { grid-column:1 / -1; grid-row:1; }
@@ -1952,6 +1953,10 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   .case-form-live-preview .interactive-form-field { display:flex !important;flex-direction:column !important;align-items:stretch !important; }
   .case-form-live-preview input,.case-form-live-preview textarea { width:100% !important;min-width:0 !important;min-height:46px !important;font-size:16px !important; }
   .case-form-live-preview input[type="checkbox"] { width:22px !important;height:22px !important;min-height:22px !important;flex:0 0 22px !important; }
+  .imported-eval-form { padding:10px !important; }
+  .imported-eval-form-content .interactive-form-field { display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:7px !important; }
+  .imported-eval-form-content input,.imported-eval-form-content textarea { width:100% !important;min-width:0 !important;min-height:46px !important;font-size:16px !important; }
+  .imported-eval-form-content input[type="checkbox"] { width:22px !important;height:22px !important;min-height:22px !important;flex:0 0 22px !important; }
 }
 .session-card.key { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.06); }
 .session-card .sc-date { font-size: 10px; color: var(--accent2); font-weight: 600; margin-bottom: 3px; }
@@ -9069,13 +9074,16 @@ function saveCaseForm(id) {
   const title = document.getElementById('case-form-title')?.value.trim();
   if (!title) { showToast('عنوان فرم را وارد کنید','error'); return; }
   const importVisible = document.getElementById('case-form-import-panel')?.style.display !== 'none';
-  const content = importVisible ? document.getElementById('case-form-import')?.value.trim() : _caseFormManualContent();
-  if (!content) { showToast('حداقل یک مورد برای فرم وارد کنید','error'); return; }
+  const rawContent = importVisible ? (document.getElementById('case-form-import')?.value || '') : _caseFormManualContent();
+  if (!rawContent.trim()) { showToast('حداقل یک مورد برای فرم وارد کنید','error'); return; }
+  // Imported forms are stored verbatim. Manual forms are stored as generated structured Markdown.
+  const content = importVisible ? rawContent : rawContent.trim();
+  const creation_mode = importVisible ? 'import' : 'manual';
   _db.case_forms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
   const existing = id == null ? null : _db.case_forms.find(item => +item.id === +id);
   const now = formatJalali(...todayJalali());
-  if (existing) Object.assign(existing,{title,description:document.getElementById('case-form-description')?.value.trim()||'',content,updated_at:now});
-  else _db.case_forms.unshift({id:genEvalId(),title,description:document.getElementById('case-form-description')?.value.trim()||'',content,created_at:now,updated_at:now});
+  if (existing) Object.assign(existing,{title,description:document.getElementById('case-form-description')?.value.trim()||'',content,creation_mode,updated_at:now});
+  else _db.case_forms.unshift({id:genEvalId(),title,description:document.getElementById('case-form-description')?.value.trim()||'',content,creation_mode,created_at:now,updated_at:now});
   _save(); closeModal(); showToast(existing?'فرم ویرایش شد ✓':'فرم ساخته شد ✓','success'); renderStudents();
 }
 
@@ -16254,6 +16262,27 @@ function loadEvalForms(studentId) {
   forms.forEach(f => {
     if (_ensurePeriodIds(f)) anyChanged = true;
     (f.rows || []).forEach(row => { if (!row.type) { row.type = 'score'; anyChanged = true; } });
+    // Migration for forms selected before raw imported content was preserved.
+    // Match only imported case forms with the same title and extracted field labels.
+    if (!f.source_case_form_id) {
+      const candidates = (_db?.case_forms || []).filter(template =>
+        (template.creation_mode || 'import') === 'import' && String(template.title || '').trim() === String(f.title || '').trim()
+      );
+      const template = candidates.find(candidate => {
+        const extracted = _caseFormEvalRows(candidate).map(row => row.label);
+        const existing = (f.rows || []).map(row => row.label);
+        return existing.length > 0 && existing.every(label => extracted.includes(label));
+      });
+      if (template) {
+        f.source_case_form_id = template.id;
+        f.source_case_form_mode = 'import';
+        f.source_case_form_content = template.content || '';
+        (f.periods || []).forEach(period => {
+          if (period.form_content === undefined) period.form_content = template.content || '';
+        });
+        anyChanged = true;
+      }
+    }
   });
   if (anyChanged) saveEvalForms(studentId, forms);
   return forms;
@@ -16559,6 +16588,10 @@ function _studentEvalDisplayName(studentId) {
   return student ? `${student.name || ''} ${student.lname || ''}`.trim() : (META.entitySingular || 'شاگرد');
 }
 
+function _isImportedEvalForm(form) {
+  return !!form?.source_case_form_id && form.source_case_form_mode !== 'manual';
+}
+
 function selectCaseFormForEvaluation(studentId, caseFormId) {
   const displayName = _studentEvalDisplayName(studentId);
   const template = (_db.case_forms || []).find(item => +item.id === +caseFormId);
@@ -16573,7 +16606,8 @@ function selectCaseFormForEvaluation(studentId, caseFormId) {
   }
 
   const rows = _caseFormEvalRows(template);
-  if (!rows.length) {
+  const sourceMode = template.creation_mode || 'import';
+  if (!rows.length && sourceMode === 'manual') {
     showToast('در این فرم فیلد یا چک‌باکسی برای تبدیل به شاخص پیدا نشد', 'error');
     return;
   }
@@ -16586,6 +16620,8 @@ function selectCaseFormForEvaluation(studentId, caseFormId) {
     periods: [],
     created: formatJalali(...todayJalali()),
     source_case_form_id: template.id,
+    source_case_form_mode: sourceMode,
+    source_case_form_content: template.content || '',
   };
   forms.push(newForm);
   saveEvalForms(studentId, forms);
@@ -16869,6 +16905,23 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const form = forms.find(f => f.id === formId);
   if (!form) { openEvaluation(studentId, displayName); return; }
 
+  // Imported case forms are immediately usable like Knowledge Center forms.
+  // Keep a separate content snapshot per period so filling one period never changes the template.
+  if (_isImportedEvalForm(form)) {
+    const template = (_db.case_forms || []).find(item => +item.id === +form.source_case_form_id);
+    const originalContent = form.source_case_form_content !== undefined ? form.source_case_form_content : (template?.content || '');
+    let changed = false;
+    if (form.source_case_form_content === undefined) { form.source_case_form_content = originalContent; changed = true; }
+    if (!form.periods.length) {
+      form.periods.push({ id:genEvalId(), date:null, scores:{}, notes:{}, targets:{}, checks:{}, summary:'', actions:'', form_content:originalContent });
+      changed = true;
+    }
+    form.periods.forEach(period => {
+      if (period.form_content === undefined) { period.form_content = originalContent; changed = true; }
+    });
+    if (changed) saveEvalForms(studentId, forms);
+  }
+
   const lastIdx = form.periods.length - 1;
   const curIdx = (activePeriodIdx !== undefined && activePeriodIdx >= 0 && activePeriodIdx <= lastIdx)
     ? activePeriodIdx : lastIdx;
@@ -16901,7 +16954,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const tableHtml = buildEvalTable(form, curIdx, studentId);
 
   // ── تحلیل خودکار: سرعت رشد + نقاط قوت/ضعف ──
-  const analysisHtml = form.periods.length >= 2 ? (() => {
+  const analysisHtml = !_isImportedEvalForm(form) && form.periods.length >= 2 ? (() => {
     const last = form.periods[form.periods.length - 1];
     const prev = form.periods[form.periods.length - 2];
     const growthData = form.rows.filter(row => !row.type || row.type === 'score').map(row => {
@@ -17032,6 +17085,9 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
   const primaryBtn = openPeriodIdx !== -1
     ? { label: `🔵 پایان دوره ${fa(openPeriodIdx + 1)}`, cls: 'btn-primary', action: `endEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId},${openPeriodIdx})` }
     : { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` };
+  const editFormBtn = _isImportedEvalForm(form)
+    ? { label:'ویرایش فرم اصلی', cls:'btn-ghost', action:`openCaseFormBuilder(${form.source_case_form_id})` }
+    : { label:'ویرایش المان‌ها', cls:'btn-ghost', action:`openEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` };
 
   openModal(`📊 ${escapeHtml(form.title)} — ${displayName}`, `
     <div class="detail-section" style="max-height:65vh;overflow-y:auto">
@@ -17043,7 +17099,8 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
     </div>
   `, [
     primaryBtn,
-    { label: '✏️ ویرایش شاخص‌ها', cls: 'btn-ghost', action: `openEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    editFormBtn,
+    ...(_isImportedEvalForm(form) ? [{label:'کپی فرم',cls:'btn-ghost',action:`copyCaseForm(${form.source_case_form_id})`}] : []),
     { label: 'بازگشت', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
   ]);
   setTimeout(() => {
@@ -17070,6 +17127,32 @@ function evalSwitchTab(studentId, displayName, formId, periodIdx) {
   setTimeout(() => {
     document.querySelectorAll('#eval-table-container .jdate').forEach(el => attachJalaliDatePicker(el));
   }, 0);
+}
+
+function _buildImportedEvalForm(form, period, periodIdx) {
+  if (!period) return '';
+  const sourceId = `imported-eval-source-${form.id}-${periodIdx}`;
+  const content = String(period.form_content || '');
+  return `<div class="imported-eval-form" style="padding:14px;border:1px solid var(--border);border-radius:11px;background:var(--bg2)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--border)">
+      <div><div style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(form.title)}</div><div style="font-size:10px;color:var(--text3);margin-top:3px">فرم واردشده · پاسخ‌ها خودکار ذخیره می‌شوند</div></div>
+      <span style="font-size:10px;color:var(--green);white-space:nowrap">آماده تکمیل</span>
+    </div>
+    <textarea id="${sourceId}" aria-hidden="true" tabindex="-1" style="display:none" oninput="_saveImportedEvalContent(${form.id},${periodIdx},this.value)">${escapeHtml(content)}</textarea>
+    <div class="imported-eval-form-content" style="font-size:13px;line-height:1.9">${renderRich(content,{interactive:true,textareaId:sourceId})}</div>
+  </div>`;
+}
+
+function _saveImportedEvalContent(formId, periodIdx, value) {
+  const key = evalFindKey(formId);
+  if (!key) return;
+  const forms = _evalLoadByKey(key);
+  const form = forms.find(item => +item.id === +formId);
+  const period = form?.periods?.[periodIdx];
+  if (!period) return;
+  period.form_content = value;
+  clearTimeout(window._importedEvalSaveTimer);
+  window._importedEvalSaveTimer = setTimeout(() => _evalSaveByKey(key, forms), 400);
 }
 
 // ── BUILD the scoring table ──
@@ -17106,6 +17189,8 @@ function buildEvalTable(form, periodIdx, studentId) {
         🗑 حذف این دوره
       </button>
     </div>`) : '';
+
+  if (_isImportedEvalForm(form)) return `${dateRow}${_buildImportedEvalForm(form,period,periodIdx)}`;
 
   const rows = form.rows.map(row => {
     const rowType = row.type || 'score';
@@ -17237,7 +17322,8 @@ function startNewEvalPeriod(studentId, displayName, formId) {
     openEvalFormDetail(studentId, displayName, formId, openIdx);
     return;
   }
-  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
+  const importedContent = _isImportedEvalForm(form) ? (form.source_case_form_content || '') : null;
+  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, checks:{}, summary: '', actions: '', ...(importedContent !== null ? {form_content:importedContent} : {}) };
   form.periods.push(newPeriod);
   saveEvalForms(studentId, forms);
   _relinkAchievementsForStudent(studentId);
@@ -17284,7 +17370,8 @@ function confirmEndEvalPeriod(studentId, displayName, formId, periodIdx) {
   const form = forms.find(f => f.id === formId);
   if (!form || !form.periods[periodIdx] || form.periods[periodIdx].date) return;
   form.periods[periodIdx].date = dateVal;
-  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, summary: '', actions: '' };
+  const importedContent = _isImportedEvalForm(form) ? (form.source_case_form_content || '') : null;
+  const newPeriod = { id: genEvalId(), date: null, scores: {}, notes: {}, targets: {}, checks:{}, summary: '', actions: '', ...(importedContent !== null ? {form_content:importedContent} : {}) };
   form.periods.splice(periodIdx + 1, 0, newPeriod);
   saveEvalForms(studentId, forms);
   _relinkAchievementsForStudent(studentId);
