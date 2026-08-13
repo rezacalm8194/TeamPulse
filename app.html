@@ -7620,12 +7620,23 @@ async function _refreshWorkspacesFromServer() {
       }
       if (synced) account.pendingSync = false;
     }
-    _saveAccounts(local);
-    if (remote.length || !local.length) _saveAccounts(remote);
-    const current = _currentAccountId();
-    if (current !== 'default' && !remote.some(item => item.id === current)) {
-      _setCurrentAccountId('default');
+    // Registry reads are not deletion events. A workspace can be absent from a
+    // response because its offline registration is still pending, a deployment
+    // is mixed-version, or the request raced with creation. Preserve the local
+    // entry and current tab selection; only the explicit delete flow may remove
+    // either of them.
+    const merged = remote.map(remoteAccount => {
+      const localAccount = local.find(item => item.id === remoteAccount.id);
+      return localAccount
+        ? { ...localAccount, ...remoteAccount, pendingSync: false }
+        : remoteAccount;
+    });
+    for (const localAccount of local) {
+      if (!merged.some(item => item.id === localAccount.id) && merged.length < MAX_WORKSPACES - 1) {
+        merged.push({ ...localAccount, pendingSync: true });
+      }
     }
+    _saveAccounts(merged);
     return _getAccounts();
   } catch(e) {
     console.warn('[Workspace] registry sync failed:', e.message);
