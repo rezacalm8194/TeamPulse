@@ -4811,7 +4811,7 @@ function _freshData() {
   return {
     meta: {...DEFAULT_META},
     package_types: [],
-    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[],
+    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], financial_accounts:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
@@ -4826,7 +4826,7 @@ function _freshData() {
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
     _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
-             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,staff_roles:2,todo_calendar_events:1,
+             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,financial_accounts:1,staff_roles:2,todo_calendar_events:1,
              staff:1,staff_payments:1,staff_reminders:1,staff_adjustments:1,staff_monthly:1,instructions:1,instr_items:1},
   };
 }
@@ -4842,7 +4842,7 @@ function _migrate(d) {
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
   d.package_types = d.package_types || [];
-  ['families','students','packages','payments','sessions','expenses','wallet_tx','reminders','key_events','topics',
+  ['families','students','packages','payments','sessions','expenses','financial_accounts','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
@@ -4902,7 +4902,7 @@ function _migrate(d) {
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   d._nextId = d._nextId||{};
-  ['students','packages','payments','sessions','expenses','families','package_types','wallet_tx','reminders',
+  ['students','packages','payments','sessions','expenses','financial_accounts','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
@@ -5847,8 +5847,8 @@ window.api = {
   },
 
   payments: {
-    add: (p)=>{ _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id});_save();} return _P({ok:true}); },
+    add: (p)=>{ _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.payments=_db.payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;return{...p,pkg_label:pt?pt.label:'مانده فعلی'};})),
     getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:''};})),
@@ -10189,6 +10189,10 @@ function openAddPayment(studentId) {
         <label class="form-label">بابت / شماره پیگیری</label>
         <input class="form-input" id="f-pay-method" placeholder="مثلاً: قسط دوم، شماره فاکتور...">
       </div>
+      <div class="form-group">
+        <label class="form-label">واریز به حساب</label>
+        <select class="form-select" id="f-pay-account">${financialAccountOptionsHtml()}</select>
+      </div>
       <div class="form-group full">
         <label class="form-label">یادداشت</label>
         <input class="form-input" id="f-pay-note" placeholder="اختیاری">
@@ -10232,6 +10236,7 @@ async function savePayment(studentId) {
     currency: document.getElementById('f-pay-currency')?.value || 'تومان',
     date,
     method: document.getElementById('f-pay-method')?.value,
+    account_id: document.getElementById('f-pay-account')?.value || null,
     note: document.getElementById('f-pay-note')?.value,
   });
   closeModal();
@@ -10513,6 +10518,10 @@ function openGeneralPaymentModal() {
         <label class="form-label">بابت / شماره پیگیری</label>
         <input class="form-input" id="gp-method" placeholder="مثلاً: قسط دوم، شماره فاکتور...">
       </div>
+      <div class="form-group">
+        <label class="form-label">واریز به حساب</label>
+        <select class="form-select" id="gp-account">${financialAccountOptionsHtml()}</select>
+      </div>
       <div class="form-group full">
         <label class="form-label">یادداشت</label>
         <input class="form-input" id="gp-note" placeholder="مثلاً: پرداخت نقدی امروز">
@@ -10570,6 +10579,7 @@ async function saveGeneralPayment() {
     currency: document.getElementById('gp-currency')?.value || 'تومان',
     date,
     method: document.getElementById('gp-method')?.value,
+    account_id: document.getElementById('gp-account')?.value || null,
     note: document.getElementById('gp-note')?.value,
   });
   closeModal();
@@ -12397,6 +12407,44 @@ function _expenseAmountValue(value) {
   return Math.max(0, Number(enDigits(String(value||'').replace(/[,٬،\s]/g,''))) || 0);
 }
 
+const FINANCIAL_ACCOUNT_TYPES = { cash:'نقد', bank:'حساب بانکی', pos:'کارت‌خوان', wallet:'کیف پول', other:'سایر' };
+function financialAccountOptionsHtml(selectedId=null, emptyLabel='بدون اتصال به حساب') {
+  const accounts=_db.financial_accounts||[];
+  return `<option value="">${emptyLabel}</option>${accounts.map(a=>`<option value="${a.id}" ${String(a.id)===String(selectedId||'')?'selected':''}>${escapeHtml(a.name)} · ${FINANCIAL_ACCOUNT_TYPES[a.type]||'سایر'}</option>`).join('')}`;
+}
+function _financialAccountBalance(account) {
+  const id=String(account.id);
+  const received=(_db.payments||[]).filter(p=>String(p.account_id||'')===id&&(p.currency||'تومان')==='تومان').reduce((sum,p)=>sum+Number(p.amount||0),0);
+  const spent=(_db.expenses||[]).filter(e=>String(e.account_id||'')===id).reduce((sum,e)=>sum+Number(e.amount||0),0);
+  return Number(account.opening_balance||0)+received-spent;
+}
+function openFinancialAccounts() {
+  const accounts=(_db.financial_accounts||[]).slice();
+  const cards=accounts.map(a=>`<div style="padding:13px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div style="font-size:12px;color:var(--text2)">${escapeHtml(a.name)} · ${FINANCIAL_ACCOUNT_TYPES[a.type]||'سایر'}</div><div style="font-size:18px;font-weight:800;color:var(--green);margin:7px 0">${fmt(_financialAccountBalance(a))}</div><div style="font-size:10px;color:var(--text3)">موجودی فعلی (تومان)</div><div style="display:flex;gap:5px;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="openFinancialAccountForm(${a.id})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteFinancialAccount(${a.id})">حذف</button></div></div>`).join('');
+  const list=accounts.length
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">${cards}</div>`
+    : '<div style="text-align:center;padding:28px;color:var(--text3)">حسابی ثبت نشده است. با ثبت نقد، بانک یا کارت‌خوان شروع کنید.</div>';
+  const header='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px"><div style="font-size:11px;color:var(--text3)">مانده فقط از تراکنش‌های متصل به حساب محاسبه می‌شود</div><button class="btn btn-primary btn-sm" onclick="openFinancialAccountForm()">+ حساب جدید</button></div>';
+  openModal('🏦 حساب‌های مالی',header+list,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}]);
+}
+function openFinancialAccountForm(id=null) {
+  const a=id==null?{}:(_db.financial_accounts||[]).find(a=>String(a.id)===String(id))||{};
+  openModal(id==null?'➕ حساب مالی جدید':'✏️ ویرایش حساب مالی',`<div class="form-grid"><div class="form-group"><label class="form-label">نام حساب *</label><input class="form-input" id="fa-name" value="${escapeHtml(a.name||'')}" placeholder="مثلاً: کارت‌خوان فروشگاه"></div><div class="form-group"><label class="form-label">نوع</label><select class="form-select" id="fa-type">${Object.entries(FINANCIAL_ACCOUNT_TYPES).map(([key,label])=>`<option value="${key}" ${a.type===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group full"><label class="form-label">موجودی اولیه (تومان)</label><input class="form-input amount-input" id="fa-opening" inputmode="numeric" value="${a.opening_balance?fmt(a.opening_balance):''}" placeholder="برای شروع مانده فعلی حساب را وارد کنید"></div></div>`,[{label:'ذخیره',cls:'btn-primary',action:`saveFinancialAccount(${id==null?'null':Number(id)})`},{label:'انصراف',cls:'btn-ghost',action:'openFinancialAccounts()'}]);
+}
+function saveFinancialAccount(id=null) {
+  const name=(document.getElementById('fa-name')?.value||'').trim();
+  if(!name){showToast('نام حساب را وارد کنید','error');return;}
+  const data={name,type:document.getElementById('fa-type')?.value||'other',opening_balance:_expenseAmountValue(document.getElementById('fa-opening')?.value)};
+  if(id==null){const item={id:_db._nextId.financial_accounts++,...data,created_at:new Date().toISOString()};_db.financial_accounts.push(item);}else{const item=(_db.financial_accounts||[]).find(a=>String(a.id)===String(id));if(item)Object.assign(item,data);}
+  _save();showToast('حساب مالی ذخیره شد ✓','success');openFinancialAccounts();
+}
+function deleteFinancialAccount(id) {
+  const used=(_db.payments||[]).some(p=>String(p.account_id||'')===String(id))||(_db.expenses||[]).some(e=>String(e.account_id||'')===String(id));
+  if(used){showToast('این حساب به تراکنش‌ها متصل است و قابل حذف نیست','error');return;}
+  if(!confirm('این حساب حذف شود؟'))return;
+  _db.financial_accounts=_db.financial_accounts.filter(a=>String(a.id)!==String(id));_save();openFinancialAccounts();
+}
+
 function _expenseFormHtml(expense={}) {
   const today = _formatJalali(..._todayJalali());
   return `<div class="form-grid">
@@ -12404,6 +12452,7 @@ function _expenseFormHtml(expense={}) {
     <div class="form-group"><label class="form-label">تاریخ *</label><input class="form-input jdate" id="expense-date" value="${escapeHtml(expense.date_jalali||today)}" placeholder="۱۴۰۵/۰۵/۲۲"></div>
     <div class="form-group"><label class="form-label">دسته‌بندی *</label><select class="form-select" id="expense-category">${EXPENSE_CATEGORIES.map(c=>`<option ${expense.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
     <div class="form-group"><label class="form-label">روش پرداخت</label><select class="form-select" id="expense-method">${EXPENSE_PAYMENT_METHODS.map(m=>`<option ${expense.payment_method===m?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">پرداخت از حساب</label><select class="form-select" id="expense-account">${financialAccountOptionsHtml(expense.account_id)}</select></div>
     <div class="form-group full"><label class="form-label">شرح</label><textarea class="form-textarea" id="expense-description" rows="3" placeholder="این هزینه بابت چه چیزی بوده است؟">${escapeHtml(expense.description||'')}</textarea></div>
     <div class="form-group full"><label class="form-label">تصویر رسید (اختیاری)</label><button type="button" class="btn btn-ghost" onclick="addExpenseReceipt()">📎 افزودن رسید</button><div id="expense-receipts">${renderAttachmentsGrid(window._pendingExpenseReceipts, `(fid)=>removePendingExpenseReceipt(fid)`)}</div></div>
   </div>`;
@@ -12441,7 +12490,7 @@ function saveExpense() {
   const id=window._editingExpenseId;
   const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
   if(!expense){showToast('هزینه پیدا نشد','error');return;}
-  Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',description:(document.getElementById('expense-description')?.value||'').trim(),receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
+  Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',account_id:document.getElementById('expense-account')?.value||null,description:(document.getElementById('expense-description')?.value||'').trim(),receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
   if(id==null)_db.expenses.push(expense);
   _save();
   showToast('هزینه ذخیره شد ✓','success');
@@ -12517,6 +12566,7 @@ async function renderDashboard() {
     <button type="button" class="btn btn-danger" onclick="openExpenseManager()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;box-shadow:0 6px 18px rgba(248,113,113,.14)">🧾 هزینه‌ها</button>
     <button type="button" class="btn btn-primary" onclick="openDashboardFinanceSection('payments')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;background:var(--green);border-color:var(--green);box-shadow:0 6px 18px rgba(62,207,142,.14)">📈 درآمدها و حساب مشتریان</button>
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
+    <button type="button" class="btn btn-ghost" onclick="openFinancialAccounts()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏦 حساب‌های مالی</button>
     <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
   </div>
   <div class="stats-row" aria-label="خلاصه مالی ماه جاری">
@@ -22318,7 +22368,7 @@ function _cloneData(data) {
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
-    'students','packages','payments','sessions','expenses','families','wallet_tx','reminders','key_events','topics',
+    'students','packages','payments','sessions','expenses','financial_accounts','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
     'instructions','todos'
   ];
