@@ -4811,7 +4811,7 @@ function _freshData() {
   return {
     meta: {...DEFAULT_META},
     package_types: [],
-    families:[], students:[], packages:[], payments:[], sessions:[],
+    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
@@ -4826,7 +4826,7 @@ function _freshData() {
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
     _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
-             wallet_tx:1,reminders:1,key_events:1,topics:1,staff_roles:2,todo_calendar_events:1,
+             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,staff_roles:2,todo_calendar_events:1,
              staff:1,staff_payments:1,staff_reminders:1,staff_adjustments:1,staff_monthly:1,instructions:1,instr_items:1},
   };
 }
@@ -4842,7 +4842,7 @@ function _migrate(d) {
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
   d.package_types = d.package_types || [];
-  ['families','students','packages','payments','sessions','wallet_tx','reminders','key_events','topics',
+  ['families','students','packages','payments','sessions','expenses','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
@@ -4902,7 +4902,7 @@ function _migrate(d) {
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   d._nextId = d._nextId||{};
-  ['students','packages','payments','sessions','families','package_types','wallet_tx','reminders',
+  ['students','packages','payments','sessions','expenses','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
@@ -5966,11 +5966,20 @@ window.api = {
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
       const monthlyIncome=Object.entries(monthMap).map(([k,total])=>{const jy=Math.floor(+k/100),jm=+k%100;return{jy,jm,total,label:`${JMONTHS[jm-1]} ${faNum(jy)}`};}).sort((a,b)=>(b.jy*100+b.jm)-(a.jy*100+a.jm));
       const[tjy,tjm]=_todayJalali();
+      const expenses=(_db.expenses||[]).map(e=>({...e,amount:Number(e.amount||0)}));
+      const expenseMonthTotal=(jy,jm)=>expenses.reduce((sum,e)=>{const[y,m]=_jalaliParse(e.date_jalali);return y===jy&&m===jm?sum+e.amount:sum;},0);
+      const currentMonthExpenses=expenseMonthTotal(tjy,tjm);
+      const[prevJy,prevJm]=tjm===1?[tjy-1,12]:[tjy,tjm-1];
+      const previousMonthExpenses=expenseMonthTotal(prevJy,prevJm);
+      const expenseChangePercent=previousMonthExpenses>0?Math.round((currentMonthExpenses-previousMonthExpenses)/previousMonthExpenses*100):(currentMonthExpenses>0?100:0);
+      const categoryTotals={};
+      expenses.forEach(e=>{const[y,m]=_jalaliParse(e.date_jalali);if(y===tjy&&m===tjm){const c=e.category||'سایر';categoryTotals[c]=(categoryTotals[c]||0)+e.amount;}});
+      const topExpenseCategory=Object.entries(categoryTotals).sort((a,b)=>b[1]-a[1])[0]||null;
       // Build familyGroups for dashboard
       const familyGroups = _db.families.map(f => {
         return _familySummary(f);
       }).filter(f => f.members.length > 0);
-      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy});
+      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy,currentMonthExpenses,previousMonthExpenses,expenseChangePercent,topExpenseCategory});
     },
   },
 
@@ -12324,10 +12333,86 @@ function changeDashboardIncomeYear(value) {
   renderDashboard();
 }
 
+const EXPENSE_CATEGORIES = ['اجاره','حقوق و دستمزد','تبلیغات','تجهیزات','نرم‌افزار و اشتراک','حمل‌ونقل','پذیرایی','مالیات و بیمه','آموزش','سایر'];
+const EXPENSE_PAYMENT_METHODS = ['کارت','انتقال بانکی','نقدی','چک','کیف پول','سایر'];
+window._pendingExpenseReceipts = window._pendingExpenseReceipts || [];
+
+function _expenseAmountValue(value) {
+  return Math.max(0, Number(enDigits(String(value||'').replace(/[,٬،\s]/g,''))) || 0);
+}
+
+function _expenseFormHtml(expense={}) {
+  const today = _formatJalali(..._todayJalali());
+  return `<div class="form-grid">
+    <div class="form-group"><label class="form-label">مبلغ (تومان) *</label><input class="form-input amount-input" id="expense-amount" inputmode="numeric" value="${expense.amount?fmt(expense.amount):''}" placeholder="مثلاً ۷۲,۰۰۰,۰۰۰"></div>
+    <div class="form-group"><label class="form-label">تاریخ *</label><input class="form-input jdate" id="expense-date" value="${escapeHtml(expense.date_jalali||today)}" placeholder="۱۴۰۵/۰۵/۲۲"></div>
+    <div class="form-group"><label class="form-label">دسته‌بندی *</label><select class="form-select" id="expense-category">${EXPENSE_CATEGORIES.map(c=>`<option ${expense.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">روش پرداخت</label><select class="form-select" id="expense-method">${EXPENSE_PAYMENT_METHODS.map(m=>`<option ${expense.payment_method===m?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div class="form-group full"><label class="form-label">شرح</label><textarea class="form-textarea" id="expense-description" rows="3" placeholder="این هزینه بابت چه چیزی بوده است؟">${escapeHtml(expense.description||'')}</textarea></div>
+    <div class="form-group full"><label class="form-label">تصویر رسید (اختیاری)</label><button type="button" class="btn btn-ghost" onclick="addExpenseReceipt()">📎 افزودن رسید</button><div id="expense-receipts">${renderAttachmentsGrid(window._pendingExpenseReceipts, `(fid)=>removePendingExpenseReceipt(fid)`)}</div></div>
+  </div>`;
+}
+
+function openExpenseForm(id=null) {
+  const expense = id==null ? {} : (_db.expenses||[]).find(e=>String(e.id)===String(id)) || {};
+  window._editingExpenseId = id;
+  window._pendingExpenseReceipts = _cloneData(expense.receipts||[]);
+  openModal(id==null?'➕ ثبت هزینه جدید':'✏️ ویرایش هزینه',_expenseFormHtml(expense),[
+    {label:'ذخیره هزینه',cls:'btn-primary',action:'saveExpense()'},
+    {label:'انصراف',cls:'btn-ghost',action:'openExpenseManager()'}
+  ]);
+  initDatePickers();
+}
+
+async function addExpenseReceipt() {
+  window._pendingExpenseReceipts = await attachFiles('expense',window._editingExpenseId,window._pendingExpenseReceipts||[]);
+  const el=document.getElementById('expense-receipts');
+  if(el)el.innerHTML=renderAttachmentsGrid(window._pendingExpenseReceipts,`(fid)=>removePendingExpenseReceipt(fid)`);
+}
+
+async function removePendingExpenseReceipt(id) {
+  window._pendingExpenseReceipts=(window._pendingExpenseReceipts||[]).filter(a=>a.id!==id);
+  try{await _IDB.delete(id);}catch(e){}
+  const el=document.getElementById('expense-receipts');
+  if(el)el.innerHTML=renderAttachmentsGrid(window._pendingExpenseReceipts,`(fid)=>removePendingExpenseReceipt(fid)`);
+}
+
+function saveExpense() {
+  const amount=_expenseAmountValue(document.getElementById('expense-amount')?.value);
+  const date=(document.getElementById('expense-date')?.value||'').trim();
+  if(!amount){showToast('مبلغ هزینه را وارد کنید','error');return;}
+  if(!_jalaliKey(date)){showToast('تاریخ هزینه معتبر نیست','error');return;}
+  const id=window._editingExpenseId;
+  const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
+  if(!expense){showToast('هزینه پیدا نشد','error');return;}
+  Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',description:(document.getElementById('expense-description')?.value||'').trim(),receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
+  if(id==null)_db.expenses.push(expense);
+  _save();
+  showToast('هزینه ذخیره شد ✓','success');
+  openExpenseManager();
+}
+
+async function deleteExpense(id) {
+  const expense=(_db.expenses||[]).find(e=>String(e.id)===String(id));
+  if(!expense||!confirm('این هزینه حذف شود؟'))return;
+  try{await _IDB.deleteMany((expense.receipts||[]).map(a=>a.id));}catch(e){}
+  _db.expenses=_db.expenses.filter(e=>String(e.id)!==String(id));
+  _save();
+  showToast('هزینه حذف شد','error');
+  openExpenseManager();
+}
+
+function openExpenseManager() {
+  const list=(_db.expenses||[]).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||Number(b.id)-Number(a.id));
+  const total=list.reduce((s,e)=>s+Number(e.amount||0),0);
+  openModal('🧾 مدیریت هزینه‌ها',`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap"><div><div style="font-size:11px;color:var(--text3)">جمع کل هزینه‌های ثبت‌شده</div><div style="font-size:20px;font-weight:800;color:var(--red)">${fmt(total)} <small style="font-size:10px">تومان</small></div></div><button class="btn btn-primary" onclick="openExpenseForm()">+ هزینه جدید</button></div>
+    ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>`<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}','${escapeHtml(e.receipts[0].name)}','${e.receipts[0].type}')">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button></div></div></div>`).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
+}
+
 async function renderDashboard() {
   updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
-  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear } = stats;
+  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const collected = totalAmount > 0 ? Math.round(totalPaid / totalAmount * 100) : 0;
   const incomeMonthNames = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
@@ -12371,6 +12456,11 @@ async function renderDashboard() {
       <div class="stat-value" style="color:${upcomingReminders>0?'var(--amber)':'var(--text)'}">${fa(upcomingReminders)}</div>
       <div class="stat-sub">⏰ پرداخت‌های پیگیری</div>
     </div>
+    <button type="button" class="stat-card s-red" onclick="openExpenseManager()" style="font:inherit;text-align:right;cursor:pointer;width:100%;color:inherit;position:relative" aria-label="باز کردن مدیریت هزینه‌ها">
+      <div class="stat-label" style="display:flex;justify-content:space-between;gap:8px"><span>هزینه این ماه</span><span style="color:var(--text3)">مدیریت ←</span></div>
+      <div class="stat-value">${fmt(currentMonthExpenses||0)}</div>
+      <div class="stat-sub" style="line-height:1.7">${previousMonthExpenses>0?`${expenseChangePercent>=0?'▲':'▼'} ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:(currentMonthExpenses>0?'اولین ماه ثبت هزینه':'هنوز هزینه‌ای ثبت نشده')}${topExpenseCategory?` · بیشترین: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
+    </button>
   </div>
 
   <div class="dash-grid">
@@ -22131,7 +22221,7 @@ function _cloneData(data) {
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
-    'students','packages','payments','sessions','families','wallet_tx','reminders','key_events','topics',
+    'students','packages','payments','sessions','expenses','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
     'instructions','todos'
   ];

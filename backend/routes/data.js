@@ -77,6 +77,7 @@ const DATA_ARRAY_KEYS = [
   'packages',
   'payments',
   'sessions',
+  'expenses',
   'families',
   'todos',
   'staff',
