@@ -7309,14 +7309,19 @@ function _workspaceOwnerId() {
 }
 function _accountsStorageKey() { return ACCOUNTS_KEY + ':' + _workspaceOwnerId(); }
 function _currentAccountStorageKey() { return 'teampulse_current_account:' + _workspaceOwnerId(); }
-function _tabAccountStorageKey() { return 'teampulse_tab_current_account:' + _workspaceOwnerId(); }
+// This key must be readable before authentication finishes during a reload.
+// The owner id lives inside the value so separate signed-in accounts remain
+// isolated without making the key depend on startup timing.
+function _tabAccountStorageKey() { return 'teampulse_tab_current_account'; }
 
 function _setCurrentAccountId(id, remember = true) {
   const value = String(id || 'default');
+  const ownerId = _workspaceOwnerId();
   // The active workspace is tab-scoped. localStorage is shared by every open
   // tab and must never be used as the live routing source for load/save calls.
-  try { sessionStorage.setItem(_tabAccountStorageKey(), value); } catch(e) {}
-  window._tabWorkspaceId = value;
+  const selection = { ownerId, id: value };
+  try { sessionStorage.setItem(_tabAccountStorageKey(), JSON.stringify(selection)); } catch(e) {}
+  window._tabWorkspaceSelection = selection;
   // Keep only a launch preference for genuinely new tabs. Existing tabs read
   // their captured window/session value and are therefore unaffected.
   if (remember) {
@@ -7366,11 +7371,27 @@ function _currentAccountId() {
   // Team invites store the selected workspace as `accountId`. Older sessions
   // may use `workspaceId`, so accept both instead of silently loading default.
   if (team) return team.accountId || team.workspaceId || 'default';
-  if (window._tabWorkspaceId) return window._tabWorkspaceId;
+  const ownerId = _workspaceOwnerId();
+  const selection = window._tabWorkspaceSelection;
+  if (selection?.id && (ownerId === 'guest' || selection.ownerId === ownerId)) return selection.id;
+  if (selection && ownerId !== 'guest' && selection.ownerId !== ownerId) {
+    window._tabWorkspaceSelection = null;
+  }
   try {
-    const tabValue = sessionStorage.getItem(_tabAccountStorageKey());
-    if (tabValue) return (window._tabWorkspaceId = tabValue);
+    const rawTabValue = sessionStorage.getItem(_tabAccountStorageKey());
+    if (rawTabValue) {
+      let tabValue = null;
+      try { tabValue = JSON.parse(rawTabValue); } catch(e) { tabValue = { ownerId, id: rawTabValue }; }
+      if (tabValue?.id && (ownerId === 'guest' || tabValue.ownerId === ownerId)) {
+        window._tabWorkspaceSelection = tabValue;
+        return tabValue.id;
+      }
+    }
   } catch(e) {}
+  // Before auth is restored we do not yet know which owner's launch preference
+  // is relevant. Return a temporary default without caching it; auth startup
+  // recalculates the DB key after the user identity becomes available.
+  if (ownerId === 'guest') return 'default';
   const key = _currentAccountStorageKey();
   let value = localStorage.getItem(key);
   if (!value && _workspaceAuthUser()?.id) {
