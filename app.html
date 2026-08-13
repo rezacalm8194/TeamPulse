@@ -5850,8 +5850,8 @@ window.api = {
     add: (p)=>{ _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id});_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.payments=_db.payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;return{...p,pkg_label:pt?pt.label:'مانده فعلی'};})),
-    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:''};})),
+    getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
+    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
   },
 
   sessions: {
@@ -9454,7 +9454,7 @@ async function openStudentDetail(id) {
   const payRows = payments.length
     ? payments.map(p => `
       <div class="detail-row">
-        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${p.pkg_label}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
+        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${p.pkg_label}${p.account_label ? ` <small style="color:var(--accent2)">· ${escapeHtml(p.account_label)}</small>`:''}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
         <span class="detail-val amount-paid">
           ${fmt(p.amount)} ${p.currency || 'تومان'}
           <button class="btn btn-ghost btn-sm" style="margin-right:4px" onclick="openEditPayment(${p.id})">✏️</button>
@@ -10421,6 +10421,10 @@ async function openEditPayment(id) {
         <label class="form-label">بابت / شماره پیگیری</label>
         <input class="form-input" id="ep-method" value="${escapeHtml(p.method||'')}">
       </div>
+      <div class="form-group">
+        <label class="form-label">واریز به حساب</label>
+        <select class="form-select" id="ep-account">${financialAccountOptionsHtml(p.account_id)}</select>
+      </div>
       <div class="form-group full">
         <label class="form-label">یادداشت</label>
         <input class="form-input" id="ep-note" value="${escapeHtml(p.note||'')}">
@@ -10447,6 +10451,7 @@ async function savePaymentEdit(id) {
     package_id: pkgValue === '__general__' ? null : +pkgValue,
     currency: document.getElementById('ep-currency')?.value,
     method: document.getElementById('ep-method')?.value,
+    account_id: document.getElementById('ep-account')?.value || null,
     note: document.getElementById('ep-note')?.value,
   });
   closeModal();
@@ -10687,24 +10692,31 @@ async function renderPayments(search = '') {
     setContent(html);
 
   } else if (tab === 'payments') {
-    let payments = await window.api.payments.getAll();
+    const allPayments = await window.api.payments.getAll();
+    let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
-    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card">
+    const receivedTotal=allPayments.filter(p=>(p.currency||'تومان')==='تومان').reduce((sum,p)=>sum+Number(p.amount||0),0);
+    const openReceivables=allStudents.reduce((sum,s)=>sum+Math.max(0,Number(s.balance||0)),0);
+    const overdueCustomers=allStudents.filter(s=>Number(s.balance||0)>0).length;
+    const accountedPayments=allPayments.filter(p=>p.account_id).length;
+    const summary=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 0 12px"><div class="kpi-card"><div class="kpi-label">دریافت ثبت‌شده</div><div class="kpi-value paid">${fmt(receivedTotal)}</div><div class="kpi-sub">تومان · همه دریافت‌ها</div></div><div class="kpi-card"><div class="kpi-label">مطالبات باز</div><div class="kpi-value debt">${fmt(openReceivables)}</div><div class="kpi-sub">تومان · مانده مشتریان</div></div><div class="kpi-card"><div class="kpi-label">مشتریان بدهکار</div><div class="kpi-value">${fa(overdueCustomers)}</div><div class="kpi-sub">نیازمند پیگیری</div></div><div class="kpi-card"><div class="kpi-label">واریز متصل به حساب</div><div class="kpi-value">${fa(accountedPayments)} / ${fa(allPayments.length)}</div><div class="kpi-sub">برای مانده دقیق حساب‌ها</div></div></div>`;
+    let html = `${accountCustomerTabsHtml(tab, search)}${summary}<div class="table-card">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
-        <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
+        <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
         <tbody>`;
     if (payments.length === 0) {
-      html += `<tr><td colspan="7"><div class="empty"><span>💳</span>پرداختی ثبت نشده</div></td></tr>`;
+      html += `<tr><td colspan="8"><div class="empty"><span>💳</span>پرداختی ثبت نشده</div></td></tr>`;
     } else {
       payments.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
-          <td style="font-weight:500">${p.name} ${p.lname}</td>
+          <td style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${p.name} ${p.lname}</button></td>
           <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.pkg_label}</span></td>
           <td><span class="amount amount-paid">${fmt(p.amount)} ${p.currency||'تومان'}</span></td>
           <td style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
+          <td style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
           <td>${student ? balanceHtml(student.balance) : '—'}</td>
           <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
           <td>
