@@ -5975,6 +5975,9 @@ window.api = {
       const categoryTotals={};
       expenses.forEach(e=>{const[y,m]=_jalaliParse(e.date_jalali);if(y===tjy&&m===tjm){const c=e.category||'سایر';categoryTotals[c]=(categoryTotals[c]||0)+e.amount;}});
       const topExpenseCategory=Object.entries(categoryTotals).sort((a,b)=>b[1]-a[1])[0]||null;
+      const expenseMonthMap={};
+      expenses.forEach(e=>{const[y,m]=_jalaliParse(e.date_jalali);if(!y||!m)return;const k=y*100+m;expenseMonthMap[k]=(expenseMonthMap[k]||0)+e.amount;});
+      const monthlyExpenses=Object.entries(expenseMonthMap).map(([k,total])=>{const jy=Math.floor(+k/100),jm=+k%100;return{jy,jm,total,label:`${JMONTHS[jm-1]} ${faNum(jy)}`};}).sort((a,b)=>(b.jy*100+b.jm)-(a.jy*100+a.jm));
       // تعهد پرسنلی فقط از مواردی ساخته می‌شود که صراحتاً برایشان رکورد حقوق
       // ثبت شده اما هنوز پرداخت نشده است؛ حقوق احتمالیِ ماه‌های آینده بدهی نیست.
       const unpaidStaffSalary=(_db.staff_monthly||[])
@@ -5985,7 +5988,7 @@ window.api = {
       const familyGroups = _db.families.map(f => {
         return _familySummary(f);
       }).filter(f => f.members.length > 0);
-      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy,currentMonthExpenses,previousMonthExpenses,expenseChangePercent,topExpenseCategory,unpaidStaffSalary,staffDueCount});
+      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,monthlyExpenses,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy,currentMonthExpenses,previousMonthExpenses,expenseChangePercent,topExpenseCategory,unpaidStaffSalary,staffDueCount});
     },
   },
 
@@ -12434,7 +12437,7 @@ function openExpenseManager() {
 async function renderDashboard() {
   updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
-  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount } = stats;
+  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const openCommitments = netDebt + Number(unpaidStaffSalary || 0);
   const monthlyCashProfit = Number(currentMonthIncome || 0) - Number(currentMonthExpenses || 0);
@@ -12453,6 +12456,24 @@ async function renderDashboard() {
   }).reverse();
   const selectedYearTotal = selectedYearMonths.reduce((sum, month) => sum + month.total, 0);
   const selectedFocusMonth = selectedYearMonths[0] || { label: `سال ${fa(selectedIncomeYear)}`, total: 0, jm: 0 };
+  const incomeTrendMap = new Map(monthlyIncome.map(m => [`${m.jy}-${m.jm}`, Number(m.total||0)]));
+  const expenseTrendMap = new Map((monthlyExpenses||[]).map(m => [`${m.jy}-${m.jm}`, Number(m.total||0)]));
+  const [trendYear, trendMonth] = _todayJalali();
+  const financialTrend = Array.from({length:6}, (_,index) => {
+    const offset = 5-index;
+    const totalMonths = trendYear * 12 + (trendMonth - 1) - offset;
+    const jy = Math.floor(totalMonths / 12), jm = totalMonths % 12 + 1;
+    const income = incomeTrendMap.get(`${jy}-${jm}`) || 0;
+    const expense = expenseTrendMap.get(`${jy}-${jm}`) || 0;
+    return { jy, jm, label: incomeMonthNames[jm-1], income, expense, profit:income-expense };
+  });
+  const trendMax = Math.max(1,...financialTrend.flatMap(m=>[m.income,m.expense,Math.abs(m.profit)]));
+  const financialTrendHtml = financialTrend.map(m => {
+    const incomeHeight=Math.max(m.income?8:0,Math.round(m.income/trendMax*86));
+    const expenseHeight=Math.max(m.expense?8:0,Math.round(m.expense/trendMax*86));
+    const profitColor=m.profit>=0?'var(--green)':'var(--red)';
+    return `<div style="flex:1;min-width:54px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:4px;border-bottom:1px solid var(--border2)"><span title="درآمد: ${fmt(m.income)} تومان" style="display:block;width:12px;height:${incomeHeight}px;min-height:${m.income?8:1}px;border-radius:5px 5px 1px 1px;background:var(--green)"></span><span title="هزینه: ${fmt(m.expense)} تومان" style="display:block;width:12px;height:${expenseHeight}px;min-height:${m.expense?8:1}px;border-radius:5px 5px 1px 1px;background:var(--red)"></span></div><div style="font-size:10px;color:var(--text2)">${m.label}</div><div style="font-size:9px;font-weight:700;color:${profitColor};white-space:nowrap">${m.profit>=0?'+':''}${fmt(m.profit)}</div></div>`;
+  }).join('');
 
   const html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2)">
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-left:auto">مدیریت مالی</div>
@@ -12482,6 +12503,11 @@ async function renderDashboard() {
       <div class="stat-value" style="color:${openCommitments>0?'var(--amber)':'var(--green)'}">${fmt(openCommitments)}</div>
       <div class="stat-sub">مطالبات مشتریان: ${fmt(netDebt)}${staffDueCount?` · حقوق پرداخت‌نشده: ${fmt(unpaidStaffSalary)}`:''}</div>
     </div>
+  </div>
+
+  <div class="detail-section" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div><h3 style="margin:0">📊 روند مالی ۶ ماه اخیر</h3><div style="font-size:10px;color:var(--text3);margin-top:4px">مقایسه درآمد و هزینه؛ عدد زیر هر ماه سود نقدی است</div></div><div style="display:flex;gap:10px;font-size:10px;color:var(--text2)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:4px"></i>درآمد</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-left:4px"></i>هزینه</span></div></div>
+    <div style="display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:4px 2px 2px">${financialTrendHtml}</div>
   </div>
 
   <div class="dash-grid">
