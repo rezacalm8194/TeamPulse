@@ -5183,6 +5183,39 @@ async function _loadPrimaryDatabase() {
   } else {
     _db = _freshData();
   }
+
+  // A secondary-workspace snapshot without its exact identity is unsafe. It
+  // can be a default-workspace document cached under the wrong key by an older
+  // multi-tab build. Never display, merge, persist or upload it. Start from a
+  // quarantined empty document and wait for the workspace-scoped server read.
+  const loadingWorkspaceId = typeof _currentAccountId === 'function' ? _currentAccountId() : 'default';
+  if (
+    loadingWorkspaceId !== 'default' &&
+    String(_db?._workspaceId || '') !== String(loadingWorkspaceId)
+  ) {
+    const quarantinedSnapshot = _cloneData(_db);
+    console.error('[Workspace] quarantined an untrusted local snapshot', {
+      workspaceId: loadingWorkspaceId,
+      snapshotWorkspaceId: _db?._workspaceId || null,
+      source,
+    });
+    try {
+      await _idbPutDatabaseSnapshot(
+        key + ':quarantine:' + Date.now(),
+        quarantinedSnapshot,
+        'workspace-identity-quarantine'
+      );
+    } catch(e) {
+      console.warn('[Workspace] could not retain quarantined snapshot:', e.message);
+    }
+    _db = _freshData();
+    _db._workspaceId = loadingWorkspaceId;
+    _db._lastSaved = 0;
+    source = 'workspace-quarantine';
+    window._workspaceDataReady = false;
+  } else if (loadingWorkspaceId !== 'default') {
+    window._workspaceDataReady = true;
+  }
   _migrate(_db);
 
   let idbVerified = false;
@@ -22283,6 +22316,10 @@ async function _syncToServerOnce(conflictAttempt = 0) {
     }
     if (!accId) return null;
     const activeWorkspaceId = _currentAccountId();
+    if (!teamSession && activeWorkspaceId !== 'default' && window._workspaceDataReady !== true) {
+      _markServerSyncPending('workspace-awaiting-authoritative-load');
+      return null;
+    }
     if (!teamSession && activeWorkspaceId !== 'default' && String(_db?._workspaceId || '') !== activeWorkspaceId) {
       // A stale/legacy cache can belong to the default workspace and have no
       // identity marker. Before blocking the save, fetch the authoritative
@@ -22492,6 +22529,23 @@ async function _loadFromServer() {
       });
       return false;
     }
+    // A confirmed empty response is authoritative too. Replace any quarantined
+    // legacy cache with a genuinely empty, correctly identified workspace.
+    if (!data && !teamSession && activeWorkspaceId !== 'default') {
+      const empty = _freshData();
+      empty._workspaceId = activeWorkspaceId;
+      empty._lastSaved = 0;
+      _migrate(empty);
+      _db = empty;
+      window._workspaceDataReady = true;
+      window._serverDataEtag = payload.etag || null;
+      const key = window._activeDBKey || DB_KEY;
+      try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
+      _clearServerSyncPending(Infinity);
+      _writeServerSyncBaseline(_db, null);
+      console.warn('[Workspace] initialized confirmed empty scoped workspace');
+      return true;
+    }
     if (activeWorkspaceId !== 'default' && data?._workspaceId && String(data._workspaceId) !== activeWorkspaceId) {
       console.error('[Workspace] ignored data carrying a different workspace identity', {
         activeWorkspaceId,
@@ -22502,6 +22556,7 @@ async function _loadFromServer() {
     window._serverDataEtag = payload.etag || window._serverDataEtag || null;
     if (!data) return false;
     if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
+    if (!teamSession && activeWorkspaceId !== 'default') window._workspaceDataReady = true;
     if (_isManualRestoreProtected()) {
       const expectedSig = _getManualRestoreExpectedSignature();
       const localSig = _dataFingerprint(_serverDataSignature(_db));
