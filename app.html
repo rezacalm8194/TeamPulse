@@ -12371,6 +12371,7 @@ function openDashboardIncomeReport() {
 }
 
 function openDashboardFinanceSection(page) {
+  if (page === 'payments') window._paymentsTab = 'payments';
   currentPage = page;
   location.hash = page;
   renderPage();
@@ -12514,7 +12515,7 @@ async function renderDashboard() {
   const html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2)">
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-left:auto">مدیریت مالی</div>
     <button type="button" class="btn btn-danger" onclick="openExpenseManager()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;box-shadow:0 6px 18px rgba(248,113,113,.14)">🧾 هزینه‌ها</button>
-    <button type="button" class="btn btn-primary" onclick="openDashboardFinanceSection('customerlist')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;background:var(--green);border-color:var(--green);box-shadow:0 6px 18px rgba(62,207,142,.14)">📈 درآمدها و مشتریان</button>
+    <button type="button" class="btn btn-primary" onclick="openDashboardFinanceSection('payments')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;background:var(--green);border-color:var(--green);box-shadow:0 6px 18px rgba(62,207,142,.14)">📈 درآمدها و حساب مشتریان</button>
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
     <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
   </div>
