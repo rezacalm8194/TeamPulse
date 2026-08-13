@@ -4192,6 +4192,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
       <a class="nav-item" data-page="payments" title="حساب مشتریان"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h2l1.7 9.3a2 2 0 002 1.7h6.2a2 2 0 002-1.7L18 6.5H5.3"/><circle cx="8" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="17" r="1.1" fill="currentColor" stroke="none"/></svg></span><span>حساب مشتریان</span></a>
       <a class="nav-item" data-page="staff" title="حساب پرسنل و اعضا"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="15" height="10" rx="2"/><path d="M7 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5M2.5 11h15"/></svg></span><span>حساب پرسنل و اعضا</span></a>
       <a class="nav-item" data-page="dashboard" title="داشبورد مالی"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span>داشبورد مالی</span></a>
+      <a class="nav-item" data-page="transactions" title="تراکنش‌های مالی"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5h14M3 14.5h14M5.5 3v5M14.5 12v5"/><circle cx="5.5" cy="5.5" r="1.4"/><circle cx="14.5" cy="14.5" r="1.4"/></svg></span><span>تراکنش‌های مالی</span></a>
       <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
 
       <div class="nav-section">سیستم</div>
@@ -7875,7 +7876,7 @@ let CURRENCIES = ['تومان'];
 let allStudents = [];
 // safe pages list (don't restore admin panel from refresh unless admin)
 const _SAFE_RESTORE_PAGES = ['students','payments','sessions','families','reminders',
-  'customerlist','archive','staff','instructions','todolist','calendar','tutorial','settings','dashboard','admin_panel','goals','habits'];
+  'customerlist','archive','staff','instructions','todolist','calendar','tutorial','settings','dashboard','transactions','admin_panel','goals','habits'];
 function _getInitialPage() {
   // URL hash takes priority (works with back/forward + shareable links),
   // falls back to last page saved in localStorage, then default.
@@ -7993,6 +7994,7 @@ function _teamCan(page) {
   if (['settings','tutorial'].includes(page)) return true;
   if (page === 'students' && permissions.includes('sessions')) return true;
   if (page === 'payments' && ['reminders','families'].some(p => permissions.includes(p))) return true;
+  if (page === 'transactions' && permissions.includes('dashboard')) return true;
   return permissions.includes(page);
 }
 function _teamPerm(key) {
@@ -8403,6 +8405,7 @@ function _teamCanCreateInstruction(parentId) {
 function _menuPageFor(page) {
   if (page === 'sessions' || page === 'customerlist' || page === 'archive') return 'students';
   if (page === 'reminders' || page === 'families') return 'payments';
+  if (page === 'transactions') return 'dashboard';
   return page;
 }
 (function _syncInitialActiveMenuSync() {
@@ -8830,6 +8833,7 @@ function updatePageTitle() {
     tutorial: 'آموزش‌ها',
     admin_panel: '👑 پنل مدیریت',
     dashboard: 'داشبورد مالی',
+    transactions: 'تراکنش‌های مالی',
     settings: 'تنظیمات',
     goals: '🎯 اهداف',
     habits: '🔥 عادت‌ها',
@@ -9031,6 +9035,7 @@ async function renderPage() {
     else if (currentPage === 'goals')     await renderGoals();
     else if (currentPage === 'habits')    await renderHabits();
     else if (currentPage === 'dashboard') await renderDashboard();
+    else if (currentPage === 'transactions') await renderFinancialTransactions();
     else await renderStudents();
   } catch(e) {
     console.error('[TeamPulse] renderPage error:', e);
@@ -12396,6 +12401,46 @@ function openDashboardFinanceSection(page) {
   renderPage();
 }
 
+function _financialTransactionsFilters() {
+  return window._financialTransactionsFilter || (window._financialTransactionsFilter={type:'all',account:'all',from:'',to:''});
+}
+function _financialTransactionRows() {
+  const accounts=new Map((_db.financial_accounts||[]).map(a=>[String(a.id),a.name]));
+  const staff=new Map((_db.staff||[]).map(s=>[String(s.id),`${s.name||''} ${s.lname||''}`.trim()||'پرسنل']));
+  const income=(_db.payments||[]).map(p=>{const customer=(_db.students||[]).find(s=>String(s.id)===String(p.student_id));return{id:`income-${p.id}`,kind:'income',kindLabel:'دریافت مشتری',date:p.date_jalali||'',amount:Number(p.amount||0),currency:p.currency||'تومان',accountId:p.account_id||'',account:accounts.get(String(p.account_id||''))||'—',party:customer?`${customer.name||''} ${customer.lname||''}`.trim():'مشتری',description:p.note||p.method||'دریافت از مشتری'};});
+  const salary=(_db.staff_payments||[]).map(p=>({id:`salary-${p.id}`,kind:'salary',kindLabel:'حقوق و پرسنل',date:p.date_jalali||'',amount:Number(p.amount||0),currency:'تومان',accountId:p.account_id||'',account:accounts.get(String(p.account_id||''))||'—',party:staff.get(String(p.staff_id))||'پرسنل',description:p.note||'پرداخت حقوق'}));
+  const expense=(_db.expenses||[]).filter(e=>e.source!=='staff_payment').map(e=>({id:`expense-${e.id}`,kind:'expense',kindLabel:'هزینه',date:e.date_jalali||'',amount:Number(e.amount||0),currency:'تومان',accountId:e.account_id||'',account:accounts.get(String(e.account_id||''))||'—',party:e.category||'سایر',description:e.description||e.payment_method||'هزینه'}));
+  return [...income,...salary,...expense].sort((a,b)=>_jalaliKey(b.date)-_jalaliKey(a.date));
+}
+function updateFinancialTransactionsFilters() {
+  const filter=_financialTransactionsFilters();
+  filter.type=document.getElementById('ft-type')?.value||'all';
+  filter.account=document.getElementById('ft-account')?.value||'all';
+  filter.from=document.getElementById('ft-from')?.value||'';
+  filter.to=document.getElementById('ft-to')?.value||'';
+  renderFinancialTransactions();
+}
+function downloadFinancialTransactionsCsv() {
+  const f=_financialTransactionsFilters();
+  const from=_jalaliKey(f.from),to=_jalaliKey(f.to);
+  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
+  const csv=['تاریخ,نوع,طرف حساب,شرح,حساب مالی,مبلغ,واحد پول',...rows.map(x=>[x.date,x.kindLabel,x.party,x.description,x.account,x.amount,x.currency].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n');
+  const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download='financial-transactions.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+}
+async function renderFinancialTransactions() {
+  updateTopbarActions('');
+  const f=_financialTransactionsFilters();
+  const from=_jalaliKey(f.from),to=_jalaliKey(f.to);
+  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
+  const income=rows.filter(x=>x.kind==='income'&&x.currency==='تومان').reduce((s,x)=>s+x.amount,0);
+  const outgoing=rows.filter(x=>x.kind!=='income').reduce((s,x)=>s+x.amount,0);
+  const accountOptions=(_db.financial_accounts||[]).map(a=>`<option value="${a.id}" ${String(f.account)===String(a.id)?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
+  const kindColor={income:'var(--green)',salary:'var(--amber)',expense:'var(--red)'};
+  const html=`<div class="table-card" style="margin-bottom:12px"><div class="table-header"><div><div class="title">📒 تراکنش‌های مالی</div><div class="subtitle">همهٔ دریافت‌ها و پرداخت‌ها در یک نمای واحد</div></div><button class="btn btn-ghost btn-sm" onclick="downloadFinancialTransactionsCsv()">↓ خروجی اکسل</button></div><div class="form-grid" style="padding:0 16px 16px"><div class="form-group"><label class="form-label">نوع تراکنش</label><select class="form-select" id="ft-type" onchange="updateFinancialTransactionsFilters()"><option value="all">همه</option><option value="income" ${f.type==='income'?'selected':''}>دریافت مشتری</option><option value="salary" ${f.type==='salary'?'selected':''}>حقوق و پرسنل</option><option value="expense" ${f.type==='expense'?'selected':''}>هزینه</option></select></div><div class="form-group"><label class="form-label">حساب مالی</label><select class="form-select" id="ft-account" onchange="updateFinancialTransactionsFilters()"><option value="all">همه حساب‌ها</option>${accountOptions}</select></div><div class="form-group"><label class="form-label">از تاریخ</label><input class="form-input jdate" id="ft-from" value="${escapeHtml(f.from)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۰۱/۰۱"></div><div class="form-group"><label class="form-label">تا تاریخ</label><input class="form-input jdate" id="ft-to" value="${escapeHtml(f.to)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۱۲/۲۹"></div></div></div><div class="stats-row" style="margin-bottom:12px"><div class="stat-card s-green"><div class="stat-label">ورود وجه</div><div class="stat-value">${fmt(income)}</div><div class="stat-sub">تومان · نتایج فیلترشده</div></div><div class="stat-card s-red"><div class="stat-label">خروج وجه</div><div class="stat-value">${fmt(outgoing)}</div><div class="stat-sub">تومان · هزینه و حقوق</div></div><div class="stat-card"><div class="stat-label">خالص جریان نقدی</div><div class="stat-value" style="color:${income-outgoing>=0?'var(--green)':'var(--red)'}">${fmt(income-outgoing)}</div><div class="stat-sub">تومان</div></div></div><div class="table-card tbl-responsive"><div class="table-header"><span class="title">${fa(rows.length)} تراکنش</span></div><table><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شرح</th><th>حساب مالی</th><th>مبلغ</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td data-label="تاریخ">${DateService.disp(x.date)||'—'}</td><td data-label="نوع"><span class="tag" style="color:${kindColor[x.kind]};background:color-mix(in srgb, ${kindColor[x.kind]} 15%, transparent)">${x.kindLabel}</span></td><td data-label="طرف حساب">${escapeHtml(x.party)}</td><td data-label="شرح" style="color:var(--text2);font-size:11px">${escapeHtml(x.description)}</td><td data-label="حساب مالی" style="color:${x.accountId?'var(--accent2)':'var(--text3)'}">${escapeHtml(x.account)}</td><td data-label="مبلغ" style="font-weight:800;color:${x.kind==='income'?'var(--green)':'var(--red)'}">${x.kind==='income'?'+':'-'}${fmt(x.amount)} <small>${x.currency}</small></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty"><span>📒</span>تراکنشی با این فیلتر پیدا نشد</div></td></tr>`}</tbody></table></div>`;
+  setContent(html);initDatePickers();
+}
+
 async function openDashboardCustomerAccount(id) {
   currentPage='customerlist'; location.hash='customerlist';
   await renderPage();
@@ -12593,6 +12638,7 @@ async function renderDashboard() {
     <button type="button" class="btn btn-primary" onclick="openDashboardFinanceSection('payments')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;background:var(--green);border-color:var(--green);box-shadow:0 6px 18px rgba(62,207,142,.14)">📈 درآمدها و حساب مشتریان</button>
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
     <button type="button" class="btn btn-ghost" onclick="openFinancialAccounts()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏦 حساب‌های مالی</button>
+    <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('transactions')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">📒 تراکنش‌ها</button>
     <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
   </div>
   <div class="stats-row" aria-label="خلاصه مالی ماه جاری">
@@ -21576,6 +21622,7 @@ const DEFAULT_NAV_ORDER = [
   { page: 'payments',     icon: '🛒', label: () => 'حساب مشتریان' },
   { page: 'staff',        icon: '🧑‍💼', label: () => 'حساب پرسنل و اعضا' },
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
+  { page: 'transactions', icon: '📒', label: () => 'تراکنش‌های مالی' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری' },
   { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
   { page: 'admin_panel',  icon: '👑', label: () => 'پنل مدیریت' },
