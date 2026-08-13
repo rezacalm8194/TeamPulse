@@ -7276,6 +7276,21 @@ function _workspaceOwnerId() {
 }
 function _accountsStorageKey() { return ACCOUNTS_KEY + ':' + _workspaceOwnerId(); }
 function _currentAccountStorageKey() { return 'teampulse_current_account:' + _workspaceOwnerId(); }
+function _tabAccountStorageKey() { return 'teampulse_tab_current_account:' + _workspaceOwnerId(); }
+
+function _setCurrentAccountId(id, remember = true) {
+  const value = String(id || 'default');
+  // The active workspace is tab-scoped. localStorage is shared by every open
+  // tab and must never be used as the live routing source for load/save calls.
+  try { sessionStorage.setItem(_tabAccountStorageKey(), value); } catch(e) {}
+  window._tabWorkspaceId = value;
+  // Keep only a launch preference for genuinely new tabs. Existing tabs read
+  // their captured window/session value and are therefore unaffected.
+  if (remember) {
+    try { localStorage.setItem(_currentAccountStorageKey(), value); } catch(e) {}
+  }
+  return value;
+}
 
 function _normalizeSecondaryAccounts(accounts) {
   const seen = new Set();
@@ -7318,6 +7333,11 @@ function _currentAccountId() {
   // Team invites store the selected workspace as `accountId`. Older sessions
   // may use `workspaceId`, so accept both instead of silently loading default.
   if (team) return team.accountId || team.workspaceId || 'default';
+  if (window._tabWorkspaceId) return window._tabWorkspaceId;
+  try {
+    const tabValue = sessionStorage.getItem(_tabAccountStorageKey());
+    if (tabValue) return (window._tabWorkspaceId = tabValue);
+  } catch(e) {}
   const key = _currentAccountStorageKey();
   let value = localStorage.getItem(key);
   if (!value && _workspaceAuthUser()?.id) {
@@ -7327,7 +7347,7 @@ function _currentAccountId() {
       localStorage.removeItem('teampulse_current_account');
     }
   }
-  return value || 'default';
+  return _setCurrentAccountId(value || 'default', false);
 }
 function _workspaceQuery(separator='?') {
   return separator + 'workspace=' + encodeURIComponent(_currentAccountId());
@@ -7341,7 +7361,7 @@ async function _switchAccount(id) {
     showToast('این میزکار در حساب شما وجود ندارد', 'error');
     return;
   }
-  localStorage.setItem(_currentAccountStorageKey(), id);
+  _setCurrentAccountId(id);
   window._activeDBKey = _localWorkspaceDBKey(id);
   await _loadPrimaryDatabase();
   // اگر میزکار جدید و خالیه، اسمش رو از لیست حساب‌ها بخون و توی meta بذار
@@ -7571,7 +7591,7 @@ async function _refreshWorkspacesFromServer() {
     if (remote.length || !local.length) _saveAccounts(remote);
     const current = _currentAccountId();
     if (current !== 'default' && !remote.some(item => item.id === current)) {
-      localStorage.setItem(_currentAccountStorageKey(), 'default');
+      _setCurrentAccountId('default');
     }
     return _getAccounts();
   } catch(e) {
@@ -8101,7 +8121,7 @@ function _acceptTeamInviteToken(token) {
     instructionFolders: payload.instructionFolders || payload.instruction_folders || [],
     acceptedAt: new Date().toISOString(),
   }));
-  if (payload.accountId) localStorage.setItem(_currentAccountStorageKey(), payload.accountId);
+  if (payload.accountId) _setCurrentAccountId(payload.accountId);
   if (payload.ownerDbKey) window._activeDBKey = payload.ownerDbKey;
   localStorage.removeItem(TEAM_PENDING_INVITE_KEY);
   currentPage = permissions.find(p => _SAFE_RESTORE_PAGES.includes(p)) || 'todolist';
