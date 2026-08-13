@@ -473,6 +473,9 @@ function handleSaveData(req, res) {
     const { force, base_etag: baseEtag } = req.body;
     let data = sanitizeUserDataForStorage(req.body.data);
     if (!data) return res.status(400).json({ error: 'no data' });
+    // Workspace identity is server-owned routing metadata. Never trust a client
+    // to provide it and never store an unlabelled secondary document.
+    data._workspaceId = workspace.workspaceId;
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
     if (existing) {
       let previousData = null;
