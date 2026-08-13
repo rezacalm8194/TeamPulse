@@ -5984,11 +5984,29 @@ window.api = {
         .filter(m=>!m.paid)
         .reduce((sum,m)=>sum+Number(m.total||0),0);
       const staffDueCount=(_db.staff_monthly||[]).filter(m=>!m.paid).length;
+      const staffPaymentAlerts=(_db.staff_reminders||[])
+        .filter(r=>!r.done)
+        .map(r=>{
+          const staff=_db.staff.find(s=>s.id===r.staff_id);
+          const dueIn=_daysUntil(r.due_date_jalali||'');
+          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn};
+        })
+        .filter(item=>item.dueIn!=null&&item.dueIn<=7)
+        .sort((a,b)=>a.dueIn-b.dueIn);
+      const customerDueAlerts=(_db.reminders||[])
+        .filter(r=>!r.done&&r.student_id)
+        .map(r=>{
+          const student=_db.students.find(s=>s.id===r.student_id);
+          const dueIn=_daysUntil(r.due_date_jalali||'');
+          return {studentId:r.student_id,name:student?.name||'مشتری',lname:student?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn};
+        })
+        .filter(item=>item.dueIn!=null&&item.dueIn<=7)
+        .sort((a,b)=>a.dueIn-b.dueIn);
       // Build familyGroups for dashboard
       const familyGroups = _db.families.map(f => {
         return _familySummary(f);
       }).filter(f => f.members.length > 0);
-      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,monthlyExpenses,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy,currentMonthExpenses,previousMonthExpenses,expenseChangePercent,topExpenseCategory,unpaidStaffSalary,staffDueCount});
+      return _P({totalStudents:_db.students.length,totalPaid,totalAmount,totalWallet,totalSessions:_db.sessions.length,debtors,topEarners,familyGroups,pkgDistribution,upcomingReminders,monthlyIncome,monthlyExpenses,currentMonthIncome:monthMap[tjy*100+tjm]||0,currentMonthLabel:`${JMONTHS[tjm-1]} ${faNum(tjy)}`,currentYearTotal:monthlyIncome.filter(m=>m.jy===tjy).reduce((a,m)=>a+m.total,0),currentJalaliYear:tjy,currentMonthExpenses,previousMonthExpenses,expenseChangePercent,topExpenseCategory,unpaidStaffSalary,staffDueCount,staffPaymentAlerts,customerDueAlerts});
     },
   },
 
@@ -12358,6 +12376,18 @@ function openDashboardFinanceSection(page) {
   renderPage();
 }
 
+async function openDashboardCustomerAccount(id) {
+  currentPage='customerlist'; location.hash='customerlist';
+  await renderPage();
+  await openStudentDetail(id);
+}
+
+async function openDashboardStaffAccount(id) {
+  currentPage='staff'; location.hash='staff';
+  await renderPage();
+  await openStaffDetail(id);
+}
+
 const EXPENSE_CATEGORIES = ['اجاره','حقوق و دستمزد','تبلیغات','تجهیزات','نرم‌افزار و اشتراک','حمل‌ونقل','پذیرایی','مالیات و بیمه','آموزش','سایر'];
 const EXPENSE_PAYMENT_METHODS = ['کارت','انتقال بانکی','نقدی','چک','کیف پول','سایر'];
 window._pendingExpenseReceipts = window._pendingExpenseReceipts || [];
@@ -12437,7 +12467,7 @@ function openExpenseManager() {
 async function renderDashboard() {
   updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
-  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount } = stats;
+  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount, staffPaymentAlerts, customerDueAlerts } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const openCommitments = netDebt + Number(unpaidStaffSalary || 0);
   const monthlyCashProfit = Number(currentMonthIncome || 0) - Number(currentMonthExpenses || 0);
@@ -12474,6 +12504,12 @@ async function renderDashboard() {
     const profitColor=m.profit>=0?'var(--green)':'var(--red)';
     return `<div style="flex:1;min-width:54px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:4px;border-bottom:1px solid var(--border2)"><span title="درآمد: ${fmt(m.income)} تومان" style="display:block;width:12px;height:${incomeHeight}px;min-height:${m.income?8:1}px;border-radius:5px 5px 1px 1px;background:var(--green)"></span><span title="هزینه: ${fmt(m.expense)} تومان" style="display:block;width:12px;height:${expenseHeight}px;min-height:${m.expense?8:1}px;border-radius:5px 5px 1px 1px;background:var(--red)"></span></div><div style="font-size:10px;color:var(--text2)">${m.label}</div><div style="font-size:9px;font-weight:700;color:${profitColor};white-space:nowrap">${m.profit>=0?'+':''}${fmt(m.profit)}</div></div>`;
   }).join('');
+  const dueLabel = days => days < 0 ? `${fa(Math.abs(days))} روز تأخیر` : days === 0 ? 'سررسید امروز' : `${fa(days)} روز مانده`;
+  const financialAlerts = [
+    ...(customerDueAlerts||[]).slice(0,3).map(item=>({kind:'customer',icon:'👤',title:`پرداخت ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.studentId,urgent:item.dueIn<=0})),
+    ...(staffPaymentAlerts||[]).slice(0,3).map(item=>({kind:'staff',icon:'💼',title:`حقوق ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.staffId,urgent:item.dueIn<=0})),
+    ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',icon:'📈',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
+  ];
 
   const html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2)">
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-left:auto">مدیریت مالی</div>
@@ -12508,6 +12544,19 @@ async function renderDashboard() {
   <div class="detail-section" style="margin-top:14px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div><h3 style="margin:0">📊 روند مالی ۶ ماه اخیر</h3><div style="font-size:10px;color:var(--text3);margin-top:4px">مقایسه درآمد و هزینه؛ عدد زیر هر ماه سود نقدی است</div></div><div style="display:flex;gap:10px;font-size:10px;color:var(--text2)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:4px"></i>درآمد</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-left:4px"></i>هزینه</span></div></div>
     <div style="display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:4px 2px 2px">${financialTrendHtml}</div>
+  </div>
+
+  <div class="dash-grid" style="margin-top:14px">
+    <div class="detail-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">⚠️ پیگیری‌های مالی</h3><span style="font-size:10px;color:var(--text3)">${fa(financialAlerts.length)} مورد</span></div>
+      ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${item.icon}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:18px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
+    </div>
+    <div class="detail-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">🧾 خلاصه هزینه‌ها</h3><button class="btn btn-ghost btn-sm" onclick="openExpenseManager()">مدیریت</button></div>
+      <div class="detail-row"><span class="detail-key">هزینه ${escapeHtml(currentMonthLabel||'ماه جاری')}</span><span class="detail-val" style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</span></div>
+      <div class="detail-row"><span class="detail-key">دسته پرهزینه</span><span class="detail-val">${topExpenseCategory?`${escapeHtml(topExpenseCategory[0])} · ${fmt(topExpenseCategory[1])} تومان`:'هنوز هزینه‌ای ثبت نشده'}</span></div>
+      <div class="detail-row"><span class="detail-key">تغییر نسبت به ماه قبل</span><span class="detail-val" style="color:${expenseChangePercent>0?'var(--red)':'var(--green)'}">${previousMonthExpenses?`${expenseChangePercent>=0?'▲':'▼'} ${fa(Math.abs(expenseChangePercent))}٪`:'—'}</span></div>
+    </div>
   </div>
 
   <div class="dash-grid">
