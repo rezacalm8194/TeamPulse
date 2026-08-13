@@ -10696,12 +10696,7 @@ async function renderPayments(search = '') {
     let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
-    const receivedTotal=allPayments.filter(p=>(p.currency||'تومان')==='تومان').reduce((sum,p)=>sum+Number(p.amount||0),0);
-    const openReceivables=allStudents.reduce((sum,s)=>sum+Math.max(0,Number(s.balance||0)),0);
-    const overdueCustomers=allStudents.filter(s=>Number(s.balance||0)>0).length;
-    const accountedPayments=allPayments.filter(p=>p.account_id).length;
-    const summary=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 0 12px"><div class="kpi-card"><div class="kpi-label">دریافت ثبت‌شده</div><div class="kpi-value paid">${fmt(receivedTotal)}</div><div class="kpi-sub">تومان · همه دریافت‌ها</div></div><div class="kpi-card"><div class="kpi-label">مطالبات باز</div><div class="kpi-value debt">${fmt(openReceivables)}</div><div class="kpi-sub">تومان · مانده مشتریان</div></div><div class="kpi-card"><div class="kpi-label">مشتریان بدهکار</div><div class="kpi-value">${fa(overdueCustomers)}</div><div class="kpi-sub">نیازمند پیگیری</div></div><div class="kpi-card"><div class="kpi-label">واریز متصل به حساب</div><div class="kpi-value">${fa(accountedPayments)} / ${fa(allPayments.length)}</div><div class="kpi-sub">برای مانده دقیق حساب‌ها</div></div></div>`;
-    let html = `${accountCustomerTabsHtml(tab, search)}${summary}<div class="table-card">
+    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
@@ -10712,14 +10707,14 @@ async function renderPayments(search = '') {
       payments.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
-          <td style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${p.name} ${p.lname}</button></td>
-          <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.pkg_label}</span></td>
-          <td><span class="amount amount-paid">${fmt(p.amount)} ${p.currency||'تومان'}</span></td>
-          <td style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
-          <td style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
-          <td>${student ? balanceHtml(student.balance) : '—'}</td>
-          <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
-          <td>
+          <td data-label="مشتری" style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${p.name} ${p.lname}</button></td>
+          <td data-label="پکیج"><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.pkg_label}</span></td>
+          <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${p.currency||'تومان'}</span></td>
+          <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
+          <td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
+          <td data-label="مانده حساب">${student ? balanceHtml(student.balance) : '—'}</td>
+          <td data-label="یادداشت" style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
+          <td data-label="عملیات">
             <div style="display:flex;align-items:center;gap:5px">
               <button class="btn btn-ghost btn-sm" onclick="openEditPayment(${p.id})">✏️</button>
               <button class="btn btn-danger" style="font-size:14px;padding:7px 12px" onclick="deletePayment(${p.id}, 'payments')">🗑</button>
