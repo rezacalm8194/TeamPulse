@@ -22179,7 +22179,35 @@ function _notifyRecentCreatedTodos(accountId) {
     });
 }
 
+// Serialize whole-document saves. Several UI actions, the poller and retry timer
+// can request a sync at the same time. Letting those uploads run concurrently
+// gives every request the same base_etag; the first succeeds and all the others
+// become 409 conflicts (especially noisy for multi-chunk payloads). Coalesce
+// concurrent requests into one trailing pass, which will no-op when data did not
+// change while the first save was running.
 async function _syncToServer(conflictAttempt = 0) {
+  if (window._serverSyncInFlight) {
+    window._serverSyncQueued = true;
+    return window._serverSyncInFlight;
+  }
+  const run = (async () => {
+    let result = null;
+    do {
+      window._serverSyncQueued = false;
+      result = await _syncToServerOnce(conflictAttempt);
+      conflictAttempt = 0;
+    } while (window._serverSyncQueued);
+    return result;
+  })();
+  window._serverSyncInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (window._serverSyncInFlight === run) window._serverSyncInFlight = null;
+  }
+}
+
+async function _syncToServerOnce(conflictAttempt = 0) {
   if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
   if (_adoptManualRestoreFromLocalStorage('before-sync')) {
@@ -22302,7 +22330,7 @@ async function _syncToServer(conflictAttempt = 0) {
       window._serverDataEtag = responseData.etag || null;
       try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
       _markServerSyncPending('conflict-merged');
-      return _syncToServer(conflictAttempt + 1);
+      return _syncToServerOnce(conflictAttempt + 1);
     }
     if (res && res.ok) {
       if (forceSync) window._forceNextSync = false;
