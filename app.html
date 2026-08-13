@@ -6232,7 +6232,7 @@ window.api = {
       else if(rm===0&&er)_db.staff_reminders=_db.staff_reminders.filter(r=>r.staff_id!==s.id);
       _save(); return _P({ok:true});
     },
-    delete: (id)=>{ _db.staff=_db.staff.filter(x=>x.id!==id);['staff_payments','staff_reminders','staff_adjustments','staff_monthly'].forEach(k=>{_db[k]=_db[k].filter(x=>x.staff_id!==id);}); _save(); return _P({ok:true}); },
+    delete: (id)=>{ const payments=(_db.staff_payments||[]).filter(x=>x.staff_id===id);payments.forEach(_removeStaffPaymentExpense);_db.staff=_db.staff.filter(x=>x.id!==id);['staff_payments','staff_reminders','staff_adjustments','staff_monthly'].forEach(k=>{_db[k]=_db[k].filter(x=>x.staff_id!==id);}); _save(); return _P({ok:true}); },
     paySalary: (p)=>{
       const s=_db.staff.find(x=>x.id===p.staff_id); if(!s)return _P({ok:false});
       const[ty,tm]=_todayJalali();
@@ -6247,7 +6247,9 @@ window.api = {
       if(!m){m={id:_nextId('staff_monthly'),staff_id:s.id,jy:tjy,jm:tjm,fixed_salary:s.salary||0,roles,total,paid:false,paid_date:null,note:'',created_at:new Date().toISOString()};_db.staff_monthly.push(m);}
       else{m.fixed_salary=s.salary||0;m.roles=roles;m.total=total;}
       m.paid=true;m.paid_date=p.date;
-      _db.staff_payments.push({id:_nextId('staff_payments'),staff_id:s.id,amount:total,date_jalali:p.date,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()});
+      const payment={id:_nextId('staff_payments'),staff_id:s.id,amount:total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
+      _db.staff_payments.push(payment);
+      _syncStaffPaymentExpense(payment);
       const rem=_db.staff_reminders
         .filter(x=>x.staff_id===s.id&&!x.done)
         .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
@@ -6269,9 +6271,9 @@ window.api = {
 
   staffPayments: {
     getByStaff: (id)=>_P(_db.staff_payments.filter(p=>p.staff_id===id).reverse()),
-    add: (p)=>{ _db.staff_payments.push({id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.staff_payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.staff_payments=_db.staff_payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    add: (p)=>{ const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save(); return _P({ok:true}); },
+    update: (p)=>{ const pay=_db.staff_payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});if(Object.prototype.hasOwnProperty.call(p,'account_id'))pay.account_id=p.account_id||null;_syncStaffPaymentExpense(pay);_save();} return _P({ok:true}); },
+    delete: (id)=>{ const pay=_db.staff_payments.find(x=>x.id===id);_removeStaffPaymentExpense(pay);_db.staff_payments=_db.staff_payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
   staffReminders: {
@@ -6325,10 +6327,10 @@ window.api = {
       const roles=(p.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.rate||0,count:r.count||1,amount:(r.rate||0)*(r.count||1)};});
       const total=(p.fixed_salary||0)+roles.reduce((a,r)=>a+r.amount,0);
       const item={id:_nextId('staff_monthly'),staff_id:p.staff_id,jy:p.jy,jm:p.jm,fixed_salary:p.fixed_salary||0,roles,total,paid:false,paid_date:null,note:p.note||'',created_at:new Date().toISOString()};
-      if(p.mark_paid){item.paid=true;item.paid_date=p.paid_date||null;_db.staff_payments.push({id:_nextId('staff_payments'),staff_id:p.staff_id,amount:total,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),note:`حقوق ${JMONTHS[p.jm-1]} ${faNum(p.jy)}`,created_at:new Date().toISOString()});}
+      if(p.mark_paid){item.paid=true;item.paid_date=p.paid_date||null;const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:total,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),account_id:p.account_id||null,note:`حقوق ${JMONTHS[p.jm-1]} ${faNum(p.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);}
       _db.staff_monthly.push(item); _save(); return _P({ok:true,id:item.id});
     },
-    markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;_db.staff_payments.push({id:_nextId('staff_payments'),staff_id:m.staff_id,amount:m.total,date_jalali:p.date,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()});_save();} return _P({ok:true}); },
+    markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;const payment={id:_nextId('staff_payments'),staff_id:m.staff_id,amount:m.total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.staff_monthly=_db.staff_monthly.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     updateMonth: (p)=>{
       const m=_db.staff_monthly.find(x=>x.id===p.id); if(!m) return _P({ok:false});
@@ -12418,6 +12420,21 @@ function _financialAccountBalance(account) {
   const spent=(_db.expenses||[]).filter(e=>String(e.account_id||'')===id).reduce((sum,e)=>sum+Number(e.amount||0),0);
   return Number(account.opening_balance||0)+received-spent;
 }
+function _syncStaffPaymentExpense(payment) {
+  if (!payment) return null;
+  _db.expenses = _db.expenses || [];
+  const staff = (_db.staff||[]).find(s=>String(s.id)===String(payment.staff_id));
+  const title = `حقوق و دستمزد — ${[staff?.name,staff?.lname].filter(Boolean).join(' ')||'پرسنل'}`;
+  let expense = payment.expense_id && _db.expenses.find(e=>String(e.id)===String(payment.expense_id));
+  const data = {amount:Number(payment.amount||0),date_jalali:payment.date_jalali||'',category:'حقوق و دستمزد',payment_method:'پرداخت پرسنل',account_id:payment.account_id||null,description:payment.note||title,source:'staff_payment',staff_payment_id:payment.id,updated_at:new Date().toISOString()};
+  if (expense) Object.assign(expense,data);
+  else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense);payment.expense_id=expense.id; }
+  return expense;
+}
+function _removeStaffPaymentExpense(payment) {
+  if (!payment?.expense_id) return;
+  _db.expenses=(_db.expenses||[]).filter(e=>String(e.id)!==String(payment.expense_id));
+}
 function openFinancialAccounts() {
   const accounts=(_db.financial_accounts||[]).slice();
   const cards=accounts.map(a=>`<div style="padding:13px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div style="font-size:12px;color:var(--text2)">${escapeHtml(a.name)} · ${FINANCIAL_ACCOUNT_TYPES[a.type]||'سایر'}</div><div style="font-size:18px;font-weight:800;color:var(--green);margin:7px 0">${fmt(_financialAccountBalance(a))}</div><div style="font-size:10px;color:var(--text3)">موجودی فعلی (تومان)</div><div style="display:flex;gap:5px;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="openFinancialAccountForm(${a.id})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteFinancialAccount(${a.id})">حذف</button></div></div>`).join('');
@@ -12490,6 +12507,7 @@ function saveExpense() {
   const id=window._editingExpenseId;
   const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
   if(!expense){showToast('هزینه پیدا نشد','error');return;}
+  if(expense.source==='staff_payment'){showToast('این هزینه از پرداخت حقوق ساخته شده؛ آن را از حساب پرسنل اصلاح کنید','error');return;}
   Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',account_id:document.getElementById('expense-account')?.value||null,description:(document.getElementById('expense-description')?.value||'').trim(),receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
   if(id==null)_db.expenses.push(expense);
   _save();
@@ -12499,6 +12517,7 @@ function saveExpense() {
 
 async function deleteExpense(id) {
   const expense=(_db.expenses||[]).find(e=>String(e.id)===String(id));
+  if(expense?.source==='staff_payment'){showToast('این هزینه از پرداخت حقوق ساخته شده؛ آن را از حساب پرسنل اصلاح کنید','error');return;}
   if(!expense||!confirm('این هزینه حذف شود؟'))return;
   try{await _IDB.deleteMany((expense.receipts||[]).map(a=>a.id));}catch(e){}
   _db.expenses=_db.expenses.filter(e=>String(e.id)!==String(id));
@@ -12511,7 +12530,7 @@ function openExpenseManager() {
   const list=(_db.expenses||[]).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||Number(b.id)-Number(a.id));
   const total=list.reduce((s,e)=>s+Number(e.amount||0),0);
   openModal('🧾 مدیریت هزینه‌ها',`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap"><div><div style="font-size:11px;color:var(--text3)">جمع کل هزینه‌های ثبت‌شده</div><div style="font-size:20px;font-weight:800;color:var(--red)">${fmt(total)} <small style="font-size:10px">تومان</small></div></div><button class="btn btn-primary" onclick="openExpenseForm()">+ هزینه جدید</button></div>
-    ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>`<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}','${escapeHtml(e.receipts[0].name)}','${e.receipts[0].type}')">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button></div></div></div>`).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
+    ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>`<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} ${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--accent2);font-weight:400">خودکار از حقوق</span>':''} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}','${escapeHtml(e.receipts[0].name)}','${e.receipts[0].type}')">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end">${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--text3)">از حساب پرسنل</span>':`<button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button>`}</div></div></div>`).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
 }
 
 async function renderDashboard() {
@@ -15813,6 +15832,10 @@ function openStaffPayment(staffId, name) {
         <input class="form-input jdate" id="sp-date" value="${formatJalali(...todayJalali())}">
       </div>
       <div class="form-group full">
+        <label class="form-label">پرداخت از حساب</label>
+        <select class="form-select" id="sp-account">${financialAccountOptionsHtml()}</select>
+      </div>
+      <div class="form-group full">
         <label class="form-label">یادداشت</label>
         <input class="form-input" id="sp-note" placeholder="مثلاً: حقوق خرداد">
       </div>
@@ -15826,7 +15849,7 @@ function openStaffPayment(staffId, name) {
 async function saveStaffPayment(staffId) {
   const amount = +(document.getElementById('sp-amount')?.value||0);
   if (!amount) { showToast('مبلغ را وارد کنید', 'error'); return; }
-  await window.api.staffPayments.add({ staff_id: staffId, amount, date: document.getElementById('sp-date')?.value, note: document.getElementById('sp-note')?.value });
+  await window.api.staffPayments.add({ staff_id: staffId, amount, date: document.getElementById('sp-date')?.value, account_id: document.getElementById('sp-account')?.value||null, note: document.getElementById('sp-note')?.value });
   closeModal();
   showToast('ثبت شد ✓', 'success');
   await openStaffDetail(staffId);
@@ -16260,6 +16283,12 @@ async function payStaffSalary(staffId, name) {
       </div>
     </div>
 
+    <div class="form-group full" style="margin-top:10px">
+      <label class="form-label">پرداخت از حساب</label>
+      <select class="form-select" id="psp-account">${financialAccountOptionsHtml()}</select>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">با انتخاب حساب، خروج وجه و هزینه «حقوق و دستمزد» خودکار ثبت می‌شود.</div>
+    </div>
+
     <p style="font-size:11px;color:var(--text3);margin-top:10px">پس از تأیید: این مبلغ در تاریخچه پرداخت‌ها ثبت می‌شود، یادآوری ماه بعد تنظیم می‌شود و تعداد دفعات نقش‌ها برای ورود اطلاعات ماه جدید صفر می‌شود.</p>
   `, [
     { label: 'تأیید پرداخت', cls: 'btn-primary', action: `confirmPayStaffSalary(${staffId})` },
@@ -16273,6 +16302,7 @@ async function confirmPayStaffSalary(staffId) {
   await window.api.staff.paySalary({
     staff_id: staffId,
     date: document.getElementById('psp-date')?.value,
+    account_id: document.getElementById('psp-account')?.value||null,
     for_jy: forYear,
     for_jm: forMonth,
   });
