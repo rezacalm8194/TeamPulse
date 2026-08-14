@@ -2591,13 +2591,24 @@ body.light mark { background: rgba(251,191,36,.5); }
     overflow:visible;
   }
   .staff-accounts-table .staff-actions-cell {
-    width:100%;
+    position:absolute;
+    top:12px;
+    left:14px;
+    width:auto;
+    margin:0;
+    padding:0!important;
+    border:0!important;
+    display:block!important;
     text-align:initial;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
   }
-  .staff-accounts-table .staff-actions-cell::before { margin-bottom:0; }
+  .staff-accounts-table tbody tr { position:relative; }
+  .staff-accounts-table .staff-actions-cell::before { display:none!important; }
+  .staff-accounts-table .staff-actions-cell .row-menu-btn {
+    width:40px;
+    height:40px;
+    border-radius:10px;
+    font-size:19px;
+  }
 
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
   .table-header .table-search{width:100%;max-width:none!important}
