@@ -4103,6 +4103,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 }
 .stu-tools-row .chip-bar{padding:0}
 .stu-table-actions{display:flex;justify-content:center}
+.student-record-row{cursor:pointer}
+.student-record-row:hover td{background:rgba(124,106,247,.055)}
 .archive-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:14px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
 .archive-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
 .archive-search{min-width:260px;max-width:420px;flex:1}
@@ -9485,7 +9487,7 @@ async function renderStudents(search = '') {
       const extra = pkgs.length - visiblePkgs.length;
       const menuId = `stu-menu-${s.id}`;
       html += `
-      <div class="mstu-card">
+      <div class="mstu-card student-record-row" onclick="openStudentDetail(${s.id})">
         <div class="mstu-top">
           ${avatar(s.name, i)}
           <div class="mstu-name-wrap">
@@ -10378,7 +10380,7 @@ async function renderPurchases(search = '') {
     html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
   } else {
     packages.forEach(p => {
-      html += `<tr>
+      html += `<tr class="student-record-row" onclick="openStudentDetail(${s.id})" title="مشاهده جزئیات پرونده ${escapeHtml(`${s.name} ${s.lname}`.trim())}">
         <td style="font-weight:500">${p.name} ${p.lname}</td>
         <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
         <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
