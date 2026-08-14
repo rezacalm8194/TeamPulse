@@ -4812,7 +4812,7 @@ function _freshData() {
   return {
     meta: {...DEFAULT_META},
     package_types: [],
-    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], financial_accounts:[], fiscal_year_closings:[],
+    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], financial_accounts:[], fiscal_year_closings:[], financial_budgets:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
@@ -4827,7 +4827,7 @@ function _freshData() {
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
     _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
-             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,financial_accounts:1,fiscal_year_closings:1,staff_roles:2,todo_calendar_events:1,
+             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,financial_accounts:1,fiscal_year_closings:1,financial_budgets:1,staff_roles:2,todo_calendar_events:1,
              staff:1,staff_payments:1,staff_reminders:1,staff_adjustments:1,staff_monthly:1,instructions:1,instr_items:1},
   };
 }
@@ -4843,7 +4843,7 @@ function _migrate(d) {
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
   d.package_types = d.package_types || [];
-  ['families','students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','wallet_tx','reminders','key_events','topics',
+  ['families','students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
@@ -4903,7 +4903,7 @@ function _migrate(d) {
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   d._nextId = d._nextId||{};
-  ['students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','families','package_types','wallet_tx','reminders',
+  ['students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
@@ -12484,6 +12484,44 @@ function reopenFiscalYear(year) {
   record.closed=false;record.reopened_at=new Date().toISOString();record.updated_at=new Date().toISOString();_save();showToast(`گزارش سال ${fa(year)} بازگشایی شد`,'success');openFiscalYearClosing(year);
 }
 
+function _budgetFor(year, month=0) { return (_db.financial_budgets||[]).find(b=>Number(b.year)===Number(year)&&Number(b.month||0)===Number(month||0)); }
+function _budgetActual(year, month=0) {
+  const match=date=>{const[y,m]=_jalaliParse(date);return Number(y)===Number(year)&&(!month||Number(m)===Number(month));};
+  const income=(_db.payments||[]).filter(p=>(p.currency||'تومان')==='تومان'&&match(p.date_jalali)).reduce((s,p)=>s+Number(p.amount||0),0);
+  const expenses=(_db.expenses||[]).filter(e=>match(e.date_jalali)).reduce((s,e)=>s+Number(e.amount||0),0);
+  const categories={};(_db.expenses||[]).filter(e=>match(e.date_jalali)).forEach(e=>{const k=e.category||'سایر';categories[k]=(categories[k]||0)+Number(e.amount||0);});
+  return {income,expenses,profit:income-expenses,categories};
+}
+function _budgetProgress(value,target) { return target>0?Math.round(value/target*100):0; }
+function _budgetBar(value,target,color='var(--accent)') { const p=Math.min(100,_budgetProgress(value,target));return `<div style="height:7px;border-radius:99px;background:var(--bg3);overflow:hidden;margin-top:6px"><span style="display:block;height:100%;width:${p}%;background:${color};border-radius:99px"></span></div>`; }
+function _budgetCategoryFields(limits={}) { return EXPENSE_CATEGORIES.map(c=>`<div class="form-group"><label class="form-label">سقف ${c}</label><input class="form-input amount-input" data-budget-category="${c}" inputmode="numeric" value="${limits[c]?fmt(limits[c]):''}" placeholder="بدون سقف"></div>`).join(''); }
+function openBudgetManager() {
+  _db.financial_budgets=_db.financial_budgets||[];
+  const rows=[..._db.financial_budgets].sort((a,b)=>Number(b.year)*100+Number(b.month||0)-(Number(a.year)*100+Number(a.month||0)));
+  const monthNames=['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const header='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px"><div style="font-size:11px;color:var(--text3)">هدف درآمد، سقف هزینه و سقف دسته‌ها را برای کنترل مالی تعیین کنید.</div><button class="btn btn-primary btn-sm" onclick="openBudgetForm()">+ بودجه جدید</button></div>';
+  const cards=rows.map(b=>{const a=_budgetActual(b.year,b.month);const label=b.month?`${monthNames[b.month]} ${fa(b.year)}`:`سال ${fa(b.year)}`;const profitColor=a.profit>=0?'var(--green)':'var(--red)';return `<div style="padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${label}</b><div style="display:flex;gap:5px"><button class="btn btn-ghost btn-sm" onclick="openBudgetForm(${b.id})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteFinancialBudget(${b.id})">حذف</button></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px;font-size:11px"><div>درآمد: <b style="color:var(--green)">${fmt(a.income)} / ${fmt(b.income_target||0)}</b>${_budgetBar(a.income,b.income_target,'var(--green)')}</div><div>هزینه: <b style="color:var(--red)">${fmt(a.expenses)} / ${fmt(b.expense_limit||0)}</b>${_budgetBar(a.expenses,b.expense_limit,'var(--red)')}</div><div>سود: <b style="color:${profitColor}">${fmt(a.profit)} / ${fmt(b.profit_target||0)}</b>${_budgetBar(a.profit,b.profit_target,'var(--accent)')}</div></div></div>`;}).join('');
+  const html=header+(cards?`<div style="display:flex;flex-direction:column;gap:8px">${cards}</div>`:'<div style="text-align:center;color:var(--text3);padding:30px">هنوز بودجه‌ای تعریف نشده است.</div>');
+  openModal('🎯 بودجه و هدف مالی',html,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
+}
+function openBudgetForm(id=null) {
+  const b=id==null?{}:(_db.financial_budgets||[]).find(x=>Number(x.id)===Number(id))||{};
+  const[year,month]=_todayJalali();const months=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const html=`<div class="form-grid"><div class="form-group"><label class="form-label">سال</label><input class="form-input" id="budget-year" type="number" value="${b.year||year}"></div><div class="form-group"><label class="form-label">دوره</label><select class="form-select" id="budget-month"><option value="0" ${!b.month?'selected':''}>بودجه سالانه</option>${months.map((n,i)=>`<option value="${i+1}" ${Number(b.month)===i+1?'selected':''}>${n}</option>`).join('')}</select></div><div class="form-group"><label class="form-label">هدف درآمد (تومان)</label><input class="form-input amount-input" id="budget-income" inputmode="numeric" value="${b.income_target?fmt(b.income_target):''}"></div><div class="form-group"><label class="form-label">سقف هزینه کل (تومان)</label><input class="form-input amount-input" id="budget-expense" inputmode="numeric" value="${b.expense_limit?fmt(b.expense_limit):''}"></div><div class="form-group full"><label class="form-label">هدف سود نقدی (تومان)</label><input class="form-input amount-input" id="budget-profit" inputmode="numeric" value="${b.profit_target?fmt(b.profit_target):''}"></div><div class="form-group full"><label class="form-label">سقف هزینه بر اساس دسته (اختیاری)</label><div class="form-grid" style="margin-top:8px">${_budgetCategoryFields(b.category_limits||{})}</div></div></div>`;
+  openModal(id==null?'🎯 بودجه جدید':'✏️ ویرایش بودجه',html,[{label:'ذخیره',cls:'btn-primary',action:`saveFinancialBudget(${id==null?'null':Number(id)})`},{label:'انصراف',cls:'btn-ghost',action:'openBudgetManager()'}],{fullPage:true});
+}
+function saveFinancialBudget(id=null) {
+  const year=Number(document.getElementById('budget-year')?.value),month=Number(document.getElementById('budget-month')?.value||0);
+  if(!year||year<1300){showToast('سال مالی معتبر وارد کنید','error');return;}
+  const limits={};document.querySelectorAll('[data-budget-category]').forEach(el=>{const v=_expenseAmountValue(el.value);if(v>0)limits[el.dataset.budgetCategory]=v;});
+  const data={year,month,income_target:_expenseAmountValue(document.getElementById('budget-income')?.value),expense_limit:_expenseAmountValue(document.getElementById('budget-expense')?.value),profit_target:_expenseAmountValue(document.getElementById('budget-profit')?.value),category_limits:limits,updated_at:new Date().toISOString()};
+  _db.financial_budgets=_db.financial_budgets||[];const duplicate=_db.financial_budgets.find(b=>Number(b.year)===year&&Number(b.month||0)===month&&Number(b.id)!==Number(id));
+  if(duplicate){Object.assign(duplicate,data);showToast('بودجه همان دوره به‌روزرسانی شد ✓','success');}else if(id==null){_db.financial_budgets.push({id:_nextId('financial_budgets'),...data,created_at:new Date().toISOString()});showToast('بودجه ذخیره شد ✓','success');}else{const b=_db.financial_budgets.find(x=>Number(x.id)===Number(id));if(b)Object.assign(b,data);}
+  _save();openBudgetManager();if(currentPage==='dashboard')renderDashboard();
+}
+function deleteFinancialBudget(id) { if(!confirm('این بودجه حذف شود؟'))return;_db.financial_budgets=(_db.financial_budgets||[]).filter(b=>Number(b.id)!==Number(id));_save();openBudgetManager(); }
+function budgetDashboardHtml(year,month) { const b=_budgetFor(year,month);if(!b)return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h3 style="margin:0">🎯 بودجه ماه</h3><p style="font-size:11px;color:var(--text3);margin:5px 0 0">برای این ماه هنوز بودجه‌ای ثبت نشده است.</p></div><button class="btn btn-ghost btn-sm" onclick="openBudgetForm()">تعریف بودجه</button></div></div>`;const a=_budgetActual(year,month);const alerts=[];if(b.expense_limit&&a.expenses>=b.expense_limit)alerts.push('سقف هزینه کل رد شده');else if(b.expense_limit&&a.expenses/b.expense_limit>=.8)alerts.push('هزینه به ۸۰٪ سقف رسیده');Object.entries(b.category_limits||{}).forEach(([c,l])=>{if((a.categories[c]||0)>=l)alerts.push(`سقف ${c} رد شده`);});return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">🎯 بودجه ${fa(year)}/${fa(month)}</h3><button class="btn btn-ghost btn-sm" onclick="openBudgetManager()">مدیریت</button></div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px;font-size:11px"><div>درآمد ${fmt(a.income)} / ${fmt(b.income_target)}${_budgetBar(a.income,b.income_target,'var(--green)')}</div><div>هزینه ${fmt(a.expenses)} / ${fmt(b.expense_limit)}${_budgetBar(a.expenses,b.expense_limit,'var(--red)')}</div><div>سود ${fmt(a.profit)} / ${fmt(b.profit_target)}${_budgetBar(a.profit,b.profit_target,'var(--accent)')}</div></div>${alerts.length?`<div style="font-size:11px;color:var(--amber);margin-top:10px">⚠️ ${alerts.join(' · ')}</div>`:''}</div>`; }
+
 async function openDashboardCustomerAccount(id) {
   currentPage='customerlist'; location.hash='customerlist';
   await renderPage();
@@ -12682,6 +12720,7 @@ async function renderDashboard() {
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
     <button type="button" class="btn btn-ghost" onclick="openFinancialAccounts()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏦 حساب‌های مالی</button>
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('transactions')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">📒 تراکنش‌ها</button>
+    <button type="button" class="btn btn-ghost" onclick="openBudgetManager()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🎯 بودجه‌بندی</button>
     <button type="button" class="btn btn-ghost" onclick="openFiscalYearClosing()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏁 بستن سال مالی</button>
     <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
   </div>
@@ -12707,6 +12746,8 @@ async function renderDashboard() {
       <div class="stat-sub">مطالبات مشتریان: ${fmt(netDebt)}${staffDueCount?` · حقوق پرداخت‌نشده: ${fmt(unpaidStaffSalary)}`:''}</div>
     </div>
   </div>
+
+  ${budgetDashboardHtml(currentJalaliYear,currentJalaliMonth)}
 
   <div class="detail-section" style="margin-top:14px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div><h3 style="margin:0">📊 روند مالی ۶ ماه اخیر</h3><div style="font-size:10px;color:var(--text3);margin-top:4px">مقایسه درآمد و هزینه؛ عدد زیر هر ماه سود نقدی است</div></div><div style="display:flex;gap:10px;font-size:10px;color:var(--text2)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:4px"></i>درآمد</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-left:4px"></i>هزینه</span></div></div>
@@ -22496,7 +22537,7 @@ function _cloneData(data) {
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
-    'students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','families','wallet_tx','reminders','key_events','topics',
+    'students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','financial_budgets','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
     'instructions','todos'
   ];
