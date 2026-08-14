@@ -2611,9 +2611,11 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
   /* عملیات فروش و دریافت در موبایل کنار نام مشتری می‌ماند، نه انتهای کارت */
   .customer-sales-table tbody tr,
-  .customer-payments-table tbody tr { position:relative; }
+  .customer-payments-table tbody tr,
+  .customer-reminders-table tbody tr { position:relative; }
   .customer-sales-table td[data-label="عملیات"],
-  .customer-payments-table td[data-label="عملیات"] {
+  .customer-payments-table td[data-label="عملیات"],
+  .customer-reminders-table td[data-label="عملیات"] {
     position:absolute;
     top:12px;
     left:14px;
@@ -2624,9 +2626,11 @@ body.light mark { background: rgba(251,191,36,.5); }
     display:block!important;
   }
   .customer-sales-table td[data-label="عملیات"]::before,
-  .customer-payments-table td[data-label="عملیات"]::before { display:none!important; }
+  .customer-payments-table td[data-label="عملیات"]::before,
+  .customer-reminders-table td[data-label="عملیات"]::before { display:none!important; }
   .customer-sales-table td[data-label="عملیات"] .row-menu-btn,
-  .customer-payments-table td[data-label="عملیات"] .row-menu-btn {
+  .customer-payments-table td[data-label="عملیات"] .row-menu-btn,
+  .customer-reminders-table td[data-label="عملیات"] .row-menu-btn {
     width:32px;
     height:32px;
     border-radius:9px;
@@ -12111,7 +12115,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">
       فروش دوره‌ای را در بخش فروش ثبت کن؛ TeamPulse بر اساس سررسید اولین پرداخت و دوره تکرار، یادآوری پرداخت را خودش می‌سازد. وقتی از همین صفحه پرداخت را تأیید کنی، دریافت ثبت می‌شود و سررسید بعدی هم خودکار جلو می‌رود.
     </p>
-  </div><div class="table-card">
+  </div><div class="table-card tbl-responsive customer-reminders-table">
     <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(filtered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
@@ -12140,15 +12144,15 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     }
 
     html += `<tr>
-      <td style="font-weight:500">${r.name} ${r.lname}</td>
-      <td>${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
-      <td>
+      <td data-label="مشتری" style="font-weight:500">${r.name} ${r.lname}</td>
+      <td data-label="عنوان">${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
+      <td data-label="سررسید">
         <div>${DateService.disp(r.due_date_jalali)}</div>
       </td>
-      <td>${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
-      <td style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? `هر ${fa(r.repeat_months)} ماه` : 'یک‌بار'}</td>
-      <td>${statusBadge}</td>
-      <td>
+      <td data-label="مبلغ">${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
+      <td data-label="تکرار" style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? `هر ${fa(r.repeat_months)} ماه` : 'یک‌بار'}</td>
+      <td data-label="وضعیت">${statusBadge}</td>
+      <td data-label="عملیات">
         <div class="row-menu">
           <button class="row-menu-btn" onclick="toggleRowMenu(event,'${reminderMenuId}')" aria-label="عملیات یادآوری">⋮</button>
           <div class="row-menu-panel" id="${reminderMenuId}">
