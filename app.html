@@ -11396,7 +11396,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..."></textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -11748,7 +11748,7 @@ async function openEditSession(sessionId) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4">${escapeHtml(session.note)}</textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -14371,6 +14371,91 @@ function richToolbar(textareaId) {
     <span class="rt-sep"></span>
     ${moreStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
   </div>`;
+}
+
+// تبدیل HTML موجود در کلیپ‌بورد به Markdown امنِ قابل‌نمایش در تیم‌پالس.
+// محتوای جلسه به‌صورت متن ذخیره می‌شود؛ بنابراین HTML خام را نگه نمی‌داریم تا
+// هم ظاهر برنامه یکدست بماند و هم کد ناخواسته از کلیپ‌بورد وارد نشود.
+function _clipboardHtmlToRichText(html) {
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  const clean = value => String(value || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+  const joinBlocks = values => values.map(clean).filter(Boolean).join('\n\n');
+  const inline = node => {
+    if (!node) return '';
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br') return '\n';
+    if (tag === 'script' || tag === 'style' || tag === 'noscript') return '';
+    const content = Array.from(node.childNodes).map(inline).join('');
+    if (tag === 'strong' || tag === 'b') return content.trim() ? `**${content.trim()}**` : '';
+    if (tag === 'em' || tag === 'i') return content.trim() ? `*${content.trim()}*` : '';
+    if (tag === 'u') return content.trim() ? `<u>${content.trim()}</u>` : '';
+    if (tag === 'a') {
+      const href = (node.getAttribute('href') || '').trim();
+      return /^https?:\/\//i.test(href) && content.trim() ? `[${content.trim()}](${href})` : content;
+    }
+    if (tag === 'img') {
+      const src = (node.getAttribute('src') || '').trim();
+      const alt = (node.getAttribute('alt') || 'تصویر').trim();
+      return /^https?:\/\//i.test(src) ? `![${alt}](${src})` : '';
+    }
+    return content;
+  };
+  const list = (node, ordered, depth) => {
+    const start = Number(node.getAttribute('start')) || 1;
+    return Array.from(node.children).filter(child => child.tagName && child.tagName.toLowerCase() === 'li').map((li, index) => {
+      const direct = Array.from(li.childNodes).filter(child => !(child.nodeType === Node.ELEMENT_NODE && /^(ul|ol)$/i.test(child.tagName))).map(inline).join('');
+      const prefix = ordered ? `${start + index}. ` : '- ';
+      const nested = Array.from(li.children).filter(child => /^(ul|ol)$/i.test(child.tagName)).map(child => list(child, child.tagName.toLowerCase() === 'ol', depth + 1)).filter(Boolean).join('\n');
+      const indent = '  '.repeat(depth || 0);
+      return indent + prefix + clean(direct) + (nested ? '\n' + nested : '');
+    }).join('\n');
+  };
+  const table = node => {
+    const rows = Array.from(node.querySelectorAll('tr')).map(row => Array.from(row.querySelectorAll(':scope > th, :scope > td')).map(cell => clean(inline(cell))).filter((_, index, cells) => index < cells.length));
+    if (!rows.length || !rows[0].length) return '';
+    const width = rows[0].length;
+    const markdownRows = rows.map(cells => `| ${Array.from({ length: width }, (_, i) => String(cells[i] || '').replace(/\|/g, '\\|')).join(' | ')} |`);
+    markdownRows.splice(1, 0, `| ${Array.from({ length: width }, () => '---').join(' | ')} |`);
+    return markdownRows.join('\n');
+  };
+  const block = node => {
+    if (!node) return '';
+    if (node.nodeType === Node.TEXT_NODE) return clean(node.nodeValue);
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'script' || tag === 'style' || tag === 'noscript') return '';
+    if (/^h[1-6]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${clean(inline(node))}`;
+    if (tag === 'ul' || tag === 'ol') return list(node, tag === 'ol', 0);
+    if (tag === 'table') return table(node);
+    if (tag === 'blockquote') return clean(inline(node)).split('\n').filter(Boolean).map(line => `> ${line}`).join('\n');
+    if (tag === 'pre') return `\`\`\`\n${node.textContent || ''}\n\`\`\``;
+    if (tag === 'hr') return '---';
+    if (/^(p|div|section|article|main|header|footer|figure|figcaption|li)$/.test(tag)) {
+      const hasBlocks = Array.from(node.children).some(child => /^(h[1-6]|p|div|section|article|ul|ol|table|blockquote|pre|hr)$/i.test(child.tagName));
+      return hasBlocks ? joinBlocks(Array.from(node.childNodes).map(block)) : clean(inline(node));
+    }
+    return clean(inline(node));
+  };
+  return joinBlocks(Array.from(doc.body.childNodes).map(block));
+}
+
+function pasteRichClipboard(event, textareaId) {
+  const html = event.clipboardData && event.clipboardData.getData('text/html');
+  if (!html) return;
+  const converted = _clipboardHtmlToRichText(html);
+  if (!converted) return;
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+  event.preventDefault();
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  textarea.value = textarea.value.slice(0, start) + converted + textarea.value.slice(end);
+  textarea.focus();
+  textarea.selectionStart = textarea.selectionEnd = start + converted.length;
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  showToast('عنوان‌ها، فهرست‌ها و جدولِ متن کپی‌شده حفظ شد ✓', 'success');
 }
 
 function _toggleToolbarMore(id) {
