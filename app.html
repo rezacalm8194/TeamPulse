@@ -2375,6 +2375,29 @@ body.light mark { background: rgba(251,191,36,.5); }
   font-size: 13px; font-weight: 700; color: var(--text2);
   text-align: center; margin-bottom: 14px; letter-spacing: .04em;
 }
+.finance-nav {
+  position: sticky; top: 0; z-index: 24; display: flex; align-items: center; gap: 8px;
+  padding: 10px; margin: -4px 0 14px; border: 1px solid var(--border2); border-radius: 14px;
+  background: color-mix(in srgb, var(--bg2) 92%, transparent); backdrop-filter: blur(12px);
+}
+.finance-nav-label { font-size: 11px; font-weight: 800; color: var(--text3); padding: 0 5px; white-space: nowrap; }
+.finance-nav-main { display: flex; gap: 7px; flex: 1; }
+.finance-nav-btn { min-height: 38px; flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 6px; border: 1px solid var(--border2); border-radius: 10px; background: var(--bg3); color: var(--text2); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.finance-nav-btn:hover,.finance-nav-btn.active { border-color: var(--accent); background: rgba(124,106,247,.16); color: var(--accent2); }
+.finance-nav-more { flex: 0 0 auto; padding: 0 13px; }
+.finance-tools-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding-bottom:4px; }
+.finance-tool { min-height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; border:1px solid var(--border2); border-radius:12px; background:var(--bg3); color:var(--text2); font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
+.finance-tool:hover { border-color:var(--accent); color:var(--accent2); }
+#sidebar .nav-item[data-page="payments"],#sidebar .nav-item[data-page="staff"],#sidebar .nav-item[data-page="transactions"] { display:none !important; }
+@media(max-width:768px){
+  .finance-nav { position: sticky; top: 0; margin: -2px -2px 12px; padding: 7px; gap: 6px; border-radius: 12px; }
+  .finance-nav-label { display:none; }
+  .finance-nav-main { gap:6px; }
+  .finance-nav-btn { min-width:0; min-height:44px; padding:5px 4px; font-size:10.5px; flex-direction:column; gap:1px; line-height:1.1; }
+  .finance-nav-btn .finance-icon { font-size:15px; }
+  .finance-nav-more { flex:0 0 54px; padding:5px 3px; }
+  .finance-tools-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
 .bs-option {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 16px; border-radius: 12px;
@@ -12726,19 +12749,7 @@ async function renderDashboard() {
     ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',icon:'📈',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
   ];
 
-  const html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2)">
-    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-left:auto">مدیریت مالی</div>
-    <button type="button" class="btn btn-danger" onclick="openExpenseManager()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;box-shadow:0 6px 18px rgba(248,113,113,.14)">🧾 هزینه‌ها</button>
-    <button type="button" class="btn btn-primary" onclick="openDashboardFinanceSection('payments')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800;background:var(--green);border-color:var(--green);box-shadow:0 6px 18px rgba(62,207,142,.14)">📈 درآمدها و حساب مشتریان</button>
-    <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
-    <button type="button" class="btn btn-ghost" onclick="openFinancialAccounts()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏦 حساب‌های مالی</button>
-    <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('transactions')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">📒 تراکنش‌ها</button>
-    <button type="button" class="btn btn-ghost" onclick="openBudgetManager()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🎯 بودجه‌بندی</button>
-    <button type="button" class="btn btn-ghost" onclick="openCashForecast()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🔮 پیش‌بینی نقدینگی</button>
-    <button type="button" class="btn btn-ghost" onclick="openFiscalYearClosing()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏁 بستن سال مالی</button>
-    <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
-  </div>
-  <div class="stats-row" aria-label="خلاصه مالی ماه جاری">
+  const html = `<div class="stats-row" aria-label="خلاصه مالی ماه جاری">
     <div class="stat-card s-green">
       <div class="stat-label">درآمد دریافت‌شده</div>
       <div class="stat-value">${fmt(currentMonthIncome||0)}</div>
@@ -19716,6 +19727,25 @@ function initAmountHints() {
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
+function _isFinancePage(page=currentPage) { return ['dashboard','payments','staff','transactions'].includes(page); }
+function _financeNavHtml() {
+  const active=currentPage==='payments'?'income':currentPage==='staff'?'staff':'';
+  return `<nav class="finance-nav" aria-label="ابزارهای مالی"><span class="finance-nav-label">مدیریت مالی</span><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">📈</span><span>درآمد</span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">🧾</span><span>هزینه</span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">💼</span><span>پرسنل</span></button></div><button class="finance-nav-btn finance-nav-more" onclick="openFinanceTools()"><span class="finance-icon">•••</span><span>بیشتر</span></button></nav>`;
+}
+function openFinanceDestination(destination) {
+  if(destination==='expense'){openExpenseManager();return;}
+  if(destination==='income'){window._paymentsTab='payments';currentPage='payments';}
+  if(destination==='staff')currentPage='staff';
+  location.hash=currentPage;renderPage();
+}
+function openFinanceTools() {
+  document.getElementById('finance-tools-sheet')?.remove();
+  const overlay=document.createElement('div');overlay.id='finance-tools-sheet';overlay.className='bottom-sheet-overlay';
+  const tools=[['📊','نمای کلی مالی',()=>{currentPage='dashboard';location.hash='dashboard';renderPage();}],['🏦','حساب‌های مالی',()=>openFinancialAccounts()],['📒','تراکنش‌ها',()=>{currentPage='transactions';location.hash='transactions';renderPage();}],['🎯','بودجه‌بندی',()=>openBudgetManager()],['🔮','پیش‌بینی نقدینگی',()=>openCashForecast()],['🏁','بستن سال مالی',()=>openFiscalYearClosing()]];
+  overlay.innerHTML=`<div class="bottom-sheet" role="dialog" aria-modal="true" aria-label="ابزارهای مالی"><div class="bottom-sheet-handle"></div><div class="bs-title">ابزارهای مالی</div><div class="finance-tools-grid">${tools.map(([icon,label])=>`<button class="finance-tool">${icon}<span>${label}</span></button>`).join('')}</div></div>`;
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.body.appendChild(overlay);overlay.querySelectorAll('.finance-tool').forEach((btn,index)=>btn.addEventListener('click',()=>{overlay.remove();tools[index][2]();}));requestAnimationFrame(()=>overlay.classList.add('open'));
+}
 function setContent(html) {
   const contentEl = document.getElementById('content');
   if (!contentEl) return;
@@ -19734,7 +19764,7 @@ function setContent(html) {
   const prevCVal = prevC ? prevC.value : null;
   const prevCPos = prevC ? prevC.selectionStart : null;
   
-  contentEl.innerHTML = html;
+  contentEl.innerHTML = _isFinancePage() ? _financeNavHtml()+html : html;
   if (typeof _applyResponsiveTableLabels === 'function') {
     try { _applyResponsiveTableLabels(); } catch(e) {}
   }
