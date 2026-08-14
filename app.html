@@ -6008,24 +6008,36 @@ window.api = {
         .filter(m=>!m.paid)
         .reduce((sum,m)=>sum+Number(m.total||0),0);
       const staffDueCount=(_db.staff_monthly||[]).filter(m=>!m.paid).length;
-      const staffPaymentAlerts=(_db.staff_reminders||[])
-        .filter(r=>!r.done)
+      // هشدارهای مالی باید از وضعیت مالیِ فعلی ساخته شوند، نه صرفاً از
+      // یادآورهای قدیمی. به‌خصوص یک یادآور تکراری/صفر یا حقوق تسویه‌شده
+      // نباید دوباره به‌عنوان «پیگیری» در داشبورد ظاهر شود.
+      const latestStaffReminderByStaff=new Map();
+      (_db.staff_reminders||[])
+        .filter(r=>!r.done&&Number(r.amount||0)>0&&_jalaliKey(r.due_date_jalali||'')>0)
+        .forEach(r=>{
+          const previous=latestStaffReminderByStaff.get(String(r.staff_id));
+          if(!previous||_jalaliKey(r.due_date_jalali)>_jalaliKey(previous.due_date_jalali)) latestStaffReminderByStaff.set(String(r.staff_id),r);
+        });
+      const staffPaymentAlerts=[...latestStaffReminderByStaff.values()]
         .map(r=>{
-          const staff=_db.staff.find(s=>s.id===r.staff_id);
-          const dueIn=_daysUntil(r.due_date_jalali||'');
-          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn};
+          const staff=_db.staff.find(s=>String(s.id)===String(r.staff_id));
+          const [jy,jm]=_jalaliParse(r.due_date_jalali||'');
+          const paidForDueMonth=(_db.staff_monthly||[]).some(m=>String(m.staff_id)===String(r.staff_id)&&Number(m.jy)===Number(jy)&&Number(m.jm)===Number(jm)&&m.paid);
+          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),paidForDueMonth,staffExists:!!staff};
         })
-        .filter(item=>item.dueIn!=null&&item.dueIn<=7)
+        .filter(item=>item.staffExists&&!item.paidForDueMonth&&item.dueIn!=null&&item.dueIn<=7)
         .sort((a,b)=>a.dueIn-b.dueIn);
+      const summaryByStudentId=new Map(summaries.map(s=>[String(s.id),s]));
       const customerDueAlerts=(_db.reminders||[])
-        .filter(r=>!r.done&&r.student_id)
+        .filter(r=>!r.done&&r.student_id&&_jalaliKey(r.due_date_jalali||'')>0)
         .map(r=>{
-          const student=_db.students.find(s=>s.id===r.student_id);
-          const dueIn=_daysUntil(r.due_date_jalali||'');
-          return {studentId:r.student_id,name:student?.name||'مشتری',lname:student?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn};
+          const student=summaryByStudentId.get(String(r.student_id));
+          const balance=Math.max(0,Number(student?.balance||0));
+          return {studentId:r.student_id,name:student?.name||'مشتری',lname:student?.lname||'',amount:balance,date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),studentExists:!!student};
         })
-        .filter(item=>item.dueIn!=null&&item.dueIn<=7)
-        .sort((a,b)=>a.dueIn-b.dueIn);
+        .filter(item=>item.studentExists&&item.amount>0&&item.dueIn!=null&&item.dueIn<=7)
+        .sort((a,b)=>a.dueIn-b.dueIn)
+        .filter((item,index,items)=>items.findIndex(other=>String(other.studentId)===String(item.studentId))===index);
       // Build familyGroups for dashboard
       const familyGroups = _db.families.map(f => {
         return _familySummary(f);
