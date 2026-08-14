@@ -4812,7 +4812,7 @@ function _freshData() {
   return {
     meta: {...DEFAULT_META},
     package_types: [],
-    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], financial_accounts:[],
+    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], financial_accounts:[], fiscal_year_closings:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'پرسنل'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
@@ -4827,7 +4827,7 @@ function _freshData() {
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
     _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
-             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,financial_accounts:1,staff_roles:2,todo_calendar_events:1,
+             wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,financial_accounts:1,fiscal_year_closings:1,staff_roles:2,todo_calendar_events:1,
              staff:1,staff_payments:1,staff_reminders:1,staff_adjustments:1,staff_monthly:1,instructions:1,instr_items:1},
   };
 }
@@ -4843,7 +4843,7 @@ function _migrate(d) {
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
   d.package_types = d.package_types || [];
-  ['families','students','packages','payments','sessions','expenses','financial_accounts','wallet_tx','reminders','key_events','topics',
+  ['families','students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
@@ -4903,7 +4903,7 @@ function _migrate(d) {
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   d._nextId = d._nextId||{};
-  ['students','packages','payments','sessions','expenses','financial_accounts','families','package_types','wallet_tx','reminders',
+  ['students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
@@ -12402,7 +12402,7 @@ function openDashboardFinanceSection(page) {
 }
 
 function _financialTransactionsFilters() {
-  return window._financialTransactionsFilter || (window._financialTransactionsFilter={type:'all',account:'all',from:'',to:''});
+  return window._financialTransactionsFilter || (window._financialTransactionsFilter={type:'all',account:'all',year:'all',from:'',to:''});
 }
 function _financialTransactionRows() {
   const accounts=new Map((_db.financial_accounts||[]).map(a=>[String(a.id),a.name]));
@@ -12416,6 +12416,7 @@ function updateFinancialTransactionsFilters() {
   const filter=_financialTransactionsFilters();
   filter.type=document.getElementById('ft-type')?.value||'all';
   filter.account=document.getElementById('ft-account')?.value||'all';
+  filter.year=document.getElementById('ft-year')?.value||'all';
   filter.from=document.getElementById('ft-from')?.value||'';
   filter.to=document.getElementById('ft-to')?.value||'';
   renderFinancialTransactions();
@@ -12423,7 +12424,7 @@ function updateFinancialTransactionsFilters() {
 function downloadFinancialTransactionsCsv() {
   const f=_financialTransactionsFilters();
   const from=_jalaliKey(f.from),to=_jalaliKey(f.to);
-  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
+  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(f.year==='all'||String(_jalaliParse(x.date)[0])===String(f.year))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
   const csv=['تاریخ,نوع,طرف حساب,شرح,حساب مالی,مبلغ,واحد پول',...rows.map(x=>[x.date,x.kindLabel,x.party,x.description,x.account,x.amount,x.currency].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n');
   const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=url;a.download='financial-transactions.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
@@ -12432,13 +12433,55 @@ async function renderFinancialTransactions() {
   updateTopbarActions('');
   const f=_financialTransactionsFilters();
   const from=_jalaliKey(f.from),to=_jalaliKey(f.to);
-  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
+  const rows=_financialTransactionRows().filter(x=>(f.type==='all'||x.kind===f.type)&&(f.account==='all'||String(x.accountId)===String(f.account))&&(f.year==='all'||String(_jalaliParse(x.date)[0])===String(f.year))&&(!from||_jalaliKey(x.date)>=from)&&(!to||_jalaliKey(x.date)<=to));
   const income=rows.filter(x=>x.kind==='income'&&x.currency==='تومان').reduce((s,x)=>s+x.amount,0);
   const outgoing=rows.filter(x=>x.kind!=='income').reduce((s,x)=>s+x.amount,0);
   const accountOptions=(_db.financial_accounts||[]).map(a=>`<option value="${a.id}" ${String(f.account)===String(a.id)?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
+  const years=[...new Set(_financialTransactionRows().map(x=>_jalaliParse(x.date)[0]).filter(Boolean))].sort((a,b)=>b-a);
+  const yearOptions=years.map(y=>`<option value="${y}" ${String(f.year)===String(y)?'selected':''}>${fa(y)}</option>`).join('');
   const kindColor={income:'var(--green)',salary:'var(--amber)',expense:'var(--red)'};
-  const html=`<div class="table-card" style="margin-bottom:12px"><div class="table-header"><div><div class="title">📒 تراکنش‌های مالی</div><div class="subtitle">همهٔ دریافت‌ها و پرداخت‌ها در یک نمای واحد</div></div><button class="btn btn-ghost btn-sm" onclick="downloadFinancialTransactionsCsv()">↓ خروجی اکسل</button></div><div class="form-grid" style="padding:0 16px 16px"><div class="form-group"><label class="form-label">نوع تراکنش</label><select class="form-select" id="ft-type" onchange="updateFinancialTransactionsFilters()"><option value="all">همه</option><option value="income" ${f.type==='income'?'selected':''}>دریافت مشتری</option><option value="salary" ${f.type==='salary'?'selected':''}>حقوق و پرسنل</option><option value="expense" ${f.type==='expense'?'selected':''}>هزینه</option></select></div><div class="form-group"><label class="form-label">حساب مالی</label><select class="form-select" id="ft-account" onchange="updateFinancialTransactionsFilters()"><option value="all">همه حساب‌ها</option>${accountOptions}</select></div><div class="form-group"><label class="form-label">از تاریخ</label><input class="form-input jdate" id="ft-from" value="${escapeHtml(f.from)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۰۱/۰۱"></div><div class="form-group"><label class="form-label">تا تاریخ</label><input class="form-input jdate" id="ft-to" value="${escapeHtml(f.to)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۱۲/۲۹"></div></div></div><div class="stats-row" style="margin-bottom:12px"><div class="stat-card s-green"><div class="stat-label">ورود وجه</div><div class="stat-value">${fmt(income)}</div><div class="stat-sub">تومان · نتایج فیلترشده</div></div><div class="stat-card s-red"><div class="stat-label">خروج وجه</div><div class="stat-value">${fmt(outgoing)}</div><div class="stat-sub">تومان · هزینه و حقوق</div></div><div class="stat-card"><div class="stat-label">خالص جریان نقدی</div><div class="stat-value" style="color:${income-outgoing>=0?'var(--green)':'var(--red)'}">${fmt(income-outgoing)}</div><div class="stat-sub">تومان</div></div></div><div class="table-card tbl-responsive"><div class="table-header"><span class="title">${fa(rows.length)} تراکنش</span></div><table><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شرح</th><th>حساب مالی</th><th>مبلغ</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td data-label="تاریخ">${DateService.disp(x.date)||'—'}</td><td data-label="نوع"><span class="tag" style="color:${kindColor[x.kind]};background:color-mix(in srgb, ${kindColor[x.kind]} 15%, transparent)">${x.kindLabel}</span></td><td data-label="طرف حساب">${escapeHtml(x.party)}</td><td data-label="شرح" style="color:var(--text2);font-size:11px">${escapeHtml(x.description)}</td><td data-label="حساب مالی" style="color:${x.accountId?'var(--accent2)':'var(--text3)'}">${escapeHtml(x.account)}</td><td data-label="مبلغ" style="font-weight:800;color:${x.kind==='income'?'var(--green)':'var(--red)'}">${x.kind==='income'?'+':'-'}${fmt(x.amount)} <small>${x.currency}</small></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty"><span>📒</span>تراکنشی با این فیلتر پیدا نشد</div></td></tr>`}</tbody></table></div>`;
+  const html=`<div class="table-card" style="margin-bottom:12px"><div class="table-header"><div><div class="title">📒 تراکنش‌های مالی</div><div class="subtitle">همهٔ دریافت‌ها و پرداخت‌ها در یک نمای واحد</div></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="openFiscalYearClosing()">🏁 بستن سال مالی</button><button class="btn btn-ghost btn-sm" onclick="downloadFinancialTransactionsCsv()">↓ خروجی اکسل</button></div></div><div class="form-grid" style="padding:0 16px 16px"><div class="form-group"><label class="form-label">سال مالی</label><select class="form-select" id="ft-year" onchange="updateFinancialTransactionsFilters()"><option value="all">همه سال‌ها</option>${yearOptions}</select></div><div class="form-group"><label class="form-label">نوع تراکنش</label><select class="form-select" id="ft-type" onchange="updateFinancialTransactionsFilters()"><option value="all">همه</option><option value="income" ${f.type==='income'?'selected':''}>دریافت مشتری</option><option value="salary" ${f.type==='salary'?'selected':''}>حقوق و پرسنل</option><option value="expense" ${f.type==='expense'?'selected':''}>هزینه</option></select></div><div class="form-group"><label class="form-label">حساب مالی</label><select class="form-select" id="ft-account" onchange="updateFinancialTransactionsFilters()"><option value="all">همه حساب‌ها</option>${accountOptions}</select></div><div class="form-group"><label class="form-label">از تاریخ</label><input class="form-input jdate" id="ft-from" value="${escapeHtml(f.from)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۰۱/۰۱"></div><div class="form-group"><label class="form-label">تا تاریخ</label><input class="form-input jdate" id="ft-to" value="${escapeHtml(f.to)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۱۲/۲۹"></div></div></div><div class="stats-row" style="margin-bottom:12px"><div class="stat-card s-green"><div class="stat-label">ورود وجه</div><div class="stat-value">${fmt(income)}</div><div class="stat-sub">تومان · نتایج فیلترشده</div></div><div class="stat-card s-red"><div class="stat-label">خروج وجه</div><div class="stat-value">${fmt(outgoing)}</div><div class="stat-sub">تومان · هزینه و حقوق</div></div><div class="stat-card"><div class="stat-label">خالص جریان نقدی</div><div class="stat-value" style="color:${income-outgoing>=0?'var(--green)':'var(--red)'}">${fmt(income-outgoing)}</div><div class="stat-sub">تومان</div></div></div><div class="table-card tbl-responsive"><div class="table-header"><span class="title">${fa(rows.length)} تراکنش</span></div><table><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شرح</th><th>حساب مالی</th><th>مبلغ</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td data-label="تاریخ">${DateService.disp(x.date)||'—'}</td><td data-label="نوع"><span class="tag" style="color:${kindColor[x.kind]};background:color-mix(in srgb, ${kindColor[x.kind]} 15%, transparent)">${x.kindLabel}</span></td><td data-label="طرف حساب">${escapeHtml(x.party)}</td><td data-label="شرح" style="color:var(--text2);font-size:11px">${escapeHtml(x.description)}</td><td data-label="حساب مالی" style="color:${x.accountId?'var(--accent2)':'var(--text3)'}">${escapeHtml(x.account)}</td><td data-label="مبلغ" style="font-weight:800;color:${x.kind==='income'?'var(--green)':'var(--red)'}">${x.kind==='income'?'+':'-'}${fmt(x.amount)} <small>${x.currency}</small></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty"><span>📒</span>تراکنشی با این فیلتر پیدا نشد</div></td></tr>`}</tbody></table></div>`;
   setContent(html);initDatePickers();
+}
+
+function _fiscalYearReport(year) {
+  const rows=_financialTransactionRows().filter(x=>Number(_jalaliParse(x.date)[0])===Number(year));
+  const income=rows.filter(x=>x.kind==='income'&&x.currency==='تومان').reduce((s,x)=>s+x.amount,0);
+  const salaries=rows.filter(x=>x.kind==='salary').reduce((s,x)=>s+x.amount,0);
+  const expenses=rows.filter(x=>x.kind==='expense').reduce((s,x)=>s+x.amount,0);
+  const byCategory={};
+  (_db.expenses||[]).filter(e=>Number(_jalaliParse(e.date_jalali)[0])===Number(year)).forEach(e=>{const k=e.category||'سایر';byCategory[k]=(byCategory[k]||0)+Number(e.amount||0);});
+  const topCategory=Object.entries(byCategory).sort((a,b)=>b[1]-a[1])[0]||null;
+  const receivables=(_db.students||[]).reduce((s,x)=>s+Math.max(0,Number(x.balance||0)),0);
+  const unpaidStaff=(_db.staff_monthly||[]).filter(x=>!x.paid).reduce((s,x)=>s+Number(x.total||0),0);
+  return {year,rows:rows.length,income,salaries,expenses,outgoing:salaries+expenses,profit:income-salaries-expenses,receivables,unpaidStaff,topCategory};
+}
+function openFiscalYearClosing(year=null) {
+  const available=[...new Set(_financialTransactionRows().map(x=>_jalaliParse(x.date)[0]).filter(Boolean))].sort((a,b)=>b-a);
+  const selected=Number(year||_financialTransactionsFilters().year||available[0]||_todayJalali()[0]);
+  const report=_fiscalYearReport(selected);
+  _db.fiscal_year_closings=_db.fiscal_year_closings||[];
+  const closing=_db.fiscal_year_closings.find(x=>Number(x.year)===selected&&x.closed!==false);
+  const opts=available.length?available.map(y=>`<option value="${y}" ${Number(y)===selected?'selected':''}>${fa(y)}</option>`).join(''):`<option value="${selected}">${fa(selected)}</option>`;
+  const status=closing?`<div style="padding:10px 12px;border-radius:10px;background:rgba(62,207,142,.11);color:var(--green);font-size:12px;margin-bottom:12px">✓ گزارش سال ${fa(selected)} در ${DateService.disp(closing.closed_date||'')} بسته و ثبت شده است.</div>`:`<div style="padding:10px 12px;border-radius:10px;background:rgba(251,191,36,.10);color:var(--amber);font-size:12px;margin-bottom:12px">این عمل یک تصویر ثابت از گزارش سال ثبت می‌کند و داده‌های تراکنش را حذف نمی‌کند.</div>`;
+  const content=`<div class="form-group"><label class="form-label">سال مالی</label><select class="form-select" id="fy-year" onchange="openFiscalYearClosing(this.value)">${opts}</select></div>${status}<div class="stats-row" style="margin:12px 0"><div class="stat-card s-green"><div class="stat-label">درآمد واقعی</div><div class="stat-value">${fmt(report.income)}</div><div class="stat-sub">تومان · دریافت مشتریان</div></div><div class="stat-card s-red"><div class="stat-label">هزینه و حقوق</div><div class="stat-value">${fmt(report.outgoing)}</div><div class="stat-sub">تومان</div></div><div class="stat-card"><div class="stat-label">سود نقدی</div><div class="stat-value" style="color:${report.profit>=0?'var(--green)':'var(--red)'}">${fmt(report.profit)}</div><div class="stat-sub">تومان</div></div></div><div class="detail-section"><div class="detail-row"><span class="detail-key">تعداد تراکنش‌های سال</span><span class="detail-val">${fa(report.rows)}</span></div><div class="detail-row"><span class="detail-key">بیشترین دسته هزینه</span><span class="detail-val">${report.topCategory?`${escapeHtml(report.topCategory[0])} · ${fmt(report.topCategory[1])} تومان`:'—'}</span></div><div class="detail-row"><span class="detail-key">مطالبات باز فعلی مشتریان</span><span class="detail-val amount-debt">${fmt(report.receivables)} تومان</span></div><div class="detail-row"><span class="detail-key">تعهدات پرداخت‌نشده پرسنل</span><span class="detail-val amount-debt">${fmt(report.unpaidStaff)} تومان</span></div></div><div class="form-group" style="margin-top:12px"><label class="form-label">یادداشت مدیریتی سال</label><textarea class="form-input" id="fy-note" rows="3" placeholder="مثلاً: تمرکز سال بعد روی کاهش هزینه تبلیغات">${escapeHtml(closing?.note||'')}</textarea></div>`;
+  const actions=closing?[{label:'بازگشایی گزارش',cls:'btn-ghost',action:`reopenFiscalYear(${selected})`},{label:'بستن',cls:'btn-primary',action:'closeModal()'}]:[{label:'ثبت و بستن سال',cls:'btn-primary',action:`confirmFiscalYearClosing(${selected})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}];
+  openModal(`🏁 بستن سال مالی ${fa(selected)}`,content,actions,{fullPage:true});
+}
+function confirmFiscalYearClosing(year) {
+  if(!confirm(`گزارش سال مالی ${fa(year)} ثبت و بسته شود؟`))return;
+  _db.fiscal_year_closings=_db.fiscal_year_closings||[];
+  const snapshot={..._fiscalYearReport(year),created_at:new Date().toISOString()};
+  const existing=_db.fiscal_year_closings.find(x=>Number(x.year)===Number(year));
+  const record={year:Number(year),closed:true,closed_date:_formatJalali(..._todayJalali()),note:(document.getElementById('fy-note')?.value||'').trim(),snapshot,updated_at:new Date().toISOString()};
+  if(existing)Object.assign(existing,record);else _db.fiscal_year_closings.push({id:_nextId('fiscal_year_closings'),...record,created_at:new Date().toISOString()});
+  _save();closeModal();showToast(`سال مالی ${fa(year)} بسته شد ✓`,'success');
+  if(currentPage==='transactions')renderFinancialTransactions();
+}
+function reopenFiscalYear(year) {
+  const record=(_db.fiscal_year_closings||[]).find(x=>Number(x.year)===Number(year));
+  if(!record)return;
+  record.closed=false;record.reopened_at=new Date().toISOString();record.updated_at=new Date().toISOString();_save();showToast(`گزارش سال ${fa(year)} بازگشایی شد`,'success');openFiscalYearClosing(year);
 }
 
 async function openDashboardCustomerAccount(id) {
@@ -12639,6 +12682,7 @@ async function renderDashboard() {
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('staff')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">💼 حقوق و پرسنل</button>
     <button type="button" class="btn btn-ghost" onclick="openFinancialAccounts()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏦 حساب‌های مالی</button>
     <button type="button" class="btn btn-ghost" onclick="openDashboardFinanceSection('transactions')" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">📒 تراکنش‌ها</button>
+    <button type="button" class="btn btn-ghost" onclick="openFiscalYearClosing()" style="min-width:140px;justify-content:center;padding:10px 18px;font-weight:800">🏁 بستن سال مالی</button>
     <div style="width:100%;font-size:10.5px;color:var(--text3);line-height:1.7">هزینه این ماه: <b style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</b>${previousMonthExpenses>0?` · ${fa(Math.abs(expenseChangePercent))}٪ ${expenseChangePercent>=0?'بیشتر':'کمتر'} از ماه قبل`:''}${topExpenseCategory?` · بیشترین هزینه: ${escapeHtml(topExpenseCategory[0])}`:''}</div>
   </div>
   <div class="stats-row" aria-label="خلاصه مالی ماه جاری">
@@ -22452,7 +22496,7 @@ function _cloneData(data) {
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
-    'students','packages','payments','sessions','expenses','financial_accounts','families','wallet_tx','reminders','key_events','topics',
+    'students','packages','payments','sessions','expenses','financial_accounts','fiscal_year_closings','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
     'instructions','todos'
   ];
