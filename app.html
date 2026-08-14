@@ -2609,6 +2609,29 @@ body.light mark { background: rgba(251,191,36,.5); }
     border-radius:10px;
     font-size:19px;
   }
+  /* عملیات فروش و دریافت در موبایل کنار نام مشتری می‌ماند، نه انتهای کارت */
+  .customer-sales-table tbody tr,
+  .customer-payments-table tbody tr { position:relative; }
+  .customer-sales-table td[data-label="عملیات"],
+  .customer-payments-table td[data-label="عملیات"] {
+    position:absolute;
+    top:12px;
+    left:14px;
+    width:auto;
+    margin:0;
+    padding:0!important;
+    border:0!important;
+    display:block!important;
+  }
+  .customer-sales-table td[data-label="عملیات"]::before,
+  .customer-payments-table td[data-label="عملیات"]::before { display:none!important; }
+  .customer-sales-table td[data-label="عملیات"] .row-menu-btn,
+  .customer-payments-table td[data-label="عملیات"] .row-menu-btn {
+    width:40px;
+    height:40px;
+    border-radius:10px;
+    font-size:19px;
+  }
 
   .table-header{flex-wrap:wrap;gap:8px;padding:10px}
   .table-header .table-search{width:100%;max-width:none!important}
@@ -10741,7 +10764,7 @@ async function renderPayments(search = '') {
     let packages = await window.api.packages.getAll();
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
 
-    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card">
+    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-sales-table">
       <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
@@ -10750,8 +10773,9 @@ async function renderPayments(search = '') {
       html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
     } else {
       packages.forEach(p => {
+        const saleMenuId = `sale-menu-${p.id}`;
         html += `<tr>
-          <td style="font-weight:500">${p.name} ${p.lname}</td>
+          <td data-label="مشتری" style="font-weight:500">${p.name} ${p.lname}</td>
           <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
           <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
@@ -10761,10 +10785,14 @@ async function renderPayments(search = '') {
           </td>
           <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
           <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
-          <td>
-            <div style="display:flex;align-items:center;gap:5px">
-              <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
-              <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
+          <td data-label="عملیات">
+            <div class="row-menu">
+              <button class="row-menu-btn" type="button" aria-label="عملیات فروش ${escapeHtml(`${p.name} ${p.lname}`.trim())}" aria-haspopup="menu" onclick="toggleRowMenu(event,'${saleMenuId}')">⋮</button>
+              <div class="row-menu-panel" id="${saleMenuId}" role="menu">
+                <div class="row-menu-item" role="menuitem" onclick="openEditPackage(${p.id})">✏️ ویرایش فروش</div>
+                <div class="row-menu-divider"></div>
+                <div class="row-menu-item danger" role="menuitem" onclick="deletePackage(${p.id})">🗑 حذف فروش</div>
+              </div>
             </div>
           </td>
         </tr>`;
@@ -10797,9 +10825,13 @@ async function renderPayments(search = '') {
           <td data-label="مانده حساب">${student ? balanceHtml(student.balance) : '—'}</td>
           <td data-label="یادداشت" style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
           <td data-label="عملیات">
-            <div style="display:flex;align-items:center;gap:5px">
-              <button class="btn btn-ghost btn-sm" onclick="openEditPayment(${p.id})">✏️</button>
-              <button class="btn btn-danger" style="font-size:14px;padding:7px 12px" onclick="deletePayment(${p.id}, 'payments')">🗑</button>
+            <div class="row-menu">
+              <button class="row-menu-btn" type="button" aria-label="عملیات دریافت ${escapeHtml(`${p.name} ${p.lname}`.trim())}" aria-haspopup="menu" onclick="toggleRowMenu(event,'payment-menu-${p.id}')">⋮</button>
+              <div class="row-menu-panel" id="payment-menu-${p.id}" role="menu">
+                <div class="row-menu-item" role="menuitem" onclick="openEditPayment(${p.id})">✏️ ویرایش دریافت</div>
+                <div class="row-menu-divider"></div>
+                <div class="row-menu-item danger" role="menuitem" onclick="deletePayment(${p.id}, 'payments')">🗑 حذف دریافت</div>
+              </div>
             </div>
           </td>
         </tr>`;
