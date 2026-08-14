@@ -22315,11 +22315,15 @@ async function _triggerAttach(entityType, entityId) {
     };
     const node = findNode(_db.instructions || []);
     if (!node) { showToast('موردی یافت نشد', 'error'); return; }
+    const wasEditing = !!document.getElementById('ei-title') && Number(window._currentEditNoteId) === Number(id);
     const newAttachments = await attachFiles(entityType, id, node.attachments || []);
     node.attachments = newAttachments;
     _save();
     showToast('پیوست اضافه شد ✓', 'success');
-    openNoteDetail(id);
+    // در فرم ویرایش، همان فرم را دوباره باز کن تا پیش‌نمایش فایل تازه فوراً
+    // دیده شود؛ خارج از فرم ویرایش، جزئیات یادداشت را به‌روز نمایش بده.
+    if (wasEditing) openEditInstruction(id);
+    else openNoteDetail(id);
   }
 }
 
