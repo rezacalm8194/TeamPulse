@@ -9204,16 +9204,23 @@ function studentSectionNav(active) {
   </div>`;
 }
 
-function renderCaseFormsSection() {
-  const forms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
-  if (!forms.length) return `
+function renderCaseFormsSection(search = '') {
+  const allForms = Array.isArray(_db.case_forms) ? _db.case_forms : [];
+  const query = String(search || '').trim().toLowerCase();
+  const forms = query ? allForms.filter(form => [form.title, form.description, form.content].some(value => String(value || '').toLowerCase().includes(query))) : allForms;
+  if (!allForms.length) return `
     <div class="table-card" style="margin-bottom:16px">
       <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">فرم آماده‌ای ساخته نشده است</span></div></div>
       <div class="empty" style="padding:22px"><span>▣</span>با دکمه «افزودن فرم» یک فرم بسازید یا متن فرم آماده را وارد کنید</div>
     </div>`;
+  if (!forms.length) return `
+    <div class="table-card" style="margin-bottom:16px">
+      <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">نتیجه‌ای برای جستجو پیدا نشد</span></div></div>
+      <div class="empty" style="padding:22px"><span>🔎</span>فرمی با عبارت «${escapeHtml(search)}» پیدا نشد</div>
+    </div>`;
   return `
     <div class="table-card" style="margin-bottom:16px">
-      <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">${fa(forms.length)} فرم ساخته‌شده</span></div></div>
+      <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">${query ? `${fa(forms.length)} نتیجه از ${fa(allForms.length)} فرم` : `${fa(forms.length)} فرم ساخته‌شده`}</span></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;padding:14px">
         ${forms.map(form => {
           const menuId = 'case-form-menu-' + form.id;
@@ -9223,7 +9230,7 @@ function renderCaseFormsSection() {
             <div style="display:flex;align-items:flex-start;gap:10px">
               <div style="width:38px;height:38px;border-radius:10px;background:rgba(124,106,247,.14);color:var(--accent2);display:grid;place-items:center;font-size:20px;flex-shrink:0">▣</div>
               <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.7">${escapeHtml(form.title)}</div><div style="font-size:10px;color:var(--text3);margin-top:5px">${fa(fieldCount)} مورد · ویرایش ${DateService.disp(form.updated_at || form.created_at || '') || 'اکنون'}</div></div>
-              <div class="row-menu" onclick="event.stopPropagation()"><button class="row-menu-btn" aria-label="عملیات فرم" onclick="toggleRowMenu(event,'${menuId}')">⋮</button><div class="row-menu-panel" id="${menuId}"><div class="row-menu-item" onclick="openCaseFormDetail(${form.id})">مشاهده</div><div class="row-menu-item" onclick="openCaseFormBuilder(${form.id})">ویرایش</div><div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="deleteCaseForm(${form.id})">حذف</div></div></div>
+              <div class="row-menu" onclick="event.stopPropagation()"><button class="row-menu-btn" aria-label="عملیات فرم" onclick="toggleRowMenu(event,'${menuId}')">⋮</button><div class="row-menu-panel" id="${menuId}"><div class="row-menu-item" onclick="openCaseFormDetail(${form.id})">مشاهده</div><div class="row-menu-item" onclick="openCaseFormBuilder(${form.id})">ویرایش</div><div class="row-menu-divider"></div><div class="row-menu-item" onclick="printCaseForm(${form.id})">🖨️ پرینت</div><div class="row-menu-item" onclick="downloadCaseFormWord(${form.id})">📝 دانلود Word</div><div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="deleteCaseForm(${form.id})">حذف</div></div></div>
             </div>
             ${form.description ? `<div style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.7">${escapeHtml(form.description)}</div>` : ''}
           </div>`;
@@ -9342,6 +9349,57 @@ function copyCaseForm(id) {
   copyToClipboard(('# ' + form.title + '\n\n' + form.content).trim(), 'فرم کپی شد ✓');
 }
 
+function _caseFormDocumentHtml(form, autoPrint = false) {
+  const title = escapeHtml(form.title || 'فرم پرونده');
+  // جایگزینی رنگ‌های متغیر با رنگ‌های ثابت باعث می‌شود فایل .doc در Word هم
+  // مستقل از پوستهٔ تیرهٔ برنامه خوانا باشد.
+  const content = renderRich(form.content || '')
+    .replaceAll('var(--text)', '#1f2937')
+    .replaceAll('var(--text2)', '#4b5563')
+    .replaceAll('var(--text3)', '#6b7280')
+    .replaceAll('var(--accent2)', '#5b45d6')
+    .replaceAll('var(--border)', '#d1d5db')
+    .replaceAll('var(--border2)', '#e5e7eb')
+    .replaceAll('var(--bg2)', '#ffffff')
+    .replaceAll('var(--bg3)', '#f8fafc');
+  const printScript = autoPrint ? '<' + 'script>window.onload=()=>{window.focus();setTimeout(()=>window.print(),300);</' + 'script>' : '';
+  return `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>
+    *{box-sizing:border-box} body{direction:rtl;font-family:Tahoma,Arial,sans-serif;color:#1f2937;background:#fff;max-width:860px;margin:0 auto;padding:34px 40px;font-size:13px;line-height:2}
+    h1{font-size:21px;margin:0 0 5px;color:#111827} h2,h3,h4,h5,h6{color:#111827} .meta{font-size:11px;color:#6b7280;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid #e5e7eb}
+    table{width:100%;border-collapse:collapse;margin:14px 0} th,td{padding:8px 10px;border:1px solid #d1d5db;text-align:right;vertical-align:top} th{background:#f3f4f6;font-weight:700}
+    input,textarea{border:1px solid #9ca3af;border-radius:4px;min-height:26px;background:#fff} mark{background:#fef3c7;padding:1px 3px}@page{size:A4;margin:16mm}@media print{body{max-width:none;padding:0}.meta{margin-bottom:16px}}
+  </style></head><body><h1>${title}</h1>${form.description ? `<div class="meta">${escapeHtml(form.description)}</div>` : '<div class="meta">فرم پرونده · TeamPulse</div>'}<main>${content}</main>${printScript}</body></html>`;
+}
+
+function _caseFormFilename(form) {
+  return String(form?.title || 'فرم-پرونده').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 70) || 'فرم-پرونده';
+}
+
+function printCaseForm(id) {
+  const form = (_db.case_forms || []).find(item => +item.id === +id);
+  if (!form) return;
+  const popup = window.open('', '_blank', 'width=960,height=760');
+  if (!popup) { showToast('مرورگر اجازه بازکردن پنجره پرینت را نداد', 'error'); return; }
+  popup.document.open();
+  popup.document.write(_caseFormDocumentHtml(form, true));
+  popup.document.close();
+}
+
+function downloadCaseFormWord(id) {
+  const form = (_db.case_forms || []).find(item => +item.id === +id);
+  if (!form) return;
+  const blob = new Blob(['\ufeff' + _caseFormDocumentHtml(form)], { type: 'application/msword;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = _caseFormFilename(form) + '.doc';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  showToast('فایل Word آماده دانلود شد ✓', 'success');
+}
+
 function deleteCaseForm(id) {
   if (!confirm('این فرم حذف شود؟')) return;
   _db.case_forms = (_db.case_forms || []).filter(item => +item.id !== +id);
@@ -9352,7 +9410,7 @@ async function renderStudents(search = '') {
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی ${META.entitySingular || 'شاگرد'}..." oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجوی مشتری یا فرم..." aria-label="جستجوی مشتری یا فرم پرونده" oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
     </div>
     <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
       <button class="btn btn-primary" onclick="openCaseFormBuilder()" style="border-radius:0;border:none;box-shadow:none"><span class="btn-icon">+</span><span> افزودن فرم</span></button>
@@ -9382,7 +9440,7 @@ async function renderStudents(search = '') {
 
   let html = `
   ${studentSectionNav('students')}
-  ${renderCaseFormsSection()}
+  ${renderCaseFormsSection(search)}
   <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
       <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
