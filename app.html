@@ -6283,7 +6283,7 @@ window.api = {
       if(!m){m={id:_nextId('staff_monthly'),staff_id:s.id,jy:tjy,jm:tjm,fixed_salary:s.salary||0,roles,total,paid:false,paid_date:null,note:'',created_at:new Date().toISOString()};_db.staff_monthly.push(m);}
       else{m.fixed_salary=s.salary||0;m.roles=roles;m.total=total;}
       m.paid=true;m.paid_date=p.date;
-      const payment={id:_nextId('staff_payments'),staff_id:s.id,amount:total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
+      const payment={id:_nextId('staff_payments'),staff_id:s.id,monthly_id:m.id,amount:total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
       _db.staff_payments.push(payment);
       _syncStaffPaymentExpense(payment);
       const rem=_db.staff_reminders
@@ -6309,7 +6309,18 @@ window.api = {
     getByStaff: (id)=>_P(_db.staff_payments.filter(p=>p.staff_id===id).reverse()),
     add: (p)=>{ const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save(); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.staff_payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});if(Object.prototype.hasOwnProperty.call(p,'account_id'))pay.account_id=p.account_id||null;_syncStaffPaymentExpense(pay);_save();} return _P({ok:true}); },
-    delete: (id)=>{ const pay=_db.staff_payments.find(x=>x.id===id);_removeStaffPaymentExpense(pay);_db.staff_payments=_db.staff_payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    delete: (id)=>{
+      const pay=_db.staff_payments.find(x=>x.id===id);
+      if(!pay)return _P({ok:true});
+      // حذف یک پرداخت حقوق باید رکورد ماهانهٔ مرتبط را نیز از حالت «پرداخت‌شده»
+      // خارج کند؛ در غیر این صورت نمودار همچنان مبلغ حذف‌شده را نمایش می‌دهد.
+      let monthly=pay.monthly_id!=null?_db.staff_monthly.find(m=>String(m.id)===String(pay.monthly_id)):null;
+      if(!monthly&&String(pay.note||'').startsWith('حقوق ')) monthly=_db.staff_monthly.find(m=>m.staff_id===pay.staff_id&&m.paid&&m.paid_date===pay.date_jalali);
+      if(monthly){monthly.paid=false;monthly.paid_date=null;}
+      _removeStaffPaymentExpense(pay);
+      _db.staff_payments=_db.staff_payments.filter(x=>x.id!==id);
+      _save(); return _P({ok:true});
+    },
   },
 
   staffReminders: {
@@ -6355,7 +6366,18 @@ window.api = {
     getTrends: ()=>{
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
-      return _P(_db.staff.map(s=>{const records=[..._db.staff_monthly].filter(m=>m.staff_id===s.id).sort((a,b)=>(a.jy*100+a.jm)-(b.jy*100+b.jm));return{staff_id:s.id,name:s.name,lname:s.lname,months:records.map(r=>({label:`${JMONTHS[r.jm-1]} ${faNum(r.jy)}`,total:r.total,paid:r.paid,paid_date:r.paid_date,fixed_salary:r.fixed_salary||0,roles:r.roles||[]}))};}).filter(t=>t.months.length>=2));
+      return _P(_db.staff.map(s=>{
+        // روند «پرداخت» فقط از حقوقی که واقعاً پرداخت شده ساخته می‌شود. برای
+        // داده‌های قدیمیِ تکراری هم آخرین رکورد هر ماه نگه داشته می‌شود.
+        const byMonth=new Map();
+        _db.staff_monthly.filter(m=>m.staff_id===s.id&&m.paid).forEach(m=>{
+          const key=`${m.jy}-${m.jm}`;
+          const previous=byMonth.get(key);
+          if(!previous||Number(m.id)>Number(previous.id)) byMonth.set(key,m);
+        });
+        const records=[...byMonth.values()].sort((a,b)=>(a.jy*100+a.jm)-(b.jy*100+b.jm));
+        return{staff_id:s.id,name:s.name,lname:s.lname,months:records.map(r=>({label:`${JMONTHS[r.jm-1]} ${faNum(r.jy)}`,total:r.total,paid:true,paid_date:r.paid_date,fixed_salary:r.fixed_salary||0,roles:r.roles||[]}))};
+      }).filter(t=>t.months.length>=2));
     },
     add: (p)=>{
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
@@ -6363,11 +6385,20 @@ window.api = {
       const roles=(p.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.rate||0,count:r.count||1,amount:(r.rate||0)*(r.count||1)};});
       const total=(p.fixed_salary||0)+roles.reduce((a,r)=>a+r.amount,0);
       const item={id:_nextId('staff_monthly'),staff_id:p.staff_id,jy:p.jy,jm:p.jm,fixed_salary:p.fixed_salary||0,roles,total,paid:false,paid_date:null,note:p.note||'',created_at:new Date().toISOString()};
-      if(p.mark_paid){item.paid=true;item.paid_date=p.paid_date||null;const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:total,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),account_id:p.account_id||null,note:`حقوق ${JMONTHS[p.jm-1]} ${faNum(p.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);}
+      if(p.mark_paid){item.paid=true;item.paid_date=p.paid_date||null;const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,monthly_id:item.id,amount:total,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),account_id:p.account_id||null,note:`حقوق ${JMONTHS[p.jm-1]} ${faNum(p.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);}
       _db.staff_monthly.push(item); _save(); return _P({ok:true,id:item.id});
     },
-    markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;const payment={id:_nextId('staff_payments'),staff_id:m.staff_id,amount:m.total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.staff_monthly=_db.staff_monthly.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;const payment={id:_nextId('staff_payments'),staff_id:m.staff_id,monthly_id:m.id,amount:m.total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save();} return _P({ok:true}); },
+    delete: (id)=>{
+      const m=_db.staff_monthly.find(x=>x.id===id);
+      if(!m)return _P({ok:true});
+      const monthLabel=`حقوق ${['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'][m.jm-1]}`;
+      const yearLabel=String(m.jy).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
+      const linked=(_db.staff_payments||[]).find(p=>String(p.monthly_id)===String(m.id))||(_db.staff_payments||[]).find(p=>p.staff_id===m.staff_id&&String(p.note||'').includes(monthLabel)&&String(p.note||'').includes(yearLabel));
+      if(linked){_removeStaffPaymentExpense(linked);_db.staff_payments=_db.staff_payments.filter(p=>p.id!==linked.id);}
+      _db.staff_monthly=_db.staff_monthly.filter(x=>x.id!==id);
+      _save(); return _P({ok:true});
+    },
     updateMonth: (p)=>{
       const m=_db.staff_monthly.find(x=>x.id===p.id); if(!m) return _P({ok:false});
       // جلوگیری از تداخل با رکورد دیگه‌ای که از قبل همون ماه رو داره
