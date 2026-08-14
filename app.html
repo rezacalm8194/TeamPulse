@@ -22158,6 +22158,7 @@ async function attachFiles(entityType, entityId, existingAttachments) {
     document.body.appendChild(input);
 
     let resolved = false;
+    let selectionProcessing = false;
     const done = (val) => {
       if (resolved) return;
       resolved = true;
@@ -22166,6 +22167,7 @@ async function attachFiles(entityType, entityId, existingAttachments) {
     };
 
     input.onchange = async () => {
+      selectionProcessing = true;
       const files = Array.from(input.files || []);
       if (!files.length) { done(existingAttachments || []); return; }
       const newAttachments = [...(existingAttachments || [])];
@@ -22186,7 +22188,12 @@ async function attachFiles(entityType, entityId, existingAttachments) {
     // fallback: اگه dialog بدون انتخاب بسته شد
     const onFocus = () => {
       window.removeEventListener('focus', onFocus);
-      setTimeout(() => { if (!resolved) done(existingAttachments || []); }, 500);
+      // هنگام انتخاب فایل، بازگشت فوکوس مرورگر ممکن است پیش از پایانِ تبدیل
+      // فایل به Data URL رخ دهد. فقط وقتی واقعاً هیچ انتخابی انجام نشده است
+      // دیالوگ را لغو‌شده در نظر بگیر.
+      setTimeout(() => {
+        if (!resolved && !selectionProcessing && !(input.files && input.files.length)) done(existingAttachments || []);
+      }, 500);
     };
     window.addEventListener('focus', onFocus);
     input.click();
