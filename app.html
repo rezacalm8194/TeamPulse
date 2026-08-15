@@ -2376,26 +2376,34 @@ body.light mark { background: rgba(251,191,36,.5); }
   text-align: center; margin-bottom: 14px; letter-spacing: .04em;
 }
 .finance-nav {
-  position: sticky; top: 0; z-index: 24; display: flex; align-items: center; gap: 8px;
-  padding: 10px; margin: -4px 0 14px; border: 1px solid var(--border2); border-radius: 14px;
+  position: sticky; top: 0; z-index: 24; display: flex; align-items: stretch; gap: 10px;
+  padding: 12px; margin: -4px 0 16px; border: 1px solid var(--border2); border-radius: 16px;
   background: color-mix(in srgb, var(--bg2) 92%, transparent); backdrop-filter: blur(12px);
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
 }
-.finance-nav-label { font-size: 11px; font-weight: 800; color: var(--text3); padding: 0 5px; white-space: nowrap; }
-.finance-nav-main { display: flex; gap: 7px; flex: 1; }
-.finance-nav-btn { min-height: 38px; flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 6px; border: 1px solid var(--border2); border-radius: 10px; background: var(--bg3); color: var(--text2); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.finance-nav-btn:hover,.finance-nav-btn.active { border-color: var(--accent); background: rgba(124,106,247,.16); color: var(--accent2); }
-.finance-nav-more { flex: 0 0 auto; padding: 0 13px; }
+.finance-nav-label { display:flex;align-items:center;font-size:11px;font-weight:800;color:var(--text3);padding:0 6px;white-space:nowrap; }
+.finance-nav-main { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;flex:1; }
+.finance-nav-btn { min-height:64px;flex:1;display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border2);border-radius:13px;background:var(--bg3);color:var(--text2);font:inherit;text-align:right;cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease; }
+.finance-nav-btn:hover,.finance-nav-btn.active { border-color:var(--accent);background:rgba(124,106,247,.16);color:var(--accent2);transform:translateY(-1px); }
+.finance-nav-btn:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.finance-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:rgba(124,106,247,.12);color:currentColor;flex:0 0 auto}
+.finance-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.finance-nav-copy{display:flex;flex-direction:column;gap:3px;min-width:0}.finance-nav-title{font-size:13px;font-weight:800;color:var(--text)}.finance-nav-btn.active .finance-nav-title,.finance-nav-btn:hover .finance-nav-title{color:var(--accent2)}.finance-nav-desc{font-size:10px;color:var(--text3);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.finance-nav-more { flex:0 0 82px;justify-content:center;padding:8px;flex-direction:column;gap:3px; }
+.finance-dashboard-stats .stat-card{min-height:96px}.finance-advanced{margin-top:14px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2);overflow:hidden}.finance-advanced>summary{min-height:50px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;list-style:none;cursor:pointer;font-size:12px;font-weight:800}.finance-advanced>summary::-webkit-details-marker{display:none}.finance-advanced>summary::after{content:'⌄';font-size:20px;color:var(--accent2);transition:transform .2s}.finance-advanced[open]>summary::after{transform:rotate(180deg)}.finance-advanced[open]>summary{border-bottom:1px solid var(--border2)}.finance-advanced-body{padding:0 14px 14px}.finance-alerts{margin-top:14px;border-color:rgba(251,191,36,.24)}
 .finance-tools-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding-bottom:4px; }
 .finance-tool { min-height:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; border:1px solid var(--border2); border-radius:12px; background:var(--bg3); color:var(--text2); font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
 .finance-tool:hover { border-color:var(--accent); color:var(--accent2); }
 #sidebar .nav-item[data-page="payments"],#sidebar .nav-item[data-page="staff"],#sidebar .nav-item[data-page="transactions"] { display:none !important; }
 @media(max-width:768px){
-  .finance-nav { position: sticky; top: 0; margin: -2px -2px 12px; padding: 7px; gap: 6px; border-radius: 12px; }
+  .finance-nav { position:sticky;top:0;margin:-2px -2px 12px;padding:7px;gap:6px;border-radius:12px; }
   .finance-nav-label { display:none; }
   .finance-nav-main { gap:6px; }
-  .finance-nav-btn { min-width:0; min-height:44px; padding:5px 4px; font-size:10.5px; flex-direction:column; gap:1px; line-height:1.1; }
-  .finance-nav-btn .finance-icon { font-size:15px; }
+  .finance-nav-btn { min-width:0;min-height:58px;padding:7px 4px;flex-direction:column;justify-content:center;gap:3px;line-height:1.1;text-align:center; }
+  .finance-icon{width:25px;height:25px;border-radius:7px}.finance-icon svg{width:16px;height:16px}
+  .finance-nav-title{font-size:10.5px}.finance-nav-desc{display:none}
   .finance-nav-more { flex:0 0 54px; padding:5px 3px; }
+  .finance-dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.finance-dashboard-stats .stat-card{min-height:86px}
   .finance-tools-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 .bs-option {
@@ -13009,7 +13017,7 @@ async function renderDashboard() {
     ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',icon:'📈',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
   ];
 
-  const html = `<div class="stats-row" aria-label="خلاصه مالی ماه جاری">
+  const html = `<div class="stats-row finance-dashboard-stats" aria-label="خلاصه مالی ماه جاری">
     <div class="stat-card s-green">
       <div class="stat-label">درآمد دریافت‌شده</div>
       <div class="stat-value">${fmt(currentMonthIncome||0)}</div>
@@ -13032,20 +13040,25 @@ async function renderDashboard() {
     </div>
   </div>
 
-  ${budgetDashboardHtml(currentJalaliYear,currentJalaliMonth)}
-
-  ${cashForecastDashboardHtml()}
+  <div class="detail-section finance-alerts">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">⚠️ پیگیری‌های مالی</h3><span style="font-size:10px;color:var(--text3)">${fa(financialAlerts.length)} مورد</span></div>
+    ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${item.icon}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:12px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
+  </div>
 
   <div class="detail-section" style="margin-top:14px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div><h3 style="margin:0">📊 روند مالی ۶ ماه اخیر</h3><div style="font-size:10px;color:var(--text3);margin-top:4px">مقایسه درآمد و هزینه؛ عدد زیر هر ماه سود نقدی است</div></div><div style="display:flex;gap:10px;font-size:10px;color:var(--text2)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:4px"></i>درآمد</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-left:4px"></i>هزینه</span></div></div>
     <div style="display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:4px 2px 2px">${financialTrendHtml}</div>
   </div>
 
-  <div class="dash-grid" style="margin-top:14px">
-    <div class="detail-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">⚠️ پیگیری‌های مالی</h3><span style="font-size:10px;color:var(--text3)">${fa(financialAlerts.length)} مورد</span></div>
-      ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${item.icon}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:18px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
+  <details class="finance-advanced">
+    <summary><span>گزارش‌ها و برنامه‌ریزی پیشرفته <small style="display:block;margin-top:3px;color:var(--text3);font-size:10px;font-weight:500">بودجه ماه و پیش‌بینی جریان نقدی</small></span></summary>
+    <div class="finance-advanced-body">
+      ${budgetDashboardHtml(currentJalaliYear,currentJalaliMonth)}
+      ${cashForecastDashboardHtml()}
     </div>
+  </details>
+
+  <div class="dash-grid" style="margin-top:14px;grid-template-columns:1fr">
     <div class="detail-section">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">🧾 خلاصه هزینه‌ها</h3><button class="btn btn-ghost btn-sm" onclick="openExpenseManager()">مدیریت</button></div>
       <div class="detail-row"><span class="detail-key">هزینه ${escapeHtml(currentMonthLabel||'ماه جاری')}</span><span class="detail-val" style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</span></div>
@@ -20075,7 +20088,10 @@ function initAmountHints() {
 function _isFinancePage(page=currentPage) { return ['dashboard','payments','staff','transactions'].includes(page); }
 function _financeNavHtml() {
   const active=currentPage==='payments'?'income':currentPage==='staff'?'staff':'';
-  return `<nav class="finance-nav" aria-label="ابزارهای مالی"><span class="finance-nav-label">مدیریت مالی</span><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">📈</span><span>درآمد</span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">🧾</span><span>هزینه</span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">💼</span><span>پرسنل</span></button></div><button class="finance-nav-btn finance-nav-more" onclick="openFinanceTools()"><span class="finance-icon">•••</span><span>بیشتر</span></button></nav>`;
+  const incomeIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m6 9V5m6 13v-7m4-5-5 5-4-3-6 6"/></svg>';
+  const expenseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/></svg>';
+  const staffIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.5-4 2.5-6 5.5-6s5 2 5.5 6M16 8h5m-2.5-2.5v5"/></svg>';
+  return `<nav class="finance-nav" aria-label="بخش‌های اصلی مدیریت مالی"><span class="finance-nav-label">مدیریت مالی</span><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">${incomeIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">درآمد</span><span class="finance-nav-desc">فروش و دریافت مشتریان</span></span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">${expenseIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">هزینه</span><span class="finance-nav-desc">ثبت و مدیریت پرداخت‌ها</span></span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">${staffIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">پرسنل</span><span class="finance-nav-desc">حقوق و حساب پرسنل</span></span></button></div><button class="finance-nav-btn finance-nav-more" onclick="openFinanceTools()" aria-label="ابزارهای مالی بیشتر"><span class="finance-icon">•••</span><span class="finance-nav-title">بیشتر</span></button></nav>`;
 }
 function openFinanceDestination(destination) {
   if(destination==='expense'){openExpenseManager();return;}
