@@ -4967,6 +4967,7 @@ function _migrate(d) {
   });
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
+  _dedupeExactPackages(d);
   d._nextId = d._nextId||{};
   ['students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
@@ -4975,6 +4976,51 @@ function _migrate(d) {
   });
   _syncServiceCatalogs(d);
   return d;
+}
+
+function _packageExactKey(p) {
+  return [
+    p?.student_id, p?.type_id, p?.staff_id || '', Number(p?.total_amount || 0),
+    Number(p?.initial_cost || 0), Number(p?.repeat_months || 0),
+    String(p?.start_date || ''), String(p?.payment_due_date || p?.start_date || ''),
+    String(p?.note || '').trim()
+  ].map(value => String(value ?? '')).join('\u001f');
+}
+
+function _dedupeExactPackages(d) {
+  if (!Array.isArray(d?.packages) || d.packages.length < 2) return 0;
+  d._deletedItems = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
+  d._deletedItems.packages = d._deletedItems.packages && typeof d._deletedItems.packages === 'object'
+    ? d._deletedItems.packages
+    : {};
+  const keptByKey = new Map();
+  const removedToKept = new Map();
+  const cleaned = [];
+  d.packages.forEach(pkg => {
+    const key = _packageExactKey(pkg);
+    const kept = keptByKey.get(key);
+    const createdTime = Date.parse(pkg?.created_at || '') || 0;
+    const keptTime = Date.parse(kept?.created_at || '') || 0;
+    const clearlySameSubmission = !!kept && (!createdTime || !keptTime || Math.abs(createdTime - keptTime) <= 2 * 60 * 1000);
+    if (!clearlySameSubmission) {
+      keptByKey.set(key, pkg);
+      cleaned.push(pkg);
+      return;
+    }
+    removedToKept.set(String(pkg.id), kept.id);
+    d._deletedItems.packages[String(pkg.id)] = new Date().toISOString();
+  });
+  if (!removedToKept.size) return 0;
+  (d.payments || []).forEach(item => {
+    const keptId = removedToKept.get(String(item.package_id));
+    if (keptId != null) item.package_id = keptId;
+  });
+  (d.reminders || []).forEach(item => {
+    const keptId = removedToKept.get(String(item.package_id));
+    if (keptId != null) item.package_id = keptId;
+  });
+  d.packages = cleaned;
+  return removedToKept.size;
 }
 
 function _recordDeletedItems(collection, ids) {
@@ -5913,7 +5959,13 @@ window.api = {
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
-      _db.packages.push({id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:p.payment_due_date||startDate,note:p.note||''});
+      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:p.payment_due_date||startDate,note:p.note||'',created_at:new Date().toISOString()};
+      const duplicate=_db.packages.find(existing=>{
+        const age=Date.now()-(Date.parse(existing.created_at||'')||0);
+        return age>=0&&age<=15000&&_packageExactKey(existing)===_packageExactKey(newPackage);
+      });
+      if(duplicate)return _P({ok:true,id:duplicate.id,deduplicated:true});
+      _db.packages.push(newPackage);
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       _save(); return _P({ok:true,id:pkgId});
@@ -9892,6 +9944,9 @@ function openNewPurchase(studentId, preset = {}) {
 }
 
 async function saveNewPurchase(studentId, reminderId = 0) {
+  if (window._savingNewPurchase) return;
+  window._savingNewPurchase = true;
+  try {
   const type_id = await resolvePurchaseTypeId('np');
   const date = document.getElementById('np-date')?.value;
   const paymentDueDate = document.getElementById('np-payment-due')?.value || date;
@@ -9929,6 +9984,9 @@ async function saveNewPurchase(studentId, reminderId = 0) {
   else if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments();
   else if (currentPage === 'payments') await renderPayments();
   else await renderStudents();
+  } finally {
+    window._savingNewPurchase = false;
+  }
 }
 
 // ── Wallet adjust modal ────────────────────────────────────────────────────────
