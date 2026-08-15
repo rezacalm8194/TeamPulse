@@ -4884,6 +4884,7 @@ function _freshData() {
     todos:[],
     staff_role_entries:[],
     _user_wallet:null,
+    _deletedItems:{},
     instructions:[],
     guide_categories:[], guide_items:[], case_forms:[],
     archive_columns:['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','نحوه آشنایی','توضیحات','وضعیت ارتباط','شروع همکاری'],
@@ -4906,6 +4907,7 @@ function _migrate(d) {
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
   d.package_types = d.package_types || [];
+  d._deletedItems = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
   ['families','students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
@@ -4973,6 +4975,21 @@ function _migrate(d) {
   });
   _syncServiceCatalogs(d);
   return d;
+}
+
+function _recordDeletedItems(collection, ids) {
+  if (!collection) return;
+  const deletedIds = (Array.isArray(ids) ? ids : [ids])
+    .filter(id => id !== null && id !== undefined)
+    .map(id => String(id));
+  if (!deletedIds.length) return;
+  _db._deletedItems = _db._deletedItems && typeof _db._deletedItems === 'object' ? _db._deletedItems : {};
+  const tombstones = _db._deletedItems[collection] && typeof _db._deletedItems[collection] === 'object'
+    ? _db._deletedItems[collection]
+    : {};
+  const deletedAt = new Date().toISOString();
+  deletedIds.forEach(id => { tombstones[id] = deletedAt; });
+  _db._deletedItems[collection] = tombstones;
 }
 
 function _load() {
@@ -5902,7 +5919,14 @@ window.api = {
       _save(); return _P({ok:true,id:pkgId});
     },
     update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:p.payment_due_date??pkg.payment_due_date??p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.packages=_db.packages.filter(x=>x.id!==id); _db.reminders=_db.reminders.filter(x=>x.package_id!==id); _save(); return _P({ok:true}); },
+    delete: (id)=>{
+      const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
+      _recordDeletedItems('packages',id);
+      _recordDeletedItems('reminders',reminderIds);
+      _db.packages=_db.packages.filter(x=>String(x.id)!==String(id));
+      _db.reminders=_db.reminders.filter(x=>String(x.package_id)!==String(id));
+      _save(); return _P({ok:true});
+    },
   },
 
   wallet: {
@@ -22913,17 +22937,42 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
   ];
   const merged = ownerData;
   merged._nextId = merged._nextId || {};
+  merged._deletedItems = merged._deletedItems && typeof merged._deletedItems === 'object' ? merged._deletedItems : {};
+  const localDeleted = localBeforeLoad._deletedItems && typeof localBeforeLoad._deletedItems === 'object'
+    ? localBeforeLoad._deletedItems
+    : {};
+
+  Object.entries(localDeleted).forEach(([key, tombstones]) => {
+    if (!tombstones || typeof tombstones !== 'object') return;
+    merged._deletedItems[key] = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
+      ? merged._deletedItems[key]
+      : {};
+    Object.entries(tombstones).forEach(([id, deletedAt]) => {
+      const remoteDeletedAt = merged._deletedItems[key][id] || '';
+      if (!remoteDeletedAt || String(deletedAt || '') >= String(remoteDeletedAt)) {
+        merged._deletedItems[key][id] = deletedAt || new Date().toISOString();
+      }
+    });
+  });
 
   collections.forEach(key => {
     const localArr = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
-    if (!localArr.length) return;
-    const serverArr = Array.isArray(merged[key]) ? merged[key] : [];
+    const tombstones = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
+      ? merged._deletedItems[key]
+      : {};
+    const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
+      .filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
+    if (!localArr.length) {
+      merged[key] = serverArr;
+      return;
+    }
     const byId = new Map(serverArr.map(item => [String(item.id), item]));
     let maxId = Math.max(0, ...(serverArr.map(item => +item.id || 0)), +(merged._nextId[key] || 1) - 1);
 
     localArr.forEach(localItem => {
       if (!localItem || localItem.id == null) return;
       const idKey = String(localItem.id);
+      if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) return;
       const serverItem = byId.get(idKey);
       if (!serverItem) {
         serverArr.push(_cloneData(localItem));
