@@ -2038,6 +2038,21 @@ body.light mark { background: rgba(251,191,36,.5); }
 .topic-item-date { font-size: 10px; color: var(--text3); margin-bottom: 4px; }
 .topic-item-excerpt { font-size: 11px; color: var(--text2); line-height: 1.6; cursor: pointer; }
 .topic-copy-btn { margin-top: 6px; font-size: 10px; }
+.topics-section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 12px; margin-bottom: 8px;
+}
+.topics-section-head .form-section { margin: 0; flex: 1; }
+.topics-show-all-btn { flex: 0 0 auto; min-height: 36px; }
+.topics-all-list { display: grid; gap: 10px; max-height: 60vh; overflow-y: auto; padding: 2px; }
+.topics-all-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.topics-all-title { font-size: 14px; font-weight: 800; margin: 3px 0 7px; }
+.topics-all-text { color: var(--text2); font-size: 12px; line-height: 1.85; overflow-wrap: anywhere; }
+.topics-all-checklist { margin: 9px 0 0; padding: 8px 12px; background: var(--bg2); border-radius: 8px; font-size: 11px; line-height: 1.9; }
+@media (max-width: 480px) {
+  .topics-section-head { align-items: stretch; flex-direction: column; }
+  .topics-show-all-btn { width: 100%; min-height: 44px; }
+}
 
 /* ── Checklist (inside topic detail) ─────────────────────────────────── */
 .checklist-item {
@@ -19525,7 +19540,10 @@ async function openTopics(studentId, displayName) {
         <button class="btn btn-ghost" onclick="_addNewTopicChecklistItem()">+ اضافه</button>
       </div>
     </div>
-    <div class="form-section">موضوعات ثبت‌شده</div>
+    <div class="topics-section-head">
+      <div class="form-section">موضوعات ثبت‌شده</div>
+      ${topics.length ? `<button class="btn btn-ghost btn-sm topics-show-all-btn" type="button" onclick="openAllTopics(${studentId}, decodeURIComponent('${encodeURIComponent(displayName)}'))">نمایش و کپی همه</button>` : ''}
+    </div>
     <div id="topics-list">
       ${topics.length === 0
         ? '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>'
@@ -19544,6 +19562,50 @@ async function openTopics(studentId, displayName) {
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
   initDatePickers();
+}
+
+function _topicPlainText(value) {
+  const el = document.createElement('div');
+  el.innerHTML = String(value || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n');
+  return (el.textContent || '').replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function openAllTopics(studentId, displayName) {
+  const topics = await window.api.topics.getByStudent(studentId);
+  const sortedTopics = topics.slice().sort((a, b) => jalaliKey(b.date_jalali) - jalaliKey(a.date_jalali) || b.id - a.id);
+  const divider = '\n\n--------------------\n\n';
+  const topicCopyEntries = sortedTopics.map((t, index) => {
+      const checklist = (t.checklist || []).map(c => `${c.done ? '☑' : '☐'} ${_topicPlainText(c.text)}`).join('\n');
+      return [
+        `${index + 1}. ${_topicPlainText(t.title) || '(بدون عنوان)'}`,
+        `تاریخ: ${DateService.disp(t.date_jalali)}`,
+        _topicPlainText(t.text),
+        checklist ? `چک‌لیست:\n${checklist}` : ''
+      ].filter(Boolean).join('\n');
+    });
+  window._allTopicsCopyText = sortedTopics.length
+    ? `همه موضوعات مهم — ${displayName}\n\n${topicCopyEntries.join(divider)}`
+    : `همه موضوعات مهم — ${displayName}\n\nهنوز موضوعی ثبت نشده`;
+
+  const body = sortedTopics.length ? sortedTopics.map(t => {
+    const checklist = t.checklist || [];
+    return `<article class="topics-all-item">
+      <div class="topic-item-date">${DateService.disp(t.date_jalali)}</div>
+      <div class="topics-all-title">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
+      ${t.text ? `<div class="topics-all-text">${renderRich(t.text)}</div>` : ''}
+      ${checklist.length ? `<div class="topics-all-checklist">${checklist.map(c => `<div>${c.done ? '☑' : '☐'} ${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
+    </article>`;
+  }).join('') : '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>';
+
+  openModal(`همه موضوعات مهم — ${displayName}`, `
+    <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
+      <button class="btn btn-primary btn-sm" type="button" onclick="copyToClipboard(window._allTopicsCopyText || '', 'همه موضوعات کپی شد ✓')" style="min-width:150px">کپی همه موضوعات</button>
+    </div>
+    <div class="topics-all-list">${body}</div>
+  `, [
+    { label: 'کپی همه موضوعات', cls: 'btn-ghost', action: `copyToClipboard(window._allTopicsCopyText || '', 'همه موضوعات کپی شد ✓')` },
+    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
+  ]);
 }
 
 async function openCopyTopic(topicId, fromStudentId) {
