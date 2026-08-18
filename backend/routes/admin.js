@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
+const { logger } = require('../utils/logger');
 webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
 function adminOnly(req, res, next) {
@@ -293,7 +294,13 @@ router.post('/users', auth, adminOnly, async (req, res) => {
 
 router.put('/users/:id/role', auth, adminOnly, (req, res) => {
   try {
+    const previous = db.prepare('SELECT role FROM accounts WHERE id=?').get(req.params.id);
     db.prepare("UPDATE accounts SET role=?,updated_at=datetime('now') WHERE id=?").run(req.body.role, req.params.id);
+    logger.audit('role_changed', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: req.params.id,
+      entityType: 'account', entityId: req.params.id,
+      metadata: { from: previous?.role || null, to: req.body.role },
+    });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

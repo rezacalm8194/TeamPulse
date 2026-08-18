@@ -20,6 +20,7 @@ backend/.env*
 !backend/.env.example
 
 # Runtime and debug files
+node_modules/
 backend/.speech-debug/
 backend/archive/
 
@@ -30,3 +31,6 @@ backend/speech-models/
 backend/database/*.db
 backend/database/*.db-shm
 backend/database/*.db-wal
+logs/
+*.log
+*.log.*

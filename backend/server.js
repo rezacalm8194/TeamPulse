@@ -3,11 +3,34 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const { randomUUID } = require('crypto');
 const db = require('./config/database');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { logger } = require('./utils/logger');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
+app.use((req, res, next) => {
+  req.requestId = String(req.headers['x-request-id'] || randomUUID()).slice(0, 128);
+  res.setHeader('X-Request-ID', req.requestId);
+  const startedAt = Date.now();
+  const isSync = req.path.startsWith('/api/data/') || req.path.startsWith('/api/sync');
+  if (isSync) logger.info('sync_started', { requestId: req.requestId, method: req.method, path: req.path });
+  res.on('finish', () => {
+    const fields = {
+      requestId: req.requestId,
+      userId: req.user?.id,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      duration: Date.now() - startedAt,
+    };
+    if (isSync) logger[res.statusCode >= 400 ? 'error' : 'info'](res.statusCode >= 400 ? 'sync_failed' : 'sync_success', fields);
+    if (res.statusCode === 403) logger.warn('permission_denied', { ...fields, ip: req.ip });
+    if (res.statusCode >= 500) logger.error('api_error', fields);
+  });
+  next();
+});
 try {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(lower(trim(email)))');
 } catch (error) {
@@ -66,7 +89,8 @@ function sanitizeServerErrors(req, res, next) {
   const originalJson = res.json.bind(res);
   res.json = body => {
     if (process.env.NODE_ENV === 'production' && res.statusCode >= 500 && body && typeof body === 'object') {
-      console.error('[server-error-response]', {
+      logger.error('server_error_response', {
+        requestId: req.requestId,
         path: req.originalUrl,
         status: res.statusCode,
         error: body.error || null,
@@ -169,5 +193,19 @@ app.use(express.static(path.join(__dirname, '../'), {
   setHeaders: setStaticCacheHeaders,
 }));
 app.use(applyCsp, (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
-app.listen(PORT, () => console.log('TeamPulse API on port ' + PORT));
+const server = app.listen(PORT, () => logger.info('application_started', { port: PORT }));
+let shuttingDown = false;
+function shutdownAfterFatal(event, error) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.fatal(event, { error });
+  server.close(() => process.exit(1));
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+process.on('unhandledRejection', reason => {
+  shutdownAfterFatal('unhandled_rejection', reason instanceof Error ? reason : String(reason));
+});
+process.on('uncaughtException', error => {
+  shutdownAfterFatal('uncaught_exception', error);
+});
 module.exports = app;

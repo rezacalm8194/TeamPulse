@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const auth = require('../middleware/auth');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
+const { logger } = require('../utils/logger');
 
 ensureTeamAccessSchema(db);
 try { db.exec('ALTER TABLE accounts ADD COLUMN phone TEXT'); } catch {}
@@ -69,8 +70,10 @@ router.post('/register', (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
     const token = sign({ id, email, role: 'owner' });
+    logger.info('registration_success', { requestId: req.requestId, userId: id });
     res.status(201).json({ token, user: { id, name, email, phone, business_name, role: 'owner' } });
   } catch (e) {
+    logger.error('registration_failed', { requestId: req.requestId, error: e });
     if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
       return res.status(409).json({ error: 'email already exists' });
     }
@@ -93,11 +96,15 @@ router.post('/login', (req, res) => {
       ORDER BY datetime(created_at) ASC, rowid ASC
     `).all(email);
     const user = candidates.find(candidate => bcrypt.compareSync(password, candidate.password));
-    if (!user)
+    if (!user) {
+      logger.warn('login_failed', { requestId: req.requestId, ip: req.ip, reason: 'invalid_credentials' });
       return res.status(401).json({ error: 'invalid credentials' });
+    }
     const token = sign({ id: user.id, email: user.email, role: user.role });
+    logger.info('login_success', { requestId: req.requestId, userId: user.id, ip: req.ip });
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '', business_name: user.business_name, role: user.role } });
   } catch (e) {
+    logger.error('login_error', { requestId: req.requestId, error: e });
     res.status(500).json({ error: e.message });
   }
 });
@@ -140,10 +147,21 @@ router.post('/team-invite/grant', auth, (req, res) => {
         updated_at=datetime('now')
     `).run(req.user.id, workspaceId, memberEmail, staffId, inviteId,
       JSON.stringify(permissions), JSON.stringify(instructionFolders));
+    logger.audit('permission_changed', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: null,
+      entityType: 'team_access_grant', entityId: inviteId,
+      metadata: { workspaceId, action: 'granted', permissionKeys: permissions },
+    });
     res.json({ success: true, permissions, instructionFolders });
   } catch (e) {
+    logger.error('permission_change_failed', { requestId: req.requestId, userId: req.user.id, error: e });
     res.status(500).json({ error: e.message });
   }
+});
+
+router.post('/logout', auth, (req, res) => {
+  logger.info('logout', { requestId: req.requestId, userId: req.user.id, ip: req.ip });
+  res.json({ success: true });
 });
 
 router.delete('/team-invite/grant', auth, (req, res) => {
@@ -158,6 +176,11 @@ router.delete('/team-invite/grant', auth, (req, res) => {
       ON CONFLICT(owner_account_id,workspace_id,member_email) DO UPDATE SET
         status='revoked', updated_at=datetime('now')
     `).run(req.user.id, workspaceId, memberEmail);
+    logger.audit('permission_changed', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: null,
+      entityType: 'team_access_grant', entityId: workspaceId,
+      metadata: { workspaceId, action: 'revoked' },
+    });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

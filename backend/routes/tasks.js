@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { randomUUID } = require('crypto');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
+const { logger } = require('../utils/logger');
 
 function ensureTaskChecklistSchema() {
   const cols = new Set(db.prepare("PRAGMA table_info(tasks)").all().map(c => c.name));
@@ -90,6 +91,14 @@ router.post('/', auth, (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id, req.user.id, req.user.id, req.user.id, client_id||null, assignee_id||null, visibility||'private', JSON.stringify(shared_with||[]), title, description||null, manager_note||description||null, priority||'medium', status||'open', due_date||null, due_time||null, requires_report||'none', requires_attachment||'none', requires_approval?1:0, recurrence_rule||null, occurrence_date||due_date||null);
     addHistory(id, req.user.id, 'created', null, req.body);
+    logger.audit('task_created', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: assignee_id || null,
+      entityType: 'task', entityId: id, metadata: { status: status || 'open' },
+    });
+    if (assignee_id) logger.audit('task_assigned', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: assignee_id,
+      entityType: 'task', entityId: id, metadata: {},
+    });
     res.status(201).json(db.prepare('SELECT * FROM tasks WHERE id=?').get(id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -108,6 +117,19 @@ router.put('/:id', auth, (req, res) => {
     db.prepare(`UPDATE tasks SET title=?,description=?,manager_note=?,priority=?,status=?,due_date=?,due_time=?,assignee_id=?,visibility=?,shared_with=?,requires_report=?,requires_attachment=?,requires_approval=?,staff_report=?,report_updated_at=?,completed_by=?,completed_at=?,recurrence_rule=?,occurrence_date=?,updated_at=datetime("now") WHERE id=?`)
       .run(next.title, next.description||null, next.manager_note||null, next.priority||'medium', next.status||'open', next.due_date||null, next.due_time||null, next.assignee_id||null, next.visibility||'private', JSON.stringify(next.shared_with||parseShared(next.shared_with)), next.requires_report||'none', next.requires_attachment||'none', next.requires_approval?1:0, next.staff_report||null, next.report_updated_at||null, next.completed_by||null, next.completed_at||null, next.recurrence_rule||null, next.occurrence_date||next.due_date||null, req.params.id);
     addHistory(req.params.id, req.user.id, 'updated', existing, next);
+    const changedFields = Object.keys(req.body).filter(key => String(existing[key] ?? '') !== String(next[key] ?? ''));
+    logger.audit('task_updated', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: next.assignee_id || null,
+      entityType: 'task', entityId: req.params.id, metadata: { changedFields },
+    });
+    if (String(existing.assignee_id || '') !== String(next.assignee_id || '')) logger.audit('task_assigned', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: next.assignee_id || null,
+      entityType: 'task', entityId: req.params.id, metadata: { previousTargetUserId: existing.assignee_id || null },
+    });
+    if (String(existing.status || '') !== String(next.status || '')) logger.audit('task_status_changed', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: next.assignee_id || null,
+      entityType: 'task', entityId: req.params.id, metadata: { from: existing.status, to: next.status },
+    });
     res.json(db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -118,6 +140,10 @@ router.delete('/:id', auth, (req, res) => {
     if (!canManageTask(req, existing)) return res.status(403).json({ error: 'forbidden' });
     db.prepare('DELETE FROM tasks WHERE id=? AND account_id=?').run(req.params.id, req.user.id);
     addHistory(req.params.id, req.user.id, 'deleted', existing, null);
+    logger.audit('task_deleted', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: existing.assignee_id || null,
+      entityType: 'task', entityId: req.params.id, metadata: {},
+    });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

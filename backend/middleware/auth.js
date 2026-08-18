@@ -1,4 +1,5 @@
 const { verify } = require('../utils/jwt');
+const { logger } = require('../utils/logger');
 
 module.exports = (req, res, next) => {
   const header = req.headers.authorization;
@@ -13,12 +14,16 @@ module.exports = (req, res, next) => {
     token = req.query.token;
   }
   if (!token) {
+    logger.warn('unauthorized_access', { requestId: req.requestId, path: req.path, ip: req.ip });
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
     req.user = verify(token);
     next();
-  } catch {
+  } catch (error) {
+    logger.warn(error.name === 'TokenExpiredError' ? 'session_expired' : 'invalid_token', {
+      requestId: req.requestId, path: req.path, ip: req.ip, errorCode: error.name,
+    });
     res.status(401).json({ error: 'invalid token' });
   }
 };
