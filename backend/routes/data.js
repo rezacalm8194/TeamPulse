@@ -3,6 +3,8 @@ const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { createHash } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
+const { logger } = require('../utils/logger');
+const { diffTodos, emitTodoAudit } = require('../utils/todoAudit');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -399,6 +401,24 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   const canDeleteTodos = permissions.includes('todo_delete') ||
     permissions.includes('todo_manage_staff') ||
     permissions.includes('todo_edit_manager');
+  const canCompleteAssigned = permissions.includes('todo_complete_own') ||
+    permissions.includes('todo_edit_manager') ||
+    permissions.includes('todo_manage_staff');
+  // Completing a recurring todo creates an archived snapshot and advances the
+  // original row to its next occurrence. The snapshot is not a user-created
+  // task, so it must be accepted with completion permission even when the
+  // member is not allowed to create arbitrary todos.
+  const validCompletionSnapshots = incomingTodos.filter(todo => {
+    if (!canCompleteAssigned || !todo || !todo._snapshot || !todo.archived || !todo.done) return false;
+    if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return false;
+    const root = String(todoRootId(todo));
+    return previousTodos.some(oldTodo =>
+      String(todoRootId(oldTodo)) === root &&
+      todoAssignedToMember(oldTodo, memberEmail, ownStaffIds) &&
+      todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)
+    );
+  });
+  const completedRoots = new Set(validCompletionSnapshots.map(todo => String(todoRootId(todo))));
   const nextTodos = previousTodos.map(oldTodo => {
     if (
       canDeleteTodos &&
@@ -430,6 +450,10 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
     const nextStatus = canCompleteOwn
       ? (nextDone ? (incoming.status || oldTodo.status || 'completed') : (incoming.status || 'pending'))
       : oldTodo.status;
+    const completedRecurringOccurrence = canCompleteOwn &&
+      completedRoots.has(String(todoRootId(oldTodo))) &&
+      oldTodo.repeat && oldTodo.repeat !== 'none' &&
+      !incoming.done;
     return {
       ...oldTodo,
       done: nextDone,
@@ -443,15 +467,25 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
       report_updated_at: canReportOwn ? (incoming.report_updated_at || oldTodo.report_updated_at || null) : oldTodo.report_updated_at,
       history: incoming.history || oldTodo.history,
       updated_at: incoming.updated_at || oldTodo.updated_at,
+      ...(completedRecurringOccurrence ? {
+        date_jalali: incoming.date_jalali || oldTodo.date_jalali,
+        scheduled_date: incoming.scheduled_date || incoming.scheduledDate || oldTodo.scheduled_date,
+        scheduledDate: incoming.scheduledDate || incoming.scheduled_date || oldTodo.scheduledDate,
+        occurrence_date: incoming.occurrence_date || incoming.scheduled_date || incoming.date_jalali || oldTodo.occurrence_date,
+        recurrence_parent_id: incoming.recurrence_parent_id || todoRootId(oldTodo),
+        archived: false,
+      } : {}),
     };
   }).filter(Boolean);
-  if (permissions.includes('todo_create_self')) {
+  if (permissions.includes('todo_create_self') || validCompletionSnapshots.length) {
+    const completionSnapshotIds = new Set(validCompletionSnapshots.map(todo => String(todo.id)));
     incomingTodos.forEach(todo => {
       if (previousTodos.some(x => String(x.id) === String(todo.id))) return;
       // شناسه‌ای که قبلاً توسط صاحب حساب حذف شده هرگز از نسخهٔ محلیِ پرسنل
       // دوباره زنده نمی‌شود؛ فقط شناسه‌های واقعاً جدید پذیرفته می‌شوند.
       if (tombstones.has(String(todo.id))) return;
       if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return;
+      if (!permissions.includes('todo_create_self') && !completionSnapshotIds.has(String(todo.id))) return;
       nextTodos.push(todo);
     });
   }
@@ -478,8 +512,8 @@ function handleSaveData(req, res) {
     // to provide it and never store an unlabelled secondary document.
     data._workspaceId = workspace.workspaceId;
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
+    let previousData = null;
     if (existing) {
-      let previousData = null;
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
       const currentEtag = dataEtag(existing.data);
       // Team-member writes are merged field-by-field below. Owner/admin writes
@@ -524,6 +558,21 @@ function handleSaveData(req, res) {
       db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
     }
     const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
+    let savedData = null;
+    try { savedData = saved?.data ? JSON.parse(saved.data) : null; } catch {}
+    // Audit is strictly post-commit and best-effort. No diff or log failure may
+    // turn an already-successful database save into a failed sync response.
+    try {
+      emitTodoAudit(logger, req, diffTodos(previousData?.todos, savedData?.todos));
+    } catch (auditError) {
+      try {
+        logger.error('todo_audit_failed', {
+          requestId: req.requestId,
+          userId: req.user?.id,
+          errorCode: auditError?.code || auditError?.name || 'AUDIT_DIFF_FAILED',
+        });
+      } catch {}
+    }
     res.json({ success: true, updated_at: saved?.updated_at || null, etag: dataEtag(saved?.data) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
