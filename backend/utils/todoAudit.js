@@ -53,6 +53,19 @@ function assigneeId(todo) {
   return value == null || value === '' ? null : String(value);
 }
 
+function recurringSnapshotIdentity(todo) {
+  if (!todo?._snapshot || !todo?.archived || !isDone(todo)) return null;
+  const snapshotId = todoId(todo);
+  const rootTodoId = todo?.recurrence_parent_id ?? todo?.recurring_parent_id ?? todo?.parent_todo_id;
+  if (!snapshotId || rootTodoId == null || rootTodoId === '') return null;
+  const occurrence = todo?.occurrence_date ?? todo?.scheduled_date ?? todo?.scheduledDate ?? todo?.date_jalali ?? null;
+  return {
+    snapshotId,
+    rootTodoId: String(rootTodoId),
+    occurrence: occurrence == null || occurrence === '' ? null : String(occurrence),
+  };
+}
+
 function changedUpdateFields(previous, next, { completionChanged, assigneeChanged }) {
   const fields = Object.entries(UPDATED_FIELD_READERS)
     .filter(([, read]) => stableValue(read(previous)) !== stableValue(read(next)))
@@ -75,12 +88,14 @@ function diffTodos(previousTodos, nextTodos) {
     if (!previous) {
       // Recurrence snapshots represent completion history, not a user-created todo.
       if (next?._snapshot && next?.archived) {
-        if (isDone(next)) {
+        const identity = recurringSnapshotIdentity(next);
+        if (identity) {
           changes.push({
             event: 'todo_completed',
-            entityId: String(next.recurrence_parent_id || next.recurring_parent_id || next.parent_todo_id || id),
+            entityId: identity.snapshotId,
             targetUserId: assigneeId(next),
-            metadata: { previousDone: false, nextDone: true, previousStatus: 'pending', nextStatus: todoStatus(next) },
+            metadata: { rootTodoId: identity.rootTodoId, occurrence: identity.occurrence },
+            recurringSnapshot: true,
           });
         }
       } else {
@@ -158,4 +173,4 @@ function emitTodoAudit(logger, req, changes) {
   }
 }
 
-module.exports = { diffTodos, emitTodoAudit, isDone, assigneeId };
+module.exports = { diffTodos, emitTodoAudit, isDone, assigneeId, recurringSnapshotIdentity };

@@ -44,21 +44,23 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
 
   const port = 32194;
   const vapid = webpush.generateVAPIDKeys();
-  const child = spawn(process.execPath, ['server.js'], {
-    cwd: backendDir,
-    env: {
+  const serverEnv = {
       ...process.env, PORT: String(port), DB_PATH: testDb, LOG_DIR: logDir,
       JWT_SECRET: 'todo-audit-test-secret', NODE_ENV: 'test',
       VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+  };
+  const startServer = () => spawn(process.execPath, ['server.js'], {
+    cwd: backendDir, env: serverEnv, stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const stopServer = async processToStop => {
+    if (processToStop.exitCode != null) return;
+    const exited = new Promise(resolve => processToStop.once('exit', resolve));
+    processToStop.kill();
+    await exited;
+  };
+  let child = startServer();
   t.after(async () => {
-    if (child.exitCode == null) {
-      const exited = new Promise(resolve => child.once('exit', resolve));
-      child.kill();
-      await exited;
-    }
+    await stopServer(child);
     fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await waitForServer(port, child);
@@ -105,16 +107,76 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   assert.equal(entries.filter(entry => entry.event === 'todo_completed' && entry.entityId === '501').length, 1);
   assert.equal(entries.filter(entry => entry.event === 'todo_updated' && entry.entityId === '501').length, 0);
 
-  const beforeRejected = entries.length;
+  const recurringRoot = { id: 17, repeat: 'daily', done: false, status: 'pending' };
+  const snapshot1001 = {
+    id: 1001, recurrence_parent_id: 17, scheduled_date: '1405/05/27',
+    _snapshot: true, archived: true, done: true, status: 'completed',
+    title: privateTitle, description: 'PRIVATE_DESCRIPTION', note: 'PRIVATE_NOTE', report: 'PRIVATE_REPORT',
+  };
+  const snapshot1002 = { ...snapshot1001, id: 1002, scheduled_date: '1405/05/28' };
+  let current = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, { headers: { authorization: `Bearer ${token}` } });
+  let currentBody = await current.json();
+  const recurringData = {
+    ...currentBody.data,
+    todos: [...currentBody.data.todos, recurringRoot, snapshot1001, snapshot1002],
+  };
+  let response = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers, body: JSON.stringify({ base_etag: currentBody.etag, data: recurringData }),
+  });
+  assert.equal(response.status, 200);
+  let responseBody = await response.json();
+  await new Promise(resolve => setTimeout(resolve, 150));
+  entries = auditEntries(logDir);
+  const recurringEntries = entries.filter(entry => entry.event === 'todo_completed' && ['1001', '1002'].includes(entry.entityId));
+  assert.equal(recurringEntries.length, 2);
+  assert.deepEqual(recurringEntries.map(entry => entry.metadata.rootTodoId), ['17', '17']);
+  assert.deepEqual(recurringEntries.map(entry => entry.metadata.occurrence), ['1405/05/27', '1405/05/28']);
+
+  // An unchanged re-sync, followed by remove/re-add, must not create another
+  // immutable occurrence completion event.
+  response = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers, body: JSON.stringify({ base_etag: responseBody.etag, data: recurringData }),
+  });
+  responseBody = await response.json();
+  const without1001 = { ...recurringData, todos: recurringData.todos.filter(todoItem => todoItem.id !== 1001) };
+  response = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers, body: JSON.stringify({ base_etag: responseBody.etag, data: without1001 }),
+  });
+  responseBody = await response.json();
+  response = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers, body: JSON.stringify({ base_etag: responseBody.etag, data: recurringData }),
+  });
+  responseBody = await response.json();
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(auditEntries(logDir).filter(entry => entry.event === 'todo_completed' && entry.entityId === '1001').length, 1);
+
+  // A real process restart must preserve the recurring dedupe record.
+  await stopServer(child);
+  child = startServer();
+  await waitForServer(port, child);
+  response = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers, body: JSON.stringify({ base_etag: responseBody.etag, data: recurringData }),
+  });
+  assert.equal(response.status, 200);
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(auditEntries(logDir).filter(entry => entry.event === 'todo_completed' && entry.entityId === '1001').length, 1);
+
+  const countOutboxRows = () => {
+    const readonlyDb = new Database(testDb, { readonly: true });
+    const count = readonlyDb.prepare('SELECT COUNT(*) AS count FROM todo_audit_events').get().count;
+    readonlyDb.close();
+    return count;
+  };
+  const beforeRejectedOutbox = countOutboxRows();
   const conflict = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
     method: 'PUT', headers,
     body: JSON.stringify({ base_etag: 'stale-etag', data: { todos: [{ ...todo, title: 'conflicting title' }], students: [{ id: 1 }, { id: 2 }, { id: 3 }] } }),
   });
   assert.equal(conflict.status, 409);
 
-  const current = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, { headers: { authorization: `Bearer ${token}` } });
+  current = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, { headers: { authorization: `Bearer ${token}` } });
   assert.equal(current.status, 200);
-  const currentBody = await current.json();
+  currentBody = await current.json();
   const destructive = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
     method: 'PUT', headers,
     body: JSON.stringify({ base_etag: currentBody.etag, data: { todos: [] } }),
@@ -124,9 +186,12 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
 
   await new Promise(resolve => setTimeout(resolve, 150));
   entries = auditEntries(logDir);
-  assert.equal(entries.length, beforeRejected);
+  const verificationDb = new Database(testDb, { readonly: true });
+  assert.equal(verificationDb.prepare("SELECT COUNT(*) AS count FROM todo_audit_events WHERE status='pending'").get().count, 0);
+  verificationDb.close();
+  assert.equal(countOutboxRows(), beforeRejectedOutbox);
   const serialized = JSON.stringify(entries);
-  for (const forbidden of [privateTitle, 'PRIVATE_NOTE', 'PRIVATE_REPORT', token]) {
+  for (const forbidden of [privateTitle, 'PRIVATE_NOTE', 'PRIVATE_DESCRIPTION', 'PRIVATE_REPORT', token]) {
     assert.equal(serialized.includes(forbidden), false);
   }
 });

@@ -81,14 +81,27 @@ test('audit emission never throws into the sync path', () => {
   assert.doesNotThrow(() => emitTodoAudit(logger, { requestId: 'r1', user: { id: 'u1' } }, diffTodos([], [baseTodo])));
 });
 
-test('recurring completion snapshot emits completion for its root, not creation', () => {
+test('recurring completion snapshot uses occurrence identity and safe metadata', () => {
   const snapshot = {
     ...baseTodo, id: 502, recurrence_parent_id: 101,
+    scheduled_date: '1405/05/28',
     _snapshot: true, archived: true, done: true, status: 'late_completed',
   };
   const [change] = diffTodos([baseTodo], [baseTodo, snapshot]);
   assert.equal(change.event, 'todo_completed');
-  assert.equal(change.entityId, '101');
+  assert.equal(change.entityId, '502');
+  assert.equal(change.recurringSnapshot, true);
+  assert.deepEqual(change.metadata, { rootTodoId: '101', occurrence: '1405/05/28' });
+});
+
+test('two recurring occurrences of one root are distinguishable', () => {
+  const snapshots = [1001, 1002].map((id, index) => ({
+    id, recurrence_parent_id: 101, scheduled_date: `1405/05/${28 + index}`,
+    _snapshot: true, archived: true, done: true, status: 'completed',
+  }));
+  const changes = diffTodos([], snapshots);
+  assert.deepEqual(changes.map(change => change.entityId), ['1001', '1002']);
+  assert.deepEqual(changes.map(change => change.metadata.rootTodoId), ['101', '101']);
 });
 
 test('audit payload contains no todo text or sensitive request data', () => {

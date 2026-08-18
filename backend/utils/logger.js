@@ -107,12 +107,29 @@ function writeSync(level, event, fields = {}, options = {}) {
   return entry;
 }
 
+function writeAsync(level, event, fields = {}, options = {}) {
+  const entry = buildEntry(level, event, fields, options.category);
+  const line = `${JSON.stringify(entry)}\n`;
+  try {
+    ensureLogDir();
+    const writes = destinations(entry.level, entry.category).map(file => {
+      const filePath = path.join(LOG_DIR, file);
+      rotate(filePath);
+      return fs.promises.appendFile(filePath, line);
+    });
+    return Promise.all(writes).then(() => entry);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
 const logger = {
   debug: (event, fields) => write('debug', event, fields),
   info: (event, fields) => write('info', event, fields),
   warn: (event, fields) => write('warn', event, fields),
   error: (event, fields) => write('error', event, fields),
   audit: (event, fields, level = 'info') => write(level, event, fields, { category: 'audit' }),
+  auditAsync: (event, fields, level = 'info') => writeAsync(level, event, fields, { category: 'audit' }),
   fatal: (event, fields) => writeSync('error', event, fields),
 };
 

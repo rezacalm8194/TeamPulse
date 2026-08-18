@@ -4,7 +4,11 @@ const auth = require('../middleware/auth');
 const { createHash } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { logger } = require('../utils/logger');
-const { diffTodos, emitTodoAudit } = require('../utils/todoAudit');
+const { diffTodos } = require('../utils/todoAudit');
+const {
+  enqueueTodoAuditEvents,
+  flushPendingTodoAudits,
+} = require('../utils/todoAuditStore');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -513,6 +517,7 @@ function handleSaveData(req, res) {
     data._workspaceId = workspace.workspaceId;
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
     let previousData = null;
+    let todoChanges = [];
     if (existing) {
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
       const currentEtag = dataEtag(existing.data);
@@ -549,30 +554,31 @@ function handleSaveData(req, res) {
         });
       }
       const nextData = JSON.stringify(data);
+      todoChanges = diffTodos(previousData?.todos, data?.todos);
       const run = db.transaction(() => {
         saveVersionSnapshot(storageKey, existing.data);
         db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
+        enqueueTodoAuditEvents(db, storageKey, {
+          requestId: req.requestId,
+          actorUserId: req.user?.id,
+        }, todoChanges);
       });
       run();
     } else {
-      db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
+      todoChanges = diffTodos([], data?.todos);
+      const run = db.transaction(() => {
+        db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
+        enqueueTodoAuditEvents(db, storageKey, {
+          requestId: req.requestId,
+          actorUserId: req.user?.id,
+        }, todoChanges);
+      });
+      run();
     }
     const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
-    let savedData = null;
-    try { savedData = saved?.data ? JSON.parse(saved.data) : null; } catch {}
-    // Audit is strictly post-commit and best-effort. No diff or log failure may
-    // turn an already-successful database save into a failed sync response.
-    try {
-      emitTodoAudit(logger, req, diffTodos(previousData?.todos, savedData?.todos));
-    } catch (auditError) {
-      try {
-        logger.error('todo_audit_failed', {
-          requestId: req.requestId,
-          userId: req.user?.id,
-          errorCode: auditError?.code || auditError?.name || 'AUDIT_DIFF_FAILED',
-        });
-      } catch {}
-    }
+    // The save and pending outbox rows committed atomically. File delivery is
+    // best-effort after commit; failures stay pending for startup/next-save retry.
+    void flushPendingTodoAudits(db, logger);
     res.json({ success: true, updated_at: saved?.updated_at || null, etag: dataEtag(saved?.data) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
