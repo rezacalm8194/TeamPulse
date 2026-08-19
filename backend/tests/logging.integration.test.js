@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
+const { classifySyncOutcome } = require('../utils/logger');
 
 const backendDir = path.resolve(__dirname, '..');
 const sourceDb = path.join(backendDir, 'database', 'teampulse.db');
@@ -109,6 +110,13 @@ test('application logging scenarios are structured and redact secrets', async t 
   });
   assert.equal(syncFailure.status, 401);
 
+  const syncConflict = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ base_etag: 'stale-etag', data: { todos: [] } }),
+  });
+  assert.equal(syncConflict.status, 409);
+
   const apiError = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
     method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ title: { invalid: 'binding' } }),
@@ -120,7 +128,7 @@ test('application logging scenarios are structured and redact secrets', async t 
   const auditLog = fs.readFileSync(path.join(logDir, 'audit.log'), 'utf8');
   const errorLog = fs.readFileSync(path.join(logDir, 'error.log'), 'utf8');
   for (const line of `${appLog}${auditLog}${errorLog}`.trim().split(/\r?\n/)) assert.doesNotThrow(() => JSON.parse(line));
-  ['login_failed', 'login_success', 'unauthorized_access', 'task_created', 'task_assigned', 'sync_success', 'sync_failed', 'api_error']
+  ['login_failed', 'login_success', 'unauthorized_access', 'task_created', 'task_assigned', 'sync_success', 'sync_conflict', 'api_error']
     .forEach(event => assert.match(`${appLog}${auditLog}${errorLog}`, new RegExp(`"event":"${event}"`)));
   for (const secret of [
     'SafePassword123!',
@@ -137,6 +145,12 @@ test('application logging scenarios are structured and redact secrets', async t 
   const auditEntries = auditLog.trim().split(/\r?\n/).map(JSON.parse);
   assert.equal(appEntries.filter(entry => entry.event === 'api_error').length, 1);
   assert.equal(errorEntries.filter(entry => entry.event === 'api_error').length, 1);
+  assert.equal(appEntries.filter(entry => entry.event === 'sync_failed').length, 0);
+  assert.equal(errorEntries.filter(entry => entry.event === 'sync_conflict').length, 0);
+  assert.deepEqual(classifySyncOutcome(200), { level: 'info', event: 'sync_success' });
+  assert.equal(classifySyncOutcome(401), null);
+  assert.deepEqual(classifySyncOutcome(409), { level: 'warn', event: 'sync_conflict' });
+  assert.deepEqual(classifySyncOutcome(500), { level: 'error', event: 'sync_failed' });
   assert.equal(auditEntries.filter(entry => entry.event === 'task_created').length, 1);
   assert.equal(auditEntries.filter(entry => entry.event === 'task_assigned').length, 1);
 });

@@ -8,6 +8,10 @@ const { diffTodos } = require('../utils/todoAudit');
 const {
   enqueueTodoAuditEvents,
   flushPendingTodoAudits,
+  getTodoHighWater,
+  writeTodoHighWater,
+  documentTodoHighWater,
+  findTodoIdCollisions,
 } = require('../utils/todoAuditStore');
 
 function dataEtag(serialized) {
@@ -211,6 +215,7 @@ function memberFromWorkspaceData(targetId, workspaceId, memberEmail, inviteId = 
   if (!row?.data) return undefined;
   try {
     const data = JSON.parse(row.data);
+    data._todoIdHighWater = Math.max(documentTodoHighWater(data), getTodoHighWater(db, workspace.storageKey));
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
     let member = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
@@ -553,11 +558,22 @@ function handleSaveData(req, res) {
           message: 'Refusing to overwrite existing account data with an almost empty payload.'
         });
       }
+      const todoIdCollisions = findTodoIdCollisions(db, storageKey, previousData?.todos, data?.todos);
+      if (todoIdCollisions.length) {
+        return res.status(409).json({
+          error: 'todo_id_collision',
+          message: 'A new todo reused an historical numeric id.',
+          todo_ids: todoIdCollisions,
+          todo_id_high_water: getTodoHighWater(db, storageKey),
+        });
+      }
+      data._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(data));
       const nextData = JSON.stringify(data);
       todoChanges = diffTodos(previousData?.todos, data?.todos);
       const run = db.transaction(() => {
         saveVersionSnapshot(storageKey, existing.data);
         db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
+        writeTodoHighWater(db, storageKey, data._todoIdHighWater);
         enqueueTodoAuditEvents(db, storageKey, {
           requestId: req.requestId,
           actorUserId: req.user?.id,
@@ -565,9 +581,11 @@ function handleSaveData(req, res) {
       });
       run();
     } else {
+      data._todoIdHighWater = documentTodoHighWater(data);
       todoChanges = diffTodos([], data?.todos);
       const run = db.transaction(() => {
         db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
+        writeTodoHighWater(db, storageKey, data._todoIdHighWater);
         enqueueTodoAuditEvents(db, storageKey, {
           requestId: req.requestId,
           actorUserId: req.user?.id,
@@ -579,7 +597,12 @@ function handleSaveData(req, res) {
     // The save and pending outbox rows committed atomically. File delivery is
     // best-effort after commit; failures stay pending for startup/next-save retry.
     void flushPendingTodoAudits(db, logger);
-    res.json({ success: true, updated_at: saved?.updated_at || null, etag: dataEtag(saved?.data) });
+    res.json({
+      success: true,
+      updated_at: saved?.updated_at || null,
+      etag: dataEtag(saved?.data),
+      todo_id_high_water: getTodoHighWater(db, storageKey),
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
 
@@ -746,10 +769,12 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     restored = sanitizeUserDataForStorage(restored);
     restored._restored_at = new Date().toISOString();
     restored._lastSaved = Date.now();
+    restored._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(restored));
     const serialized = JSON.stringify(restored);
     const run = db.transaction(() => {
       saveVersionSnapshot(storageKey, current.data, { force:true });
       db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
+      writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
     run();
     res.json({ success: true, data: restored, etag: dataEtag(serialized) });

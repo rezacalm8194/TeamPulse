@@ -4997,6 +4997,7 @@ function _migrate(d) {
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
   });
+  _syncTodoIdAllocator(d);
   _syncServiceCatalogs(d);
   return d;
 }
@@ -7325,7 +7326,7 @@ const _gcal = {
       });
       return 'updated';
     }
-    const id = _nextId('todos');
+    const id = _allocateTodoId();
     _db.todos.push({
       id,
       title,
@@ -24821,11 +24822,42 @@ async function _initAuth() {
 // repeat: 'none'|'daily'|'every2days'|'weekly'|'monthly'|'custom'
 // remind_min: دقیقه قبل از زمان task
 
+function _todoSafeNumericId(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function _syncTodoIdAllocator(data = _db) {
+  if (!data || typeof data !== 'object') return 0;
+  data._nextId = data._nextId || {};
+  const currentMax = (Array.isArray(data.todos) ? data.todos : [])
+    .reduce((max, todo) => Math.max(max, _todoSafeNumericId(todo?.id)), 0);
+  const nextIdHighWater = Math.max(0, _todoSafeNumericId(data._nextId.todos) - 1);
+  data._todoIdHighWater = Math.max(_todoSafeNumericId(data._todoIdHighWater), currentMax, nextIdHighWater);
+  data._nextId.todos = data._todoIdHighWater + 1;
+  return data._todoIdHighWater;
+}
+
+function _allocateTodoId() {
+  _syncTodoIdAllocator(_db);
+  let randomPart = Math.floor(Math.random() * 1000);
+  try {
+    const values = new Uint16Array(1);
+    crypto.getRandomValues(values);
+    randomPart = values[0] % 1000;
+  } catch(e) {}
+  const timeCandidate = Date.now() * 1000 + randomPart;
+  const id = Math.max(_db._todoIdHighWater + 1, timeCandidate);
+  _db._todoIdHighWater = id;
+  _db._nextId.todos = id + 1;
+  return id;
+}
+
 function _todosInit() {
   if (!_db.todos) _db.todos = [];
   if (!_db.todo_calendar_events) _db.todo_calendar_events = [];
   if (!_db.todo_history) _db.todo_history = [];
-  if (!_db._nextId.todos) _db._nextId.todos = 1;
+  _syncTodoIdAllocator(_db);
   if (!_db._nextId.todo_calendar_events) _db._nextId.todo_calendar_events = 1;
   _db.todos.forEach(t => {
     if ((t.remind_min === undefined || t.remind_min === null) && t.time) t.remind_min = 15;
@@ -24942,7 +24974,7 @@ function _createTodoOccurrenceRecord(t, status, completedAt = null) {
   const nowIso = completedAt || new Date().toISOString();
   const record = {
     ...t,
-    id: (_db._nextId.todos++),
+    id: _allocateTodoId(),
     recurrence_parent_id: _todoRootId(t),
     scheduled_date: scheduledDate,
     scheduledDate,
@@ -25312,7 +25344,7 @@ async function _saveQuickStaffChecklist(staffId) {
   titles.forEach(title => {
     const duplicateKey = [String(staff.id), dateJalali, _todoNormalizedTitle(title)].join('|');
     if (existingKeys.has(duplicateKey)) { skipped++; return; }
-    const id = _db._nextId.todos++;
+    const id = _allocateTodoId();
     existingKeys.add(duplicateKey);
     created++;
     _db.todos.push({
@@ -27645,7 +27677,7 @@ function renderTodoList() {
       if (doneDayKey < _todayK) {
         _db.todos.push({
           ...t,
-          id: (_db._nextId.todos++),
+          id: _allocateTodoId(),
           done: true,
           archived: true,
           repeat: 'none',
@@ -28077,7 +28109,7 @@ function _initTodoDragDrop() {
 
 function _quickAddTodo(title) {
   _todosInit();
-  const id = _db._nextId.todos++;
+  const id = _allocateTodoId();
   const today = _todayJalaliStr();
   _db.todos.push({
     id, title, note:'', date_jalali: today, time:'',
@@ -28366,7 +28398,7 @@ function _moveTodoOccurrenceToDate(t, scheduledDate, targetDate, targetLabel) {
     }
     const copy = {
       ...t,
-      id: (_db._nextId.todos++),
+      id: _allocateTodoId(),
       recurrence_parent_id: rootId,
       scheduled_date: targetDate,
       scheduledDate: targetDate,
@@ -29199,7 +29231,7 @@ async function saveTodo() {
   if (!_todoCanCreateForStaff(assigneeId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
   const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
-  const id = _db._nextId.todos++;
+  const id = _allocateTodoId();
   const newTodo = {
     id, title,
     note: document.getElementById('todo-note')?.value.trim() || '',
@@ -29682,7 +29714,7 @@ async function updateTodo(id) {
     if (editOnlyThis) {
       const occurrence = {
         ...t,
-        id: (_db._nextId.todos++),
+        id: _allocateTodoId(),
         recurrence_parent_id: _todoRootId(t),
         title,
         note: document.getElementById('todo-note')?.value.trim() || '',

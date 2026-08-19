@@ -6,10 +6,11 @@ const rateLimit = require('express-rate-limit');
 const { randomUUID } = require('crypto');
 const db = require('./config/database');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-const { logger } = require('./utils/logger');
-const { initTodoAuditStore, seedHistoricalRecurringSnapshots, flushPendingTodoAudits } = require('./utils/todoAuditStore');
+const { logger, classifySyncOutcome } = require('./utils/logger');
+const { initTodoAuditStore, seedHistoricalRecurringSnapshots, migrateTodoAuditOccurrenceIdentityV2, flushPendingTodoAudits } = require('./utils/todoAuditStore');
 initTodoAuditStore(db);
 seedHistoricalRecurringSnapshots(db);
+migrateTodoAuditOccurrenceIdentityV2(db);
 void flushPendingTodoAudits(db, logger);
 const app = express();
 app.set('trust proxy', 1);
@@ -29,7 +30,8 @@ app.use((req, res, next) => {
       statusCode: res.statusCode,
       duration: Date.now() - startedAt,
     };
-    if (isSync) logger[res.statusCode >= 400 ? 'error' : 'info'](res.statusCode >= 400 ? 'sync_failed' : 'sync_success', fields);
+    const syncOutcome = isSync ? classifySyncOutcome(res.statusCode) : null;
+    if (syncOutcome) logger[syncOutcome.level](syncOutcome.event, fields);
     if (res.statusCode === 403) logger.warn('permission_denied', { ...fields, ip: req.ip });
     if (res.statusCode >= 500) logger.error('api_error', fields);
   });

@@ -62,6 +62,17 @@ function destinations(level, category) {
   return [...files];
 }
 
+function classifySyncOutcome(statusCode) {
+  const status = Number(statusCode);
+  if (status < 400) return { level: 'info', event: 'sync_success' };
+  // Authentication and permission middleware already log the precise reason.
+  // Avoid duplicating those expected client responses as Sync errors.
+  if (status === 401 || status === 403) return null;
+  if (status === 409) return { level: 'warn', event: 'sync_conflict' };
+  if (status >= 500) return { level: 'error', event: 'sync_failed' };
+  return { level: 'warn', event: 'sync_rejected' };
+}
+
 function buildEntry(level, event, fields = {}, category = 'application') {
   return sanitize({
     timestamp: new Date().toISOString(),
@@ -133,4 +144,4 @@ const logger = {
   fatal: (event, fields) => writeSync('error', event, fields),
 };
 
-module.exports = { logger, sanitize, LOG_DIR };
+module.exports = { logger, sanitize, LOG_DIR, classifySyncOutcome };

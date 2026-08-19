@@ -107,9 +107,9 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   assert.equal(entries.filter(entry => entry.event === 'todo_completed' && entry.entityId === '501').length, 1);
   assert.equal(entries.filter(entry => entry.event === 'todo_updated' && entry.entityId === '501').length, 0);
 
-  const recurringRoot = { id: 17, repeat: 'daily', done: false, status: 'pending' };
+  const recurringRoot = { id: 1000, repeat: 'daily', done: false, status: 'pending' };
   const snapshot1001 = {
-    id: 1001, recurrence_parent_id: 17, scheduled_date: '1405/05/27',
+    id: 1001, recurrence_parent_id: 1000, scheduled_date: '1405/05/27',
     _snapshot: true, archived: true, done: true, status: 'completed',
     title: privateTitle, description: 'PRIVATE_DESCRIPTION', note: 'PRIVATE_NOTE', report: 'PRIVATE_REPORT',
   };
@@ -129,7 +129,7 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   entries = auditEntries(logDir);
   const recurringEntries = entries.filter(entry => entry.event === 'todo_completed' && ['1001', '1002'].includes(entry.entityId));
   assert.equal(recurringEntries.length, 2);
-  assert.deepEqual(recurringEntries.map(entry => entry.metadata.rootTodoId), ['17', '17']);
+  assert.deepEqual(recurringEntries.map(entry => entry.metadata.rootTodoId), ['1000', '1000']);
   assert.deepEqual(recurringEntries.map(entry => entry.metadata.occurrence), ['1405/05/27', '1405/05/28']);
 
   // An unchanged re-sync, followed by remove/re-add, must not create another
@@ -167,6 +167,19 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
     readonlyDb.close();
     return count;
   };
+  current = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, { headers: { authorization: `Bearer ${token}` } });
+  currentBody = await current.json();
+  const staleCollision = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers,
+    body: JSON.stringify({
+      base_etag: currentBody.etag,
+      data: { ...currentBody.data, todos: [...currentBody.data.todos, { id: 400, title: 'stale client todo', done: false, status: 'pending' }] },
+    }),
+  });
+  assert.equal(staleCollision.status, 409);
+  const staleCollisionBody = await staleCollision.json();
+  assert.equal(staleCollisionBody.error, 'todo_id_collision');
+  assert.ok(staleCollisionBody.todo_id_high_water >= 1002);
   const beforeRejectedOutbox = countOutboxRows();
   const conflict = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
     method: 'PUT', headers,
