@@ -558,7 +558,13 @@ function handleSaveData(req, res) {
           message: 'Refusing to overwrite existing account data with an almost empty payload.'
         });
       }
-      const todoIdCollisions = findTodoIdCollisions(db, storageKey, previousData?.todos, data?.todos);
+      const todoIdCollisions = findTodoIdCollisions(
+        db,
+        storageKey,
+        previousData?.todos,
+        data?.todos,
+        { incomingHighWater: data?._todoIdHighWater }
+      );
       if (todoIdCollisions.length) {
         return res.status(409).json({
           error: 'todo_id_collision',

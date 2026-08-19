@@ -40,6 +40,17 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   db.prepare('DELETE FROM accounts WHERE id=? OR lower(email)=?').run(userId, email);
   db.prepare('INSERT INTO accounts (id,name,email,password,role,is_active) VALUES (?,?,?,?,?,1)')
     .run(userId, 'Todo Audit Test', email, bcrypt.hashSync('SafePassword123!', 4), 'user');
+  // Migration behavior is covered by todo-audit-store.test.js. Keep this API
+  // integration test focused on request semantics instead of rescanning the
+  // copied production-sized fixture during server startup.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.prepare('INSERT OR IGNORE INTO app_migrations (name) VALUES (?)')
+    .run('todo_audit_occurrence_identity_v2');
   db.close();
 
   const port = 32194;
@@ -173,13 +184,36 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
     method: 'PUT', headers,
     body: JSON.stringify({
       base_etag: currentBody.etag,
-      data: { ...currentBody.data, todos: [...currentBody.data.todos, { id: 400, title: 'stale client todo', done: false, status: 'pending' }] },
+      data: {
+        ...currentBody.data,
+        _todoIdHighWater: 0,
+        todos: [...currentBody.data.todos, { id: 400, title: 'stale client todo', done: false, status: 'pending' }],
+      },
     }),
   });
   assert.equal(staleCollision.status, 409);
   const staleCollisionBody = await staleCollision.json();
   assert.equal(staleCollisionBody.error, 'todo_id_collision');
   assert.ok(staleCollisionBody.todo_id_high_water >= 1002);
+
+  // A current client that has acknowledged the server high-water may restore
+  // historical non-recurring todos below that mark. This is not a new ID
+  // allocation; genuinely new IDs are allocated above the acknowledged mark.
+  const restoredHistorical = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers,
+    body: JSON.stringify({
+      base_etag: currentBody.etag,
+      data: {
+        ...currentBody.data,
+        todos: [
+          ...currentBody.data.todos,
+          { id: 400, title: 'restored historical todo', done: false, status: 'pending' },
+          { id: 401, title: 'another restored historical todo', done: false, status: 'pending' },
+        ],
+      },
+    }),
+  });
+  assert.equal(restoredHistorical.status, 200);
   const beforeRejectedOutbox = countOutboxRows();
   const conflict = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
     method: 'PUT', headers,

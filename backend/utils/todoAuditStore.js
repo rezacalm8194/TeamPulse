@@ -230,12 +230,15 @@ function recurringOccurrenceKnown(db, storageKey, todo) {
   );
 }
 
-function findTodoIdCollisions(db, storageKey, previousTodos, nextTodos) {
+function findTodoIdCollisions(db, storageKey, previousTodos, nextTodos, options = {}) {
   const highWater = getTodoHighWater(db, storageKey);
+  const incomingHighWater = numericTodoId(options.incomingHighWater);
+  const clientAcknowledgedHighWater = highWater > 0 && incomingHighWater >= highWater;
   const previousById = new Map((Array.isArray(previousTodos) ? previousTodos : []).map(todo => [String(todo?.id), todo]));
-  return (Array.isArray(nextTodos) ? nextTodos : []).filter(todo => {
+  const collisions = new Set();
+  for (const todo of Array.isArray(nextTodos) ? nextTodos : []) {
     const id = numericTodoId(todo?.id);
-    if (!id) return false;
+    if (!id) continue;
     const previous = previousById.get(String(todo.id));
     if (previous) {
       const beforeIdentity = recurringSnapshotIdentity(previous);
@@ -243,15 +246,35 @@ function findTodoIdCollisions(db, storageKey, previousTodos, nextTodos) {
       if (!beforeIdentity && !nextIdentity) {
         const previousCreatedAt = String(previous?.created_at || '').trim();
         const nextCreatedAt = String(todo?.created_at || '').trim();
-        return !!(previousCreatedAt && nextCreatedAt && previousCreatedAt !== nextCreatedAt);
+        if (previousCreatedAt && nextCreatedAt && previousCreatedAt !== nextCreatedAt) {
+          collisions.add(String(todo.id));
+        }
+        continue;
       }
-      if (!beforeIdentity || !nextIdentity) return true;
-      return beforeIdentity.rootTodoId !== nextIdentity.rootTodoId ||
-        normalizeOccurrence(beforeIdentity.occurrence) !== normalizeOccurrence(nextIdentity.occurrence);
+      if (!beforeIdentity || !nextIdentity ||
+          beforeIdentity.rootTodoId !== nextIdentity.rootTodoId ||
+          normalizeOccurrence(beforeIdentity.occurrence) !== normalizeOccurrence(nextIdentity.occurrence)) {
+        collisions.add(String(todo.id));
+      }
+      continue;
     }
-    if (id > highWater) return false;
-    return !recurringOccurrenceKnown(db, storageKey, todo);
-  }).map(todo => String(todo.id));
+    if (id > highWater) continue;
+
+    // Recurring snapshots must always prove their exact occurrence identity.
+    // A high-water acknowledgement alone must not allow a new occurrence to
+    // reuse an old numeric snapshot id.
+    if (recurringSnapshotIdentity(todo)) {
+      if (!recurringOccurrenceKnown(db, storageKey, todo)) collisions.add(String(todo.id));
+      continue;
+    }
+
+    // A current client echoes the server's persisted high-water value and its
+    // allocator only creates ids above it. Therefore a lower non-recurring id
+    // is a legitimate historical restore/re-add, not a newly allocated id.
+    // Clients that have not seen the high-water remain protected as stale.
+    if (!clientAcknowledgedHighWater) collisions.add(String(todo.id));
+  }
+  return [...collisions];
 }
 
 function enqueueTodoAuditEvents(db, storageKey, requestContext, changes) {

@@ -264,6 +264,18 @@ test('server high-water rejects stale new ids, preserves known historical re-add
     writeTodoHighWater(db, 'workspace-b', 12);
     const staleNew = { id: 6626, done: false, status: 'pending' };
     assert.deepEqual(findTodoIdCollisions(db, 'workspace-a', [], [staleNew]), ['6626']);
+    assert.deepEqual(
+      findTodoIdCollisions(db, 'workspace-a', [], [staleNew], { incomingHighWater: 9000 }),
+      []
+    );
+    assert.deepEqual(
+      findTodoIdCollisions(db, 'workspace-a', [], [staleNew], { incomingHighWater: 8999 }),
+      ['6626']
+    );
+    assert.deepEqual(
+      findTodoIdCollisions(db, 'workspace-a', [], [staleNew, staleNew]),
+      ['6626']
+    );
     assert.deepEqual(findTodoIdCollisions(db, 'workspace-b', [], [staleNew]), []);
     assert.equal(documentTodoHighWater({ todos: [{ id: 100 }], _nextId: { todos: 9001 } }), 9000);
     assert.deepEqual(findTodoIdCollisions(
@@ -275,6 +287,16 @@ test('server high-water rejects stale new ids, preserves known historical re-add
     const historical = snapshot(6626, 9, '1405/04/25');
     enqueueTodoAuditEvents(db, 'workspace-a', {}, diffTodos([], [historical]));
     assert.deepEqual(findTodoIdCollisions(db, 'workspace-a', [], [historical]), []);
+    assert.deepEqual(
+      findTodoIdCollisions(
+        db,
+        'workspace-a',
+        [],
+        [snapshot(6626, 9, '1405/05/27')],
+        { incomingHighWater: 9000 }
+      ),
+      ['6626']
+    );
     assert.deepEqual(
       findTodoIdCollisions(db, 'workspace-a', [historical], [snapshot(6626, 9, '1405/05/27')]),
       ['6626']
