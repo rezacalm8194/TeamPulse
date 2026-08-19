@@ -24,6 +24,24 @@ function safeParse(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
+function scanDataRows(db, table, callback, { excludeAdmin = false, batchSize = 8 } = {}) {
+  let lastRowId = 0;
+  const adminFilter = excludeAdmin ? " AND account_id!='__admin_settings__'" : '';
+  const statement = db.prepare(`
+    SELECT rowid AS scan_row_id,account_id,data
+    FROM ${table}
+    WHERE rowid>?${adminFilter}
+    ORDER BY rowid
+    LIMIT ?
+  `);
+  while (true) {
+    const rows = statement.all(lastRowId, batchSize);
+    if (rows.length === 0) return;
+    for (const row of rows) callback(row);
+    lastRowId = rows[rows.length - 1].scan_row_id;
+  }
+}
+
 function initTodoAuditStore(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_migrations (
@@ -144,28 +162,29 @@ function seedHistoricalRecurringSnapshots(db) {
 
     let historicalScanCount = 0;
     historicalScanCount += 1;
-    const currentRows = db.prepare("SELECT account_id,data FROM user_data WHERE account_id!='__admin_settings__'").all();
-    for (const row of currentRows) seedDocument(db, row.account_id, safeParse(row.data, {}));
+    scanDataRows(db, 'user_data', row => {
+      seedDocument(db, row.account_id, safeParse(row.data, {}));
+    }, { excludeAdmin: true });
 
     const hasVersions = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='user_data_versions'").get();
     if (hasVersions) {
       historicalScanCount += 1;
-      for (const row of db.prepare('SELECT account_id,data FROM user_data_versions').all()) {
+      scanDataRows(db, 'user_data_versions', row => {
         seedDocument(db, row.account_id, safeParse(row.data, {}));
-      }
+      });
     }
 
     // Tombstones are the only durable trace for an item absent from both the
     // current document and retained versions. Conservatively reserve their
     // recurring event keys; this stores identities only and emits no audit.
-    for (const row of currentRows) {
+    scanDataRows(db, 'user_data', row => {
       const document = safeParse(row.data, {});
       const tombstones = Array.isArray(document?._todoTombstones) ? document._todoTombstones : [];
       for (const id of tombstones) {
         if (id == null || id === '') continue;
         seedIdentity(db, row.account_id, { snapshotId: String(id), rootTodoId: null, occurrence: null });
       }
-    }
+    }, { excludeAdmin: true });
     db.prepare('INSERT INTO app_migrations(name) VALUES (?)').run(HISTORICAL_SEED_MIGRATION);
     return { applied: true, historicalScanCount };
   });
@@ -179,15 +198,16 @@ function migrateTodoAuditOccurrenceIdentityV2(db) {
 
     let historicalScanCount = 1;
     const highWaterByStorage = new Map();
-    const currentRows = db.prepare("SELECT account_id,data FROM user_data WHERE account_id!='__admin_settings__'").all();
-    for (const row of currentRows) seedOccurrenceDocument(db, row.account_id, safeParse(row.data, {}), highWaterByStorage);
+    scanDataRows(db, 'user_data', row => {
+      seedOccurrenceDocument(db, row.account_id, safeParse(row.data, {}), highWaterByStorage);
+    }, { excludeAdmin: true });
 
     const hasVersions = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='user_data_versions'").get();
     if (hasVersions) {
       historicalScanCount += 1;
-      for (const row of db.prepare('SELECT account_id,data FROM user_data_versions').all()) {
+      scanDataRows(db, 'user_data_versions', row => {
         seedOccurrenceDocument(db, row.account_id, safeParse(row.data, {}), highWaterByStorage);
-      }
+      });
     }
 
     for (const row of db.prepare('SELECT event_key,entity_id,storage_key FROM todo_audit_events').all()) {
