@@ -1,12 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const path = require('path');
-const Database = require('better-sqlite3');
 const jwt = require('jsonwebtoken');
+const db = require('../config/database');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../database/teampulse.db');
-const db = new Database(DB_PATH);
 const JWT_SECRET = process.env.JWT_SECRET;
 
 db.exec(`
