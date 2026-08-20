@@ -23782,6 +23782,22 @@ async function _pollServerStatus() {
   }
 }
 
+function _refreshUiAfterServerLoad(updated) {
+  if (currentPage === 'todolist') {
+    if (updated) window._todoListServerRefreshPending = true;
+    if (!window._todoListServerRefreshPending || !_canAutoRefresh({ allowTodoList: true })) return;
+    const content = document.getElementById('content');
+    const scrollTop = content?.scrollTop || 0;
+    renderTodoList();
+    window._todoListServerRefreshPending = false;
+    requestAnimationFrame(() => {
+      if (content) content.scrollTop = scrollTop;
+    });
+    return;
+  }
+  if (updated && _canAutoRefresh()) renderPage();
+}
+
 function _startServerSyncLoops() {
   clearInterval(window._syncInterval);
   clearInterval(window._pollInterval);
@@ -23794,7 +23810,7 @@ function _startServerSyncLoops() {
     try {
       if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && !document.hidden) {
         const updated = await _pollServerStatus();
-        if (updated && _canAutoRefresh()) renderPage();
+        _refreshUiAfterServerLoad(updated);
       }
     } finally {
       if (window._serverPollGeneration === generation) {
@@ -23842,7 +23858,7 @@ function _bindServerSyncLifecycleHandlers() {
       _syncToServer();
     } else {
       _refreshReminderPushRegistration();
-      _loadFromServer().then(updated => { if (updated && _canAutoRefresh()) renderPage(); });
+      _loadFromServer().then(_refreshUiAfterServerLoad);
     }
   });
   window.addEventListener('pagehide', () => {
@@ -23856,7 +23872,7 @@ function _bindServerSyncLifecycleHandlers() {
       await _syncToServer();
     }
     const updated = await _loadFromServer();
-    if (updated && _canAutoRefresh()) renderPage();
+    _refreshUiAfterServerLoad(updated);
   });
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
@@ -25942,10 +25958,10 @@ function _updateTodoEndPreview() {
     : 'با انتخاب ساعت، زمان پایان نمایش داده می‌شود';
 }
 
-function _canAutoRefresh() {
+function _canAutoRefresh({ allowTodoList = false } = {}) {
   // لیست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
   // کل صفحه را rebuild کند و حس «ریلـود کوچک» یا پریدن کارها بسازد.
-  if (currentPage === 'todolist') return false;
+  if (currentPage === 'todolist' && !allowTodoList) return false;
   // اگه modal باز هست
   if (document.querySelector('.modal-overlay.open')) return false;
   // اگه روی input/textarea focus هست (کیبورد موبایل باز)
