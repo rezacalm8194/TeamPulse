@@ -23757,6 +23757,31 @@ async function _loadFromServer() {
   }
 }
 
+async function _pollServerStatus() {
+  if (_isTerminalTodoCollisionPending()) return false;
+  // Keep the existing full-load conflict protections in charge while a local
+  // save is pending; the lightweight shortcut must not make that decision.
+  if (_hasServerSyncPending()) return _loadFromServer();
+  if (!_sbUser || !_sbSession?.token) return false;
+  const teamSession = _teamAccessSession();
+  const accId = teamSession?.ownerUserId || _sbUser.id;
+  if (!accId) return false;
+  try {
+    const res = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+    if (!res.ok) return false;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return false;
+    const status = await res.json();
+    const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
+    if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
+    if (status.etag === window._serverDataEtag) return false;
+    return _loadFromServer();
+  } catch(e) {
+    console.warn('[TeamPulse] status poll skipped:', e.message);
+    return false;
+  }
+}
+
 function _startServerSyncLoops() {
   clearInterval(window._syncInterval);
   clearInterval(window._pollInterval);
@@ -23768,7 +23793,7 @@ function _startServerSyncLoops() {
   const poll = async () => {
     try {
       if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && !document.hidden) {
-        const updated = await _loadFromServer();
+        const updated = await _pollServerStatus();
         if (updated && _canAutoRefresh()) renderPage();
       }
     } finally {

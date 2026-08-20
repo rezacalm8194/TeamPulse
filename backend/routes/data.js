@@ -787,6 +787,21 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+router.get('/:accountId/status', auth, (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(workspace.storageKey);
+    res.json({
+      etag: row ? dataEtag(row.data) : null,
+      updated_at: row?.updated_at || null,
+      todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/:accountId', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;
