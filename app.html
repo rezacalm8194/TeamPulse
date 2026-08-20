@@ -23596,7 +23596,6 @@ function _mergeServerTodosIntoLocal(serverData) {
 
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
 async function _loadFromServer() {
-  if (_isTerminalTodoCollisionPending()) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   try {
@@ -23840,10 +23839,9 @@ async function _loadFromServer() {
 }
 
 async function _pollServerStatus() {
-  if (_isTerminalTodoCollisionPending()) return false;
   // Keep the existing full-load conflict protections in charge while a local
   // save is pending; the lightweight shortcut must not make that decision.
-  if (_hasServerSyncPending()) return _loadFromServer();
+  if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending()) return _loadFromServer();
   if (!_sbUser || !_sbSession?.token) return false;
   const teamSession = _teamAccessSession();
   const accId = teamSession?.ownerUserId || _sbUser.id;
@@ -29463,7 +29461,6 @@ async function saveTodo() {
   }
 
   _db.todos.push(newTodo);
-  _save();
 
   // Schedule notification
   if (remindMin > 0 && time && dateJalali) {
@@ -29478,6 +29475,10 @@ async function saveTodo() {
   closeModal();
   showToast('کار روی دستگاه ذخیره شد ✓', 'success');
   renderTodoList();
+  // Let iOS/Android paint the optimistic UI before serializing the large local
+  // database. The Todo is already in _db; persistence and upload follow next.
+  await new Promise(resolve => requestAnimationFrame(() => resolve()));
+  _save();
   window._todoSaveInProgress = false;
 
   clearTimeout(window._serverSyncTimer);
