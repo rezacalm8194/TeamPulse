@@ -23842,7 +23842,7 @@ function _nextServerPollDelay() {
   const idleFor = Date.now() - (window._lastAppActivityAt || Date.now());
   if (idleFor > 5 * 60 * 1000) return 90 * 1000;
   if (idleFor > 90 * 1000) return 45 * 1000;
-  return 15 * 1000;
+  return 5 * 1000;
 }
 
 function _startKeyEventReminderLoop() {
@@ -29284,9 +29284,11 @@ async function _onTodoGcalToggle(cb) {
 }
 
 async function saveTodo() {
+  if (window._todoSaveInProgress) return;
+  window._todoSaveInProgress = true;
   _todosInit();
   const title = document.getElementById('todo-title')?.value.trim();
-  if (!title) { showToast('عنوان کار را وارد کنید', 'error'); return; }
+  if (!title) { window._todoSaveInProgress = false; showToast('عنوان کار را وارد کنید', 'error'); return; }
   const repeat = document.getElementById('todo-repeat')?.value || 'none';
   const weekdays = repeat === 'custom_weekdays'
     ? (document.getElementById('todo-weekdays')?.value || '')
@@ -29296,10 +29298,14 @@ async function saveTodo() {
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
   if (remindMin > 0 && !time) {
+    window._todoSaveInProgress = false;
     showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
     return;
   }
-  if (remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) return;
+  if (remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) {
+    window._todoSaveInProgress = false;
+    return;
+  }
 
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
@@ -29310,6 +29316,7 @@ async function saveTodo() {
   const ownStaff = _todoSessionStaff();
 
   if (_isTeamGuest() && _teamPerm('todo_create_self') && !ownStaff) {
+    window._todoSaveInProgress = false;
     showToast('حساب پرسنلی شما شناسایی نشد', 'error');
     return;
   }
@@ -29320,7 +29327,7 @@ async function saveTodo() {
     assigneeId = String(ownStaff.id);
   }
 
-  if (!_todoCanCreateForStaff(assigneeId)) { showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
+  if (!_todoCanCreateForStaff(assigneeId)) { window._todoSaveInProgress = false; showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
   const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
   const id = _allocateTodoId();
@@ -29370,24 +29377,13 @@ async function saveTodo() {
     });
   }
   if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
+    window._todoSaveInProgress = false;
     showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
     return;
   }
 
   _db.todos.push(newTodo);
   _save();
-  clearTimeout(window._serverSyncTimer);
-  const syncRes = await _syncToServer();
-  if (syncRes && syncRes.status === 403 && _teamAccessSession()) {
-      // A definitive permission rejection must be rolled back. Transient
-      // network/server failures stay local and are retried automatically.
-      _db.todos = _db.todos.filter(t => t.id !== id);
-      _save();
-      showToast('ذخیره کار رد شد؛ دسترسی هم‌تیمی را بررسی کن', 'error');
-      await _loadFromServer();
-      renderTodoList();
-      return;
-  }
 
   // Schedule notification
   if (remindMin > 0 && time && dateJalali) {
@@ -29400,8 +29396,22 @@ async function saveTodo() {
   }
 
   closeModal();
-  showToast(syncRes?.ok ? 'کار اضافه و روی سرور ذخیره شد ✓' : 'کار روی دستگاه ذخیره شد و در صف ارسال به سرور است', syncRes?.ok ? 'success' : 'error');
+  showToast('کار روی دستگاه ذخیره شد ✓', 'success');
   renderTodoList();
+  window._todoSaveInProgress = false;
+
+  clearTimeout(window._serverSyncTimer);
+  void _syncToServer().then(async syncRes => {
+    if (syncRes && syncRes.status === 403 && _teamAccessSession()) {
+      // A definitive permission rejection must be rolled back. Transient
+      // network/server failures stay local and are retried automatically.
+      _db.todos = _db.todos.filter(t => t.id !== id);
+      _save();
+      showToast('ذخیره کار رد شد؛ دسترسی هم‌تیمی را بررسی کن', 'error');
+      await _loadFromServer();
+      renderTodoList();
+    }
+  });
 }
 
 function _scheduleTodoNotification(id, title, dateJalali, time, remindMinutes) {
