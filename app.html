@@ -23254,7 +23254,7 @@ async function _syncToServer(conflictAttempt = 0) {
   }
 }
 
-async function _syncToServerOnce(conflictAttempt = 0) {
+async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
   if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
   if (_adoptManualRestoreFromLocalStorage('before-sync')) {
@@ -23374,6 +23374,26 @@ async function _syncToServerOnce(conflictAttempt = 0) {
     let responseData = null;
     try { responseData = await res.clone().json(); } catch(e) {}
 
+    if (res.status === 409 && responseData?.error === 'todo_id_collision') {
+      const serverHighWater = _applyTodoIdHighWater(responseData.todo_id_high_water);
+      const collisionIds = Array.isArray(responseData.todo_ids) ? responseData.todo_ids : [];
+      let remapped = false;
+      if (todoCollisionAttempt < 1 && serverHighWater > 0) {
+        const ids = new Set(collisionIds.map(item => String(item?.id ?? item)));
+        (_db.todos || []).forEach(todo => {
+          if (!ids.has(String(todo?.id))) return;
+          if (todo?._snapshot !== true || todo?.archived !== true) return;
+          if (todo?.recurrence_parent_id == null && todo?.root == null) return;
+          todo.id = _allocateTodoId();
+          remapped = true;
+        });
+      }
+      try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+      _markServerSyncPending(remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped');
+      if (remapped) return _syncToServerOnce(conflictAttempt, todoCollisionAttempt + 1);
+      return res;
+    }
+
     if (res.status === 409 && responseData?.error === 'sync_conflict' && responseData.data && conflictAttempt < 2) {
       const localPending = _cloneData(_db);
       _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data);
@@ -23381,9 +23401,10 @@ async function _syncToServerOnce(conflictAttempt = 0) {
       window._serverDataEtag = responseData.etag || null;
       try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
       _markServerSyncPending('conflict-merged');
-      return _syncToServerOnce(conflictAttempt + 1);
+      return _syncToServerOnce(conflictAttempt + 1, todoCollisionAttempt);
     }
     if (res && res.ok) {
+      _applyTodoIdHighWater(responseData?.todo_id_high_water);
       if (forceSync) window._forceNextSync = false;
       window._lastServerSyncSavedAt = syncSavedAt;
       window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
@@ -23399,7 +23420,7 @@ async function _syncToServerOnce(conflictAttempt = 0) {
       window._teamSyncForbiddenWarned = true;
       showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
     }
-    if (res && res.status === 409 && !window._destructiveSyncBlockedWarned) {
+    if (res && res.status === 409 && responseData?.error !== 'todo_id_collision' && !window._destructiveSyncBlockedWarned) {
       window._destructiveSyncBlockedWarned = true;
       showToast('سرور جلوی پاک شدن ناگهانی داده‌ها را گرفت؛ صفحه را رفرش کنید', 'error');
     }
@@ -23416,7 +23437,7 @@ async function _syncToServerOnce(conflictAttempt = 0) {
       }
       return res;
     }
-    if (res && !res.ok) {
+    if (res && !res.ok && responseData?.error !== 'todo_id_collision') {
       _markServerSyncPending('http-' + res.status);
       _scheduleServerSyncRetry();
       if (!window._serverSyncFailureWarned) {
@@ -23546,6 +23567,15 @@ async function _loadFromServer() {
         dataWorkspaceId: data._workspaceId,
       });
       return false;
+    }
+    const responseHighWater = _todoSafeNumericId(payload.todo_id_high_water);
+    if (responseHighWater) {
+      if (data && typeof data === 'object') {
+        data._nextId = data._nextId || {};
+        data._todoIdHighWater = Math.max(_todoSafeNumericId(data._todoIdHighWater), responseHighWater);
+        data._nextId.todos = Math.max(_todoSafeNumericId(data._nextId.todos), responseHighWater + 1);
+      }
+      _applyTodoIdHighWater(responseHighWater);
     }
     window._serverDataEtag = payload.etag || window._serverDataEtag || null;
     if (!data) return false;
@@ -24836,6 +24866,16 @@ function _syncTodoIdAllocator(data = _db) {
   data._todoIdHighWater = Math.max(_todoSafeNumericId(data._todoIdHighWater), currentMax, nextIdHighWater);
   data._nextId.todos = data._todoIdHighWater + 1;
   return data._todoIdHighWater;
+}
+
+function _applyTodoIdHighWater(value) {
+  const highWater = _todoSafeNumericId(value);
+  if (!highWater || (!_db || typeof _db !== 'object')) return 0;
+  _db._nextId = _db._nextId || {};
+  _db._todoIdHighWater = Math.max(_todoSafeNumericId(_db._todoIdHighWater), highWater);
+  _db._nextId.todos = Math.max(_todoSafeNumericId(_db._nextId.todos), highWater + 1);
+  try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+  return highWater;
 }
 
 function _allocateTodoId() {
