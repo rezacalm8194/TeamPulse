@@ -23255,21 +23255,104 @@ function _isTerminalTodoCollisionPending() {
   return pending.fingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
 }
 
+const TODO_COLLISION_REPAIR_VERSION = 2;
+
+function _remapTodoIdReferences(idRemap) {
+  if (!(idRemap instanceof Map) || !idRemap.size) return;
+  const todoReferenceFields = ['recurrence_parent_id', 'recurring_parent_id', 'parent_todo_id', 'root'];
+  (_db.todos || []).forEach(todo => {
+    todoReferenceFields.forEach(field => {
+      const replacement = idRemap.get(String(todo?.[field]));
+      if (replacement != null) todo[field] = replacement;
+    });
+    if (Array.isArray(todo.history)) {
+      todo.history.forEach(row => {
+        const replacement = idRemap.get(String(row?.task_id));
+        if (replacement != null) row.task_id = replacement;
+      });
+    }
+  });
+  (_db.todo_history || []).forEach(row => {
+    const replacement = idRemap.get(String(row?.task_id));
+    if (replacement != null) row.task_id = replacement;
+  });
+}
+
+async function _reconcileTerminalTodoCollisions(pending) {
+  const todoIds = [...new Set((Array.isArray(pending?.todoIds) ? pending.todoIds : []).map(String))].sort();
+  const unknownKey = `${TODO_COLLISION_REPAIR_VERSION}:${todoIds.join(',')}:unknown`;
+  let recoveryKey = unknownKey;
+  if (pending?.recoveryFailed && pending?.recoveryKey === unknownKey) return false;
+  const teamSession = _teamAccessSession();
+  const accId = teamSession?.ownerUserId || _sbUser?.id;
+  if (!accId || !_sbSession?.token) return false;
+  try {
+    const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+    if (!statusRes.ok) throw new Error('collision_status_unavailable');
+    const status = await statusRes.json();
+    const serverHighWater = _applyTodoIdHighWater(status.todo_id_high_water);
+    recoveryKey = `${TODO_COLLISION_REPAIR_VERSION}:${todoIds.join(',')}:${serverHighWater}`;
+    if (pending?.recoveryFailed && pending?.recoveryKey === recoveryKey) return false;
+
+    const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery());
+    if (!currentRes.ok) throw new Error('collision_server_data_unavailable');
+    const currentPayload = await currentRes.json();
+    if (currentPayload?.workspace_id && String(currentPayload.workspace_id) !== _currentAccountId()) {
+      throw new Error('collision_workspace_mismatch');
+    }
+    const serverTodos = Array.isArray(currentPayload?.data?.todos) ? currentPayload.data.todos : [];
+    const serverById = new Map(serverTodos.map(todo => [String(todo?.id), todo]));
+    const localById = new Map((_db.todos || []).map(todo => [String(todo?.id), todo]));
+    const idRemap = new Map();
+    const serverBacked = [];
+
+    todoIds.forEach(oldId => {
+      const localTodo = localById.get(oldId);
+      if (!localTodo) return;
+      const serverTodo = serverById.get(oldId);
+      if (serverTodo) {
+        serverBacked.push(serverTodo);
+        return;
+      }
+      const newId = _allocateTodoId();
+      localTodo.id = newId;
+      idRemap.set(oldId, newId);
+    });
+
+    _remapTodoIdReferences(idRemap);
+    _syncTodoIdAllocator(_db);
+    if (serverBacked.length) _mergeServerTodosIntoLocal({ todos: serverBacked });
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+
+    _clearServerSyncPending(Infinity);
+    _markServerSyncPending(idRemap.size ? 'todo-id-collision-remapped' : 'todo-id-collision-resolved');
+    return true;
+  } catch(e) {
+    _markServerSyncPending('todo-id-collision-stopped', {
+      todoIds,
+      recoveryKey,
+      recoveryFailed: true,
+    });
+    return false;
+  }
+}
+
 async function _syncToServer(conflictAttempt = 0) {
   if (window._serverSyncInFlight) {
     window._serverSyncQueued = true;
     return window._serverSyncInFlight;
   }
-  let terminalCollisionRecovery = false;
   if (_isTerminalTodoCollisionPending()) {
     const pending = _readServerSyncPending();
-    if (pending?.recoveryAttempted) return;
-    _markServerSyncPending('todo-id-collision-stopped', {
-      todoIds: Array.isArray(pending?.todoIds) ? pending.todoIds : [],
-      recoveryAttempted: true,
-    });
-    terminalCollisionRecovery = true;
-    window._todoCollisionRecoveryInFlight = true;
+    if (window._todoCollisionRepairInFlight) return window._todoCollisionRepairInFlight;
+    const repair = _reconcileTerminalTodoCollisions(pending);
+    window._todoCollisionRepairInFlight = repair;
+    let repaired = false;
+    try { repaired = await repair; }
+    finally {
+      if (window._todoCollisionRepairInFlight === repair) window._todoCollisionRepairInFlight = null;
+    }
+    if (!repaired) return;
   }
   const run = (async () => {
     let result = null;
@@ -23285,7 +23368,6 @@ async function _syncToServer(conflictAttempt = 0) {
     return await run;
   } finally {
     if (window._serverSyncInFlight === run) window._serverSyncInFlight = null;
-    if (terminalCollisionRecovery) window._todoCollisionRecoveryInFlight = false;
   }
 }
 
@@ -23462,23 +23544,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
           });
           if (idRemap.size) {
             _db.todos = localTodos.filter(todo => !removeTodos.has(todo));
-            const todoReferenceFields = ['recurrence_parent_id', 'recurring_parent_id', 'parent_todo_id', 'root'];
-            (_db.todos || []).forEach(todo => {
-              todoReferenceFields.forEach(field => {
-                const replacement = idRemap.get(String(todo?.[field]));
-                if (replacement != null) todo[field] = replacement;
-              });
-              if (Array.isArray(todo.history)) {
-                todo.history.forEach(row => {
-                  const replacement = idRemap.get(String(row?.task_id));
-                  if (replacement != null) row.task_id = replacement;
-                });
-              }
-            });
-            (_db.todo_history || []).forEach(row => {
-              const replacement = idRemap.get(String(row?.task_id));
-              if (replacement != null) row.task_id = replacement;
-            });
+            _remapTodoIdReferences(idRemap);
             _syncTodoIdAllocator(_db);
             remapped = true;
           }
@@ -23489,7 +23555,6 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped',
         remapped ? {} : {
           todoIds: collisionIds.map(item => String(item?.id ?? item)),
-          recoveryAttempted: !!window._todoCollisionRecoveryInFlight || todoCollisionAttempt > 0,
         }
       );
       if (remapped) return _syncToServerOnce(conflictAttempt, todoCollisionAttempt + 1);
