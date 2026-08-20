@@ -23232,7 +23232,14 @@ function _notifyRecentCreatedTodos(accountId) {
 // become 409 conflicts (especially noisy for multi-chunk payloads). Coalesce
 // concurrent requests into one trailing pass, which will no-op when data did not
 // change while the first save was running.
+function _isTerminalTodoCollisionPending() {
+  const pending = _readServerSyncPending();
+  return pending?.reason === 'todo-id-collision-stopped' &&
+    pending.fingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
+}
+
 async function _syncToServer(conflictAttempt = 0) {
+  if (_isTerminalTodoCollisionPending()) return;
   if (window._serverSyncInFlight) {
     window._serverSyncQueued = true;
     return window._serverSyncInFlight;
@@ -23383,7 +23390,8 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         (_db.todos || []).forEach(todo => {
           if (!ids.has(String(todo?.id))) return;
           if (todo?._snapshot !== true || todo?.archived !== true) return;
-          if (todo?.recurrence_parent_id == null && todo?.root == null) return;
+          if (todo?.recurrence_parent_id == null && todo?.recurring_parent_id == null &&
+              todo?.parent_todo_id == null && todo?.root == null) return;
           todo.id = _allocateTodoId();
           remapped = true;
         });
@@ -23508,6 +23516,7 @@ function _mergeServerTodosIntoLocal(serverData) {
 
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
 async function _loadFromServer() {
+  if (_isTerminalTodoCollisionPending()) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   try {
