@@ -5565,14 +5565,26 @@ function _readServerSyncPending() {
   }
 }
 
-function _markServerSyncPending(reason = 'save') {
+function _markServerSyncPending(reason = 'save', details = {}) {
   try {
+    const existing = _readServerSyncPending();
+    const stoppedIds = existing?.reason === 'todo-id-collision-stopped' && Array.isArray(existing.todoIds)
+      ? existing.todoIds.map(String)
+      : [];
+    if (reason !== 'todo-id-collision-stopped' && stoppedIds.length) {
+      const currentIds = new Set((_db?.todos || []).map(todo => String(todo?.id)));
+      if (stoppedIds.some(id => currentIds.has(id))) {
+        reason = 'todo-id-collision-stopped';
+        details = { ...details, todoIds: stoppedIds };
+      }
+    }
     const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
     localStorage.setItem(_serverSyncPendingKey(), JSON.stringify({
       savedAt,
       reason,
       dbKey: window._activeDBKey || DB_KEY,
       fingerprint: _dataFingerprint(_serverDataSignature(_db)),
+      ...details,
       updatedAt: Date.now()
     }));
     window._hasPendingServerSync = true;
@@ -23234,8 +23246,13 @@ function _notifyRecentCreatedTodos(accountId) {
 // change while the first save was running.
 function _isTerminalTodoCollisionPending() {
   const pending = _readServerSyncPending();
-  return pending?.reason === 'todo-id-collision-stopped' &&
-    pending.fingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
+  if (pending?.reason !== 'todo-id-collision-stopped') return false;
+  const unresolvedIds = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
+  if (unresolvedIds.length) {
+    const currentIds = new Set((_db?.todos || []).map(todo => String(todo?.id)));
+    return unresolvedIds.some(id => currentIds.has(id));
+  }
+  return pending.fingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
 }
 
 async function _syncToServer(conflictAttempt = 0) {
@@ -23387,17 +23404,74 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       let remapped = false;
       if (todoCollisionAttempt < 1 && serverHighWater > 0) {
         const ids = new Set(collisionIds.map(item => String(item?.id ?? item)));
-        (_db.todos || []).forEach(todo => {
-          if (!ids.has(String(todo?.id))) return;
-          if (todo?._snapshot !== true || todo?.archived !== true) return;
-          if (todo?.recurrence_parent_id == null && todo?.recurring_parent_id == null &&
-              todo?.parent_todo_id == null && todo?.root == null) return;
-          todo.id = _allocateTodoId();
-          remapped = true;
-        });
+        let serverTodos = null;
+        try {
+          const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery());
+          if (currentRes.ok) {
+            const currentPayload = await currentRes.json();
+            if (Array.isArray(currentPayload?.data?.todos)) serverTodos = currentPayload.data.todos;
+          }
+        } catch(e) {}
+        if (serverTodos) {
+          const idRemap = new Map();
+          const removeTodos = new Set();
+          const todoDate = todo => String(todo?.occurrence_date || todo?.date_jalali || todo?.scheduled_date || todo?.scheduledDate || '');
+          const todoRoot = todo => String(todo?.recurrence_parent_id ?? todo?.recurring_parent_id ?? todo?.parent_todo_id ?? todo?.root ?? '');
+          const localTodos = _db.todos || [];
+          localTodos.forEach(todo => {
+            const oldId = String(todo?.id);
+            if (!ids.has(oldId)) return;
+            // A matching current server id is ambiguous/server-backed; never remap it.
+            if (serverTodos.some(serverTodo => String(serverTodo?.id) === oldId)) return;
+            const isRecurring = todo?._snapshot === true || todo?.recurrence_parent_id != null ||
+              todo?.recurring_parent_id != null || todo?.parent_todo_id != null || todo?.root != null;
+            let equivalent = null;
+            if (isRecurring && todoRoot(todo) && todoDate(todo)) {
+              equivalent = serverTodos.find(serverTodo =>
+                String(serverTodo?.id) !== oldId &&
+                todoRoot(serverTodo) === todoRoot(todo) &&
+                todoDate(serverTodo) === todoDate(todo)
+              ) || null;
+            }
+            if (equivalent) {
+              const localState = { ...todo };
+              const localEquivalent = localTodos.find(item => item !== todo && String(item?.id) === String(equivalent.id));
+              if (localEquivalent) {
+                Object.assign(localEquivalent, equivalent, localState, { id: equivalent.id });
+                removeTodos.add(todo);
+              } else {
+                Object.assign(todo, equivalent, localState, { id: equivalent.id });
+              }
+              idRemap.set(oldId, equivalent.id);
+            } else {
+              const newId = _allocateTodoId();
+              todo.id = newId;
+              idRemap.set(oldId, newId);
+            }
+          });
+          if (idRemap.size) {
+            _db.todos = localTodos.filter(todo => !removeTodos.has(todo));
+            const todoReferenceFields = ['recurrence_parent_id', 'recurring_parent_id', 'parent_todo_id', 'root'];
+            (_db.todos || []).forEach(todo => {
+              todoReferenceFields.forEach(field => {
+                const replacement = idRemap.get(String(todo?.[field]));
+                if (replacement != null) todo[field] = replacement;
+              });
+            });
+            (_db.todo_history || []).forEach(row => {
+              const replacement = idRemap.get(String(row?.task_id));
+              if (replacement != null) row.task_id = replacement;
+            });
+            _syncTodoIdAllocator(_db);
+            remapped = true;
+          }
+        }
       }
       try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
-      _markServerSyncPending(remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped');
+      _markServerSyncPending(
+        remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped',
+        remapped ? {} : { todoIds: collisionIds.map(item => String(item?.id ?? item)) }
+      );
       if (remapped) return _syncToServerOnce(conflictAttempt, todoCollisionAttempt + 1);
       return res;
     }
