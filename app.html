@@ -23256,10 +23256,20 @@ function _isTerminalTodoCollisionPending() {
 }
 
 async function _syncToServer(conflictAttempt = 0) {
-  if (_isTerminalTodoCollisionPending()) return;
   if (window._serverSyncInFlight) {
     window._serverSyncQueued = true;
     return window._serverSyncInFlight;
+  }
+  let terminalCollisionRecovery = false;
+  if (_isTerminalTodoCollisionPending()) {
+    const pending = _readServerSyncPending();
+    if (pending?.recoveryAttempted) return;
+    _markServerSyncPending('todo-id-collision-stopped', {
+      todoIds: Array.isArray(pending?.todoIds) ? pending.todoIds : [],
+      recoveryAttempted: true,
+    });
+    terminalCollisionRecovery = true;
+    window._todoCollisionRecoveryInFlight = true;
   }
   const run = (async () => {
     let result = null;
@@ -23275,6 +23285,7 @@ async function _syncToServer(conflictAttempt = 0) {
     return await run;
   } finally {
     if (window._serverSyncInFlight === run) window._serverSyncInFlight = null;
+    if (terminalCollisionRecovery) window._todoCollisionRecoveryInFlight = false;
   }
 }
 
@@ -23476,7 +23487,10 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
       _markServerSyncPending(
         remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped',
-        remapped ? {} : { todoIds: collisionIds.map(item => String(item?.id ?? item)) }
+        remapped ? {} : {
+          todoIds: collisionIds.map(item => String(item?.id ?? item)),
+          recoveryAttempted: !!window._todoCollisionRecoveryInFlight || todoCollisionAttempt > 0,
+        }
       );
       if (remapped) return _syncToServerOnce(conflictAttempt, todoCollisionAttempt + 1);
       return res;
