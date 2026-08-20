@@ -23583,6 +23583,33 @@ function _mergeServerTodosIntoLocal(serverData) {
     }
     const remoteTime = _syncItemTime(remote);
     const localTime = _syncItemTime(local);
+    const localHistoryKeys = new Set((Array.isArray(local.history) ? local.history : []).map(row =>
+      [row?.action, row?.created_at, row?.user_id, row?.new_value].map(value => String(value ?? '')).join('|')
+    ));
+    const remoteStateRows = (Array.isArray(remote.history) ? remote.history : []).filter(row =>
+      row?.action === 'completed' || row?.action === 'unchecked'
+    );
+    const hasNewRemoteState = remoteStateRows.some(row =>
+      !localHistoryKeys.has([row?.action, row?.created_at, row?.user_id, row?.new_value]
+        .map(value => String(value ?? '')).join('|'))
+    );
+    if (hasNewRemoteState) {
+      ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
+       'completed_by_email', 'archived', 'updated_at', 'skipped_at'].forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(remote, field)) local[field] = _cloneData(remote[field]);
+      });
+      local.history = Array.isArray(local.history) ? local.history : [];
+      (remote.history || []).forEach(row => {
+        const key = [row?.action, row?.created_at, row?.user_id, row?.new_value]
+          .map(value => String(value ?? '')).join('|');
+        if (!localHistoryKeys.has(key)) {
+          local.history.push(_cloneData(row));
+          localHistoryKeys.add(key);
+        }
+      });
+      changed = true;
+      return;
+    }
     if (remoteTime > localTime) {
       Object.assign(local, remote);
       changed = true;
@@ -23790,8 +23817,10 @@ async function _loadFromServer() {
           return false;
         }
         const localPending = _cloneData(_db);
+        const serverSnapshot = _cloneData(data);
         const merged = _mergeLocalPendingChangesIntoOwnerData(localPending, data);
         _db = merged;
+        _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
         const key = window._activeDBKey || DB_KEY;
         _persistDatabaseSnapshot(key, _db);
@@ -23813,8 +23842,10 @@ async function _loadFromServer() {
       const localDiverged = _localDataDivergedFromServerBaseline();
       if (localHasMeaningfulData && _serverDataChanged(data, _db) && localDiverged !== false) {
         const beforeMergeFingerprint = _dataFingerprint(_serverDataSignature(_db));
+        const serverSnapshot = _cloneData(data);
         _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
         _migrate(_db);
+        const serverTodoStateChanged = _mergeServerTodosIntoLocal(serverSnapshot);
         const mergedChanged = beforeMergeFingerprint !== _dataFingerprint(_serverDataSignature(_db));
         const key = window._activeDBKey || DB_KEY;
         try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
@@ -23822,7 +23853,7 @@ async function _loadFromServer() {
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
         console.warn('[TeamPulse] prevented automatic rollback and merged local data with server');
-        return mergedChanged;
+        return mergedChanged || serverTodoStateChanged;
       }
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
