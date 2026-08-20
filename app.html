@@ -23719,15 +23719,17 @@ async function _loadFromServer() {
       );
       const localDiverged = _localDataDivergedFromServerBaseline();
       if (localHasMeaningfulData && _serverDataChanged(data, _db) && localDiverged !== false) {
+        const beforeMergeFingerprint = _dataFingerprint(_serverDataSignature(_db));
         _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
         _migrate(_db);
+        const mergedChanged = beforeMergeFingerprint !== _dataFingerprint(_serverDataSignature(_db));
         const key = window._activeDBKey || DB_KEY;
         try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
         _markServerSyncPending(localDiverged ? 'local-diverged-from-baseline' : 'legacy-safe-merge');
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
         console.warn('[TeamPulse] prevented automatic rollback and merged local data with server');
-        return true;
+        return mergedChanged;
       }
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
