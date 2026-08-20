@@ -23457,6 +23457,12 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
                 const replacement = idRemap.get(String(todo?.[field]));
                 if (replacement != null) todo[field] = replacement;
               });
+              if (Array.isArray(todo.history)) {
+                todo.history.forEach(row => {
+                  const replacement = idRemap.get(String(row?.task_id));
+                  if (replacement != null) row.task_id = replacement;
+                });
+              }
             });
             (_db.todo_history || []).forEach(row => {
               const replacement = idRemap.get(String(row?.task_id));
