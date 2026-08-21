@@ -23445,6 +23445,7 @@ function _syncTodoDelta(todo, operation = 'upsert') {
     if (!accId || !_sbSession?.token) return null;
     try {
       let deltaCollisionAttempt = 0;
+      let deltaStateConflictAttempt = 0;
       const resolvedCollisionIds = new Set();
       while (true) {
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
@@ -23506,7 +23507,50 @@ function _syncTodoDelta(todo, operation = 'upsert') {
           }
           return res;
         }
-        if (res.status === 409) await _loadFromServer();
+        if (res.status === 409 && responseData?.error === 'todo_delta_conflict' &&
+            (operation === 'complete' || operation === 'reopen') &&
+            deltaStateConflictAttempt < 1 && responseData?.todo) {
+          const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+          if (localTodo) {
+            const intendedState = todoSnapshot;
+            const rebasedTodo = { ...responseData.todo };
+            ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
+             'completed_by_email', 'archived', 'skipped_at', 'staff_report',
+             'report_updated_at', 'report_attachment_name', 'report_attachment_at'].forEach(field => {
+              if (Object.prototype.hasOwnProperty.call(intendedState, field)) {
+                rebasedTodo[field] = _cloneData(intendedState[field]);
+              }
+            });
+            const historyKeys = new Set();
+            rebasedTodo.history = [...(Array.isArray(responseData.todo.history) ? responseData.todo.history : []),
+              ...(Array.isArray(intendedState.history) ? intendedState.history : [])].filter(row => {
+              const key = [row?.action, row?.created_at, row?.user_id, row?.new_value]
+                .map(value => String(value ?? '')).join('|');
+              if (historyKeys.has(key)) return false;
+              historyKeys.add(key);
+              return true;
+            });
+            rebasedTodo.updated_at = new Date().toISOString();
+            Object.assign(localTodo, rebasedTodo);
+            todoSnapshot = _cloneData(localTodo);
+            window._serverDataEtag = responseData.etag || window._serverDataEtag || null;
+            try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+            deltaStateConflictAttempt += 1;
+            continue;
+          }
+        }
+        if (res.status === 409) {
+          // A Delta conflict is target-scoped. Reload the authoritative Todo
+          // state, but never turn it into a whole-document/chunk upload.
+          window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+          try {
+            const updated = await _loadFromServer();
+            _refreshUiAfterServerLoad(updated);
+          } catch(e) {
+            console.warn('[TeamPulse] Delta conflict reload failed:', e.message);
+          }
+          return res;
+        }
         return _syncToServer();
       }
     } catch(e) {
