@@ -24102,6 +24102,33 @@ function _nextServerPollDelay() {
   return 5 * 1000;
 }
 
+async function _syncFromServerOnResume() {
+  if (document.hidden || document.visibilityState === 'hidden') return false;
+  if (!_sbUser || !_sbSession?.token) return false;
+  if (window._resumeServerSyncInFlight) return window._resumeServerSyncInFlight;
+  window._lastAppActivityAt = Date.now();
+  const run = (async () => {
+    const updated = await _pollServerStatus();
+    _refreshUiAfterServerLoad(updated);
+    return updated;
+  })();
+  window._resumeServerSyncInFlight = run;
+  try { return await run; }
+  finally {
+    if (window._resumeServerSyncInFlight === run) window._resumeServerSyncInFlight = null;
+  }
+}
+
+function _scheduleServerResumeSync(delay = 500) {
+  if (document.hidden || document.visibilityState === 'hidden') return;
+  window._lastAppActivityAt = Date.now();
+  clearTimeout(window._resumeServerSyncTimer);
+  window._resumeServerSyncTimer = setTimeout(() => {
+    window._resumeServerSyncTimer = null;
+    void _syncFromServerOnResume();
+  }, delay);
+}
+
 function _startKeyEventReminderLoop() {
   _checkKeyEventReminders();
   clearInterval(window._keyEventReminderInterval);
@@ -24117,22 +24144,24 @@ function _bindServerSyncLifecycleHandlers() {
       _syncToServer();
     } else {
       _refreshReminderPushRegistration();
-      _loadFromServer().then(_refreshUiAfterServerLoad);
+      _scheduleServerResumeSync();
     }
   });
   window.addEventListener('pagehide', () => {
     clearTimeout(window._serverSyncTimer);
     _syncToServer();
   });
-  window.addEventListener('focus', async () => {
+  window.addEventListener('focus', () => {
     _refreshReminderPushRegistration();
     if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
       clearTimeout(window._serverSyncTimer);
-      await _syncToServer();
+      void _syncToServer();
     }
-    const updated = await _loadFromServer();
-    _refreshUiAfterServerLoad(updated);
+    _scheduleServerResumeSync();
   });
+  window.addEventListener('pageshow', () => _scheduleServerResumeSync());
+  window.addEventListener('online', () => _scheduleServerResumeSync());
+  _scheduleServerResumeSync(500);
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
     _adoptManualRestoreFromLocalStorage('beforeunload');
