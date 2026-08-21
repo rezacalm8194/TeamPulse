@@ -23373,18 +23373,39 @@ async function _syncToServer(conflictAttempt = 0) {
   }
 }
 
+function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
+  const pending = _readServerSyncPending();
+  if (!pending) return;
+  const targetId = String(todoId);
+  const isCollisionPending = pending.reason === 'todo-id-collision-stopped' ||
+    pending.reason === 'todo-delta-collision-stopped' ||
+    pending.reason === 'todo-delta-collision-remapped';
+  if (!isCollisionPending) {
+    _clearServerSyncPending(syncSavedAt);
+    return;
+  }
+  const pendingIds = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
+  if (!pendingIds.includes(targetId)) return;
+  const remainingIds = pendingIds.filter(id => id !== targetId);
+  if (!remainingIds.length) {
+    _clearServerSyncPending(Infinity);
+    return;
+  }
+  _markServerSyncPending(pending.reason, { ...pending, todoIds: remainingIds });
+}
+
 function _syncTodoDelta(todo, operation = 'upsert') {
   clearTimeout(window._serverSyncTimer);
   let todoSnapshot = _cloneData(todo);
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
-    if (_isTerminalTodoCollisionPending()) return _syncToServer();
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser?.id;
     if (!accId || !_sbSession?.token) return null;
     try {
       let deltaCollisionAttempt = 0;
+      const resolvedCollisionIds = new Set();
       while (true) {
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
           method: 'POST',
@@ -23410,7 +23431,8 @@ function _syncTodoDelta(todo, operation = 'upsert') {
           const syncPayload = _serverSafeData(_db);
           window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
           _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
-          _clearServerSyncPending(syncSavedAt);
+          _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoSnapshot.id);
+          resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
           setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
           if (responseData?.server_changed) {
@@ -23427,6 +23449,7 @@ function _syncTodoDelta(todo, operation = 'upsert') {
             const oldId = String(localTodo.id);
             const newId = _allocateTodoId();
             localTodo.id = newId;
+            resolvedCollisionIds.add(oldId);
             _remapTodoIdReferences(new Map([[oldId, newId]]));
             _save(false);
             _markServerSyncPending('todo-delta-collision-remapped', { todoIds: [oldId] });
