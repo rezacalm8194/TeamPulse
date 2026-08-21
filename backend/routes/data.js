@@ -673,9 +673,9 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     const todoIdCollisions = findTodoIdCollisions(
       db,
       storageKey,
-      previousTodos,
-      nextData.todos,
-      { incomingHighWater: req.body?.todo_id_high_water }
+      oldTodo ? [oldTodo] : [],
+      [savedTodo],
+      { incomingHighWater: oldTodo ? req.body?.todo_id_high_water : 0 }
     );
     if (todoIdCollisions.length) {
       return res.status(409).json({

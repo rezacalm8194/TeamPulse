@@ -23375,7 +23375,7 @@ async function _syncToServer(conflictAttempt = 0) {
 
 function _syncTodoDelta(todo, operation = 'upsert') {
   clearTimeout(window._serverSyncTimer);
-  const todoSnapshot = _cloneData(todo);
+  let todoSnapshot = _cloneData(todo);
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
@@ -23384,49 +23384,68 @@ function _syncTodoDelta(todo, operation = 'upsert') {
     const accId = teamSession?.ownerUserId || _sbUser?.id;
     if (!accId || !_sbSession?.token) return null;
     try {
-      const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
-        method: 'POST',
-        body: JSON.stringify({
-          workspace: _currentAccountId(),
-          operation,
-          todo: todoSnapshot,
-          base_etag: window._serverDataEtag || null,
-          todo_id_high_water: _db?._todoIdHighWater || 0,
-        }),
-      });
-      let responseData = null;
-      try { responseData = await res.clone().json(); } catch(e) {}
-      if (res.ok) {
-        _applyTodoIdHighWater(responseData?.todo_id_high_water);
-        const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
-        if (localTodo && responseData?.todo &&
-            String(localTodo.updated_at || '') === String(todoSnapshot.updated_at || '')) {
-          Object.assign(localTodo, responseData.todo);
-        }
-        window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
-        window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, syncSavedAt);
-        const syncPayload = _serverSafeData(_db);
-        window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
-        _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
-        _clearServerSyncPending(syncSavedAt);
-        if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
-        setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
-        if (responseData?.server_changed) {
-          setTimeout(() => {
-            _loadFromServer().then(updated => _refreshUiAfterServerLoad(updated));
-          }, 0);
-        }
-        return res;
-      }
-      if (res.status === 409 && responseData?.error === 'todo_id_collision') {
-        _applyTodoIdHighWater(responseData.todo_id_high_water);
-        _markServerSyncPending('todo-id-collision-stopped', {
-          todoIds: Array.isArray(responseData.todo_ids) ? responseData.todo_ids.map(String) : [String(todoSnapshot.id)],
+      let deltaCollisionAttempt = 0;
+      while (true) {
+        const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
+          method: 'POST',
+          body: JSON.stringify({
+            workspace: _currentAccountId(),
+            operation,
+            todo: todoSnapshot,
+            base_etag: window._serverDataEtag || null,
+            todo_id_high_water: _db?._todoIdHighWater || 0,
+          }),
         });
-      } else if (res.status === 409) {
-        await _loadFromServer();
+        let responseData = null;
+        try { responseData = await res.clone().json(); } catch(e) {}
+        if (res.ok) {
+          _applyTodoIdHighWater(responseData?.todo_id_high_water);
+          const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+          if (localTodo && responseData?.todo &&
+              String(localTodo.updated_at || '') === String(todoSnapshot.updated_at || '')) {
+            Object.assign(localTodo, responseData.todo);
+          }
+          window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+          window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, syncSavedAt);
+          const syncPayload = _serverSafeData(_db);
+          window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
+          _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
+          _clearServerSyncPending(syncSavedAt);
+          if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
+          setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
+          if (responseData?.server_changed) {
+            setTimeout(() => {
+              _loadFromServer().then(updated => _refreshUiAfterServerLoad(updated));
+            }, 0);
+          }
+          return res;
+        }
+        if (res.status === 409 && responseData?.error === 'todo_id_collision') {
+          _applyTodoIdHighWater(responseData.todo_id_high_water);
+          const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+          if (operation === 'create' && deltaCollisionAttempt < 1 && localTodo) {
+            const oldId = String(localTodo.id);
+            const newId = _allocateTodoId();
+            localTodo.id = newId;
+            _remapTodoIdReferences(new Map([[oldId, newId]]));
+            _save(false);
+            _markServerSyncPending('todo-delta-collision-remapped', { todoIds: [oldId] });
+            todoSnapshot = _cloneData(localTodo);
+            deltaCollisionAttempt += 1;
+            continue;
+          }
+          _markServerSyncPending('todo-delta-collision-stopped', {
+            todoIds: Array.isArray(responseData.todo_ids) ? responseData.todo_ids.map(String) : [String(todoSnapshot.id)],
+          });
+          if (operation !== 'create') {
+            const updated = await _loadFromServer();
+            _refreshUiAfterServerLoad(updated);
+          }
+          return res;
+        }
+        if (res.status === 409) await _loadFromServer();
+        return _syncToServer();
       }
-      return _syncToServer();
     } catch(e) {
       return _syncToServer();
     }
