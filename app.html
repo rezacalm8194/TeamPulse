@@ -5476,7 +5476,7 @@ function _save(stamp=true, { scheduleServerSync = true } = {}) {
     }
   }
   if (stamp) {
-    if (localSaved) _markServerSyncPending('save');
+    if (localSaved) _markServerSyncPending(scheduleServerSync ? 'save' : 'todo-delta-save');
     _saveVersion();
     if (scheduleServerSync) {
       clearTimeout(window._serverSyncTimer);
@@ -5577,7 +5577,7 @@ function _markServerSyncPending(reason = 'save', details = {}) {
     const stoppedIds = existing?.reason === 'todo-id-collision-stopped' && Array.isArray(existing.todoIds)
       ? existing.todoIds.map(String)
       : [];
-    if (reason !== 'todo-id-collision-stopped' && stoppedIds.length) {
+    if (reason !== 'todo-id-collision-stopped' && reason !== 'save' && stoppedIds.length) {
       const currentIds = new Set((_db?.todos || []).map(todo => String(todo?.id)));
       if (stoppedIds.some(id => currentIds.has(id))) {
         reason = 'todo-id-collision-stopped';
@@ -23269,12 +23269,15 @@ function _notifyRecentCreatedTodos(accountId) {
 function _isTerminalTodoCollisionPending() {
   const pending = _readServerSyncPending();
   if (pending?.reason !== 'todo-id-collision-stopped') return false;
-  const unresolvedIds = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
-  if (unresolvedIds.length) {
-    const currentIds = new Set((_db?.todos || []).map(todo => String(todo?.id)));
-    return unresolvedIds.some(id => currentIds.has(id));
-  }
-  return pending.fingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
+  const stoppedFingerprint = pending.stoppedFingerprint || pending.fingerprint;
+  return !!stoppedFingerprint && stoppedFingerprint === _dataFingerprint(_serverDataSignature(_db || {}));
+}
+
+function _stopTerminalTodoCollisionSync() {
+  clearTimeout(window._serverSyncRetryTimer);
+  window._serverSyncRetryTimer = null;
+  window._serverSyncRetryAttempt = 0;
+  window._serverSyncQueued = false;
 }
 
 const TODO_COLLISION_REPAIR_VERSION = 2;
@@ -23354,36 +23357,30 @@ async function _reconcileTerminalTodoCollisions(pending) {
       todoIds,
       recoveryKey,
       recoveryFailed: true,
+      stoppedFingerprint: _dataFingerprint(_serverDataSignature(_db || {})),
     });
     return false;
   }
 }
 
 async function _syncToServer(conflictAttempt = 0) {
+  if (_isTerminalTodoCollisionPending()) {
+    _stopTerminalTodoCollisionSync();
+    return null;
+  }
   if (window._serverSyncInFlight) {
     window._serverSyncQueued = true;
     return window._serverSyncInFlight;
   }
   if (_stopStaleFullSyncConflictPending()) return;
-  if (_isTerminalTodoCollisionPending()) {
-    const pending = _readServerSyncPending();
-    if (window._todoCollisionRepairInFlight) return window._todoCollisionRepairInFlight;
-    const repair = _reconcileTerminalTodoCollisions(pending);
-    window._todoCollisionRepairInFlight = repair;
-    let repaired = false;
-    try { repaired = await repair; }
-    finally {
-      if (window._todoCollisionRepairInFlight === repair) window._todoCollisionRepairInFlight = null;
-    }
-    if (!repaired) return;
-  }
   const run = (async () => {
     let result = null;
     do {
       window._serverSyncQueued = false;
       result = await _syncToServerOnce(conflictAttempt);
       conflictAttempt = 0;
-    } while (window._serverSyncQueued);
+    } while (window._serverSyncQueued && !_isTerminalTodoCollisionPending());
+    if (_isTerminalTodoCollisionPending()) _stopTerminalTodoCollisionSync();
     return result;
   })();
   window._serverSyncInFlight = run;
@@ -23391,7 +23388,18 @@ async function _syncToServer(conflictAttempt = 0) {
     return await run;
   } finally {
     if (window._serverSyncInFlight === run) window._serverSyncInFlight = null;
+    if (_isTerminalTodoCollisionPending()) _stopTerminalTodoCollisionSync();
   }
+}
+
+function _rebaseTerminalTodoCollisionPending(pending, todoIds) {
+  const details = {
+    todoIds,
+    stoppedFingerprint: _dataFingerprint(_serverDataSignature(_db || {})),
+  };
+  if (pending.recoveryKey != null) details.recoveryKey = pending.recoveryKey;
+  if (pending.recoveryFailed != null) details.recoveryFailed = pending.recoveryFailed;
+  _markServerSyncPending('todo-id-collision-stopped', details);
 }
 
 function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
@@ -23406,13 +23414,22 @@ function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
     return;
   }
   const pendingIds = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
-  if (!pendingIds.includes(targetId)) return;
+  if (!pendingIds.includes(targetId)) {
+    if (pending.reason === 'todo-id-collision-stopped') {
+      _rebaseTerminalTodoCollisionPending(pending, pendingIds);
+    }
+    return;
+  }
   const remainingIds = pendingIds.filter(id => id !== targetId);
   if (!remainingIds.length) {
     _clearServerSyncPending(Infinity);
     return;
   }
-  _markServerSyncPending(pending.reason, { ...pending, todoIds: remainingIds });
+  if (pending.reason === 'todo-id-collision-stopped') {
+    _rebaseTerminalTodoCollisionPending(pending, remainingIds);
+  } else {
+    _markServerSyncPending(pending.reason, { ...pending, todoIds: remainingIds });
+  }
 }
 
 function _syncTodoDelta(todo, operation = 'upsert') {
@@ -23504,6 +23521,10 @@ function _syncTodoDelta(todo, operation = 'upsert') {
 }
 
 async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
+  if (_isTerminalTodoCollisionPending()) {
+    _stopTerminalTodoCollisionSync();
+    return null;
+  }
   if (_fullSyncConflictPendingMatchesCurrentData() && _readServerSyncPending()?.reason === 'conflict-merged-stopped') return null;
   if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
@@ -23688,6 +23709,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         remapped ? 'todo-id-collision-remapped' : 'todo-id-collision-stopped',
         remapped ? {} : {
           todoIds: collisionIds.map(item => String(item?.id ?? item)),
+          stoppedFingerprint: _dataFingerprint(_serverDataSignature(_db || {})),
         }
       );
       if (remapped) return _syncToServerOnce(conflictAttempt, todoCollisionAttempt + 1);
