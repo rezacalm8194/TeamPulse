@@ -4819,7 +4819,9 @@ function _appTimeLabel() {
 }
 
 function _jalaliFromInstant(value) {
-  const p = _timeZoneParts(value ? new Date(value) : new Date());
+  const instant = value ? new Date(value) : new Date();
+  if (!Number.isFinite(instant.getTime())) return null;
+  const p = _timeZoneParts(instant);
   return gregorianToJalali(p.year, p.month, p.day);
 }
 
@@ -25402,7 +25404,9 @@ function _isTodoRecurring(t) {
 function _todoDoneDayKey(t) {
   if (!t?.done_at && !t?.completedAt && !t?.completed_at) return 0;
   const raw = t.done_at || t.completedAt || t.completed_at;
-  const [dy,dm,dd] = _jalaliFromInstant(raw);
+  const parts = _jalaliFromInstant(raw);
+  if (!parts) return 0;
+  const [dy,dm,dd] = parts;
   return _jalaliKey(_formatJalali(dy,dm,dd));
 }
 
@@ -25996,7 +26000,11 @@ function _todoPerf(tasks) {
   const overdue = tasks.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey).length;
   const late = tasks.filter(t => t.done && _todoScheduledDate(t) && _todoDoneDayKey(t) > _jalaliKey(_todoScheduledDate(t))).length;
   const onTime = done - late;
-  const activeDays = new Set(tasks.filter(t => t.done_at || t.completed_at).map(t => _formatJalali(..._jalaliFromInstant(t.done_at || t.completed_at)))).size;
+  const activeDays = new Set(tasks
+    .filter(t => t.done_at || t.completed_at)
+    .map(t => _jalaliFromInstant(t.done_at || t.completed_at))
+    .filter(Boolean)
+    .map(parts => _formatJalali(...parts))).size;
   return {
     planned, done, pending: Math.max(0, planned - done), overdue, late,
     percent: planned ? Math.round(done / planned * 100) : 0,
@@ -28149,7 +28157,9 @@ function renderTodoList() {
   let _archiveChanged = duplicateCleanupCount > 0;
   _db.todos.forEach(t => {
     if (t.done && !t.archived && t.repeat && t.repeat !== 'none' && t.done_at) {
-      const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
+      const parts = _jalaliFromInstant(t.done_at);
+      if (!parts) return;
+      const [dy,dm,dd] = parts;
       const doneDayStr = _formatJalali(dy,dm,dd);
       const doneDayKey = _jalaliKey(doneDayStr);
       if (doneDayKey < _todayK) {
@@ -28170,7 +28180,9 @@ function renderTodoList() {
       }
     }
     if (t.done && !t.archived && (!t.repeat || t.repeat === 'none') && t.done_at) {
-      const [dy,dm,dd] = _jalaliFromInstant(t.done_at);
+      const parts = _jalaliFromInstant(t.done_at);
+      if (!parts) return;
+      const [dy,dm,dd] = parts;
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
@@ -30472,12 +30484,13 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
     const catIcon = t.category ? (catMap[t.category] || '') : '';
     const assignee = _todoAssigneeLabel(t);
     const todayK = _jalaliKey(_todayJalaliStr());
-    const doneDay = t.done_at ? (() => { const [dy,dm,dd]=_jalaliFromInstant(t.done_at); return _jalaliKey(_formatJalali(dy,dm,dd)); })() : 0;
+    const doneParts = t.done_at ? _jalaliFromInstant(t.done_at) : null;
+    const doneDay = doneParts ? _jalaliKey(_formatJalali(...doneParts)) : 0;
     const isToday = doneDay === todayK;
     const statusBadge = isToday
       ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(62,207,142,.15);color:#3ecf8e;font-weight:700">امروز</span>'
       : '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(124,106,247,.12);color:#9d8fff;font-weight:600">بایگانی</span>';
-    const doneDate = t.done_at ? DateService.disp(_formatJalali(..._jalaliFromInstant(t.done_at))) : '';
+    const doneDate = doneParts ? DateService.disp(_formatJalali(...doneParts)) : '';
     return '<div id="archive-row-' + t.id + '" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border:1px solid var(--border)">' +
       '<span style="font-size:15px;flex-shrink:0">✅</span>' +
       '<div style="flex:1;min-width:0">' +
@@ -33342,7 +33355,10 @@ function _goalAchievementDate(g) {
   if (g.completed_date_jalali) return g.completed_date_jalali;
   if (g.completed_at) {
     try {
-      if (typeof _jalaliFromInstant === 'function') return _formatJalali(..._jalaliFromInstant(g.completed_at));
+      if (typeof _jalaliFromInstant === 'function') {
+        const parts = _jalaliFromInstant(g.completed_at);
+        if (parts) return _formatJalali(...parts);
+      }
     } catch(e) {}
   }
   return _todayJalaliStr ? _todayJalaliStr() : '';
