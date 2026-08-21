@@ -613,6 +613,104 @@ function handleSaveData(req, res) {
 }
 
 router.put('/:accountId', auth, handleSaveData);
+router.post('/:accountId/todos/delta', auth, (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const storageKey = workspace.storageKey;
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    const operation = String(req.body?.operation || 'upsert');
+    if (!['create', 'edit', 'complete', 'reopen', 'upsert'].includes(operation)) {
+      return res.status(400).json({ error: 'invalid_todo_operation' });
+    }
+    const incomingTodo = sanitizeUserDataForStorage(req.body?.todo);
+    if (!incomingTodo || typeof incomingTodo !== 'object' || incomingTodo.id == null) {
+      return res.status(400).json({ error: 'invalid_todo' });
+    }
+    const existing = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
+    if (!existing) return res.status(409).json({ error: 'delta_requires_full_sync' });
+    let previousData;
+    try { previousData = JSON.parse(existing.data); }
+    catch { return res.status(500).json({ error: 'invalid_server_data' }); }
+    const currentEtag = dataEtag(existing.data);
+    const baseEtag = req.body?.base_etag || null;
+    const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
+    const oldTodo = previousTodos.find(todo => String(todo?.id) === String(incomingTodo.id));
+
+    if (!grant && baseEtag !== currentEtag && oldTodo) {
+      const incomingTime = Date.parse(incomingTodo.updated_at || incomingTodo.done_at || incomingTodo.created_at || '') || 0;
+      const serverTime = Date.parse(oldTodo.updated_at || oldTodo.done_at || oldTodo.created_at || '') || 0;
+      if (!incomingTime || incomingTime < serverTime ||
+          (incomingTime === serverTime && JSON.stringify(incomingTodo) !== JSON.stringify(oldTodo))) {
+        return res.status(409).json({
+          error: 'todo_delta_conflict',
+          message: 'Todo changed on the server since this client loaded it.',
+          etag: currentEtag,
+          todo: oldTodo,
+        });
+      }
+    }
+
+    const candidateTodos = oldTodo
+      ? previousTodos.map(todo => String(todo?.id) === String(incomingTodo.id) ? incomingTodo : todo)
+      : [...previousTodos, incomingTodo];
+    let nextData = {
+      ...previousData,
+      todos: candidateTodos,
+      _lastSaved: Math.max(Date.now(), Number(previousData._lastSaved || 0)),
+      _workspaceId: workspace.workspaceId,
+    };
+    if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
+    const savedTodo = (nextData.todos || []).find(todo => String(todo?.id) === String(incomingTodo.id));
+    if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
+    if (grant && oldTodo && JSON.stringify(incomingTodo) !== JSON.stringify(oldTodo) &&
+        JSON.stringify(savedTodo) === JSON.stringify(oldTodo)) {
+      return res.status(403).json({ error: 'todo_operation_forbidden' });
+    }
+
+    const todoIdCollisions = findTodoIdCollisions(
+      db,
+      storageKey,
+      previousTodos,
+      nextData.todos,
+      { incomingHighWater: req.body?.todo_id_high_water }
+    );
+    if (todoIdCollisions.length) {
+      return res.status(409).json({
+        error: 'todo_id_collision',
+        message: 'A new todo reused an historical numeric id.',
+        todo_ids: todoIdCollisions,
+        todo_id_high_water: getTodoHighWater(db, storageKey),
+      });
+    }
+
+    nextData._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(nextData));
+    const serialized = JSON.stringify(nextData);
+    const todoChanges = diffTodos(previousTodos, nextData.todos);
+    const run = db.transaction(() => {
+      saveVersionSnapshot(storageKey, existing.data);
+      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
+      writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
+      enqueueTodoAuditEvents(db, storageKey, {
+        requestId: req.requestId,
+        actorUserId: req.user?.id,
+      }, todoChanges);
+    });
+    run();
+    const saved = db.prepare("SELECT updated_at FROM user_data WHERE account_id=?").get(storageKey);
+    void flushPendingTodoAudits(db, logger);
+    res.json({
+      success: true,
+      etag: dataEtag(serialized),
+      updated_at: saved?.updated_at || null,
+      todo_id_high_water: getTodoHighWater(db, storageKey),
+      todo: savedTodo,
+      server_changed: !baseEtag || baseEtag !== currentEtag,
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 router.post('/:accountId/chunks', auth, (req, res) => {
   cleanExpiredChunkUploads();
   const accountId = String(req.params.accountId || '');

@@ -5453,7 +5453,7 @@ function _trimStoredVersions() {
   } catch(e) {}
 }
 
-function _save(stamp=true) {
+function _save(stamp=true, { scheduleServerSync = true } = {}) {
   if (stamp) _db._lastSaved = Date.now();
   const key = window._activeDBKey || DB_KEY;
   let localSaved = false;
@@ -5478,14 +5478,16 @@ function _save(stamp=true) {
   if (stamp) {
     if (localSaved) _markServerSyncPending('save');
     _saveVersion();
-    clearTimeout(window._serverSyncTimer);
-    if (_teamAccessSession()) {
-      window._serverSyncTimer = setTimeout(() => {
-        _syncToServer();
-      }, 20);
-    } else {
-      // sync به سرور با debounce
-      window._serverSyncTimer = setTimeout(_syncToServer, 200);
+    if (scheduleServerSync) {
+      clearTimeout(window._serverSyncTimer);
+      if (_teamAccessSession()) {
+        window._serverSyncTimer = setTimeout(() => {
+          _syncToServer();
+        }, 20);
+      } else {
+        // sync به سرور با debounce
+        window._serverSyncTimer = setTimeout(_syncToServer, 200);
+      }
     }
   }
 }
@@ -23371,6 +23373,73 @@ async function _syncToServer(conflictAttempt = 0) {
   }
 }
 
+function _syncTodoDelta(todo, operation = 'upsert') {
+  clearTimeout(window._serverSyncTimer);
+  const todoSnapshot = _cloneData(todo);
+  const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
+  const execute = async () => {
+    if (!todoSnapshot || todoSnapshot.id == null) return null;
+    if (_isTerminalTodoCollisionPending()) return _syncToServer();
+    const teamSession = _teamAccessSession();
+    const accId = teamSession?.ownerUserId || _sbUser?.id;
+    if (!accId || !_sbSession?.token) return null;
+    try {
+      const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace: _currentAccountId(),
+          operation,
+          todo: todoSnapshot,
+          base_etag: window._serverDataEtag || null,
+          todo_id_high_water: _db?._todoIdHighWater || 0,
+        }),
+      });
+      let responseData = null;
+      try { responseData = await res.clone().json(); } catch(e) {}
+      if (res.ok) {
+        _applyTodoIdHighWater(responseData?.todo_id_high_water);
+        const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+        if (localTodo && responseData?.todo &&
+            String(localTodo.updated_at || '') === String(todoSnapshot.updated_at || '')) {
+          Object.assign(localTodo, responseData.todo);
+        }
+        window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+        window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, syncSavedAt);
+        const syncPayload = _serverSafeData(_db);
+        window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
+        _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
+        _clearServerSyncPending(syncSavedAt);
+        if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
+        setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
+        if (responseData?.server_changed) {
+          setTimeout(() => {
+            _loadFromServer().then(updated => _refreshUiAfterServerLoad(updated));
+          }, 0);
+        }
+        return res;
+      }
+      if (res.status === 409 && responseData?.error === 'todo_id_collision') {
+        _applyTodoIdHighWater(responseData.todo_id_high_water);
+        _markServerSyncPending('todo-id-collision-stopped', {
+          todoIds: Array.isArray(responseData.todo_ids) ? responseData.todo_ids.map(String) : [String(todoSnapshot.id)],
+        });
+      } else if (res.status === 409) {
+        await _loadFromServer();
+      }
+      return _syncToServer();
+    } catch(e) {
+      return _syncToServer();
+    }
+  };
+  const previous = window._todoDeltaChain || Promise.resolve();
+  const run = previous.catch(() => null).then(execute);
+  const chained = run.finally(() => {
+    if (window._todoDeltaChain === chained) window._todoDeltaChain = null;
+  });
+  window._todoDeltaChain = chained;
+  return run;
+}
+
 async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
   if (window._leavingTeamAccess) return null;
   if (!_sbUser || !_sbSession?.token) return null;
@@ -28391,13 +28460,15 @@ function _quickAddTodo(title) {
   _todosInit();
   const id = _allocateTodoId();
   const today = _todayJalaliStr();
-  _db.todos.push({
+  const todo = {
     id, title, note:'', date_jalali: today, time:'',
     repeat:'none', weekdays:'', remind_min:0,
     done:false, done_at:null, archived:false,
-    created_at: new Date().toISOString(),
-  });
-  _save();
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status:'pending',
+  };
+  _db.todos.push(todo);
+  _save(true, { scheduleServerSync: false });
+  void _syncTodoDelta(todo, 'create');
   showToast('✓ ' + title, 'success');
   renderTodoList();
 }
@@ -28474,6 +28545,7 @@ function _completeTodoWithReport(t, report) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   const oldDone = !!t.done;
+  const requiresFullSync = !oldDone && !!(t.repeat && t.repeat !== 'none');
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
   t.completedAt = t.done_at;
@@ -28522,7 +28594,14 @@ function _completeTodoWithReport(t, report) {
   // درخواست‌های هم‌زمان، تعارض ETag و برگشت ظاهری تیک می‌شد.
   clearTimeout(window._todoPersistTimer);
   window._todoPersistTimer = setTimeout(() => {
-    try { _save(); }
+    try {
+      if (requiresFullSync) {
+        _save();
+      } else {
+        _save(true, { scheduleServerSync: false });
+        void _syncTodoDelta(t, t.done ? 'complete' : 'reopen');
+      }
+    }
     catch(e) {
       console.error('[TeamPulse] todo persist failed:', e);
       showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
@@ -29556,11 +29635,13 @@ async function saveTodo() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+  let relatedRankChanged = false;
   if (newTodo.main_today_rank > 0) {
     (_db.todos || []).forEach(t => {
       if (!t.archived && !t.done && _jalaliKey(t.date_jalali || t.scheduled_date || t.scheduledDate || '') === _jalaliToday() && +t.main_today_rank === newTodo.main_today_rank) {
         t.main_today_rank = 0;
         t.updated_at = new Date().toISOString();
+        relatedRankChanged = true;
       }
     });
   }
@@ -29588,11 +29669,11 @@ async function saveTodo() {
   // Let iOS/Android paint the optimistic UI before serializing the large local
   // database. The Todo is already in _db; persistence and upload follow next.
   await new Promise(resolve => requestAnimationFrame(() => resolve()));
-  _save();
+  _save(true, { scheduleServerSync: false });
   window._todoSaveInProgress = false;
 
-  clearTimeout(window._serverSyncTimer);
-  void _syncToServer().then(async syncRes => {
+  const syncPromise = relatedRankChanged ? _syncToServer() : _syncTodoDelta(newTodo, 'create');
+  void syncPromise.then(async syncRes => {
     if (syncRes && syncRes.status === 403 && _teamAccessSession()) {
       // A definitive permission rejection must be rolled back. Transient
       // network/server failures stay local and are retried automatically.
@@ -30060,15 +30141,7 @@ async function updateTodo(id) {
     sync_gcal: syncGcalWanted,
     updated_at: new Date().toISOString(),
   });
-  _save();
-  if (_teamAccessSession()) {
-    clearTimeout(window._serverSyncTimer);
-    await _syncToServer();
-    if ((_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
-      showToast('ویرایش روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
-      return;
-    }
-  }
+  _save(true, { scheduleServerSync: false });
 
   if (remindMin > 0 && time && dateJalali) {
     _scheduleTodoNotification(t.id, title, dateJalali, time, remindMin);
@@ -30087,6 +30160,8 @@ async function updateTodo(id) {
   closeModal();
   showToast('ذخیره شد ✓', 'success');
   renderTodoList();
+  if (normalizedMainTodayRank > 0) void _syncToServer();
+  else void _syncTodoDelta(t, 'edit');
 }
 
 async function deleteTodo(id) {
