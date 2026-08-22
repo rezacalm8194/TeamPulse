@@ -582,7 +582,8 @@ function persistWorkspaceDocument(req, res, {
     // برای سند موجود، صاحب حساب باید دقیقاً مشخص کند تغییرات را روی کدام
     // نسخه سرور انجام داده است. نبودن base_etag هم مثل نسخه قدیمی است؛ وگرنه
     // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
-    if (!grant && !force && (!baseEtag || baseEtag !== currentEtag)) {
+    // force فقط جایگزینی عمدیِ تقریباً خالی را اجازه می‌دهد، نه دور زدن etag.
+    if (!grant && (!baseEtag || baseEtag !== currentEtag)) {
       const conflictDoc = previousLayout === 'parts'
         ? loadWorkspaceDocument(db, storageKey)?.data
         : previousData;

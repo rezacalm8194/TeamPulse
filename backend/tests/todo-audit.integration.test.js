@@ -231,6 +231,13 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   assert.equal(destructive.status, 409);
   assert.equal((await destructive.json()).error, 'destructive_overwrite_blocked');
 
+  const forcedStale = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
+    method: 'PUT', headers,
+    body: JSON.stringify({ force: true, base_etag: 'stale-etag', data: { todos: [] } }),
+  });
+  assert.equal(forcedStale.status, 409);
+  assert.equal((await forcedStale.json()).error, 'sync_conflict');
+
   await new Promise(resolve => setTimeout(resolve, 150));
   entries = auditEntries(logDir);
   const verificationDb = new Database(testDb, { readonly: true });

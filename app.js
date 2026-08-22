@@ -3555,7 +3555,7 @@ async function _createAccount(name) {
         '/api/data/' + encodeURIComponent(ownerId) + '?workspace=' + encodeURIComponent(id),
         {
           method: 'PUT',
-          body: JSON.stringify({ data: _serverSafeData(emptyWorkspace), force: true })
+          body: JSON.stringify({ data: _serverSafeData(emptyWorkspace) })
         }
       );
       if (!seed.ok) {
@@ -3694,9 +3694,10 @@ async function _refreshWorkspacesFromServer() {
         }
         if (localData) {
           const seeded = await _apiFetch(dataUrl, {
-            method:'PUT', body:JSON.stringify({ data:_serverSafeData(localData), force:true })
+            method:'PUT', body:JSON.stringify({ data:_serverSafeData(localData) })
           });
-          synced = seeded.ok;
+          // 409 یعنی سند روی سرور از قبل هست؛ بازنویسی اجباری نمی‌کنیم.
+          synced = seeded.ok || seeded.status === 409;
         }
       }
       if (synced) account.pendingSync = false;
@@ -27499,7 +27500,7 @@ function _adminImportUserBackup(userId,userName){
       if(!confirm(`داده‌های فعلی «${userName||'این کاربر'}» با محتوای فایل جایگزین شود؟ پیش از جایگزینی، نسخه فعلی در تاریخچه سرور ذخیره می‌شود.`))return;
       let res=await _apiFetch('/api/admin/backup/users/'+encodeURIComponent(userId)+'/import',{method:'POST',body:JSON.stringify({backup:parsed})});
       if(res.status===404){
-        res=await _apiFetch('/api/data/'+encodeURIComponent(userId),{method:'PUT',body:JSON.stringify({data:parsed.data,force:true})});
+        return showToast('برای بازیابی امن این کاربر، ابتدا نسخه جدید بک‌اند را منتشر کنید','error');
       }
       if(!res.ok){
         const error=await res.json().catch(()=>({}));
