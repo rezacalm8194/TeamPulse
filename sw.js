@@ -1,8 +1,8 @@
-const CACHE = 'team-pulse-static-v79';
+const CACHE = 'team-pulse-static-v80';
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp79',
-  '/app.js?v=tp79',
+  '/app.css?v=tp80',
+  '/app.js?v=tp80',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
@@ -83,7 +83,7 @@ async function staleWhileRevalidate(request) {
 }
 
 function isVersionedAppBundle(url) {
-  return url.pathname === '/app.js' || url.pathname === '/app.css';
+  return url.pathname === '/app.js' || url.pathname === '/app-extra.js' || url.pathname === '/app.css';
 }
 
 self.addEventListener('fetch', event => {
