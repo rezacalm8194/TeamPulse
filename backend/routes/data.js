@@ -1,4 +1,7 @@
 const router = require('express').Router();
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { createHash } = require('crypto');
@@ -22,15 +25,57 @@ function dataEtag(serialized) {
 // Large workspaces can exceed an upstream proxy's body-size limit before the
 // request reaches Express. Receive them as small authenticated JSON chunks and
 // pass the reconstructed request through the exact same save validation.
+// Keep only metadata in RAM; spill chunk bodies to temp files so a 200×600KB
+// upload cannot pin ~120MB until TTL expiry.
 const pendingChunkUploads = new Map();
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
+const CHUNK_UPLOAD_DIR = path.join(os.tmpdir(), 'teampulse-chunk-uploads');
+const CHUNK_PART_ENCODING = 'utf16le';
+
+function chunkUploadDirForKey(key) {
+  return path.join(CHUNK_UPLOAD_DIR, createHash('sha256').update(key).digest('hex'));
+}
+
+function removeChunkUploadDir(dir) {
+  if (!dir) return;
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+}
+
+function discardChunkUpload(key, upload) {
+  pendingChunkUploads.delete(key);
+  removeChunkUploadDir(upload?.dir);
+}
 
 function cleanExpiredChunkUploads() {
   const cutoff = Date.now() - CHUNK_UPLOAD_TTL_MS;
   for (const [key, upload] of pendingChunkUploads) {
-    if (upload.updatedAt < cutoff) pendingChunkUploads.delete(key);
+    if (upload.updatedAt < cutoff) discardChunkUpload(key, upload);
   }
+  try {
+    for (const name of fs.readdirSync(CHUNK_UPLOAD_DIR)) {
+      const dir = path.join(CHUNK_UPLOAD_DIR, name);
+      let mtimeMs = 0;
+      try { mtimeMs = fs.statSync(dir).mtimeMs; } catch (_) { continue; }
+      if (mtimeMs < cutoff) removeChunkUploadDir(dir);
+    }
+  } catch (_) { /* base dir may not exist yet */ }
 }
+
+function assembleChunkUpload(upload) {
+  const assembledPath = path.join(upload.dir, 'assembled.json');
+  const out = fs.openSync(assembledPath, 'w');
+  try {
+    for (let i = 0; i < upload.total; i++) {
+      const buf = fs.readFileSync(path.join(upload.dir, `${i}.part`));
+      fs.writeSync(out, buf);
+    }
+  } finally {
+    fs.closeSync(out);
+  }
+  return fs.readFileSync(assembledPath, CHUNK_PART_ENCODING);
+}
+
+setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS user_data_versions (
@@ -806,24 +851,45 @@ router.post('/:accountId/chunks', auth, (req, res) => {
   const key = `${ownerKey}:${accountId}:${uploadId}`;
   let upload = pendingChunkUploads.get(key);
   if (!upload) {
-    upload = { total, chunks: new Array(total), updatedAt: Date.now() };
+    const dir = chunkUploadDirForKey(key);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      logger.error('chunk_upload_dir_failed', { requestId: req.requestId, error: error.message });
+      return res.status(500).json({ error: 'chunk_upload_failed' });
+    }
+    upload = { total, received: 0, seen: new Array(total).fill(false), dir, updatedAt: Date.now() };
     pendingChunkUploads.set(key, upload);
   }
   if (upload.total !== total) {
-    pendingChunkUploads.delete(key);
+    discardChunkUpload(key, upload);
     return res.status(409).json({ error: 'chunk_total_mismatch' });
   }
-  upload.chunks[index] = chunk;
+  try {
+    fs.writeFileSync(path.join(upload.dir, `${index}.part`), chunk, CHUNK_PART_ENCODING);
+  } catch (error) {
+    discardChunkUpload(key, upload);
+    logger.error('chunk_upload_write_failed', { requestId: req.requestId, error: error.message });
+    return res.status(500).json({ error: 'chunk_upload_failed' });
+  }
+  if (!upload.seen[index]) {
+    upload.seen[index] = true;
+    upload.received += 1;
+  }
   upload.updatedAt = Date.now();
-  if (upload.chunks.filter(part => typeof part === 'string').length !== total) {
+  if (upload.received !== total) {
     return res.json({ success: true, complete: false, received: index });
   }
   pendingChunkUploads.delete(key);
   try {
-    req.body = JSON.parse(upload.chunks.join(''));
-  } catch (_) {
-    return res.status(400).json({ error: 'invalid_chunked_json' });
+    req.body = JSON.parse(assembleChunkUpload(upload));
+  } catch (error) {
+    removeChunkUploadDir(upload.dir);
+    if (error instanceof SyntaxError) return res.status(400).json({ error: 'invalid_chunked_json' });
+    logger.error('chunk_upload_assemble_failed', { requestId: req.requestId, error: error.message });
+    return res.status(500).json({ error: 'chunk_upload_failed' });
   }
+  removeChunkUploadDir(upload.dir);
   return handleSaveData(req, res);
 });
 // navigator.sendBeacon() only ever issues a POST, so the same save logic
