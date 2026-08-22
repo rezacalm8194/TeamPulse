@@ -17,12 +17,23 @@ const {
   findTodoIdCollisions,
 } = require('../utils/todoAuditStore');
 const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
+const { mergeAndApplyDeletedItems } = require('../utils/deletedItems');
 const {
   MAX_VERSIONS_PER_WORKSPACE,
   ensureVersionSnapshotSchema,
   saveVersionSnapshot: persistVersionSnapshot,
+  isVersionSnapshotDue,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
+const {
+  ensureDocumentStoreSchema,
+  loadWorkspaceMeta,
+  loadWorkspaceDocument,
+  loadDocumentParts,
+  serializeWorkspaceDocument,
+  writeWorkspaceDocument,
+  deleteWorkspaceDocument,
+} = require('../utils/documentStore');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -84,6 +95,7 @@ function assembleChunkUpload(upload) {
 setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 
 ensureVersionSnapshotSchema(db);
+ensureDocumentStoreSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
   return persistVersionSnapshot(db, accountId, serializedData, { force });
@@ -230,12 +242,16 @@ function normalizeTeamPermissions(permissions) {
 }
 
 function memberFromWorkspaceData(targetId, workspaceId, memberEmail, inviteId = '') {
-  const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(workspaceStorageKey(targetId, workspaceId));
-  if (!row?.data) return undefined;
+  const storageKey = workspaceStorageKey(targetId, workspaceId);
+  const meta = loadWorkspaceMeta(db, storageKey);
+  if (!meta) return undefined;
   try {
-    const data = JSON.parse(row.data);
-    data._todoIdHighWater = Math.max(documentTodoHighWater(data), getTodoHighWater(db, workspaceStorageKey(targetId, workspaceId)));
-    const members = Array.isArray(data?.team_members) ? data.team_members : [];
+    const members = meta.layout === 'parts'
+      ? (loadDocumentParts(db, storageKey, ['team_members']).collections.team_members || [])
+      : (() => {
+        const data = JSON.parse(meta.serialized || 'null');
+        return Array.isArray(data?.team_members) ? data.team_members : [];
+      })();
     let member = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
       const sameInvite = !inviteId || String(m.id || '').trim() === String(inviteId).trim();
@@ -251,6 +267,21 @@ function memberFromWorkspaceData(targetId, workspaceId, memberEmail, inviteId = 
   } catch {
     return undefined;
   }
+}
+
+function keysNeededForPatch(patch, grant) {
+  const keys = new Set();
+  const collections = patch?.collections && typeof patch.collections === 'object' ? patch.collections : {};
+  Object.keys(collections).forEach(key => keys.add(key));
+  if (grant) {
+    keys.add('todos');
+    keys.add('staff');
+  }
+  const deletedItems = patch?.scalars?._deletedItems;
+  if (deletedItems && typeof deletedItems === 'object' && !Array.isArray(deletedItems)) {
+    Object.keys(deletedItems).forEach(key => keys.add(key));
+  }
+  return [...keys];
 }
 
 function getTeamGrant(req, targetId, workspaceId) {
@@ -534,13 +565,17 @@ function persistWorkspaceDocument(req, res, {
   baseEtag,
   existing,
   previousData,
+  previousSerialized = null,
+  previousLayout = 'blob',
+  replaceAll = true,
   patched = false,
 }) {
   data = sanitizeUserDataForStorage(data);
   if (data) data._workspaceId = workspace.workspaceId;
   let todoChanges = [];
+  let savedEtag = null;
   if (existing) {
-    const currentEtag = dataEtag(existing.data);
+    const currentEtag = existing.etag || (previousSerialized ? dataEtag(previousSerialized) : null);
     // Team-member writes are merged field-by-field below. Owner/admin writes
     // replace the full account document, so protect them from stale tabs or
     // another device silently overwriting a newer server version.
@@ -548,16 +583,19 @@ function persistWorkspaceDocument(req, res, {
     // نسخه سرور انجام داده است. نبودن base_etag هم مثل نسخه قدیمی است؛ وگرنه
     // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
     if (!grant && !force && (!baseEtag || baseEtag !== currentEtag)) {
+      const conflictDoc = previousLayout === 'parts'
+        ? loadWorkspaceDocument(db, storageKey)?.data
+        : previousData;
       return res.status(409).json({
         error: 'sync_conflict',
         message: 'Server data changed since this client loaded it.',
-        data: sanitizeUserDataForStorage(previousData),
+        data: sanitizeUserDataForStorage(conflictDoc),
         etag: currentEtag,
       });
     }
     if (grant) {
       data = mergeAllowedTeamTodos(previousData, data, grant);
-    } else {
+    } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {
       // این ذخیره‌سازی توسط خودِ صاحب حساب (کارفرما) انجام می‌شود؛ اگر کاری که
       // قبلاً وجود داشت الان در داده‌های ارسالی نیست، یعنی او آن را حذف کرده —
       // شناسه‌اش را برای همیشه در فهرست حذف‌شده‌ها نگه می‌داریم تا نسخهٔ محلیِ
@@ -567,6 +605,7 @@ function persistWorkspaceDocument(req, res, {
       const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
       data._todoTombstones = mergeTodoTombstones(previousData, [...nextTodoIds], removedTodoIds);
     }
+    data = mergeAndApplyDeletedItems(previousData, data, { inferRemovals: !grant });
     if (data && typeof data === 'object') delete data._deletedTodoIds;
     if (!force && looksLikeDestructiveOverwrite(previousData, data)) {
       return res.status(409).json({
@@ -591,11 +630,13 @@ function persistWorkspaceDocument(req, res, {
     }
     data._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(data));
     data._workspaceId = workspace.workspaceId;
-    const nextData = JSON.stringify(data);
     todoChanges = diffTodos(previousData?.todos, data?.todos);
     const run = db.transaction(() => {
-      saveVersionSnapshot(storageKey, existing.data);
-      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
+      if (isVersionSnapshotDue(db, storageKey)) {
+        const previousBlob = previousSerialized || serializeWorkspaceDocument(db, storageKey);
+        persistVersionSnapshot(db, storageKey, previousBlob);
+      }
+      savedEtag = writeWorkspaceDocument(db, storageKey, data, { replaceAll }).etag;
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
         requestId: req.requestId,
@@ -608,7 +649,7 @@ function persistWorkspaceDocument(req, res, {
     data._workspaceId = workspace.workspaceId;
     todoChanges = diffTodos([], data?.todos);
     const run = db.transaction(() => {
-      db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
+      savedEtag = writeWorkspaceDocument(db, storageKey, data, { replaceAll: true }).etag;
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
         requestId: req.requestId,
@@ -617,14 +658,14 @@ function persistWorkspaceDocument(req, res, {
     });
     run();
   }
-  const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
+  const saved = db.prepare("SELECT updated_at FROM user_data WHERE account_id=?").get(storageKey);
   // The save and pending outbox rows committed atomically. File delivery is
   // best-effort after commit; failures stay pending for startup/next-save retry.
   void flushPendingTodoAudits(db, logger);
   return res.json({
     success: true,
     updated_at: saved?.updated_at || null,
-    etag: dataEtag(saved?.data),
+    etag: savedEtag,
     todo_id_high_water: getTodoHighWater(db, storageKey),
     patched,
   });
@@ -644,11 +685,7 @@ function handleSaveData(req, res) {
     // Workspace identity is server-owned routing metadata. Never trust a client
     // to provide it and never store an unlabelled secondary document.
     data._workspaceId = workspace.workspaceId;
-    const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
-    let previousData = null;
-    if (existing) {
-      try { previousData = JSON.parse(existing.data || 'null'); } catch {}
-    }
+    const loaded = loadWorkspaceDocument(db, storageKey);
     return persistWorkspaceDocument(req, res, {
       storageKey,
       workspace,
@@ -656,8 +693,11 @@ function handleSaveData(req, res) {
       data,
       force,
       baseEtag,
-      existing,
-      previousData,
+      existing: loaded ? { etag: loaded.etag } : null,
+      previousData: loaded?.data || null,
+      previousSerialized: loaded?.serialized || null,
+      previousLayout: loaded?.layout || 'blob',
+      replaceAll: true,
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
@@ -674,13 +714,17 @@ function handleDocumentDelta(req, res) {
     const hasCollections = collections && typeof collections === 'object' && Object.keys(collections).length;
     const hasScalars = scalars && typeof scalars === 'object' && Object.keys(scalars).length;
     if (!hasCollections && !hasScalars) return res.status(400).json({ error: 'empty_patch' });
-    const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
-    if (!existing) return res.status(409).json({ error: 'delta_requires_full_sync' });
-    let previousData = null;
-    try { previousData = JSON.parse(existing.data || 'null'); } catch {
-      return res.status(500).json({ error: 'invalid_server_data' });
-    }
+    const meta = loadWorkspaceMeta(db, storageKey);
+    if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const patch = { collections: hasCollections ? collections : {}, scalars: hasScalars ? scalars : {} };
+    const useParts = meta.layout === 'parts';
+    let previousData;
+    if (useParts) {
+      previousData = loadDocumentParts(db, storageKey, keysNeededForPatch(patch, grant)).data;
+    } else {
+      try { previousData = JSON.parse(meta.serialized || 'null'); }
+      catch { return res.status(500).json({ error: 'invalid_server_data' }); }
+    }
     let data;
     if (grant) {
       data = {
@@ -700,8 +744,11 @@ function handleDocumentDelta(req, res) {
       data,
       force,
       baseEtag,
-      existing,
+      existing: { etag: meta.etag },
       previousData,
+      previousSerialized: meta.serialized,
+      previousLayout: meta.layout,
+      replaceAll: !useParts,
       patched: true,
     });
   } catch (e) {
@@ -728,12 +775,17 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     if (!incomingTodo || typeof incomingTodo !== 'object' || incomingTodo.id == null) {
       return res.status(400).json({ error: 'invalid_todo' });
     }
-    const existing = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
-    if (!existing) return res.status(409).json({ error: 'delta_requires_full_sync' });
+    const meta = loadWorkspaceMeta(db, storageKey);
+    if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
+    const useParts = meta.layout === 'parts';
     let previousData;
-    try { previousData = JSON.parse(existing.data); }
-    catch { return res.status(500).json({ error: 'invalid_server_data' }); }
-    const currentEtag = dataEtag(existing.data);
+    if (useParts) {
+      previousData = loadDocumentParts(db, storageKey, grant ? ['todos', 'staff'] : ['todos']).data;
+    } else {
+      try { previousData = JSON.parse(meta.serialized); }
+      catch { return res.status(500).json({ error: 'invalid_server_data' }); }
+    }
+    const currentEtag = meta.etag;
     const baseEtag = req.body?.base_etag || null;
     const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
     const oldTodo = previousTodos.find(todo => String(todo?.id) === String(incomingTodo.id));
@@ -786,11 +838,13 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     }
 
     nextData._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(nextData));
-    const serialized = JSON.stringify(nextData);
     const todoChanges = diffTodos(previousTodos, nextData.todos);
+    let savedEtag = null;
     const run = db.transaction(() => {
-      saveVersionSnapshot(storageKey, existing.data);
-      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
+      if (isVersionSnapshotDue(db, storageKey)) {
+        saveVersionSnapshot(storageKey, meta.serialized || serializeWorkspaceDocument(db, storageKey));
+      }
+      savedEtag = writeWorkspaceDocument(db, storageKey, nextData, { replaceAll: !useParts }).etag;
       writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
         requestId: req.requestId,
@@ -802,7 +856,7 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     void flushPendingTodoAudits(db, logger);
     res.json({
       success: true,
-      etag: dataEtag(serialized),
+      etag: savedEtag,
       updated_at: saved?.updated_at || null,
       todo_id_high_water: getTodoHighWater(db, storageKey),
       todo: savedTodo,
@@ -931,7 +985,7 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
     try { db.prepare("DELETE FROM push_subscriptions WHERE account_id=? AND COALESCE(workspace_id,'default')=?").run(targetId, workspaceId); } catch {}
     db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
-    db.prepare('DELETE FROM user_data WHERE account_id=?').run(storageKey);
+    deleteWorkspaceDocument(db, storageKey);
     return true;
   });
   if (!run()) return res.status(404).json({ error: 'workspace_not_found' });
@@ -967,8 +1021,7 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
       'SELECT id,data FROM user_data_versions WHERE id=? AND account_id=?'
     ).get(req.params.versionId, storageKey);
     if (!selected) return res.status(404).json({ error: 'version_not_found' });
-    const current = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(storageKey);
-    if (!current) return res.status(404).json({ error: 'data_not_found' });
+    if (!loadWorkspaceMeta(db, storageKey)) return res.status(404).json({ error: 'data_not_found' });
     let restored;
     try { restored = JSON.parse(selected.data); }
     catch { return res.status(422).json({ error: 'invalid_version_data' }); }
@@ -976,14 +1029,14 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     restored._restored_at = new Date().toISOString();
     restored._lastSaved = Date.now();
     restored._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(restored));
-    const serialized = JSON.stringify(restored);
+    let savedEtag = null;
     const run = db.transaction(() => {
-      saveVersionSnapshot(storageKey, current.data, { force:true });
-      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, storageKey);
+      saveVersionSnapshot(storageKey, serializeWorkspaceDocument(db, storageKey), { force:true });
+      savedEtag = writeWorkspaceDocument(db, storageKey, restored, { replaceAll: true }).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
     run();
-    res.json({ success: true, data: restored, etag: dataEtag(serialized) });
+    res.json({ success: true, data: restored, etag: savedEtag });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -993,10 +1046,10 @@ router.get('/:accountId/status', auth, (req, res) => {
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(workspace.storageKey);
+    const meta = loadWorkspaceMeta(db, workspace.storageKey);
     res.json({
-      etag: row ? dataEtag(row.data) : null,
-      updated_at: row?.updated_at || null,
+      etag: meta?.etag || null,
+      updated_at: meta?.updated_at || null,
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1008,15 +1061,14 @@ router.get('/:accountId', auth, (req, res) => {
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const row = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(workspace.storageKey);
-    if (!row) return res.json({ data: null });
+    const loaded = loadWorkspaceDocument(db, workspace.storageKey);
+    if (!loaded) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
-    const data = JSON.parse(row.data);
     res.json({
-      data: grant ? sanitizeDataForTeamMember(data, grant) : sanitizeUserDataForStorage(data),
+      data: grant ? sanitizeDataForTeamMember(loaded.data, grant) : sanitizeUserDataForStorage(loaded.data),
       workspace_id: workspace.workspaceId,
-      updated_at: row.updated_at,
-      etag: dataEtag(row.data),
+      updated_at: loaded.updated_at,
+      etag: loaded.etag,
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

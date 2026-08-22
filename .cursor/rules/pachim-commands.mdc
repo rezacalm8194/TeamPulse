@@ -1,0 +1,15 @@
+---
+description: How to write commands for Pachim server panel
+alwaysApply: true
+---
+
+# Pachim commands
+
+When the user must run something on Pachim (دستورات / SSH panel):
+
+- One command per block. Never chain with `&&`, `||`, `;`, `|`, or newlines in one paste.
+- Each command must be under 255 characters.
+- Do not wrap multiple steps in a one-liner. Number them: run 1, wait, then 2.
+- Prefer simple `cp`, `mv`, `git checkout HEAD -- path`, `git pull origin main`.
+- RTL replies: keep these command blocks LTR and separate from Persian sentences.
+- If a git pathspec fails, use `git checkout HEAD -- path` not `git checkout -- path`.

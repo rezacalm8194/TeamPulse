@@ -105,6 +105,29 @@ function backfillVersionSummaries(db) {
   }
 }
 
+function snapshotAgeMs(createdAt) {
+  const latestAt = Date.parse(String(createdAt || '').replace(' ', 'T') + 'Z');
+  return Number.isFinite(latestAt) ? Date.now() - latestAt : Infinity;
+}
+
+function isVersionSnapshotDue(db, accountId, { force = false } = {}) {
+  if (force) return true;
+  const latestMeta = db.prepare(`
+    SELECT created_at
+    FROM user_data_version_summaries
+    WHERE account_id=?
+    ORDER BY version_id DESC
+    LIMIT 1
+  `).get(accountId);
+  if (latestMeta?.created_at) return snapshotAgeMs(latestMeta.created_at) >= VERSION_MIN_INTERVAL_MS;
+  const latest = db.prepare(`
+    SELECT created_at FROM user_data_versions
+    WHERE account_id=? ORDER BY id DESC LIMIT 1
+  `).get(accountId);
+  if (!latest?.created_at) return true;
+  return snapshotAgeMs(latest.created_at) >= VERSION_MIN_INTERVAL_MS;
+}
+
 function saveVersionSnapshot(db, accountId, serializedData, { force = false } = {}) {
   const latestMeta = db.prepare(`
     SELECT version_id, created_at, data_hash
@@ -121,13 +144,9 @@ function saveVersionSnapshot(db, accountId, serializedData, { force = false } = 
       WHERE account_id=? ORDER BY id DESC LIMIT 1
     `).get(accountId);
     if (latest?.data === serializedData) return false;
-    if (!force && latest?.created_at) {
-      const latestAt = Date.parse(String(latest.created_at).replace(' ', 'T') + 'Z');
-      if (Number.isFinite(latestAt) && Date.now() - latestAt < VERSION_MIN_INTERVAL_MS) return false;
-    }
-  } else if (!force && latestMeta.created_at) {
-    const latestAt = Date.parse(String(latestMeta.created_at).replace(' ', 'T') + 'Z');
-    if (Number.isFinite(latestAt) && Date.now() - latestAt < VERSION_MIN_INTERVAL_MS) return false;
+    if (!force && latest?.created_at && snapshotAgeMs(latest.created_at) < VERSION_MIN_INTERVAL_MS) return false;
+  } else if (!force && latestMeta.created_at && snapshotAgeMs(latestMeta.created_at) < VERSION_MIN_INTERVAL_MS) {
+    return false;
   }
   const createdAt = db.prepare("SELECT datetime('now') AS t").get().t;
   const inserted = db.prepare(
@@ -172,5 +191,6 @@ module.exports = {
   ensureVersionSnapshotSchema,
   backfillVersionSummaries,
   saveVersionSnapshot,
+  isVersionSnapshotDue,
   listVersionSummaries,
 };

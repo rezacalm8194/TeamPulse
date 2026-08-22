@@ -620,6 +620,7 @@ function _migrate(d) {
   });
   _syncTodoIdAllocator(d);
   _syncServiceCatalogs(d);
+  _applyDeletedItemTombstones(d);
   return d;
 }
 
@@ -681,6 +682,34 @@ function _recordDeletedItems(collection, ids) {
   const deletedAt = new Date().toISOString();
   deletedIds.forEach(id => { tombstones[id] = deletedAt; });
   _db._deletedItems[collection] = tombstones;
+}
+
+const _STUDENT_TOMBSTONE_RELATIONS = ['packages','payments','sessions','wallet_tx','reminders','topics','key_events'];
+
+function _idsRelatedToStudents(collection, studentIds) {
+  const set = new Set((Array.isArray(studentIds) ? studentIds : [studentIds]).map(id => String(id)));
+  return (_db[collection] || []).filter(row => set.has(String(row?.student_id))).map(row => row.id);
+}
+
+function _recordStudentAndRelatedDeletions(studentIds) {
+  const ids = (Array.isArray(studentIds) ? studentIds : [studentIds])
+    .filter(id => id !== null && id !== undefined);
+  if (!ids.length) return;
+  _STUDENT_TOMBSTONE_RELATIONS.forEach(collection => {
+    _recordDeletedItems(collection, _idsRelatedToStudents(collection, ids));
+  });
+  _recordDeletedItems('students', ids);
+}
+
+function _applyDeletedItemTombstones(d) {
+  if (!d || typeof d !== 'object') return d;
+  const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
+  ['students', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
+    const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
+    if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
+    d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
+  });
+  return d;
 }
 
 function _load() {
@@ -1668,12 +1697,16 @@ window.api = {
       if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.customer_category=String(p.value||'شخصی');});
       if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.relationship_status=String(p.value||'');});
       if(p?.action==='delete'){
+        const deleteIds=[...ids];
+        _recordStudentAndRelatedDeletions(deleteIds);
         _db.students=_db.students.filter(s=>!ids.has(Number(s.id)));
         _db.packages=_db.packages.filter(x=>!ids.has(Number(x.student_id)));
         _db.payments=_db.payments.filter(x=>!ids.has(Number(x.student_id)));
         _db.sessions=_db.sessions.filter(x=>!ids.has(Number(x.student_id)));
         _db.wallet_tx=_db.wallet_tx.filter(x=>!ids.has(Number(x.student_id)));
         _db.reminders=_db.reminders.filter(x=>!ids.has(Number(x.student_id)));
+        _db.topics=_db.topics.filter(x=>!ids.has(Number(x.student_id)));
+        _db.key_events=_db.key_events.filter(x=>!ids.has(Number(x.student_id)));
       }
       _save();return _P({ok:true,count:ids.size});
     },
@@ -1717,6 +1750,11 @@ window.api = {
       const removedPackageIds = _db.packages
         .filter(pkg=>pkg.student_id===s.id&&!selectedIds.has(String(pkg.id)))
         .map(pkg=>pkg.id);
+      if(removedPackageIds.length){
+        const removedReminderIds=_db.reminders.filter(r=>removedPackageIds.includes(r.package_id)).map(r=>r.id);
+        _recordDeletedItems('packages',removedPackageIds);
+        _recordDeletedItems('reminders',removedReminderIds);
+      }
       _db.packages = _db.packages.filter(pkg=>pkg.student_id!==s.id || selectedIds.has(String(pkg.id)));
       if(removedPackageIds.length)_db.reminders=_db.reminders.filter(r=>!removedPackageIds.includes(r.package_id));
       selectedPackages.forEach(pkg=>{
@@ -1736,12 +1774,15 @@ window.api = {
       _save(); return _P({ok:true});
     },
     delete: (id)=>{
+      _recordStudentAndRelatedDeletions(id);
       _db.students=_db.students.filter(x=>x.id!==id);
       _db.packages=_db.packages.filter(x=>x.student_id!==id);
       _db.payments=_db.payments.filter(x=>x.student_id!==id);
       _db.sessions=_db.sessions.filter(x=>x.student_id!==id);
       _db.wallet_tx=_db.wallet_tx.filter(x=>x.student_id!==id);
       _db.reminders=_db.reminders.filter(x=>x.student_id!==id);
+      _db.topics=_db.topics.filter(x=>x.student_id!==id);
+      _db.key_events=_db.key_events.filter(x=>x.student_id!==id);
       _save(); return _P({ok:true});
     },
   },
@@ -18834,7 +18875,7 @@ function _cloneData(data) {
   catch(e) { return {}; }
 }
 
-function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
+function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, options = {}) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
     'students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','wallet_tx','reminders','key_events','topics',
@@ -18849,6 +18890,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
     : {};
 
   Object.entries(localDeleted).forEach(([key, tombstones]) => {
+    if (options.teamSafe && key !== 'todos') return;
     if (!tombstones || typeof tombstones !== 'object') return;
     merged._deletedItems[key] = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
       ? merged._deletedItems[key]
@@ -18868,7 +18910,8 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData) {
       : {};
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
       .filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
-    if (!localArr.length) {
+    const allowLocal = !options.teamSafe || key === 'todos';
+    if (!allowLocal || !localArr.length) {
       merged[key] = serverArr;
       return;
     }
@@ -19366,7 +19409,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         }
         return null;
       }
-      _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db);
+      _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: true });
       _migrate(_db);
       try {
         const key = window._activeDBKey || _teamActiveDBKey();
@@ -19538,7 +19581,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       if (conflictAttempt < 1) {
         const localPending = _cloneData(_db);
         const serverBaseline = _cloneData(responseData.data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data);
+        _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data, { teamSafe: !!teamSession });
         _migrate(_db);
         window._serverDataEtag = responseData.etag || null;
         _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
@@ -19813,7 +19856,7 @@ async function _loadFromServer() {
       const teamLocalHasData = !!(_db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length);
       const teamLocalDiverged = _localDataDivergedFromServerBaseline();
       if (teamLocalHasData && _serverDataChanged(data, _db) && teamLocalDiverged !== false) {
-        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data), { teamSafe: true });
         _migrate(_db);
         const key = window._activeDBKey || _teamActiveDBKey();
         try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
