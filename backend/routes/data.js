@@ -13,6 +13,7 @@ const {
   documentTodoHighWater,
   findTodoIdCollisions,
 } = require('../utils/todoAuditStore');
+const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -215,7 +216,7 @@ function memberFromWorkspaceData(targetId, workspaceId, memberEmail, inviteId = 
   if (!row?.data) return undefined;
   try {
     const data = JSON.parse(row.data);
-    data._todoIdHighWater = Math.max(documentTodoHighWater(data), getTodoHighWater(db, workspace.storageKey));
+    data._todoIdHighWater = Math.max(documentTodoHighWater(data), getTodoHighWater(db, workspaceStorageKey(targetId, workspaceId)));
     const members = Array.isArray(data?.team_members) ? data.team_members : [];
     let member = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
@@ -506,6 +507,111 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   };
 }
 
+function persistWorkspaceDocument(req, res, {
+  storageKey,
+  workspace,
+  grant,
+  data,
+  force,
+  baseEtag,
+  existing,
+  previousData,
+  patched = false,
+}) {
+  data = sanitizeUserDataForStorage(data);
+  if (data) data._workspaceId = workspace.workspaceId;
+  let todoChanges = [];
+  if (existing) {
+    const currentEtag = dataEtag(existing.data);
+    // Team-member writes are merged field-by-field below. Owner/admin writes
+    // replace the full account document, so protect them from stale tabs or
+    // another device silently overwriting a newer server version.
+    // برای سند موجود، صاحب حساب باید دقیقاً مشخص کند تغییرات را روی کدام
+    // نسخه سرور انجام داده است. نبودن base_etag هم مثل نسخه قدیمی است؛ وگرنه
+    // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
+    if (!grant && !force && (!baseEtag || baseEtag !== currentEtag)) {
+      return res.status(409).json({
+        error: 'sync_conflict',
+        message: 'Server data changed since this client loaded it.',
+        data: sanitizeUserDataForStorage(previousData),
+        etag: currentEtag,
+      });
+    }
+    if (grant) {
+      data = mergeAllowedTeamTodos(previousData, data, grant);
+    } else {
+      // این ذخیره‌سازی توسط خودِ صاحب حساب (کارفرما) انجام می‌شود؛ اگر کاری که
+      // قبلاً وجود داشت الان در داده‌های ارسالی نیست، یعنی او آن را حذف کرده —
+      // شناسه‌اش را برای همیشه در فهرست حذف‌شده‌ها نگه می‌داریم تا نسخهٔ محلیِ
+      // قدیمیِ پرسنل نتواند بعداً دوباره زنده‌اش کند.
+      const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
+      const nextTodoIds = new Set((Array.isArray(data?.todos) ? data.todos : []).map(t => String(t.id)));
+      const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
+      data._todoTombstones = mergeTodoTombstones(previousData, [...nextTodoIds], removedTodoIds);
+    }
+    if (data && typeof data === 'object') delete data._deletedTodoIds;
+    if (!force && looksLikeDestructiveOverwrite(previousData, data)) {
+      return res.status(409).json({
+        error: 'destructive_overwrite_blocked',
+        message: 'Refusing to overwrite existing account data with an almost empty payload.'
+      });
+    }
+    const todoIdCollisions = findTodoIdCollisions(
+      db,
+      storageKey,
+      previousData?.todos,
+      data?.todos,
+      { incomingHighWater: data?._todoIdHighWater }
+    );
+    if (todoIdCollisions.length) {
+      return res.status(409).json({
+        error: 'todo_id_collision',
+        message: 'A new todo reused an historical numeric id.',
+        todo_ids: todoIdCollisions,
+        todo_id_high_water: getTodoHighWater(db, storageKey),
+      });
+    }
+    data._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(data));
+    data._workspaceId = workspace.workspaceId;
+    const nextData = JSON.stringify(data);
+    todoChanges = diffTodos(previousData?.todos, data?.todos);
+    const run = db.transaction(() => {
+      saveVersionSnapshot(storageKey, existing.data);
+      db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
+      writeTodoHighWater(db, storageKey, data._todoIdHighWater);
+      enqueueTodoAuditEvents(db, storageKey, {
+        requestId: req.requestId,
+        actorUserId: req.user?.id,
+      }, todoChanges);
+    });
+    run();
+  } else {
+    data._todoIdHighWater = documentTodoHighWater(data);
+    data._workspaceId = workspace.workspaceId;
+    todoChanges = diffTodos([], data?.todos);
+    const run = db.transaction(() => {
+      db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
+      writeTodoHighWater(db, storageKey, data._todoIdHighWater);
+      enqueueTodoAuditEvents(db, storageKey, {
+        requestId: req.requestId,
+        actorUserId: req.user?.id,
+      }, todoChanges);
+    });
+    run();
+  }
+  const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
+  // The save and pending outbox rows committed atomically. File delivery is
+  // best-effort after commit; failures stay pending for startup/next-save retry.
+  void flushPendingTodoAudits(db, logger);
+  return res.json({
+    success: true,
+    updated_at: saved?.updated_at || null,
+    etag: dataEtag(saved?.data),
+    todo_id_high_water: getTodoHighWater(db, storageKey),
+    patched,
+  });
+}
+
 function handleSaveData(req, res) {
   try {
     const targetId = req.params.accountId;
@@ -522,97 +628,72 @@ function handleSaveData(req, res) {
     data._workspaceId = workspace.workspaceId;
     const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
     let previousData = null;
-    let todoChanges = [];
     if (existing) {
       try { previousData = JSON.parse(existing.data || 'null'); } catch {}
-      const currentEtag = dataEtag(existing.data);
-      // Team-member writes are merged field-by-field below. Owner/admin writes
-      // replace the full account document, so protect them from stale tabs or
-      // another device silently overwriting a newer server version.
-      // برای سند موجود، صاحب حساب باید دقیقاً مشخص کند تغییرات را روی کدام
-      // نسخه سرور انجام داده است. نبودن base_etag هم مثل نسخه قدیمی است؛ وگرنه
-      // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
-      if (!grant && !force && (!baseEtag || baseEtag !== currentEtag)) {
-        return res.status(409).json({
-          error: 'sync_conflict',
-          message: 'Server data changed since this client loaded it.',
-          data: sanitizeUserDataForStorage(previousData),
-          etag: currentEtag,
-        });
-      }
-      if (grant) {
-        data = mergeAllowedTeamTodos(previousData, data, grant);
-      } else {
-        // این ذخیره‌سازی توسط خودِ صاحب حساب (کارفرما) انجام می‌شود؛ اگر کاری که
-        // قبلاً وجود داشت الان در داده‌های ارسالی نیست، یعنی او آن را حذف کرده —
-        // شناسه‌اش را برای همیشه در فهرست حذف‌شده‌ها نگه می‌داریم تا نسخهٔ محلیِ
-        // قدیمیِ پرسنل نتواند بعداً دوباره زنده‌اش کند.
-        const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
-        const nextTodoIds = new Set((Array.isArray(data?.todos) ? data.todos : []).map(t => String(t.id)));
-        const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
-        data._todoTombstones = mergeTodoTombstones(previousData, [...nextTodoIds], removedTodoIds);
-      }
-      if (!force && looksLikeDestructiveOverwrite(previousData, data)) {
-        return res.status(409).json({
-          error: 'destructive_overwrite_blocked',
-          message: 'Refusing to overwrite existing account data with an almost empty payload.'
-        });
-      }
-      const todoIdCollisions = findTodoIdCollisions(
-        db,
-        storageKey,
-        previousData?.todos,
-        data?.todos,
-        { incomingHighWater: data?._todoIdHighWater }
-      );
-      if (todoIdCollisions.length) {
-        return res.status(409).json({
-          error: 'todo_id_collision',
-          message: 'A new todo reused an historical numeric id.',
-          todo_ids: todoIdCollisions,
-          todo_id_high_water: getTodoHighWater(db, storageKey),
-        });
-      }
-      data._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(data));
-      const nextData = JSON.stringify(data);
-      todoChanges = diffTodos(previousData?.todos, data?.todos);
-      const run = db.transaction(() => {
-        saveVersionSnapshot(storageKey, existing.data);
-        db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(nextData, storageKey);
-        writeTodoHighWater(db, storageKey, data._todoIdHighWater);
-        enqueueTodoAuditEvents(db, storageKey, {
-          requestId: req.requestId,
-          actorUserId: req.user?.id,
-        }, todoChanges);
-      });
-      run();
-    } else {
-      data._todoIdHighWater = documentTodoHighWater(data);
-      todoChanges = diffTodos([], data?.todos);
-      const run = db.transaction(() => {
-        db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(storageKey, JSON.stringify(data));
-        writeTodoHighWater(db, storageKey, data._todoIdHighWater);
-        enqueueTodoAuditEvents(db, storageKey, {
-          requestId: req.requestId,
-          actorUserId: req.user?.id,
-        }, todoChanges);
-      });
-      run();
     }
-    const saved = db.prepare("SELECT data,updated_at FROM user_data WHERE account_id=?").get(storageKey);
-    // The save and pending outbox rows committed atomically. File delivery is
-    // best-effort after commit; failures stay pending for startup/next-save retry.
-    void flushPendingTodoAudits(db, logger);
-    res.json({
-      success: true,
-      updated_at: saved?.updated_at || null,
-      etag: dataEtag(saved?.data),
-      todo_id_high_water: getTodoHighWater(db, storageKey),
+    return persistWorkspaceDocument(req, res, {
+      storageKey,
+      workspace,
+      grant,
+      data,
+      force,
+      baseEtag,
+      existing,
+      previousData,
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
 
+function handleDocumentDelta(req, res) {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const storageKey = workspace.storageKey;
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    const { force, base_etag: baseEtag, collections, scalars } = req.body || {};
+    const hasCollections = collections && typeof collections === 'object' && Object.keys(collections).length;
+    const hasScalars = scalars && typeof scalars === 'object' && Object.keys(scalars).length;
+    if (!hasCollections && !hasScalars) return res.status(400).json({ error: 'empty_patch' });
+    const existing = db.prepare("SELECT account_id,data FROM user_data WHERE account_id=?").get(storageKey);
+    if (!existing) return res.status(409).json({ error: 'delta_requires_full_sync' });
+    let previousData = null;
+    try { previousData = JSON.parse(existing.data || 'null'); } catch {
+      return res.status(500).json({ error: 'invalid_server_data' });
+    }
+    const patch = { collections: hasCollections ? collections : {}, scalars: hasScalars ? scalars : {} };
+    let data;
+    if (grant) {
+      data = {
+        ...previousData,
+        todos: candidateTodosFromPatch(previousData, patch),
+        _deletedTodoIds: Array.isArray(patch.collections?.todos?.delete) ? patch.collections.todos.delete : [],
+        _lastSaved: patch.scalars?._lastSaved || previousData?._lastSaved,
+      };
+    } else {
+      data = applyDocumentPatch(previousData, patch);
+    }
+    data._workspaceId = workspace.workspaceId;
+    return persistWorkspaceDocument(req, res, {
+      storageKey,
+      workspace,
+      grant,
+      data,
+      force,
+      baseEtag,
+      existing,
+      previousData,
+      patched: true,
+    });
+  } catch (e) {
+    if (e && e.code === 'patch_too_large') return res.status(413).json({ error: 'patch_too_large' });
+    res.status(500).json({ error: e.message });
+  }
+}
+
 router.put('/:accountId', auth, handleSaveData);
+router.post('/:accountId/delta', auth, handleDocumentDelta);
 router.post('/:accountId/todos/delta', auth, (req, res) => {
   try {
     const targetId = req.params.accountId;

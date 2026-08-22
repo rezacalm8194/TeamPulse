@@ -5370,6 +5370,7 @@ async function _loadPrimaryDatabase() {
     window._workspaceDataReady = true;
   }
   _migrate(_db);
+  _restoreServerSyncEtagFromBaseline();
 
   let idbVerified = false;
   try {
@@ -5543,15 +5544,144 @@ function _readServerSyncBaseline() {
   } catch(e) { return null; }
 }
 
+const _SYNC_SKIP_KEYS = new Set([
+  '_gdrive_token', '_gdrive_token_expiry', '_gcal_token', '_gcal_token_expiry',
+  '_todoTombstones', '_workspaceId', '_deletedTodoIds'
+]);
+const _SYNC_ID_COLLECTION_KEYS = new Set([
+  'families','students','packages','payments','sessions','expenses','expense_reminders',
+  'financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders',
+  'key_events','topics','staff','staff_payments','staff_reminders','staff_adjustments',
+  'staff_monthly','instructions','guide_categories','guide_items','case_forms','todos',
+  'staff_role_entries','team_members','team_invites','package_types','staff_roles',
+  'goals','habits','todo_history','todo_calendar_events'
+]);
+
+function _isSyncIdCollection(key, value) {
+  if (!Array.isArray(value)) return false;
+  if (_SYNC_ID_COLLECTION_KEYS.has(key)) return true;
+  if (!value.length) return false;
+  return value.every(item => item == null || (typeof item === 'object' && !Array.isArray(item) && item.id != null));
+}
+
+function _syncCollectionHashes(data) {
+  const collections = {};
+  const scalars = {};
+  Object.keys(data || {}).forEach(key => {
+    if (_SYNC_SKIP_KEYS.has(key)) return;
+    const value = data[key];
+    if (_isSyncIdCollection(key, value)) {
+      const hashes = {};
+      (Array.isArray(value) ? value : []).forEach(item => {
+        if (item && item.id != null) hashes[String(item.id)] = _isolationItemHash(item);
+      });
+      collections[key] = hashes;
+    } else {
+      scalars[key] = _isolationItemHash(value);
+    }
+  });
+  return { collections, scalars };
+}
+
 function _writeServerSyncBaseline(data, etag = null) {
+  const safe = _serverSafeData(data || {});
+  const hashes = _syncCollectionHashes(safe);
+  const record = {
+    fingerprint: _dataFingerprint(_serverDataSignature(safe)),
+    etag: etag || window._serverDataEtag || null,
+    savedAt: Number(data?._lastSaved || 0) || 0,
+    updatedAt: Date.now(),
+    hashes,
+  };
+  window._serverSyncHashCache = { etag: record.etag, hashes };
   try {
-    localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify({
-      fingerprint: _dataFingerprint(_serverDataSignature(data || {})),
-      etag: etag || window._serverDataEtag || null,
-      savedAt: Number(data?._lastSaved || 0) || 0,
-      updatedAt: Date.now()
-    }));
-  } catch(e) { console.warn('[TeamPulse] sync baseline save failed:', e.message); }
+    localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify(record));
+  } catch(e) {
+    try {
+      localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify({
+        fingerprint: record.fingerprint,
+        etag: record.etag,
+        savedAt: record.savedAt,
+        updatedAt: record.updatedAt,
+      }));
+    } catch(inner) {
+      console.warn('[TeamPulse] sync baseline save failed:', inner.message);
+    }
+  }
+}
+
+function _readServerSyncHashes() {
+  if (window._serverSyncHashCache?.hashes) return window._serverSyncHashCache.hashes;
+  const baseline = _readServerSyncBaseline();
+  if (baseline?.hashes) {
+    window._serverSyncHashCache = { etag: baseline.etag || null, hashes: baseline.hashes };
+    return baseline.hashes;
+  }
+  return null;
+}
+
+function _restoreServerSyncEtagFromBaseline() {
+  const baseline = _readServerSyncBaseline();
+  if (baseline?.etag && !window._serverDataEtag) window._serverDataEtag = baseline.etag;
+  if (baseline?.hashes) window._serverSyncHashCache = { etag: baseline.etag || window._serverDataEtag || null, hashes: baseline.hashes };
+}
+
+function _buildServerSyncPatch(data) {
+  const hashes = _readServerSyncHashes();
+  if (!hashes?.collections && !hashes?.scalars) return null;
+  const collections = {};
+  const scalars = {};
+  let changedItems = 0;
+  let baselineItems = 0;
+  const seenKeys = new Set();
+  Object.keys(data || {}).forEach(key => {
+    if (_SYNC_SKIP_KEYS.has(key)) return;
+    seenKeys.add(key);
+    const value = data[key];
+    if (_isSyncIdCollection(key, value)) {
+      const prevHashes = hashes.collections?.[key] || {};
+      const upsert = [];
+      const seen = new Set();
+      (Array.isArray(value) ? value : []).forEach(item => {
+        if (!item || item.id == null) return;
+        const id = String(item.id);
+        seen.add(id);
+        if (prevHashes[id] !== _isolationItemHash(item)) upsert.push(item);
+      });
+      const del = Object.keys(prevHashes).filter(id => !seen.has(id));
+      baselineItems += Object.keys(prevHashes).length;
+      changedItems += upsert.length + del.length;
+      if (upsert.length || del.length) collections[key] = { upsert, delete: del };
+    } else if (hashes.scalars?.[key] !== _isolationItemHash(value)) {
+      scalars[key] = value;
+      changedItems += 1;
+      baselineItems += 1;
+    } else {
+      baselineItems += 1;
+    }
+  });
+  Object.keys(hashes.collections || {}).forEach(key => {
+    if (seenKeys.has(key) || _SYNC_SKIP_KEYS.has(key)) return;
+    const del = Object.keys(hashes.collections[key] || {});
+    if (!del.length) return;
+    collections[key] = { upsert: [], delete: del };
+    changedItems += del.length;
+    baselineItems += del.length;
+  });
+  if (!Object.keys(collections).length && !Object.keys(scalars).length) return null;
+  return { collections, scalars, changedItems, baselineItems };
+}
+
+function _preferDocumentDelta(patch, fullPayload) {
+  if (!patch) return false;
+  const patchSize = JSON.stringify({
+    collections: patch.collections,
+    scalars: patch.scalars,
+  }).length;
+  const fullSize = JSON.stringify(fullPayload).length;
+  if (patchSize >= fullSize * 0.7) return false;
+  if (patch.baselineItems >= 20 && patch.changedItems > patch.baselineItems * 0.55) return false;
+  return true;
 }
 
 function _localDataDivergedFromServerBaseline() {
@@ -23670,23 +23800,46 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     }
     const syncSavedAt = localSavedAt || Date.now();
     const syncPayload = _serverSafeData(_db);
-    const requestPayload = {
+    const fullRequestPayload = {
       data: syncPayload,
       force: forceSync,
       client_saved_at: syncSavedAt,
       base_etag: window._serverDataEtag || null,
     };
-    const rawRequestSize = JSON.stringify(requestPayload).length;
-    let res;
-    if (rawRequestSize > 700 * 1024) {
-      res = await _sendChunkedWorkspacePayload(accId, requestPayload);
-    } else {
-      const encodedRequest = await _compressedJsonRequestBody(requestPayload);
-      res = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
+    const documentPatch = forceSync ? null : _buildServerSyncPatch(syncPayload);
+    const useDocumentDelta = _preferDocumentDelta(documentPatch, fullRequestPayload);
+    const sendFullDocument = async () => {
+      const rawRequestSize = JSON.stringify(fullRequestPayload).length;
+      if (rawRequestSize > 700 * 1024) {
+        return _sendChunkedWorkspacePayload(accId, fullRequestPayload);
+      }
+      const encodedRequest = await _compressedJsonRequestBody(fullRequestPayload);
+      return _apiFetch('/api/data/' + accId + _workspaceQuery(), {
         method: 'PUT',
         body: encodedRequest.body,
         headers: encodedRequest.headers,
       });
+    };
+    let res;
+    if (useDocumentDelta) {
+      res = await _apiFetch('/api/data/' + accId + '/delta' + _workspaceQuery(), {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace: _currentAccountId(),
+          collections: documentPatch.collections,
+          scalars: documentPatch.scalars,
+          client_saved_at: syncSavedAt,
+          base_etag: window._serverDataEtag || null,
+        }),
+      });
+      let deltaBody = null;
+      try { deltaBody = await res.clone().json(); } catch(e) {}
+      if (res.status === 404 || res.status === 405 ||
+          (res.status === 409 && (deltaBody?.error === 'delta_requires_full_sync' || deltaBody?.error === 'empty_patch'))) {
+        res = await sendFullDocument();
+      }
+    } else {
+      res = await sendFullDocument();
     }
     let responseData = null;
     try { responseData = await res.clone().json(); } catch(e) {}
@@ -24315,15 +24468,29 @@ function _bindServerSyncLifecycleHandlers() {
       const teamSession = _teamAccessSession();
       if (teamSession && !teamSession.ownerUserId) return;
       const accId = teamSession?.ownerUserId || _sbUser.id;
-      const url = (window.location.origin || '') + '/api/data/' + accId +
-        '?token=' + encodeURIComponent(_sbSession.token) + _workspaceQuery('&');
       const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
-      const data = JSON.stringify({
-        data: _serverSafeData(_db),
+      const syncPayload = _serverSafeData(_db);
+      const fullBody = {
+        data: syncPayload,
         force: !!window._forceNextSync,
         client_saved_at: savedAt,
         base_etag: window._serverDataEtag || null,
-      });
+      };
+      const patch = window._forceNextSync ? null : _buildServerSyncPatch(syncPayload);
+      const useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
+      const payloadObj = useDelta ? {
+        workspace: _currentAccountId(),
+        collections: patch.collections,
+        scalars: patch.scalars,
+        client_saved_at: savedAt,
+        base_etag: window._serverDataEtag || null,
+      } : fullBody;
+      const path = useDelta
+        ? '/api/data/' + accId + '/delta'
+        : '/api/data/' + accId;
+      const url = (window.location.origin || '') + path +
+        '?token=' + encodeURIComponent(_sbSession.token) + _workspaceQuery('&');
+      const data = JSON.stringify(payloadObj);
       if (navigator.sendBeacon) {
         const blob = new Blob([data], { type: 'application/json' });
         const sent = navigator.sendBeacon(url, blob);
