@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp81';
+const TP_ASSET_V = 'tp83';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4844,16 +4844,27 @@ function _updatePlainFieldAnswer(noteId, field, input, itemIndex, textareaId) {
 }
 
 // ── Global error guard: never let a stray error silently freeze the UI ──────
+function _isBrowserExtensionNoise(msg) {
+  msg = String(msg || '');
+  return msg.includes('Could not establish connection') ||
+    msg.includes('Receiving end does not exist') ||
+    msg.includes('Extension context invalidated');
+}
 window.addEventListener('error', (e) => {
+  const msg = String((e && (e.message || (e.error && e.error.message))) || '');
+  if (_isBrowserExtensionNoise(msg)) {
+    e.preventDefault();
+    return;
+  }
   console.error('App error:', e.error || e.message);
   showToast('خطایی رخ داد — اگر چیزی کار نکرد، لطفاً دوباره تلاش کن', 'error');
 });
 window.addEventListener('unhandledrejection', (e) => {
   const msg = e.reason?.message || String(e.reason || '');
-  // نادیده گرفتن خطاهای مربوط به extension مرورگر
-  if (msg.includes('Could not establish connection') ||
-      msg.includes('Receiving end does not exist') ||
-      msg.includes('Extension context invalidated')) {
+  const isExt = _isBrowserExtensionNoise(msg);
+  // نادیده گرفتن خطاهای مربوط به extension مرورگر (preventDefault stops Chrome's Uncaught log)
+  if (isExt) {
+    e.preventDefault();
     return;
   }
   console.error('Unhandled promise rejection:', e.reason);
@@ -24438,7 +24449,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v81';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v83';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
