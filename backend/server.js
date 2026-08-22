@@ -209,7 +209,7 @@ function shutdownAfterFatal(event, error) {
   setTimeout(() => process.exit(1), 5000).unref();
 }
 process.on('unhandledRejection', reason => {
-  shutdownAfterFatal('unhandled_rejection', reason instanceof Error ? reason : String(reason));
+  logger.fatal('unhandled_rejection', { error: reason instanceof Error ? reason : String(reason) });
 });
 process.on('uncaughtException', error => {
   shutdownAfterFatal('uncaught_exception', error);

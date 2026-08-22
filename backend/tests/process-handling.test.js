@@ -58,6 +58,16 @@ function waitForExit(child, timeoutMs = 10000) {
   });
 }
 
+async function waitForLogEvent(logDir, event, timeoutMs = 5000) {
+  const errorLogPath = path.join(logDir, 'error.log');
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (fs.existsSync(errorLogPath) && fs.readFileSync(errorLogPath, 'utf8').includes(`"event":"${event}"`)) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`timed out waiting for log event ${event}`);
+}
+
 async function stop(child) {
   if (child.exitCode != null) return;
   const exited = waitForExit(child, 3000);
@@ -90,17 +100,17 @@ test('logs survive server restart and fatal process events terminate cleanly', {
   await waitForHealth(32211, second);
   assert.equal(await waitForExit(second), 0);
 
-  for (const [crash, port, event] of [
-    ['uncaughtException', 32212, 'uncaught_exception'],
-    ['unhandledRejection', 32213, 'unhandled_rejection'],
-  ]) {
-    const child = startServer({ port, dbPath, logDir, crash });
-    children.push(child);
-    const exitCode = await waitForExit(child);
-    assert.equal(exitCode, 1, `${crash} must terminate with exit code 1`);
-    const errorLog = fs.readFileSync(path.join(logDir, 'error.log'), 'utf8');
-    assert.match(errorLog, new RegExp(`"event":"${event}"`));
-  }
+  const uncaught = startServer({ port: 32212, dbPath, logDir, crash: 'uncaughtException' });
+  children.push(uncaught);
+  assert.equal(await waitForExit(uncaught), 1, 'uncaughtException must terminate with exit code 1');
+  assert.match(fs.readFileSync(path.join(logDir, 'error.log'), 'utf8'), /"event":"uncaught_exception"/);
+
+  const rejected = startServer({ port: 32213, dbPath, logDir, crash: 'unhandledRejection' });
+  children.push(rejected);
+  await waitForHealth(32213, rejected);
+  await waitForLogEvent(logDir, 'unhandled_rejection');
+  assert.equal(rejected.exitCode, null, 'unhandledRejection must not terminate the process');
+  await waitForHealth(32213, rejected);
 
   for (const file of ['app.log', 'error.log', 'audit.log']) {
     const filePath = path.join(logDir, file);
