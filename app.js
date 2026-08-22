@@ -14497,6 +14497,20 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
   return response;
 }
 
+async function _readApiJson(res) {
+  const text = await res.text();
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {
+    if (res.status >= 500 || trimmed.startsWith('<')) {
+      throw new Error('ارتباط با سرور برقرار نشد. صفحه را رفرش کن یا چند لحظه بعد دوباره تلاش کن');
+    }
+    throw new Error('پاسخ سرور نامعتبر بود');
+  }
+}
+
 function _getApiAuthToken() {
   if (_sbSession?.token) return _sbSession.token;
   const saved = (typeof _authLoadSession === 'function') ? _authLoadSession() : null;
@@ -14510,7 +14524,7 @@ const _auth = {
       method: 'POST',
       body: JSON.stringify({ email, password, name: name || '', phone: phone || '' })
     });
-    const data = await res.json();
+    const data = await _readApiJson(res);
     if (!res.ok) throw new Error(data.error || 'خطا در ثبت‌نام');
     _sbSession = { token: data.token };
     _sbUser = data.user;
@@ -14525,7 +14539,7 @@ const _auth = {
       method: 'POST',
       body: JSON.stringify({ email, password })
     });
-    const data = await res.json();
+    const data = await _readApiJson(res);
     if (!res.ok) throw new Error(data.error || 'خطا در ورود');
     _sbSession = { token: data.token };
     _sbUser = data.user;

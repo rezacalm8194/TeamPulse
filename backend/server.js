@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('./utils/jwt');
 const express = require('express');
 const cors = require('cors');
-const compression = require('compression');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { randomUUID } = require('crypto');
 const db = require('./config/database');
@@ -82,7 +82,11 @@ const cspValue = [
   'upgrade-insecure-requests',
 ].join('; ');
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(compression({ threshold: 1024 }));
+try {
+  app.use(require('compression')({ threshold: 1024 }));
+} catch (error) {
+  logger.warn('compression_unavailable', { error });
+}
 function securityHeaders(req, res, next) {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()');

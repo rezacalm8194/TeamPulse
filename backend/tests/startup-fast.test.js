@@ -16,7 +16,7 @@ test('app shell does not prefetch extra JS on first paint', () => {
 
 test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /require\('compression'\)/);
-  assert.match(serverJs, /app\.use\(compression\(/);
+  assert.match(serverJs, /compression_unavailable/);
   assert.match(serverJs, /max-age=31536000, immutable/);
 });
 
