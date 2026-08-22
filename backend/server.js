@@ -130,6 +130,13 @@ const authLoginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'too_many_login_attempts' },
 });
+const authRegisterLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_register_attempts' },
+});
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -152,6 +159,7 @@ const speechLimiter = rateLimit({
   message: { error: 'too_many_speech_requests' },
 });
 app.use('/api/auth/login', authLoginLimiter);
+app.use('/api/auth/register', authRegisterLimiter);
 app.use('/api/', noStoreApi);
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }));
 app.use('/api/auth', require('./routes/auth'));
