@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('./utils/jwt');
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { randomUUID } = require('crypto');
 const db = require('./config/database');
@@ -82,6 +82,7 @@ const cspValue = [
   'upgrade-insecure-requests',
 ].join('; ');
 app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression({ threshold: 1024 }));
 function securityHeaders(req, res, next) {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()');
@@ -207,8 +208,10 @@ function setStaticCacheHeaders(res, filePath) {
   if (ext === '.html') {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Content-Security-Policy', cspValue);
-  } else if (/\.(?:css|js|png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+  } else if (/\.(?:css|js)$/i.test(ext)) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (/\.(?:png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
+    res.setHeader('Cache-Control', 'public, max-age=604800');
   }
 }
 app.use(blockSensitiveStatic);

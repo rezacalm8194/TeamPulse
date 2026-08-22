@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp80';
+const TP_ASSET_V = 'tp81';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -47,8 +47,10 @@ function _tpLazy(name) {
 ].forEach(_tpLazy);
 function _tpPrefetchExtra() {
   const run = () => { _tpEnsureExtra().catch(() => {}); };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2500 });
-  else setTimeout(run, 1200);
+  setTimeout(() => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+    else run();
+  }, 4000);
 }
 
 
@@ -16272,8 +16274,12 @@ async function _authOnSuccess() {
     catch(e) { localStorage.removeItem(TEAM_PENDING_INVITE_KEY); showToast(e.message || 'دعوت‌نامه معتبر نیست', 'error'); }
   }
   window._teamOwnerDataReady = false;
-  await _ensureTeamAccessOwner();
-  if (!_teamAccessSession()) await _refreshWorkspacesFromServer();
+  const teamSessionAtStart = _teamAccessSession();
+  if (teamSessionAtStart && !teamSessionAtStart.ownerUserId) {
+    await _ensureTeamAccessOwner();
+  } else if (teamSessionAtStart) {
+    void _ensureTeamAccessOwner();
+  }
   window._activeDBKey = _teamActiveDBKey();
   await _loadPrimaryDatabase();
   let loadedFromServer = false;
@@ -16306,9 +16312,12 @@ async function _authOnSuccess() {
   await init();
   updateAccountDisplay();
 
-  // داده محلی را فوری نشان می‌دهیم؛ sync سرور بعد از بالا آمدن صفحه انجام می‌شود
-  // تا رفرش صفحه روی حالت «در حال بارگذاری» مکث نکند.
+  // داده محلی را فوری نشان می‌دهیم؛ رجیستری میزکار و sync سرور بعد از اولین
+  // paint انجام می‌شود تا رفرش صفحه روی درخواست شبکه مکث نکند.
   (async () => {
+    if (!_teamAccessSession()) {
+      try { await _refreshWorkspacesFromServer(); } catch (e) {}
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       loadedFromServer = await _loadFromServer();
       if (loadedFromServer) break;
@@ -16333,23 +16342,24 @@ async function _authOnSuccess() {
     }
   })();
 
-  // آپدیت wallet از سرور
-  try {
-    const wRes = await _apiFetch('/api/wallet');
-    if (wRes.ok) {
-      const ct = wRes.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) throw new Error('not json');
-      const wData = await wRes.json();
-      if (!_db._user_wallet) _db._user_wallet = { balance: 0, daily_cost: 1000, transactions: [] };
-      _db._user_wallet.balance = wData.balance;
-      _db._user_wallet.daily_cost = wData.daily_cost;
-      _db._user_wallet.transactions = (wData.transactions || []).map(t => ({
-        id: t.id, type: t.type, amount: t.amount, desc: t.description,
-        date: new Date((t.created_at||0)*1000).toISOString()
-      }));
-      _save(false);
-    } else { _initUserWallet(); }
-  } catch(e) { _initUserWallet(); }
+  void (async () => {
+    try {
+      const wRes = await _apiFetch('/api/wallet');
+      if (wRes.ok) {
+        const ct = wRes.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) throw new Error('not json');
+        const wData = await wRes.json();
+        if (!_db._user_wallet) _db._user_wallet = { balance: 0, daily_cost: 1000, transactions: [] };
+        _db._user_wallet.balance = wData.balance;
+        _db._user_wallet.daily_cost = wData.daily_cost;
+        _db._user_wallet.transactions = (wData.transactions || []).map(t => ({
+          id: t.id, type: t.type, amount: t.amount, desc: t.description,
+          date: new Date((t.created_at||0)*1000).toISOString()
+        }));
+        _save(false);
+      } else { _initUserWallet(); }
+    } catch(e) { _initUserWallet(); }
+  })();
 
   _startServerSyncLoops();
   _startKeyEventReminderLoop();
@@ -24414,7 +24424,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v80';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v81';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
