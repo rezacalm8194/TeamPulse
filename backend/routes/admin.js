@@ -17,9 +17,16 @@ ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
 webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
+const ALLOWED_ACCOUNT_ROLES = new Set(['admin', 'owner', 'user']);
+
 function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   next();
+}
+
+function parseAccountRole(value) {
+  const role = String(value || '').trim();
+  return ALLOWED_ACCOUNT_ROLES.has(role) ? role : null;
 }
 
 function ensureWalletTables() {
@@ -281,7 +288,7 @@ router.post('/users', auth, adminOnly, async (req, res) => {
     const name = String(req.body.name || '').trim();
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
-    const role = req.body.role === 'admin' ? 'admin' : 'user';
+    const role = parseAccountRole(req.body.role) === 'admin' ? 'admin' : 'user';
     const plan = ['free','basic','pro','enterprise'].includes(req.body.plan) ? req.body.plan : 'free';
     if (!name || !email || password.length < 6) return res.status(400).json({ error: 'invalid user data' });
     if (db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email)) return res.status(409).json({ error: 'email already exists' });
@@ -300,14 +307,17 @@ router.post('/users', auth, adminOnly, async (req, res) => {
 
 router.put('/users/:id/role', auth, adminOnly, (req, res) => {
   try {
-    const previous = db.prepare('SELECT role FROM accounts WHERE id=?').get(req.params.id);
-    db.prepare("UPDATE accounts SET role=?,updated_at=datetime('now') WHERE id=?").run(req.body.role, req.params.id);
+    const role = parseAccountRole(req.body.role);
+    if (!role) return res.status(400).json({ error: 'invalid role' });
+    const previous = db.prepare('SELECT id,role FROM accounts WHERE id=?').get(req.params.id);
+    if (!previous) return res.status(404).json({ error: 'not found' });
+    db.prepare("UPDATE accounts SET role=?,updated_at=datetime('now') WHERE id=?").run(role, req.params.id);
     logger.audit('role_changed', {
       requestId: req.requestId, actorUserId: req.user.id, targetUserId: req.params.id,
       entityType: 'account', entityId: req.params.id,
-      metadata: { from: previous?.role || null, to: req.body.role },
+      metadata: { from: previous.role || null, to: role },
     });
-    res.json({ success: true });
+    res.json({ success: true, role });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
