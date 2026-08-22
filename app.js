@@ -4446,10 +4446,11 @@ function fa(n) { return String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[
 function fmt(n) { return fa(Number(n || 0).toLocaleString('en')); }
 function avatar(name, idx) {
   const c = COLORS[idx % COLORS.length];
-  return `<div class="avatar" style="background:${c}22;color:${c}">${name.charAt(0)}</div>`;
+  const initial = escapeHtml(String(name || '').charAt(0) || '؟');
+  return `<div class="avatar" style="background:${c}22;color:${c}">${initial}</div>`;
 }
 function pkgTag(pkg) {
-  return `<span class="tag" style="background:${pkg.type_color}22;color:${pkg.type_color}">${pkg.type_label}</span>`;
+  return `<span class="tag" style="background:${pkg.type_color}22;color:${pkg.type_color}">${escapeHtml(pkg.type_label)}</span>`;
 }
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
@@ -4495,9 +4496,16 @@ function statusHtml(balance, isSupplier) {
   return `<span class="status status-ok">تسویه</span>`;
 }
 function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
+  if (str == null || str === false) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function escapeAttr(str) {
+  return escapeHtml(JSON.stringify(str == null ? '' : String(str)));
 }
 function excerpt(str, len=70) {
   if (!str) return '';
@@ -4518,7 +4526,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   const bs = 'margin-top:3px;width:18px;height:18px;flex-shrink:0;accent-color:var(--accent2)';
   const chk = checked ? 'checked ' : '';
   const ts = checked ? 'text-decoration:line-through;color:var(--text3)' : '';
-  const answerMatch = text.match(/^(.+?[:：])\s*(.*)$/);
+  const answerMatch = String(text || '').match(/^(.+?[:：])\s*(.*)$/);
   if (answerMatch && interactive && (noteId != null || textareaId)) {
     const answerHandler = "oninput='_updateChecklistAnswer(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
     return '<div class="interactive-form-field" style="display:grid;grid-template-columns:minmax(110px,auto) minmax(150px,1fr);align-items:center;gap:10px;margin:4px 0;min-height:52px;padding:7px 10px;border-radius:9px;background:var(--bg3);border:1px solid var(--border)">' +
@@ -5064,7 +5072,7 @@ async function renderPage() {
     setContent(`<div style="text-align:center;padding:40px;color:var(--red)">
       <div style="font-size:32px;margin-bottom:12px">⚠️</div>
       <div style="font-weight:700;margin-bottom:8px">خطا در بارگذاری صفحه</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:16px">${e.message}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px">${escapeHtml(e.message)}</div>
       <button class="btn btn-primary" onclick="renderPage()">تلاش مجدد</button>
     </div>`);
   }
@@ -5111,7 +5119,7 @@ function studentSectionNav(active) {
     { page: 'archive', label: 'بایگانی' },
   ].filter(item => typeof _teamCan !== 'function' || _teamCan(item.page));
   return `<div class="students-section-nav" aria-label="بخش‌های ${plural}">
-    ${items.map(item => `<button class="${[active === item.page ? 'active' : '', item.cls || ''].filter(Boolean).join(' ')}" onclick="goStudentSection('${item.page}')">${item.label}</button>`).join('')}
+    ${items.map(item => `<button class="${[active === item.page ? 'active' : '', item.cls || ''].filter(Boolean).join(' ')}" onclick="goStudentSection('${item.page}')">${escapeHtml(item.label)}</button>`).join('')}
   </div>`;
 }
 
@@ -5382,7 +5390,7 @@ async function renderStudents(search = '') {
         <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
         <button class="chip ${stuChip==='paid'?'active':''}" onclick="setStuChip('paid')">🟢 تسویه</button>
         ${topTypes.length ? (stuChipsExpanded
-          ? topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip('${escapeHtml(t)}')">${t}</button>`).join('')
+          ? topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip(${escapeAttr(t)})">${escapeHtml(t)}</button>`).join('')
             + `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="بستن فیلترهای بیشتر">−</button>`
           : `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="فیلترهای بیشتر">+</button>`
         ) : ''}
@@ -5416,7 +5424,7 @@ async function renderStudents(search = '') {
           <div class="name-cell">
             ${avatar(s.name, i)}
             <div>
-              <div style="font-weight:500">${s.name} ${s.lname} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${fam.name}</span>` : ''}</div>
+              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
               <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
             </div>
           </div>
@@ -5464,8 +5472,8 @@ async function renderStudents(search = '') {
         <div class="mstu-top">
           ${avatar(s.name, i)}
           <div class="mstu-name-wrap">
-            <div class="mstu-name">${s.name} ${s.lname}</div>
-            ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${fam.name}</div>` : ''}
+            <div class="mstu-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
+            ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${escapeHtml(fam.name)}</div>` : ''}
           </div>
           <div class="row-menu">
             <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
@@ -5515,7 +5523,7 @@ async function openStudentDetail(id) {
     ? studentPackages.map(p => `
       <div class="detail-row" id="pkg-row-${p.id}">
         <span class="detail-key">
-          <span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color};font-size:10px">${p.type_label}</span>
+          <span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color};font-size:10px">${escapeHtml(p.type_label)}</span>
           ${p.start_date ? ` · شروع: ${p.start_date}` : ''}
           ${p.payment_due_date ? ` · سررسید پرداخت: ${p.payment_due_date}` : ''}
           ${!p.is_chargeable ? ` · <small style="color:var(--amber)">هنوز وارد بدهی نشده</small>` : ''}
@@ -5532,16 +5540,16 @@ async function openStudentDetail(id) {
 
   const pkgRows = (s.packages || []).map(p => `
     <div class="detail-row">
-      <span class="detail-key">${p.type_label}${p.initial_cost ? ` <small style="color:var(--text3)">(+${fmt(p.initial_cost)} بدهی قبلی)</small>` : ''}</span>
+      <span class="detail-key">${escapeHtml(p.type_label)}${p.initial_cost ? ` <small style="color:var(--text3)">(+${fmt(p.initial_cost)} بدهی قبلی)</small>` : ''}</span>
       <span class="detail-val">${fmt(p.grand_total)} تومان${!p.is_chargeable?' · آینده':''}</span>
     </div>`).join('');
 
   const payRows = payments.length
     ? payments.map(p => `
       <div class="detail-row">
-        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${p.pkg_label}${p.account_label ? ` <small style="color:var(--accent2)">· ${escapeHtml(p.account_label)}</small>`:''}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
+        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${escapeHtml(p.pkg_label)}${p.account_label ? ` <small style="color:var(--accent2)">· ${escapeHtml(p.account_label)}</small>`:''}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
         <span class="detail-val amount-paid">
-          ${fmt(p.amount)} ${p.currency || 'تومان'}
+          ${fmt(p.amount)} ${escapeHtml(p.currency || 'تومان')}
           <button class="btn btn-ghost btn-sm" style="margin-right:4px" onclick="openEditPayment(${p.id})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deletePayment(${p.id}, 'students')">🗑</button>
         </span>
@@ -5560,10 +5568,10 @@ async function openStudentDetail(id) {
   if (fam) {
     familySection = `
     <div class="detail-section">
-      <h3>👨‍👩‍👧 حساب مشترک: ${fam.name}</h3>
+      <h3>👨‍👩‍👧 حساب مشترک: ${escapeHtml(fam.name)}</h3>
       ${fam.members.map(m => `
         <div class="detail-row">
-          <span class="detail-key">${m.name} ${m.lname}${m.id===s.id?' (این فرد)':''}</span>
+          <span class="detail-key">${escapeHtml(m.name)} ${escapeHtml(m.lname)}${m.id===s.id?' (این فرد)':''}</span>
           <span class="detail-val">${balanceHtml(m.balance)}</span>
         </div>`).join('')}
       <div class="detail-row" style="border-top:1px solid var(--border2);margin-top:4px">
@@ -5573,16 +5581,16 @@ async function openStudentDetail(id) {
     </div>`;
   }
 
-  openModal(`جزئیات: ${s.name} ${s.lname}`, `
+  openModal(`جزئیات: ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="detail-section">
       <h3>اطلاعات ${META.entitySingular || 'شاگرد'}</h3>
-      <div class="detail-row"><span class="detail-key">نام</span><span class="detail-val">${s.name} ${s.lname}</span></div>
+      <div class="detail-row"><span class="detail-key">نام</span><span class="detail-val">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</span></div>
       <div class="detail-row"><span class="detail-key">تاریخ رزرو/ثبت‌نام</span><span class="detail-val">${DateService.disp(s.date_jalali) || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${s.phone || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">دسته‌بندی مشتری</span><span class="detail-val">${s.customer_category || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">نام مجموعه</span><span class="detail-val">${s.organization_name || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">آدرس</span><span class="detail-val">${s.address || '—'}</span></div>
-      <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${s.note || '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${escapeHtml(s.phone || '—')}</span></div>
+      <div class="detail-row"><span class="detail-key">دسته‌بندی مشتری</span><span class="detail-val">${escapeHtml(s.customer_category || '—')}</span></div>
+      <div class="detail-row"><span class="detail-key">نام مجموعه</span><span class="detail-val">${escapeHtml(s.organization_name || '—')}</span></div>
+      <div class="detail-row"><span class="detail-key">آدرس</span><span class="detail-val">${escapeHtml(s.address || '—')}</span></div>
+      <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${escapeHtml(s.note || '—')}</span></div>
     </div>
     <div class="detail-section">
       <h3>پکیج‌ها و مبالغ</h3>
@@ -5680,7 +5688,7 @@ function purchaseStaffOptionsHtml(typeId = '', selectedStaffId = '') {
   const sorted = rows.slice().sort((a,b) => Number(staffMatchesService(b,typeId)) - Number(staffMatchesService(a,typeId)));
   return '<option value="">— انتخاب نشده —</option>' + sorted.map(s => {
     const matched = staffMatchesService(s,typeId);
-    const name = `${s.name||''} ${s.lname||''}`.trim();
+    const name = `${escapeHtml(s.name||'')} ${escapeHtml(s.lname||'')}`.trim();
     return `<option value="${s.id}" ${String(s.id)===String(selectedStaffId)?'selected':''}>${escapeHtml(name || 'پرسنل')} ${matched ? '— هماهنگ با خدمت' : ''}</option>`;
   }).join('');
 }
@@ -5724,7 +5732,7 @@ function openNewPurchase(studentId, preset = {}) {
   const reminderId = preset.reminder_id ? Number(preset.reminder_id) : 0;
   const typeOptions = purchaseTypeOptionsHtml(defaultPkgId);
 
-  openModal(`🛍 ثبت خرید جدید — ${s.name} ${s.lname}`, `
+  openModal(`🛍 ثبت خرید جدید — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">پکیج / خدمت *</label>
@@ -5828,7 +5836,7 @@ async function saveNewPurchase(studentId, reminderId = 0) {
 function openWalletAdjust(studentId, sign) {
   const s = allStudents.find(x => x.id === studentId);
   const title = sign > 0 ? 'افزایش موجودی کیف پول' : 'برداشت از کیف پول';
-  openModal(`${title} — ${s.name} ${s.lname}`, `
+  openModal(`${title} — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">مبلغ (تومان) *</label>
@@ -5884,17 +5892,17 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
   archiveColumns = savedArchiveColumns.length ? savedArchiveColumns : [...ARCHIVE_DEFAULT_COLUMNS];
 
   const familyOptions = FAMILIES.map(f =>
-    `<option value="${f.id}" ${s?.family_id===f.id?'selected':''}>${f.name}</option>`
+    `<option value="${f.id}" ${s?.family_id===f.id?'selected':''}>${escapeHtml(f.name)}</option>`
   ).join('');
 
   const pkgRows = PKG_TYPES.map(pt => {
     const existing = s?.packages?.find(p => p.type_id === pt.id);
     const checked = !!existing;
     return `
-    <div class="pkg-check-row" data-type-id="${pt.id}" data-label="${pt.label}">
+    <div class="pkg-check-row" data-type-id="${pt.id}" data-label="${escapeHtml(pt.label)}">
       <label class="pkg-check ${checked?'checked':''}">
         <input type="checkbox" value="${pt.id}" ${checked?'checked':''} onchange="onPkgCheckChange(this)">
-        <span style="display:inline-flex;align-items:center;gap:4px"><span class="color-dot" style="background:${pt.color}"></span>${pt.label}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span class="color-dot" style="background:${pt.color}"></span>${escapeHtml(pt.label)}</span>
       </label>
       <div class="pkg-amount-fields" style="display:${checked?'grid':'none'}">
         <div class="form-group">
@@ -5931,7 +5939,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
     .filter(x => x.id !== id)
     .map(x => `
       <label class="pkg-check fam-member-label" style="width:100%;justify-content:flex-start" onclick="this.classList.toggle('checked')">
-        <input type="checkbox" class="fam-member-cb" value="${x.id}"> ${x.name} ${x.lname}
+        <input type="checkbox" class="fam-member-cb" value="${x.id}"> ${escapeHtml(x.name)} ${escapeHtml(x.lname)}
       </label>`).join('');
 
   openModal(editing ? `ویرایش ${META.entitySingular||'شاگرد'}` : `افزودن ${META.entitySingular||'شاگرد'} جدید`, `
@@ -6254,7 +6262,7 @@ function openAddPayment(studentId) {
   const pkgOptions = paymentPackageOptionsHtml(s.packages || []);
   const pkgLabels = uniquePaymentPackageOptions(s.packages || []).map(p=>p.type_label).join('، ') || '—';
 
-  openModal(`ثبت پرداخت — ${s.name} ${s.lname}`, `
+  openModal(`ثبت پرداخت — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <p style="font-size:12px;color:var(--text2);margin-bottom:6px">مانده فعلی: ${balanceHtml(s.balance)}</p>
     <p style="font-size:11px;color:var(--text3);margin-bottom:10px">خدمات فعال: ${pkgLabels}</p>
     <div class="form-grid">
@@ -6345,7 +6353,7 @@ async function savePayment(studentId) {
 async function renderPurchases(search = '') {
   updateTopbarActions(`
     <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input placeholder="جستجو با نام شاگرد..." oninput="renderPurchases(this.value)" value="${search}">
+      <input placeholder="جستجو با نام شاگرد..." oninput="renderPurchases(this.value)" value="${escapeHtml(search)}">
     </div>`);
   let packages = await window.api.packages.getAll();
   if (search.trim()) {
@@ -6360,8 +6368,8 @@ async function renderPurchases(search = '') {
   } else {
     packages.forEach(p => {
       html += `<tr class="student-record-row" onclick="openStudentDetail(${s.id})" title="مشاهده جزئیات پرونده ${escapeHtml(`${s.name} ${s.lname}`.trim())}">
-        <td style="font-weight:500">${p.name} ${p.lname}</td>
-        <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
+        <td style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
+        <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span></td>
         <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
         <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
         <td style="color:var(--text2)">
@@ -6395,8 +6403,8 @@ async function openEditPackage(id) {
   const p = packages.find(x => x.id === id);
   if (!p) return;
   const pts = await window.api.packageTypes.getAll();
-  const typeOptions = pts.map(pt => `<option value="${pt.id}" ${pt.id===p.type_id?'selected':''}>${pt.label}</option>`).join('');
-  openModal(`✏️ ویرایش خرید — ${p.name} ${p.lname}`, `
+  const typeOptions = pts.map(pt => `<option value="${pt.id}" ${pt.id===p.type_id?'selected':''}>${escapeHtml(pt.label)}</option>`).join('');
+  openModal(`✏️ ویرایش خرید — ${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">نوع خرید</label>
@@ -6490,7 +6498,7 @@ async function openEditPayment(id) {
   const packages = await window.api.packages.getByStudent(p.student_id);
   const pkgOptions = paymentPackageOptionsHtml(packages, { includeNew: false, selectedId: p.package_id || null });
 
-  openModal(`✏️ ویرایش پرداخت — ${p.name} ${p.lname}`, `
+  openModal(`✏️ ویرایش پرداخت — ${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">ثبت این پرداخت بابت</label>
@@ -6565,7 +6573,7 @@ async function deletePayment(id, context) {
 async function openGeneralPurchaseModal() {
   allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
   const options = allStudents.filter(s => !s.archived)
-    .map(s => `<option value="${s.id}">${s.name} ${s.lname}</option>`).join('');
+    .map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   openModal('🛒 افزودن خرید جدید', `
     <div class="form-group full">
       <label class="form-label">${META.entitySingular||'شاگرد'} *</label>
@@ -6585,7 +6593,7 @@ function confirmGeneralPurchaseStudent() {
 
 function openGeneralPaymentModal() {
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
-  const studentOptions = allStudents.map(s => `<option value="${s.id}">${s.name} ${s.lname}</option>`).join('');
+  const studentOptions = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
 
   openModal('افزودن پرداختی', `
     <div class="form-grid">
@@ -6761,8 +6769,8 @@ async function renderPayments(search = '') {
       packages.forEach(p => {
         const saleMenuId = `sale-menu-${p.id}`;
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500">${p.name} ${p.lname}</td>
-          <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.type_label}</span></td>
+          <td data-label="مشتری" style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
+          <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span></td>
           <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
           <td style="color:var(--text2)">
@@ -6803,9 +6811,9 @@ async function renderPayments(search = '') {
       payments.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${p.name} ${p.lname}</button></td>
-          <td data-label="پکیج"><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${p.pkg_label}</span></td>
-          <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${p.currency||'تومان'}</span></td>
+          <td data-label="مشتری" style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</button></td>
+          <td data-label="پکیج"><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span></td>
+          <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency||'تومان')}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
           <td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
           <td data-label="مانده حساب">${student ? balanceHtml(student.balance) : '—'}</td>
@@ -6893,14 +6901,14 @@ async function renderSessions(search = '') {
     html += `
     <div class="session-column" draggable="true" data-student-id="${g.student_id}">
       <div class="session-column-header">
-        <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${g.name} ${g.lname}</span>
+        <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
         <span class="scn-count">(${fa(g.sessions.length)})</span>
-        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')" style="cursor:pointer;background:rgba(251,191,36,.15);color:var(--amber);border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}</span>` : ''}
-        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
-        <button class="topics-btn" onclick="openTopics(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📌 موضوعات مهم</button>
-        <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">🌟 رویدادهای مهم</button>
-        <button class="summary-btn" onclick="openSessionsSummary(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
-        <button class="eval-btn" onclick="openEvaluation(${g.student_id}, '${escapeHtml(g.name)} ${escapeHtml(g.lname)}')">📊 ارزیابی عملکرد</button>
+        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" style="cursor:pointer;background:rgba(251,191,36,.15);color:var(--amber);border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}</span>` : ''}
+        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
+        <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
+        <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
+        <button class="summary-btn" onclick="openSessionsSummary(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
+        <button class="eval-btn" onclick="openEvaluation(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📊 ارزیابی عملکرد</button>
         <button class="session-column-add" onclick="openAddSessionGeneral(${g.student_id})">+ افزودن ${META.sessionSingular||'جلسه'}</button>
       </div>
       <div class="session-column-body">
@@ -6930,7 +6938,7 @@ async function renderSessions(search = '') {
         ${_keySessionsExpanded ? keyOnes.map(s => `
           <div class="key-session-card" onclick="openSessionDetail(${s.id})">
             <div class="ks-top">
-              <span class="ks-name">${s.name} ${s.lname}</span>
+              <span class="ks-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</span>
               <span class="ks-date">${DateService.disp(s.date_jalali)}</span>
             </div>
             <div class="ks-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
@@ -7149,7 +7157,7 @@ async function openSessionDetail(sessionId) {
   }
   if (!session) return;
 
-  openModal(`${student.name} ${student.lname} — ${DateService.disp(session.date_jalali)}`, `
+  openModal(`${escapeHtml(student.name)} ${escapeHtml(student.lname)} — ${DateService.disp(session.date_jalali)}`, `
     <div class="detail-section">
       ${session.importance==='key' ? '<p style="color:var(--amber);font-weight:700;margin-bottom:8px">⭐ نکته مهم و کلیدی</p>' : ''}
       <div class="detail-row"><span class="detail-key">عنوان</span><span class="detail-val">${escapeHtml(session.title) || '—'}</span></div>
@@ -7217,14 +7225,14 @@ async function openStudentFollowups(studentId, displayName) {
     ? '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">همه اقدامات انجام شده‌اند 🎉</div>'
     : openFU.map(f => `
       <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer">
-        <input type="checkbox" onchange="toggleFollowupAndRefresh(${studentId}, '${escapeHtml(displayName)}', ${f.session_id}, ${f.id}, this)" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer;flex-shrink:0">
+        <input type="checkbox" onchange="toggleFollowupAndRefresh(${studentId}, ${escapeAttr(displayName)}, ${f.session_id}, ${f.id}, this)" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer;flex-shrink:0">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;color:var(--text)">${escapeHtml(f.text)}</div>
           <div style="font-size:10px;color:var(--text3);margin-top:2px">از جلسه ${f.session_date}</div>
         </div>
       </label>`).join('');
 
-  openModal(`📌 اقدامات باز — ${displayName}`, `
+  openModal(`📌 اقدامات باز — ${escapeHtml(displayName)}`, `
     <div style="margin-bottom:10px;font-size:12px;color:var(--text2)">
       ${fa(openFU.length)} مورد هنوز انجام نشده
     </div>
@@ -7313,11 +7321,11 @@ async function openAddSessionGeneral(presetStudentId = null) {
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
   _resetSessionTimer();
   const initStudentId = presetStudentId || allStudents[0]?.id || null;
-  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===initStudentId?'selected':''}>${s.name} ${s.lname}</option>`).join('');
+  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===initStudentId?'selected':''}>${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   const initStudent = allStudents.find(s => s.id === initStudentId);
   const preSummary = initStudentId ? await _buildPreSessionSummary(initStudentId) : '';
 
-  const title = `ثبت ${META.sessionSingular || 'جلسه'}${initStudent ? `<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${initStudent.name} ${initStudent.lname}</div>` : '<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px"></div>'}`;
+  const title = `ثبت ${META.sessionSingular || 'جلسه'}${initStudent ? `<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${escapeHtml(initStudent.name)} ${escapeHtml(initStudent.lname)}</div>` : '<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px"></div>'}`;
 
   openModal(title, `
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
@@ -7676,7 +7684,7 @@ async function openEditSession(sessionId) {
 
   const preSummary = await _buildPreSessionSummary(session.student_id, sessionId);
 
-  openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${student.name} ${student.lname}</div>`, `
+  openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${escapeHtml(student.name)} ${escapeHtml(student.lname)}</div>`, `
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
 
@@ -7936,7 +7944,7 @@ async function renderFamilies(embedded = currentPage === 'payments') {
     html += `
     <div class="table-card family-card">
       <div class="table-header">
-        <span class="title">👨‍👩‍👧 ${f.name}</span>
+        <span class="title">👨‍👩‍👧 ${escapeHtml(f.name)}</span>
         <span style="margin-right:auto;font-size:12px;font-weight:700">${familyBalanceLabel}: ${familyBalanceHtml(f.totalBalance)}</span>
         ${familyActionsHtml(f.id)}
       </div>
@@ -7953,7 +7961,7 @@ async function renderFamilies(embedded = currentPage === 'payments') {
             ? `<tr><td colspan="5"><div class="empty">عضوی ندارد — از صفحه ${META.entityPlural||'شاگردان'} با ویرایش، عضو اضافه کن</div></td></tr>`
             : f.members.map(m => `
               <tr>
-                <td style="font-weight:500">${m.name} ${m.lname}</td>
+                <td style="font-weight:500">${escapeHtml(m.name)} ${escapeHtml(m.lname)}</td>
                 <td>${fmt(m.totalAmount)}</td>
                 <td><span class="amount-paid">${fmt(m.totalPaid)}</span></td>
                 <td>${m.wallet > 0 ? fmt(m.wallet) : '—'}</td>
@@ -8017,13 +8025,13 @@ function openAddFamilyMember(familyId, familyName) {
 
   const list = candidates.map(s => `
     <label class="pkg-check" style="width:100%;justify-content:flex-start" onclick="this.classList.toggle('checked')">
-      <input type="checkbox" class="fam-add-cb" value="${s.id}"> ${s.name} ${s.lname}
+      <input type="checkbox" class="fam-add-cb" value="${s.id}"> ${escapeHtml(s.name)} ${escapeHtml(s.lname)}
     </label>`).join('');
 
-  openModal(`افزودن عضو به "${familyName}"`, `
+  openModal(`افزودن عضو به "${escapeHtml(familyName)}"`, `
     <div class="pkg-row" style="flex-direction:column;align-items:stretch">${list}</div>
   `, [
-    { label: 'افزودن', cls: 'btn-primary', action: `saveAddFamilyMembers(${familyId}, '${escapeHtml(familyName)}')` },
+    { label: 'افزودن', cls: 'btn-primary', action: `saveAddFamilyMembers(${familyId}, ${escapeAttr(familyName)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
 }
@@ -8119,7 +8127,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     }
 
     html += `<tr>
-      <td data-label="مشتری" style="font-weight:500">${r.name} ${r.lname}</td>
+      <td data-label="مشتری" style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
       <td data-label="عنوان">${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
       <td data-label="سررسید">
         <div>${DateService.disp(r.due_date_jalali)}</div>
@@ -8148,7 +8156,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
 
 function openAddReminder(presetStudentId = null) {
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
-  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===presetStudentId?'selected':''}>${s.name} ${s.lname}</option>`).join('');
+  const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===presetStudentId?'selected':''}>${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
 
   openModal('یادآوری پرداخت جدید', `
     <div class="form-grid">
@@ -8213,7 +8221,7 @@ async function markReminderPaid(id) {
   if (!r) return;
 
   openModal('تأیید پرداخت', `
-    <p style="font-size:13px;margin-bottom:12px">آیا پرداخت "<b>${escapeHtml(r.title)}</b>" برای <b>${r.name} ${r.lname}</b> انجام شده؟</p>
+    <p style="font-size:13px;margin-bottom:12px">آیا پرداخت "<b>${escapeHtml(r.title)}</b>" برای <b>${escapeHtml(r.name)} ${escapeHtml(r.lname)}</b> انجام شده؟</p>
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی (تومان)</label>
@@ -8345,7 +8353,7 @@ async function openEditReminder(id) {
   const r = reminders.find(x => x.id === id);
   if (!r) return;
 
-  openModal(`✏️ ویرایش یادآوری — ${r.name} ${r.lname}`, `
+  openModal(`✏️ ویرایش یادآوری — ${escapeHtml(r.name)} ${escapeHtml(r.lname)}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">عنوان</label>
@@ -8426,9 +8434,9 @@ async function renderCustomerList() {
     allStudents.slice().reverse().forEach((s, i) => {
       html += `<tr>
         <td>${fa(i+1)}</td>
-        <td style="font-weight:500">${s.name}</td>
-        <td style="font-weight:500">${s.lname}</td>
-        <td style="direction:ltr;text-align:right">${s.phone || '—'}</td>
+        <td style="font-weight:500">${escapeHtml(s.name)}</td>
+        <td style="font-weight:500">${escapeHtml(s.lname)}</td>
+        <td style="direction:ltr;text-align:right">${escapeHtml(s.phone || '—')}</td>
         <td>${(s.packages||[]).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
       </tr>`;
     });
@@ -8535,7 +8543,7 @@ async function renderFinancialTransactions() {
   const years=[...new Set(_financialTransactionRows().map(x=>_jalaliParse(x.date)[0]).filter(Boolean))].sort((a,b)=>b-a);
   const yearOptions=years.map(y=>`<option value="${y}" ${String(f.year)===String(y)?'selected':''}>${fa(y)}</option>`).join('');
   const kindColor={income:'var(--green)',salary:'var(--amber)',expense:'var(--red)'};
-  const html=`<div class="table-card" style="margin-bottom:12px"><div class="table-header"><div><div class="title">📒 تراکنش‌های مالی</div><div class="subtitle">همهٔ دریافت‌ها و پرداخت‌ها در یک نمای واحد</div></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="openFiscalYearClosing()">🏁 بستن سال مالی</button><button class="btn btn-ghost btn-sm" onclick="downloadFinancialTransactionsCsv()">↓ خروجی اکسل</button></div></div><div class="form-grid" style="padding:0 16px 16px"><div class="form-group"><label class="form-label">سال مالی</label><select class="form-select" id="ft-year" onchange="updateFinancialTransactionsFilters()"><option value="all">همه سال‌ها</option>${yearOptions}</select></div><div class="form-group"><label class="form-label">نوع تراکنش</label><select class="form-select" id="ft-type" onchange="updateFinancialTransactionsFilters()"><option value="all">همه</option><option value="income" ${f.type==='income'?'selected':''}>دریافت مشتری</option><option value="salary" ${f.type==='salary'?'selected':''}>حقوق و پرسنل</option><option value="expense" ${f.type==='expense'?'selected':''}>هزینه</option></select></div><div class="form-group"><label class="form-label">حساب مالی</label><select class="form-select" id="ft-account" onchange="updateFinancialTransactionsFilters()"><option value="all">همه حساب‌ها</option>${accountOptions}</select></div><div class="form-group"><label class="form-label">از تاریخ</label><input class="form-input jdate" id="ft-from" value="${escapeHtml(f.from)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۰۱/۰۱"></div><div class="form-group"><label class="form-label">تا تاریخ</label><input class="form-input jdate" id="ft-to" value="${escapeHtml(f.to)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۱۲/۲۹"></div></div></div><div class="stats-row" style="margin-bottom:12px"><div class="stat-card s-green"><div class="stat-label">ورود وجه</div><div class="stat-value">${fmt(income)}</div><div class="stat-sub">تومان · نتایج فیلترشده</div></div><div class="stat-card s-red"><div class="stat-label">خروج وجه</div><div class="stat-value">${fmt(outgoing)}</div><div class="stat-sub">تومان · هزینه و حقوق</div></div><div class="stat-card"><div class="stat-label">خالص جریان نقدی</div><div class="stat-value" style="color:${income-outgoing>=0?'var(--green)':'var(--red)'}">${fmt(income-outgoing)}</div><div class="stat-sub">تومان</div></div></div><div class="table-card tbl-responsive"><div class="table-header"><span class="title">${fa(rows.length)} تراکنش</span></div><table><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شرح</th><th>حساب مالی</th><th>مبلغ</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td data-label="تاریخ">${DateService.disp(x.date)||'—'}</td><td data-label="نوع"><span class="tag" style="color:${kindColor[x.kind]};background:color-mix(in srgb, ${kindColor[x.kind]} 15%, transparent)">${x.kindLabel}</span></td><td data-label="طرف حساب">${escapeHtml(x.party)}</td><td data-label="شرح" style="color:var(--text2);font-size:11px">${escapeHtml(x.description)}</td><td data-label="حساب مالی" style="color:${x.accountId?'var(--accent2)':'var(--text3)'}">${escapeHtml(x.account)}</td><td data-label="مبلغ" style="font-weight:800;color:${x.kind==='income'?'var(--green)':'var(--red)'}">${x.kind==='income'?'+':'-'}${fmt(x.amount)} <small>${x.currency}</small></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty"><span>📒</span>تراکنشی با این فیلتر پیدا نشد</div></td></tr>`}</tbody></table></div>`;
+  const html=`<div class="table-card" style="margin-bottom:12px"><div class="table-header"><div><div class="title">📒 تراکنش‌های مالی</div><div class="subtitle">همهٔ دریافت‌ها و پرداخت‌ها در یک نمای واحد</div></div><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="openFiscalYearClosing()">🏁 بستن سال مالی</button><button class="btn btn-ghost btn-sm" onclick="downloadFinancialTransactionsCsv()">↓ خروجی اکسل</button></div></div><div class="form-grid" style="padding:0 16px 16px"><div class="form-group"><label class="form-label">سال مالی</label><select class="form-select" id="ft-year" onchange="updateFinancialTransactionsFilters()"><option value="all">همه سال‌ها</option>${yearOptions}</select></div><div class="form-group"><label class="form-label">نوع تراکنش</label><select class="form-select" id="ft-type" onchange="updateFinancialTransactionsFilters()"><option value="all">همه</option><option value="income" ${f.type==='income'?'selected':''}>دریافت مشتری</option><option value="salary" ${f.type==='salary'?'selected':''}>حقوق و پرسنل</option><option value="expense" ${f.type==='expense'?'selected':''}>هزینه</option></select></div><div class="form-group"><label class="form-label">حساب مالی</label><select class="form-select" id="ft-account" onchange="updateFinancialTransactionsFilters()"><option value="all">همه حساب‌ها</option>${accountOptions}</select></div><div class="form-group"><label class="form-label">از تاریخ</label><input class="form-input jdate" id="ft-from" value="${escapeHtml(f.from)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۰۱/۰۱"></div><div class="form-group"><label class="form-label">تا تاریخ</label><input class="form-input jdate" id="ft-to" value="${escapeHtml(f.to)}" onchange="updateFinancialTransactionsFilters()" placeholder="۱۴۰۵/۱۲/۲۹"></div></div></div><div class="stats-row" style="margin-bottom:12px"><div class="stat-card s-green"><div class="stat-label">ورود وجه</div><div class="stat-value">${fmt(income)}</div><div class="stat-sub">تومان · نتایج فیلترشده</div></div><div class="stat-card s-red"><div class="stat-label">خروج وجه</div><div class="stat-value">${fmt(outgoing)}</div><div class="stat-sub">تومان · هزینه و حقوق</div></div><div class="stat-card"><div class="stat-label">خالص جریان نقدی</div><div class="stat-value" style="color:${income-outgoing>=0?'var(--green)':'var(--red)'}">${fmt(income-outgoing)}</div><div class="stat-sub">تومان</div></div></div><div class="table-card tbl-responsive"><div class="table-header"><span class="title">${fa(rows.length)} تراکنش</span></div><table><thead><tr><th>تاریخ</th><th>نوع</th><th>طرف حساب</th><th>شرح</th><th>حساب مالی</th><th>مبلغ</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td data-label="تاریخ">${DateService.disp(x.date)||'—'}</td><td data-label="نوع"><span class="tag" style="color:${kindColor[x.kind]};background:color-mix(in srgb, ${kindColor[x.kind]} 15%, transparent)">${x.kindLabel}</span></td><td data-label="طرف حساب">${escapeHtml(x.party)}</td><td data-label="شرح" style="color:var(--text2);font-size:11px">${escapeHtml(x.description)}</td><td data-label="حساب مالی" style="color:${x.accountId?'var(--accent2)':'var(--text3)'}">${escapeHtml(x.account)}</td><td data-label="مبلغ" style="font-weight:800;color:${x.kind==='income'?'var(--green)':'var(--red)'}">${x.kind==='income'?'+':'-'}${fmt(x.amount)} <small>${escapeHtml(x.currency)}</small></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty"><span>📒</span>تراکنشی با این فیلتر پیدا نشد</div></td></tr>`}</tbody></table></div>`;
   setContent(html);initDatePickers();
 }
 
@@ -8793,7 +8801,7 @@ function openExpenseManager() {
   const total=list.reduce((s,e)=>s+Number(e.amount||0),0);
   const reminderByExpense=new Map((_db.expense_reminders||[]).filter(r=>!r.done).map(r=>[String(r.expense_id),r]));
   openModal('🧾 مدیریت هزینه‌ها',`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap"><div><div style="font-size:11px;color:var(--text3)">جمع کل هزینه‌های ثبت‌شده</div><div style="font-size:20px;font-weight:800;color:var(--red)">${fmt(total)} <small style="font-size:10px">تومان</small></div></div><button class="btn btn-primary" onclick="openExpenseForm()">+ هزینه جدید</button></div>
-    ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>{const reminder=reminderByExpense.get(String(e.id));return `<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} ${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--accent2);font-weight:400">خودکار از حقوق</span>':''} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${Number(e.repeat_months||0)>0?`<div style="font-size:10px;color:var(--accent2);margin-top:5px">🔁 ${_expenseRepeatLabel(e.repeat_months)} · یادآوری: ${DateService.disp(reminder?.due_date_jalali||'—')}</div>`:''}${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}','${escapeHtml(e.receipts[0].name)}','${e.receipts[0].type}')">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end">${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--text3)">از حساب پرسنل</span>':`<button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button>`}</div></div></div>`;}).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
+    ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>{const reminder=reminderByExpense.get(String(e.id));return `<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} ${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--accent2);font-weight:400">خودکار از حقوق</span>':''} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${Number(e.repeat_months||0)>0?`<div style="font-size:10px;color:var(--accent2);margin-top:5px">🔁 ${_expenseRepeatLabel(e.repeat_months)} · یادآوری: ${DateService.disp(reminder?.due_date_jalali||'—')}</div>`:''}${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}',${escapeAttr(e.receipts[0].name)},${escapeAttr(e.receipts[0].type)})">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end">${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--text3)">از حساب پرسنل</span>':`<button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button>`}</div></div></div>`;}).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
 }
 
 async function renderDashboard() {
@@ -8834,7 +8842,7 @@ async function renderDashboard() {
     const incomeHeight=Math.max(m.income?8:0,Math.round(m.income/trendMax*86));
     const expenseHeight=Math.max(m.expense?8:0,Math.round(m.expense/trendMax*86));
     const profitColor=m.profit>=0?'var(--green)':'var(--red)';
-    return `<div style="flex:1;min-width:54px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:4px;border-bottom:1px solid var(--border2)"><span title="درآمد: ${fmt(m.income)} تومان" style="display:block;width:12px;height:${incomeHeight}px;min-height:${m.income?8:1}px;border-radius:5px 5px 1px 1px;background:var(--green)"></span><span title="هزینه: ${fmt(m.expense)} تومان" style="display:block;width:12px;height:${expenseHeight}px;min-height:${m.expense?8:1}px;border-radius:5px 5px 1px 1px;background:var(--red)"></span></div><div style="font-size:10px;color:var(--text2)">${m.label}</div><div style="font-size:9px;font-weight:700;color:${profitColor};white-space:nowrap">${m.profit>=0?'+':''}${fmt(m.profit)}</div></div>`;
+    return `<div style="flex:1;min-width:54px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:4px;border-bottom:1px solid var(--border2)"><span title="درآمد: ${fmt(m.income)} تومان" style="display:block;width:12px;height:${incomeHeight}px;min-height:${m.income?8:1}px;border-radius:5px 5px 1px 1px;background:var(--green)"></span><span title="هزینه: ${fmt(m.expense)} تومان" style="display:block;width:12px;height:${expenseHeight}px;min-height:${m.expense?8:1}px;border-radius:5px 5px 1px 1px;background:var(--red)"></span></div><div style="font-size:10px;color:var(--text2)">${escapeHtml(m.label)}</div><div style="font-size:9px;font-weight:700;color:${profitColor};white-space:nowrap">${m.profit>=0?'+':''}${fmt(m.profit)}</div></div>`;
   }).join('');
   const dueLabel = days => days < 0 ? `${fa(Math.abs(days))} روز تأخیر` : days === 0 ? 'سررسید امروز' : `${fa(days)} روز مانده`;
   const financialAlerts = [
@@ -8869,7 +8877,7 @@ async function renderDashboard() {
 
   <div class="detail-section finance-alerts">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">⚠️ پیگیری‌های مالی</h3><span style="font-size:10px;color:var(--text3)">${fa(financialAlerts.length)} مورد</span></div>
-    ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${item.icon}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:12px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
+    ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${escapeHtml(item.icon)}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:12px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
   </div>
 
   <div class="detail-section" style="margin-top:14px">
@@ -8900,7 +8908,7 @@ async function renderDashboard() {
       ${pkgDistribution.filter(p=>p.count>0).map(p => `
         <div class="bar-item">
           <div class="bar-label">
-            <span>${p.label}</span>
+            <span>${escapeHtml(p.label)}</span>
             <span style="font-weight:600;color:var(--text)">${fa(p.count)} نفر</span>
           </div>
           <div class="progress-bar">
@@ -8930,7 +8938,7 @@ async function renderDashboard() {
                       <div class="name-cell">
                         ${avatar(d.name, d.id)}
                         <div>
-                          <div style="font-weight:500">${d.name} ${d.lname}</div>
+                          <div style="font-weight:500">${escapeHtml(d.name)} ${escapeHtml(d.lname)}</div>
                         </div>
                       </div>
                     </td>
@@ -8949,7 +8957,7 @@ async function renderDashboard() {
     <h3>👨‍👩‍👧 مانده حساب‌های مشترک</h3>
     ${familyGroups.map(f => `
       <div class="detail-row">
-        <span class="detail-key">${f.name} (${fa(f.members.length)} نفر)</span>
+        <span class="detail-key">${escapeHtml(f.name)} (${fa(f.members.length)} نفر)</span>
         <span class="detail-val">${familyBalanceHtml(f.totalBalance)}</span>
       </div>`).join('')}
   </div>` : ''}
@@ -8959,7 +8967,7 @@ async function renderDashboard() {
     <h3>💰 پول‌سازترین ${META.entityPlural || 'شاگردان'} <span style="font-size:10px;color:var(--text3);font-weight:400">(۷۰٪ میزان پرداختی + ۳۰٪ سرعت پرداخت)</span></h3>
     ${topEarners.map((e,i) => `
       <div class="detail-row" ${i >= 10 ? 'data-top-earner-extra style="display:none"' : ''}>
-        <span class="detail-key">${fa(i+1)}. ${e.name} ${e.lname}</span>
+        <span class="detail-key">${fa(i+1)}. ${escapeHtml(e.name)} ${escapeHtml(e.lname)}</span>
         <span class="detail-val amount-paid">${fmt(e.paid)} تومان</span>
       </div>`).join('')}
     ${topEarners.length > 10 ? `
@@ -8980,7 +8988,7 @@ async function renderDashboard() {
     </div>
     <div class="stats-row" style="margin-bottom:14px">
       <div class="stat-card s-green">
-        <div class="stat-label">درآمد ${selectedFocusMonth.label}${selectedIncomeYear===currentJalaliYear?' (ماه جاری)':''}</div>
+        <div class="stat-label">درآمد ${escapeHtml(selectedFocusMonth.label)}${selectedIncomeYear===currentJalaliYear?' (ماه جاری)':''}</div>
         <div class="stat-value">${fmt(selectedFocusMonth.total)}</div>
         <div class="stat-sub">تومان</div>
       </div>
@@ -8992,7 +9000,7 @@ async function renderDashboard() {
     </div>
     ${selectedYearMonths.map((m, index) => `
         <div class="detail-row" ${index >= 6 ? 'data-monthly-income-extra style="display:none"' : ''}>
-          <span class="detail-key">${m.label}${selectedIncomeYear===currentJalaliYear && m.jm===currentJalaliMonth ? ' <span style="color:var(--accent2);font-size:10px">(ماه جاری)</span>' : ''}</span>
+          <span class="detail-key">${escapeHtml(m.label)}${selectedIncomeYear===currentJalaliYear && m.jm===currentJalaliMonth ? ' <span style="color:var(--accent2);font-size:10px">(ماه جاری)</span>' : ''}</span>
           <span class="detail-val amount-paid">${fmt(m.total)} تومان</span>
         </div>`).join('')}
     ${selectedYearMonths.length > 6 ? `
@@ -9165,7 +9173,7 @@ function _teamRoleSelectHtml(prefix, selectedRole = 'staff_basic') {
   const picked = TEAM_ROLE_PRESETS[selectedRole] ? selectedRole : 'custom';
   const role = TEAM_ROLE_PRESETS[picked];
   const options = Object.entries(TEAM_ROLE_PRESETS).map(([key, role]) => {
-    const optionLabel = `${role.label} — ${role.desc}`;
+    const optionLabel = `${escapeHtml(role.label)} — ${role.desc}`;
     return `<option value="${key}" ${picked === key ? 'selected' : ''}>${escapeHtml(optionLabel)}</option>`;
   }).join('');
   return `
@@ -9233,9 +9241,9 @@ function _teamPermCards(prefix, selected) {
         ${s.key === 'instructions' ? `onchange="_teamToggleInstructionFolderPanel('${prefix}')"` : ''}
         style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px">
       <span style="display:flex;gap:9px;align-items:flex-start;flex:1">
-        <span style="font-size:18px;line-height:1">${s.icon}</span>
+        <span style="font-size:18px;line-height:1">${escapeHtml(s.icon)}</span>
         <span style="min-width:0">
-          <b style="display:block;font-size:13px;color:var(--text)">${s.label}</b>
+          <b style="display:block;font-size:13px;color:var(--text)">${escapeHtml(s.label)}</b>
           <small style="display:block;font-size:11px;color:var(--text3);line-height:1.7">${s.desc}</small>
         </span>
       </span>
@@ -9252,9 +9260,9 @@ function _teamPermCards(prefix, selected) {
   const todoCards = TODO_TEAM_PERMISSIONS.map(s => `
     <label style="display:flex;gap:9px;align-items:flex-start;padding:10px;border:1px solid rgba(96,165,250,.22);border-radius:9px;background:rgba(96,165,250,.045);cursor:pointer">
       <input type="checkbox" class="${prefix}-team-perm ${prefix}-team-perm-todo" value="${s.key}" ${picked.has(s.key)?'checked':''} style="width:17px;height:17px;accent-color:var(--accent);margin-top:2px">
-      <span style="font-size:16px;line-height:1">${s.icon}</span>
+      <span style="font-size:16px;line-height:1">${escapeHtml(s.icon)}</span>
       <span style="min-width:0">
-        <b style="display:block;font-size:12px;color:var(--text)">${s.label}</b>
+        <b style="display:block;font-size:12px;color:var(--text)">${escapeHtml(s.label)}</b>
         <small style="display:block;font-size:10px;color:var(--text3);line-height:1.7">${s.desc}</small>
       </span>
     </label>
@@ -9373,7 +9381,7 @@ function _teamInstructionFolderPicker(prefix, selected, enabled = false) {
       return `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border2);border-radius:9px;background:var(--bg3);cursor:pointer;margin-right:${Math.min(depth,4)*16}px">
         <input type="checkbox" class="${prefix}-team-folder" value="${f.id}" ${(enabled && (allChecked || selectedIds.has(+f.id)))?'checked':''}
           onchange="_teamSyncInstructionFolderAll('${prefix}')" style="width:16px;height:16px;accent-color:var(--accent)">
-        <span style="font-size:15px">${f.icon || '📁'}</span>
+        <span style="font-size:15px">${escapeHtml(f.icon || '📁')}</span>
         <span style="font-size:12px;font-weight:700;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(f.title || 'بدون عنوان')}</span>
         ${_instrTypeBadge(f)}
       </label>`;
@@ -9784,7 +9792,7 @@ async function renderSettings() {
       ${setupItems.map(i => `
         <div class="setup-item ${i.done?'done':''}" onclick="switchSettingsTab('${i.go}')">
           <span class="setup-dot">${i.done?'✓':''}</span>
-          <span>${i.label}</span>
+          <span>${escapeHtml(i.label)}</span>
         </div>`).join('')}
     </div>
   </div>`;
@@ -9822,7 +9830,7 @@ async function renderSettings() {
         <div class="settings-pkg-row" draggable="true" data-pkg-id="${pt.id}" style="cursor:grab">
           <span class="drag-handle" title="بکش تا جابجا کنی" style="color:var(--text3);font-size:18px;cursor:grab;flex-shrink:0">⠿</span>
           <input type="color" class="color-input" value="${pt.color}" onchange="updatePkgType(${pt.id}, this.value, null)">
-          <input class="form-input" style="flex:1" value="${pt.label}" onchange="updatePkgType(${pt.id}, null, this.value)">
+          <input class="form-input" style="flex:1" value="${escapeHtml(pt.label)}" onchange="updatePkgType(${pt.id}, null, this.value)">
           <button class="btn btn-danger btn-sm" onclick="deletePkgType(${pt.id})">🗑</button>
         </div>`).join('')}
     </div>
@@ -10237,7 +10245,7 @@ function _renderVersionChoice(index) {
         <div><b style="color:var(--text)">${dateStr}</b> · ${v.source==='server'?'☁️ نسخه سرور':'💻 نسخه این دستگاه'}</div>
         <div>کارها: ${fa(s.todos||0)} · مراجعین: ${fa(s.students||0)} · پرسنل: ${fa(s.staff||0)} · یادداشت‌ها: ${fa(s.instructions||0)} · حجم: ${size}</div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="restoreVersion('${v.source}','${escapeHtml(String(v.ref))}')">بازگشت به نسخه انتخاب‌شده</button>
+      <button class="btn btn-primary btn-sm" onclick="restoreVersion(${escapeAttr(v.source)},${escapeAttr(String(v.ref))})">بازگشت به نسخه انتخاب‌شده</button>
     </div>`;
 }
 
@@ -10934,7 +10942,7 @@ function paintArchiveRows(rows) {
     ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c),isStatus=archiveFieldForHeader(c)==='relationship_status';return `<td class="${archiveColumnClass(c)}" title="${escapeHtml(v)}">${isStatus?archiveStatusBadge(v):escapeHtml(v||'—')}</td>`;}).join('')}
     <td class="archive-operation-col" onclick="event.stopPropagation()"><div class="archive-actions"><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
     :`<tr><td colspan="${archiveColumns.length+3}"><div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده؛ دستی اضافه کنید یا فایل Excel وارد کنید.</div></td></tr>`;
-  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const fullName=`${s.name||''} ${s.lname||''}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—',category=s.customer_category||'—',referral=s.referral_source||'متفرقه',startDate=DateService.disp(s.date_jalali)||'—',phone=String(s.phone||'').trim(),tel=phone.replace(/[^\d+]/g,'');return `<article class="archive-mobile-card" data-archive-mobile-id="${s.id}"><div class="archive-mobile-head"><div class="archive-mobile-title">${escapeHtml(fullName)}</div>${archiveStatusBadge(s.relationship_status)}</div><div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><div class="archive-mobile-phone">☎ ${escapeHtml(phone||'—')}</div><div class="archive-mobile-meta">${escapeHtml(category)} · ${escapeHtml(city)} · ${escapeHtml(referral)}</div><button type="button" class="archive-details-toggle" aria-expanded="false" onclick="toggleArchiveMobileCard(${s.id},this)">جزئیات <span class="archive-details-chevron">⌄</span></button><div class="archive-mobile-quick-actions">${tel?`<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(tel)}">☎ تماس</a>`:'<button class="btn btn-ghost btn-sm" disabled>☎ تماس</button>'}<button type="button" class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button type="button" class="btn btn-ghost btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button><button type="button" class="btn btn-ghost btn-sm archive-more-btn" aria-label="عملیات بیشتر" onclick="openArchiveMobileMore(${s.id})">⋮</button></div><div class="archive-mobile-expand"><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(referral)}</span></div><div class="archive-mobile-field"><small>تاریخ شروع همکاری</small><span>${escapeHtml(startDate)}</span></div><div class="archive-mobile-field full"><small>توضیحات</small><span title="${escapeHtml(s.description||'')}">${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions"><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️ ویرایش اطلاعات</button></div></div></article>`;}).join(''):`<div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده</div>`;
+  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const fullName=`${escapeHtml(s.name||'')} ${escapeHtml(s.lname||'')}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—',category=s.customer_category||'—',referral=s.referral_source||'متفرقه',startDate=DateService.disp(s.date_jalali)||'—',phone=String(s.phone||'').trim(),tel=phone.replace(/[^\d+]/g,'');return `<article class="archive-mobile-card" data-archive-mobile-id="${s.id}"><div class="archive-mobile-head"><div class="archive-mobile-title">${escapeHtml(fullName)}</div>${archiveStatusBadge(s.relationship_status)}</div><div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><div class="archive-mobile-phone">☎ ${escapeHtml(phone||'—')}</div><div class="archive-mobile-meta">${escapeHtml(category)} · ${escapeHtml(city)} · ${escapeHtml(referral)}</div><button type="button" class="archive-details-toggle" aria-expanded="false" onclick="toggleArchiveMobileCard(${s.id},this)">جزئیات <span class="archive-details-chevron">⌄</span></button><div class="archive-mobile-quick-actions">${tel?`<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(tel)}">☎ تماس</a>`:'<button class="btn btn-ghost btn-sm" disabled>☎ تماس</button>'}<button type="button" class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button type="button" class="btn btn-ghost btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button><button type="button" class="btn btn-ghost btn-sm archive-more-btn" aria-label="عملیات بیشتر" onclick="openArchiveMobileMore(${s.id})">⋮</button></div><div class="archive-mobile-expand"><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(referral)}</span></div><div class="archive-mobile-field"><small>تاریخ شروع همکاری</small><span>${escapeHtml(startDate)}</span></div><div class="archive-mobile-field full"><small>توضیحات</small><span title="${escapeHtml(s.description||'')}">${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions"><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️ ویرایش اطلاعات</button></div></div></article>`;}).join(''):`<div class="empty"><span>📦</span>هنوز فردی در بایگانی ثبت نشده</div>`;
   updateArchiveBulkbar();
 }
 
@@ -11077,7 +11085,7 @@ async function renderStaff() {
     staffList.forEach((s,i) => {
       const roleTags = [
         s.salary > 0 ? `<span class="tag tag-coaching">حقوق ثابت: ${fmt(s.salary)}</span>` : '',
-        ...(s.roles||[]).map(r => `<span class="tag" style="background:var(--accent2)22;color:var(--accent2)">${r.role_label}${r.amount?`: ${fmt(r.amount)}×${fa(r.count??1)}`:''}</span>`)
+        ...(s.roles||[]).map(r => `<span class="tag" style="background:var(--accent2)22;color:var(--accent2)">${escapeHtml(r.role_label)}${r.amount?`: ${fmt(r.amount)}×${fa(r.count??1)}`:''}</span>`)
       ].filter(Boolean).join(' ') || '<span style="color:var(--text3)">—</span>';
 
       // سررسید این ماه = تاریخ سررسید یادآوری
@@ -11099,7 +11107,7 @@ async function renderStaff() {
         <td data-label="نام">
           <div class="name-cell">
             ${avatar(s.name, i)}
-            <div><div style="font-weight:500">${s.name} ${s.lname}</div><div class="name-cell-sub">${s.phone||'—'}</div></div>
+            <div><div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div><div class="name-cell-sub">${escapeHtml(s.phone||'—')}</div></div>
           </div>
         </td>
         <td data-label="نوع"><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
@@ -11112,12 +11120,12 @@ async function renderStaff() {
           <div class="row-menu">
             <button class="row-menu-btn" onclick="toggleRowMenu(event,'${rowMenuId}')">⋮</button>
             <div class="row-menu-panel" id="${rowMenuId}">
-              ${!isPaid ? `<div class="row-menu-item" onclick="openSalaryTransfer(${s.id})">💳 واریز حقوق</div><div class="row-menu-item" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ ثبت دستی پرداخت</div>` : `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ ثبت پرداخت اصلاحی</div>`}
+              ${!isPaid ? `<div class="row-menu-item" onclick="openSalaryTransfer(${s.id})">💳 واریز حقوق</div><div class="row-menu-item" onclick="payStaffSalary(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ ثبت دستی پرداخت</div>` : `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ ثبت پرداخت اصلاحی</div>`}
               <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
               <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ تنظیمات حساب</div>
               <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
               <div class="row-menu-divider"></div>
-              <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑 حذف</div>
+              <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑 حذف</div>
             </div>
           </div>
         </td>
@@ -11150,7 +11158,7 @@ async function renderStaff() {
       }
       const remMenuId = `rem-menu-${r.id}`;
       html += `<tr>
-        <td style="font-weight:500">${r.name} ${r.lname}</td>
+        <td style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
         <td style="font-size:12px">${DateService.disp(r.due_date_jalali)}</td>
         <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
@@ -11181,10 +11189,11 @@ async function renderStaff() {
     html += `<table><thead><tr><th>نام و نام‌خانوادگی</th><th>ماه و سال</th><th>حقوق آن ماه</th><th>عملیات</th></tr></thead><tbody>`;
     paidHistory.forEach(m => {
       const historyMenuId = `salary-history-menu-${m.id}`;
-      const staffFullName = escapeHtml(`${m.name} ${m.lname}`.trim());
+      const staffPlainName = `${m.name || ''} ${m.lname || ''}`.trim();
+      const staffFullName = escapeHtml(staffPlainName);
       html += `<tr>
-        <td style="font-weight:500">${m.name} ${m.lname}</td>
-        <td>${m.label}</td>
+        <td style="font-weight:500">${escapeHtml(m.name)} ${escapeHtml(m.lname)}</td>
+        <td>${escapeHtml(m.label)}</td>
         <td>
           <span class="amount amount-paid">${fmt(m.grand_total)} تومان</span>
           ${m.adj_total !== 0 ? `<div style="font-size:10px;color:${m.adj_total>0?'var(--green)':'var(--red)'};margin-top:2px">(حقوق: ${fmt(m.total)} ${m.adj_total>0?'+ پاداش':'- جریمه'}: ${fmt(Math.abs(m.adj_total))})</div>` : ''}
@@ -11194,7 +11203,7 @@ async function renderStaff() {
             <button class="row-menu-btn" type="button" aria-label="عملیات پرداخت ${staffFullName}" aria-haspopup="menu" onclick="toggleRowMenu(event,'${historyMenuId}')">⋮</button>
             <div class="row-menu-panel" id="${historyMenuId}" role="menu">
               <div class="row-menu-item" role="menuitem" onclick="openStaffDetail(${m.staff_id})">📊 جزئیات</div>
-              <div class="row-menu-item" role="menuitem" onclick="openFixMonthlyMonth(${m.id}, ${m.staff_id}, '${staffFullName}', ${m.jy}, ${m.jm}, true)">✏️ ویرایش</div>
+              <div class="row-menu-item" role="menuitem" onclick="openFixMonthlyMonth(${m.id}, ${m.staff_id}, ${escapeAttr(staffPlainName)}, ${m.jy}, ${m.jm}, true)">✏️ ویرایش</div>
               <div class="row-menu-divider"></div>
               <div class="row-menu-item danger" role="menuitem" onclick="deleteSalaryHistory(${m.id})">🗑 حذف</div>
             </div>
@@ -11309,7 +11318,7 @@ function buildSalaryReportCard(t, teamAvg = 0) {
     const isLast = i === pts.length - 1;
     return `
     <circle class="salary-chart-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isLast ? '4.5' : '3.5'}" fill="${isLast && diff >= 0 ? 'var(--green)' : 'var(--accent2)'}" stroke="var(--bg3)" stroke-width="2">
-      <title>${p.m.label}
+      <title>${escapeHtml(p.m.label)}
 حقوق: ${fmt(p.m.total)}
 پایه: ${fmt(p.m.fixed_salary || 0)}
 مزایا: ${fmt(benefit)}
@@ -11351,7 +11360,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
     if (!(last.roles || []).some(r => /پاداش|bonus/i.test(r.role_label || ''))) addBreakdownRow('پاداش', 0);
     addBreakdownRow('کسورات', 0);
     breakdownHtml = `<div class="salary-breakdown">
-      <div class="salary-breakdown-title">ترکیب حقوق ${last.label}</div>
+      <div class="salary-breakdown-title">ترکیب حقوق ${escapeHtml(last.label)}</div>
       ${rows.join('')}
     </div>`;
   }
@@ -11363,11 +11372,11 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
       ? [...last.roles].sort((a, b) => b.amount - a.amount)[0]
       : null;
     const reason = diff > 0
-      ? (dominant ? `که عمدتاً به دلیل <b>${dominant.role_label}</b> بوده است` : `که به دلیل افزایش حقوق پایه بوده است`)
+      ? (dominant ? `که عمدتاً به دلیل <b>${escapeHtml(dominant.role_label)}</b> بوده است` : `که به دلیل افزایش حقوق پایه بوده است`)
       : '';
     insight = `<div class="salary-insight"><div class="salary-insight-title">تحلیل هوشمند</div>حقوق این ماه نسبت به ماه قبل <b>${fa(Math.abs(pct))}٪ ${diff > 0 ? 'افزایش' : 'کاهش'}</b> داشته است${reason}. روند پرداخت در ${fa(months.length)} ماه اخیر ${paidCount === months.length ? '<b>منظم</b>' : `<b>${fa(paidCount)} پرداخت ثبت‌شده</b>`} بوده و میانگین دریافتی <b>${fmt(avg)} تومان</b> است.</div>`;
   } else {
-    insight = `<div class="salary-insight"><div class="salary-insight-title">تحلیل هوشمند</div>میانگین حقوق <b>${t.name} ${t.lname}</b> در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است. برای تحلیل تغییرات، حداقل یک ماه دیگر داده لازم است.</div>`;
+    insight = `<div class="salary-insight"><div class="salary-insight-title">تحلیل هوشمند</div>میانگین حقوق <b>${escapeHtml(t.name)} ${escapeHtml(t.lname)}</b> در ${fa(months.length)} ماه اخیر <b>${fmt(avg)} تومان</b> بوده است. برای تحلیل تغییرات، حداقل یک ماه دیگر داده لازم است.</div>`;
   }
 
   const goalHtml = `<div>
@@ -11385,7 +11394,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
   </div>`;
 
   const slipPayload = (m) => encodeURIComponent(JSON.stringify({
-    staff: `${t.name} ${t.lname}`.trim(),
+    staff: `${t.name || ''} ${t.lname || ''}`.trim(),
     label: m.label,
     total: m.total || 0,
     paid: !!m.paid,
@@ -11396,7 +11405,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
 
   const timelineHtml = months.slice(-2).reverse().map(m => `<div class="salary-timeline-item">
     <div>
-      <div class="salary-timeline-month">${m.label}</div>
+      <div class="salary-timeline-month">${escapeHtml(m.label)}</div>
       <div class="salary-timeline-status">${m.paid ? '✓ پرداخت شد' : 'در انتظار پرداخت'}</div>
     </div>
     <div>
@@ -11404,7 +11413,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
       <button class="salary-slip-link" type="button" onclick="openSalarySlip('${slipPayload(m)}')">مشاهده فیش</button>
     </div>
   </div>`).join('');
-  const reportTitle = `گزارش حقوق ${t.name} ${t.lname}`;
+  const reportTitle = `گزارش حقوق ${escapeHtml(t.name)} ${escapeHtml(t.lname)}`;
   const reportText = `${reportTitle}
 حقوق این ماه: ${fmt(last.total)} تومان
 تغییر نسبت به ماه قبل: ${prev ? `${pct > 0 ? '+' : ''}${fa(pct)}٪، ${fmt(Math.abs(diff))} تومان` : 'بدون سابقه'}
@@ -11424,7 +11433,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
       else changeBadge = '= بدون تغییر';
     }
     return `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:4px 6px;font-weight:500">${m.label}</td>
+      <td style="padding:4px 6px;font-weight:500">${escapeHtml(m.label)}</td>
       <td style="padding:4px 6px">${fmt(m.total)} تومان</td>
       <td style="padding:4px 6px;color:${changeColor};font-weight:600">${changeBadge}</td>
       <td style="padding:4px 6px">${m.paid ? '<span style="color:var(--green)">✓ پرداخت شد</span>' : '<span style="color:var(--text3)">در انتظار</span>'}</td>
@@ -11432,7 +11441,7 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
     </tr>`;
   }).join('');
 
-  return `<div class="trend-block" data-name="${t.name} ${t.lname}">
+  return `<div class="trend-block" data-name="${escapeHtml(t.name)} ${escapeHtml(t.lname)}">
     <div class="salary-toolbar">
       <div class="salary-range-tabs" aria-label="بازه زمانی">
         ${['۳ ماه','۶ ماه','۱۲ ماه','همه'].map(x => `<button class="${x === rangeLabel ? 'active' : ''}" type="button">${x}</button>`).join('')}
@@ -11449,8 +11458,8 @@ ${p.m.paid ? 'پرداخت شد' : 'در انتظار پرداخت'}</title>
       <div class="salary-who">
         <div class="salary-avatar">${(t.name || '؟').charAt(0)}</div>
         <div>
-          <div class="salary-name">${t.name} ${t.lname}</div>
-          <div class="salary-name-sub">پروفایل مالی پرسنل/عضو، پرداخت ${last.label}</div>
+          <div class="salary-name">${escapeHtml(t.name)} ${escapeHtml(t.lname)}</div>
+          <div class="salary-name-sub">پروفایل مالی پرسنل/عضو، پرداخت ${escapeHtml(last.label)}</div>
         </div>
       </div>
       <div class="salary-current">
@@ -11630,7 +11639,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
       <label class="role-row-label">
         <input type="checkbox" class="role-checkbox" data-role-id="${r.id}" ${checked?'checked':''}
           onchange="onRoleCheckChange(this)">
-        <span>${r.label}</span>
+        <span>${escapeHtml(r.label)}</span>
       </label>
       ${isBonus ? `
       <details class="bonus-details" ${checked ? 'open' : ''}>
@@ -11805,7 +11814,7 @@ async function addRoleInline() {
   row.innerHTML = `
     <label class="role-row-label">
       <input type="checkbox" class="role-checkbox" data-role-id="${newRole.id}" checked onchange="onRoleCheckChange(this)">
-      <span>${newRole.label}</span>
+      <span>${escapeHtml(newRole.label)}</span>
     </label>
     <div class="role-row-fields">
       <div class="role-field">
@@ -11968,7 +11977,7 @@ function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm, returnToSta
       </div>
     </div>
   `, [
-    { label: 'ذخیره اصلاح', cls: 'btn-primary', action: `confirmFixMonthlyMonth(${monthlyId},${staffId},'${escapeHtml(name)}',${returnToStaffPage})` },
+    { label: 'ذخیره اصلاح', cls: 'btn-primary', action: `confirmFixMonthlyMonth(${monthlyId},${staffId},${escapeAttr(name)},${returnToStaffPage})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
 }
@@ -12008,11 +12017,11 @@ async function openStaffDetail(id) {
   const adjLabel = { bonus: '🎁 پاداش', penalty: '⚠️ جریمه', project: '📁 پروژه' };
   const adjColor = { bonus: 'var(--green)', penalty: 'var(--red)', project: 'var(--accent2)' };
 
-  openModal(`📊 جزئیات و عملکرد — ${s.name} ${s.lname}`, `
+  openModal(`📊 جزئیات و عملکرد — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="detail-section">
       <h3>اطلاعات پایه</h3>
       <div class="detail-row"><span class="detail-key">نقش‌ها</span><span class="detail-val">${(s.roles||[]).map(r=>r.role_label).join('، ')||'—'}</span></div>
-      <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${s.phone||'—'}</span></div>
+      <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${escapeHtml(s.phone||'—')}</span></div>
       <div class="detail-row"><span class="detail-key">شماره کارت</span><span class="detail-val" style="direction:ltr">${s.card_number||'—'}</span></div>
       <div class="detail-row"><span class="detail-key">حقوق ثابت ماهانه</span><span class="detail-val">${fmt(s.salary)} تومان</span></div>
       <div class="detail-row"><span class="detail-key">حقوق کل تخمینی این ماه</span><span class="detail-val" style="font-weight:700">${fmt(s.expectedMonthly)} تومان</span></div>
@@ -12020,33 +12029,33 @@ async function openStaffDetail(id) {
     </div>
 
     <div class="detail-section">
-      <h3>💰 حقوق و دستمزد (پرداخت‌های آزاد) <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffPayment(${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">+ ثبت پرداخت</button></h3>
+      <h3>💰 حقوق و دستمزد (پرداخت‌های آزاد) <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffPayment(${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">+ ثبت پرداخت</button></h3>
       ${payments.length===0?'<p style="font-size:12px;color:var(--text3)">پرداختی ثبت نشده</p>':payments.slice(0,10).map(p=>`
         <div class="detail-row">
           <span class="detail-key">${DateService.disp(p.date_jalali)}${p.note?` — ${escapeHtml(p.note)}`:''}</span>
           <span class="detail-val amount-paid" style="display:flex;align-items:center;gap:6px">
             ${fmt(p.amount)} تومان
-            <button class="btn btn-ghost btn-sm" onclick="openEditStaffPayment(${p.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteStaffPayment(${p.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
           </span>
         </div>`).join('')}
     </div>
 
     <div class="detail-section">
-      <h3>🎁 پاداش / ⚠️ جریمه / 📁 دستمزد پروژه <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffAdjustment(${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">+ افزودن</button></h3>
+      <h3>🎁 پاداش / ⚠️ جریمه / 📁 دستمزد پروژه <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffAdjustment(${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">+ افزودن</button></h3>
       ${adjustments.length===0?'<p style="font-size:12px;color:var(--text3)">موردی ثبت نشده</p>':adjustments.slice(0,10).map(a=>`
         <div class="detail-row">
           <span class="detail-key">${DateService.disp(a.date_jalali)} — ${adjLabel[a.type]}${a.title?`: ${escapeHtml(a.title)}`:''}</span>
           <span class="detail-val" style="color:${adjColor[a.type]};display:flex;align-items:center;gap:6px">
             ${a.type==='penalty'?'-':'+'}${fmt(a.amount)} تومان
-            <button class="btn btn-ghost btn-sm" onclick="openEditStaffAdjustment(${a.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteStaffAdjustment(${a.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditStaffAdjustment(${a.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteStaffAdjustment(${a.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
           </span>
         </div>`).join('')}
     </div>
 
     <div class="detail-section">
-      <h3>📅 گزارش حقوق ماه‌به‌ماه <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffMonthly(${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">+ ثبت حقوق یک ماه</button></h3>
+      <h3>📅 گزارش حقوق ماه‌به‌ماه <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffMonthly(${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">+ ثبت حقوق یک ماه</button></h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:6px">برای ثبت سوابق ماه‌های گذشته (مثلاً اردیبهشت، خرداد و...) از این بخش استفاده کن. روند صعودی/نزولی نسبت به ماه قبل نشان داده می‌شود.</p>
       ${monthly.length===0?'<p style="font-size:12px;color:var(--text3)">هنوز رکوردی ثبت نشده</p>':monthly.map(m=>{
         let trendBadge = '';
@@ -12058,14 +12067,14 @@ async function openStaffDetail(id) {
         return `
         <div class="detail-row">
           <span class="detail-key">
-            ${m.label} ${trendBadge}${m.paid?' <span class="status status-ok" style="margin-right:4px">پرداخت‌شده</span>':''}
-            ${m.roles && m.roles.length ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">${m.roles.map(r=>`${r.role_label}: ${fa(r.count||1)}×${fmt(r.rate||r.amount||0)}=${fmt(r.amount)}`).join(' | ')}</div>` : ''}
+            ${escapeHtml(m.label)} ${trendBadge}${m.paid?' <span class="status status-ok" style="margin-right:4px">پرداخت‌شده</span>':''}
+            ${m.roles && m.roles.length ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">${m.roles.map(r=>`${escapeHtml(r.role_label)}: ${fa(r.count||1)}×${fmt(r.rate||r.amount||0)}=${fmt(r.amount)}`).join(' | ')}</div>` : ''}
           </span>
           <span class="detail-val" style="display:flex;align-items:center;gap:6px">
             ${fmt(m.total)} تومان
-            ${!m.paid?`<button class="btn btn-primary btn-sm" onclick="markMonthlyPaid(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">✓ پرداخت شد</button>`:''}
-            <button class="btn btn-ghost btn-sm" onclick="openFixMonthlyMonth(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}', ${m.jy}, ${m.jm})">✏️ اصلاح ماه</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteMonthly(${m.id}, ${id}, '${escapeHtml(s.name)} ${escapeHtml(s.lname)}')">🗑</button>
+            ${!m.paid?`<button class="btn btn-primary btn-sm" onclick="markMonthlyPaid(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ پرداخت شد</button>`:''}
+            <button class="btn btn-ghost btn-sm" onclick="openFixMonthlyMonth(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))}, ${m.jy}, ${m.jm})">✏️ اصلاح ماه</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteMonthly(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
           </span>
         </div>`;
       }).join('')}
@@ -12095,7 +12104,7 @@ async function openEditStaffPayment(id, staffId, name) {
       </div>
     </div>
   `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffPayment(${id}, ${staffId}, '${escapeHtml(name)}')` },
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffPayment(${id}, ${staffId}, ${escapeAttr(name)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
@@ -12149,7 +12158,7 @@ async function openEditStaffAdjustment(id, staffId, name) {
       </div>
     </div>
   `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffAdjustment(${id}, ${staffId}, '${escapeHtml(name)}')` },
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffAdjustment(${id}, ${staffId}, ${escapeAttr(name)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
@@ -12266,7 +12275,7 @@ async function openStaffMonthly(staffId, name) {
 
   const roleRows = (s.roles||[]).map(r => `
     <div class="role-row" style="align-items:flex-end">
-      <span style="min-width:100px;font-size:13px">${r.role_label}</span>
+      <span style="min-width:100px;font-size:13px">${escapeHtml(r.role_label)}</span>
       <div style="flex:1">
         <label class="form-label">دستمزد هر بار (تومان)</label>
         <input class="form-input amount-input sm-role-rate" data-role-id="${r.role_id}" data-role-label="${escapeHtml(r.role_label)}" type="number" value="${r.amount||0}">
@@ -12306,7 +12315,7 @@ async function openStaffMonthly(staffId, name) {
       <input class="form-input jdate" id="sm-paid-date" value="${formatJalali(...todayJalali())}">
     </div>
   `, [
-    { label: 'ثبت', cls: 'btn-primary', action: `saveStaffMonthly(${staffId}, '${escapeHtml(name)}')` },
+    { label: 'ثبت', cls: 'btn-primary', action: `saveStaffMonthly(${staffId}, ${escapeAttr(name)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
@@ -12402,10 +12411,10 @@ async function openSalaryTransfer(staffId) {
   const cardFormatted = (s.card_number || '').replace(/\D/g, '').replace(/(.{4})/g, '$1-').replace(/-$/, '');
   const monthName = JMONTHS[tjm - 1];
 
-  openModal(`💳 واریز حقوق — ${s.name} ${s.lname}`, `
+  openModal(`💳 واریز حقوق — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:16px 20px;margin-bottom:12px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:4px">نام همکار</div>
-      <div style="font-size:15px;font-weight:700">${s.name} ${s.lname}</div>
+      <div style="font-size:15px;font-weight:700">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -12854,7 +12863,7 @@ async function openEditStaffReminder(id) {
   const reminders = await window.api.staffReminders.getAll();
   const r = reminders.find(x => x.id === id);
   if (!r) return;
-  openModal(`✏️ ویرایش یادآوری — ${r.name} ${r.lname}`, `
+  openModal(`✏️ ویرایش یادآوری — ${escapeHtml(r.name)} ${escapeHtml(r.lname)}`, `
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">عنوان</label>
@@ -12931,7 +12940,7 @@ async function openSessionsSummary(studentId, displayName) {
         ${s.extra_note ? `<div class="summary-entry-extra">${renderRich(s.extra_note)}</div>` : ''}
       </div>`).join('');
 
-  openModal(`📋 خلاصه کل ${META.sessionPlural||'جلسات'} — ${displayName}`, `
+  openModal(`📋 خلاصه کل ${META.sessionPlural||'جلسات'} — ${escapeHtml(displayName)}`, `
     <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
       <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(window._sessionsSummaryCopyText || '', 'کل متن خلاصه کپی شد ✓')" style="min-width:150px">📋 کپی کل متن</button>
     </div>
@@ -13379,8 +13388,8 @@ function openEvaluation(studentId, displayName) {
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" onclick="openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${f.id})">📋 باز کردن</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteEvalForm(${studentId},'${escapeHtml(displayName)}',${f.id})">🗑</button>
+              <button class="btn btn-ghost btn-sm" onclick="openEvalFormDetail(${studentId},${escapeAttr(displayName)},${f.id})">📋 باز کردن</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteEvalForm(${studentId},${escapeAttr(displayName)},${f.id})">🗑</button>
             </div>
           </div>
           ${f.periods.length > 0 ? `<div style="padding:6px 12px 8px;font-size:10px;color:var(--text3)">
@@ -13409,7 +13418,7 @@ function openEvaluation(studentId, displayName) {
       oninput="setAchTimelineSearch(${studentId}, this.value)">
     <div id="eval-panel-ach-list"></div>`;
 
-  openModal(`📊 ارزیابی عملکرد — ${displayName}`, `
+  openModal(`📊 ارزیابی عملکرد — ${escapeHtml(displayName)}`, `
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button id="eval-tab-forms" onclick="document.getElementById('eval-panel-forms').style.display='block';document.getElementById('eval-panel-ach').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-ach').style.background='var(--bg3)';document.getElementById('eval-tab-ach').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--accent);color:white">📋 فرم‌های ارزیابی</button>
       <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تاریخچه دستاوردها (${fa(allSessions.length)})</button>
@@ -13422,7 +13431,7 @@ function openEvaluation(studentId, displayName) {
       ${achPanelHtml}
     </div>
   `, [
-    { label: '+ فرم جدید', cls: 'btn-primary', action: `openNewEvalForm(${studentId},'${escapeHtml(displayName)}')` },
+    { label: '+ فرم جدید', cls: 'btn-primary', action: `openNewEvalForm(${studentId},${escapeAttr(displayName)})` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   setTimeout(() => renderAchTimelinePanel(studentId), 0);
@@ -13563,8 +13572,8 @@ function openEditEvalRows(studentId, displayName, formId) {
       ⚠️ امتیازهای ثبت‌شده برای شاخص‌های موجود حفظ می‌شن. شاخص‌های جدید از صفر شروع می‌کنن.
     </div>
   `, [
-    { label: '✅ ذخیره تغییرات', cls: 'btn-primary', action: `saveEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` },
-    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    { label: '✅ ذخیره تغییرات', cls: 'btn-primary', action: `saveEditEvalRows(${studentId},${escapeAttr(displayName)},${formId})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},${escapeAttr(displayName)},${formId})` },
   ]);
 }
 
@@ -13585,7 +13594,7 @@ function saveEditEvalRows(studentId, displayName, formId) {
 }
 
 function openNewEvalForm(studentId, displayName) {
-  openModal(`📊 فرم ارزیابی جدید — ${displayName}`, `
+  openModal(`📊 فرم ارزیابی جدید — ${escapeHtml(displayName)}`, `
     <input type="hidden" id="ef-mode" value="default">
     <div class="form-group full">
       <label class="form-label">عنوان فرم ارزیابی</label>
@@ -13609,8 +13618,8 @@ function openNewEvalForm(studentId, displayName) {
         <input class="form-input" id="ef-desc" placeholder="هدف این ارزیابی...">
       </div></div>
   `, [
-    { label: 'ایجاد فرم', cls: 'btn-primary', action: `saveNewEvalForm(${studentId},'${escapeHtml(displayName)}')` },
-    { label: 'انصراف', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
+    { label: 'ایجاد فرم', cls: 'btn-primary', action: `saveNewEvalForm(${studentId},${escapeAttr(displayName)})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: `openEvaluation(${studentId},${escapeAttr(displayName)})` },
   ]);
 }
 
@@ -13678,14 +13687,14 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
           const color = active ? (isOpen ? 'var(--blue)' : 'var(--green)') : 'var(--text2)';
           return `
           <button id="eval-tab-${i}"
-            onclick="evalSwitchTab(${studentId},'${escapeHtml(displayName)}',${formId},${i})"
+            onclick="evalSwitchTab(${studentId},${escapeAttr(displayName)},${formId},${i})"
             style="padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;border:1px solid ${border};background:${bg};color:${color};display:flex;align-items:center;gap:5px">
             ${isOpen ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--blue);display:inline-block;flex-shrink:0"></span>' : ''}
             دوره ${fa(i+1)} · ${isOpen ? 'باز' : p.date}
           </button>`;
         }).join('')}
         ${form.periods.filter(p=>p.date).length >= 2 ? `
-          <button onclick="openEvalCompare(${studentId},'${escapeHtml(displayName)}',${formId})"
+          <button onclick="openEvalCompare(${studentId},${escapeAttr(displayName)},${formId})"
             style="padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.08);color:var(--blue)">
             📈 مقایسه دوره‌ها
           </button>` : ''}
@@ -13717,25 +13726,25 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
 
     const strengthsList = strengths.map(r =>
       `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;color:var(--text)">${escapeHtml(r.label)}</span>
         <span style="font-size:12px;font-weight:600;color:var(--green)">${fa(r.pct)}٪</span>
       </div>`).join('');
 
     const weaknessesList = weaknesses.map(r =>
       `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;color:var(--text)">${escapeHtml(r.label)}</span>
         <span style="font-size:12px;font-weight:600;color:var(--red)">${fa(r.pct)}٪</span>
       </div>`).join('');
 
     const growthList = topGrowth.map(r =>
       `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;color:var(--text)">${escapeHtml(r.label)}</span>
         <span style="font-size:11px;font-weight:600;color:${r.diff > 0 ? 'var(--green)' : 'var(--text3)'}">${r.diff > 0 ? '▲' : '='} ${fa(Math.abs(r.diff))}٪</span>
       </div>`).join('');
 
     const stagnantList = stagnant.map(r =>
       `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px;color:var(--text)">${r.label}</span>
+        <span style="font-size:12px;color:var(--text)">${escapeHtml(r.label)}</span>
         <span style="font-size:11px;font-weight:600;color:${r.diff < 0 ? 'var(--red)' : 'var(--text3)'}">${r.diff < 0 ? '▼' : '='} ${fa(Math.abs(r.diff))}٪</span>
       </div>`).join('');
 
@@ -13824,13 +13833,13 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
 
   const openPeriodIdx = form.periods.findIndex(p => !p.date);
   const primaryBtn = openPeriodIdx !== -1
-    ? { label: `🔵 پایان دوره ${fa(openPeriodIdx + 1)}`, cls: 'btn-primary', action: `endEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId},${openPeriodIdx})` }
-    : { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId})` };
+    ? { label: `🔵 پایان دوره ${fa(openPeriodIdx + 1)}`, cls: 'btn-primary', action: `endEvalPeriod(${studentId},${escapeAttr(displayName)},${formId},${openPeriodIdx})` }
+    : { label: '+ دوره جدید', cls: 'btn-primary', action: `startNewEvalPeriod(${studentId},${escapeAttr(displayName)},${formId})` };
   const editFormBtn = _isImportedEvalForm(form)
     ? { label:'ویرایش فرم اصلی', cls:'btn-ghost', action:`openCaseFormBuilder(${form.source_case_form_id})` }
-    : { label:'ویرایش المان‌ها', cls:'btn-ghost', action:`openEditEvalRows(${studentId},'${escapeHtml(displayName)}',${formId})` };
+    : { label:'ویرایش المان‌ها', cls:'btn-ghost', action:`openEditEvalRows(${studentId},${escapeAttr(displayName)},${formId})` };
 
-  openModal(`📊 ${escapeHtml(form.title)} — ${displayName}`, `
+  openModal(`📊 ${escapeHtml(form.title)} — ${escapeHtml(displayName)}`, `
     <div class="detail-section" style="max-height:65vh;overflow-y:auto">
       ${form.desc ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${escapeHtml(form.desc)}</div>` : ''}
       ${periodTabsHtml}
@@ -13843,7 +13852,7 @@ function openEvalFormDetail(studentId, displayName, formId, activePeriodIdx) {
     primaryBtn,
     editFormBtn,
     ...(_isImportedEvalForm(form) ? [{label:'کپی فرم',cls:'btn-ghost',action:`copyCaseForm(${form.source_case_form_id})`}] : []),
-    { label: 'بازگشت', cls: 'btn-ghost', action: `openEvaluation(${studentId},'${escapeHtml(displayName)}')` },
+    { label: 'بازگشت', cls: 'btn-ghost', action: `openEvaluation(${studentId},${escapeAttr(displayName)})` },
   ]);
   setTimeout(() => {
     document.querySelectorAll('#eval-table-container .jdate').forEach(el => attachJalaliDatePicker(el));
@@ -14165,8 +14174,8 @@ function endEvalPeriod(studentId, displayName, formId, periodIdx) {
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.8">با ثبت این تاریخ، دوره ${fa(periodIdx + 1)} بسته می‌شود، تمام دستاوردهای این بازه زمانی خودکار به همین دوره متصل می‌شوند و یک دوره جدید (باز) بلافاصله شروع می‌شود.</div>
     </div>
   `, [
-    { label: '✅ پایان دوره', cls: 'btn-primary', action: `confirmEndEvalPeriod(${studentId},'${escapeHtml(displayName)}',${formId},${periodIdx})` },
-    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId},${periodIdx})` },
+    { label: '✅ پایان دوره', cls: 'btn-primary', action: `confirmEndEvalPeriod(${studentId},${escapeAttr(displayName)},${formId},${periodIdx})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},${escapeAttr(displayName)},${formId},${periodIdx})` },
   ]);
   setTimeout(() => {
     const inp = document.getElementById('enp-date');
@@ -14458,7 +14467,7 @@ function openEvalCompare(studentId, displayName, formId) {
     </div>
     <div id="eval-compare-result" data-student="${escapeHtml(displayName)}">${buildEvalCompareHtml(form, 0, form.periods.length-1)}</div>
   `, [
-    { label: 'بازگشت', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},'${escapeHtml(displayName)}',${formId})` },
+    { label: 'بازگشت', cls: 'btn-ghost', action: `openEvalFormDetail(${studentId},${escapeAttr(displayName)},${formId})` },
   ]);
 }
 
@@ -14981,7 +14990,7 @@ function shareEvalPeriod(formId, periodIdx) {
           : `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e">${tgtPct - pct}٪ مانده</span>`)
       : '';
     return `<tr>
-      <td>${row.label}</td>
+      <td>${escapeHtml(row.label)}</td>
       <td>${score !== null ? `<span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${barColor}"></span></span>${score}/${row.maxScore} <span style="font-size:10px;color:#9ca3af">(${pct}٪)</span>` : '—'}</td>
       <td style="color:#6b7280;font-size:11px">${note || '—'}</td>
       <td style="text-align:center">${tgtPct !== null ? `<span style="font-size:10px;color:#6b7280">${target}/${row.maxScore}</span><br>${gapCell}` : '—'}</td>
@@ -15015,7 +15024,7 @@ function shareEvalPeriod(formId, periodIdx) {
     ${summarySection}
     ${actionsSection}`;
 
-  const title = `ارزیابی عملکرد · ${form.title} · ${studentName ? studentName + ' · ' : ''}دوره ${periodIdx+1}`;
+  const title = `ارزیابی عملکرد · ${escapeHtml(form.title)} · ${studentName ? studentName + ' · ' : ''}دوره ${periodIdx+1}`;
   const html = _evalBuildSharePage(title, sender, body, studentName);
   _evalShare(`اشتراک-ارزیابی-${form.title}-د${periodIdx+1}.html`, html, title, studentName);
 }
@@ -15075,7 +15084,7 @@ function shareEvalCompare(formId, aIdx, bIdx) {
     const bA = pctA!==null ? `<span class="bar-wrap"><span class="bar-fill" style="width:${pctA}%;background:${pctA>=70?'#059669':pctA>=40?'#d97706':'#dc2626'}"></span></span>${fa(sA)}/${fa(row.maxScore)}` : '—';
     const bB = pctB!==null ? `<span class="bar-wrap"><span class="bar-fill" style="width:${pctB}%;background:${pctB>=70?'#059669':pctB>=40?'#d97706':'#dc2626'}"></span></span>${fa(sB)}/${fa(row.maxScore)}` : '—';
     const diffHtml = diff!==null ? `<span class="${diff>0?'diff-pos':diff<0?'diff-neg':'diff-zero'}">${diff>0?'▲':'▼'} ${fa(Math.abs(diff))}٪</span>` : '—';
-    return `<tr><td>${row.label}</td><td>${bA}</td><td>${bB}</td><td style="text-align:center">${diffHtml}</td></tr>`;
+    return `<tr><td>${escapeHtml(row.label)}</td><td>${bA}</td><td>${bB}</td><td style="text-align:center">${diffHtml}</td></tr>`;
   }).join('');
 
   // نام شاگرد بالای مقایسه
@@ -15094,7 +15103,7 @@ function shareEvalCompare(formId, aIdx, bIdx) {
       <tbody>${rowsHtml}</tbody>
     </table>`;
 
-  const title = `مقایسه عملکرد · ${form.title} · ${studentName ? studentName + ' · ' : ''}دوره ${aIdx+1} vs ${bIdx+1}`;
+  const title = `مقایسه عملکرد · ${escapeHtml(form.title)} · ${studentName ? studentName + ' · ' : ''}دوره ${aIdx+1} vs ${bIdx+1}`;
   const html = _evalBuildSharePage(title, sender, body, studentName);
   _evalShare(`اشتراک-مقایسه-${form.title}-د${aIdx+1}-د${bIdx+1}.html`, html, title, studentName);
 }
@@ -15171,7 +15180,7 @@ function downloadEvalPeriod(formId, periodIdx) {
     const pct = score !== null ? Math.round((score / row.maxScore) * 100) : null;
     const barColor = pct !== null ? (pct >= 70 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626') : '#e5e7eb';
     return `<tr>
-      <td>${row.label}</td>
+      <td>${escapeHtml(row.label)}</td>
       <td>
         ${score !== null ? `<span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${barColor}"></span></span>
         ${score}/${row.maxScore} <span style="font-size:10px;color:#9ca3af">(${pct}٪)</span>` : '—'}
@@ -15181,7 +15190,7 @@ function downloadEvalPeriod(formId, periodIdx) {
   }).join('');
 
   const body = `
-    <h1>${form.title}</h1>
+    <h1>${escapeHtml(form.title)}</h1>
     <div class="meta">دوره ${fa(periodIdx+1)} · تاریخ: ${period.date || 'باز (هنوز پایان نیافته)'} ${form.desc ? '· ' + form.desc : ''}</div>
     ${totalScore !== null ? `
     <div class="total-box">
@@ -15198,8 +15207,8 @@ function downloadEvalPeriod(formId, periodIdx) {
       <tbody>${rowsHtml}</tbody>
     </table>`;
 
-  const html = _evalPrintShell(`ارزیابی · ${form.title} · دوره ${periodIdx+1}`, body);
-  _evalDownload(`ارزیابی-${form.title}-دوره${periodIdx+1}.html`, html);
+  const html = _evalPrintShell(`ارزیابی · ${escapeHtml(form.title)} · دوره ${periodIdx+1}`, body);
+  _evalDownload(`ارزیابی-${escapeHtml(form.title)}-دوره${periodIdx+1}.html`, html);
   showToast('فایل دانلود شد ✅');
 }
 
@@ -15268,11 +15277,11 @@ function downloadEvalCompare(formId, aIdx, bIdx) {
     const diffHtml = diff!==null
       ? `<span class="${diff>0?'diff-pos':diff<0?'diff-neg':'diff-zero'}">${diff>0?'▲':'▼'} ${fa(Math.abs(diff))}٪</span>`
       : '—';
-    return `<tr><td>${row.label}</td><td>${bA}</td><td>${bB}</td><td style="text-align:center">${diffHtml}</td></tr>`;
+    return `<tr><td>${escapeHtml(row.label)}</td><td>${bA}</td><td>${bB}</td><td style="text-align:center">${diffHtml}</td></tr>`;
   }).join('');
 
   const body = `
-    <h1>${form.title} — مقایسه دوره‌ها</h1>
+    <h1>${escapeHtml(form.title)} — مقایسه دوره‌ها</h1>
     <div class="meta">دوره ${fa(aIdx+1)} (${pA.date}) در مقابل دوره ${fa(bIdx+1)} (${pB.date})</div>
     ${cardsHtml}
     ${chartSvg}
@@ -15287,8 +15296,8 @@ function downloadEvalCompare(formId, aIdx, bIdx) {
       <tbody>${rowsHtml}</tbody>
     </table>`;
 
-  const html = _evalPrintShell(`مقایسه · ${form.title} · دوره ${aIdx+1} vs ${bIdx+1}`, body);
-  _evalDownload(`مقایسه-${form.title}-د${aIdx+1}-د${bIdx+1}.html`, html);
+  const html = _evalPrintShell(`مقایسه · ${escapeHtml(form.title)} · دوره ${aIdx+1} vs ${bIdx+1}`, body);
+  _evalDownload(`مقایسه-${escapeHtml(form.title)}-د${aIdx+1}-د${bIdx+1}.html`, html);
   showToast('گزارش مقایسه دانلود شد ✅');
 }
 
@@ -15329,7 +15338,7 @@ function buildEvalTrendChart(form, totals, highlightA, highlightB) {
 async function openTopics(studentId, displayName) {
   const topics = await window.api.topics.getByStudent(studentId);
 
-  openModal(`📌 موضوعات مهم — ${displayName}`, `
+  openModal(`📌 موضوعات مهم — ${escapeHtml(displayName)}`, `
     <div class="form-group full">
       <label class="form-label">عنوان موضوع</label>
       <input class="form-input" id="f-topic-title" placeholder="مثلاً: تصمیم برای تغییر شغل">
@@ -15345,7 +15354,7 @@ async function openTopics(studentId, displayName) {
         <input class="form-input jdate" id="f-topic-date" value="${formatJalali(...todayJalali())}">
       </div>
       <div class="form-group" style="align-self:flex-end">
-        <button class="btn btn-primary" onclick="saveTopic(${studentId}, '${escapeHtml(displayName)}')">+ افزودن</button>
+        <button class="btn btn-primary" onclick="saveTopic(${studentId}, ${escapeAttr(displayName)})">+ افزودن</button>
       </div>
     </div>
     <div class="form-group full" style="margin-top:8px">
@@ -15366,8 +15375,8 @@ async function openTopics(studentId, displayName) {
         : topics.map(t => `
           <div class="topic-item">
             <div class="topic-item-date">${DateService.disp(t.date_jalali)}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
-            <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, '${escapeHtml(displayName)}')">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
-            <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, '${escapeHtml(displayName)}')">${renderRich(excerpt(t.text, 90))}</div>
+            <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
+            <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${renderRich(excerpt(t.text, 90))}</div>
             <div style="display:flex;gap:6px;margin-top:4px">
               <button class="btn btn-ghost btn-sm" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();openEditTopic(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">✏️ ویرایش</button>
               <button class="btn btn-ghost btn-sm topic-copy-btn" onclick="event.stopPropagation();openCopyTopic(${t.id}, ${studentId})">📋 کپی</button>
@@ -15413,7 +15422,7 @@ async function openAllTopics(studentId, displayName) {
     </article>`;
   }).join('') : '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>';
 
-  openModal(`همه موضوعات مهم — ${displayName}`, `
+  openModal(`همه موضوعات مهم — ${escapeHtml(displayName)}`, `
     <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
       <button class="btn btn-primary btn-sm" type="button" onclick="copyToClipboard(window._allTopicsCopyText || '', 'همه موضوعات کپی شد ✓')" style="min-width:150px">کپی همه موضوعات</button>
     </div>
@@ -15430,7 +15439,7 @@ async function openCopyTopic(topicId, fromStudentId) {
   if (!t) return;
   allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
   const options = allStudents.filter(s => s.id !== fromStudentId)
-    .map(s => `<option value="${s.id}">${s.name} ${s.lname}</option>`).join('');
+    .map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
 
   openModal(`📋 کپی موضوع: "${escapeHtml(t.title) || '(بدون عنوان)'}"`, `
     <div class="form-group full">
@@ -15512,9 +15521,9 @@ async function openTopicDetail(topicId, studentId, displayName) {
           ? '<p style="font-size:12px;color:var(--text3)">موردی ثبت نشده</p>'
           : checklist.map(c => `
             <label class="checklist-item ${c.done?'done':''}">
-              <input type="checkbox" ${c.done?'checked':''} onchange="toggleChecklistItem(${topicId}, ${c.id}, ${studentId}, '${escapeHtml(displayName)}')">
+              <input type="checkbox" ${c.done?'checked':''} onchange="toggleChecklistItem(${topicId}, ${c.id}, ${studentId}, ${escapeAttr(displayName)})">
               <span>${escapeHtml(c.text)}</span>
-              <button type="button" class="btn btn-danger btn-sm" onclick="event.preventDefault();deleteChecklistItem(${topicId}, ${c.id}, ${studentId}, '${escapeHtml(displayName)}')">🗑</button>
+              <button type="button" class="btn btn-danger btn-sm" onclick="event.preventDefault();deleteChecklistItem(${topicId}, ${c.id}, ${studentId}, ${escapeAttr(displayName)})">🗑</button>
             </label>`).join('')}
       </div>
       <div class="form-grid" style="margin-top:8px">
@@ -15522,7 +15531,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
           <input class="form-input" id="f-checklist-text" placeholder="مورد جدید چک‌لیست را بنویس...">
         </div>
         <div class="form-group" style="align-self:flex-end">
-          <button class="btn btn-ghost" onclick="addChecklistItem(${topicId}, ${studentId}, '${escapeHtml(displayName)}')">+ افزودن به چک‌لیست</button>
+          <button class="btn btn-ghost" onclick="addChecklistItem(${topicId}, ${studentId}, ${escapeAttr(displayName)})">+ افزودن به چک‌لیست</button>
         </div>
       </div>
     </div>
@@ -15537,9 +15546,9 @@ async function openTopicDetail(topicId, studentId, displayName) {
         : renderAttachmentsGrid(topicAttachments, null)}
     </div>
   `, [
-    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `openEditTopic(${topicId}, ${studentId}, '${escapeHtml(displayName)}')` },
-    { label: '🗑 حذف', cls: 'btn-danger', action: `deleteTopic(${topicId}, ${studentId}, '${escapeHtml(displayName)}')` },
-    { label: '↩️ بازگشت', cls: 'btn-ghost', action: `closeModal();openTopics(${studentId}, '${escapeHtml(displayName)}')` },
+    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `openEditTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
+    { label: '🗑 حذف', cls: 'btn-danger', action: `deleteTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
+    { label: '↩️ بازگشت', cls: 'btn-ghost', action: `closeModal();openTopics(${studentId}, ${escapeAttr(displayName)})` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
 }
@@ -15601,8 +15610,8 @@ async function openEditTopic(topicId, studentId, displayName) {
       </div>
     </div>
   `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: 'saveEditTopic(' + topicId + ',' + studentId + ',\'' + escapeHtml(displayName) + '\')' },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal();openTopics(' + studentId + ',\'' + escapeHtml(displayName) + '\')' },
+    { label: 'ذخیره', cls: 'btn-primary', action: 'saveEditTopic(' + topicId + ',' + studentId + ',' + escapeAttr(displayName) + ')' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal();openTopics(' + studentId + ',' + escapeAttr(displayName) + ')' },
   ]);
   initDatePickers();
 }
@@ -15689,9 +15698,9 @@ async function openKeyEvents(studentId, displayName) {
             '<div class="key-event-text">' + renderRich(e.text) + '</div>' +
           '</div>' +
           '<div style="display:flex;gap:4px;flex-shrink:0">' +
-            '<button class="btn btn-ghost btn-sm" onclick="openEditKeyEvent(' + e.id + ',' + studentId + ',\'' + escapeHtml(displayName) + '\')" title="ویرایش">✏️</button>' +
-            (hasRemind ? '<button class="btn btn-ghost btn-sm" onclick="markKeyEventRemindDone(' + e.id + ',' + studentId + ',\'' + escapeHtml(displayName) + '\')" title="یادآوری انجام شد" style="color:var(--green)">✓</button>' : '') +
-            '<button class="btn btn-danger btn-sm" onclick="deleteKeyEvent(' + e.id + ',' + studentId + ',\'' + escapeHtml(displayName) + '\')" title="حذف">🗑</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="openEditKeyEvent(' + e.id + ',' + studentId + ',' + escapeAttr(displayName) + ')" title="ویرایش">✏️</button>' +
+            (hasRemind ? '<button class="btn btn-ghost btn-sm" onclick="markKeyEventRemindDone(' + e.id + ',' + studentId + ',' + escapeAttr(displayName) + ')" title="یادآوری انجام شد" style="color:var(--green)">✓</button>' : '') +
+            '<button class="btn btn-danger btn-sm" onclick="deleteKeyEvent(' + e.id + ',' + studentId + ',' + escapeAttr(displayName) + ')" title="حذف">🗑</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -15733,7 +15742,7 @@ async function openKeyEvents(studentId, displayName) {
       </div>
     </div>
     <div style="margin-top:8px">
-      <button class="btn btn-primary" onclick="saveKeyEvent(${studentId}, '${escapeHtml(displayName)}')">+ افزودن رویداد</button>
+      <button class="btn btn-primary" onclick="saveKeyEvent(${studentId}, ${escapeAttr(displayName)})">+ افزودن رویداد</button>
     </div>
     <div class="form-section" style="margin-top:14px">رویدادهای ثبت‌شده (${fa(events.length)})</div>
     <div id="key-events-list" style="max-height:280px;overflow-y:auto">
@@ -15796,8 +15805,8 @@ async function openEditKeyEvent(id, studentId, displayName) {
     </div>
     ${e.remind_date && !e.remind_done ? '<div style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-ke-edit-done" style="width:16px;height:16px"> یادآوری انجام شده (دوره بعدی شروع می‌شود)</label></div>' : ''}
   `, [
-    { label: '💾 ذخیره', cls: 'btn-primary', action: 'saveEditKeyEvent(' + id + ',' + studentId + ',\'' + escapeHtml(displayName) + '\')' },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'openKeyEvents(' + studentId + ',\'' + escapeHtml(displayName) + '\')' },
+    { label: '💾 ذخیره', cls: 'btn-primary', action: 'saveEditKeyEvent(' + id + ',' + studentId + ',' + escapeAttr(displayName) + ')' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'openKeyEvents(' + studentId + ',' + escapeAttr(displayName) + ')' },
   ]);
   initDatePickers();
 }
@@ -15837,7 +15846,7 @@ function openModal(title, body, actions = [], opts = {}) {
   }
   _lockModalPageScroll();
   const btns = actions.map(a =>
-    `<button class="btn ${a.cls}" onclick="${a.action}"${a.style ? ` style="${a.style}"` : ''}>${a.label}</button>`
+    `<button class="btn ${escapeHtml(a.cls || '')}" onclick="${a.action}"${a.style ? ` style="${escapeHtml(a.style)}"` : ''}>${typeof a.label === 'string' ? a.label : ''}</button>`
   ).join('');
 
   const fullPage = !!opts.fullPage;
@@ -16097,7 +16106,7 @@ async function init() {
     }
   } catch(e) {
     console.error('[TeamPulse] init() ERROR:', e);
-    document.getElementById('content').innerHTML = '<div style="text-align:center;padding:40px;color:#f87171"><h2>خطا: ' + e.message + '</h2><button onclick="location.reload()" style="padding:10px 24px;background:#7c6af7;color:white;border:none;border-radius:8px;cursor:pointer">تلاش مجدد</button></div>';
+    document.getElementById('content').innerHTML = '<div style="text-align:center;padding:40px;color:#f87171"><h2>خطا: ' + escapeHtml(e.message) + '</h2><button onclick="location.reload()" style="padding:10px 24px;background:#7c6af7;color:white;border:none;border-radius:8px;cursor:pointer">تلاش مجدد</button></div>';
   }
 }
 
@@ -16279,7 +16288,7 @@ function _instrTypeMeta(item) {
 }
 function _instrTypeBadge(item) {
   const m = _instrTypeMeta(item);
-  return `<span class="_instr-type-badge _instr-type-${m.cls}" title="${m.label}">${m.icon} ${m.label}</span>`;
+  return `<span class="_instr-type-badge _instr-type-${m.cls}" title="${escapeHtml(m.label)}">${escapeHtml(m.icon)} ${escapeHtml(m.label)}</span>`;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -16330,7 +16339,7 @@ async function renderInstructions(instrSearch) {
     _instrPath.forEach((p, i) => {
       const isCurrent = i === _instrPath.length - 1;
       full += `<span class="instr-crumb-sep">‹</span>
-        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' class="instr-crumb-link ${isCurrent ? 'instr-crumb-current' : ''}">${p.icon||'📁'} ${escapeHtml(p.title)}</span>`;
+        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' class="instr-crumb-link ${isCurrent ? 'instr-crumb-current' : ''}">${escapeHtml(p.icon||'📁')} ${escapeHtml(p.title)}</span>`;
     });
     full += `</div>`;
 
@@ -16346,7 +16355,7 @@ async function renderInstructions(instrSearch) {
 
     breadcrumb = full + compact;
   }
-  _instrSetHeaderNav(_instrPath.length > 0, _instrPath.length ? `${_instrPath[_instrPath.length-1].icon||'📁'} ${_instrPath[_instrPath.length-1].title}` : null);
+  _instrSetHeaderNav(_instrPath.length > 0, _instrPath.length ? `${escapeHtml(_instrPath[_instrPath.length-1].icon||'📁')} ${_instrPath[_instrPath.length-1].title}` : null);
 
   /* ── Windows/desktop toolbar: centralizes every create/sort/search action that used
      to be split between the topbar and per-folder buttons. Hidden on mobile — the FAB
@@ -16402,7 +16411,7 @@ async function renderInstructions(instrSearch) {
         pinnedBar += `<div onclick="${(item.type==='category'||item.type==='kcategory')?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${(item.type!=='category'&&item.type!=='kcategory')?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
           style="display:flex;align-items:center;gap:7px;padding:7px 12px;background:var(--bg2);border:1px solid var(--border);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
           onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
-          <span>${item.icon||'📁'}</span><span>${escapeHtml(item.title)}</span>
+          <span>${escapeHtml(item.icon||'📁')}</span><span>${escapeHtml(item.title)}</span>
         </div>`;
       });
       pinnedBar += `</div></div>`;
@@ -16422,7 +16431,7 @@ async function renderInstructions(instrSearch) {
         recentBar += `<div onclick="${(item.type==='category'||item.type==='kcategory')?`_instrOpenFolder(${item.id},'${(item.icon||'📁').replace(/'/g,"\\'")}','${item.title.replace(/'/g,"\\'")}')`:``}${(item.type!=='category'&&item.type!=='kcategory')?`openNoteDetail(${item.id})`:''}; _instrRecordOpen(${item.id})"
           style="display:flex;align-items:center;gap:7px;padding:7px 14px;background:var(--bg3);border:1px solid var(--border2);border-right:3px solid ${c};border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);transition:all .15s"
           onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'">
-          <span>${item.icon||'📝'}</span><span>${escapeHtml(item.title)}</span>
+          <span>${escapeHtml(item.icon||'📝')}</span><span>${escapeHtml(item.title)}</span>
         </div>`;
       });
       recentBar += `</div></div>`;
@@ -16511,7 +16520,7 @@ async function renderInstructions(instrSearch) {
             <div style="height:3px;background:${color}"></div>
             <div class="_ifcard-body" style="padding:13px 14px 11px">
               ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
-              <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${item.icon||'📁'}</div>
+              <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${escapeHtml(item.icon||'📁')}</div>
               <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
                 <div class="_ifcard-title" style="font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1">${escapeHtml(item.title)}</div>
                 ${_instrTypeBadge(item)}
@@ -16551,7 +16560,7 @@ async function renderInstructions(instrSearch) {
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
-            <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${item.icon||'📁'}</span>
+            <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${escapeHtml(item.icon||'📁')}</span>
             <div style="flex:1;min-width:0">
               <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
                 <span class="_ifcard-title" style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
@@ -16590,7 +16599,7 @@ async function renderInstructions(instrSearch) {
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
-            <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📁'}</span>
+            <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${escapeHtml(item.icon||'📁')}</span>
             <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
@@ -16631,7 +16640,7 @@ async function renderInstructions(instrSearch) {
             onmouseover="_instrHoverCard(this,'${color}')"
             onmouseout="_instrUnhoverCard(this)">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
-            <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${item.icon||'📝'}</div>
+            <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${escapeHtml(item.icon||'📝')}</div>
             <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
               <div class="_ifcard-title" style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
               ${_instrTypeBadge(item)}
@@ -16667,7 +16676,7 @@ async function renderInstructions(instrSearch) {
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
-            <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${item.icon||'📝'}</span>
+            <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${escapeHtml(item.icon||'📝')}</span>
             <div style="flex:1;min-width:0">
               <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
                 <span class="_ifcard-title" style="font-weight:600;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${escapeHtml(item.title)}</span>
@@ -16704,7 +16713,7 @@ async function renderInstructions(instrSearch) {
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background=''">
-            <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${item.icon||'📝'}</span>
+            <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${escapeHtml(item.icon||'📝')}</span>
             <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
             ${isKey ? `<span style="font-size:10px;color:var(--amber);flex-shrink:0">⭐</span>` : ''}
@@ -16762,7 +16771,7 @@ async function renderInstructions(instrSearch) {
     setContent('<div style="text-align:center;padding:40px;color:var(--red)">'
       + '<div style="font-size:32px">⚠️</div>'
       + '<div style="font-weight:700;margin:8px 0">خطا در بارگذاری</div>'
-      + '<div style="font-size:11px;color:var(--text3);margin-bottom:12px">' + (e.message||'') + '</div>'
+      + '<div style="font-size:11px;color:var(--text3);margin-bottom:12px">' + escapeHtml(e.message||'') + '</div>'
       + '<button class="btn btn-primary" onclick="renderInstructions()">🔄 تلاش مجدد</button>'
       + '</div>');
   }
@@ -16857,8 +16866,8 @@ function _instrFabHtml() {
     <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
       <div class="instr-fab-menu" id="instr-fab-menu">
-        ${actions.map(a => `<button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(${level === 'root' ? 'null' : '_instrParentId'},'${a.type}')">
-          <span>${a.icon}</span><span>${a.label}</span>
+        ${actions.map(a => `<button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(${level === 'root' ? 'null' : '_instrParentId'},${escapeAttr(a.type)})">
+          <span>${escapeHtml(a.icon)}</span><span>${escapeHtml(a.label)}</span>
         </button>`).join('')}
       </div>
       <button type="button" class="instr-fab-btn" id="instr-fab-btn" onclick="_toggleInstrFab()">+</button>
@@ -17170,19 +17179,19 @@ function _instrOpenTransferModal(ids, mode) {
   const options = _instrTransferDestinationOptions(rootIds);
   const selectedPreview = rootIds.map(id => {
     const item = _db.instructions.find(x => +x.id === +id);
-    return item ? `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border2);background:var(--bg3);border-radius:999px;padding:4px 9px;font-size:11px;color:var(--text2)">${item.icon || (item.type === 'category' ? '📁' : '📝')} ${escapeHtml(item.title)}</span>` : '';
+    return item ? `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border2);background:var(--bg3);border-radius:999px;padding:4px 9px;font-size:11px;color:var(--text2)">${escapeHtml(item.icon || (item.type === 'category' ? '📁' : '📝'))} ${escapeHtml(item.title)}</span>` : '';
   }).join('');
   const optionsHtml = options.map(opt => {
     const idArg = opt.id == null ? 'null' : opt.id;
     // ساخت پوشهٔ جدید فقط داخل یک دسته‌بندی/پوشهٔ واقعی معنا دارد، نه در ریشهٔ مرکز دانش
     const canMakeFolderHere = opt.id != null;
-    const searchKey = `${opt.title || ''} ${opt.path || ''}`.toLowerCase();
+    const searchKey = `${escapeHtml(opt.title || '')} ${opt.path || ''}`.toLowerCase();
     return `
       <div class="_instrTransferOpt" data-search="${escapeHtml(searchKey)}" style="display:flex;align-items:stretch;gap:6px;margin-bottom:7px">
         <button type="button" onclick="_instrConfirmTransfer('${op}', ${idArg})"
           style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:right;padding:11px 12px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer"
           onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
-          <span style="width:26px;height:26px;border-radius:8px;background:rgba(124,106,247,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0">${opt.icon}</span>
+          <span style="width:26px;height:26px;border-radius:8px;background:rgba(124,106,247,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(opt.icon)}</span>
           <span style="flex:1;min-width:0;padding-right:${opt.depth * 12}px">
             <strong style="display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(opt.title)}</strong>
             <small style="display:block;color:var(--text3);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">${escapeHtml(opt.path)}</small>
@@ -17292,7 +17301,7 @@ function _instrLegacyBulkMove() {
   const folders = (_db.instructions || []).filter(x => (x.type === 'category' || x.type === 'kcategory') && !idSet.has(x.id) && !isDescendantOfSelected(x.id));
   const optionsHtml = folders.map(f => `
     <div onclick="_confirmBulkMove(${f.id})" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border2);margin-bottom:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-      <span>${f.icon || '📁'}</span><span style="font-size:13px">${escapeHtml(f.title)}</span>
+      <span>${escapeHtml(f.icon || '📁')}</span><span style="font-size:13px">${escapeHtml(f.title)}</span>
     </div>`).join('');
   openModal('📁 انتقال به پوشه', `
     <p style="font-size:12px;color:var(--text3);margin-bottom:10px">مقصد را برای ${fa(_instrSelectedIds.size)} مورد انتخاب‌شده مشخص کن.</p>
@@ -17528,7 +17537,7 @@ function openNoteDetail(id) {
   const authorStr = node.author ? `<div class="detail-row"><span class="detail-key">نویسنده</span><span class="detail-val">${escapeHtml(node.author)}</span></div>` : '';
   const tagsStr = _instrTagsHtml(node.tags||[]);
 
-  openModal(`${node.icon||'📝'} ${escapeHtml(node.title)}`, `
+  openModal(`${escapeHtml(node.icon||'📝')} ${escapeHtml(node.title)}`, `
     <div id="note-sticker-display-${id}" style="font-size:20px;letter-spacing:3px;margin-bottom:${stickers.length?'8':'0'}px">${stickers.join(' ')}</div>
     <div class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
       ${dateStr}${impStr}${statusStr}${authorStr}
@@ -17594,7 +17603,7 @@ async function _toggleNoteSticker(id, sticker, btn) {
   }
   _save();
   const displayEl = document.getElementById('note-sticker-display-' + id);
-  if (displayEl) displayEl.innerHTML = node.stickers.join(' ');
+  if (displayEl) displayEl.textContent = (node.stickers || []).join(' ');
 }
 
 // Icons for picker
@@ -17809,7 +17818,7 @@ function openEditInstruction(id) {
   const iconColorBlock = `
     <div class="form-group full">
       <label class="form-label">آیکون</label>
-      <input type="hidden" id="ei-icon" value="${node.icon||'📝'}">
+      <input type="hidden" id="ei-icon" value="${escapeHtml(node.icon||'📝')}">
       <div style="display:flex;flex-wrap:wrap;gap:5px">${iconBtns}</div>
     </div>
     <div class="form-group full">
@@ -17887,7 +17896,7 @@ function openEditInstruction(id) {
   }
 
   openModal(`✏️ ویرایش — ${escapeHtml(node.title)}`, `<div class="form-grid">${bodyHtml}</div>`, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditInstruction(${id},'${node.type}')` },
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditInstruction(${id},${escapeAttr(node.type)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ], node.type === 'note' ? { overlayClass: 'note-editor-modal' } : {});
   if (node.type === 'note') {
@@ -18038,7 +18047,7 @@ function renderNavOrderEditor() {
       ondragover="event.preventDefault()"
       ondrop="event.preventDefault();_dropNavItem(${i})">
       <span style="color:var(--text3);font-size:16px">⠿</span>
-      <span style="font-size:16px">${item.icon}</span>
+      <span style="font-size:16px">${escapeHtml(item.icon)}</span>
       <span style="flex:1;font-size:13px">${item.label()}</span>
       <span style="color:var(--text3);font-size:11px">${i+1}</span>
     </div>
@@ -18334,7 +18343,7 @@ function renderAttachmentsGrid(attachments, onDelete) {
       ${attachments.map(a => `
         <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;
              overflow:hidden;position:relative;cursor:pointer"
-             onclick="_openAttachment('${a.id}','${escapeHtml(a.name)}','${a.type}')">
+             onclick="_openAttachment(${escapeAttr(a.id)},${escapeAttr(a.name)},${escapeAttr(a.type)})">
           ${a.type && a.type.startsWith('image/') && a.thumb
             ? `<div style="height:90px;background:var(--bg4);overflow:hidden">
                 <img src="${a.thumb}" style="width:100%;height:100%;object-fit:cover">
@@ -18424,7 +18433,7 @@ async function _openAttachment(id, name, type) {
                         padding:10px 14px;border-bottom:1px solid var(--border)">
               <span style="font-size:13px;font-weight:600">${escapeHtml(name)}</span>
               <div style="display:flex;gap:8px">
-                <button class="btn btn-ghost btn-sm" onclick="_downloadAttachment('${id}','${escapeHtml(name)}')">⬇️ دانلود</button>
+                <button class="btn btn-ghost btn-sm" onclick="_downloadAttachment('${id}',${escapeAttr(name)})">⬇️ دانلود</button>
                 <button class="modal-close" onclick="document.getElementById('modals').innerHTML=''">×</button>
               </div>
             </div>
@@ -20587,8 +20596,8 @@ function _renderWelcomeStep() {
               background:${_selectedJob===j.id?'rgba(124,106,247,.2)':'var(--bg3)'};
               border:1.5px solid ${_selectedJob===j.id?'var(--accent2)':'var(--border2)'};
               cursor:pointer;font-family:var(--font);font-size:12px;color:var(--text);transition:.15s">
-            <span style="font-size:18px">${j.icon}</span>
-            <span>${j.label}</span>
+            <span style="font-size:18px">${escapeHtml(j.icon)}</span>
+            <span>${escapeHtml(j.label)}</span>
           </button>`).join('')}
         </div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
@@ -20684,7 +20693,7 @@ function _renderWelcomeStep() {
           ${PKG_TYPES.map(pt => `
             <div class="settings-pkg-row" data-pkg-id="${pt.id}">
               <input type="color" class="color-input" value="${pt.color}" onchange="updatePkgType(${pt.id}, this.value, null)">
-              <input class="form-input" style="flex:1" value="${pt.label}" onchange="updatePkgType(${pt.id}, null, this.value)">
+              <input class="form-input" style="flex:1" value="${escapeHtml(pt.label)}" onchange="updatePkgType(${pt.id}, null, this.value)">
               <button class="btn btn-danger btn-sm" onclick="_wzDeletePkgType(${pt.id})">🗑</button>
             </div>`).join('')}
         </div>
@@ -22607,7 +22616,7 @@ function _todoCalendarSearchResultsHtml() {
   const shown = results.slice(0,14);
   return `<div class="calendar-search-results">
     ${shown.map(r => `<button type="button" class="calendar-search-result" onclick="${r.action}">
-      <span style="font-size:16px">${r.icon}</span>
+      <span style="font-size:16px">${escapeHtml(r.icon)}</span>
       <span style="min-width:0;flex:1"><b style="display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.title)}</b><small style="color:var(--text3)">${escapeHtml(r.subtitle || '')}</small></span>
     </button>`).join('') || '<div style="padding:18px;text-align:center;font-size:12px;color:var(--text3)">نتیجه‌ای پیدا نشد.</div>'}
     ${results.length > shown.length ? `<div style="padding:6px;text-align:center;font-size:10px;color:var(--text3)">و ${fa(results.length-shown.length)} نتیجه دیگر؛ عبارت دقیق‌تری بنویسید.</div>` : ''}
@@ -23000,7 +23009,7 @@ function _todoMiniSessionHtml(s) {
 
 function _todoMiniHabitHtml(h) {
   return `<div class="todo-mini-habit" onclick="event.stopPropagation();openHabitDetail(${h.id})" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${h.color || '#34d399'}18;border-right:3px solid ${h.color || '#34d399'};cursor:pointer">
-    <span>${h.icon || '🔥'}</span><span style="font-size:10px;color:${h.color || '#34d399'};font-weight:800">${h._doneOnDate?'✓':'عادت'}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.title || '')}</span>
+    <span>${escapeHtml(h.icon || '🔥')}</span><span style="font-size:10px;color:${h.color || '#34d399'};font-weight:800">${h._doneOnDate?'✓':'عادت'}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.title || '')}</span>
   </div>`;
 }
 
@@ -23286,7 +23295,7 @@ function _todoCalendarResponsiveCss() {
 }
 
 function _todoCategoryMeta(t) {
-  const text = `${t.title || ''} ${t.description || ''}`.toLowerCase();
+  const text = `${escapeHtml(t.title || '')} ${escapeHtml(t.description || '')}`.toLowerCase();
   const cat = t.category || '';
   if (/جلسه|کال|ملاقات|رزرو/.test(text)) return { icon:'📅', label:'جلسه', kind:'sessions', color:'#60a5fa' };
   if (/تماس|زنگ|پیگیری/.test(text)) return { icon:'📞', label:'تماس', kind:'call', color:'#38bdf8' };
@@ -23419,7 +23428,7 @@ function _todoMiniEventHtml(t) {
   return `<div draggable="true" ondragstart="_todoDragStart(event,${t.id})" onclick="event.stopPropagation();openEditTodo(${t.id})"
     title="${escapeHtml(meta.label)} - ${escapeHtml(t.title)}"
     style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${s.bg};border-right:3px solid ${s.color};cursor:pointer">
-    <span style="font-size:12px;line-height:1;flex-shrink:0">${meta.icon}</span>
+    <span style="font-size:12px;line-height:1;flex-shrink:0">${escapeHtml(meta.icon)}</span>
     ${t._repeatPreview ? '<span style="font-size:10px;line-height:1;flex-shrink:0" title="تکرار آینده">🔁</span>' : ''}
     <span style="font-size:10px;color:${s.color};font-weight:800;flex-shrink:0">${t.time ? escapeHtml(_todoTimeRangeLabel(t)) : '•'}</span>
     <span style="font-size:11px;color:${t.done?'var(--text3)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title)}</span>
@@ -23673,7 +23682,7 @@ function _renderGregorianTodoCalendarView() {
           <div style="font-size:12px;color:${isOfficialDay?'var(--red)':isToday||isSelected?'var(--accent2)':isWeekend?'#60a5fa':'var(--text3)'};font-weight:900">${dateObj.getDate()} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${isOfficialDay?'🔴':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${keyEvents.length?'⭐':''} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
           ${list.length ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(list.length)} کار · ${fa(doneCount)} انجام · ${fa(remain)} مانده</div>` : ''}
         </div>
-        ${list.length ? `<span title="${heat.label}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
+        ${list.length ? `<span title="${escapeHtml(heat.label)}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;gap:4px">
         ${events.slice(0, _todoViewMode==='week'?3:1).map(_todoMiniOccasionHtml).join('')}
@@ -23896,7 +23905,7 @@ function _renderTodoCalendarView() {
           <div style="font-size:12px;color:${isOfficialDay?'var(--red)':isToday||isSelected?'var(--accent2)':'var(--text3)'};font-weight:900">${fa(jd)} ${isToday?'<span style="font-size:9px;background:rgba(124,106,247,.22);border-radius:999px;padding:1px 5px;margin-right:3px">امروز</span>':''} ${isOfficialDay?'🔴':''} ${birthdays.length?'🎂':''} ${events.map(e=>e._reminder?'🔔':_todoEventTypeMeta(e.type).icon).join('')} ${keyEvents.length?'⭐':''} ${hasRepeat?'🔁':''} ${hasNote?'📝':''}</div>
           ${list.length ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">${fa(list.length)} کار · ${fa(doneCount)} انجام · ${fa(remain)} مانده · ${fa(hours)} ساعت</div>` : ''}
         </div>
-        ${list.length ? `<span title="${heat.label}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
+        ${list.length ? `<span title="${escapeHtml(heat.label)}" style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);border-radius:999px;padding:2px 6px">${fa(list.length)}</span>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;gap:4px">
         ${events.slice(0, _todoViewMode==='week'?3:1).map(_todoMiniOccasionHtml).join('')}
@@ -25102,7 +25111,7 @@ function _buildGoalSelectOptions(selectedId) {
   const goals = (_db.goals || []);
   const sel = selectedId ? String(selectedId) : '';
   let opts = '<option value=""' + (sel===''?' selected':'') + '>— هیچ‌کدام —</option>';
-  opts += goals.map(g => `<option value="${g.id}" ${sel===String(g.id)?'selected':''}>${g.icon||'🎯'} ${escapeHtml(g.title)}</option>`).join('');
+  opts += goals.map(g => `<option value="${g.id}" ${sel===String(g.id)?'selected':''}>${escapeHtml(g.icon||'🎯')} ${escapeHtml(g.title)}</option>`).join('');
   return opts;
 }
 
@@ -25898,7 +25907,7 @@ function openEditTodo(id) {
               <label class="form-label">دسته‌بندی</label>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 ${_buildCategoryButtons(t.category||'general')}
-                <input type="hidden" id="todo-category" value="${t.category||'general'}">
+                <input type="hidden" id="todo-category" value="${escapeHtml(t.category||'general')}">
               </div>
             </div>
             <div class="form-group">
@@ -26403,7 +26412,7 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
     .map(g => `
       <div style="margin-bottom:16px">
         <div style="font-size:11px;font-weight:700;color:var(--text3);padding:6px 4px;border-bottom:1px solid var(--border);margin-bottom:8px">
-          ${g.label} <span style="opacity:.6">(${fa(g.items.length)})</span>
+          ${escapeHtml(g.label)} <span style="opacity:.6">(${fa(g.items.length)})</span>
         </div>
         ${g.items.map(renderRow).join('')}
       </div>`).join('');
@@ -26555,9 +26564,9 @@ async function renderTutorial() {
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;user-select:none"
           onclick="this.parentElement.querySelector('.tut-body').style.display=this.parentElement.querySelector('.tut-body').style.display==='none'?'block':'none'">
-          <div style="width:38px;height:38px;border-radius:10px;background:${s.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${s.icon}</div>
+          <div style="width:38px;height:38px;border-radius:10px;background:${s.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${escapeHtml(s.icon)}</div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:14px;color:var(--text)">${s.title}</div>
+            <div style="font-weight:700;font-size:14px;color:var(--text)">${escapeHtml(s.title)}</div>
             <div style="font-size:12px;color:var(--text3)">${s.desc.slice(0,60)}...</div>
           </div>
           <span style="color:var(--text3);font-size:12px">▾</span>
@@ -26603,7 +26612,7 @@ async function renderTutorial() {
           <div style="display:flex;gap:12px;align-items:flex-start">
             <div style="width:32px;height:32px;border-radius:50%;background:var(--accent2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${s.n}</div>
             <div>
-              <div style="font-weight:700;font-size:13px;margin-bottom:2px">${s.title}</div>
+              <div style="font-weight:700;font-size:13px;margin-bottom:2px">${escapeHtml(s.title)}</div>
               <div style="font-size:12px;color:var(--text2);line-height:1.7">${s.desc}</div>
             </div>
           </div>`).join('')}
@@ -26633,7 +26642,7 @@ function openStaffRolesCompleted() {
 
   // نمایش لیست همکاران برای انتخاب — بدون نشون دادن اسامی دیگران
   const staffList = _db.staff.map(s => `
-    <button onclick="_staffRoleLogin(${s.id},'${escapeHtml(s.name+' '+s.lname)}')"
+    <button onclick="_staffRoleLogin(${s.id},${escapeAttr(s.name+' '+s.lname)})"
       style="width:100%;display:flex;align-items:center;gap:12px;padding:13px 16px;
         background:var(--bg3);border:1px solid var(--border2);border-radius:12px;
         cursor:pointer;font-family:var(--font);margin-bottom:8px;transition:.15s"
@@ -27227,7 +27236,7 @@ async function renderAdminPanel() {
 function _adminRenderUserList(users) {
   if (!users.length) return '<p style="font-size:12px;color:var(--text3);padding:12px">کاربری پیدا نشد</p>';
   return users.map(u => {
-    const initLetter = (u.name||u.email||'?').charAt(0).toUpperCase();
+    const initLetter = escapeHtml(String(u.name||u.email||'?').charAt(0).toUpperCase());
     const uid = u.id;
     const uname = escapeHtml(u.name||u.email||'');
     const isActive = u.is_active;
@@ -27255,7 +27264,7 @@ function _adminRenderUserList(users) {
         initLetter + '</div>',
       '<div style="flex:1;min-width:0">',
         '<div style="font-size:13px;font-weight:600;margin-bottom:2px">' + escapeHtml(u.name||'—') + '</div>',
-        '<div style="font-size:11px;color:var(--text3);direction:ltr;text-align:right">' + (u.email||'—') + '</div>',
+        '<div style="font-size:11px;color:var(--text3);direction:ltr;text-align:right">' + escapeHtml(u.email||'—') + '</div>',
         '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + roleLabel + ' · ' + fa(u.client_count||0) + ' مشتری</div>',
       '</div>',
       '<div style="display:flex;align-items:center;gap:6px">',
@@ -28074,7 +28083,7 @@ function _renderChargeRequests(reqs) {
   el.innerHTML = reqs.map(r => `
     <div style="padding:10px 12px;background:var(--bg3);border-radius:10px;margin-bottom:6px;border:1px solid ${r.status==='pending'?'var(--amber)':r.status==='approved'?'var(--green)':'var(--red)'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:12px;direction:ltr">${r.email}</span>
+        <span style="font-size:12px;direction:ltr">${escapeHtml(r.email)}</span>
         <span style="font-size:12px;font-weight:700;color:var(--accent2)">${fa(r.amount)} ت</span>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:6px">${new Date(r.created_at*1000).toLocaleDateString('fa-IR')}</div>
@@ -28138,11 +28147,11 @@ function _adminEmailSuggest(q) {
   const filtered = users.filter(u => (u.email||'').toLowerCase().includes(q.toLowerCase())).slice(0, 6);
   if (!filtered.length) { suggestions.style.display = 'none'; return; }
   suggestions.innerHTML = filtered.map(u =>
-    '<div onclick="_adminSelectEmail(' + JSON.stringify(u.email) + ',' + JSON.stringify(u.id) + ')" ' +
+    '<div onclick="_adminSelectEmail(' + escapeAttr(u.email) + ',' + escapeAttr(u.id) + ')" ' +
     'style="padding:8px 12px;cursor:pointer;font-size:12px;direction:ltr;border-bottom:1px solid var(--border)" ' +
     'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'"> ' +
-    '<span style="color:var(--accent2)">' + u.email + '</span>' +
-    '<span style="color:var(--text3);font-size:11px;margin-right:8px"> — ' + (u.name||'') + '</span>' +
+    '<span style="color:var(--accent2)">' + escapeHtml(u.email) + '</span>' +
+    '<span style="color:var(--text3);font-size:11px;margin-right:8px"> — ' + escapeHtml(u.name||'') + '</span>' +
     '</div>'
   ).join('');
   suggestions.style.display = 'block';
@@ -28158,7 +28167,7 @@ function _adminSelectEmail(email, userId) {
   const info = document.getElementById('charge-user-info');
   if (info && user) {
     info.style.display = 'block';
-    info.innerHTML = '👤 ' + (user.name||'') + ' · ' + fa(user.client_count||0) + ' مشتری';
+    info.innerHTML = '👤 ' + escapeHtml(user.name||'') + ' · ' + fa(user.client_count||0) + ' مشتری';
   }
 }
 
@@ -28726,7 +28735,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v77';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v78';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -29177,7 +29186,7 @@ function _goalPeriodSelectHtml(prefix, value) {
     <div class="form-group">
       <label class="form-label">بازه هدف</label>
       <select class="form-select" id="${prefix}-period">
-        ${GOAL_PERIODS.map(p => `<option value="${p.key}" ${current===p.key?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
+        ${GOAL_PERIODS.map(p => `<option value="${p.key}" ${current===p.key?'selected':''}>${escapeHtml(p.icon)} ${escapeHtml(p.label)}</option>`).join('')}
       </select>
     </div>`;
 }
@@ -29255,12 +29264,12 @@ function _goalAchievementsHtml() {
   const selectedYear = localStorage.getItem('tp_goal_achievement_year') || years[0] || currentYear;
   const yearItems = list.filter(a => (a.year || _goalAchievementYear(a.completed_date_jalali)) === selectedYear);
   const yearButtons = years.map(y => `
-    <button onclick="event.stopPropagation();setGoalAchievementYear('${escapeHtml(y)}')" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
+    <button onclick="event.stopPropagation();setGoalAchievementYear(${escapeAttr(y)})" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
   `).join('');
   const cards = yearItems.length ? yearItems.map(a => `
     <div class="goal-achievement-card" onclick="openGoalDetail(${a.goal_id})" style="background:var(--bg3);border:1px solid rgba(62,207,142,.24);border-radius:12px;padding:12px;cursor:pointer">
       <div style="display:flex;align-items:flex-start;gap:10px">
-        <span style="font-size:24px;line-height:1">${a.icon || '🏆'}</span>
+        <span style="font-size:24px;line-height:1">${escapeHtml(a.icon || '🏆')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:900;color:var(--text);line-height:1.6">${escapeHtml(a.title || 'هدف تکمیل‌شده')}</div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -29475,7 +29484,7 @@ function renderGoals() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div style="min-width:0">
           <div style="font-size:11px;color:var(--accent2);font-weight:800;margin-bottom:4px">امروز فقط برای این هدف یک قدم بردار</div>
-          <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.5">${todayGoal.icon || '🎯'} ${escapeHtml(todayGoal.title)}</div>
+          <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.5">${escapeHtml(todayGoal.icon || '🎯')} ${escapeHtml(todayGoal.title)}</div>
           ${todayMotivation ? `<div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:5px">چون: «${escapeHtml(todayMotivation)}»</div>` : ''}
         </div>
         <span style="font-size:22px;color:var(--green)">›</span>
@@ -29511,7 +29520,7 @@ function renderGoals() {
           background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
           ${m.done?'<span style="color:white;font-size:10px">✓</span>':''}
         </div>
-        <span style="font-size:11.5px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text2)'}">${m.title}</span>
+        <span style="font-size:11.5px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text2)'}">${escapeHtml(m.title)}</span>
       </div>`).join('');
 
     return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
@@ -29526,12 +29535,12 @@ function renderGoals() {
         </button>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            <span style="font-size:15px;font-weight:700;color:var(--text)">${g.title}</span>
-            <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
+            <span style="font-size:15px;font-weight:700;color:var(--text)">${escapeHtml(g.title)}</span>
+            <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${escapeHtml(sc.label)}</span>
             ${g.difficulty ? `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${diffColors[g.difficulty] || 'var(--text2)'}">⚡ ${diffLabels[g.difficulty] || g.difficulty}</span>` : ''}
             <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(124,106,247,.10);color:var(--accent2);font-weight:700">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
           </div>
-          ${g.category ? `<span style="font-size:11px;color:var(--text3)">${g.category}</span>` : ''}
+          ${g.category ? `<span style="font-size:11px;color:var(--text3)">${escapeHtml(g.category)}</span>` : ''}
         </div>
         <div style="text-align:center;flex-shrink:0">
           <div style="font-size:22px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
@@ -29550,7 +29559,7 @@ function renderGoals() {
           ⏳ ${_formatDaysLeft(daysLeft, fa)}
         </span>` : ''}
         ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
-        <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${health.icon} سلامت ${health.label}</span>
+        <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${escapeHtml(health.icon)} سلامت ${escapeHtml(health.label)}</span>
         ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
         ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
       </div>
@@ -29568,7 +29577,7 @@ function renderGoals() {
     return `
       <section style="margin-bottom:18px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
-          <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${period.icon} اهداف ${period.label}</h3>
+          <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
           <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
         </div>
         ${periodGoals.map(renderGoalCard).join('')}
@@ -29626,10 +29635,10 @@ function renderGoals() {
                   ${_isGoalAchieved(g) ? '✓' : ''}
                 </button>
                 <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.5">${g.title}</div>
+                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.5">${escapeHtml(g.title)}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
-                    <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${sc.label}</span>
-                    ${g.category ? `<span style="font-size:10px;color:var(--text3)">${g.category}</span>` : ''}
+                    <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${escapeHtml(sc.label)}</span>
+                    ${g.category ? `<span style="font-size:10px;color:var(--text3)">${escapeHtml(g.category)}</span>` : ''}
                     <span style="font-size:10px;color:var(--accent2)">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
                   </div>
                 </div>
@@ -29727,7 +29736,7 @@ function _goalCategoryPickerHtml(prefix, value) {
   const preset = GOAL_CATEGORY_PRESETS.some(c => c.label === current);
   const customOpen = current && !preset;
   const options = GOAL_CATEGORY_PRESETS.map(c =>
-    `<option value="${escapeHtml(c.label)}" ${current === c.label ? 'selected' : ''}>${c.icon} ${c.label}</option>`
+    `<option value="${escapeHtml(c.label)}" ${current === c.label ? 'selected' : ''}>${escapeHtml(c.icon)} ${escapeHtml(c.label)}</option>`
   ).join('');
   return `
     <div class="form-group">
@@ -30312,11 +30321,11 @@ function openGoalDetail(id) {
         background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
         ${m.done?'<span style="color:white;font-size:13px">✓</span>':''}
       </div>
-      <span style="flex:1;font-size:13px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${m.title}</span>
+      <span style="flex:1;font-size:13px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(m.title)}</span>
       <button onclick="deleteMilestone(${id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px">🗑</button>
     </div>`).join('');
 
-  openModal(`${g.icon || '🎯'} ${g.title}`, `
+  openModal(`${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}`, `
     <div>
       ${g.why ? `<div style="background:rgba(62,207,142,.09);border:1px solid rgba(62,207,142,.25);border-radius:12px;padding:14px 16px;margin-bottom:14px">
         <div style="font-size:11px;color:var(--green);font-weight:800;margin-bottom:6px">💡 چرا؟</div>
@@ -30330,7 +30339,7 @@ function openGoalDetail(id) {
 
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
         <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:16px;font-weight:800;color:${health.color}">${health.icon} ${health.label}</div>
+          <div style="font-size:16px;font-weight:800;color:${health.color}">${escapeHtml(health.icon)} ${escapeHtml(health.label)}</div>
           <div style="font-size:9px;color:var(--text3);margin-top:3px">سلامت هدف ${fa(health.score)}٪</div>
         </div>
         <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
@@ -30344,7 +30353,7 @@ function openGoalDetail(id) {
       </div>
 
       <div style="font-size:12px;color:var(--text2);line-height:1.8;background:rgba(96,165,250,.07);border-radius:10px;padding:10px 12px;margin-bottom:14px">
-        ${prediction.text}
+        ${escapeHtml(prediction.text)}
       </div>
 
       ${_goalTimelineHtml(g)}
@@ -30454,7 +30463,7 @@ function openGoalLinkedItems(id) {
     </div>`;
   }).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">عادتی به این هدف لینک نشده</div>';
 
-  openModal(`🔗 ارتباط‌های «${g.title}»`, `
+  openModal(`🔗 ارتباط‌های «${escapeHtml(g.title)}»`, `
     <div>
       <div style="margin-bottom:16px">
         <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">✅ کارهای مرتبط (${fa(tasks.length)})</div>
@@ -30612,14 +30621,14 @@ function _openGoalExperience(id, mode) {
     </div>
     <div style="position:relative;z-index:1;flex:1;display:flex;align-items:${cinematic?'center':'stretch'};justify-content:center;padding:20px max(22px,env(safe-area-inset-right,0px)) max(28px,env(safe-area-inset-bottom,0px)) max(22px,env(safe-area-inset-left,0px));overflow:auto">
       <div style="width:100%;max-width:${cinematic?'760px':'860px'};text-align:${cinematic?'center':'right'};display:flex;flex-direction:column;gap:16px;justify-content:${cinematic?'center':'flex-start'}">
-        <div style="font-size:${cinematic?'46px':'34px'};line-height:1">${g.icon || '🎯'}</div>
+        <div style="font-size:${cinematic?'46px':'34px'};line-height:1">${escapeHtml(g.icon || '🎯')}</div>
         <h1 style="font-size:${cinematic?'clamp(28px,6vw,56px)':'clamp(24px,5vw,42px)'};line-height:1.45;margin:0;font-weight:900">${escapeHtml(g.title)}</h1>
         ${g.why ? `<div style="font-size:${cinematic?'clamp(18px,3vw,28px)':'clamp(16px,2.4vw,22px)'};line-height:1.9;font-weight:700;color:#e8eaf0;background:${cinematic?'transparent':'rgba(255,255,255,.06)'};border:${cinematic?'none':'1px solid rgba(255,255,255,.10)'};border-radius:16px;padding:${cinematic?'0':'16px'}">چرا؟<br>${escapeHtml(g.why)}</div>` : ''}
         ${motivation ? `<div style="font-size:15px;line-height:1.9;color:#c8cce0;opacity:.95">امروز یادت باشد: «${escapeHtml(motivation)}»</div>` : ''}
         ${!cinematic && g.vision ? `<div style="background:rgba(124,106,247,.12);border:1px solid rgba(124,106,247,.18);border-radius:16px;padding:16px;font-size:14px;line-height:1.9;color:#dfe2ff">${escapeHtml(g.vision)}</div>` : ''}
         ${!cinematic ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:${health.color}">${health.icon} ${health.label}</b><div style="font-size:11px;opacity:.7;margin-top:4px">سلامت ${fa(health.score)}٪</div></div>
-          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:#b8adff">${prediction.value}</b><div style="font-size:11px;opacity:.7;margin-top:4px">${prediction.text}</div></div>
+          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:${health.color}">${escapeHtml(health.icon)} ${escapeHtml(health.label)}</b><div style="font-size:11px;opacity:.7;margin-top:4px">سلامت ${fa(health.score)}٪</div></div>
+          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:#b8adff">${prediction.value}</b><div style="font-size:11px;opacity:.7;margin-top:4px">${escapeHtml(prediction.text)}</div></div>
         </div>
         <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:16px">
           <div style="font-size:13px;font-weight:800;margin-bottom:8px">مراحل</div>${milestoneHtml}
@@ -30909,7 +30918,7 @@ function renderHabits() {
           background:${_habitFilter===t.key ? 'rgba(251,191,36,.12)' : 'var(--bg2)'};
           color:${_habitFilter===t.key ? 'var(--amber)' : 'var(--text2)'};
           font-size:12px;font-weight:600;white-space:nowrap;font-family:var(--font)">
-          ${t.icon} ${t.label} (${fa(t.count)})
+          ${escapeHtml(t.icon)} ${escapeHtml(t.label)} (${fa(t.count)})
         </button>`).join('')}
     </div>`;
 
@@ -31040,9 +31049,9 @@ function renderHabits() {
         </button>
         <div style="flex:1;min-width:0">
           <div style="font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4">
-            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span><span>${h.icon || '🔥'}</span>
+            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span><span>${escapeHtml(h.icon || '🔥')}</span>
           </div>
-          <div style="font-size:11px;font-weight:700;color:${status.color};margin-top:2px">${status.icon} ${status.text}</div>
+          <div style="font-size:11px;font-weight:700;color:${status.color};margin-top:2px">${escapeHtml(status.icon)} ${escapeHtml(status.text)}</div>
         </div>
         <button onclick="event.stopPropagation();openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
       </div>
@@ -31139,7 +31148,7 @@ function renderHabits() {
                   ${doneToday ? '✓' : ''}
                 </button>
                 <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escapeHtml(h.title)} ${h.icon||'🔥'}</div>
+                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escapeHtml(h.title)} ${escapeHtml(h.icon||'🔥')}</div>
                   <div style="font-size:11px;font-weight:600;color:${statusColor};margin-top:2px">${statusIcon} ${doneToday?'انجام شد':timeNotYetDue?`هنوز نرسیده (${h.time})`:'انجام نشده'}</div>
                 </div>
                 <div style="text-align:center;flex-shrink:0">
@@ -31282,7 +31291,7 @@ function openEditHabit(id) {
       </div>
       <div class="form-group">
         <label class="form-label">آیکون</label>
-        <input class="form-input" id="hab-icon" value="${h.icon||'🔥'}" style="font-size:18px">
+        <input class="form-input" id="hab-icon" value="${escapeHtml(h.icon||'🔥')}" style="font-size:18px">
       </div>
       <div class="form-group">
         <label class="form-label">رنگ</label>
@@ -31424,7 +31433,7 @@ function openHabitDetail(id) {
       <div style="font-size:9px;color:var(--text3);margin-top:2px">${label}</div>
     </div>`;
 
-  openModal(`${h.icon || '🔥'} ${escapeHtml(h.title)}`, `
+  openModal(`${escapeHtml(h.icon || '🔥')} ${escapeHtml(h.title)}`, `
     <div>
       ${h.desc ? `<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:14px;background:var(--bg3);border-radius:10px;padding:10px 12px">📝 ${escapeHtml(h.desc)}</div>` : ''}
 
@@ -31473,7 +31482,7 @@ function openHabitMenu(id) {
       font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:var(--font);text-align:right">
       <span style="font-size:16px">${icon}</span><span>${label}</span>
     </button>`;
-  openModal(`${h.icon || '🔥'} ${escapeHtml(h.title)}`, `
+  openModal(`${escapeHtml(h.icon || '🔥')} ${escapeHtml(h.title)}`, `
     <div>
       ${rowBtn('✏️', 'ویرایش', `closeModal();openEditHabit(${id})`)}
       ${rowBtn('📊', 'آمار و تاریخچه', `closeModal();openHabitHistory(${id})`)}
