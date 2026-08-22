@@ -1,7 +1,9 @@
 const router = require('express').Router();
-const { randomUUID } = require('crypto');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
+
+const MIN_CHARGE_AMOUNT = 10000;
+const MAX_CHARGE_AMOUNT = 10000000;
 
 function ensureWalletTables() {
   db.prepare(`
@@ -59,18 +61,12 @@ function ensureWallet(accountId) {
 
   const settings = getAdminSettings();
   const dailyCost = Number(settings.daily_cost || 1000);
-  const giftAmount = 100000;
   const now = Math.floor(Date.now() / 1000);
 
   db.prepare(`
     INSERT INTO user_wallets (account_id, balance, daily_cost, gift_given, last_charge_check, created_at, updated_at)
-    VALUES (?, ?, ?, 1, ?, ?, ?)
-  `).run(accountId, giftAmount, dailyCost, now, now, now);
-
-  db.prepare(`
-    INSERT INTO wallet_transactions (id, account_id, type, amount, description, created_at)
-    VALUES (?, ?, 'gift', ?, ?, ?)
-  `).run(randomUUID(), accountId, giftAmount, '🎁 هدیه خوش‌آمدگویی', now);
+    VALUES (?, 0, ?, 1, ?, ?, ?)
+  `).run(accountId, dailyCost, now, now, now);
 
   return db.prepare('SELECT * FROM user_wallets WHERE account_id=?').get(accountId);
 }
@@ -99,10 +95,13 @@ router.get('/', auth, (req, res) => {
 router.post('/charge-request', auth, (req, res) => {
   try {
     ensureWallet(req.user.id);
-    const amount = Number(req.body.amount || 0);
+    const amount = Number(req.body.amount);
     const receiptText = String(req.body.receipt_text || '').trim();
-    if (!amount || amount < 10000) {
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_CHARGE_AMOUNT) {
       return res.status(400).json({ error: 'minimum amount is 10000' });
+    }
+    if (amount > MAX_CHARGE_AMOUNT) {
+      return res.status(400).json({ error: 'maximum amount is 10000000' });
     }
 
     const now = Math.floor(Date.now() / 1000);

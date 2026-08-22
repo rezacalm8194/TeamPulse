@@ -26862,18 +26862,14 @@ function _saveStaffPass(staffId) {
 function _initUserWallet() {
   if (!_db._user_wallet) {
     _db._user_wallet = {
-      balance: 100000,
-      transactions: [{ id: 1, type: 'gift', amount: 100000, desc: '🎁 هدیه خوش‌آمدگویی', date: new Date().toISOString() }],
+      balance: 0,
+      transactions: [],
       daily_cost: 1000,
       last_charge_check: new Date().toISOString(),
       gift_given: true,
     };
     _save(false);
-    setTimeout(() => {
-      showToast('🎁 ۱۰۰٬۰۰۰ تومان هدیه خوش‌آمدگویی به کیف پولت اضافه شد!', 'success');
-    }, 2000);
   } else if (!_db._user_wallet.gift_given) {
-    // قبلاً wallet بوده ولی flag نداشته — فقط flag اضافه کن
     _db._user_wallet.gift_given = true;
     _save(false);
   }
@@ -28183,7 +28179,7 @@ async function _adminChargeWallet() {
 
     if (!userData) userData = { _user_wallet: null };
     if (!userData._user_wallet) {
-      userData._user_wallet = { balance: 100000, daily_cost: 1000, transactions: [] };
+      userData._user_wallet = { balance: 0, daily_cost: 1000, transactions: [] };
     }
 
     userData._user_wallet.balance += amount;
@@ -28231,7 +28227,7 @@ function _openChargeRequest() {
     </p>
     <div class="form-group full">
       <label class="form-label">مبلغ (تومان)</label>
-      <input class="form-input" id="cr-amount" type="number" placeholder="50000" min="10000">
+      <input class="form-input" id="cr-amount" type="number" placeholder="50000" min="10000" max="10000000">
     </div>
     <div class="form-group full">
       <label class="form-label">توضیح یا شماره پیگیری فیش</label>
@@ -28247,6 +28243,7 @@ async function _submitChargeRequest() {
   const amount = parseInt(document.getElementById('cr-amount')?.value || '0');
   const receipt = document.getElementById('cr-receipt')?.value.trim() || '';
   if (!amount || amount < 10000) { showToast('حداقل مبلغ ۱۰,۰۰۰ تومان است', 'error'); return; }
+  if (amount > 10000000) { showToast('حداکثر مبلغ ۱۰٬۰۰۰٬۰۰۰ تومان است', 'error'); return; }
   const res = await _apiFetch('/api/wallet/charge-request', {
     method: 'POST',
     body: JSON.stringify({ amount, receipt_text: receipt })
