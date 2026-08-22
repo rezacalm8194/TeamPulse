@@ -4,11 +4,19 @@ const { randomUUID } = require('crypto');
 const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const auth = require('../middleware/auth');
+const {
+  ensureTokenRevocationSchema,
+  currentTokenVersion,
+  bumpTokenVersion,
+  revokeJti,
+  purgeExpiredRevokedTokens,
+} = require('../utils/tokenRevocation');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { loadWorkspaceMeta, loadDocumentParts } = require('../utils/documentStore');
 const { logger } = require('../utils/logger');
 
 ensureTeamAccessSchema(db);
+ensureTokenRevocationSchema(db);
 try { db.exec('ALTER TABLE accounts ADD COLUMN phone TEXT'); } catch {}
 try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_unique ON accounts(phone) WHERE phone IS NOT NULL AND phone<>''"); } catch {}
 
@@ -70,7 +78,7 @@ router.post('/register', (req, res) => {
     const id = randomUUID();
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
-    const token = sign({ id });
+    const token = sign({ id, tv: currentTokenVersion(db, id) });
     logger.info('registration_success', { requestId: req.requestId, userId: id });
     res.status(201).json({ token, user: { id, name, email, phone, business_name, role: 'owner' } });
   } catch (e) {
@@ -101,7 +109,7 @@ router.post('/login', (req, res) => {
       logger.warn('login_failed', { requestId: req.requestId, ip: req.ip, reason: 'invalid_credentials' });
       return res.status(401).json({ error: 'invalid credentials' });
     }
-    const token = sign({ id: user.id });
+    const token = sign({ id: user.id, tv: currentTokenVersion(db, user.id) });
     logger.info('login_success', { requestId: req.requestId, userId: user.id, ip: req.ip });
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '', business_name: user.business_name, role: user.role } });
   } catch (e) {
@@ -161,8 +169,15 @@ router.post('/team-invite/grant', auth, (req, res) => {
 });
 
 router.post('/logout', auth, (req, res) => {
-  logger.info('logout', { requestId: req.requestId, userId: req.user.id, ip: req.ip });
-  res.json({ success: true });
+  try {
+    revokeJti(db, { jti: req.user.jti, accountId: req.user.id, exp: req.user.exp });
+    purgeExpiredRevokedTokens(db);
+    logger.info('logout', { requestId: req.requestId, userId: req.user.id, ip: req.ip });
+    res.json({ success: true });
+  } catch (e) {
+    logger.error('logout_failed', { requestId: req.requestId, userId: req.user.id, error: e });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.delete('/team-invite/grant', auth, (req, res) => {
@@ -307,8 +322,12 @@ router.put('/password', auth, (req, res) => {
     if (!bcrypt.compareSync(current_password, user.password))
       return res.status(401).json({ error: 'current password wrong' });
     const hash = bcrypt.hashSync(new_password, 10);
-    db.prepare('UPDATE accounts SET password=?, updated_at=datetime("now") WHERE id=?').run(hash, req.user.id);
-    res.json({ success: true });
+    const tv = db.transaction(() => {
+      db.prepare('UPDATE accounts SET password=?, updated_at=datetime("now") WHERE id=?').run(hash, req.user.id);
+      return bumpTokenVersion(db, req.user.id);
+    })();
+    const token = sign({ id: req.user.id, tv });
+    res.json({ success: true, token });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

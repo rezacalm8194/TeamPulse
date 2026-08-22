@@ -5,6 +5,7 @@ const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
 const { logger } = require('../utils/logger');
+const { ensureTokenRevocationSchema, bumpTokenVersion } = require('../utils/tokenRevocation');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
 const {
   ensureDocumentStoreSchema,
@@ -13,6 +14,7 @@ const {
   writeWorkspaceDocument,
   deleteWorkspaceDocumentsForAccount,
 } = require('../utils/documentStore');
+ensureTokenRevocationSchema(db);
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
 webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
@@ -428,8 +430,11 @@ router.post('/users/:id/reset-password', auth, adminOnly, (req, res) => {
   try {
     const password = String(req.body.password || '');
     if (password.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
-    db.prepare("UPDATE accounts SET password=?,updated_at=datetime('now') WHERE id=?")
-      .run(bcrypt.hashSync(password, 10), req.params.id);
+    db.transaction(() => {
+      db.prepare("UPDATE accounts SET password=?,updated_at=datetime('now') WHERE id=?")
+        .run(bcrypt.hashSync(password, 10), req.params.id);
+      bumpTokenVersion(db, req.params.id);
+    })();
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

@@ -9694,6 +9694,10 @@ async function _changeOwnPassword() {
       const message = res.status === 401 ? 'رمز فعلی اشتباه است' : (payload.error || 'تغییر رمز انجام نشد');
       throw new Error(message);
     }
+    if (payload.token) {
+      _sbSession = { token: payload.token };
+      _authSaveSession({ token: payload.token, user: _sbUser });
+    }
     if (_sbUser?.email) _authSaveCredentials(_sbUser.email, newPassword);
     ['security-current-password','security-new-password','security-confirm-password'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';

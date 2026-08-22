@@ -1,6 +1,13 @@
 const { verify } = require('../utils/jwt');
 const db = require('../config/database');
 const { logger } = require('../utils/logger');
+const {
+  ensureTokenRevocationSchema,
+  isJtiRevoked,
+  currentTokenVersion,
+} = require('../utils/tokenRevocation');
+
+ensureTokenRevocationSchema(db);
 
 function takeBodyToken(req) {
   // sendBeacon cannot set Authorization. Putting the JWT in the query string
@@ -27,6 +34,12 @@ module.exports = (req, res, next) => {
   }
   try {
     const payload = verify(token);
+    if (isJtiRevoked(db, payload.jti)) {
+      logger.warn('invalid_token', {
+        requestId: req.requestId, path: req.path, ip: req.ip, errorCode: 'TokenRevoked',
+      });
+      return res.status(401).json({ error: 'invalid token' });
+    }
     const account = db.prepare(
       'SELECT id, email, role, is_active FROM accounts WHERE id=?'
     ).get(payload.id);
@@ -34,7 +47,19 @@ module.exports = (req, res, next) => {
       logger.warn('unauthorized_access', { requestId: req.requestId, path: req.path, ip: req.ip });
       return res.status(401).json({ error: 'unauthorized' });
     }
-    req.user = { id: account.id, email: account.email, role: account.role };
+    if (currentTokenVersion(db, account.id) !== payload.tv) {
+      logger.warn('invalid_token', {
+        requestId: req.requestId, path: req.path, ip: req.ip, errorCode: 'TokenVersionMismatch',
+      });
+      return res.status(401).json({ error: 'invalid token' });
+    }
+    req.user = {
+      id: account.id,
+      email: account.email,
+      role: account.role,
+      jti: payload.jti,
+      exp: payload.exp,
+    };
     next();
   } catch (error) {
     logger.warn(error.name === 'TokenExpiredError' ? 'session_expired' : 'invalid_token', {

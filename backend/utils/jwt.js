@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const jwt = require('jsonwebtoken');
 
 const SECRET = process.env.JWT_SECRET;
@@ -26,18 +27,31 @@ module.exports = {
   sign: (payload = {}) => {
     const id = payload.id;
     if (!id) throw new Error('jwt payload requires id');
-    return jwt.sign({ id }, SECRET, { expiresIn: expiresInSeconds() });
+    const tv = Number.isFinite(Number(payload.tv)) ? Math.max(0, Math.floor(Number(payload.tv))) : 0;
+    const jti = String(payload.jti || randomUUID()).trim();
+    if (!jti) throw new Error('jwt payload requires jti');
+    return jwt.sign({ id, tv }, SECRET, { expiresIn: expiresInSeconds(), jwtid: jti });
   },
   verify: (token) => {
     const payload = jwt.verify(token, SECRET);
     const id = payload && payload.id;
+    const jti = payload && payload.jti;
+    const tv = Number(payload && payload.tv);
     const iat = Number(payload && payload.iat);
     const exp = Number(payload && payload.exp);
-    if (!id || !Number.isFinite(iat) || !Number.isFinite(exp) || exp - iat > MAX_TTL_SECONDS) {
+    if (
+      !id ||
+      !jti ||
+      !Number.isFinite(tv) ||
+      tv < 0 ||
+      !Number.isFinite(iat) ||
+      !Number.isFinite(exp) ||
+      exp - iat > MAX_TTL_SECONDS
+    ) {
       const error = new Error('invalid token');
       error.name = 'JsonWebTokenError';
       throw error;
     }
-    return { id };
+    return { id, jti, tv: Math.floor(tv), exp };
   }
 };

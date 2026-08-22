@@ -16,7 +16,17 @@ test('session tokens omit role and last at most 8 hours by default', () => {
   assert.equal(decoded.role, undefined);
   assert.equal(decoded.email, undefined);
   assert.ok(decoded.exp - decoded.iat <= 8 * 60 * 60);
-  assert.deepEqual(verify(token), { id: 'user-1' });
+  const verified = verify(token);
+  assert.equal(verified.id, 'user-1');
+  assert.equal(verified.tv, 0);
+  assert.equal(typeof verified.jti, 'string');
+  assert.ok(verified.jti.length > 0);
+  assert.equal(typeof verified.exp, 'number');
+});
+
+test('tokens without jti or version are rejected', () => {
+  const token = jwt.sign({ id: 'user-1' }, process.env.JWT_SECRET, { expiresIn: '8h' });
+  assert.throws(() => verify(token), { name: 'JsonWebTokenError' });
 });
 
 test('legacy long-lived tokens are rejected even if signature is valid', () => {
