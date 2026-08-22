@@ -8,10 +8,8 @@ const { randomUUID } = require('crypto');
 const db = require('./config/database');
 const { logger, classifySyncOutcome } = require('./utils/logger');
 const { initTodoAuditStore, seedHistoricalRecurringSnapshots, migrateTodoAuditOccurrenceIdentityV2, flushPendingTodoAudits } = require('./utils/todoAuditStore');
+const { backfillVersionSummaries } = require('./utils/versionSnapshots');
 initTodoAuditStore(db);
-seedHistoricalRecurringSnapshots(db);
-migrateTodoAuditOccurrenceIdentityV2(db);
-void flushPendingTodoAudits(db, logger);
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
@@ -199,7 +197,20 @@ app.use(express.static(path.join(__dirname, '../'), {
   setHeaders: setStaticCacheHeaders,
 }));
 app.use(applyCsp, (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
-const server = app.listen(PORT, () => logger.info('application_started', { port: PORT }));
+const HOST = process.env.HOST || '127.0.0.1';
+const server = app.listen(PORT, HOST, () => {
+  logger.info('application_started', { port: PORT, host: HOST });
+  setImmediate(() => {
+    try {
+      seedHistoricalRecurringSnapshots(db);
+      migrateTodoAuditOccurrenceIdentityV2(db);
+      backfillVersionSummaries(db);
+      void flushPendingTodoAudits(db, logger);
+    } catch (error) {
+      logger.error('startup_job_failed', { error });
+    }
+  });
+});
 let shuttingDown = false;
 function shutdownAfterFatal(event, error) {
   if (shuttingDown) return;

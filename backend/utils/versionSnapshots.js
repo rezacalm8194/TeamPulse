@@ -59,7 +59,6 @@ function ensureVersionSnapshotSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_user_data_version_summaries_account
       ON user_data_version_summaries(account_id, version_id DESC);
   `);
-  backfillVersionSummaries(db);
 }
 
 function insertVersionSummary(db, versionId, accountId, createdAt, serializedData) {
@@ -84,21 +83,26 @@ function insertVersionSummary(db, versionId, accountId, createdAt, serializedDat
 }
 
 function backfillVersionSummaries(db) {
-  // .all() finishes the SELECT first. .iterate() keeps the connection busy,
-  // so INSERT inside that loop throws in better-sqlite3.
-  const missing = db.prepare(`
+  const selectMissing = db.prepare(`
     SELECT v.id, v.account_id, v.created_at, v.data
     FROM user_data_versions v
     LEFT JOIN user_data_version_summaries s ON s.version_id = v.id
-    WHERE s.version_id IS NULL
-  `).all();
-  if (!missing.length) return;
+    WHERE s.version_id IS NULL AND v.id > ?
+    ORDER BY v.id
+    LIMIT 8
+  `);
   const fill = db.transaction(rows => {
     for (const row of rows) {
       insertVersionSummary(db, row.id, row.account_id, row.created_at, row.data);
     }
   });
-  fill(missing);
+  let lastId = 0;
+  for (;;) {
+    const missing = selectMissing.all(lastId);
+    if (!missing.length) return;
+    fill(missing);
+    lastId = missing[missing.length - 1].id;
+  }
 }
 
 function saveVersionSnapshot(db, accountId, serializedData, { force = false } = {}) {
@@ -166,6 +170,7 @@ module.exports = {
   MAX_VERSIONS_PER_WORKSPACE,
   versionSummaryFromSerialized,
   ensureVersionSnapshotSchema,
+  backfillVersionSummaries,
   saveVersionSnapshot,
   listVersionSummaries,
 };

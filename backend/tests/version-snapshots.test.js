@@ -5,6 +5,7 @@ const {
   MAX_VERSIONS_PER_WORKSPACE,
   versionSummaryFromSerialized,
   ensureVersionSnapshotSchema,
+  backfillVersionSummaries,
   saveVersionSnapshot,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
@@ -65,6 +66,7 @@ test('existing version rows are backfilled into the summary table once', () => {
   insertVersion.run('acc-2', payload({ todos: [{ id: 8 }, { id: 7 }] }));
   insertVersion.run('acc-3', payload({ todos: [] }));
   ensureVersionSnapshotSchema(db);
+  backfillVersionSummaries(db);
   const listed = listVersionSummaries(db, 'acc-2', 72);
   assert.equal(listed.length, 2);
   assert.equal(listed[0].summary.todos, 2);
