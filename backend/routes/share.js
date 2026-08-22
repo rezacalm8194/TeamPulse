@@ -1,10 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const db = require('../config/database');
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const requireAuth = require('../middleware/auth');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS share_pages (
@@ -14,19 +12,6 @@ db.exec(`
     expires_at TEXT NOT NULL
   );
 `);
-
-function requireAuth(req, res, next) {
-  if (!JWT_SECRET) return res.status(500).json({ error: 'jwt_secret_not_configured' });
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'unauthorized' });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch(e) {
-    return res.status(401).json({ error: 'invalid token' });
-  }
-}
 
 const SHARE_MAX_SIZE = 600 * 1024;
 const SHARE_TTL_DAYS = 30;

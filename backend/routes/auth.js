@@ -69,7 +69,7 @@ router.post('/register', (req, res) => {
     const id = randomUUID();
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
-    const token = sign({ id, email, role: 'owner' });
+    const token = sign({ id });
     logger.info('registration_success', { requestId: req.requestId, userId: id });
     res.status(201).json({ token, user: { id, name, email, phone, business_name, role: 'owner' } });
   } catch (e) {
@@ -100,7 +100,7 @@ router.post('/login', (req, res) => {
       logger.warn('login_failed', { requestId: req.requestId, ip: req.ip, reason: 'invalid_credentials' });
       return res.status(401).json({ error: 'invalid credentials' });
     }
-    const token = sign({ id: user.id, email: user.email, role: user.role });
+    const token = sign({ id: user.id });
     logger.info('login_success', { requestId: req.requestId, userId: user.id, ip: req.ip });
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '', business_name: user.business_name, role: user.role } });
   } catch (e) {

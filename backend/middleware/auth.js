@@ -1,4 +1,5 @@
 const { verify } = require('../utils/jwt');
+const db = require('../config/database');
 const { logger } = require('../utils/logger');
 
 module.exports = (req, res, next) => {
@@ -18,7 +19,15 @@ module.exports = (req, res, next) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
   try {
-    req.user = verify(token);
+    const payload = verify(token);
+    const account = db.prepare(
+      'SELECT id, email, role, is_active FROM accounts WHERE id=?'
+    ).get(payload.id);
+    if (!account || Number(account.is_active) !== 1) {
+      logger.warn('unauthorized_access', { requestId: req.requestId, path: req.path, ip: req.ip });
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    req.user = { id: account.id, email: account.email, role: account.role };
     next();
   } catch (error) {
     logger.warn(error.name === 'TokenExpiredError' ? 'session_expired' : 'invalid_token', {
