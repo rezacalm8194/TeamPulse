@@ -11,6 +11,10 @@ const {
   loadDocumentParts,
   loadWorkspaceMeta,
   writeWorkspaceDocument,
+  writeWorkspaceDocumentAsync,
+  loadWorkspaceDocumentAsync,
+  loadDocumentPartsAsync,
+  serializeWorkspaceDocumentAsync,
 } = require('../utils/documentStore');
 const { applyDocumentPatch } = require('../utils/documentPatch');
 
@@ -100,4 +104,58 @@ test('legacy blob documents still load until the first write migrates them', () 
   writeWorkspaceDocument(db, 'acc-2', loaded.data, { replaceAll: true });
   assert.equal(loadWorkspaceMeta(db, 'acc-2').layout, 'parts');
   assert.equal(loadWorkspaceDocument(db, 'acc-2').data.students[0].id, 9);
+});
+
+test('async write/load yields the same parts document as the sync path', async () => {
+  const db = makeDb();
+  const data = {
+    students: Array.from({ length: 20 }, (_, i) => ({ id: i, name: 'S' + i })),
+    todos: [{ id: 10, title: 'keep' }],
+    _lastSaved: 1,
+  };
+  const written = await writeWorkspaceDocumentAsync(db, 'acc-async', data, { replaceAll: true });
+  const loaded = await loadWorkspaceDocumentAsync(db, 'acc-async');
+  assert.equal(loaded.layout, 'parts');
+  assert.equal(loaded.etag, written.etag);
+  assert.equal(loaded.data.students.length, 20);
+  assert.equal(loaded.data.todos[0].title, 'keep');
+  const parts = await loadDocumentPartsAsync(db, 'acc-async', ['todos']);
+  assert.equal(parts.data.todos[0].title, 'keep');
+  assert.equal(Array.isArray(parts.data.students), false);
+});
+
+test('file-backed async path round-trips through a worker thread', async t => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { shutdownDocumentStoreWorkers } = require('../utils/documentStoreThread');
+  const file = path.join(os.tmpdir(), `teampulse-docstore-${process.pid}-${Date.now()}.db`);
+  const db = new Database(file);
+  t.after(async () => {
+    await shutdownDocumentStoreWorkers();
+    try { db.close(); } catch (_) { /* ignore */ }
+    try { fs.unlinkSync(file); } catch (_) { /* ignore */ }
+    try { fs.unlinkSync(`${file}-wal`); } catch (_) { /* ignore */ }
+    try { fs.unlinkSync(`${file}-shm`); } catch (_) { /* ignore */ }
+  });
+  db.pragma('journal_mode = WAL');
+  db.exec(`
+    CREATE TABLE user_data (
+      account_id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_at TEXT
+    );
+  `);
+  ensureDocumentStoreSchema(db);
+  const data = {
+    students: Array.from({ length: 30 }, (_, i) => ({ id: i, name: 'W' + i })),
+    todos: [{ id: 7, title: 'worker' }],
+  };
+  const written = await writeWorkspaceDocumentAsync(db, 'acc-worker', data, { replaceAll: true });
+  const loaded = await loadWorkspaceDocumentAsync(db, 'acc-worker');
+  assert.equal(loaded.etag, written.etag);
+  assert.equal(loaded.data.todos[0].title, 'worker');
+  assert.equal(loaded.data.students.length, 30);
+  const serialized = await serializeWorkspaceDocumentAsync(db, 'acc-worker');
+  assert.equal(JSON.parse(serialized).todos[0].title, 'worker');
 });

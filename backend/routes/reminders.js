@@ -9,7 +9,7 @@ const cron = require('node-cron');
 const webpush = require('web-push');
 const { randomUUID } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
-const { loadWorkspaceMeta, loadDocumentParts, loadWorkspaceDocument } = require('../utils/documentStore');
+const { loadWorkspaceMeta, loadDocumentParts, loadWorkspaceMetaAsync, loadDocumentPartsAsync, loadWorkspaceDocumentAsync } = require('../utils/documentStore');
 
 ensureTeamAccessSchema(db);
 
@@ -91,10 +91,10 @@ function parseJsonArray(value) {
   }
 }
 
-function loadAccountCollections(accountId, keys) {
-  const meta = loadWorkspaceMeta(db, accountId);
+async function loadAccountCollections(accountId, keys) {
+  const meta = await loadWorkspaceMetaAsync(db, accountId);
   if (!meta) return null;
-  if (meta.layout === 'parts') return loadDocumentParts(db, accountId, keys).data;
+  if (meta.layout === 'parts') return (await loadDocumentPartsAsync(db, accountId, keys)).data;
   try { return JSON.parse(meta.serialized || 'null'); } catch { return null; }
 }
 
@@ -423,7 +423,7 @@ cron.schedule('* * * * *', async () => {
       // Yield between accounts so static files and API requests are not held
       // behind a long reminder scan in Node's single event loop.
       await new Promise(resolve => setImmediate(resolve));
-      const userData = loadAccountCollections(acc.id, reminderCollectionKeys);
+      const userData = await loadAccountCollections(acc.id, reminderCollectionKeys);
       if (!userData) continue;
 
       for (const t of (userData.todos || [])) {
@@ -636,7 +636,7 @@ router.post('/notify-todo-created', auth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    const userData = loadWorkspaceDocument(db, workspaceStorageKey(accountId, workspaceId))?.data;
+    const userData = (await loadWorkspaceDocumentAsync(db, workspaceStorageKey(accountId, workspaceId)))?.data;
     if (!userData) return res.status(404).json({ error: 'account_data_not_found' });
     const todo = (userData.todos || []).find(item => String(item?.id) === todoId);
     if (!todo || !todoBelongsToAccount(todo, accountId)) {

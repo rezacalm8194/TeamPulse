@@ -1,4 +1,5 @@
 const { createHash } = require('crypto');
+const { isMainThread } = require('worker_threads');
 
 const SCALARS_PART = '__scalars__';
 const PARTS_MARKER = '{"_layout":"parts"}';
@@ -217,38 +218,41 @@ function upsertUserDataMeta(db, accountId, etag) {
 
 function writeWorkspaceDocument(db, accountId, data, { replaceAll = true } = {}) {
   ensureDocumentStoreSchema(db);
-  if (accountId === ADMIN_SETTINGS_ID) {
-    const serialized = JSON.stringify(data || {});
-    const etag = blobEtag(serialized);
-    const existing = db.prepare('SELECT account_id FROM user_data WHERE account_id=?').get(accountId);
-    if (existing) {
-      db.prepare("UPDATE user_data SET data=?, data_etag=?, updated_at=datetime('now') WHERE account_id=?").run(serialized, etag, accountId);
-    } else {
-      db.prepare("INSERT INTO user_data (account_id, data, data_etag, updated_at) VALUES (?,?,?,datetime('now'))").run(accountId, serialized, etag);
+  const persist = db.transaction(() => {
+    if (accountId === ADMIN_SETTINGS_ID) {
+      const serialized = JSON.stringify(data || {});
+      const etag = blobEtag(serialized);
+      const existing = db.prepare('SELECT account_id FROM user_data WHERE account_id=?').get(accountId);
+      if (existing) {
+        db.prepare("UPDATE user_data SET data=?, data_etag=?, updated_at=datetime('now') WHERE account_id=?").run(serialized, etag, accountId);
+      } else {
+        db.prepare("INSERT INTO user_data (account_id, data, data_etag, updated_at) VALUES (?,?,?,datetime('now'))").run(accountId, serialized, etag);
+      }
+      return { etag, layout: 'blob' };
     }
-    return { etag, layout: 'blob' };
-  }
 
-  const { scalars, collections } = splitDocument(data);
-  const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
-  hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
-  const writtenCollections = Object.keys(collections);
-  writtenCollections.forEach(key => {
-    hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
-  });
-  if (replaceAll) {
-    const keep = new Set([SCALARS_PART, ...writtenCollections]);
-    db.prepare(
-      'SELECT part_key FROM user_data_parts WHERE account_id=?'
-    ).all(accountId).forEach(row => {
-      if (keep.has(row.part_key)) return;
-      db.prepare('DELETE FROM user_data_parts WHERE account_id=? AND part_key=?').run(accountId, row.part_key);
-      delete hashes[row.part_key];
+    const { scalars, collections } = splitDocument(data);
+    const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
+    hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
+    const writtenCollections = Object.keys(collections);
+    writtenCollections.forEach(key => {
+      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
     });
-  }
-  const etag = documentEtagFromHashes(hashes);
-  upsertUserDataMeta(db, accountId, etag);
-  return { etag, layout: 'parts', hashes };
+    if (replaceAll) {
+      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      db.prepare(
+        'SELECT part_key FROM user_data_parts WHERE account_id=?'
+      ).all(accountId).forEach(row => {
+        if (keep.has(row.part_key)) return;
+        db.prepare('DELETE FROM user_data_parts WHERE account_id=? AND part_key=?').run(accountId, row.part_key);
+        delete hashes[row.part_key];
+      });
+    }
+    const etag = documentEtagFromHashes(hashes);
+    upsertUserDataMeta(db, accountId, etag);
+    return { etag, layout: 'parts', hashes };
+  });
+  return persist();
 }
 
 function deleteWorkspaceDocument(db, accountId) {
@@ -265,6 +269,141 @@ function deleteWorkspaceDocumentsForAccount(db, accountId) {
     .run(accountId, `${accountId}::workspace::%`);
 }
 
+function yieldEventLoop() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+function documentStoreThread() {
+  return require('./documentStoreThread');
+}
+
+function shouldOffload(db) {
+  return isMainThread && documentStoreThread().canOffloadDocumentStore(db);
+}
+
+function isWorkerInfrastructureError(err) {
+  const msg = String(err && err.message || '');
+  return err?.code === 'ERR_DLOPEN_FAILED'
+    || msg.startsWith('document_store_worker')
+    || msg.includes('unknown_document_store_method');
+}
+
+async function offloadOrInline(db, method, args, inline) {
+  if (shouldOffload(db)) {
+    try {
+      return await documentStoreThread().callDocumentWorker(db, method, args);
+    } catch (err) {
+      if (isWorkerInfrastructureError(err)) return inline();
+      throw err;
+    }
+  }
+  return inline();
+}
+
+async function loadWorkspaceMetaAsync(db, accountId) {
+  return offloadOrInline(db, 'loadWorkspaceMeta', [accountId], async () => {
+    await yieldEventLoop();
+    return loadWorkspaceMeta(db, accountId);
+  });
+}
+
+async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
+  return offloadOrInline(db, 'loadDocumentParts', [accountId, collectionKeys], async () => {
+    ensureDocumentStoreSchema(db);
+    const wanted = new Set([SCALARS_PART]);
+    (collectionKeys || []).forEach(key => {
+      if (isSafePartKey(key) && key !== SCALARS_PART) wanted.add(key);
+    });
+    const keys = [...wanted];
+    const placeholders = keys.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT part_key, data FROM user_data_parts WHERE account_id=? AND part_key IN (${placeholders})`
+    ).all(accountId, ...keys);
+    const scalars = {};
+    const collections = {};
+    for (const row of rows) {
+      const value = parsePartValue(row.part_key, row.data);
+      if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
+      else collections[row.part_key] = value;
+      await yieldEventLoop();
+    }
+    collectionKeys.forEach(key => {
+      if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
+        collections[key] = [];
+      }
+    });
+    return { scalars, collections, data: assembleDocument(scalars, collections) };
+  });
+}
+
+async function loadWorkspaceDocumentAsync(db, accountId) {
+  return offloadOrInline(db, 'loadWorkspaceDocument', [accountId], async () => {
+    const meta = loadWorkspaceMeta(db, accountId);
+    if (!meta) return null;
+    if (meta.layout === 'parts') {
+      const rows = db.prepare(
+        'SELECT part_key, data FROM user_data_parts WHERE account_id=?'
+      ).all(accountId);
+      const scalars = {};
+      const collections = {};
+      for (const row of rows) {
+        const value = parsePartValue(row.part_key, row.data);
+        if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
+        else collections[row.part_key] = value;
+        await yieldEventLoop();
+      }
+      return { ...meta, data: assembleDocument(scalars, collections) };
+    }
+    await yieldEventLoop();
+    let data = null;
+    try { data = JSON.parse(meta.serialized || 'null'); } catch { data = null; }
+    return { ...meta, data };
+  });
+}
+
+async function serializeWorkspaceDocumentAsync(db, accountId) {
+  return offloadOrInline(db, 'serializeWorkspaceDocument', [accountId], async () => {
+    const loaded = await loadWorkspaceDocumentAsync(db, accountId);
+    if (!loaded) return '{}';
+    if (loaded.serialized) return loaded.serialized;
+    await yieldEventLoop();
+    return JSON.stringify(loaded.data || {});
+  });
+}
+
+async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = true } = {}) {
+  return offloadOrInline(db, 'writeWorkspaceDocument', [accountId, data, { replaceAll }], async () => {
+    ensureDocumentStoreSchema(db);
+    if (accountId === ADMIN_SETTINGS_ID) {
+      await yieldEventLoop();
+      return writeWorkspaceDocument(db, accountId, data, { replaceAll });
+    }
+    const { scalars, collections } = splitDocument(data);
+    const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
+    await yieldEventLoop();
+    hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
+    const writtenCollections = Object.keys(collections);
+    for (const key of writtenCollections) {
+      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
+      await yieldEventLoop();
+    }
+    if (replaceAll) {
+      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      const extra = db.prepare(
+        'SELECT part_key FROM user_data_parts WHERE account_id=?'
+      ).all(accountId);
+      for (const row of extra) {
+        if (keep.has(row.part_key)) continue;
+        db.prepare('DELETE FROM user_data_parts WHERE account_id=? AND part_key=?').run(accountId, row.part_key);
+        delete hashes[row.part_key];
+      }
+    }
+    const etag = documentEtagFromHashes(hashes);
+    upsertUserDataMeta(db, accountId, etag);
+    return { etag, layout: 'parts', hashes };
+  });
+}
+
 module.exports = {
   SCALARS_PART,
   PARTS_MARKER,
@@ -276,10 +415,15 @@ module.exports = {
   loadPartHashes,
   hasDocumentParts,
   loadWorkspaceMeta,
+  loadWorkspaceMetaAsync,
   loadDocumentParts,
+  loadDocumentPartsAsync,
   loadWorkspaceDocument,
+  loadWorkspaceDocumentAsync,
   serializeWorkspaceDocument,
+  serializeWorkspaceDocumentAsync,
   writeWorkspaceDocument,
+  writeWorkspaceDocumentAsync,
   deleteWorkspaceDocument,
   deleteWorkspaceDocumentsForAccount,
 };

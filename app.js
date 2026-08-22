@@ -18243,17 +18243,36 @@ function _formatSize(bytes) {
   return (bytes/(1024*1024)).toFixed(1) + ' MB';
 }
 
+const _RASTER_IMAGE_MIME = /^(image\/(?:jpeg|png|gif|webp|avif|bmp))(?:;.*)?$/i;
+const _ACTIVE_FILE_MIME = /html|xhtml|svg|xml|javascript|ecmascript|wasm/i;
+
+function _safeAttachmentMime(type) {
+  const mime = String(type || '').split(';')[0].trim().toLowerCase();
+  if (_RASTER_IMAGE_MIME.test(mime)) return mime.split(';')[0].toLowerCase();
+  if (/^audio\/(mpeg|mp4|wav|x-wav|webm|ogg|aac)$/i.test(mime)) return mime;
+  if (/^video\/(mp4|webm|ogg)$/i.test(mime)) return mime;
+  return 'application/octet-stream';
+}
+
+function _rewriteDataUrlMime(dataURL, mime) {
+  const raw = String(dataURL || '');
+  const idx = raw.indexOf(',');
+  if (idx < 0) return raw;
+  const b64 = /;base64/i.test(raw.slice(0, idx));
+  return 'data:' + _safeAttachmentMime(mime) + (b64 ? ';base64,' : ',') + raw.slice(idx + 1);
+}
+
 async function _readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
+    reader.onload = e => resolve(_rewriteDataUrlMime(e.target.result, file && file.type));
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
 async function _makeThumbnail(file, maxW=200, maxH=200) {
-  if (!file.type.startsWith('image/')) return null;
+  if (!_RASTER_IMAGE_MIME.test(file.type || '')) return null;
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -18329,7 +18348,7 @@ async function attachFiles(entityType, entityId, existingAttachments) {
 }
 
 async function _uploadSharedAttachment(id,fileOrBlob,name=''){if(!_sbSession?.token||!fileOrBlob)return false;try{const fd=new FormData();fd.append('id',id);fd.append('owner_account_id',_teamAccessSession()?.ownerUserId||_sbUser?.id||'');fd.append('workspace_id',_currentAccountId());fd.append('file',fileOrBlob,name||fileOrBlob.name||'file');return(await _apiFetch('/api/files',{method:'POST',body:fd})).ok;}catch(_){return false;}}
-async function _attachmentDataURL(id){let data=await _IDB.get(id);if(data)return data;if(!_sbSession?.token)return null;try{const res=await _apiFetch('/api/files/'+encodeURIComponent(id));if(!res.ok)return null;data=await _readFileAsDataURL(await res.blob());await _IDB.save(id,data);return data;}catch(_){return null;}}
+async function _attachmentDataURL(id){let data=await _IDB.get(id);if(data){const header=String(data).slice(0,80);if(_ACTIVE_FILE_MIME.test(header))data=_rewriteDataUrlMime(data,'application/octet-stream');return data;}if(!_sbSession?.token)return null;try{const res=await _apiFetch('/api/files/'+encodeURIComponent(id));if(!res.ok)return null;const blob=await res.blob();data=await _readFileAsDataURL(new Blob([blob],{type:_safeAttachmentMime(blob.type)}));await _IDB.save(id,data);return data;}catch(_){return null;}}
 async function _ensureEvalFormAttachmentsShared(studentId,formId){const forms=loadEvalForms(studentId),form=forms.find(x=>+x.id===+formId);if(!form?.attachments?.length)return;let changed=false;for(const a of form.attachments){if(a.server_stored)continue;const data=await _IDB.get(a.id);if(!data)continue;const blob=await(await fetch(data)).blob();if(await _uploadSharedAttachment(a.id,blob,a.name)){a.server_stored=true;changed=true;}}if(changed)saveEvalForms(studentId,forms);}
 
 // ── Render attachments grid ───────────────────────────────────────────────────
@@ -18423,7 +18442,7 @@ async function _openAttachment(id, name, type) {
     const dataURL = await _attachmentDataURL(id);
     if (!dataURL) { showToast('فایل یافت نشد', 'error'); return; }
 
-    if (type && type.startsWith('image/')) {
+    if (_RASTER_IMAGE_MIME.test(type || '') && String(dataURL).startsWith('data:image/') && !_ACTIVE_FILE_MIME.test(String(dataURL).slice(0, 64))) {
       // نمایش تصویر در modal
       document.getElementById('modals').innerHTML = `
         <div class="modal-overlay open" onclick="this.innerHTML===event.target.outerHTML&&(document.getElementById('modals').innerHTML='')">
@@ -18441,7 +18460,6 @@ async function _openAttachment(id, name, type) {
           </div>
         </div>`;
     } else {
-      // دانلود فایل
       await _downloadAttachment(id, name, dataURL);
     }
   } catch(e) {
@@ -18449,13 +18467,34 @@ async function _openAttachment(id, name, type) {
   }
 }
 
+function _dataUrlToOctetBlob(dataURL) {
+  const raw = String(dataURL || '');
+  const idx = raw.indexOf(',');
+  if (idx < 0) return new Blob([new Uint8Array(0)], { type: 'application/octet-stream' });
+  const payload = raw.slice(idx + 1);
+  if (/;base64/i.test(raw.slice(0, idx))) {
+    const bin = atob(payload);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: 'application/octet-stream' });
+  }
+  try {
+    return new Blob([decodeURIComponent(payload)], { type: 'application/octet-stream' });
+  } catch (_) {
+    return new Blob([payload], { type: 'application/octet-stream' });
+  }
+}
+
 async function _downloadAttachment(id, name, dataURL) {
   if (!dataURL) dataURL = await _attachmentDataURL(id);
   if (!dataURL) { showToast('فایل یافت نشد', 'error'); return; }
+  const url = URL.createObjectURL(_dataUrlToOctetBlob(dataURL));
   const a = document.createElement('a');
-  a.href = dataURL;
-  a.download = name;
+  a.href = url;
+  a.download = String(name || 'file').replace(/\.(?:html?|svg|xml|js|mjs|xhtml)$/i, '$&.download');
+  a.rel = 'noopener';
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
   showToast('دانلود شروع شد ✓', 'success');
 }
 

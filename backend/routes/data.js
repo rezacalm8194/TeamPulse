@@ -29,10 +29,12 @@ const {
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceMeta,
-  loadWorkspaceDocument,
+  loadWorkspaceMetaAsync,
+  loadWorkspaceDocumentAsync,
   loadDocumentParts,
-  serializeWorkspaceDocument,
-  writeWorkspaceDocument,
+  loadDocumentPartsAsync,
+  serializeWorkspaceDocumentAsync,
+  writeWorkspaceDocumentAsync,
   deleteWorkspaceDocument,
 } = require('../utils/documentStore');
 
@@ -557,7 +559,48 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   };
 }
 
-function persistWorkspaceDocument(req, res, {
+const persistLocks = new Map();
+
+function withPersistLock(storageKey, fn) {
+  const previous = persistLocks.get(storageKey) || Promise.resolve();
+  const next = previous.catch(() => {}).then(fn);
+  persistLocks.set(storageKey, next);
+  return next.finally(() => {
+    if (persistLocks.get(storageKey) === next) persistLocks.delete(storageKey);
+  });
+}
+
+async function persistWorkspaceDocument(req, res, {
+  storageKey,
+  workspace,
+  grant,
+  data,
+  force,
+  baseEtag,
+  existing,
+  previousData,
+  previousSerialized = null,
+  previousLayout = 'blob',
+  replaceAll = true,
+  patched = false,
+}) {
+  return withPersistLock(storageKey, () => persistWorkspaceDocumentLocked(req, res, {
+    storageKey,
+    workspace,
+    grant,
+    data,
+    force,
+    baseEtag,
+    existing,
+    previousData,
+    previousSerialized,
+    previousLayout,
+    replaceAll,
+    patched,
+  }));
+}
+
+async function persistWorkspaceDocumentLocked(req, res, {
   storageKey,
   workspace,
   grant,
@@ -586,7 +629,7 @@ function persistWorkspaceDocument(req, res, {
     // force فقط جایگزینی عمدیِ تقریباً خالی را اجازه می‌دهد، نه دور زدن etag.
     if (!grant && (!baseEtag || baseEtag !== currentEtag)) {
       const conflictDoc = previousLayout === 'parts'
-        ? loadWorkspaceDocument(db, storageKey)?.data
+        ? (await loadWorkspaceDocumentAsync(db, storageKey))?.data
         : previousData;
       return res.status(409).json({
         error: 'sync_conflict',
@@ -633,36 +676,34 @@ function persistWorkspaceDocument(req, res, {
     data._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(data));
     data._workspaceId = workspace.workspaceId;
     todoChanges = diffTodos(previousData?.todos, data?.todos);
-    const run = db.transaction(() => {
-      if (isVersionSnapshotDue(db, storageKey)) {
-        const previousBlob = previousSerialized || serializeWorkspaceDocument(db, storageKey);
-        persistVersionSnapshot(db, storageKey, previousBlob);
-      }
-      savedEtag = writeWorkspaceDocument(db, storageKey, data, { replaceAll }).etag;
+    if (isVersionSnapshotDue(db, storageKey)) {
+      const previousBlob = previousSerialized || await serializeWorkspaceDocumentAsync(db, storageKey);
+      persistVersionSnapshot(db, storageKey, previousBlob);
+    }
+    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, { replaceAll })).etag;
+    db.transaction(() => {
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
         requestId: req.requestId,
         actorUserId: req.user?.id,
       }, todoChanges);
-    });
-    run();
+    })();
   } else {
     data._todoIdHighWater = documentTodoHighWater(data);
     data._workspaceId = workspace.workspaceId;
     todoChanges = diffTodos([], data?.todos);
-    const run = db.transaction(() => {
-      savedEtag = writeWorkspaceDocument(db, storageKey, data, { replaceAll: true }).etag;
+    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, { replaceAll: true })).etag;
+    db.transaction(() => {
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
         requestId: req.requestId,
         actorUserId: req.user?.id,
       }, todoChanges);
-    });
-    run();
+    })();
   }
   const saved = db.prepare("SELECT updated_at FROM user_data WHERE account_id=?").get(storageKey);
-  // The save and pending outbox rows committed atomically. File delivery is
-  // best-effort after commit; failures stay pending for startup/next-save retry.
+  // Document JSON/SQLite I/O runs on a worker connection; high-water and
+  // audit rows commit together afterwards. File delivery is best-effort.
   void flushPendingTodoAudits(db, logger);
   return res.json({
     success: true,
@@ -673,7 +714,7 @@ function persistWorkspaceDocument(req, res, {
   });
 }
 
-function handleSaveData(req, res) {
+async function handleSaveData(req, res) {
   try {
     const targetId = req.params.accountId;
     const workspace = resolveWorkspace(req, res, targetId);
@@ -687,7 +728,7 @@ function handleSaveData(req, res) {
     // Workspace identity is server-owned routing metadata. Never trust a client
     // to provide it and never store an unlabelled secondary document.
     data._workspaceId = workspace.workspaceId;
-    const loaded = loadWorkspaceDocument(db, storageKey);
+    const loaded = await loadWorkspaceDocumentAsync(db, storageKey);
     return persistWorkspaceDocument(req, res, {
       storageKey,
       workspace,
@@ -704,7 +745,7 @@ function handleSaveData(req, res) {
   } catch(e) { res.status(500).json({ error: e.message }); }
 }
 
-function handleDocumentDelta(req, res) {
+async function handleDocumentDelta(req, res) {
   try {
     const targetId = req.params.accountId;
     const workspace = resolveWorkspace(req, res, targetId);
@@ -716,13 +757,13 @@ function handleDocumentDelta(req, res) {
     const hasCollections = collections && typeof collections === 'object' && Object.keys(collections).length;
     const hasScalars = scalars && typeof scalars === 'object' && Object.keys(scalars).length;
     if (!hasCollections && !hasScalars) return res.status(400).json({ error: 'empty_patch' });
-    const meta = loadWorkspaceMeta(db, storageKey);
+    const meta = await loadWorkspaceMetaAsync(db, storageKey);
     if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const patch = { collections: hasCollections ? collections : {}, scalars: hasScalars ? scalars : {} };
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
-      previousData = loadDocumentParts(db, storageKey, keysNeededForPatch(patch, grant)).data;
+      previousData = (await loadDocumentPartsAsync(db, storageKey, keysNeededForPatch(patch, grant))).data;
     } else {
       try { previousData = JSON.parse(meta.serialized || 'null'); }
       catch { return res.status(500).json({ error: 'invalid_server_data' }); }
@@ -765,7 +806,7 @@ function handleDocumentDelta(req, res) {
 router.use(express.json({ type: 'text/plain', limit: '10mb' }));
 router.put('/:accountId', auth, handleSaveData);
 router.post('/:accountId/delta', auth, handleDocumentDelta);
-router.post('/:accountId/todos/delta', auth, (req, res) => {
+router.post('/:accountId/todos/delta', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
     const workspace = resolveWorkspace(req, res, targetId);
@@ -781,12 +822,12 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     if (!incomingTodo || typeof incomingTodo !== 'object' || incomingTodo.id == null) {
       return res.status(400).json({ error: 'invalid_todo' });
     }
-    const meta = loadWorkspaceMeta(db, storageKey);
+    const meta = await loadWorkspaceMetaAsync(db, storageKey);
     if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
-      previousData = loadDocumentParts(db, storageKey, grant ? ['todos', 'staff'] : ['todos']).data;
+      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['todos', 'staff'] : ['todos'])).data;
     } else {
       try { previousData = JSON.parse(meta.serialized); }
       catch { return res.status(500).json({ error: 'invalid_server_data' }); }
@@ -846,18 +887,19 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     nextData._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(nextData));
     const todoChanges = diffTodos(previousTodos, nextData.todos);
     let savedEtag = null;
-    const run = db.transaction(() => {
+    await withPersistLock(storageKey, async () => {
       if (isVersionSnapshotDue(db, storageKey)) {
-        saveVersionSnapshot(storageKey, meta.serialized || serializeWorkspaceDocument(db, storageKey));
+        saveVersionSnapshot(storageKey, meta.serialized || await serializeWorkspaceDocumentAsync(db, storageKey));
       }
-      savedEtag = writeWorkspaceDocument(db, storageKey, nextData, { replaceAll: !useParts }).etag;
-      writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
-      enqueueTodoAuditEvents(db, storageKey, {
-        requestId: req.requestId,
-        actorUserId: req.user?.id,
-      }, todoChanges);
+      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: !useParts })).etag;
+      db.transaction(() => {
+        writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
+        enqueueTodoAuditEvents(db, storageKey, {
+          requestId: req.requestId,
+          actorUserId: req.user?.id,
+        }, todoChanges);
+      })();
     });
-    run();
     const saved = db.prepare("SELECT updated_at FROM user_data WHERE account_id=?").get(storageKey);
     void flushPendingTodoAudits(db, logger);
     res.json({
@@ -870,7 +912,7 @@ router.post('/:accountId/todos/delta', auth, (req, res) => {
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/:accountId/chunks', auth, (req, res) => {
+router.post('/:accountId/chunks', auth, async (req, res) => {
   cleanExpiredChunkUploads();
   const accountId = String(req.params.accountId || '');
   const uploadId = String(req.body?.upload_id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
@@ -1012,7 +1054,7 @@ router.get('/:accountId/versions', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
+router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
     // هم‌تیمی می‌تواند داده مجاز را ویرایش کند، اما بازگردانی کل حساب فقط برای
@@ -1036,23 +1078,22 @@ router.post('/:accountId/versions/:versionId/restore', auth, (req, res) => {
     restored._lastSaved = Date.now();
     restored._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(restored));
     let savedEtag = null;
-    const run = db.transaction(() => {
-      saveVersionSnapshot(storageKey, serializeWorkspaceDocument(db, storageKey), { force:true });
-      savedEtag = writeWorkspaceDocument(db, storageKey, restored, { replaceAll: true }).etag;
+    await withPersistLock(storageKey, async () => {
+      saveVersionSnapshot(storageKey, await serializeWorkspaceDocumentAsync(db, storageKey), { force:true });
+      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, { replaceAll: true })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
-    run();
     res.json({ success: true, data: restored, etag: savedEtag });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:accountId/status', auth, (req, res) => {
+router.get('/:accountId/status', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const meta = loadWorkspaceMeta(db, workspace.storageKey);
+    const meta = await loadWorkspaceMetaAsync(db, workspace.storageKey);
     res.json({
       etag: meta?.etag || null,
       updated_at: meta?.updated_at || null,
@@ -1061,13 +1102,13 @@ router.get('/:accountId/status', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:accountId', auth, (req, res) => {
+router.get('/:accountId', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const loaded = loadWorkspaceDocument(db, workspace.storageKey);
+    const loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);
     if (!loaded) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     res.json({
