@@ -17,6 +17,12 @@ const {
   findTodoIdCollisions,
 } = require('../utils/todoAuditStore');
 const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
+const {
+  MAX_VERSIONS_PER_WORKSPACE,
+  ensureVersionSnapshotSchema,
+  saveVersionSnapshot: persistVersionSnapshot,
+  listVersionSummaries,
+} = require('../utils/versionSnapshots');
 
 function dataEtag(serialized) {
   return createHash('sha256').update(String(serialized || '')).digest('hex');
@@ -77,43 +83,10 @@ function assembleChunkUpload(upload) {
 
 setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS user_data_versions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id TEXT NOT NULL,
-    data TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-  )
-`).run();
-db.prepare("CREATE INDEX IF NOT EXISTS idx_user_data_versions_account ON user_data_versions(account_id, created_at)").run();
-
-// Ordinary clients sync every few seconds. Saving a full backup on every sync
-// used to consume the whole retention window in a very short time. Keep at
-// most one automatic snapshot per hour, ignore identical snapshots, and retain
-// three days of hourly recovery points. Explicit restore operations can still
-// force a snapshot of the current state immediately.
-const VERSION_MIN_INTERVAL_MS = 60 * 60 * 1000;
-const MAX_VERSIONS_PER_WORKSPACE = 72;
+ensureVersionSnapshotSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
-  const latest = db.prepare(`
-    SELECT id,data,created_at FROM user_data_versions
-    WHERE account_id=? ORDER BY id DESC LIMIT 1
-  `).get(accountId);
-  if (latest?.data === serializedData) return false;
-  if (!force && latest?.created_at) {
-    const latestAt = Date.parse(String(latest.created_at).replace(' ', 'T') + 'Z');
-    if (Number.isFinite(latestAt) && Date.now() - latestAt < VERSION_MIN_INTERVAL_MS) return false;
-  }
-  db.prepare("INSERT INTO user_data_versions (account_id,data) VALUES (?,?)").run(accountId, serializedData);
-  db.prepare(`
-    DELETE FROM user_data_versions
-    WHERE account_id=? AND id NOT IN (
-      SELECT id FROM user_data_versions
-      WHERE account_id=? ORDER BY id DESC LIMIT ?
-    )
-  `).run(accountId, accountId, MAX_VERSIONS_PER_WORKSPACE);
-  return true;
+  return persistVersionSnapshot(db, accountId, serializedData, { force });
 }
 db.prepare(`
   CREATE TABLE IF NOT EXISTS account_workspaces (
@@ -956,6 +929,7 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
     if (!result.changes) return false;
     db.prepare('DELETE FROM team_access_grants WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
     try { db.prepare("DELETE FROM push_subscriptions WHERE account_id=? AND COALESCE(workspace_id,'default')=?").run(targetId, workspaceId); } catch {}
+    db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data WHERE account_id=?').run(storageKey);
     return true;
@@ -974,26 +948,7 @@ router.get('/:accountId/versions', auth, (req, res) => {
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const storageKey = workspace.storageKey;
     const limit = Math.min(MAX_VERSIONS_PER_WORKSPACE, Math.max(1, Number(req.query.limit || MAX_VERSIONS_PER_WORKSPACE)));
-    const rows = db.prepare(`
-      SELECT id,data,created_at FROM user_data_versions
-      WHERE account_id=? ORDER BY id DESC LIMIT ?
-    `).all(storageKey, limit);
-    const versions = rows.map(row => {
-      let data = {};
-      try { data = JSON.parse(row.data || '{}'); } catch {}
-      return {
-        id: row.id,
-        created_at: row.created_at ? String(row.created_at).replace(' ', 'T') + 'Z' : null,
-        size: Buffer.byteLength(row.data || '', 'utf8'),
-        summary: {
-          todos: Array.isArray(data.todos) ? data.todos.length : 0,
-          students: Array.isArray(data.students) ? data.students.length : 0,
-          staff: Array.isArray(data.staff) ? data.staff.length : 0,
-          instructions: Array.isArray(data.instructions) ? data.instructions.length : 0,
-        }
-      };
-    });
-    res.json({ versions });
+    res.json({ versions: listVersionSummaries(db, storageKey, limit) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

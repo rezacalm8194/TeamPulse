@@ -5,6 +5,8 @@ const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
 const { logger } = require('../utils/logger');
+const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
+ensureVersionSnapshotSchema(db);
 webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
 function adminOnly(req, res, next) {
@@ -157,7 +159,7 @@ function saveAdminImportedData(accountId, data) {
   const serialized = JSON.stringify(data);
   const existing = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(accountId);
   if (existing) {
-    db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)').run(accountId, existing.data);
+    saveVersionSnapshot(db, accountId, existing.data, { force: true });
     db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, accountId);
   } else {
     db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(accountId, serialized);
@@ -487,6 +489,7 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
       db.prepare("DELETE FROM user_wallets WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM sync_events WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM push_subscriptions WHERE account_id=?").run(accountId);
+      db.prepare("DELETE FROM user_data_version_summaries WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
       db.prepare("DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
       db.prepare("DELETE FROM user_data WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
       db.prepare("DELETE FROM account_workspaces WHERE owner_account_id=?").run(accountId);
