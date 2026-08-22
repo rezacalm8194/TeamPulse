@@ -43,19 +43,38 @@ try {
   // normalized lookup in the meantime.
   console.error('[accounts] case-insensitive email index pending:', error.message);
 }
-const allowedCorsOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
-const corsOptions = allowedCorsOrigins.length
-  ? {
-      origin(origin, callback) {
-        if (!origin || allowedCorsOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error('cors_origin_not_allowed'));
-      },
-      credentials: false,
-    }
-  : { origin: '*', credentials: false };
+function parseCorsOrigins(raw) {
+  return String(raw || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(origin => origin && origin !== '*');
+}
+function defaultCorsOrigins() {
+  if (process.env.NODE_ENV === 'production') {
+    return ['https://teampulse.ir', 'https://www.teampulse.ir'];
+  }
+  return [
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
+}
+const configuredCorsOrigins = parseCorsOrigins(process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGINS);
+const allowedCorsOrigins = configuredCorsOrigins.length ? configuredCorsOrigins : defaultCorsOrigins();
+if (!configuredCorsOrigins.length) {
+  logger.warn('cors_origins_defaulted', {
+    origins: allowedCorsOrigins,
+    nodeEnv: process.env.NODE_ENV || 'development',
+  });
+}
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedCorsOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('cors_origin_not_allowed'));
+  },
+  credentials: false,
+};
 const cspValue = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com https://www.gstatic.com",
@@ -108,6 +127,12 @@ function sanitizeServerErrors(req, res, next) {
 }
 app.use(securityHeaders);
 app.use(cors(corsOptions));
+app.use((err, req, res, next) => {
+  if (err && err.message === 'cors_origin_not_allowed') {
+    return res.status(403).json({ error: 'cors_origin_not_allowed' });
+  }
+  return next(err);
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sanitizeServerErrors);
