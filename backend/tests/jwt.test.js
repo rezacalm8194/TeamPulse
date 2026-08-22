@@ -35,3 +35,16 @@ test('legacy long-lived tokens are rejected even if signature is valid', () => {
   assert.ok(decoded.exp - decoded.iat > MAX_TTL_SECONDS);
   assert.throws(() => verify(token), { name: 'JsonWebTokenError' });
 });
+
+test('missing JWT_SECRET fails when the module loads', () => {
+  const previous = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = '';
+  delete require.cache[jwtPath];
+  try {
+    assert.throws(() => require('../utils/jwt'), /JWT_SECRET is required/);
+  } finally {
+    process.env.JWT_SECRET = previous;
+    delete require.cache[jwtPath];
+    require('../utils/jwt');
+  }
+});

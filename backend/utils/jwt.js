@@ -1,7 +1,17 @@
+const path = require('path');
 const { randomUUID } = require('crypto');
 const jwt = require('jsonwebtoken');
 
-const SECRET = process.env.JWT_SECRET;
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+function requireJwtSecret(value = process.env.JWT_SECRET) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('JWT_SECRET is required');
+  }
+  return value;
+}
+
+const SECRET = requireJwtSecret();
 const DEFAULT_TTL_SECONDS = 8 * 60 * 60;
 const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 const UNIT_SECONDS = { ms: 0.001, s: 1, m: 60, h: 3600, d: 86400 };
@@ -24,6 +34,7 @@ function expiresInSeconds() {
 
 module.exports = {
   MAX_TTL_SECONDS,
+  requireJwtSecret,
   sign: (payload = {}) => {
     const id = payload.id;
     if (!id) throw new Error('jwt payload requires id');
