@@ -2,6 +2,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
@@ -58,6 +59,19 @@ const upload = multer({
 
 function isDevelopment() {
   return process.env.NODE_ENV !== 'production';
+}
+
+function persistSpeechDebugAudio() {
+  return isDevelopment();
+}
+
+async function unlinkQuiet(filePath) {
+  if (!filePath) return;
+  try {
+    await fsp.unlink(filePath);
+  } catch {
+    /* already gone or never created */
+  }
 }
 
 function responseDebug(debug) {
@@ -500,6 +514,9 @@ function handleSpeechUpload(req, res, next) {
 }
 
 router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req, res) => {
+  let persistDebug = false;
+  let rawPath;
+  let convertedPath;
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'audio_required', message: 'audio file required' });
@@ -507,13 +524,16 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
 
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
     const provider = speechProvider();
-    await fsp.mkdir(DEBUG_AUDIO_DIR, { recursive: true });
+    persistDebug = persistSpeechDebugAudio();
+    const workDir = persistDebug ? DEBUG_AUDIO_DIR : os.tmpdir();
+    await fsp.mkdir(workDir, { recursive: true });
     const id = randomUUID();
     const rawExt = audioExtension(req.file.originalname, req.file.mimetype);
-    const rawFilename = `debug-${id}${rawExt}`;
-    const rawPath = path.join(DEBUG_AUDIO_DIR, rawFilename);
-    const convertedFilename = `debug-${id}.wav`;
-    const convertedPath = path.join(DEBUG_AUDIO_DIR, convertedFilename);
+    const rawFilename = `${persistDebug ? 'debug' : 'speech'}-${id}${rawExt}`;
+    rawPath = path.join(workDir, rawFilename);
+    const convertedFilename = `${persistDebug ? 'debug' : 'speech'}-${id}.wav`;
+    convertedPath = path.join(workDir, convertedFilename);
+
     await fsp.writeFile(rawPath, req.file.buffer);
 
     const debug = {
@@ -524,23 +544,27 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        path: rawPath,
+        path: persistDebug ? rawPath : undefined,
       },
     };
-    lastDebugAudio = {
-      raw: {
-        path: rawPath,
-        filename: req.file.originalname || rawFilename,
-        mimetype: req.file.mimetype || 'application/octet-stream',
-      },
-      converted: null,
-      createdAt: new Date().toISOString(),
-    };
+    if (persistDebug) {
+      lastDebugAudio = {
+        raw: {
+          path: rawPath,
+          filename: req.file.originalname || rawFilename,
+          mimetype: req.file.mimetype || 'application/octet-stream',
+        },
+        converted: null,
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      lastDebugAudio = null;
+    }
     console.log('[speech] received audio', {
       originalname: debug.backend.originalname,
       mimetype: debug.backend.mimetype,
       size: debug.backend.size,
-      path: debug.backend.path,
+      ...(persistDebug ? { path: debug.backend.path } : {}),
     });
 
     let probe;
@@ -573,7 +597,7 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
         filename: convertedFilename,
         mimetype: 'audio/wav',
         size: convertedStats.size,
-        path: convertedPath,
+        path: persistDebug ? convertedPath : undefined,
       };
       if (!convertedStats.size) {
         return res.status(422).json({
@@ -582,12 +606,14 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
           debug: responseDebug(debug),
         });
       }
-      lastDebugAudio.converted = {
-        path: convertedPath,
-        filename: convertedFilename,
-        mimetype: 'audio/wav',
-      };
-      console.log('[speech] converted audio', debug.converted);
+      if (lastDebugAudio) {
+        lastDebugAudio.converted = {
+          path: convertedPath,
+          filename: convertedFilename,
+          mimetype: 'audio/wav',
+        };
+      }
+      console.log('[speech] converted audio', persistDebug ? debug.converted : { size: convertedStats.size });
     } catch (e) {
       console.error('[speech] ffmpeg conversion failed', e);
       const isToolMissing = e.code === 'ENOENT';
@@ -720,6 +746,10 @@ router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req,
       return res.status(400).json({ error: 'audio_required', message: 'audio file required' });
     }
     res.status(500).json({ error: 'speech_error', message: msg });
+  } finally {
+    if (!persistDebug) {
+      await Promise.all([unlinkQuiet(rawPath), unlinkQuiet(convertedPath)]);
+    }
   }
 });
 
