@@ -7,7 +7,19 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3001;
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*', credentials: true }));
+const { resolveCorsOrigins, isCorsOriginAllowed } = require('../utils/corsOrigins');
+const { origins: allowedCorsOrigins } = resolveCorsOrigins({
+  allowedOrigins: process.env.ALLOWED_ORIGINS,
+  corsOrigins: process.env.CORS_ORIGINS,
+  nodeEnv: process.env.NODE_ENV,
+});
+app.use(cors({
+  origin(origin, callback) {
+    if (isCorsOriginAllowed(origin, allowedCorsOrigins)) return callback(null, true);
+    return callback(new Error('cors_origin_not_allowed'));
+  },
+  credentials: false,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }));

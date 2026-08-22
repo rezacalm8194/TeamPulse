@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const { randomUUID } = require('crypto');
 const db = require('./config/database');
 const { logger, classifySyncOutcome } = require('./utils/logger');
+const { resolveCorsOrigins, isCorsOriginAllowed } = require('./utils/corsOrigins');
 const { initTodoAuditStore, seedHistoricalRecurringSnapshots, migrateTodoAuditOccurrenceIdentityV2, flushPendingTodoAudits } = require('./utils/todoAuditStore');
 const { backfillVersionSummaries } = require('./utils/versionSnapshots');
 initTodoAuditStore(db);
@@ -43,26 +44,12 @@ try {
   // normalized lookup in the meantime.
   console.error('[accounts] case-insensitive email index pending:', error.message);
 }
-function parseCorsOrigins(raw) {
-  return String(raw || '')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(origin => origin && origin !== '*');
-}
-function defaultCorsOrigins() {
-  if (process.env.NODE_ENV === 'production') {
-    return ['https://teampulse.ir', 'https://www.teampulse.ir'];
-  }
-  return [
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-  ];
-}
-const configuredCorsOrigins = parseCorsOrigins(process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGINS);
-const allowedCorsOrigins = configuredCorsOrigins.length ? configuredCorsOrigins : defaultCorsOrigins();
-if (!configuredCorsOrigins.length) {
+const { origins: allowedCorsOrigins, defaulted: corsOriginsDefaulted } = resolveCorsOrigins({
+  allowedOrigins: process.env.ALLOWED_ORIGINS,
+  corsOrigins: process.env.CORS_ORIGINS,
+  nodeEnv: process.env.NODE_ENV,
+});
+if (corsOriginsDefaulted) {
   logger.warn('cors_origins_defaulted', {
     origins: allowedCorsOrigins,
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -70,7 +57,7 @@ if (!configuredCorsOrigins.length) {
 }
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedCorsOrigins.includes(origin)) return callback(null, true);
+    if (isCorsOriginAllowed(origin, allowedCorsOrigins)) return callback(null, true);
     return callback(new Error('cors_origin_not_allowed'));
   },
   credentials: false,
