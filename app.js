@@ -18568,7 +18568,6 @@ function _pickSessionFilesRefresh() {
 // ════════════════════════════════════════════════════════════════════════════
 // ── TeamPulse Server API (سرور خودت) ─────────────────────────────────────
 const _API_URL = window.location.origin; // خودکار: همون سرور
-const _ADMIN_EMAIL = 'rezasafarinet1@gmail.com';
 
 let _sbSession = null;
 let _sbUser = null;
@@ -18750,8 +18749,7 @@ const _auth = {
   },
 
   isAdmin() {
-    return _sbUser?.email?.toLowerCase() === _ADMIN_EMAIL.toLowerCase() ||
-           _sbUser?.role === 'admin';
+    return _sbUser?.role === 'admin';
   },
 };
 
@@ -27233,6 +27231,10 @@ async function renderAdminPanel() {
   setTimeout(() => document.getElementById('admin-user-search')?.focus(), 100);
 }
 
+function _adminIsProtectedUser(u) {
+  return Boolean(u && u.is_protected);
+}
+
 function _adminRenderUserList(users) {
   if (!users.length) return '<p style="font-size:12px;color:var(--text3);padding:12px">کاربری پیدا نشد</p>';
   return users.map(u => {
@@ -27269,7 +27271,7 @@ function _adminRenderUserList(users) {
       '</div>',
       '<div style="display:flex;align-items:center;gap:6px">',
         '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' + bgColor + ';color:' + txtColor + '">' + statusLabel + '</span>',
-        (u.email !== _ADMIN_EMAIL ? '<button type="button" class="btn btn-ghost btn-sm" style="min-height:34px;padding:5px 10px" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '" aria-label="ورود به حساب ' + uname + '">🔑 ورود</button>' : ''),
+        (!_adminIsProtectedUser(u) ? '<button type="button" class="btn btn-ghost btn-sm" style="min-height:34px;padding:5px 10px" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '" aria-label="ورود به حساب ' + uname + '">🔑 ورود</button>' : ''),
         '<div class="row-menu">' +
           '<button class="row-menu-btn" aria-label="عملیات کاربر" onclick="toggleRowMenu(event,\'' + menuId + '\')">⋮</button>' +
           '<div class="row-menu-panel" id="' + menuId + '" style="min-width:210px">' +
@@ -27285,9 +27287,9 @@ function _adminRenderUserList(users) {
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminImportUserBackup(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">📂 وارد کردن پشتیبان</div>' +
             '<div class="row-menu-divider"></div>' +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminResetPassword(\'' + uid + '\')">🔐 بازنشانی رمز</div>' +
-            (u.email !== _ADMIN_EMAIL ? '<div class="row-menu-item" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🔑 ورود به‌جای کاربر</div>' : '') +
+            (!_adminIsProtectedUser(u) ? '<div class="row-menu-item" onclick="event.stopPropagation();_adminImpersonate(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🔑 ورود به‌جای کاربر</div>' : '') +
             '<div class="row-menu-item" onclick="event.stopPropagation();_adminToggleStatus(\'' + uid + '\',' + (isActive?0:1) + ')">' + (isActive?'🚫 مسدودکردن':'✅ فعال‌سازی') + '</div>' +
-            (u.email !== _ADMIN_EMAIL ? '<div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="event.stopPropagation();_adminDeleteUser(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🗑 حذف</div>' : '') +
+            (!_adminIsProtectedUser(u) ? '<div class="row-menu-divider"></div><div class="row-menu-item danger" onclick="event.stopPropagation();_adminDeleteUser(\'' + uid + '\',this.dataset.uname)" data-uname="' + uname + '">🗑 حذف</div>' : '') +
           '</div>' +
         '</div>',
       '</div></div>'
@@ -27587,7 +27589,7 @@ function _adminNotifyAll(){
 function _adminBulkActionsHtml(visibleUsers) {
   const users = visibleUsers || window._adminAllUsers || [];
   const count = _adminSelectedUsers.size;
-  const selectable = users.filter(u => u.email !== _ADMIN_EMAIL);
+  const selectable = users.filter(u => !_adminIsProtectedUser(u));
   const allSelected = selectable.length > 0 && selectable.every(u => _adminSelectedUsers.has(String(u.id)));
   return `<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px;padding:8px;background:${count?'rgba(124,106,247,.10)':'var(--bg3)'};border:1px solid ${count?'rgba(124,106,247,.35)':'var(--border)'};border-radius:10px">
     <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer">
@@ -27618,7 +27620,7 @@ function _adminSelectAllVisible(checked) {
   const filtered=_adminGetFilteredUsers();
   const start=((Number(window._adminUsersPage)||1)-1)*_ADMIN_USERS_PAGE_SIZE;
   filtered.slice(start,start+_ADMIN_USERS_PAGE_SIZE)
-    .filter(u => u.email !== _ADMIN_EMAIL)
+    .filter(u => !_adminIsProtectedUser(u))
     .forEach(u => checked ? _adminSelectedUsers.add(String(u.id)) : _adminSelectedUsers.delete(String(u.id)));
   _adminRefreshUserList();
 }
@@ -27684,7 +27686,7 @@ async function openAdminUserDetail(userId) {
     const toggleCls = user.is_active ? 'btn-danger' : 'btn-primary';
     const newStatus = user.is_active ? 0 : 1;
     const userName = escapeHtml(user.name||user.email||'');
-    const isMainAdmin = user.email === _ADMIN_EMAIL;
+    const isMainAdmin = _adminIsProtectedUser(user);
     const html = '<div style="display:flex;flex-direction:column;gap:12px">' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
         '<div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center">' +
@@ -27851,7 +27853,7 @@ async function _adminImpersonate(userId, userName) {
     const res = await _apiFetch('/api/admin/users/' + userId);
     if (!res.ok) { showToast('خطا','error'); return; }
     const { user } = await res.json();
-    if (user.email === _ADMIN_EMAIL) {
+    if (_adminIsProtectedUser(user)) {
       showToast('امکان ورود به حساب مدیر اصلی وجود ندارد', 'error');
       return;
     }
@@ -28735,7 +28737,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v78';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v79';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

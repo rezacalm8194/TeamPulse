@@ -5,6 +5,7 @@ const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
 const { logger } = require('../utils/logger');
+const { isProtectedAccount, withProtectedFlag } = require('../utils/protectedAdmin');
 const { ensureTokenRevocationSchema, bumpTokenVersion } = require('../utils/tokenRevocation');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
 const {
@@ -281,7 +282,13 @@ router.get('/stats', auth, adminOnly, (req, res) => {
       ORDER BY r.created_at DESC
       LIMIT 100
     `).all();
-    res.json({ userCount: users.length, users: users.map(u=>({...u,wallet:u.total_income})), dashboard, chargeReqs, settings });
+    res.json({
+      userCount: users.length,
+      users: users.map(u => withProtectedFlag(db, { ...u, wallet: u.total_income })),
+      dashboard,
+      chargeReqs,
+      settings,
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -311,8 +318,11 @@ router.put('/users/:id/role', auth, adminOnly, (req, res) => {
   try {
     const role = parseAccountRole(req.body.role);
     if (!role) return res.status(400).json({ error: 'invalid role' });
-    const previous = db.prepare('SELECT id,role FROM accounts WHERE id=?').get(req.params.id);
+    const previous = db.prepare('SELECT id,email,role FROM accounts WHERE id=?').get(req.params.id);
     if (!previous) return res.status(404).json({ error: 'not found' });
+    if (previous.role === 'admin' && role !== 'admin' && isProtectedAccount(db, previous)) {
+      return res.status(403).json({ error: 'cannot change protected admin role' });
+    }
     db.prepare("UPDATE accounts SET role=?,updated_at=datetime('now') WHERE id=?").run(role, req.params.id);
     logger.audit('role_changed', {
       requestId: req.requestId, actorUserId: req.user.id, targetUserId: req.params.id,
@@ -325,6 +335,11 @@ router.put('/users/:id/role', auth, adminOnly, (req, res) => {
 
 router.put('/users/:id/status', auth, adminOnly, (req, res) => {
   try {
+    const target = db.prepare('SELECT id,email,role FROM accounts WHERE id=?').get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'not found' });
+    if (!req.body.is_active && isProtectedAccount(db, target)) {
+      return res.status(403).json({ error: 'cannot disable protected admin' });
+    }
     db.prepare("UPDATE accounts SET is_active=?,updated_at=datetime('now') WHERE id=?").run(req.body.is_active?1:0, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -337,7 +352,7 @@ router.get('/users/:id', auth, adminOnly, (req, res) => {
     if (!user) return res.status(404).json({ error: 'not found' });
     const clients = db.prepare("SELECT * FROM clients WHERE account_id=? AND is_archived=0").all(req.params.id);
     const payments = db.prepare("SELECT * FROM payments WHERE account_id=? ORDER BY created_at DESC LIMIT 20").all(req.params.id);
-    res.json({ user, clients, payments });
+    res.json({ user: withProtectedFlag(db, user), clients, payments });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -486,10 +501,10 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();
     const targetId = req.params.id;
-    const target = db.prepare("SELECT email FROM accounts WHERE id=?").get(targetId);
+    const target = db.prepare("SELECT id,email,role FROM accounts WHERE id=?").get(targetId);
     if (!target) return res.status(404).json({ error: 'not found' });
-    if (target.email === 'rezasafarinet1@gmail.com') {
-      return res.status(403).json({ error: 'cannot delete main admin' });
+    if (isProtectedAccount(db, target)) {
+      return res.status(403).json({ error: 'cannot delete protected admin' });
     }
     if (targetId === req.user.id) {
       return res.status(403).json({ error: 'cannot delete your own account while logged in' });

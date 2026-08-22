@@ -77,10 +77,15 @@ router.post('/charge-requests/:id/reject', auth, adminOnly, (req, res) => res.js
 router.delete('/users/:id', auth, adminOnly, (req, res) => {
   try {
     const targetId = req.params.id;
-    const target = db.prepare("SELECT email FROM accounts WHERE id=?").get(targetId);
+    const target = db.prepare("SELECT id,email,role FROM accounts WHERE id=?").get(targetId);
     if (!target) return res.status(404).json({ error: 'not found' });
-    if (target.email === 'rezasafarinet1@gmail.com') {
-      return res.status(403).json({ error: 'cannot delete main admin' });
+    const adminCount = Number(db.prepare("SELECT COUNT(*) FROM accounts WHERE role='admin'").pluck().get() || 0);
+    const protectedEmails = String(process.env.PROTECTED_ADMIN_EMAILS || '')
+      .split(/[,\s]+/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+    const isProtected = protectedEmails.includes(String(target.email || '').trim().toLowerCase())
+      || (target.role === 'admin' && adminCount <= 1);
+    if (isProtected) {
+      return res.status(403).json({ error: 'cannot delete protected admin' });
     }
     db.prepare("DELETE FROM clients WHERE account_id=?").run(targetId);
     db.prepare("DELETE FROM payments WHERE account_id=?").run(targetId);
