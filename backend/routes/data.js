@@ -1,4 +1,5 @@
-const router = require('express').Router();
+const express = require('express');
+const router = express.Router();
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -758,6 +759,10 @@ function handleDocumentDelta(req, res) {
   }
 }
 
+// sendBeacon cannot set Content-Type to application/json reliably (browsers
+// coerce it to text/plain). Parse that body as JSON so the JWT can travel
+// in the POST body instead of the query string.
+router.use(express.json({ type: 'text/plain', limit: '10mb' }));
 router.put('/:accountId', auth, handleSaveData);
 router.post('/:accountId/delta', auth, handleDocumentDelta);
 router.post('/:accountId/todos/delta', auth, (req, res) => {
@@ -924,7 +929,7 @@ router.post('/:accountId/chunks', auth, (req, res) => {
 // must also be reachable via POST for the "closing the tab" fallback save
 // to actually reach the server (previously only PUT was registered here,
 // so every beacon save silently failed with a 404 that the client could
-// never see).
+// never see). Auth is the JSON body `token` field, never a query param.
 router.post('/:accountId', auth, handleSaveData);
 
 router.get('/:accountId/workspaces', auth, (req, res) => {

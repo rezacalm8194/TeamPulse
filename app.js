@@ -20151,17 +20151,24 @@ function _bindServerSyncLifecycleHandlers() {
       const path = useDelta
         ? '/api/data/' + accId + '/delta'
         : '/api/data/' + accId;
-      const url = (window.location.origin || '') + path +
-        '?token=' + encodeURIComponent(_sbSession.token) + _workspaceQuery('&');
+      const url = (window.location.origin || '') + path + _workspaceQuery('?');
       const data = JSON.stringify(payloadObj);
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + _sbSession.token,
+      };
+      const keepalivePost = () => {
+        fetch(url, { method: 'POST', headers: authHeaders, body: data, keepalive: true, referrerPolicy: 'no-referrer' }).catch(() => {});
+      };
       if (navigator.sendBeacon) {
-        const blob = new Blob([data], { type: 'application/json' });
+        // sendBeacon cannot set Authorization. Carry the token in the JSON
+        // body instead of the URL so it never appears in access logs or Referer.
+        const beaconBody = JSON.stringify(Object.assign({ token: _sbSession.token }, payloadObj));
+        const blob = new Blob([beaconBody], { type: 'text/plain;charset=UTF-8' });
         const sent = navigator.sendBeacon(url, blob);
-        if (!sent) {
-          fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
-        }
+        if (!sent) keepalivePost();
       } else {
-        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: true }).catch(() => {});
+        keepalivePost();
       }
     }
   });
