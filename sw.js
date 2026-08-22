@@ -1,6 +1,8 @@
-const CACHE = 'team-pulse-static-v76';
+const CACHE = 'team-pulse-static-v77';
 const CORE_ASSETS = [
   '/app',
+  '/app.css?v=tp77',
+  '/app.js?v=tp77',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
@@ -43,14 +45,20 @@ function cacheableResponse(response) {
   return response && response.ok && response.type === 'basic';
 }
 
-async function networkFirst(request) {
+async function cacheFirst(request) {
   const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
   try {
     const response = await fetch(request);
     if (cacheableResponse(response)) cache.put(request, response.clone());
     return response;
   } catch {
-    return (await cache.match(request)) || (await cache.match('/app'));
+    return new Response('', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   }
 }
 
@@ -74,13 +82,22 @@ async function staleWhileRevalidate(request) {
   return cached || fresh;
 }
 
+function isVersionedAppBundle(url) {
+  return url.pathname === '/app.js' || url.pathname === '/app.css';
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (shouldSkip(request)) return;
   if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
-    // Render the cached application immediately and refresh it in the
-    // background. Network-first made every navigation wait for a slow host.
+    // Small HTML shell: paint cached markup immediately and refresh in the
+    // background. JS/CSS are versioned and served cache-first separately.
     event.respondWith(staleWhileRevalidate(request));
+    return;
+  }
+  const url = new URL(request.url);
+  if (isVersionedAppBundle(url)) {
+    event.respondWith(cacheFirst(request));
     return;
   }
   event.respondWith(staleWhileRevalidate(request));

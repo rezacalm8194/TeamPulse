@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.html'), 'utf8');
+const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.js'), 'utf8');
 
 test('ordinary workspace syncs send collection deltas instead of the full account document', () => {
   assert.match(appSource, /function _buildServerSyncPatch\(/);
