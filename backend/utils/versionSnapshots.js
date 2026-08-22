@@ -84,18 +84,21 @@ function insertVersionSummary(db, versionId, accountId, createdAt, serializedDat
 }
 
 function backfillVersionSummaries(db) {
+  // .all() finishes the SELECT first. .iterate() keeps the connection busy,
+  // so INSERT inside that loop throws in better-sqlite3.
   const missing = db.prepare(`
     SELECT v.id, v.account_id, v.created_at, v.data
     FROM user_data_versions v
     LEFT JOIN user_data_version_summaries s ON s.version_id = v.id
     WHERE s.version_id IS NULL
-  `);
-  const fill = db.transaction(() => {
-    for (const row of missing.iterate()) {
+  `).all();
+  if (!missing.length) return;
+  const fill = db.transaction(rows => {
+    for (const row of rows) {
       insertVersionSummary(db, row.id, row.account_id, row.created_at, row.data);
     }
   });
-  fill();
+  fill(missing);
 }
 
 function saveVersionSnapshot(db, accountId, serializedData, { force = false } = {}) {

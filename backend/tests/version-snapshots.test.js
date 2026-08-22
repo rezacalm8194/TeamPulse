@@ -60,13 +60,17 @@ test('existing version rows are backfilled into the summary table once', () => {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
-  db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)')
-    .run('acc-2', payload({ todos: [{ id: 9 }] }));
+  const insertVersion = db.prepare('INSERT INTO user_data_versions (account_id,data) VALUES (?,?)');
+  insertVersion.run('acc-2', payload({ todos: [{ id: 9 }] }));
+  insertVersion.run('acc-2', payload({ todos: [{ id: 8 }, { id: 7 }] }));
+  insertVersion.run('acc-3', payload({ todos: [] }));
   ensureVersionSnapshotSchema(db);
   const listed = listVersionSummaries(db, 'acc-2', 72);
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].summary.todos, 1);
+  assert.equal(listed.length, 2);
+  assert.equal(listed[0].summary.todos, 2);
+  assert.equal(listed[1].summary.todos, 1);
   assert.equal(listed[0].summary.students, 1);
+  assert.equal(listVersionSummaries(db, 'acc-3', 72).length, 1);
 });
 
 test('identical snapshots are skipped using the stored hash, not the blob', () => {
