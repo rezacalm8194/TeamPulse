@@ -99,7 +99,8 @@ function noStoreApi(req, res, next) {
 function sanitizeServerErrors(req, res, next) {
   const originalJson = res.json.bind(res);
   res.json = body => {
-    if (process.env.NODE_ENV === 'production' && res.statusCode >= 500 && body && typeof body === 'object') {
+    const exposeErrorDetails = process.env.NODE_ENV === 'development';
+    if (!exposeErrorDetails && res.statusCode >= 500 && body && typeof body === 'object') {
       logger.error('server_error_response', {
         requestId: req.requestId,
         path: req.originalUrl,
