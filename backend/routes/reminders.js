@@ -9,6 +9,7 @@ const cron = require('node-cron');
 const webpush = require('web-push');
 const { randomUUID } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
+const { loadWorkspaceMeta, loadDocumentParts, loadWorkspaceDocument } = require('../utils/documentStore');
 
 ensureTeamAccessSchema(db);
 
@@ -90,6 +91,13 @@ function parseJsonArray(value) {
   }
 }
 
+function loadAccountCollections(accountId, keys) {
+  const meta = loadWorkspaceMeta(db, accountId);
+  if (!meta) return null;
+  if (meta.layout === 'parts') return loadDocumentParts(db, accountId, keys).data;
+  try { return JSON.parse(meta.serialized || 'null'); } catch { return null; }
+}
+
 function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
   if (!ownerAccountId || !memberEmail) return null;
   const grant = db.prepare(`
@@ -98,11 +106,14 @@ function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
     WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
   `).get(ownerAccountId, workspaceId, memberEmail);
   if (!grant) return null;
-  const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(workspaceStorageKey(ownerAccountId, workspaceId));
-  if (!row?.data) return { permissions: parseJsonArray(grant.permissions) };
+  const storageKey = workspaceStorageKey(ownerAccountId, workspaceId);
+  const meta = loadWorkspaceMeta(db, storageKey);
+  if (!meta) return { permissions: parseJsonArray(grant.permissions) };
   try {
-    const data = JSON.parse(row.data);
-    const member = (data.team_members || []).find(item =>
+    const members = meta.layout === 'parts'
+      ? (loadDocumentParts(db, storageKey, ['team_members']).collections.team_members || [])
+      : (JSON.parse(meta.serialized || 'null')?.team_members || []);
+    const member = members.find(item =>
       String(item.email || '').trim().toLowerCase() === memberEmail &&
       item.status !== 'حذف‌شده'
     );
@@ -397,7 +408,7 @@ function reminderBody(item, personName = '') {
 
 let pushCronRunning = false;
 const activeAccountsStmt = db.prepare('SELECT id FROM accounts WHERE is_active=1');
-const accountDataStmt = db.prepare('SELECT data FROM user_data WHERE account_id=?');
+const reminderCollectionKeys = ['todos', 'habits', 'students', 'staff', 'reminders', 'staff_reminders', 'key_events'];
 
 cron.schedule('* * * * *', async () => {
   // node-cron does not wait for a previous async run. Avoid piling up full
@@ -412,11 +423,8 @@ cron.schedule('* * * * *', async () => {
       // Yield between accounts so static files and API requests are not held
       // behind a long reminder scan in Node's single event loop.
       await new Promise(resolve => setImmediate(resolve));
-      const row = accountDataStmt.get(acc.id);
-      if (!row || !row.data) continue;
-
-      let userData;
-      try { userData = JSON.parse(row.data); } catch { continue; }
+      const userData = loadAccountCollections(acc.id, reminderCollectionKeys);
+      if (!userData) continue;
 
       for (const t of (userData.todos || [])) {
         const scheduledDate = todoScheduledDate(t);
@@ -628,9 +636,8 @@ router.post('/notify-todo-created', auth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    const row = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(workspaceStorageKey(accountId, workspaceId));
-    if (!row?.data) return res.status(404).json({ error: 'account_data_not_found' });
-    const userData = JSON.parse(row.data);
+    const userData = loadWorkspaceDocument(db, workspaceStorageKey(accountId, workspaceId))?.data;
+    if (!userData) return res.status(404).json({ error: 'account_data_not_found' });
     const todo = (userData.todos || []).find(item => String(item?.id) === todoId);
     if (!todo || !todoBelongsToAccount(todo, accountId)) {
       return res.status(404).json({ error: 'todo_not_found' });

@@ -6,7 +6,15 @@ const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
 const { logger } = require('../utils/logger');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
+const {
+  ensureDocumentStoreSchema,
+  loadWorkspaceDocument,
+  serializeWorkspaceDocument,
+  writeWorkspaceDocument,
+  deleteWorkspaceDocumentsForAccount,
+} = require('../utils/documentStore');
 ensureVersionSnapshotSchema(db);
+ensureDocumentStoreSchema(db);
 webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
 function adminOnly(req, res, next) {
@@ -91,14 +99,13 @@ router.get('/backup/all', auth, adminOnly, (req, res) => {
       ORDER BY created_at
     `).all();
     const appDataRows = db.prepare(`
-      SELECT account_id,data,updated_at
+      SELECT account_id,updated_at
       FROM user_data
       WHERE account_id <> '__admin_settings__'
     `).all();
     const appDataByAccount = new Map(appDataRows.map(row => {
-      let data = null;
-      try { data = JSON.parse(row.data); } catch (_) { data = row.data; }
-      return [String(row.account_id), { data, updated_at: row.updated_at }];
+      const loaded = loadWorkspaceDocument(db, row.account_id);
+      return [String(row.account_id), { data: loaded?.data ?? null, updated_at: row.updated_at }];
     }));
     const accountTables = [
       'clients', 'staff', 'payments', 'staff_payments', 'sessions', 'tasks',
@@ -156,14 +163,11 @@ function cleanImportedAppData(data) {
 }
 
 function saveAdminImportedData(accountId, data) {
-  const serialized = JSON.stringify(data);
-  const existing = db.prepare('SELECT data FROM user_data WHERE account_id=?').get(accountId);
+  const existing = loadWorkspaceDocument(db, accountId);
   if (existing) {
-    saveVersionSnapshot(db, accountId, existing.data, { force: true });
-    db.prepare("UPDATE user_data SET data=?,updated_at=datetime('now') WHERE account_id=?").run(serialized, accountId);
-  } else {
-    db.prepare("INSERT INTO user_data (account_id,data,updated_at) VALUES (?,?,datetime('now'))").run(accountId, serialized);
+    saveVersionSnapshot(db, accountId, serializeWorkspaceDocument(db, accountId), { force: true });
   }
+  writeWorkspaceDocument(db, accountId, data, { replaceAll: true });
 }
 
 // بازیابی یک کاربر فقط وقتی پذیرفته می‌شود که شناسه و ایمیل داخل فایل
@@ -491,7 +495,7 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
       db.prepare("DELETE FROM push_subscriptions WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM user_data_version_summaries WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
       db.prepare("DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
-      db.prepare("DELETE FROM user_data WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
+      deleteWorkspaceDocumentsForAccount(db, accountId);
       db.prepare("DELETE FROM account_workspaces WHERE owner_account_id=?").run(accountId);
 
       db.prepare("DELETE FROM clients WHERE account_id=?").run(accountId);

@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const auth = require('../middleware/auth');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
+const { loadWorkspaceMeta, loadDocumentParts } = require('../utils/documentStore');
 const { logger } = require('../utils/logger');
 
 ensureTeamAccessSchema(db);
@@ -219,10 +220,17 @@ router.post('/team-invite/resolve', auth, (req, res) => {
     if (storedGrant && inviteId && storedGrant.invite_id && String(storedGrant.invite_id) !== inviteId) {
       return res.status(403).json({ error: 'team access not allowed' });
     }
-    const row = db.prepare("SELECT data FROM user_data WHERE account_id=?").get(workspaceStorageKey(owner.id, workspaceId));
-    let data = null;
-    try { data = row?.data ? JSON.parse(row.data) : null; } catch {}
-    const members = Array.isArray(data?.team_members) ? data.team_members : [];
+    const storageKey = workspaceStorageKey(owner.id, workspaceId);
+    const meta = loadWorkspaceMeta(db, storageKey);
+    let members = [];
+    if (meta?.layout === 'parts') {
+      members = loadDocumentParts(db, storageKey, ['team_members']).collections.team_members || [];
+    } else if (meta?.serialized) {
+      try {
+        const parsed = JSON.parse(meta.serialized);
+        members = Array.isArray(parsed?.team_members) ? parsed.team_members : [];
+      } catch {}
+    }
     let member = storedGrant ? {
       id: storedGrant.invite_id,
       email: storedGrant.member_email,
