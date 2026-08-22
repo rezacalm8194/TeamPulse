@@ -10,7 +10,19 @@ const auth = require('../middleware/auth');
 const DEBUG_AUDIO_DIR = path.join(__dirname, '..', '.speech-debug');
 const VOSK_MODEL_DIR = process.env.VOSK_MODEL_PATH || path.join(__dirname, '..', 'speech-models', 'fa');
 const VOSK_WORKER_PATH = path.join(__dirname, '..', 'vosk_worker.py');
-const VOSK_PYTHON = path.join(__dirname, '..', '.venv', 'bin', 'python');
+
+function resolveVoskPython() {
+  if (process.env.VOSK_PYTHON) return process.env.VOSK_PYTHON;
+  const backendRoot = path.join(__dirname, '..');
+  const winPython = path.join(backendRoot, '.venv', 'Scripts', 'python.exe');
+  const unixPython = path.join(backendRoot, '.venv', 'bin', 'python');
+  const candidates = process.platform === 'win32'
+    ? [winPython, path.join(backendRoot, '.venv', 'Scripts', 'python'), unixPython]
+    : [unixPython, path.join(backendRoot, '.venv', 'bin', 'python3'), winPython];
+  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+}
+
+const VOSK_PYTHON = resolveVoskPython();
 let lastDebugAudio = null;
 let voskWorker = null;
 let voskWorkerSeq = 0;
