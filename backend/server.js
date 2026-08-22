@@ -1,11 +1,11 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { randomUUID } = require('crypto');
 const db = require('./config/database');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { logger, classifySyncOutcome } = require('./utils/logger');
 const { initTodoAuditStore, seedHistoricalRecurringSnapshots, migrateTodoAuditOccurrenceIdentityV2, flushPendingTodoAudits } = require('./utils/todoAuditStore');
 initTodoAuditStore(db);
