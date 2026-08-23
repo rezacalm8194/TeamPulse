@@ -2003,7 +2003,8 @@ async function openSalaryTransfer(staffId) {
   // Create the single portal element once
   const portal = document.createElement('div');
   portal.id = 'row-menu-portal';
-  document.body.appendChild(portal);
+  if (document.body) document.body.appendChild(portal);
+  else document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(portal); });
 
   let _currentMenuId = null; // which logical menu is open
   let _sourcePanel = null;   // original panel whose children were moved into the portal

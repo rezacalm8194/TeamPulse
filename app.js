@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp92';
+const TP_ASSET_V = 'tp93';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4645,7 +4645,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   }
   if (interactive && (noteId != null || textareaId)) {
     const handler = "onchange='_toggleChecklistItem(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-    return '<label class="interactive-checklist-item" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:44px;padding:10px 6px;border-radius:8px;transition:background .15s" onmouseenter="_tpStyle(this,'background','rgba(124,106,247,.07)')" onmouseleave="_tpStyle(this,'background','transparent')"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
+    return '<label class="interactive-checklist-item" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:44px;padding:10px 6px;border-radius:8px;transition:background .15s" onmouseenter="_tpStyle(this,\'background\',\'rgba(124,106,247,.07)\')" onmouseleave="_tpStyle(this,\'background\',\'transparent\')"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
   return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
 }
@@ -16333,7 +16333,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور</label>' +
     '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="' + (isLogin ? 'رمز عبور' : 'حداقل ۸ کاراکتر') + '" value="' + savedPass + '" ' +
     'style="width:100%;padding-left:44px;font-size:14px">' +
-    '<button type="button" onclick="_tpTogglePassword('auth-pass')" ' +
+    '<button type="button" onclick="_tpTogglePassword(\'auth-pass\')" ' +
     'style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px">👁</button></div></div>' +
     pass2 +
     (isLogin ? rememberRow : captchaSection) +
