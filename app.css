@@ -3440,28 +3440,6 @@ body.instr-select-mode ._ifcard.instr-selected {
 }
 .todo-row {
   contain: layout style;
-  transition: background-color .15s ease, border-color .15s ease, opacity .15s ease;
-}
-.todo-overdue-danger {
-  position: relative;
-  overflow: hidden;
-  box-shadow: inset 3px 0 0 rgba(239,68,68,.8);
-}
-.todo-overdue-danger > * {
-  position: relative;
-  z-index: 1;
-}
-.todo-overdue-danger::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 42%;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(239,68,68,.18) 0%, rgba(239,68,68,.06) 55%, transparent 100%);
-  pointer-events: none;
-  border-radius: 0 4px 4px 0;
-  z-index: 0;
 }
 @media(prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}

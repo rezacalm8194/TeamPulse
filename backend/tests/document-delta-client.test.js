@@ -17,5 +17,5 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);
-  assert.match(appSource, /while \(_jalaliKey\(t\.date_jalali \|\| ''\) < todayKey/);
+  assert.match(appSource, /function _setRecurringTodoOnOrAfterToday\(/);
 });

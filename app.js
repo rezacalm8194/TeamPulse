@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp83';
+const TP_ASSET_V = 'tp84';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -17292,6 +17292,33 @@ function _createTodoOccurrenceRecord(t, status, completedAt = null) {
   return record;
 }
 
+function _setRecurringTodoOnOrAfterToday(t) {
+  const today = _todayJalaliStr();
+  if (t.repeat === 'custom_weekdays' && t.weekdays) {
+    const days = String(t.weekdays).split(',');
+    const dayMap = {sat:6, sun:0, mon:1, tue:2, wed:3, thu:4, fri:5};
+    const parsed = _jalaliParse(today);
+    if (parsed && parsed.length === 3) {
+      const [jy, jm, jd] = parsed;
+      for (let i = 0; i <= 7; i++) {
+        const candidate = i === 0 ? [jy, jm, jd] : _addDays(jy, jm, jd, i);
+        const [gy, gm, gdayNum] = jalaliToGregorian(candidate[0], candidate[1], candidate[2]);
+        const jsDay = new Date(gy, gm - 1, gdayNum).getDay();
+        const dayName = Object.keys(dayMap).find(k => dayMap[k] === jsDay);
+        if (dayName && days.includes(dayName)) {
+          t.date_jalali = _formatJalali(...candidate);
+          t.scheduled_date = t.date_jalali;
+          t.scheduledDate = t.date_jalali;
+          return;
+        }
+      }
+    }
+  }
+  t.date_jalali = today;
+  t.scheduled_date = today;
+  t.scheduledDate = today;
+}
+
 function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   if (!_isTodoRecurring(t)) return;
   t.recurrence_parent_id = _todoRootId(t);
@@ -17302,11 +17329,12 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   t.completed_at = null;
   t.status = 'pending';
   t.updated_at = new Date().toISOString();
-  _advanceTodoDate(t, scheduledDate);
+  const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
-  let guard = 0;
-  while (_jalaliKey(t.date_jalali || '') < todayKey && guard++ < 1200) {
-    _advanceTodoDate(t, t.date_jalali);
+  if (scheduledKey && scheduledKey < todayKey) {
+    _setRecurringTodoOnOrAfterToday(t);
+  } else {
+    _advanceTodoDate(t, scheduledDate);
   }
   t.scheduled_date = t.date_jalali || '';
   t.scheduledDate = t.scheduled_date;
@@ -17960,7 +17988,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const bg = t.done ? 'rgba(62,207,142,.07)' : (isOverdue ? 'rgba(239,68,68,.07)' : 'var(--bg2)');
   const dateLabel = scheduled ? DateService.disp(scheduled) : 'بدون تاریخ';
   const timeLabel = _todoTimeRangeLabel(t);
-  return `<div data-todo-id="${t.id}" class="todo-row${isOverdue ? ' todo-overdue-danger' : ''}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1}">
+  return `<div data-todo-id="${t.id}" class="todo-row" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1}">
     <button onclick="_completeTodoFromList(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
       style="width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;cursor:pointer;border:2px solid ${t.done?'var(--green)':isOverdue?'var(--red)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:12px;font-weight:900;line-height:1">
       ${t.done?'✓':''}
@@ -20149,7 +20177,7 @@ function renderTodoList() {
     }
 
     return `<div data-todo-id="${t.id}" draggable="true"
-      class="todo-row${isOverdue ? ' todo-overdue-danger' : ''}"
+      class="todo-row"
       style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
         background:${bgColor};
         border:1px solid ${borderColor};
