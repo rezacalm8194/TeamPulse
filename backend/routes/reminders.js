@@ -10,6 +10,19 @@ const webpush = require('web-push');
 const { randomUUID } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { loadWorkspaceMeta, loadDocumentParts, loadWorkspaceMetaAsync, loadDocumentPartsAsync, loadWorkspaceDocumentAsync } = require('../utils/documentStore');
+const {
+  IRAN_OFFSET_MS,
+  PUSH_CATCH_UP_MS,
+  jalaliToUTC,
+  iranTodayParts,
+  iranWallTimeToUTC,
+  jalaliDayKey,
+  ensurePushDueIndexSchema,
+  loadDeliveredKeys,
+  upsertPushDueIndex,
+  computePushDueIndex,
+  listPushScanAccountIds,
+} = require('../utils/pushDueIndex');
 
 ensureTeamAccessSchema(db);
 
@@ -45,6 +58,7 @@ try {
       sent_at TEXT DEFAULT (datetime('now'))
     )
   `).run();
+  ensurePushDueIndexSchema(db);
 } catch(e) {}
 
 function ensurePushSubscriptionColumn(name, ddl) {
@@ -198,65 +212,6 @@ function isOwnerSubscription(sub, accountId, ownerEmail = '') {
   return false;
 }
 
-// ── تبدیل شمسی به UTC ─────────────────────────────────────────
-function jalaliToGregorian(jy, jm, jd) {
-  const div = (a, b) => Math.floor(a / b);
-  const mod = (a, b) => a - div(a, b) * b;
-  let gy = (jy <= 979) ? 621 : 1600;
-  jy -= (jy <= 979) ? 0 : 979;
-  let days = (365 * jy) + (div(jy, 33) * 8) + div(mod(jy, 33) + 3, 4) + 78 + jd
-    + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30 + 186));
-  gy += 400 * div(days, 146097);
-  days = mod(days, 146097);
-  if (days > 36524) { gy += 100 * div(--days, 36524); days = mod(days, 36524); if (days >= 365) days++; }
-  gy += 4 * div(days, 1461);
-  days = mod(days, 1461);
-  gy += div(days - 1, 365);
-  if (days > 365) days = mod(days - 1, 365);
-  let gd = days + 1;
-  const sal_a = [0,31,((gy%4===0&&gy%100!==0)||gy%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
-  let gm = 0;
-  for (gm = 1; gm <= 12 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
-  return [gy, gm, gd];
-}
-
-function parseJalali(str) {
-  if (!str) return null;
-  const p = '۰۱۲۳۴۵۶۷۸۹';
-  const s = str.split('').map(c => { const i = p.indexOf(c); return i >= 0 ? String(i) : c; }).join('');
-  const parts = s.split('/').map(Number);
-  return (parts.length === 3 && !parts.some(isNaN)) ? parts : null;
-}
-
-function jalaliToUTC(dateJalali, timeStr) {
-  const parts = parseJalali(dateJalali);
-  if (!parts) return null;
-  const [jy, jm, jd] = parts;
-  const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
-  const [h, m] = (timeStr || '00:00').split(':').map(Number);
-  const iranOffsetMs = (3 * 60 + 30) * 60 * 1000; // UTC+3:30
-  return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - iranOffsetMs);
-}
-
-const IRAN_OFFSET_MS = (3 * 60 + 30) * 60 * 1000;
-
-function iranTodayParts(now = new Date()) {
-  const iranNow = new Date(now.getTime() + IRAN_OFFSET_MS);
-  const gy = iranNow.getUTCFullYear();
-  const gm = iranNow.getUTCMonth() + 1;
-  const gd = iranNow.getUTCDate();
-  return {
-    gy, gm, gd,
-    key: `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`,
-  };
-}
-
-function iranWallTimeToUTC(gy, gm, gd, timeStr) {
-  const [h, m] = (timeStr || '').split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return new Date(Date.UTC(gy, gm - 1, gd, h, m, 0) - IRAN_OFFSET_MS);
-}
-
 async function sendPushSubscriptions(subs, title, body, options = {}) {
   if (!subs.length) return { sent: 0, failed: 0 };
 
@@ -357,8 +312,6 @@ async function pushTodoToRecipients(accountId, workspaceId, userData, todo, titl
 }
 
 // ── Cron: هر دقیقه ─────────────────────────────────────────────
-const PUSH_CATCH_UP_MS = 6 * 60 * 60 * 1000;
-
 function isDueForPush(now, scheduledAt, catchUpMs = PUSH_CATCH_UP_MS) {
   if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return false;
   const lateBy = now.getTime() - scheduledAt.getTime();
@@ -392,13 +345,6 @@ async function deliverOnce(deliveryKey, accountId, kind, send) {
   }
 }
 
-function jalaliDayKey(value) {
-  const parts = parseJalali(value);
-  if (!parts) return null;
-  const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
-  return gy * 10000 + gm * 100 + gd;
-}
-
 function reminderBody(item, personName = '') {
   const amount = Number(item?.amount || 0);
   const amountText = amount ? ` — مبلغ ${amount.toLocaleString('fa-IR')} تومان` : '';
@@ -407,8 +353,15 @@ function reminderBody(item, personName = '') {
 }
 
 let pushCronRunning = false;
-const activeAccountsStmt = db.prepare('SELECT id FROM accounts WHERE is_active=1');
 const reminderCollectionKeys = ['todos', 'habits', 'students', 'staff', 'reminders', 'staff_reminders', 'key_events'];
+
+function refreshPushDueIndex(accountId, userData, now) {
+  const delivered = loadDeliveredKeys(db, accountId);
+  const schedule = computePushDueIndex(accountId, userData || {}, now, delivered);
+  let etag = '';
+  try { etag = loadWorkspaceMeta(db, accountId)?.etag || ''; } catch (_) {}
+  upsertPushDueIndex(db, accountId, etag, schedule);
+}
 
 cron.schedule('* * * * *', async () => {
   // node-cron does not wait for a previous async run. Avoid piling up full
@@ -417,19 +370,22 @@ cron.schedule('* * * * *', async () => {
   pushCronRunning = true;
   try {
     const now = new Date();
-    const accounts = activeAccountsStmt.all();
+    const accountIds = listPushScanAccountIds(db, now);
 
-    for (const acc of accounts) {
+    for (const accountId of accountIds) {
       // Yield between accounts so static files and API requests are not held
       // behind a long reminder scan in Node's single event loop.
       await new Promise(resolve => setImmediate(resolve));
-      const userData = await loadAccountCollections(acc.id, reminderCollectionKeys);
-      if (!userData) continue;
+      const userData = await loadAccountCollections(accountId, reminderCollectionKeys);
+      if (!userData) {
+        refreshPushDueIndex(accountId, {}, now);
+        continue;
+      }
 
       for (const t of (userData.todos || [])) {
         const scheduledDate = todoScheduledDate(t);
         if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
-        if (!todoBelongsToAccount(t, acc.id)) {
+        if (!todoBelongsToAccount(t, accountId)) {
           // This is an expected ownership guard, not an operational warning.
           // Logging every skipped item each minute caused excessive PM2 disk I/O.
           continue;
@@ -440,10 +396,10 @@ cron.schedule('* * * * *', async () => {
 
         const notifUTC = new Date(taskUTC.getTime() - t.remind_min * 60000);
         if (isDueForPush(now, notifUTC)) {
-          const key = `todo:${acc.id}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
-          console.log(`[Push] → "${t.title}" (account: ${acc.id})`);
-          await deliverOnce(key, acc.id, 'todo', () =>
-            pushTodoToRecipients(acc.id, 'default', userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
+          const key = `todo:${accountId}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
+          console.log(`[Push] → "${t.title}" (account: ${accountId})`);
+          await deliverOnce(key, accountId, 'todo', () =>
+            pushTodoToRecipients(accountId, 'default', userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
           );
         }
       }
@@ -457,10 +413,10 @@ cron.schedule('* * * * *', async () => {
 
         const notifUTC = new Date(habitUTC.getTime() - h.remind_min * 60000);
         if (isDueForPush(now, notifUTC)) {
-          const key = `habit:${acc.id}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
-          console.log(`[Push] → habit "${h.title}" (account: ${acc.id})`);
-          await deliverOnce(key, acc.id, 'habit', () =>
-            pushToOwner(acc.id, 'default', '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
+          const key = `habit:${accountId}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
+          console.log(`[Push] → habit "${h.title}" (account: ${accountId})`);
+          await deliverOnce(key, accountId, 'habit', () =>
+            pushToOwner(accountId, 'default', '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
               kind: 'habit', tag: `habit-${h.id}`, url: '/app#habits',
             })
           );
@@ -482,10 +438,10 @@ cron.schedule('* * * * *', async () => {
         for (const r of (userData.reminders || [])) {
           const dueDayKey = jalaliDayKey(r.due_date_jalali);
           if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `financial:${acc.id}:${r.id}:${r.due_date_jalali}`;
+          const key = `financial:${accountId}:${r.id}:${r.due_date_jalali}`;
           const name = studentNames.get(String(r.student_id)) || '';
-          await deliverOnce(key, acc.id, 'financial-reminder', () =>
-            pushToOwner(acc.id, 'default', r.title || 'یادآوری پرداخت', reminderBody(r, name), {
+          await deliverOnce(key, accountId, 'financial-reminder', () =>
+            pushToOwner(accountId, 'default', r.title || 'یادآوری پرداخت', reminderBody(r, name), {
               kind: 'financial-reminder', tag: `financial-${r.id}`, url: '/app#reminders',
             })
           );
@@ -494,10 +450,10 @@ cron.schedule('* * * * *', async () => {
         for (const r of (userData.staff_reminders || [])) {
           const dueDayKey = jalaliDayKey(r.due_date_jalali);
           if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `staff:${acc.id}:${r.id}:${r.due_date_jalali}`;
+          const key = `staff:${accountId}:${r.id}:${r.due_date_jalali}`;
           const name = staffNames.get(String(r.staff_id)) || '';
-          await deliverOnce(key, acc.id, 'staff-reminder', () =>
-            pushToOwner(acc.id, 'default', r.title || 'یادآوری حقوق', reminderBody(r, name), {
+          await deliverOnce(key, accountId, 'staff-reminder', () =>
+            pushToOwner(accountId, 'default', r.title || 'یادآوری حقوق', reminderBody(r, name), {
               kind: 'staff-reminder', tag: `staff-reminder-${r.id}`, url: '/app#staff',
             })
           );
@@ -506,15 +462,17 @@ cron.schedule('* * * * *', async () => {
         for (const e of (userData.key_events || [])) {
           const dueDayKey = jalaliDayKey(e.remind_date);
           if (e.remind_done || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `key-event:${acc.id}:${e.id}:${e.remind_date}`;
+          const key = `key-event:${accountId}:${e.id}:${e.remind_date}`;
           const name = studentNames.get(String(e.student_id)) || '';
-          await deliverOnce(key, acc.id, 'key-event', () =>
-            pushToOwner(acc.id, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
+          await deliverOnce(key, accountId, 'key-event', () =>
+            pushToOwner(accountId, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
               kind: 'key-event', tag: `key-event-${e.id}`, url: '/app#students',
             })
           );
         }
       }
+
+      refreshPushDueIndex(accountId, userData, now);
     }
   } catch (e) {
     console.error('[Push Cron] Error:', e.message);
@@ -523,7 +481,7 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-console.log('[Push] Cron started — checking every minute');
+console.log('[Push] Cron started — due-index scan every minute');
 
 // ── API: ذخیره push subscription از مرورگر ────────────────────
 router.post('/subscribe', auth, (req, res) => {
@@ -564,6 +522,10 @@ router.post('/subscribe', auth, (req, res) => {
         VALUES (?,?,?,?,?,?,?,?,?)
       `).run(randomUUID(), accountId, subscription.endpoint, JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, workspaceId, scope);
     }
+    try {
+      const indexed = db.prepare('SELECT 1 FROM push_due_index WHERE account_id=?').get(accountId);
+      if (!indexed) upsertPushDueIndex(db, accountId, '__pending__', { nextTimedMs: 0, nextDailyMs: 0 });
+    } catch (_) {}
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
