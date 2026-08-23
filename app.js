@@ -17438,9 +17438,9 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   if (scheduledKey && scheduledKey < todayKey) {
-    // نوبت عقب‌افتاده ثبت شد؛ نوبت بعدی از امروز به بعد است تا همان کار
-    // بلافاصله به‌صورت باز در لیست امروز برنگردد.
-    _advanceTodoDate(t, _todayJalaliStr());
+    // نوبت عقب‌افتاده بسته شد؛ نوبت باز بعدی باید امروز (یا اولین روز مجاز از امروز)
+    // باشد تا لیست امروز خالی نماند.
+    _setRecurringTodoOnOrAfterToday(t);
   } else {
     _advanceTodoDate(t, scheduledDate);
   }
@@ -20145,6 +20145,23 @@ function renderTodoList(options = {}) {
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
+    if (!t.done && !t.archived && _isTodoRecurring(t) && _todoScheduledDate(t) === _tomorrowJalaliStr()) {
+      const rootId = _todoRootId(t);
+      const hasTodayOpen = _todoHasOccurrenceFor(rootId, _todayStr, t.id);
+      const caughtUpOverdueToday = (_db.todos || []).some(x =>
+        x && x._snapshot && x.archived &&
+        String(_todoRootId(x)) === String(rootId) &&
+        _todoIsDoneToday(x, _todayK) &&
+        _jalaliKey(_todoScheduledDate(x) || '') < _todayK
+      );
+      if (!hasTodayOpen && caughtUpOverdueToday) {
+        t.date_jalali = _todayStr;
+        t.scheduled_date = _todayStr;
+        t.scheduledDate = _todayStr;
+        t.updated_at = new Date().toISOString();
+        _archiveChanged = true;
+      }
+    }
   });
   if (_archiveChanged) {
     if (_isTeamGuest()) {
@@ -20726,7 +20743,11 @@ function _resolveOverdueTodo(id, action) {
       t.updated_at = completedAt;
       _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
-      if (!_paintTodoCheckedFast(t.id)) renderTodoList();
+      if (!_todoRemainsOpenToday(t) && _paintTodoCheckedFast(t.id)) {
+        _queueTodoTickPersist(t, 'complete', [snapshot]);
+        return;
+      }
+      renderTodoList();
       _queueTodoTickPersist(t, 'complete', [snapshot]);
       return;
     }
