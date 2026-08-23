@@ -17960,7 +17960,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const bg = t.done ? 'rgba(62,207,142,.07)' : (isOverdue ? 'rgba(239,68,68,.07)' : 'var(--bg2)');
   const dateLabel = scheduled ? DateService.disp(scheduled) : 'بدون تاریخ';
   const timeLabel = _todoTimeRangeLabel(t);
-  return `<div data-todo-id="${t.id}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1};transition:all .15s">
+  return `<div data-todo-id="${t.id}" class="todo-row${isOverdue ? ' todo-overdue-danger' : ''}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1}">
     <button onclick="_completeTodoFromList(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
       style="width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;cursor:pointer;border:2px solid ${t.done?'var(--green)':isOverdue?'var(--red)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:12px;font-weight:900;line-height:1">
       ${t.done?'✓':''}
@@ -20149,13 +20149,13 @@ function renderTodoList() {
     }
 
     return `<div data-todo-id="${t.id}" draggable="true"
-      class="${isOverdue ? 'todo-overdue-danger' : ''}"
+      class="todo-row${isOverdue ? ' todo-overdue-danger' : ''}"
       style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
         background:${bgColor};
         border:1px solid ${borderColor};
         border-right:3px solid ${leftBorder};
         border-radius:10px;margin-bottom:6px;opacity:${t.done?.5:1};
-        cursor:default;user-select:none;transition:all .15s">
+        cursor:default;user-select:none">
       <span class="todo-drag-handle" style="color:var(--text3);font-size:14px;cursor:grab;padding:2px 2px 0;flex-shrink:0;opacity:.35;line-height:1">⠿</span>
       <button onclick="_completeTodoFromList(${t.id})"
         style="width:22px;height:22px;border-radius:50%;flex-shrink:0;margin-top:2px;cursor:pointer;
