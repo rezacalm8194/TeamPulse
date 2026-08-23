@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp86';
+const TP_ASSET_V = 'tp87';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -15162,11 +15162,6 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
           setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
-          if (responseData?.server_changed) {
-            setTimeout(() => {
-              _loadFromServer().then(updated => _refreshUiAfterServerLoad(updated));
-            }, 0);
-          }
           return res;
         }
         if (res.status === 409 && responseData?.error === 'todo_id_collision') {
@@ -15237,9 +15232,17 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
           return res;
         }
+        if (operation === 'complete' || operation === 'reopen') {
+          _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
+          return res;
+        }
         return _syncToServer();
       }
     } catch(e) {
+      if (operation === 'complete' || operation === 'reopen') {
+        _markServerSyncPending('todo-delta-network', { todoIds: [String(todoSnapshot.id)] });
+        return null;
+      }
       return _syncToServer();
     }
   };
@@ -15588,11 +15591,6 @@ function _mergeServerTodosIntoLocal(serverData) {
         .map(value => String(value ?? '')).join('|'))
     );
     if (hasNewRemoteState) {
-      ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
-       'completed_by_email', 'archived', 'updated_at', 'skipped_at',
-       'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
-        if (Object.prototype.hasOwnProperty.call(remote, field)) local[field] = _cloneData(remote[field]);
-      });
       local.history = Array.isArray(local.history) ? local.history : [];
       (remote.history || []).forEach(row => {
         const key = [row?.action, row?.created_at, row?.user_id, row?.new_value]
@@ -15600,9 +15598,18 @@ function _mergeServerTodosIntoLocal(serverData) {
         if (!localHistoryKeys.has(key)) {
           local.history.push(_cloneData(row));
           localHistoryKeys.add(key);
+          changed = true;
         }
       });
-      changed = true;
+      // تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند.
+      if (remoteTime > localTime) {
+        ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
+         'completed_by_email', 'archived', 'updated_at', 'skipped_at',
+         'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
+          if (Object.prototype.hasOwnProperty.call(remote, field)) local[field] = _cloneData(remote[field]);
+        });
+        changed = true;
+      }
       return;
     }
     if (remoteTime > localTime) {
@@ -15905,6 +15912,7 @@ async function _loadFromServer() {
 }
 
 async function _pollServerStatus() {
+  if (window._todoDeltaChain) return false;
   // Keep the existing full-load conflict protections in charge while a local
   // save is pending; the lightweight shortcut must not make that decision.
   if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
@@ -17380,7 +17388,9 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   if (scheduledKey && scheduledKey < todayKey) {
-    _setRecurringTodoOnOrAfterToday(t);
+    // نوبت عقب‌افتاده ثبت شد؛ نوبت بعدی از امروز به بعد است تا همان کار
+    // بلافاصله به‌صورت باز در لیست امروز برنگردد.
+    _advanceTodoDate(t, _todayJalaliStr());
   } else {
     _advanceTodoDate(t, scheduledDate);
   }
@@ -20588,6 +20598,7 @@ function _completeTodoWithReport(t, report) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   const oldDone = !!t.done;
+  const intendedOp = oldDone ? 'reopen' : 'complete';
   let extraTodos = [];
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
@@ -20627,8 +20638,9 @@ function _completeTodoWithReport(t, report) {
   }
   // ابتدا نتیجه کلیک را فوراً نشان بده. ذخیره localStorage نباید پشت setTimeout
   // بماند؛ در اندروید با رفتن برنامه به پس‌زمینه آن تایمر اجرا نمی‌شود و تیک برمی‌گردد.
-  if (t.done && _paintTodoCheckedFast(t.id)) {
-    _queueTodoTickPersist(t, 'complete', extraTodos);
+  const stillOpenToday = !t.done && _todoRemainsOpenToday(t);
+  if (intendedOp === 'complete' && !stillOpenToday && _paintTodoCheckedFast(t.id)) {
+    _queueTodoTickPersist(t, intendedOp, extraTodos);
     return;
   }
   renderTodoList();
@@ -20638,7 +20650,7 @@ function _completeTodoWithReport(t, report) {
   }
   try {
     _save(true, { scheduleServerSync: false });
-    void _syncTodoDelta(t, t.done ? 'complete' : 'reopen', extraTodos);
+    void _syncTodoDelta(t, intendedOp, extraTodos);
   } catch(e) {
     console.error('[TeamPulse] todo persist failed:', e);
     showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
@@ -20912,6 +20924,20 @@ function _playDoneSound() {
   } catch(e) {}
 }
 
+function _todoRemainsOpenToday(t) {
+  if (!t || t.done || t.archived || t.status === 'deleted') return false;
+  const scheduled = _todoScheduledDate(t);
+  if (!scheduled) return true;
+  const key = _jalaliKey(scheduled);
+  return !!key && key <= _jalaliToday();
+}
+
+function _cssIdentEscape(value) {
+  const text = String(value ?? '');
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(text);
+  return text.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+}
+
 function _scheduleTodoListReconcile() {
   if (_todoListReconcileTimer) clearTimeout(_todoListReconcileTimer);
   _todoListReconcileTimer = setTimeout(() => {
@@ -20953,14 +20979,14 @@ function _todoNextFocusIdAfter(completedId) {
 function _paintTodoCheckedFast(id) {
   if (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report') return false;
   const sid = String(id);
-  const rows = document.querySelectorAll(`[data-todo-id="${CSS.escape(sid)}"]`);
+  const rows = document.querySelectorAll(`[data-todo-id="${_cssIdentEscape(sid)}"]`);
   if (!rows.length) return false;
   const nextId = _todoNextFocusIdAfter(sid);
   rows.forEach(el => el.remove());
   const empty = document.getElementById('todo-empty-hint');
   if (empty && !document.querySelector('.todo-row[data-todo-id]')) empty.style.display = '';
   requestAnimationFrame(() => {
-    const nextBtn = nextId && document.querySelector(`[data-todo-id="${CSS.escape(String(nextId))}"] [data-todo-complete]`);
+    const nextBtn = nextId && document.querySelector(`[data-todo-id="${_cssIdentEscape(String(nextId))}"] [data-todo-complete]`);
     if (nextBtn && typeof nextBtn.focus === 'function') nextBtn.focus({ preventScroll: true });
   });
   _scheduleTodoListReconcile();
@@ -20968,8 +20994,11 @@ function _paintTodoCheckedFast(id) {
 }
 
 function _advanceTodoDate(t, baseDateStr) {
-  // کار بدون تاریخ و repeat → فقط reset کن (فردا دوباره نشون داده میشه)
-  if (!t.date_jalali) { t.done = false; t.done_at = null; t.archived = false; t.status = 'pending'; return; }
+  if (!t.date_jalali) {
+    t.date_jalali = _todayJalaliStr();
+    t.scheduled_date = t.date_jalali;
+    t.scheduledDate = t.date_jalali;
+  }
 
   let jy, jm, jd;
   if (baseDateStr) {
@@ -20984,6 +21013,9 @@ function _advanceTodoDate(t, baseDateStr) {
     [jy, jm, jd] = baseKey === taskKey
       ? _jalaliParse(t.date_jalali)
       : _jalaliParse(_todayJalaliStr());
+  }
+  if (!jy || !jm || !jd || [jy, jm, jd].some(n => !Number.isFinite(n))) {
+    [jy, jm, jd] = _jalaliParse(_todayJalaliStr());
   }
 
   let newDate;
@@ -24667,7 +24699,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v86';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v87';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

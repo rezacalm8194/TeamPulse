@@ -20,3 +20,11 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /function _setRecurringTodoOnOrAfterToday\(/);
   assert.match(appSource, /keepalive: true/);
 });
+
+test('todo tick keeps complete operation after advancing a recurring task', () => {
+  assert.match(appSource, /const intendedOp = oldDone \? 'reopen' : 'complete'/);
+  assert.match(appSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
+  assert.match(appSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
+  assert.match(appSource, /تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند/);
+  assert.match(appSource, /if \(window\._todoDeltaChain\) return false;/);
+});
