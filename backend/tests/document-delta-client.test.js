@@ -14,6 +14,8 @@ test('ordinary workspace syncs send collection deltas instead of the full accoun
 
 test('todo completion merge prefers done state and later recurring dates', () => {
   assert.match(appSource, /function _pickMergedTodo\(/);
+  assert.match(appSource, /function _todoHasReopenAfter\(/);
+  assert.match(appSource, /if \(conflictAttempt < 4\) \{/);
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);

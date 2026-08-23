@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp88';
+const TP_ASSET_V = 'tp89';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -14740,6 +14740,15 @@ function _todoMergeTime(item) {
   return Date.parse(item?.updated_at || item?.done_at || item?.completed_at || item?.completedAt || item?.created_at || '') || 0;
 }
 
+function _todoHasReopenAfter(openItem, doneAtMs) {
+  const rows = Array.isArray(openItem?.history) ? openItem.history : [];
+  return rows.some(row => {
+    if (row?.action !== 'unchecked') return false;
+    const at = Date.parse(row.created_at || '') || 0;
+    return at >= doneAtMs;
+  });
+}
+
 function _pickMergedTodo(localItem, serverItem) {
   if (!localItem) return _cloneData(serverItem);
   if (!serverItem) return _cloneData(localItem);
@@ -14756,8 +14765,9 @@ function _pickMergedTodo(localItem, serverItem) {
   if (!!localItem.done !== !!serverItem.done) {
     const doneItem = localItem.done ? localItem : serverItem;
     const openItem = localItem.done ? serverItem : localItem;
-    if (_todoMergeTime(doneItem) >= _todoMergeTime(openItem)) return _cloneData(doneItem);
-    return _cloneData(openItem);
+    const doneAt = Date.parse(doneItem.done_at || doneItem.completed_at || doneItem.completedAt || doneItem.updated_at || '') || 0;
+    if (_todoHasReopenAfter(openItem, doneAt)) return _cloneData(openItem);
+    return _cloneData(doneItem);
   }
   if (localTime === serverTime) return _cloneData(serverItem);
   return _cloneData(localTime > serverTime ? localItem : serverItem);
@@ -14913,8 +14923,8 @@ function _stopStaleFullSyncConflictPending() {
   const pending = _readServerSyncPending();
   if (!_fullSyncConflictPendingMatchesCurrentData(pending)) return false;
   if (pending.reason === 'conflict-merged-stopped') {
-    _clearServerSyncPending(Infinity);
-    return false;
+    // همین سند هنوز تعارض دارد؛ دوباره آپلود کامل همان payload تیک دستگاه دیگر را برمی‌گرداند.
+    return true;
   }
   if (pending.reason === 'conflict-merged') {
     _markServerSyncPending('conflict-merged-stopped');
@@ -15525,7 +15535,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     }
 
     if (res.status === 409 && responseData?.error === 'sync_conflict' && responseData.data) {
-      if (conflictAttempt < 1) {
+      if (conflictAttempt < 4) {
         const localPending = _cloneData(_db);
         const serverBaseline = _cloneData(responseData.data);
         _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data, { teamSafe: !!teamSession });
@@ -15535,6 +15545,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
         try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
         _markServerSyncPending('conflict-merged');
+        try { _refreshUiAfterServerLoad(true); } catch(e) {}
         return _syncToServerOnce(conflictAttempt + 1, todoCollisionAttempt);
       }
       const stoppedFingerprint = _dataFingerprint(_serverDataSignature(_db || {}));
@@ -15652,7 +15663,7 @@ function _mergeServerTodosIntoLocal(serverData) {
         }
       });
       // تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند.
-      if (remoteTime > localTime) {
+      if (remoteTime > localTime && !!remote.done === !!local.done) {
         ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
          'completed_by_email', 'archived', 'updated_at', 'skipped_at',
          'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
@@ -15662,7 +15673,7 @@ function _mergeServerTodosIntoLocal(serverData) {
       }
       return;
     }
-    if (remoteTime > localTime) {
+    if (remoteTime > localTime && !!remote.done === !!local.done) {
       Object.assign(local, remote);
       changed = true;
       return;
@@ -15869,6 +15880,7 @@ async function _loadFromServer() {
         const pendingSavedAt = Number(pendingSync.savedAt || 0) || 0;
         if (localTime >= serverTime || pendingSavedAt >= serverTime) {
           const mergedTodos = _mergeServerTodosIntoLocal(_cloneData(data));
+          if (incomingEtag) window._serverDataEtag = incomingEtag;
           clearTimeout(window._serverSyncTimer);
           window._serverSyncTimer = setTimeout(_syncToServer, 50);
           console.warn('[TeamPulse] kept newer local data while server sync is pending');

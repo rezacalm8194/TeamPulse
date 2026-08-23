@@ -17,6 +17,15 @@ function isRecurringTemplate(todo) {
   return !!(todo && todo.repeat && todo.repeat !== 'none' && !isCompletionArtifact(todo));
 }
 
+function todoHasReopenAfter(openItem, doneAtMs) {
+  const rows = Array.isArray(openItem?.history) ? openItem.history : [];
+  return rows.some(row => {
+    if (row?.action !== 'unchecked') return false;
+    const at = Date.parse(row.created_at || '') || 0;
+    return at >= doneAtMs;
+  });
+}
+
 function pickMergedTodo(incoming, previous) {
   if (!incoming) return previous || incoming;
   if (!previous) return incoming;
@@ -28,7 +37,10 @@ function pickMergedTodo(incoming, previous) {
   if (!!incoming.done !== !!previous.done) {
     const doneItem = incoming.done ? incoming : previous;
     const openItem = incoming.done ? previous : incoming;
-    return todoRecency(doneItem) >= todoRecency(openItem) ? doneItem : openItem;
+    const doneAt = Date.parse(doneItem.done_at || doneItem.completed_at || doneItem.completedAt || doneItem.updated_at || '') || 0;
+    // A newer updated_at on an open copy is often local maintenance, not an uncheck.
+    if (todoHasReopenAfter(openItem, doneAt)) return openItem;
+    return doneItem;
   }
   return todoRecency(incoming) >= todoRecency(previous) ? incoming : previous;
 }

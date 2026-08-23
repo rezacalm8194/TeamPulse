@@ -1,8 +1,8 @@
-const CACHE = 'team-pulse-static-v88';
+const CACHE = 'team-pulse-static-v89';
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp88',
-  '/app.js?v=tp88',
+  '/app.css?v=tp89',
+  '/app.js?v=tp89',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
