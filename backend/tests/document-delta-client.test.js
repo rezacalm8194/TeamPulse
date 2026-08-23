@@ -34,3 +34,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /function _scheduleTodoDeltaRetry\(/);
   assert.match(appSource, /function _isTodoDeltaPendingReason\(/);
 });
+
+test('complete todo deletion syncs through todo delta instead of a full document save', () => {
+  assert.match(appSource, /_syncTodoDelta\(t, 'delete', removedTodos\)/);
+  assert.match(appSource, /operation === 'complete' \|\| operation === 'reopen' \|\| operation === 'delete'/);
+});

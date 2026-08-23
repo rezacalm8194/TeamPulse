@@ -15280,7 +15280,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
         }
         if (res.status === 409) {
           window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
-          if (operation === 'complete' || operation === 'reopen') {
+          if (operation === 'complete' || operation === 'reopen' || operation === 'delete') {
             _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
             _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
             return res;
@@ -15293,7 +15293,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
           return res;
         }
-        if (operation === 'complete' || operation === 'reopen') {
+        if (operation === 'complete' || operation === 'reopen' || operation === 'delete') {
           _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
           _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
           return res;
@@ -15301,7 +15301,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
         return _syncToServer();
       }
     } catch(e) {
-      if (operation === 'complete' || operation === 'reopen') {
+      if (operation === 'complete' || operation === 'reopen' || operation === 'delete') {
         _markServerSyncPending('todo-delta-network', { todoIds: [String(todoSnapshot.id)] });
         _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
         return null;
@@ -22450,26 +22450,24 @@ async function _deleteTodoCompletely(id, options = {}) {
   if (!confirm(msg)) return;
   const removedTodos = (_db.todos || []).filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId);
   removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id, x.gcal_calendar_id); });
-  if (_teamAccessSession()) {
-    const deletedIds = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
-    deletedIds.add(String(t.id));
-    deletedIds.add(rootId);
-    removedTodos.forEach(x => deletedIds.add(String(x.id)));
-    _db._deletedTodoIds = [...deletedIds];
-  }
+  const deletedIds = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
+  deletedIds.add(String(t.id));
+  deletedIds.add(rootId);
+  removedTodos.forEach(x => deletedIds.add(String(x.id)));
+  _db._deletedTodoIds = [...deletedIds];
   _db.todos = (_db.todos || []).filter(x => String(x.id) !== String(t.id) && String(_todoRootId(x)) !== rootId);
-  _save();
+  _save(true, { scheduleServerSync: false });
   removedTodos.forEach(x => {
     document.querySelectorAll(`[data-todo-id="${CSS.escape(String(x.id))}"]`).forEach(el => el.remove());
   });
   _refreshTodoAfterDelete(options.refresh);
   clearTimeout(window._serverSyncTimer);
-  const res = await _syncToServer();
-  if (_sbUser && (!res || !res.ok || (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)))) {
+  const res = await _syncTodoDelta(t, 'delete', removedTodos);
+  if (_sbUser && (!res || !res.ok)) {
     showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
     return;
   }
-  if (_teamAccessSession() && Array.isArray(_db._deletedTodoIds)) {
+  if (Array.isArray(_db._deletedTodoIds)) {
     const removedIds = new Set(removedTodos.map(x => String(x.id)).concat([String(t.id), rootId]));
     _db._deletedTodoIds = _db._deletedTodoIds.filter(x => !removedIds.has(String(x)));
     _save(false);

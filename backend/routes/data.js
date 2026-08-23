@@ -483,10 +483,13 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   });
   const completedRoots = new Set(validCompletionSnapshots.map(todo => String(todoRootId(todo))));
   const nextTodos = previousTodos.map(oldTodo => {
+    const requestedDelete = deletedTodoIds.has(String(oldTodo.id)) || deletedTodoIds.has(String(todoRootId(oldTodo)));
+    const canDeleteThisTodo = canDeleteTodos ||
+      (permissions.includes('todo_create_self') && todoAssignedToMember(oldTodo, memberEmail, ownStaffIds));
     if (
-      canDeleteTodos &&
-      todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds) &&
-      (deletedTodoIds.has(String(oldTodo.id)) || deletedTodoIds.has(String(todoRootId(oldTodo))))
+      requestedDelete &&
+      canDeleteThisTodo &&
+      todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)
     ) {
       return null;
     }
@@ -813,7 +816,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const storageKey = workspace.storageKey;
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     const operation = String(req.body?.operation || 'upsert');
-    if (!['create', 'edit', 'complete', 'reopen', 'upsert'].includes(operation)) {
+    if (!['create', 'edit', 'complete', 'reopen', 'upsert', 'delete'].includes(operation)) {
       return res.status(400).json({ error: 'invalid_todo_operation' });
     }
     const incomingTodos = [];
@@ -844,26 +847,47 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const primaryIncoming = incomingTodos[incomingTodos.length - 1];
     const oldTodo = previousTodos.find(todo => String(todo?.id) === String(primaryIncoming.id));
 
+    const deletedTodoIds = operation === 'delete'
+      ? [...new Set(incomingTodos.map(todo => String(todo.id)))]
+      : [];
     const candidateById = new Map(previousTodos.map(todo => [String(todo?.id), todo]));
-    incomingTodos.forEach(todo => {
-      const id = String(todo.id);
-      const previous = candidateById.get(id);
-      candidateById.set(id, previous ? pickMergedTodo(todo, previous) : todo);
-    });
+    if (operation !== 'delete') {
+      incomingTodos.forEach(todo => {
+        const id = String(todo.id);
+        const previous = candidateById.get(id);
+        candidateById.set(id, previous ? pickMergedTodo(todo, previous) : todo);
+      });
+    }
     const candidateTodos = [...candidateById.values()];
     let nextData = {
       ...previousData,
-      todos: candidateTodos,
+      todos: operation === 'delete'
+        ? previousTodos.filter(todo => !deletedTodoIds.includes(String(todo?.id)))
+        : candidateTodos,
       _lastSaved: Math.max(Date.now(), Number(previousData._lastSaved || 0)),
       _workspaceId: workspace.workspaceId,
     };
+    if (operation === 'delete') nextData._deletedTodoIds = deletedTodoIds;
     if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
-    const savedTodo = (nextData.todos || []).find(todo => String(todo?.id) === String(primaryIncoming.id));
-    if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
-    if (grant && oldTodo && JSON.stringify(primaryIncoming) !== JSON.stringify(oldTodo) &&
-        JSON.stringify(savedTodo) === JSON.stringify(oldTodo)) {
-      return res.status(403).json({ error: 'todo_operation_forbidden' });
+    else if (operation === 'delete') {
+      nextData = mergeOwnerTodosWithPrevious(previousData, nextData);
+      const nextTodoIds = (nextData.todos || []).map(todo => String(todo.id));
+      const removedTodoIds = previousTodos
+        .map(todo => String(todo?.id))
+        .filter(id => id && !nextTodoIds.includes(id));
+      nextData._todoTombstones = mergeTodoTombstones(previousData, nextTodoIds, removedTodoIds);
     }
+    const savedTodo = (nextData.todos || []).find(todo => String(todo?.id) === String(primaryIncoming.id));
+    if (operation === 'delete') {
+      if (oldTodo && savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
+    } else {
+      if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
+      if (grant && oldTodo && JSON.stringify(primaryIncoming) !== JSON.stringify(oldTodo) &&
+          JSON.stringify(savedTodo) === JSON.stringify(oldTodo)) {
+        return res.status(403).json({ error: 'todo_operation_forbidden' });
+      }
+    }
+    if (nextData && typeof nextData === 'object') delete nextData._deletedTodoIds;
 
     const todoIdCollisions = findTodoIdCollisions(
       db,

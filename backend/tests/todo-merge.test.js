@@ -49,3 +49,17 @@ test('owner save keeps completion snapshots omitted by a stale desktop document'
   assert.ok(next.todos.some(t => t.id === 99 && t._snapshot));
   assert.equal(next.todos.find(t => t.id === 2).date_jalali, '1405/06/01');
 });
+
+test('owner explicit delete removes completion snapshots that would otherwise be restored', () => {
+  const previous = {
+    todos: [
+      { id: 2, repeat: 'daily', date_jalali: '1405/06/01', done: false },
+      { id: 99, _snapshot: true, done: true, recurrence_parent_id: 2, date_jalali: '1403/05/31' },
+    ],
+  };
+  const next = mergeOwnerTodosWithPrevious(previous, {
+    todos: [],
+    _deletedTodoIds: [2, 99],
+  });
+  assert.equal(next.todos.length, 0);
+});
