@@ -14731,6 +14731,33 @@ function _cloneData(data) {
   catch(e) { return {}; }
 }
 
+function _todoMergeTime(item) {
+  return Date.parse(item?.updated_at || item?.done_at || item?.completed_at || item?.completedAt || item?.created_at || '') || 0;
+}
+
+function _pickMergedTodo(localItem, serverItem) {
+  if (!localItem) return _cloneData(serverItem);
+  if (!serverItem) return _cloneData(localItem);
+  const localTime = _todoMergeTime(localItem);
+  const serverTime = _todoMergeTime(serverItem);
+  const localSnap = !!(localItem._snapshot || localItem._occurrence);
+  const serverSnap = !!(serverItem._snapshot || serverItem._occurrence);
+  if (!localSnap && !serverSnap &&
+      typeof _isTodoRecurring === 'function' && _isTodoRecurring(localItem) && _isTodoRecurring(serverItem)) {
+    const localKey = _jalaliKey(_todoScheduledDate(localItem) || '');
+    const serverKey = _jalaliKey(_todoScheduledDate(serverItem) || '');
+    if (localKey !== serverKey) return _cloneData(localKey > serverKey ? localItem : serverItem);
+  }
+  if (!!localItem.done !== !!serverItem.done) {
+    const doneItem = localItem.done ? localItem : serverItem;
+    const openItem = localItem.done ? serverItem : localItem;
+    if (_todoMergeTime(doneItem) >= _todoMergeTime(openItem)) return _cloneData(doneItem);
+    return _cloneData(openItem);
+  }
+  if (localTime === serverTime) return _cloneData(serverItem);
+  return _cloneData(localTime > serverTime ? localItem : serverItem);
+}
+
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, options = {}) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
@@ -14799,7 +14826,11 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
 
       const localTime = Date.parse(localItem.updated_at || localItem.created_at || '') || 0;
       const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
-      if (localTime >= serverTime) Object.assign(serverItem, _cloneData(localItem));
+      if (key === 'todos') {
+        Object.assign(serverItem, _pickMergedTodo(localItem, serverItem));
+      } else if (localTime > serverTime) {
+        Object.assign(serverItem, _cloneData(localItem));
+      }
     });
 
     merged[key] = serverArr;
@@ -15438,6 +15469,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         const localPending = _cloneData(_db);
         const serverBaseline = _cloneData(responseData.data);
         _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data, { teamSafe: !!teamSession });
+        _mergeServerTodosIntoLocal(serverBaseline);
         _migrate(_db);
         window._serverDataEtag = responseData.etag || null;
         _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
@@ -15531,6 +15563,11 @@ function _mergeServerTodosIntoLocal(serverData) {
       changed = true;
       return;
     }
+    const picked = _pickMergedTodo(local, remote);
+    if (picked && JSON.stringify(picked) !== JSON.stringify(local)) {
+      Object.assign(local, picked);
+      changed = true;
+    }
     const remoteTime = _syncItemTime(remote);
     const localTime = _syncItemTime(local);
     const localHistoryKeys = new Set((Array.isArray(local.history) ? local.history : []).map(row =>
@@ -15545,7 +15582,8 @@ function _mergeServerTodosIntoLocal(serverData) {
     );
     if (hasNewRemoteState) {
       ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
-       'completed_by_email', 'archived', 'updated_at', 'skipped_at'].forEach(field => {
+       'completed_by_email', 'archived', 'updated_at', 'skipped_at',
+       'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
         if (Object.prototype.hasOwnProperty.call(remote, field)) local[field] = _cloneData(remote[field]);
       });
       local.history = Array.isArray(local.history) ? local.history : [];
@@ -15712,7 +15750,9 @@ async function _loadFromServer() {
       const teamLocalHasData = !!(_db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length);
       const teamLocalDiverged = _localDataDivergedFromServerBaseline();
       if (teamLocalHasData && _serverDataChanged(data, _db) && teamLocalDiverged !== false) {
+        const serverSnapshot = _cloneData(data);
         _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data), { teamSafe: true });
+        _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
         const key = window._activeDBKey || _teamActiveDBKey();
         try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
@@ -15761,10 +15801,11 @@ async function _loadFromServer() {
       if (pendingSync) {
         const pendingSavedAt = Number(pendingSync.savedAt || 0) || 0;
         if (localTime >= serverTime || pendingSavedAt >= serverTime) {
+          const mergedTodos = _mergeServerTodosIntoLocal(_cloneData(data));
           clearTimeout(window._serverSyncTimer);
           window._serverSyncTimer = setTimeout(_syncToServer, 50);
           console.warn('[TeamPulse] kept newer local data while server sync is pending');
-          return false;
+          return mergedTodos;
         }
         const localPending = _cloneData(_db);
         const serverSnapshot = _cloneData(data);
@@ -15806,8 +15847,22 @@ async function _loadFromServer() {
         return mergedChanged || serverTodoStateChanged;
       }
       const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
+      const memoryDiverged = _localDataDivergedFromServerBaseline();
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
       if ((localEmpty && _serverDataChanged(data, _db)) || (serverTime > localTime)) {
+        if (!localEmpty && memoryDiverged) {
+          const serverSnapshot = _cloneData(data);
+          _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+          _mergeServerTodosIntoLocal(serverSnapshot);
+          _migrate(_db);
+          const key = window._activeDBKey || DB_KEY;
+          try { _persistDatabaseSnapshot(key, _db); } catch(e) {}
+          _markServerSyncPending('unstamped-local-merged-with-newer-server');
+          clearTimeout(window._serverSyncTimer);
+          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          console.warn('[TeamPulse] merged in-memory local todos with newer server data');
+          return true;
+        }
         _db = data;
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
@@ -15819,10 +15874,15 @@ async function _loadFromServer() {
         console.log('[TeamPulse] Loaded from server');
         return true;
       }
-      // لوکال جدیدتره — sync لوکال رو به سرور بفرست
+      // لوکال جدیدتره — اول تیک‌های سرور را بگیر، بعد اگر لازم بود بفرست
       if (localTime > serverTime) {
         const merged = _mergeServerTodosIntoLocal(data);
-        if (merged) return true;
+        if (merged) {
+          _markServerSyncPending('merged-remote-todos-into-newer-local');
+          clearTimeout(window._serverSyncTimer);
+          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          return true;
+        }
         setTimeout(() => _syncToServer(), 500);
       }
     }
@@ -15952,13 +16012,67 @@ function _startKeyEventReminderLoop() {
   window._keyEventReminderInterval = setInterval(_checkKeyEventReminders, 5 * 60 * 1000);
 }
 
+function _flushPendingServerSyncKeepalive() {
+  if (!_sbUser?.id || !_sbSession?.token) return;
+  const teamSession = _teamAccessSession();
+  if (teamSession && !teamSession.ownerUserId) return;
+  const diverged = _localDataDivergedFromServerBaseline();
+  const pending = _hasServerSyncPending();
+  if (!diverged && !pending) return;
+  if (diverged) {
+    try {
+      _db._lastSaved = Math.max(Number(_db._lastSaved || 0), Date.now());
+      _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db);
+      _markServerSyncPending('pagehide-flush');
+    } catch(e) {}
+  }
+  const accId = teamSession?.ownerUserId || _sbUser.id;
+  const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
+  const syncPayload = _serverSafeData(_db);
+  const fullBody = {
+    data: syncPayload,
+    force: !!window._forceNextSync,
+    client_saved_at: savedAt,
+    base_etag: window._serverDataEtag || null,
+  };
+  const patch = window._forceNextSync ? null : _buildServerSyncPatch(syncPayload);
+  const useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
+  const payloadObj = useDelta ? {
+    workspace: _currentAccountId(),
+    collections: patch.collections,
+    scalars: patch.scalars,
+    client_saved_at: savedAt,
+    base_etag: window._serverDataEtag || null,
+  } : fullBody;
+  const path = useDelta
+    ? '/api/data/' + accId + '/delta'
+    : '/api/data/' + accId;
+  const url = (window.location.origin || '') + path + _workspaceQuery('?');
+  const data = JSON.stringify(payloadObj);
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + _sbSession.token,
+  };
+  const keepalivePost = () => {
+    fetch(url, { method: 'POST', headers: authHeaders, body: data, keepalive: true, referrerPolicy: 'no-referrer' }).catch(() => {});
+  };
+  if (navigator.sendBeacon) {
+    const beaconBody = JSON.stringify(Object.assign({ token: _sbSession.token }, payloadObj));
+    const blob = new Blob([beaconBody], { type: 'text/plain;charset=UTF-8' });
+    const sent = navigator.sendBeacon(url, blob);
+    if (!sent) keepalivePost();
+  } else {
+    keepalivePost();
+  }
+}
+
 function _bindServerSyncLifecycleHandlers() {
   if (window._serverSyncLifecycleBound) return;
   window._serverSyncLifecycleBound = true;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       clearTimeout(window._serverSyncTimer);
-      _syncToServer();
+      _flushPendingServerSyncKeepalive();
     } else {
       _refreshReminderPushRegistration();
       _scheduleServerResumeSync();
@@ -15966,7 +16080,7 @@ function _bindServerSyncLifecycleHandlers() {
   });
   window.addEventListener('pagehide', () => {
     clearTimeout(window._serverSyncTimer);
-    _syncToServer();
+    _flushPendingServerSyncKeepalive();
   });
   window.addEventListener('focus', () => {
     _refreshReminderPushRegistration();
@@ -15982,50 +16096,7 @@ function _bindServerSyncLifecycleHandlers() {
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
     _adoptManualRestoreFromLocalStorage('beforeunload');
-    if (_sbUser?.id && _sbSession?.token) {
-      const teamSession = _teamAccessSession();
-      if (teamSession && !teamSession.ownerUserId) return;
-      const accId = teamSession?.ownerUserId || _sbUser.id;
-      const savedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
-      const syncPayload = _serverSafeData(_db);
-      const fullBody = {
-        data: syncPayload,
-        force: !!window._forceNextSync,
-        client_saved_at: savedAt,
-        base_etag: window._serverDataEtag || null,
-      };
-      const patch = window._forceNextSync ? null : _buildServerSyncPatch(syncPayload);
-      const useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
-      const payloadObj = useDelta ? {
-        workspace: _currentAccountId(),
-        collections: patch.collections,
-        scalars: patch.scalars,
-        client_saved_at: savedAt,
-        base_etag: window._serverDataEtag || null,
-      } : fullBody;
-      const path = useDelta
-        ? '/api/data/' + accId + '/delta'
-        : '/api/data/' + accId;
-      const url = (window.location.origin || '') + path + _workspaceQuery('?');
-      const data = JSON.stringify(payloadObj);
-      const authHeaders = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + _sbSession.token,
-      };
-      const keepalivePost = () => {
-        fetch(url, { method: 'POST', headers: authHeaders, body: data, keepalive: true, referrerPolicy: 'no-referrer' }).catch(() => {});
-      };
-      if (navigator.sendBeacon) {
-        // sendBeacon cannot set Authorization. Carry the token in the JSON
-        // body instead of the URL so it never appears in access logs or Referer.
-        const beaconBody = JSON.stringify(Object.assign({ token: _sbSession.token }, payloadObj));
-        const blob = new Blob([beaconBody], { type: 'text/plain;charset=UTF-8' });
-        const sent = navigator.sendBeacon(url, blob);
-        if (!sent) keepalivePost();
-      } else {
-        keepalivePost();
-      }
-    }
+    _flushPendingServerSyncKeepalive();
   });
 }
 
@@ -17232,6 +17303,11 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   t.status = 'pending';
   t.updated_at = new Date().toISOString();
   _advanceTodoDate(t, scheduledDate);
+  const todayKey = _jalaliToday();
+  let guard = 0;
+  while (_jalaliKey(t.date_jalali || '') < todayKey && guard++ < 1200) {
+    _advanceTodoDate(t, t.date_jalali);
+  }
   t.scheduled_date = t.date_jalali || '';
   t.scheduledDate = t.scheduled_date;
 }
@@ -20462,36 +20538,30 @@ function _completeTodoWithReport(t, report) {
       _createTodoOccurrenceRecord(t, t.status, completedAt);
       _advanceRecurringTodoOccurrence(t, scheduledDate);
       if (scheduledKey && scheduledKey < todayKey) {
-        showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد؛ نوبت امروز همچنان باقی است.`, 'success');
+        showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       }
     }
     // کارهای غیر تکراری: در renderTodoList روز بعد archive میشن
   }
-  // ابتدا نتیجه کلیک را فوراً نشان بده. ذخیره چندمگابایتی localStorage و شبکه
-  // نباید پاسخ بصری دکمه تیک را متوقف کند.
+  // ابتدا نتیجه کلیک را فوراً نشان بده. ذخیره localStorage نباید پشت setTimeout
+  // بماند؛ در اندروید با رفتن برنامه به پس‌زمینه آن تایمر اجرا نمی‌شود و تیک برمی‌گردد.
   const detailsWasOpen = document.querySelector('.todo-done-details')?.open || false;
   renderTodoList();
   if (t.done) {
     const details = document.querySelector('.todo-done-details');
     if (details) details.open = true;
   }
-  // _save خودش همگام‌سازی سرور را زمان‌بندی می‌کند؛ فراخوانی مستقیم دوم باعث
-  // درخواست‌های هم‌زمان، تعارض ETag و برگشت ظاهری تیک می‌شد.
-  clearTimeout(window._todoPersistTimer);
-  window._todoPersistTimer = setTimeout(() => {
-    try {
-      if (requiresFullSync) {
-        _save();
-      } else {
-        _save(true, { scheduleServerSync: false });
-        void _syncTodoDelta(t, t.done ? 'complete' : 'reopen');
-      }
+  try {
+    if (requiresFullSync) {
+      _save();
+    } else {
+      _save(true, { scheduleServerSync: false });
+      void _syncTodoDelta(t, t.done ? 'complete' : 'reopen');
     }
-    catch(e) {
-      console.error('[TeamPulse] todo persist failed:', e);
-      showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
-    }
-  }, 0);
+  } catch(e) {
+    console.error('[TeamPulse] todo persist failed:', e);
+    showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
+  }
 }
 
 function _resolveOverdueTodo(id, action) {
@@ -20510,10 +20580,11 @@ function _resolveOverdueTodo(id, action) {
       const completedAt = new Date().toISOString();
       _createTodoOccurrenceRecord(t, 'late_completed', completedAt);
       _advanceRecurringTodoOccurrence(t, scheduledDate);
+      _todoAddHistory(t, 'completed', false, true);
+      t.updated_at = completedAt;
       _save();
-      _syncToServer();
       _playDoneSound();
-      showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد؛ نوبت امروز همچنان باقی است.`, 'success');
+      showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       renderTodoList();
       return;
     }
@@ -20523,7 +20594,10 @@ function _resolveOverdueTodo(id, action) {
     t.completed_at = t.done_at;
     t.status = 'late_completed';
     t.updated_at = t.done_at;
-    _save(); _syncToServer(); _playDoneSound(); renderTodoList();
+    _todoAddHistory(t, 'completed', false, true);
+    _save();
+    _playDoneSound();
+    renderTodoList();
     return;
   }
 
@@ -20539,7 +20613,7 @@ function _resolveOverdueTodo(id, action) {
       t.done_at = null;
       t.updated_at = t.skipped_at;
     }
-    _save(); _syncToServer();
+    _save();
     showToast(`نوبت ${DateService.disp(scheduledDate)} رد شد؛ برنامه امروز بدون تغییر ادامه دارد.`, 'warning');
     renderTodoList();
     return;
@@ -20548,7 +20622,7 @@ function _resolveOverdueTodo(id, action) {
   if (action === 'delete_occurrence') {
     if (!confirm('فقط همین نوبت حذف شود؟ قالب تکرار و نوبت امروز دست‌نخورده می‌ماند.')) return;
     _deleteTodoOccurrenceOnly(t, scheduledDate);
-    _save(); _syncToServer();
+    _save();
     showToast('نوبت حذف شد؛ زنجیره تکرار حفظ شد.', 'success');
     renderTodoList();
     return;
@@ -20727,7 +20801,7 @@ function _resolveAllOverdueTodos(action) {
       _deleteTodoOccurrenceOnly(t, scheduledDate);
     }
   });
-  _save(); _syncToServer(); closeModal(); renderTodoList();
+  _save(); closeModal(); renderTodoList();
   showToast('تعیین تکلیف گروهی انجام شد.', 'success');
 }
 
