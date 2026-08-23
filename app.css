@@ -4194,3 +4194,6 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   #archive-file{min-height:48px;padding:10px;font-size:11px}
 }
 
+.tp-hover-bg3:hover { background: var(--bg4) !important; }
+.tp-hover-admin:hover { background: rgba(255,255,255,.3) !important; }
+

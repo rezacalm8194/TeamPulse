@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp90';
+const TP_ASSET_V = 'tp91';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4287,7 +4287,7 @@ function _teamAccessDeniedHtml(page) {
     <div style="font-size:34px;margin-bottom:10px">🔒</div>
     <h3 style="margin-bottom:8px">به ${label} دسترسی نداری</h3>
     <p style="font-size:13px;color:var(--text2);line-height:1.9">صاحب حساب برای ایمیل شما دسترسی این بخش را فعال نکرده است.</p>
-    <button class="btn btn-primary" style="margin-top:14px" onclick="currentPage=_teamDefaultPage();renderPage()">رفتن به بخش‌های مجاز</button>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="_tpGoTeamHome()">رفتن به بخش‌های مجاز</button>
   </div>`;
 }
 function _teamEncodeInvite(data) {
@@ -6823,10 +6823,10 @@ function accountCustomerTabsHtml(tab, search = '') {
   return `
     <div class="payments-toolbar account-tabs-toolbar">
       <div class="payments-segmented" role="tablist" aria-label="حساب مشتریان">
-        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_paymentsTab='purchases';currentPage='payments';renderPayments()">🛒 فروش</button>
-        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_paymentsTab='payments';currentPage='payments';renderPayments()">💳 دریافت</button>
-        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_paymentsTab='reminders';currentPage='payments';renderPayments()">🔔 یادآوری</button>
-        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_paymentsTab='families';currentPage='payments';renderPayments()">👥 حساب مشترک</button>
+        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_tpPaymentsTab('purchases')">🛒 فروش</button>
+        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_tpPaymentsTab('payments')">💳 دریافت</button>
+        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_tpPaymentsTab('reminders')">🔔 یادآوری</button>
+        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👥 حساب مشترک</button>
       </div>
     </div>`;
 }
