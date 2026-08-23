@@ -65,7 +65,7 @@ function normalizeTeamPermissions(permissions) {
   return list;
 }
 
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { name, password, business_name, business_type } = req.body;
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -76,7 +76,7 @@ router.post('/register', (req, res) => {
     const exists = db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email);
     if (exists) return res.status(409).json({ error: 'email already exists' });
     const id = randomUUID();
-    const hash = bcrypt.hashSync(password, 10);
+    const hash = await bcrypt.hash(password, 10);
     db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
     const token = sign({ id, tv: currentTokenVersion(db, id) });
     logger.info('registration_success', { requestId: req.requestId, userId: id });
@@ -90,7 +90,7 @@ router.post('/register', (req, res) => {
   }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const password = req.body.password;
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -104,7 +104,13 @@ router.post('/login', (req, res) => {
       WHERE lower(trim(email))=? AND is_active=1
       ORDER BY datetime(created_at) ASC, rowid ASC
     `).all(email);
-    const user = candidates.find(candidate => bcrypt.compareSync(password, candidate.password));
+    let user = null;
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(password, candidate.password)) {
+        user = candidate;
+        break;
+      }
+    }
     if (!user) {
       logger.warn('login_failed', { requestId: req.requestId, ip: req.ip, reason: 'invalid_credentials' });
       return res.status(401).json({ error: 'invalid credentials' });
@@ -311,7 +317,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
   }
 });
 
-router.put('/password', auth, (req, res) => {
+router.put('/password', auth, async (req, res) => {
   try {
     const { current_password, new_password } = req.body;
     if (!current_password || String(new_password || '').length < 8) {
@@ -319,9 +325,9 @@ router.put('/password', auth, (req, res) => {
     }
     const user = db.prepare('SELECT * FROM accounts WHERE id=?').get(req.user.id);
     if (!user) return res.status(404).json({ error: 'not found' });
-    if (!bcrypt.compareSync(current_password, user.password))
+    if (!await bcrypt.compare(current_password, user.password))
       return res.status(401).json({ error: 'current password wrong' });
-    const hash = bcrypt.hashSync(new_password, 10);
+    const hash = await bcrypt.hash(new_password, 10);
     const tv = db.transaction(() => {
       db.prepare('UPDATE accounts SET password=?, updated_at=datetime("now") WHERE id=?').run(hash, req.user.id);
       return bumpTokenVersion(db, req.user.id);
@@ -333,13 +339,13 @@ router.put('/password', auth, (req, res) => {
   }
 });
 
-router.put('/phone', auth, (req, res) => {
+router.put('/phone', auth, async (req, res) => {
   try {
     const phone = normalizeIranPhone(req.body.phone);
     const currentPassword = String(req.body.current_password || '');
     if (!phone) return res.status(400).json({ error: 'invalid phone' });
     const user = db.prepare('SELECT password FROM accounts WHERE id=?').get(req.user.id);
-    if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
+    if (!user || !await bcrypt.compare(currentPassword, user.password)) {
       return res.status(401).json({ error: 'current password wrong' });
     }
     db.prepare('UPDATE accounts SET phone=?,updated_at=datetime("now") WHERE id=?').run(phone, req.user.id);
