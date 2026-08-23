@@ -400,3 +400,38 @@ function _tpOpenAdminPanel() {
 }
 function _tpAuthThenBackup() { _checkAuthThen(manualBackup); }
 function _tpAuthThenImport() { _checkAuthThen(importBackup); }
+function _tpFocusOnEnter(event, id) {
+  if (!event || event.key !== 'Enter') return;
+  if (event.preventDefault) event.preventDefault();
+  _tpFocus(id);
+}
+function _tpSafeCall(name) {
+  if (!/^[A-Za-z_][\w]*$/.test(String(name || ''))) return;
+  var fn = window[name];
+  if (typeof fn === 'function') return fn.apply(null, Array.prototype.slice.call(arguments, 1));
+}
+function _tpOnEnter(event, name) {
+  if (!event || event.key !== 'Enter') return;
+  if (event.preventDefault) event.preventDefault();
+  _tpSafeCall(name);
+}
+function _tpOnEnter1(event, name, a) {
+  if (!event || event.key !== 'Enter') return;
+  if (event.preventDefault) event.preventDefault();
+  _tpSafeCall(name, a);
+}
+function _tpOnEnter2(event, name, a, b) {
+  if (!event || event.key !== 'Enter') return;
+  if (event.preventDefault) event.preventDefault();
+  _tpSafeCall(name, a, b);
+}
+function _tpOnCtrlEnter1(event, name, a) {
+  if (!event || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
+  if (event.preventDefault) event.preventDefault();
+  _tpSafeCall(name, a);
+}
+function _tpOnEnterOrSpace(event, name) {
+  if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
+  if (event.preventDefault) event.preventDefault();
+  _tpSafeCall(name);
+}

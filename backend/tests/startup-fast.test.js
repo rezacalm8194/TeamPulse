@@ -15,10 +15,11 @@ test('app shell does not prefetch extra JS on first paint', () => {
 });
 
 test('CSP script-src does not allow unsafe-inline', () => {
-  assert.doesNotMatch(appHtml, /script-src[^"]*'unsafe-inline'/);
+  assert.doesNotMatch(appHtml, /script-src 'self'[^;]*unsafe-inline/);
   assert.match(appHtml, /<script src="\/tp-inline-bind\.js/);
   assert.doesNotMatch(appHtml, /<script>/);
-  assert.doesNotMatch(serverJs, /script-src 'self' 'unsafe-inline'/);
+  assert.doesNotMatch(serverJs, /"script-src[^"]*unsafe-inline/);
+  assert.equal(fs.existsSync(path.join(root, 'tp-inline-bind.js')), true);
 });
 
 test('gzip compression is enabled for static assets', () => {

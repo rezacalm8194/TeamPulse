@@ -3870,7 +3870,7 @@ async function renderAccountSwitcher() {
         '<div style="background:var(--bg3);border-radius:10px;padding:14px;border:1px solid var(--border2)">' +
           '<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ میزکار جدید <span style="color:var(--text3)">(' + allAccounts.length + '/۵)</span></div>' +
           '<div style="display:flex;gap:8px">' +
-            '<input class="form-input" id="new-acc-name" placeholder="مثلاً: کوچینگ علی..." style="flex:1" onkeydown="if(event.key===\'Enter\')_doCreateAccount()">' +
+            '<input class="form-input" id="new-acc-name" placeholder="مثلاً: کوچینگ علی..." style="flex:1" onkeydown="_tpOnEnter(event,\'_doCreateAccount\')">' +
             '<button class="btn btn-ghost" onclick="_doCreateAccount()">ایجاد</button>' +
             '<button class="btn btn-primary" onclick="_doCreateAndSwitch()">ایجاد و رفتن</button>' +
           '</div>' +
@@ -4645,7 +4645,7 @@ function _renderChecklist(text, checked, interactive, noteId, field, itemIndex, 
   }
   if (interactive && (noteId != null || textareaId)) {
     const handler = "onchange='_toggleChecklistItem(" + (noteId == null ? 'null' : noteId) + ',' + JSON.stringify(field || '') + ',this,' + itemIndex + ',' + JSON.stringify(textareaId || '') + ")'";
-    return '<label class="interactive-checklist-item" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:44px;padding:10px 6px;border-radius:8px;transition:background .15s" onmouseenter="this.style.background=\'rgba(124,106,247,.07)\'" onmouseleave="this.style.background=\'transparent\'"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
+    return '<label class="interactive-checklist-item" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:2px 0;min-height:44px;padding:10px 6px;border-radius:8px;transition:background .15s" onmouseenter="_tpStyle(this,'background','rgba(124,106,247,.07)')" onmouseleave="_tpStyle(this,'background','transparent')"><input type="checkbox" ' + chk + handler + ' style="' + bs + ';cursor:pointer"><span style="' + ts + '">' + text + '</span></label>';
   }
   return '<label style="display:flex;align-items:flex-start;gap:10px;margin:2px 0;min-height:40px;padding:8px 4px"><input type="checkbox" ' + chk + 'disabled style="' + bs + '"><span style="' + ts + '">' + text + '</span></label>';
 }
@@ -4722,7 +4722,7 @@ function renderRich(str, opts) {
     '<figure style="margin:14px 0;text-align:center">' +
       '<img src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer" ' +
         'style="display:block;max-width:100%;height:auto;max-height:70vh;margin:0 auto;border-radius:10px;border:1px solid var(--border2);object-fit:contain;background:var(--bg3)" ' +
-        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">' +
+        'onerror="_tpHideShowNext(this,\'block\')">' +
       '<figcaption style="display:none;padding:12px;border:1px dashed var(--border2);border-radius:9px;color:var(--text3);font-size:12px">تصویر بارگذاری نشد' +
         '$1' +
       '</figcaption>' +
@@ -7508,7 +7508,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
         <div id="ses-followup-list" style="margin-bottom:6px"></div>
         <div style="display:flex;gap:6px">
-          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();_addSesFollowupItem()}">
+          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1" onkeydown="_tpOnEnter(event,'_addSesFollowupItem')">
           <button type="button" class="btn btn-ghost" onclick="_addSesFollowupItem()">+ افزودن</button>
         </div>
       </div>
@@ -7867,7 +7867,7 @@ async function openEditSession(sessionId) {
             </div>`).join('')}
         </div>
         <div style="display:flex;gap:6px;margin-top:4px">
-          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditFollowup(${sessionId})}">
+          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1" onkeydown="_tpOnEnter1(event,'addEditFollowup',${sessionId})">
           <button type="button" class="btn btn-ghost" onclick="addEditFollowup(${sessionId})">+ افزودن</button>
         </div>
       </div>
@@ -8177,8 +8177,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     updateTopbarActions(`
       <div class="payments-toolbar">
         <div class="payments-segmented" role="tablist" aria-label="تاریخچه مالی">
-          <button role="tab" onclick="_paymentsTab='purchases';currentPage='payments';renderPage()">🛒 فروش</button>
-          <button role="tab" onclick="_paymentsTab='payments';currentPage='payments';renderPage()">💳 دریافت</button>
+          <button role="tab" onclick="_tpPaymentsTab('purchases',1)">🛒 فروش</button>
+          <button role="tab" onclick="_tpPaymentsTab('payments',1)">💳 دریافت</button>
           <button class="active" role="tab" aria-selected="true">🔔 یادآوری</button>
         </div>
         <div class="table-search">
@@ -9381,7 +9381,7 @@ async function renderSettings() {
         <li>✔ مشاوره</li>
       </ul>
       <div class="modal-actions" style="justify-content:center;margin-top:14px;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="document.getElementById('new-pkg-label').focus()">➕ افزودن اولین خدمت</button>
+        <button class="btn btn-primary" onclick="_tpFocus('new-pkg-label')">➕ افزودن اولین خدمت</button>
         <button class="btn btn-ghost" onclick="addSamplePkgTypes()">استفاده از نمونه آماده</button>
       </div>
       <div class="modal-actions" style="justify-content:center;margin-top:14px">
@@ -11092,8 +11092,8 @@ function openEvaluation(studentId, displayName) {
 
   openModal(`📊 ارزیابی عملکرد — ${escapeHtml(displayName)}`, `
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button id="eval-tab-forms" onclick="document.getElementById('eval-panel-forms').style.display='block';document.getElementById('eval-panel-ach').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-ach').style.background='var(--bg3)';document.getElementById('eval-tab-ach').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--accent);color:white">📋 فرم‌های ارزیابی</button>
-      <button id="eval-tab-ach" onclick="document.getElementById('eval-panel-ach').style.display='block';document.getElementById('eval-panel-forms').style.display='none';this.style.background='var(--accent)';this.style.color='white';document.getElementById('eval-tab-forms').style.background='var(--bg3)';document.getElementById('eval-tab-forms').style.color='var(--text2)'" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تاریخچه دستاوردها (${fa(allSessions.length)})</button>
+      <button id="eval-tab-forms" onclick="_tpEvalTab('forms')" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--accent);color:white">📋 فرم‌های ارزیابی</button>
+      <button id="eval-tab-ach" onclick="_tpEvalTab('ach')" style="flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;background:var(--bg3);color:var(--text2)">🌱 تاریخچه دستاوردها (${fa(allSessions.length)})</button>
     </div>
     <div id="eval-panel-forms" style="max-height:55vh;overflow-y:auto">
       ${caseFormsPickerHtml}
@@ -11663,7 +11663,7 @@ function buildEvalTable(form, periodIdx, studentId) {
       <input type="text" id="eval-date-${periodIdx}" value="${period.date}"
         class="form-input jdate" style="font-size:12px;padding:3px 8px;height:30px;text-align:center;width:120px"
         placeholder="۱۴۰۵/۰۱/۰۱"
-        oninput="this.value=this.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));updateEvalDate(${form.id},${periodIdx},this.value)">
+        oninput="_tpFaDigits(this);updateEvalDate(${form.id},${periodIdx},this.value)">
       <span style="font-size:10px;color:var(--text3)">(قابل ویرایش)</span>
       <button onclick="confirmDeleteEvalPeriod(${form.id},${periodIdx})"
         style="margin-right:auto;padding:3px 10px;font-size:11px;border-radius:6px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.08);color:var(--red);cursor:pointer">
@@ -11841,7 +11841,7 @@ function endEvalPeriod(studentId, displayName, formId, periodIdx) {
       <label class="form-label">تاریخ پایان این دوره</label>
       <input class="form-input jdate" id="enp-date" value="${today}" placeholder="۱۴۰۵/۰۱/۰۱"
         style="text-align:center;font-size:15px;font-weight:600;letter-spacing:1px"
-        oninput="this.value=this.value.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d))">
+        oninput="_tpFaDigits(this)">
       <div style="font-size:10px;color:var(--text3);margin-top:4px">تاریخ امروز به‌صورت پیش‌فرض وارد شده — از آیکون 📅 یا تایپ مستقیم تغییر بده</div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.8">با ثبت این تاریخ، دوره ${fa(periodIdx + 1)} بسته می‌شود، تمام دستاوردهای این بازه زمانی خودکار به همین دوره متصل می‌شوند و یک دوره جدید (باز) بلافاصله شروع می‌شود.</div>
     </div>
@@ -12327,7 +12327,7 @@ td{padding:7px 10px;font-size:12px;border-bottom:1px solid #f3f4f6;color:#374151
 <body>
 <div class="wrap">
   <div class="brand">
-    ${logoUrl ? `<img src="${logoUrl}" class="brand-logo" alt="${appTitle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="brand-logo" style="display:none">${appTitle.charAt(0)}</div>` : `<div class="brand-logo">${appTitle.charAt(0)}</div>`}
+    ${logoUrl ? `<img src="${logoUrl}" class="brand-logo" alt="${appTitle}" onerror="_tpHideShowNext(this,'flex')"><div class="brand-logo" style="display:none">${appTitle.charAt(0)}</div>` : `<div class="brand-logo">${appTitle.charAt(0)}</div>`}
     <div>
       <div class="brand-name">${appTitle}</div>
       <div class="brand-sub">ارسال‌شده توسط ${senderName}</div>
@@ -13033,7 +13033,7 @@ async function openTopics(studentId, displayName) {
       <label class="form-label">✅ آیتم‌های چک‌لیست (اختیاری)</label>
       <div id="new-topic-checklist" style="margin-bottom:6px"></div>
       <div style="display:flex;gap:6px">
-        <input class="form-input" id="f-new-checklist-item" placeholder="متن آیتم چک‌لیست..." style="flex:1" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();_addNewTopicChecklistItem()}">
+        <input class="form-input" id="f-new-checklist-item" placeholder="متن آیتم چک‌لیست..." style="flex:1" onkeydown="_tpOnEnter(event,'_addNewTopicChecklistItem')">
         <button class="btn btn-ghost" onclick="_addNewTopicChecklistItem()">+ اضافه</button>
       </div>
     </div>
@@ -13277,7 +13277,7 @@ async function openEditTopic(topicId, studentId, displayName) {
           </div>`).join('')}
       </div>
       <div style="display:flex;gap:6px;margin-top:6px">
-        <input class="form-input" id="edit-new-checklist-item" placeholder="آیتم جدید..." style="flex:1" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();_addEditTopicChecklistItem(${topicId},${studentId})}">
+        <input class="form-input" id="edit-new-checklist-item" placeholder="آیتم جدید..." style="flex:1" onkeydown="_tpOnEnter2(event,'_addEditTopicChecklistItem',${topicId},${studentId})">
         <button class="btn btn-ghost" onclick="_addEditTopicChecklistItem(${topicId},${studentId})">+ اضافه</button>
       </div>
     </div>
@@ -13838,8 +13838,8 @@ function renderNavOrderEditor() {
     <div draggable="true" data-page="${item.page}" style="touch-action:none" data-index="${i}"
       style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg3);
              border:1px solid var(--border2);border-radius:8px;cursor:grab;user-select:none"
-      ondragstart="this.style.opacity='.4';window._dragNavIdx=${i}"
-      ondragend="this.style.opacity='1';renderNavOrderEditor()"
+      ondragstart="_tpNavDragStart(this,${i})"
+      ondragend="_tpNavDragEnd(this)"
       ondragover="event.preventDefault()"
       ondrop="event.preventDefault();_dropNavItem(${i})">
       <span style="color:var(--text3);font-size:16px">⠿</span>
@@ -14241,7 +14241,7 @@ async function _openAttachment(id, name, type) {
     if (_RASTER_IMAGE_MIME.test(type || '') && String(dataURL).startsWith('data:image/') && !_ACTIVE_FILE_MIME.test(String(dataURL).slice(0, 64))) {
       // نمایش تصویر در modal
       document.getElementById('modals').innerHTML = `
-        <div class="modal-overlay open" onclick="this.innerHTML===event.target.outerHTML&&(document.getElementById('modals').innerHTML='')">
+        <div class="modal-overlay open" onclick="_tpClearModalsIfSelf(event)">
           <div style="max-width:90vw;max-height:90vh;background:var(--bg2);border-radius:14px;
                       overflow:hidden;position:relative">
             <div style="display:flex;align-items:center;justify-content:space-between;
@@ -14249,7 +14249,7 @@ async function _openAttachment(id, name, type) {
               <span style="font-size:13px;font-weight:600">${escapeHtml(name)}</span>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-ghost btn-sm" onclick="_downloadAttachment('${id}',${escapeAttr(name)})">⬇️ دانلود</button>
-                <button class="modal-close" onclick="document.getElementById('modals').innerHTML=''">×</button>
+                <button class="modal-close" onclick="_tpClearModals()">×</button>
               </div>
             </div>
             <img src="${dataURL}" style="max-width:90vw;max-height:80vh;object-fit:contain;display:block">
@@ -16269,7 +16269,7 @@ function _authHTML(mode) {
   const savedEmail = isLogin || isReset ? escapeHtml(savedCreds.email || '') : '';
   const savedPass = isLogin ? escapeHtml(savedCreds.password || '') : '';
 
-const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radius:18px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,.4)" onerror="this.style.display=&quot;none&quot;">';
+const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radius:18px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,.4)" onerror="_tpHideBrokenImg(this)">';
   const features = [
     { icon: '👥', text: 'مدیریت شاگردان' },
     { icon: '📅', text: 'ثبت جلسات' },
@@ -16323,17 +16323,17 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doAuth(&#39;' + mode + '&#39;)" style="display:flex;flex-direction:column;gap:14px">' +
     (!isLogin ? '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">نام و نام خانوادگی</label>' +
     '<input class="form-input" id="auth-name" name="name" type="text" placeholder="مثلاً: رضا صفری" ' +
-    'autocomplete="name" style="width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-phone\').focus()"></div>' +
+    'autocomplete="name" style="width:100%;font-size:14px" onkeydown="_tpFocusOnEnter(event,\'auth-phone\')"></div>' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">شماره تماس</label>' +
     '<input class="form-input" id="auth-phone" name="tel" autocomplete="tel" inputmode="tel" type="tel" placeholder="09123456789" ' +
-    'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-email\').focus()"></div>' : '') +
+    'style="direction:ltr;width:100%;font-size:14px" onkeydown="_tpFocusOnEnter(event,\'auth-email\')"></div>' : '') +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
     '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" ' +
-    'style="direction:ltr;width:100%;font-size:14px" onkeydown="if(event.key===\'Enter\')document.getElementById(\'auth-pass\').focus()"></div>' +
+    'style="direction:ltr;width:100%;font-size:14px" onkeydown="_tpFocusOnEnter(event,\'auth-pass\')"></div>' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور</label>' +
     '<div style="position:relative"><input class="form-input" id="auth-pass" name="password" autocomplete="' + (isLogin ? 'current-password' : 'new-password') + '" type="password" placeholder="' + (isLogin ? 'رمز عبور' : 'حداقل ۸ کاراکتر') + '" value="' + savedPass + '" ' +
     'style="width:100%;padding-left:44px;font-size:14px">' +
-    '<button type="button" onclick="const i=document.getElementById(&#39;auth-pass&#39;);i.type=i.type===&#39;password&#39;?&#39;text&#39;:&#39;password&#39;" ' +
+    '<button type="button" onclick="_tpTogglePassword('auth-pass')" ' +
     'style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px">👁</button></div></div>' +
     pass2 +
     (isLogin ? rememberRow : captchaSection) +
@@ -16367,7 +16367,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
 
     // لینک بستن
     '<div style="text-align:center;margin-top:14px">' +
-    '<button onclick="document.getElementById(&#39;auth-screen&#39;).style.display=&#39;none&#39;;document.getElementById(&#39;app&#39;).style.display=&#39;&#39;;" ' +
+    '<button onclick="_tpHideAuthShowApp()" ' +
     'style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--text3)">✕ ادامه بدون ورود</button>' +
     '</div>' +
     '</div></div>'
@@ -16683,7 +16683,7 @@ function _renderWelcomeStep() {
           </div>
         </div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
-          <button class="btn btn-ghost" onclick="_welcomeStep=0;_renderWelcomeStep()">← قبلی</button>
+          <button class="btn btn-ghost" onclick="_tpWelcome(0)">← قبلی</button>
           <button class="btn btn-primary" onclick="_applyLabelsAndNext()">بعدی →</button>
         </div>
       </div>`,
@@ -16706,8 +16706,8 @@ function _renderWelcomeStep() {
           </button>
         </div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
-          <button class="btn btn-ghost" onclick="_welcomeStep=1;_renderWelcomeStep()">← قبلی</button>
-          <button class="btn btn-primary" onclick="_welcomeStep=3;_renderWelcomeStep()">بعدی →</button>
+          <button class="btn btn-ghost" onclick="_tpWelcome(1)">← قبلی</button>
+          <button class="btn btn-primary" onclick="_tpWelcome(3)">بعدی →</button>
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:10px">می‌تونی این مرحله رو رد کنی و بعداً از تنظیمات فعالش کنی</div>
       </div>`,
@@ -16748,7 +16748,7 @@ function _renderWelcomeStep() {
         </div>
         `}
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
-          <button class="btn btn-ghost" onclick="_welcomeStep=2;_renderWelcomeStep()">← قبلی</button>
+          <button class="btn btn-ghost" onclick="_tpWelcome(2)">← قبلی</button>
           <button class="btn btn-primary" onclick="_finishWizardAndGoToStudents()">
             🚀 شروع کنیم!
           </button>
@@ -17703,7 +17703,7 @@ function _openQuickStaffChecklist(staffId) {
     </div>
     <div class="form-group full">
       <label class="form-label">عنوان کارها *</label>
-      <textarea class="form-input" id="quick-staff-titles" rows="6" autofocus onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')_saveQuickStaffChecklist('${staff.id}')" placeholder="مثلاً:
+      <textarea class="form-input" id="quick-staff-titles" rows="6" autofocus onkeydown="_tpOnCtrlEnter1(event,'_saveQuickStaffChecklist','${staff.id}')" placeholder="مثلاً:
 پیگیری پرداخت مشتری
 آماده‌سازی ویدیو
 ارسال گزارش روزانه"></textarea>
@@ -18032,9 +18032,9 @@ function _todoStaffDashboardHtml() {
   return `${_todoTabsHtml()}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="btn btn-primary btn-sm" onclick="openAddPersonnelFromTodo()">+ افزودن پرسنل</button>
     <button class="btn btn-primary btn-sm" onclick="_openQuickStaffChecklistFromFilter()">+ چک‌لیست سریع</button>
-    <select class="form-input" style="max-width:180px" onchange="_todoStaffFilter.staffId=this.value;_renderTodoStaffFilteredList()">${_todoStaffOptions(_todoStaffFilter.staffId)}</select>
-    <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.range=this.value;_renderTodoStaffFilteredList()"><option value="today">امروز</option><option value="week">هفته</option><option value="month">ماه</option><option value="year">سال</option><option value="custom">دلخواه</option></select>
-    <select class="form-input" style="max-width:150px" onchange="_todoStaffFilter.status=this.value;_renderTodoStaffFilteredList()"><option value="all">همه وضعیت‌ها</option><option value="done">انجام‌شده</option><option value="open">انجام‌نشده</option><option value="overdue">عقب‌افتاده</option></select>
+    <select class="form-input" style="max-width:180px" onchange="_tpTodoStaffField('staffId',this)">${_todoStaffOptions(_todoStaffFilter.staffId)}</select>
+    <select class="form-input" style="max-width:150px" onchange="_tpTodoStaffField('range',this)"><option value="today">امروز</option><option value="week">هفته</option><option value="month">ماه</option><option value="year">سال</option><option value="custom">دلخواه</option></select>
+    <select class="form-input" style="max-width:150px" onchange="_tpTodoStaffField('status',this)"><option value="all">همه وضعیت‌ها</option><option value="done">انجام‌شده</option><option value="open">انجام‌نشده</option><option value="overdue">عقب‌افتاده</option></select>
   </div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px">${rows || '<div style="color:var(--text3);font-size:13px">پرسنلی ثبت نشده است.</div>'}</div><div id="todo-staff-filtered-list"></div>`;
 }
 
@@ -18266,7 +18266,7 @@ function _todoReportForStaffHtml(staffId) {
   return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <div style="font-size:14px;font-weight:900">گزارش عملکرد ${escapeHtml(staff ? _todoStaffName(staff) : 'پرسنل')}</div>
-      <select class="form-input" style="max-width:160px" onchange="_todoReportFilter.range=this.value;_renderTodoStaffFilteredList()">
+      <select class="form-input" style="max-width:160px" onchange="_tpTodoReportRange(this)">
         <option value="today" ${_todoReportFilter.range==='today'?'selected':''}>روزانه</option>
         <option value="week" ${_todoReportFilter.range==='week'?'selected':''}>هفتگی</option>
         <option value="month" ${_todoReportFilter.range==='month'?'selected':''}>ماهانه</option>
@@ -18286,7 +18286,7 @@ function _todoReportHtml(myOnly = false) {
   const byDay = {};
   list.forEach(t => { const d = _todoScheduledDate(t) || 'بدون تاریخ'; (byDay[d] ||= []).push(t); });
   const details = Object.keys(byDay).sort((a,b)=>_jalaliKey(a)-_jalaliKey(b)).map(d => `<details style="border:1px solid var(--border);border-radius:10px;padding:9px;background:var(--bg2);margin-bottom:7px"><summary style="cursor:pointer;font-size:12px;font-weight:800">${DateService.disp(d)} · ${fa(byDay[d].length)} کار</summary><div style="margin-top:8px">${byDay[d].map(t => `<div style="font-size:12px;color:var(--text2);padding:6px 0;border-top:1px solid var(--border)">${t.done?'✅':'○'} ${escapeHtml(t.title)} ${t.staff_report ? `<div style="font-size:11px;color:var(--text3);margin-top:3px">گزارش: ${escapeHtml(t.staff_report)}</div>` : ''}</div>`).join('')}</div></details>`).join('');
-  return `${_todoTabsHtml()}${myOnly ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="form-input" style="max-width:160px" onchange="_todoReportFilter.range=this.value;renderTodoList()"><option value="today">روزانه</option><option value="week" selected>هفتگی</option><option value="month">ماهانه</option><option value="year">سالانه</option><option value="custom">دلخواه</option></select></div>`}${_todoPerfCards(perf)}<div style="height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden;margin-bottom:12px"><div style="height:100%;width:${perf.percent}%;background:linear-gradient(90deg,var(--green),var(--accent2))"></div></div>${details || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:18px">برای این بازه گزارشی وجود ندارد.</div>'}`;
+  return `${_todoTabsHtml()}${myOnly ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="form-input" style="max-width:160px" onchange="_tpTodoReportRange(this,'list')"><option value="today">روزانه</option><option value="week" selected>هفتگی</option><option value="month">ماهانه</option><option value="year">سالانه</option><option value="custom">دلخواه</option></select></div>`}${_todoPerfCards(perf)}<div style="height:8px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden;margin-bottom:12px"><div style="height:100%;width:${perf.percent}%;background:linear-gradient(90deg,var(--green),var(--accent2))"></div></div>${details || '<div style="font-size:12px;color:var(--text3);text-align:center;padding:18px">برای این بازه گزارشی وجود ندارد.</div>'}`;
 }
 
 function _todoDurationMinutes(t) {
@@ -18552,8 +18552,8 @@ function _todoStickyAddBoxHtml(stats = {}) {
         box-shadow:0 4px 20px rgba(124,106,247,.4);
         display:flex;align-items:center;justify-content:center;gap:10px;
         transition:all .2s"
-      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(124,106,247,.5)'"
-      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(124,106,247,.4)'">
+      onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(124,106,247,.5)')"
+      onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(124,106,247,.4)')">
       <span>کار جدید اضافه کن</span>
       <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
         display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
@@ -19864,7 +19864,7 @@ function _renderGregorianTodoCalendarView() {
         </button>`;
     }).join('');
     return `<div class="todo-calendar-year-card">
-      <button onclick="_todoCalendarCursor='${_jalaliFromDateObj(new Date(year, month, 1))}';_setTodoViewMode('month')"
+      <button onclick="_tpTodoCalCursor('${_jalaliFromDateObj(new Date(year, month, 1))}','month')"
         style="all:unset;display:flex;justify-content:space-between;align-items:center;width:100%;cursor:pointer;margin-bottom:8px">
         <b style="font-size:13px;color:var(--text)">${months[month]}</b>
         <span style="font-size:11px;color:var(--text3)">${fa(count)} کار</span>
@@ -20080,7 +20080,7 @@ function _renderTodoCalendarView() {
         </button>`;
     }).join('');
     return `<div class="todo-calendar-year-card">
-      <button onclick="_todoCalendarCursor='${_formatJalali(cy,jm,1)}';_setTodoViewMode('month')"
+      <button onclick="_tpTodoCalCursor('${_formatJalali(cy,jm,1)}','month')"
         style="all:unset;display:flex;justify-content:space-between;align-items:center;width:100%;cursor:pointer;margin-bottom:8px">
         <b style="font-size:13px;color:var(--text)">${JMONTHS[i]}</b>
         <span style="font-size:11px;color:var(--text3)">${fa(yearMonthCounts.get(jm) || 0)} کار</span>
@@ -22703,8 +22703,8 @@ function openStaffRolesCompleted() {
       style="width:100%;display:flex;align-items:center;gap:12px;padding:13px 16px;
         background:var(--bg3);border:1px solid var(--border2);border-radius:12px;
         cursor:pointer;font-family:var(--font);margin-bottom:8px;transition:.15s"
-      onmouseover="this.style.borderColor='var(--accent2)'"
-      onmouseout="this.style.borderColor='var(--border2)'">
+      onmouseover="_tpStyle(this,'borderColor','var(--accent2)')"
+      onmouseout="_tpStyle(this,'borderColor','var(--border2)')">
       <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));
         display:flex;align-items:center;justify-content:center;font-weight:700;color:white;flex-shrink:0">
         ${s.name.charAt(0)}
@@ -22743,7 +22743,7 @@ function _staffRoleLogin(staffId, staffName) {
       <h3 style="font-size:15px;margin:0 0 16px">${escapeHtml(staffName)}</h3>
       <input class="form-input" id="staff-pass-input" type="password" placeholder="رمز عبور را وارد کنید"
         style="text-align:center;font-size:16px;letter-spacing:4px;width:100%"
-        onkeydown="if(event.key==='Enter')_verifyStaffPass(${staffId})">
+        onkeydown="_tpOnEnter1(event,'_verifyStaffPass',${staffId})">
       <div id="staff-pass-err" style="display:none;margin-top:8px;font-size:12px;color:var(--red)"></div>
     </div>
   `, [
@@ -22823,7 +22823,7 @@ function renderStaffRolesPanel(staffId) {
   setContent(`
     <div style="max-width:600px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-        <button onclick="currentPage='staff';renderPage()" class="btn btn-ghost btn-sm">← بازگشت</button>
+        <button onclick="_tpGo('staff')" class="btn btn-ghost btn-sm">← بازگشت</button>
         <h2 style="font-size:16px;font-weight:700;margin:0">نقش‌های انجام‌شده — ${escapeHtml(staff.name+' '+staff.lname)}</h2>
       </div>
 
@@ -22867,7 +22867,7 @@ function renderStaffRolesPanel(staffId) {
       ${entriesHTML}
     </div>`);
 
-  updateTopbarActions(`<button class="btn btn-ghost btn-sm" onclick="currentPage='staff';renderPage()">← بازگشت به همکاران</button>`);
+  updateTopbarActions(`<button class="btn btn-ghost btn-sm" onclick="_tpGo('staff')">← بازگشت به همکاران</button>`);
 }
 
 function _addStaffRoleEntry(staffId) {
@@ -22912,7 +22912,7 @@ function openSetStaffPassword(staffId) {
       <label class="form-label">رمز عبور جدید</label>
       <div style="position:relative">
         <input class="form-input" id="new-staff-pass" type="password" placeholder="رمز عبور..." style="width:100%;padding-left:44px">
-        <button onclick="const i=document.getElementById('new-staff-pass');i.type=i.type==='password'?'text':'password'"
+        <button onclick="_tpTogglePassword('new-staff-pass')"
           style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px">👁</button>
       </div>
     </div>
@@ -23068,7 +23068,7 @@ function openWalletPanel() {
       <div id="wallet-card-number" style="background:var(--bg3);border-radius:8px;padding:10px;margin-top:10px;font-family:monospace;font-size:16px;text-align:center;direction:ltr;letter-spacing:4px;font-weight:700;color:var(--accent2)">
         ${cardFromSettings ? _formatCardNumber(cardFromSettings) : '...در حال دریافت'}
       </div>
-      <button onclick="navigator.clipboard?.writeText(document.getElementById('wallet-card-number').textContent.trim()).then(()=>showToast('کپی شد ✓','success'))" 
+      <button onclick="_tpCopyElText('wallet-card-number','کپی شد ✓')" 
         class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;font-size:11px">📋 کپی شماره کارت</button>
     </div>
     <div style="max-height:180px;overflow-y:auto">
@@ -23313,8 +23313,8 @@ function _adminRenderUserList(users) {
       'background:var(--bg3);border-radius:10px;margin-bottom:6px;cursor:pointer;',
       'border:1px solid ' + (selected?'var(--accent2)':'transparent') + ';transition:border-color .15s" ',
       'onclick="openAdminUserDetail(\'' + uid + '\')" ',
-      'onmouseover="this.style.borderColor=\'var(--accent2)\'" ',
-      'onmouseout="this.style.borderColor=\'' + (selected?'var(--accent2)':'transparent') + '\'">',
+      'onmouseover="_tpStyle(this,\'borderColor\',\'var(--accent2)\')" ',
+      'onmouseout="_tpStyle(this,\'borderColor\',\'' + (selected?'var(--accent2)':'transparent') + '\')">',
       '<input type="checkbox" aria-label="انتخاب ' + uname + '" ' + (selected?'checked ':'') +
         'onclick="event.stopPropagation();_adminToggleUserSelection(\'' + uid + '\',this.checked)" ' +
         'style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">',
@@ -23773,7 +23773,7 @@ async function openAdminUserDetail(userId) {
       '</div>' +
       (!isMainAdmin ? (
         '<div style="border-top:1px solid rgba(248,113,113,.3);padding-top:12px;margin-top:4px">' +
-          '<button onclick="var el=this;_adminDeleteUser(el.dataset.uid,el.dataset.uname)" ' +
+          '<button onclick="_tpAdminDeleteFrom(this)" ' +
           'data-uid="' + user.id + '" data-uname="' + escapeHtml(user.name||user.email||'') + '" ' +
           'class="btn btn-danger" style="width:100%;font-size:13px">' +
           '🗑️ حذف کامل این حساب کاربری' +
@@ -24210,7 +24210,7 @@ function _adminEmailSuggest(q) {
   suggestions.innerHTML = filtered.map(u =>
     '<div onclick="_adminSelectEmail(' + escapeAttr(u.email) + ',' + escapeAttr(u.id) + ')" ' +
     'style="padding:8px 12px;cursor:pointer;font-size:12px;direction:ltr;border-bottom:1px solid var(--border)" ' +
-    'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'"> ' +
+    'onmouseover="_tpStyle(this,\'background\',\'var(--bg3)\')" onmouseout="_tpStyle(this,\'background\',\'\')"> ' +
     '<span style="color:var(--accent2)">' + escapeHtml(u.email) + '</span>' +
     '<span style="color:var(--text3);font-size:11px;margin-right:8px"> — ' + escapeHtml(u.name||'') + '</span>' +
     '</div>'
@@ -25349,7 +25349,7 @@ function _goalAchievementsHtml() {
 
   return `
     <div class="goal-achievements-shell ${_goalAchievementsOpen?'is-open':''}" style="background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(124,106,247,.08));border:1px solid rgba(62,207,142,.24);border-radius:14px;padding:14px 16px;margin-bottom:18px">
-      <div id="goal-achievements-trigger" role="button" tabindex="0" aria-expanded="${_goalAchievementsOpen}" onclick="toggleGoalAchievements()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGoalAchievements()}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer">
+      <div id="goal-achievements-trigger" role="button" tabindex="0" aria-expanded="${_goalAchievementsOpen}" onclick="toggleGoalAchievements()" onkeydown="_tpOnEnterOrSpace(event,'toggleGoalAchievements')" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer">
         <div style="display:flex;align-items:center;gap:10px">
           <span id="goal-achievements-chevron" class="goal-achievements-chevron">⌄</span>
           <div>
@@ -25586,8 +25586,8 @@ function renderGoals() {
 
     return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
       onclick="openGoalDetail(${g.id})"
-      onmouseenter="this.style.borderColor='rgba(62,207,142,.6)'"
-      onmouseleave="this.style.borderColor='${urgencyColor}'">
+      onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.6)')"
+      onmouseleave="_tpStyle(this,'borderColor','$urgencyColor')">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
           style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
@@ -25656,8 +25656,8 @@ function renderGoals() {
             box-shadow:0 4px 20px rgba(124,106,247,.4);
             display:flex;align-items:center;justify-content:center;gap:10px;
             transition:all .2s"
-          onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(124,106,247,.5)'"
-          onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(124,106,247,.4)'">
+          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(124,106,247,.5)')"
+          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(124,106,247,.4)')">
           <span>🎯 هدف جدید اضافه کن</span>
           <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
             display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
@@ -25688,7 +25688,7 @@ function renderGoals() {
             const linkedTaskCount = (_db.todos||[]).filter(t => t.goal_id === g.id && !t.archived).length;
             const linkedHabitCount = (_db.habits||[]).filter(h => h.goal_id === g.id).length;
             return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
-              onmouseenter="this.style.borderColor='rgba(62,207,142,.5)'" onmouseleave="this.style.borderColor='var(--border)'">
+              onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','var(--border)')">
               <div style="display:flex;align-items:flex-start;gap:10px">
                 <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
                   style="width:26px;height:26px;border-radius:8px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;
@@ -25984,7 +25984,7 @@ function _renderGoalVisionPreview(prefix) {
   if (summary) summary.textContent = imgs.length ? imgs.length + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده';
   box.innerHTML = imgs.length ? imgs.slice(0, 6).map(item => `
     <div style="aspect-ratio:1.15;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);overflow:hidden;position:relative">
-      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div style=&quot;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px&quot;>📷</div>'">
+      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="_tpImgParentPlaceholder(this)">
     </div>`).join('') : `
     <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:18px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg3)">
       📷 هنوز تصویری اضافه نشده
@@ -26046,12 +26046,12 @@ function _openGoalVisionBoardManager(ctx) {
   document.getElementById('vision-manager-overlay')?.remove();
   const body = `
     <div>
-      <div id="vision-drop-zone" ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'" ondragleave="this.style.borderColor='var(--border2)'" ondrop="_visionDropFiles(event)"
+      <div id="vision-drop-zone" ondragover="event.preventDefault();_tpStyle(this,'borderColor','var(--accent2)')" ondragleave="_tpStyle(this,'borderColor','var(--border2)')" ondrop="_visionDropFiles(event)"
         style="border:1.5px dashed var(--border2);border-radius:14px;padding:18px;text-align:center;background:var(--bg3);margin-bottom:12px">
         <div style="font-size:32px;margin-bottom:8px">🖼</div>
         <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:5px">تصاویر را اینجا رها کن یا از دستگاه انتخاب کن</div>
         <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">تصویرهای رایج مثل جی‌پی‌جی، پی‌ان‌جی، وب‌پی و هیک - حداکثر ۱۰ مگابایت برای هر تصویر</div>
-        <button type="button" onclick="document.getElementById('vision-image-picker').click()" class="btn btn-primary" style="padding:9px 14px">📷 افزودن تصاویر</button>
+        <button type="button" onclick="_tpClickId('vision-image-picker')" class="btn btn-primary" style="padding:9px 14px">📷 افزودن تصاویر</button>
         <button type="button" onclick="_visionPromptUrl()" class="btn btn-ghost" style="padding:9px 12px">افزودن لینک</button>
         <input id="vision-image-picker" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple style="display:none" onchange="_visionHandleFiles(this.files)">
       </div>
@@ -26069,7 +26069,7 @@ function _openGoalVisionBoardManager(ctx) {
           <button type="button" onclick="_visionPreviewMusic()" class="btn btn-ghost" style="height:38px">▶ پیش‌نمایش</button>
         </div>
         <div id="vision-music-upload-wrap" style="display:${state.music && !state.music.startsWith('preset:') ? 'block' : 'none'};margin-top:10px">
-          <button type="button" onclick="document.getElementById('vision-music-picker').click()" class="btn btn-ghost">⬆ آپلود موسیقی</button>
+          <button type="button" onclick="_tpClickId('vision-music-picker')" class="btn btn-ghost">⬆ آپلود موسیقی</button>
           <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'فایل‌های صوتی رایج - حداکثر ۲۰ مگابایت'}</span>
           <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_visionHandleMusic(this.files && this.files[0])">
         </div>
@@ -26109,7 +26109,7 @@ function _renderVisionManager() {
   box.innerHTML = items.length ? items.map((item, i) => `
     <div draggable="true" ondragstart="_visionDragStart(event,${i})" ondragover="event.preventDefault()" ondrop="_visionDropReorder(event,${i})"
       style="position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--border2);background:var(--bg3);cursor:grab">
-      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">
+      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="_tpHideBrokenImg(this)">
       <button type="button" onclick="_visionRemove(${i})" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.62);color:white;cursor:pointer">×</button>
       <div style="position:absolute;right:5px;bottom:5px;font-size:10px;color:white;background:rgba(0,0,0,.55);border-radius:999px;padding:2px 6px">${i+1}</div>
     </div>`).join('') : `
@@ -26429,7 +26429,7 @@ function openGoalDetail(id) {
           </div>
         </div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-          ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="this.style.display='none'">`).join('')}
+          ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="_tpHideBrokenImg(this)">`).join('')}
         </div>
       </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
         <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت تابلو آرزو</button>
@@ -26663,7 +26663,7 @@ function _openGoalExperience(id, mode) {
   overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#05060a;color:white;display:flex;flex-direction:column;overflow:hidden;direction:rtl';
 
   const slideHtml = images.length
-    ? images.map((src, i) => `<img class="gv-slide" src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:${i===0?'1':'0'};transform:scale(${i===0?'1.02':'1'});transition:opacity 1.2s ease,transform 6s ease" onerror="this.style.display='none'">`).join('')
+    ? images.map((src, i) => `<img class="gv-slide" src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:${i===0?'1':'0'};transform:scale(${i===0?'1.02':'1'});transition:opacity 1.2s ease,transform 6s ease" onerror="_tpHideBrokenImg(this)">`).join('')
     : `<div style="position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(124,106,247,.35),transparent 34%),radial-gradient(circle at 80% 40%,rgba(62,207,142,.18),transparent 30%),#0f1117"></div>`;
 
   const milestoneHtml = milestones.length
@@ -26974,7 +26974,7 @@ function renderHabits() {
   const filterHTML = `
     <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px">
       ${filterTabs.map(t => `
-        <button onclick="_habitFilter='${t.key}';renderHabits()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;cursor:pointer;
+        <button onclick="_tpHabitFilter('${t.key}')" style="flex-shrink:0;padding:7px 14px;border-radius:20px;cursor:pointer;
           border:1px solid ${_habitFilter===t.key ? 'var(--amber)' : 'var(--border)'};
           background:${_habitFilter===t.key ? 'rgba(251,191,36,.12)' : 'var(--bg2)'};
           color:${_habitFilter===t.key ? 'var(--amber)' : 'var(--text2)'};
@@ -27164,8 +27164,8 @@ function renderHabits() {
             box-shadow:0 4px 20px rgba(251,191,36,.35);
             display:flex;align-items:center;justify-content:center;gap:10px;
             transition:all .2s"
-          onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(251,191,36,.45)'"
-          onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 20px rgba(251,191,36,.35)'">
+          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(251,191,36,.45)')"
+          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(251,191,36,.35)')">
           <span>🔥 عادت جدید اضافه کن</span>
           <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
             display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
@@ -27199,7 +27199,7 @@ function renderHabits() {
             const borderColor2 = doneToday ? 'var(--green)' : 'var(--border)';
             const cardGlow2 = doneToday ? '0 0 0 1px var(--green),0 4px 18px rgba(62,207,142,.15)' : 'none';
             return `<div onclick="openHabitDetail(${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
-              onmouseenter="this.style.borderColor='rgba(62,207,142,.5)'" onmouseleave="this.style.borderColor='${borderColor2}'">
+              onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','$borderColor2')">
               <div style="display:flex;align-items:flex-start;gap:10px">
                 <button onclick="event.stopPropagation();toggleHabitToday(${h.id})"
                   style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;
