@@ -27,8 +27,9 @@ router.post('/', auth, (req, res) => {
 router.put('/:id', auth, (req, res) => {
   try {
     const { title, session_date, duration_minutes, type, status, notes, homework, amount } = req.body;
-    db.prepare('UPDATE sessions SET title=?,session_date=?,duration_minutes=?,type=?,status=?,notes=?,homework=?,amount=? WHERE id=? AND account_id=?').run(title||null, session_date||null, duration_minutes||60, type||'online', status||'done', notes||null, homework||null, amount||0, req.params.id, req.user.id);
-    res.json(db.prepare('SELECT * FROM sessions WHERE id=?').get(req.params.id));
+    const result = db.prepare('UPDATE sessions SET title=?,session_date=?,duration_minutes=?,type=?,status=?,notes=?,homework=?,amount=? WHERE id=? AND account_id=?').run(title||null, session_date||null, duration_minutes||60, type||'online', status||'done', notes||null, homework||null, amount||0, req.params.id, req.user.id);
+    if (!result.changes) return res.status(404).json({ error: 'not found' });
+    res.json(db.prepare('SELECT * FROM sessions WHERE id=? AND account_id=?').get(req.params.id, req.user.id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

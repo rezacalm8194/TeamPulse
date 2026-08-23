@@ -25,8 +25,9 @@ router.post('/', auth, (req, res) => {
 router.put('/:id', auth, (req, res) => {
   try {
     const { name, phone, email, role, salary_type, salary_amount, commission_percent, notes, is_active } = req.body;
-    db.prepare('UPDATE staff SET name=?,phone=?,email=?,role=?,salary_type=?,salary_amount=?,commission_percent=?,notes=?,is_active=?,updated_at=datetime("now") WHERE id=? AND account_id=?').run(name, phone||null, email||null, role||'staff', salary_type||'fixed', salary_amount||0, commission_percent||0, notes||null, is_active??1, req.params.id, req.user.id);
-    res.json(db.prepare('SELECT id,name,phone,email,role,salary_type,salary_amount,commission_percent,is_active,notes FROM staff WHERE id=?').get(req.params.id));
+    const result = db.prepare('UPDATE staff SET name=?,phone=?,email=?,role=?,salary_type=?,salary_amount=?,commission_percent=?,notes=?,is_active=?,updated_at=datetime("now") WHERE id=? AND account_id=?').run(name, phone||null, email||null, role||'staff', salary_type||'fixed', salary_amount||0, commission_percent||0, notes||null, is_active??1, req.params.id, req.user.id);
+    if (!result.changes) return res.status(404).json({ error: 'not found' });
+    res.json(db.prepare('SELECT id,name,phone,email,role,salary_type,salary_amount,commission_percent,is_active,notes FROM staff WHERE id=? AND account_id=?').get(req.params.id, req.user.id));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
