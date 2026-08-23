@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp84';
+const TP_ASSET_V = 'tp85';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -14907,6 +14907,10 @@ function _fullSyncConflictPendingMatchesCurrentData(pending = _readServerSyncPen
 function _stopStaleFullSyncConflictPending() {
   const pending = _readServerSyncPending();
   if (!_fullSyncConflictPendingMatchesCurrentData(pending)) return false;
+  if (pending.reason === 'conflict-merged-stopped') {
+    _clearServerSyncPending(Infinity);
+    return false;
+  }
   if (pending.reason === 'conflict-merged') {
     _markServerSyncPending('conflict-merged-stopped');
   }
@@ -15113,9 +15117,10 @@ function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
   }
 }
 
-function _syncTodoDelta(todo, operation = 'upsert') {
+function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   clearTimeout(window._serverSyncTimer);
   let todoSnapshot = _cloneData(todo);
+  const extraSnapshots = (Array.isArray(extraTodos) ? extraTodos : []).map(item => _cloneData(item)).filter(item => item && item.id != null);
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
@@ -15129,10 +15134,12 @@ function _syncTodoDelta(todo, operation = 'upsert') {
       while (true) {
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
           method: 'POST',
+          keepalive: true,
           body: JSON.stringify({
             workspace: _currentAccountId(),
             operation,
             todo: todoSnapshot,
+            todos: extraSnapshots.length ? [...extraSnapshots, todoSnapshot] : undefined,
             base_etag: window._serverDataEtag || null,
             todo_id_high_water: _db?._todoIdHighWater || 0,
           }),
@@ -15694,7 +15701,7 @@ async function _loadFromServer() {
       }
       _applyTodoIdHighWater(responseHighWater);
     }
-    window._serverDataEtag = payload.etag || window._serverDataEtag || null;
+    const incomingEtag = payload.etag || null;
     if (!data) return false;
     if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
     if (!teamSession && activeWorkspaceId !== 'default') window._workspaceDataReady = true;
@@ -15723,6 +15730,7 @@ async function _loadFromServer() {
         window._teamOwnerDataReady = true;
         window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
         window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, localTime);
+        if (incomingEtag) window._serverDataEtag = incomingEtag;
         return false;
       }
       if (localTime > serverTime && localTime > (window._teamLastOwnerDataSavedAt || 0)) {
@@ -15771,6 +15779,7 @@ async function _loadFromServer() {
       window._teamOwnerDataReady = true;
       window._teamLastOwnerDataSavedAt = _db._lastSaved || 0;
       window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
+      if (incomingEtag) window._serverDataEtag = incomingEtag;
       _writeServerSyncBaseline(_db, window._serverDataEtag);
       _teamSyncSessionPermissions();
       console.log('[TeamPulse] Team owner data loaded from server');
@@ -15791,6 +15800,7 @@ async function _loadFromServer() {
         const key = window._activeDBKey || DB_KEY;
         _persistDatabaseSnapshot(key, _db);
         window._lastServerSyncSavedAt = Number(_db._lastSaved || 0) || 0;
+        if (incomingEtag) window._serverDataEtag = incomingEtag;
         _writeServerSyncBaseline(_db, window._serverDataEtag);
         _clearServerSyncPending(_db._lastSaved || Date.now());
         console.warn('[Workspace] replaced mismatched local cache with scoped server data');
@@ -15870,6 +15880,7 @@ async function _loadFromServer() {
         if (window._impersonating) window._impersonateServerBlocked = false;
         if (teamSession) window._teamOwnerDataReady = true;
         window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, _db._lastSaved || 0);
+        if (incomingEtag) window._serverDataEtag = incomingEtag;
         _writeServerSyncBaseline(_db, window._serverDataEtag);
         console.log('[TeamPulse] Loaded from server');
         return true;
@@ -16056,6 +16067,40 @@ function _flushPendingServerSyncKeepalive() {
   const keepalivePost = () => {
     fetch(url, { method: 'POST', headers: authHeaders, body: data, keepalive: true, referrerPolicy: 'no-referrer' }).catch(() => {});
   };
+  const todoUpsert = patch?.collections?.todos?.upsert;
+  if (Array.isArray(todoUpsert) && todoUpsert.length) {
+    const todoBody = JSON.stringify({
+      token: _sbSession.token,
+      workspace: _currentAccountId(),
+      operation: 'upsert',
+      todos: todoUpsert,
+      todo: todoUpsert[todoUpsert.length - 1],
+      base_etag: window._serverDataEtag || null,
+      todo_id_high_water: _db?._todoIdHighWater || 0,
+    });
+    if (todoBody.length < 55000) {
+      const todoUrl = (window.location.origin || '') + '/api/data/' + accId + '/todos/delta' + _workspaceQuery('?');
+      const blob = new Blob([todoBody], { type: 'text/plain;charset=UTF-8' });
+      if (!(navigator.sendBeacon && navigator.sendBeacon(todoUrl, blob))) {
+        fetch(todoUrl, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            workspace: _currentAccountId(),
+            operation: 'upsert',
+            todos: todoUpsert,
+            todo: todoUpsert[todoUpsert.length - 1],
+            base_etag: window._serverDataEtag || null,
+            todo_id_high_water: _db?._todoIdHighWater || 0,
+          }),
+          keepalive: true,
+          referrerPolicy: 'no-referrer',
+        }).catch(() => {});
+      }
+      return;
+    }
+  }
+  if (data.length > 60000) return;
   if (navigator.sendBeacon) {
     const beaconBody = JSON.stringify(Object.assign({ token: _sbSession.token }, payloadObj));
     const blob = new Blob([beaconBody], { type: 'text/plain;charset=UTF-8' });
@@ -20534,7 +20579,7 @@ function _completeTodoWithReport(t, report) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   const oldDone = !!t.done;
-  const requiresFullSync = !oldDone && !!(t.repeat && t.repeat !== 'none');
+  let extraTodos = [];
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
   t.completedAt = t.done_at;
@@ -20563,7 +20608,7 @@ function _completeTodoWithReport(t, report) {
     _playDoneSound();
     if (t.repeat && t.repeat !== 'none') {
       const completedAt = t.done_at || new Date().toISOString();
-      _createTodoOccurrenceRecord(t, t.status, completedAt);
+      extraTodos.push(_createTodoOccurrenceRecord(t, t.status, completedAt));
       _advanceRecurringTodoOccurrence(t, scheduledDate);
       if (scheduledKey && scheduledKey < todayKey) {
         showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
@@ -20580,12 +20625,8 @@ function _completeTodoWithReport(t, report) {
     if (details) details.open = true;
   }
   try {
-    if (requiresFullSync) {
-      _save();
-    } else {
-      _save(true, { scheduleServerSync: false });
-      void _syncTodoDelta(t, t.done ? 'complete' : 'reopen');
-    }
+    _save(true, { scheduleServerSync: false });
+    void _syncTodoDelta(t, t.done ? 'complete' : 'reopen', extraTodos);
   } catch(e) {
     console.error('[TeamPulse] todo persist failed:', e);
     showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
@@ -20606,11 +20647,12 @@ function _resolveOverdueTodo(id, action) {
     if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این کار دسترسی نداری', 'error'); return; }
     if (_isTodoRecurring(t)) {
       const completedAt = new Date().toISOString();
-      _createTodoOccurrenceRecord(t, 'late_completed', completedAt);
+      const snapshot = _createTodoOccurrenceRecord(t, 'late_completed', completedAt);
       _advanceRecurringTodoOccurrence(t, scheduledDate);
       _todoAddHistory(t, 'completed', false, true);
       t.updated_at = completedAt;
-      _save();
+      _save(true, { scheduleServerSync: false });
+      void _syncTodoDelta(t, 'complete', [snapshot]);
       _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       renderTodoList();
@@ -20623,7 +20665,8 @@ function _resolveOverdueTodo(id, action) {
     t.status = 'late_completed';
     t.updated_at = t.done_at;
     _todoAddHistory(t, 'completed', false, true);
-    _save();
+    _save(true, { scheduleServerSync: false });
+    void _syncTodoDelta(t, 'complete');
     _playDoneSound();
     renderTodoList();
     return;

@@ -19,6 +19,7 @@ const {
 } = require('../utils/todoAuditStore');
 const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
 const { mergeAndApplyDeletedItems } = require('../utils/deletedItems');
+const { mergeOwnerTodosWithPrevious, pickMergedTodo } = require('../utils/todoMerge');
 const {
   MAX_VERSIONS_PER_WORKSPACE,
   ensureVersionSnapshotSchema,
@@ -641,10 +642,7 @@ async function persistWorkspaceDocumentLocked(req, res, {
     if (grant) {
       data = mergeAllowedTeamTodos(previousData, data, grant);
     } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {
-      // این ذخیره‌سازی توسط خودِ صاحب حساب (کارفرما) انجام می‌شود؛ اگر کاری که
-      // قبلاً وجود داشت الان در داده‌های ارسالی نیست، یعنی او آن را حذف کرده —
-      // شناسه‌اش را برای همیشه در فهرست حذف‌شده‌ها نگه می‌داریم تا نسخهٔ محلیِ
-      // قدیمیِ پرسنل نتواند بعداً دوباره زنده‌اش کند.
+      data = mergeOwnerTodosWithPrevious(previousData, data);
       const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
       const nextTodoIds = new Set((Array.isArray(data?.todos) ? data.todos : []).map(t => String(t.id)));
       const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
@@ -818,10 +816,18 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     if (!['create', 'edit', 'complete', 'reopen', 'upsert'].includes(operation)) {
       return res.status(400).json({ error: 'invalid_todo_operation' });
     }
-    const incomingTodo = sanitizeUserDataForStorage(req.body?.todo);
-    if (!incomingTodo || typeof incomingTodo !== 'object' || incomingTodo.id == null) {
-      return res.status(400).json({ error: 'invalid_todo' });
+    const incomingTodos = [];
+    if (Array.isArray(req.body?.todos)) {
+      req.body.todos.forEach(item => {
+        const todo = sanitizeUserDataForStorage(item);
+        if (todo && typeof todo === 'object' && todo.id != null) incomingTodos.push(todo);
+      });
     }
+    const incomingTodo = sanitizeUserDataForStorage(req.body?.todo);
+    if (incomingTodo && typeof incomingTodo === 'object' && incomingTodo.id != null) {
+      incomingTodos.push(incomingTodo);
+    }
+    if (!incomingTodos.length) return res.status(400).json({ error: 'invalid_todo' });
     const meta = await loadWorkspaceMetaAsync(db, storageKey);
     if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const useParts = meta.layout === 'parts';
@@ -835,25 +841,16 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const currentEtag = meta.etag;
     const baseEtag = req.body?.base_etag || null;
     const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
-    const oldTodo = previousTodos.find(todo => String(todo?.id) === String(incomingTodo.id));
+    const primaryIncoming = incomingTodos[incomingTodos.length - 1];
+    const oldTodo = previousTodos.find(todo => String(todo?.id) === String(primaryIncoming.id));
 
-    if (!grant && baseEtag !== currentEtag && oldTodo) {
-      const incomingTime = Date.parse(incomingTodo.updated_at || incomingTodo.done_at || incomingTodo.created_at || '') || 0;
-      const serverTime = Date.parse(oldTodo.updated_at || oldTodo.done_at || oldTodo.created_at || '') || 0;
-      if (!incomingTime || incomingTime < serverTime ||
-          (incomingTime === serverTime && JSON.stringify(incomingTodo) !== JSON.stringify(oldTodo))) {
-        return res.status(409).json({
-          error: 'todo_delta_conflict',
-          message: 'Todo changed on the server since this client loaded it.',
-          etag: currentEtag,
-          todo: oldTodo,
-        });
-      }
-    }
-
-    const candidateTodos = oldTodo
-      ? previousTodos.map(todo => String(todo?.id) === String(incomingTodo.id) ? incomingTodo : todo)
-      : [...previousTodos, incomingTodo];
+    const candidateById = new Map(previousTodos.map(todo => [String(todo?.id), todo]));
+    incomingTodos.forEach(todo => {
+      const id = String(todo.id);
+      const previous = candidateById.get(id);
+      candidateById.set(id, previous ? pickMergedTodo(todo, previous) : todo);
+    });
+    const candidateTodos = [...candidateById.values()];
     let nextData = {
       ...previousData,
       todos: candidateTodos,
@@ -861,9 +858,9 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       _workspaceId: workspace.workspaceId,
     };
     if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
-    const savedTodo = (nextData.todos || []).find(todo => String(todo?.id) === String(incomingTodo.id));
+    const savedTodo = (nextData.todos || []).find(todo => String(todo?.id) === String(primaryIncoming.id));
     if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
-    if (grant && oldTodo && JSON.stringify(incomingTodo) !== JSON.stringify(oldTodo) &&
+    if (grant && oldTodo && JSON.stringify(primaryIncoming) !== JSON.stringify(oldTodo) &&
         JSON.stringify(savedTodo) === JSON.stringify(oldTodo)) {
       return res.status(403).json({ error: 'todo_operation_forbidden' });
     }
@@ -871,9 +868,9 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const todoIdCollisions = findTodoIdCollisions(
       db,
       storageKey,
-      oldTodo ? [oldTodo] : [],
-      [savedTodo],
-      { incomingHighWater: oldTodo ? req.body?.todo_id_high_water : 0 }
+      previousTodos,
+      nextData.todos,
+      { incomingHighWater: req.body?.todo_id_high_water }
     );
     if (todoIdCollisions.length) {
       return res.status(409).json({
