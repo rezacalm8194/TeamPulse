@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp89';
+const TP_ASSET_V = 'tp90';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -14740,6 +14740,13 @@ function _todoMergeTime(item) {
   return Date.parse(item?.updated_at || item?.done_at || item?.completed_at || item?.completedAt || item?.created_at || '') || 0;
 }
 
+function _todoRemoteDateRegressesLocal(localItem, remoteItem) {
+  if (!_isTodoRecurring(localItem) && !_isTodoRecurring(remoteItem)) return false;
+  const localKey = _jalaliKey(_todoScheduledDate(localItem) || '');
+  const remoteKey = _jalaliKey(_todoScheduledDate(remoteItem) || '');
+  return localKey > 0 && remoteKey > 0 && localKey > remoteKey;
+}
+
 function _todoHasReopenAfter(openItem, doneAtMs) {
   const rows = Array.isArray(openItem?.history) ? openItem.history : [];
   return rows.some(row => {
@@ -15185,7 +15192,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
           if (localTodo && responseData?.todo &&
               String(localTodo.updated_at || '') === String(todoSnapshot.updated_at || '')) {
-            Object.assign(localTodo, responseData.todo);
+            Object.assign(localTodo, _pickMergedTodo(localTodo, responseData.todo));
           }
           window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
           window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, syncSavedAt);
@@ -15247,7 +15254,8 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
             const rebasedTodo = { ...responseData.todo };
             ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
              'completed_by_email', 'archived', 'skipped_at', 'staff_report',
-             'report_updated_at', 'report_attachment_name', 'report_attachment_at'].forEach(field => {
+             'report_updated_at', 'report_attachment_name', 'report_attachment_at',
+             'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
               if (Object.prototype.hasOwnProperty.call(intendedState, field)) {
                 rebasedTodo[field] = _cloneData(intendedState[field]);
               }
@@ -15663,7 +15671,7 @@ function _mergeServerTodosIntoLocal(serverData) {
         }
       });
       // تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند.
-      if (remoteTime > localTime && !!remote.done === !!local.done) {
+      if (remoteTime > localTime && !!remote.done === !!local.done && !_todoRemoteDateRegressesLocal(local, remote)) {
         ['done', 'status', 'done_at', 'completedAt', 'completed_at', 'completed_by',
          'completed_by_email', 'archived', 'updated_at', 'skipped_at',
          'date_jalali', 'scheduled_date', 'scheduledDate', 'occurrence_date'].forEach(field => {
@@ -15673,7 +15681,7 @@ function _mergeServerTodosIntoLocal(serverData) {
       }
       return;
     }
-    if (remoteTime > localTime && !!remote.done === !!local.done) {
+    if (remoteTime > localTime && !!remote.done === !!local.done && !_todoRemoteDateRegressesLocal(local, remote)) {
       Object.assign(local, remote);
       changed = true;
       return;
@@ -20159,14 +20167,18 @@ function renderTodoList(options = {}) {
     }
     if (!t.done && !t.archived && _isTodoRecurring(t) && _todoScheduledDate(t) === _tomorrowJalaliStr()) {
       const rootId = _todoRootId(t);
-      const hasTodayOpen = _todoHasOccurrenceFor(rootId, _todayStr, t.id);
+      const hasTodayOccurrence = (_db.todos || []).some(x => {
+        if (!x || String(x.id) === String(t.id) || x.status === 'deleted') return false;
+        return String(_todoRootId(x)) === String(rootId) && _jalaliKey(_todoScheduledDate(x) || '') === _todayK;
+      });
       const caughtUpOverdueToday = (_db.todos || []).some(x =>
         x && x._snapshot && x.archived &&
         String(_todoRootId(x)) === String(rootId) &&
         _todoIsDoneToday(x, _todayK) &&
+        _jalaliKey(_todoScheduledDate(x) || '') > 0 &&
         _jalaliKey(_todoScheduledDate(x) || '') < _todayK
       );
-      if (!hasTodayOpen && caughtUpOverdueToday) {
+      if (!hasTodayOccurrence && caughtUpOverdueToday) {
         t.date_jalali = _todayStr;
         t.scheduled_date = _todayStr;
         t.scheduledDate = _todayStr;
@@ -20719,6 +20731,7 @@ function _completeTodoWithReport(t, report) {
   // بماند؛ در اندروید با رفتن برنامه به پس‌زمینه آن تایمر اجرا نمی‌شود و تیک برمی‌گردد.
   const stillOpenToday = !t.done && _todoRemainsOpenToday(t);
   if (intendedOp === 'complete' && !stillOpenToday && _paintTodoCheckedFast(t.id)) {
+    try { _save(true, { scheduleServerSync: false, quiet: true }); } catch(e) {}
     _queueTodoTickPersist(t, intendedOp, extraTodos);
     return;
   }
@@ -20756,6 +20769,7 @@ function _resolveOverdueTodo(id, action) {
       _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       if (!_todoRemainsOpenToday(t) && _paintTodoCheckedFast(t.id)) {
+        try { _save(true, { scheduleServerSync: false, quiet: true }); } catch(e) {}
         _queueTodoTickPersist(t, 'complete', [snapshot]);
         return;
       }
