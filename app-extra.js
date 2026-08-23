@@ -2006,15 +2006,20 @@ async function openSalaryTransfer(staffId) {
   document.body.appendChild(portal);
 
   let _currentMenuId = null; // which logical menu is open
+  let _sourcePanel = null;   // original panel whose children were moved into the portal
 
   function closePortal() {
+    if (_sourcePanel) {
+      while (portal.firstChild) _sourcePanel.appendChild(portal.firstChild);
+      _sourcePanel = null;
+    } else {
+      portal.innerHTML = '';
+    }
     portal.classList.remove('open');
-    portal.innerHTML = '';
     _currentMenuId = null;
   }
 
-  // Inline menu actions often stop propagation. Listen in capture phase so the
-  // close is scheduled before those handlers can stop the bubbling phase.
+  // Close after a menu action. Capture so stopPropagation on items cannot skip it.
   portal.addEventListener('click', function (event) {
     if (event.target.closest('.row-menu-item')) setTimeout(closePortal, 0);
   }, true);
@@ -2030,12 +2035,16 @@ async function openSalaryTransfer(staffId) {
     // If the same menu is already open → just close
     if (_currentMenuId === menuId) { closePortal(); return; }
 
+    closePortal();
+
     // Find the hidden source panel
     const source = document.getElementById(menuId);
     if (!source) return;
 
-    // Clone its contents into the portal
-    portal.innerHTML = source.innerHTML;
+    // Move the original nodes (with CSP-bound listeners) into the portal.
+    // Cloning via innerHTML drops those listeners, so Delete/Edit would no-op.
+    while (source.firstChild) portal.appendChild(source.firstChild);
+    _sourcePanel = source;
     _currentMenuId = menuId;
 
     // Position: align portal below the button that was clicked
