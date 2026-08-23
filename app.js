@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp87';
+const TP_ASSET_V = 'tp88';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1209,7 +1209,7 @@ function _trimStoredVersions() {
   } catch(e) {}
 }
 
-function _save(stamp=true, { scheduleServerSync = true } = {}) {
+function _save(stamp=true, { scheduleServerSync = true, quiet = false } = {}) {
   if (stamp) _db._lastSaved = Date.now();
   const key = window._activeDBKey || DB_KEY;
   let localSaved = false;
@@ -1227,7 +1227,7 @@ function _save(stamp=true, { scheduleServerSync = true } = {}) {
         console.warn('LocalStorage retry failed:', retryError.message);
       }
     }
-    if (!localSaved && stamp) {
+    if (!localSaved && stamp && !quiet) {
       showToast('حافظه دستگاه ظرفیت کافی ندارد؛ داده در حال ارسال امن به سرور است. تا نمایش تأیید ذخیره صفحه را نبندید.', 'error');
     }
   }
@@ -4857,17 +4857,22 @@ window.addEventListener('error', (e) => {
     return;
   }
   console.error('App error:', e.error || e.message);
+  let quietTodoTick = false;
+  try { quietTodoTick = !!(window._todoDeltaChain || _isTodoDeltaPendingReason()); } catch(err) {}
+  if (quietTodoTick) return;
   showToast('خطایی رخ داد — اگر چیزی کار نکرد، لطفاً دوباره تلاش کن', 'error');
 });
 window.addEventListener('unhandledrejection', (e) => {
   const msg = e.reason?.message || String(e.reason || '');
   const isExt = _isBrowserExtensionNoise(msg);
-  // نادیده گرفتن خطاهای مربوط به extension مرورگر (preventDefault stops Chrome's Uncaught log)
   if (isExt) {
     e.preventDefault();
     return;
   }
   console.error('Unhandled promise rejection:', e.reason);
+  let quietTodoTick = false;
+  try { quietTodoTick = !!(window._todoDeltaChain || _isTodoDeltaPendingReason()); } catch(err) {}
+  if (quietTodoTick) return;
   showToast('خطایی رخ داد — اگر چیزی کار نکرد، لطفاً دوباره تلاش کن', 'error');
 });
 
@@ -14951,6 +14956,26 @@ function _notifyRecentCreatedTodos(accountId) {
 // become 409 conflicts (especially noisy for multi-chunk payloads). Coalesce
 // concurrent requests into one trailing pass, which will no-op when data did not
 // change while the first save was running.
+function _isTodoDeltaPendingReason(reason = _readServerSyncPending()?.reason) {
+  return ['todo-delta-http', 'todo-delta-network', 'todo-delta-collision-remapped']
+    .includes(String(reason || ''));
+}
+
+function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots) {
+  window._pendingTodoDeltaRetry = {
+    todo: todoSnapshot,
+    operation,
+    extraTodos: extraSnapshots,
+  };
+  if (window._todoDeltaRetryTimer) return;
+  window._todoDeltaRetryTimer = setTimeout(() => {
+    window._todoDeltaRetryTimer = 0;
+    const pending = window._pendingTodoDeltaRetry;
+    if (!pending?.todo) return;
+    void _syncTodoDelta(pending.todo, pending.operation, pending.extraTodos);
+  }, 2500);
+}
+
 function _isTerminalTodoCollisionPending() {
   const pending = _readServerSyncPending();
   if (pending?.reason !== 'todo-id-collision-stopped') return false;
@@ -15120,7 +15145,7 @@ function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
 function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   clearTimeout(window._serverSyncTimer);
   let todoSnapshot = _cloneData(todo);
-  const extraSnapshots = (Array.isArray(extraTodos) ? extraTodos : []).map(item => _cloneData(item)).filter(item => item && item.id != null);
+  let extraSnapshots = (Array.isArray(extraTodos) ? extraTodos : []).map(item => _cloneData(item)).filter(item => item && item.id != null);
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
@@ -15134,7 +15159,6 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
       while (true) {
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
           method: 'POST',
-          keepalive: true,
           body: JSON.stringify({
             workspace: _currentAccountId(),
             operation,
@@ -15160,12 +15184,16 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
           _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoSnapshot.id);
           resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
+          window._pendingTodoDeltaRetry = null;
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
-          setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
+          if (operation === 'create' || operation === 'upsert') {
+            setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
+          }
           return res;
         }
         if (res.status === 409 && responseData?.error === 'todo_id_collision') {
           _applyTodoIdHighWater(responseData.todo_id_high_water);
+          const colliding = new Set((Array.isArray(responseData.todo_ids) ? responseData.todo_ids : []).map(String));
           const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
           if (operation === 'create' && deltaCollisionAttempt < 1 && localTodo) {
             const oldId = String(localTodo.id);
@@ -15173,19 +15201,31 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
             localTodo.id = newId;
             resolvedCollisionIds.add(oldId);
             _remapTodoIdReferences(new Map([[oldId, newId]]));
-            _save(false);
+            _save(false, { quiet: true });
             _markServerSyncPending('todo-delta-collision-remapped', { todoIds: [oldId] });
             todoSnapshot = _cloneData(localTodo);
             deltaCollisionAttempt += 1;
             continue;
           }
+          if ((operation === 'complete' || operation === 'reopen') && deltaCollisionAttempt < 2 && extraSnapshots.length) {
+            let remapped = false;
+            extraSnapshots = extraSnapshots.map(item => {
+              if (!colliding.has(String(item.id))) return item;
+              const localExtra = (_db.todos || []).find(x => String(x?.id) === String(item.id));
+              const newId = _allocateTodoId();
+              if (localExtra) localExtra.id = newId;
+              remapped = true;
+              return { ...item, id: newId };
+            });
+            if (remapped) {
+              deltaCollisionAttempt += 1;
+              try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+              continue;
+            }
+          }
           _markServerSyncPending('todo-delta-collision-stopped', {
             todoIds: Array.isArray(responseData.todo_ids) ? responseData.todo_ids.map(String) : [String(todoSnapshot.id)],
           });
-          if (operation !== 'create') {
-            const updated = await _loadFromServer();
-            _refreshUiAfterServerLoad(updated);
-          }
           return res;
         }
         if (res.status === 409 && responseData?.error === 'todo_delta_conflict' &&
@@ -15221,9 +15261,12 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
         }
         if (res.status === 409) {
-          // A Delta conflict is target-scoped. Reload the authoritative Todo
-          // state, but never turn it into a whole-document/chunk upload.
           window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+          if (operation === 'complete' || operation === 'reopen') {
+            _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
+            _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
+            return res;
+          }
           try {
             const updated = await _loadFromServer();
             _refreshUiAfterServerLoad(updated);
@@ -15234,6 +15277,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
         }
         if (operation === 'complete' || operation === 'reopen') {
           _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
+          _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
           return res;
         }
         return _syncToServer();
@@ -15241,13 +15285,17 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     } catch(e) {
       if (operation === 'complete' || operation === 'reopen') {
         _markServerSyncPending('todo-delta-network', { todoIds: [String(todoSnapshot.id)] });
+        _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
         return null;
       }
       return _syncToServer();
     }
   };
   const previous = window._todoDeltaChain || Promise.resolve();
-  const run = previous.catch(() => null).then(execute);
+  const run = previous.catch(() => null).then(execute).catch(error => {
+    console.warn('[TeamPulse] todo delta failed:', error?.message || error);
+    return null;
+  });
   const chained = run.finally(() => {
     if (window._todoDeltaChain === chained) window._todoDeltaChain = null;
   });
@@ -15256,6 +15304,8 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
 }
 
 async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
+  if (window._todoDeltaChain) return null;
+  if (_isTodoDeltaPendingReason()) return null;
   if (_isTerminalTodoCollisionPending()) {
     _stopTerminalTodoCollisionSync();
     return null;
@@ -15912,7 +15962,7 @@ async function _loadFromServer() {
 }
 
 async function _pollServerStatus() {
-  if (window._todoDeltaChain) return false;
+  if (window._todoDeltaChain || _isTodoDeltaPendingReason()) return false;
   // Keep the existing full-load conflict protections in charge while a local
   // save is pending; the lightweight shortcut must not make that decision.
   if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
@@ -20649,11 +20699,10 @@ function _completeTodoWithReport(t, report) {
     if (details) details.open = true;
   }
   try {
-    _save(true, { scheduleServerSync: false });
+    _save(true, { scheduleServerSync: false, quiet: true });
     void _syncTodoDelta(t, intendedOp, extraTodos);
   } catch(e) {
     console.error('[TeamPulse] todo persist failed:', e);
-    showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
   }
 }
 
@@ -20942,9 +20991,11 @@ function _scheduleTodoListReconcile() {
   if (_todoListReconcileTimer) clearTimeout(_todoListReconcileTimer);
   _todoListReconcileTimer = setTimeout(() => {
     _todoListReconcileTimer = 0;
-    if (_currentPage !== 'todolist') return;
+    if (currentPage !== 'todolist') return;
     if (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report') return;
-    renderTodoList({ skipMaintenance: true });
+    try { renderTodoList({ skipMaintenance: true }); } catch(e) {
+      console.warn('[TeamPulse] todo list reconcile failed:', e?.message || e);
+    }
   }, 280);
 }
 
@@ -20956,13 +21007,12 @@ function _queueTodoTickPersist(todo, operation, extraTodos) {
     _todoPersistQueued = false;
     const items = _todoPersistQueue.splice(0);
     try {
-      _save(true, { scheduleServerSync: false });
+      _save(true, { scheduleServerSync: false, quiet: true });
       items.forEach(item => {
         void _syncTodoDelta(item.todo, item.operation, item.extraTodos);
       });
     } catch (e) {
       console.error('[TeamPulse] todo persist failed:', e);
-      showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
     }
   });
 }
@@ -20986,8 +21036,10 @@ function _paintTodoCheckedFast(id) {
   const empty = document.getElementById('todo-empty-hint');
   if (empty && !document.querySelector('.todo-row[data-todo-id]')) empty.style.display = '';
   requestAnimationFrame(() => {
-    const nextBtn = nextId && document.querySelector(`[data-todo-id="${_cssIdentEscape(String(nextId))}"] [data-todo-complete]`);
-    if (nextBtn && typeof nextBtn.focus === 'function') nextBtn.focus({ preventScroll: true });
+    try {
+      const nextBtn = nextId && document.querySelector(`[data-todo-id="${_cssIdentEscape(String(nextId))}"] [data-todo-complete]`);
+      if (nextBtn && typeof nextBtn.focus === 'function') nextBtn.focus({ preventScroll: true });
+    } catch(e) {}
   });
   _scheduleTodoListReconcile();
   return true;
@@ -24699,7 +24751,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v87';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v88';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
