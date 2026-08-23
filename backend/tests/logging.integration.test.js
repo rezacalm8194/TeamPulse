@@ -90,7 +90,10 @@ test('application logging scenarios are structured and redact secrets', async t 
     method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ title: 'Logging test task', assignee_id: userId }),
   });
-  assert.equal(created.status, 201);
+  assert.equal(created.status, 410);
+  const retired = await created.json();
+  assert.equal(retired.error, 'legacy_route_retired');
+  assert.equal(retired.use, '/api/data');
 
   const syncPayloadMarker = 'SYNC_PAYLOAD_MUST_NOT_APPEAR_IN_LOGS';
   const syncSuccess = await fetch(`http://127.0.0.1:${port}/api/data/${userId}`, {
@@ -117,18 +120,19 @@ test('application logging scenarios are structured and redact secrets', async t 
   });
   assert.equal(syncConflict.status, 409);
 
-  const apiError = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
+  const apiError = await fetch(`http://127.0.0.1:${port}/api/clients`, {
     method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ title: { invalid: 'binding' } }),
+    body: JSON.stringify({ name: { invalid: 'binding' } }),
   });
-  assert.equal(apiError.status, 500);
+  assert.equal(apiError.status, 410);
 
   await new Promise(resolve => setTimeout(resolve, 300));
   const appLog = fs.readFileSync(path.join(logDir, 'app.log'), 'utf8');
   const auditLog = fs.readFileSync(path.join(logDir, 'audit.log'), 'utf8');
-  const errorLog = fs.readFileSync(path.join(logDir, 'error.log'), 'utf8');
-  for (const line of `${appLog}${auditLog}${errorLog}`.trim().split(/\r?\n/)) assert.doesNotThrow(() => JSON.parse(line));
-  ['login_failed', 'login_success', 'unauthorized_access', 'task_created', 'task_assigned', 'sync_success', 'sync_conflict', 'api_error']
+  const errorLogPath = path.join(logDir, 'error.log');
+  const errorLog = fs.existsSync(errorLogPath) ? fs.readFileSync(errorLogPath, 'utf8') : '';
+  for (const line of `${appLog}\n${auditLog}\n${errorLog}`.split(/\r?\n/).filter(Boolean)) assert.doesNotThrow(() => JSON.parse(line));
+  ['login_failed', 'login_success', 'unauthorized_access', 'legacy_route_retired', 'sync_success', 'sync_conflict']
     .forEach(event => assert.match(`${appLog}${auditLog}${errorLog}`, new RegExp(`"event":"${event}"`)));
   for (const secret of [
     'SafePassword123!',
@@ -139,18 +143,18 @@ test('application logging scenarios are structured and redact secrets', async t 
     'sensitive-refresh-token-value',
     syncPayloadMarker,
   ]) assert.equal(`${appLog}${auditLog}${errorLog}`.includes(secret), false);
-  assert.match(errorLog, /"event":"api_error"/);
   const appEntries = appLog.trim().split(/\r?\n/).map(JSON.parse);
-  const errorEntries = errorLog.trim().split(/\r?\n/).map(JSON.parse);
+  const errorEntries = errorLog.trim() ? errorLog.trim().split(/\r?\n/).map(JSON.parse) : [];
   const auditEntries = auditLog.trim().split(/\r?\n/).map(JSON.parse);
-  assert.equal(appEntries.filter(entry => entry.event === 'api_error').length, 1);
-  assert.equal(errorEntries.filter(entry => entry.event === 'api_error').length, 1);
+  assert.equal(appEntries.filter(entry => entry.event === 'api_error').length, 0);
+  assert.equal(errorEntries.filter(entry => entry.event === 'api_error').length, 0);
   assert.equal(appEntries.filter(entry => entry.event === 'sync_failed').length, 0);
   assert.equal(errorEntries.filter(entry => entry.event === 'sync_conflict').length, 0);
   assert.deepEqual(classifySyncOutcome(200), { level: 'info', event: 'sync_success' });
   assert.equal(classifySyncOutcome(401), null);
   assert.deepEqual(classifySyncOutcome(409), { level: 'warn', event: 'sync_conflict' });
   assert.deepEqual(classifySyncOutcome(500), { level: 'error', event: 'sync_failed' });
-  assert.equal(auditEntries.filter(entry => entry.event === 'task_created').length, 1);
-  assert.equal(auditEntries.filter(entry => entry.event === 'task_assigned').length, 1);
+  assert.equal(auditEntries.filter(entry => entry.event === 'legacy_route_retired').length, 2);
+  assert.equal(auditEntries.filter(entry => entry.event === 'task_created').length, 0);
+  assert.equal(auditEntries.filter(entry => entry.event === 'task_assigned').length, 0);
 });
