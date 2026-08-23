@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp85';
+const TP_ASSET_V = 'tp86';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -17199,7 +17199,9 @@ function _todosInit() {
   if (!_db.todo_history) _db.todo_history = [];
   _syncTodoIdAllocator(_db);
   if (!_db._nextId.todo_calendar_events) _db._nextId.todo_calendar_events = 1;
+  if (!window._todoNormSet) window._todoNormSet = typeof WeakSet === 'function' ? new WeakSet() : null;
   _db.todos.forEach(t => {
+    if (!t || (window._todoNormSet && window._todoNormSet.has(t))) return;
     if ((t.remind_min === undefined || t.remind_min === null) && t.time) t.remind_min = 15;
     if (t.scheduledDate && !t.scheduled_date) t.scheduled_date = t.scheduledDate;
     if (!t.scheduled_date && t.date_jalali) t.scheduled_date = t.date_jalali;
@@ -17212,6 +17214,7 @@ function _todosInit() {
     if (t.requires_approval === undefined) t.requires_approval = false;
     if (!t.created_by) t.created_by = _sbUser?.id || 'local-owner';
     if (!t.occurrence_date) t.occurrence_date = _todoScheduledDate(t);
+    if (window._todoNormSet) window._todoNormSet.add(t);
   });
 }
 
@@ -18034,7 +18037,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const dateLabel = scheduled ? DateService.disp(scheduled) : 'بدون تاریخ';
   const timeLabel = _todoTimeRangeLabel(t);
   return `<div data-todo-id="${t.id}" class="todo-row" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1}">
-    <button onclick="_completeTodoFromList(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
+    <button data-todo-complete onclick="_completeTodoFromList(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
       style="width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;cursor:pointer;border:2px solid ${t.done?'var(--green)':isOverdue?'var(--red)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:12px;font-weight:900;line-height:1">
       ${t.done?'✓':''}
     </button>
@@ -20035,9 +20038,9 @@ async function renderCalendar() {
   _checkTodoReminders();
 }
 
-function renderTodoList() {
+function renderTodoList(options = {}) {
   _todosInit();
-  const duplicateCleanupCount = _dedupeOpenTodos();
+  const skipMaintenance = options.skipMaintenance === true;
   if (_todoViewMode !== 'list') {
     _todoViewMode = 'list';
     localStorage.setItem('tp_todo_view_mode', _todoViewMode);
@@ -20047,7 +20050,10 @@ function renderTodoList() {
   // تکراری‌های گیرکرده از روز قبل را هم به دوره بعدی همان روز انجام منتقل کن.
   const _todayStr = _todayJalaliStr();
   const _todayK = _jalaliKey(_todayStr);
-  let _archiveChanged = duplicateCleanupCount > 0;
+  let _archiveChanged = false;
+  if (!skipMaintenance) {
+  const duplicateCleanupCount = _dedupeOpenTodos();
+  _archiveChanged = duplicateCleanupCount > 0;
   _db.todos.forEach(t => {
     if (t.done && !t.archived && t.repeat && t.repeat !== 'none' && t.done_at) {
       const parts = _jalaliFromInstant(t.done_at);
@@ -20092,11 +20098,14 @@ function renderTodoList() {
       _save(); _syncToServer();
     }
   }
+  }
 
-  if (_isTeamGuest() && _todoActiveTab === 'staff' && !_todoStaffTabExplicit) _todoActiveTab = 'mine';
-  if (_isTeamGuest() && _todoActiveTab !== 'mine' && !(_todoActiveTab === 'staff' && _todoCanOpenStaffTasksTab())) _todoActiveTab = 'mine';
-  if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
-  updateTopbarActions(_todoTopbarActionsHtml());
+  if (!skipMaintenance) {
+    if (_isTeamGuest() && _todoActiveTab === 'staff' && !_todoStaffTabExplicit) _todoActiveTab = 'mine';
+    if (_isTeamGuest() && _todoActiveTab !== 'mine' && !(_todoActiveTab === 'staff' && _todoCanOpenStaffTasksTab())) _todoActiveTab = 'mine';
+    if (['my_report','report'].includes(_todoActiveTab)) _todoActiveTab = 'mine';
+    updateTopbarActions(_todoTopbarActionsHtml());
+  }
   if (_todoActiveTab === 'staff') {
     setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${_todoStaffDashboardHtml()}</div>`);
     setTimeout(_renderTodoStaffFilteredList, 20);
@@ -20230,7 +20239,7 @@ function renderTodoList() {
         border-radius:10px;margin-bottom:6px;opacity:${t.done?.5:1};
         cursor:default;user-select:none">
       <span class="todo-drag-handle" style="color:var(--text3);font-size:14px;cursor:grab;padding:2px 2px 0;flex-shrink:0;opacity:.35;line-height:1">⠿</span>
-      <button onclick="_completeTodoFromList(${t.id})"
+      <button data-todo-complete onclick="_completeTodoFromList(${t.id})"
         style="width:22px;height:22px;border-radius:50%;flex-shrink:0;margin-top:2px;cursor:pointer;
           border:2px solid ${t.done?'var(--green)':isOverdue||priority==='urgent'?'var(--red)':priority==='high'?'var(--amber)':'var(--border2)'};
           background:${t.done?'var(--green)':'transparent'};
@@ -20436,7 +20445,7 @@ function renderTodoList() {
   }
 
   setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${html}</div>`);
-  _checkTodoReminders();
+  if (!skipMaintenance) _checkTodoReminders();
   _initTodoDragDrop();
 }
 
@@ -20618,7 +20627,10 @@ function _completeTodoWithReport(t, report) {
   }
   // ابتدا نتیجه کلیک را فوراً نشان بده. ذخیره localStorage نباید پشت setTimeout
   // بماند؛ در اندروید با رفتن برنامه به پس‌زمینه آن تایمر اجرا نمی‌شود و تیک برمی‌گردد.
-  const detailsWasOpen = document.querySelector('.todo-done-details')?.open || false;
+  if (t.done && _paintTodoCheckedFast(t.id)) {
+    _queueTodoTickPersist(t, 'complete', extraTodos);
+    return;
+  }
   renderTodoList();
   if (t.done) {
     const details = document.querySelector('.todo-done-details');
@@ -20651,11 +20663,10 @@ function _resolveOverdueTodo(id, action) {
       _advanceRecurringTodoOccurrence(t, scheduledDate);
       _todoAddHistory(t, 'completed', false, true);
       t.updated_at = completedAt;
-      _save(true, { scheduleServerSync: false });
-      void _syncTodoDelta(t, 'complete', [snapshot]);
       _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
-      renderTodoList();
+      if (!_paintTodoCheckedFast(t.id)) renderTodoList();
+      _queueTodoTickPersist(t, 'complete', [snapshot]);
       return;
     }
     t.done = true;
@@ -20665,10 +20676,9 @@ function _resolveOverdueTodo(id, action) {
     t.status = 'late_completed';
     t.updated_at = t.done_at;
     _todoAddHistory(t, 'completed', false, true);
-    _save(true, { scheduleServerSync: false });
-    void _syncTodoDelta(t, 'complete');
     _playDoneSound();
-    renderTodoList();
+    if (!_paintTodoCheckedFast(t.id)) renderTodoList();
+    _queueTodoTickPersist(t, 'complete');
     return;
   }
 
@@ -20876,22 +20886,85 @@ function _resolveAllOverdueTodos(action) {
   showToast('تعیین تکلیف گروهی انجام شد.', 'success');
 }
 
+let _todoDoneSoundCtx = null;
+let _todoDoneSoundLastAt = 0;
+let _todoListReconcileTimer = 0;
+let _todoPersistQueued = false;
+let _todoPersistQueue = [];
+
 function _playDoneSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const freqs = [523.25, 659.25, 783.99];
-    freqs.forEach((f, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = f;
-      osc.type = 'sine';
-      gain.gain.setValueAtTime(0.3, ctx.currentTime + i*0.1);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.1 + 0.3);
-      osc.start(ctx.currentTime + i*0.1);
-      osc.stop(ctx.currentTime + i*0.1 + 0.3);
-    });
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (now - _todoDoneSoundLastAt < 55) return;
+    _todoDoneSoundLastAt = now;
+    if (!_todoDoneSoundCtx) _todoDoneSoundCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _todoDoneSoundCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.14, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
   } catch(e) {}
+}
+
+function _scheduleTodoListReconcile() {
+  if (_todoListReconcileTimer) clearTimeout(_todoListReconcileTimer);
+  _todoListReconcileTimer = setTimeout(() => {
+    _todoListReconcileTimer = 0;
+    if (_currentPage !== 'todolist') return;
+    if (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report') return;
+    renderTodoList({ skipMaintenance: true });
+  }, 280);
+}
+
+function _queueTodoTickPersist(todo, operation, extraTodos) {
+  _todoPersistQueue.push({ todo, operation, extraTodos });
+  if (_todoPersistQueued) return;
+  _todoPersistQueued = true;
+  queueMicrotask(() => {
+    _todoPersistQueued = false;
+    const items = _todoPersistQueue.splice(0);
+    try {
+      _save(true, { scheduleServerSync: false });
+      items.forEach(item => {
+        void _syncTodoDelta(item.todo, item.operation, item.extraTodos);
+      });
+    } catch (e) {
+      console.error('[TeamPulse] todo persist failed:', e);
+      showToast('تغییر ثبت شد و با برقراری ارتباط دوباره ذخیره می‌شود', 'error');
+    }
+  });
+}
+
+function _todoNextFocusIdAfter(completedId) {
+  const sid = String(completedId);
+  const rows = [...document.querySelectorAll('.todo-row[data-todo-id]')];
+  const idx = rows.findIndex(el => String(el.dataset.todoId) === sid);
+  if (idx < 0) return null;
+  const next = rows[idx + 1] || rows[idx - 1];
+  return next ? next.dataset.todoId : null;
+}
+
+function _paintTodoCheckedFast(id) {
+  if (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report') return false;
+  const sid = String(id);
+  const rows = document.querySelectorAll(`[data-todo-id="${CSS.escape(sid)}"]`);
+  if (!rows.length) return false;
+  const nextId = _todoNextFocusIdAfter(sid);
+  rows.forEach(el => el.remove());
+  const empty = document.getElementById('todo-empty-hint');
+  if (empty && !document.querySelector('.todo-row[data-todo-id]')) empty.style.display = '';
+  requestAnimationFrame(() => {
+    const nextBtn = nextId && document.querySelector(`[data-todo-id="${CSS.escape(String(nextId))}"] [data-todo-complete]`);
+    if (nextBtn && typeof nextBtn.focus === 'function') nextBtn.focus({ preventScroll: true });
+  });
+  _scheduleTodoListReconcile();
+  return true;
 }
 
 function _advanceTodoDate(t, baseDateStr) {
@@ -24594,7 +24667,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v83';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v86';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
