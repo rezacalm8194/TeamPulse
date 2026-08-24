@@ -2163,13 +2163,13 @@ async function payStaffSalary(staffId, name) {
   const reminders = await window.api.staffReminders.getAll();
   const rem = reminders.find(r => r.staff_id === staffId);
 
-  // پیش‌فرض: ماهی که این پرداخت برای آن است = ماه سررسید یادآوری (نه لزوماً ماه امروز)
-  let defJy, defJm;
+  // پیش‌فرض سال: سال فعلی. ماه: ماه سررسید یادآوری (نه لزوماً ماه امروز)
+  const [curJy, curJm] = todayJalali();
+  let defJy = curJy;
+  let defJm = curJm;
   if (rem && rem.due_date_jalali) {
-    const parts = rem.due_date_jalali.split('/').map(Number);
-    defJy = parts[0]; defJm = parts[1];
-  } else {
-    [defJy, defJm] = todayJalali();
+    const parts = parseJalali(rem.due_date_jalali) || rem.due_date_jalali.split('/').map(Number);
+    if (parts[1]) defJm = parts[1];
   }
 
   const monthOptions = JMONTHS.map((mn, i) =>
