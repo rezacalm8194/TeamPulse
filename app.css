@@ -4197,3 +4197,37 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .tp-hover-bg3:hover { background: var(--bg4) !important; }
 .tp-hover-admin:hover { background: rgba(255,255,255,.3) !important; }
 
+.goog-te-banner-frame,
+.skiptranslate { display: none !important; }
+body { top: 0 !important; }
+#google_translate_element { display: none !important; }
+
+@keyframes tpHintPulse {
+  0% { transform: scale(.8); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  ._ifcard:hover ._ifcard-actions { opacity: 1 !important; pointer-events: auto !important; }
+}
+._ifcard-more-btn {
+  display: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text2);
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 2;
+}
+@media (hover: none), (pointer: coarse) {
+  ._ifcard-more-btn { display: flex; }
+  ._ifcard.show-actions ._ifcard-actions { opacity: 1 !important; pointer-events: auto !important; }
+  ._ifcard.show-actions ._ifcard-more-btn { display: none; }
+}
+

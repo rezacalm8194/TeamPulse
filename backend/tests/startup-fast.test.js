@@ -14,11 +14,12 @@ test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
-test('CSP script-src does not allow unsafe-inline', () => {
-  assert.doesNotMatch(appHtml, /script-src 'self'[^;]*unsafe-inline/);
-  assert.match(appHtml, /<script src="\/tp-inline-bind\.js/);
+test('CSP does not allow unsafe-inline for scripts or styles', () => {
+  assert.doesNotMatch(appHtml, /unsafe-inline/);
+  assert.doesNotMatch(appHtml, /<style>/);
   assert.doesNotMatch(appHtml, /<script>/);
-  assert.doesNotMatch(serverJs, /"script-src[^"]*unsafe-inline/);
+  assert.match(appHtml, /<script src="\/tp-inline-bind\.js/);
+  assert.doesNotMatch(serverJs, /'unsafe-inline'/);
   assert.equal(fs.existsSync(path.join(root, 'tp-inline-bind.js')), true);
 });
 
@@ -26,6 +27,12 @@ test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /require\('compression'\)/);
   assert.match(serverJs, /compression_unavailable/);
   assert.match(serverJs, /max-age=31536000, immutable/);
+});
+
+test('student form interpolates stored fields through escapeHtml', () => {
+  assert.match(appJs, /id="f-name"[^>]*value="\$\{escapeHtml\(s\?\.name/);
+  assert.match(appJs, /id="f-note"[^]*\$\{escapeHtml\(s\?\.note/);
+  assert.doesNotMatch(appJs, /value="\$\{s\?\.name \|\| ''\}"/);
 });
 
 test('workspace registry sync is not on the first-paint path', () => {

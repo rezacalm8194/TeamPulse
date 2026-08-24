@@ -3086,28 +3086,6 @@ async function renderInstructions(instrSearch) {
   /* ── Floating action button (mobile create shortcut) ── */
   html += _instrFabHtml();
 
-  /* ── Inject hover-reveal / tap-reveal CSS once ── */
-  if (!document.getElementById('_instr-styles')) {
-    const s = document.createElement('style');
-    s.id = '_instr-styles';
-    s.textContent = `
-      @media (hover:hover) and (pointer:fine) {
-        ._ifcard:hover ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
-      }
-      ._ifcard-more-btn{
-        display:none; width:26px;height:26px;border-radius:7px;flex-shrink:0;
-        border:1px solid var(--border2); background:var(--bg3); color:var(--text2);
-        align-items:center;justify-content:center; font-size:15px; cursor:pointer; z-index:2;
-      }
-      @media (hover:none), (pointer:coarse) {
-        ._ifcard-more-btn{ display:flex; }
-        ._ifcard.show-actions ._ifcard-actions { opacity:1 !important; pointer-events:auto !important; }
-        ._ifcard.show-actions ._ifcard-more-btn{ display:none; }
-      }
-    `;
-    document.head.appendChild(s);
-  }
-
   setContent(html);
 
   if (instrSearch) {

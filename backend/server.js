@@ -66,7 +66,7 @@ const corsOptions = {
 const cspValue = [
   "default-src 'self'",
   "script-src 'self' https://translate.google.com https://translate.googleapis.com https://www.gstatic.com",
-  "style-src 'self' 'unsafe-inline' https:",
+  "style-src 'self' https:",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",
   "connect-src 'self' https:",

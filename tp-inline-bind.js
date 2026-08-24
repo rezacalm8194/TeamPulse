@@ -26,9 +26,16 @@
     eval: 1, Function: 1, fetch: 1, setTimeout: 1, setInterval: 1,
     alert: 1, confirm: 1, prompt: 1, open: 1, close: 1, print: 1,
     XMLHttpRequest: 1, WebSocket: 1, Worker: 1, SharedWorker: 1,
-    importScripts: 1, postMessage: 1, queueMicrotask: 1, atob: 1,
-    eval: 1, setImmediate: 1, execScript: 1, location: 1, document: 1
+    importScripts: 1, postMessage: 1, queueMicrotask: 1, atob: 1, btoa: 1,
+    setImmediate: 1, execScript: 1, location: 1, document: 1,
+    navigator: 1, localStorage: 1, sessionStorage: 1, indexedDB: 1,
+    history: 1, parent: 1, top: 1, frames: 1, self: 1, window: 1, globalThis: 1,
+    Image: 1, Audio: 1, Blob: 1, File: 1, FileReader: 1, EventSource: 1,
+    Request: 1, Response: 1, Headers: 1, AbortController: 1,
+    import: 1, require: 1, process: 1, sendBeacon: 1, openDatabase: 1,
+    showModalDialog: 1, _tpSafeCall: 1
   };
+  var FRAME_OK = /^https:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com|translate\.google\.com)\//i;
   var ON_RE = /^on[a-z]+$/i;
 
   function skipWs(s, i) {
@@ -233,29 +240,102 @@
     return last;
   }
 
-  function stripDangerous(root) {
+  function collectElements(root) {
+    var list = [];
+    if (!root) return list;
+    if (root.nodeType === 1) list.push(root);
+    var found = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    for (var i = 0; i < found.length; i++) list.push(found[i]);
+    return list;
+  }
+
+  function sanitizeCss(css) {
+    var s = String(css || '');
+    if (/javascript\s*:|expression\s*\(|-moz-binding\s*:|@import|behavior\s*:|\\/i.test(s)) return '';
+    return s.replace(/url\s*\(\s*(['"]?)([^'")]+)\1\s*\)/gi, function (_, q, inner) {
+      inner = String(inner || '').replace(/^\s+|\s+$/g, '');
+      if (/^(data:image\/|#|var\()/i.test(inner)) return 'url(' + inner + ')';
+      return 'none';
+    });
+  }
+
+  function applyInlineStyles(root) {
+    var list = collectElements(root.nodeType === 9 ? (root.documentElement || root.body || root) : root);
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (!el || el.nodeType !== 1 || !el.style || !el.getAttribute) continue;
+      var css = el.getAttribute('style');
+      if (!css) continue;
+      el.style.cssText = sanitizeCss(css);
+    }
+  }
+
+  function sanitizeTree(root) {
     if (!root || !root.querySelectorAll) return;
-    var nodes = root.querySelectorAll ? root.querySelectorAll('*') : [];
-    var list = [root];
-    for (var i = 0; i < nodes.length; i++) list.push(nodes[i]);
+    var list = collectElements(root.nodeType === 9 ? (root.documentElement || root.body || root) : root);
     for (var n = 0; n < list.length; n++) {
       var el = list[n];
       if (!el || el.nodeType !== 1) continue;
+      var tag = String(el.tagName || '').toLowerCase();
+      if (tag === 'script' || tag === 'object' || tag === 'embed' || tag === 'base' || tag === 'applet' || tag === 'style') {
+        if (el.remove) el.remove();
+        else if (el.parentNode) el.parentNode.removeChild(el);
+        continue;
+      }
+      if (tag === 'link') {
+        var rel = String(el.getAttribute('rel') || '').toLowerCase();
+        if (rel.indexOf('import') >= 0) {
+          if (el.remove) el.remove();
+          else if (el.parentNode) el.parentNode.removeChild(el);
+          continue;
+        }
+        if (rel.indexOf('stylesheet') >= 0) {
+          var href = String(el.getAttribute('href') || '');
+          var origin = (global.location && global.location.origin) || '';
+          var selfCss = href.charAt(0) === '/' || (origin && href.indexOf(origin) === 0);
+          var fontCss = /^https:\/\/fonts\.googleapis\.com\//i.test(href);
+          if (!selfCss && !fontCss) {
+            if (el.remove) el.remove();
+            else if (el.parentNode) el.parentNode.removeChild(el);
+          }
+        }
+        continue;
+      }
+      if (tag === 'meta') {
+        var http = String(el.getAttribute('http-equiv') || '').toLowerCase();
+        if (http === 'refresh' || http === 'content-security-policy') {
+          if (el.remove) el.remove();
+          else if (el.parentNode) el.parentNode.removeChild(el);
+        }
+        continue;
+      }
+      if (tag === 'iframe' || tag === 'frame') {
+        var frameSrc = String(el.getAttribute('src') || '');
+        if (el.getAttribute('srcdoc') || !FRAME_OK.test(frameSrc)) {
+          if (el.remove) el.remove();
+          else if (el.parentNode) el.parentNode.removeChild(el);
+        }
+        continue;
+      }
       var href = el.getAttribute && el.getAttribute('href');
       if (href && /^\s*javascript:/i.test(href)) el.removeAttribute('href');
       var src = el.getAttribute && el.getAttribute('src');
       if (src && /^\s*javascript:/i.test(src)) el.removeAttribute('src');
+      var xlink = el.getAttribute && el.getAttribute('xlink:href');
+      if (xlink && /^\s*javascript:/i.test(xlink)) el.removeAttribute('xlink:href');
     }
+  }
+
+  function afterHtmlWrite(root) {
+    if (!root) return;
+    sanitizeTree(root);
+    applyInlineStyles(root);
+    bindTree(root);
   }
 
   function bindTree(root) {
     if (!root || root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11) return;
-    var scope = root.nodeType === 1 ? root : (root.documentElement || root);
-    var nodes = [];
-    if (root.nodeType === 1) nodes.push(root);
-    var found = (root.querySelectorAll ? root.querySelectorAll('*') : []);
-    for (var i = 0; i < found.length; i++) nodes.push(found[i]);
-    stripDangerous(root);
+    var nodes = collectElements(root.nodeType === 9 ? (root.documentElement || root.body || root) : root);
     for (var n = 0; n < nodes.length; n++) {
       var el = nodes[n];
       if (!el.attributes) continue;
@@ -287,7 +367,7 @@
       get: function () { return desc.get.call(this); },
       set: function (v) {
         desc.set.call(this, v);
-        bindTree(this);
+        afterHtmlWrite(this);
       }
     });
   }
@@ -299,18 +379,20 @@
     Element.prototype.insertAdjacentHTML = function (pos, html) {
       adj.call(this, pos, html);
       var root = (pos === 'beforebegin' || pos === 'afterend') ? this.parentNode : this;
-      if (root) bindTree(root);
+      if (root) afterHtmlWrite(root);
     };
   }
 
   global._tpBindInline = bindTree;
   global._tpParseInline = parseProgram;
+  global._tpSanitizeCss = sanitizeCss;
+  global._tpInlineDeny = DENY;
 
   function onReady(fn) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
     else fn();
   }
-  onReady(function () { bindTree(document); });
+  onReady(function () { afterHtmlWrite(document); });
 })(window);
 
 function _tpStyle(el, prop, val) {
@@ -406,9 +488,14 @@ function _tpFocusOnEnter(event, id) {
   _tpFocus(id);
 }
 function _tpSafeCall(name) {
-  if (!/^[A-Za-z_][\w]*$/.test(String(name || ''))) return;
-  var fn = window[name];
-  if (typeof fn === 'function') return fn.apply(null, Array.prototype.slice.call(arguments, 1));
+  var key = String(name || '');
+  if (!/^[A-Za-z_][\w]*$/.test(key)) return;
+  if ((window._tpInlineDeny && window._tpInlineDeny[key]) || key.indexOf('_tpUnsafe') === 0) return;
+  if (key === 'eval' || key === 'Function' || key === 'setTimeout' || key === 'setInterval' || key === '_tpSafeCall') return;
+  var fn = window[key];
+  if (typeof fn !== 'function') return;
+  if (fn === eval || fn === Function || fn === setTimeout || fn === setInterval) return;
+  return fn.apply(null, Array.prototype.slice.call(arguments, 1));
 }
 function _tpOnEnter(event, name) {
   if (!event || event.key !== 'Enter') return;

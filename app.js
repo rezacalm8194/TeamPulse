@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp93';
+const TP_ASSET_V = 'tp95';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -5066,12 +5066,6 @@ function _applyAppTranslation(targetLang) {
     setTimeout(() => _applyAppTranslation(targetLang), 100);
     return;
   }
-  if (!document.getElementById('app-translation-style')) {
-    const style = document.createElement('style');
-    style.id = 'app-translation-style';
-    style.textContent = '.goog-te-banner-frame,.skiptranslate{display:none!important}body{top:0!important}#google_translate_element{display:none!important}';
-    document.head.appendChild(style);
-  }
   if (targetLang !== 'en') {
     _setGoogleTranslateCookie('fa');
     _selectGoogleTranslateLanguage('fa');
@@ -5680,7 +5674,7 @@ async function openStudentDetail(id) {
   const walletRows = walletHistory.length
     ? walletHistory.slice(0,5).map(w => `
       <div class="detail-row">
-        <span class="detail-key">${DateService.disp(w.date_jalali) || '—'} ${w.note ? '— ' + w.note : ''}</span>
+        <span class="detail-key">${DateService.disp(w.date_jalali) || '—'} ${w.note ? '— ' + escapeHtml(w.note) : ''}</span>
         <span class="detail-val" style="color:${w.delta>=0?'var(--green)':'var(--red)'}">${w.delta>=0?'+':''}${fmt(w.delta)} ت</span>
       </div>`).join('')
     : '';
@@ -6050,7 +6044,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         </div>
         <div class="form-group full">
           <label class="form-label">توضیحات خرید</label>
-          <input class="form-input pkg-note" data-type-id="${pt.id}" placeholder="توضیحات یا یادداشت این خرید..." value="${existing?.note || ''}">
+          <input class="form-input pkg-note" data-type-id="${pt.id}" placeholder="توضیحات یا یادداشت این خرید..." value="${escapeHtml(existing?.note || '')}">
         </div>
       </div>
     </div>`;
@@ -6067,19 +6061,19 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">نام *</label>
-        <input class="form-input" id="f-name" placeholder="نام" value="${s?.name || ''}">
+        <input class="form-input" id="f-name" placeholder="نام" value="${escapeHtml(s?.name || '')}">
       </div>
       <div class="form-group">
         <label class="form-label">نام خانوادگی *</label>
-        <input class="form-input" id="f-lname" placeholder="نام خانوادگی" value="${s?.lname || ''}">
+        <input class="form-input" id="f-lname" placeholder="نام خانوادگی" value="${escapeHtml(s?.lname || '')}">
       </div>
       <div class="form-group">
         <label class="form-label">شماره تماس</label>
-        <input class="form-input" id="f-phone" placeholder="09xxxxxxxxx" value="${s?.phone || ''}">
+        <input class="form-input" id="f-phone" placeholder="09xxxxxxxxx" value="${escapeHtml(s?.phone || '')}">
       </div>
       <div class="form-group">
         <label class="form-label">نام مجموعه</label>
-        <input class="form-input" id="f-organization-name" placeholder="نام شرکت یا مجموعه" value="${s?.organization_name || ''}">
+        <input class="form-input" id="f-organization-name" placeholder="نام شرکت یا مجموعه" value="${escapeHtml(s?.organization_name || '')}">
       </div>
       ${archiveComboField('f-customer-category','دسته‌بندی',s?.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید')}
       <div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="f-referral-source" value="${escapeHtml(s?.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>
@@ -6151,7 +6145,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
 
     <div class="form-section">یادداشت</div>
     <div class="form-group full">
-      <textarea class="form-textarea" id="f-note" rows="2" placeholder="هدف، وضعیت، نکات مهم...">${s?.note || ''}</textarea>
+      <textarea class="form-textarea" id="f-note" rows="2" placeholder="هدف، وضعیت، نکات مهم...">${escapeHtml(s?.note || '')}</textarea>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: editing ? `saveStudentEdit(${id})` : 'saveStudentNew()' },
@@ -7821,7 +7815,7 @@ async function openEditSession(sessionId) {
         </div>
         <div class="meta-row">
           <span class="meta-icon">📅</span>
-          <input class="form-input jdate" id="f-ses-date" value="${session.date_jalali}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+          <input class="form-input jdate" id="f-ses-date" value="${escapeHtml(session.date_jalali)}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
         </div>
         <div class="meta-row">
           <span class="meta-icon">🏷️</span>
@@ -9472,24 +9466,24 @@ async function renderSettings() {
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">نام برنامه</label>
-          <input class="form-input" id="set-app-title" value="${META.appTitle || ''}">
+          <input class="form-input" id="set-app-title" value="${escapeHtml(META.appTitle || '')}">
         </div>
         <div class="form-group"></div>
         <div class="form-group">
           <label class="form-label">نام موجودیت (مفرد) — مثلاً «شاگرد» یا «مشتری»</label>
-          <input class="form-input" id="set-entity-singular" value="${META.entitySingular || ''}">
+          <input class="form-input" id="set-entity-singular" value="${escapeHtml(META.entitySingular || '')}">
         </div>
         <div class="form-group">
           <label class="form-label">نام موجودیت (جمع) — مثلاً «شاگردان» یا «مشتریان»</label>
-          <input class="form-input" id="set-entity-plural" value="${META.entityPlural || ''}">
+          <input class="form-input" id="set-entity-plural" value="${escapeHtml(META.entityPlural || '')}">
         </div>
         <div class="form-group">
           <label class="form-label">نام رویداد (مفرد) — مثلاً «جلسه» یا «مراجعه»</label>
-          <input class="form-input" id="set-session-singular" value="${META.sessionSingular || ''}">
+          <input class="form-input" id="set-session-singular" value="${escapeHtml(META.sessionSingular || '')}">
         </div>
         <div class="form-group">
           <label class="form-label">نام رویداد (جمع) — مثلاً «جلسات» یا «مراجعه‌ها»</label>
-          <input class="form-input" id="set-session-plural" value="${META.sessionPlural || ''}">
+          <input class="form-input" id="set-session-plural" value="${escapeHtml(META.sessionPlural || '')}">
         </div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">
@@ -9513,10 +9507,10 @@ async function renderSettings() {
               const current = META.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
               let opts = '';
               if (!common.includes(current)) {
-                opts += '<option value="' + current + '" selected>' + current + ' (فعلی — تشخیص خودکار)</option>';
+                opts += '<option value="' + escapeHtml(current) + '" selected>' + escapeHtml(current) + ' (فعلی — تشخیص خودکار)</option>';
               }
               common.forEach(tz => {
-                opts += '<option value="' + tz + '"' + (tz === current ? ' selected' : '') + '>' + tz + '</option>';
+                opts += '<option value="' + escapeHtml(tz) + '"' + (tz === current ? ' selected' : '') + '>' + escapeHtml(tz) + '</option>';
               });
               return opts;
             })()}
@@ -9545,7 +9539,7 @@ async function renderSettings() {
         </div>
         <div class="form-group">
           <label class="form-label">منطقه جغرافیایی (شهر)</label>
-          <input class="form-input" id="set-location" value="${META.location||''}" placeholder="مثلاً: تهران، مازندران">
+          <input class="form-input" id="set-location" value="${escapeHtml(META.location||'')}" placeholder="مثلاً: تهران، مازندران">
         </div>
       </div>
       <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
@@ -16662,24 +16656,24 @@ function _renderWelcomeStep() {
         <div class="form-grid" style="text-align:right">
           <div class="form-group">
             <label class="form-label">نام برنامه</label>
-            <input class="form-input" id="wz-app-title" value="${META.appTitle || ''}">
+            <input class="form-input" id="wz-app-title" value="${escapeHtml(META.appTitle || '')}">
           </div>
           <div class="form-group"></div>
           <div class="form-group">
             <label class="form-label">نام موجودیت (مفرد)</label>
-            <input class="form-input" id="wz-entity-singular" value="${META.entitySingular || preset().s}">
+            <input class="form-input" id="wz-entity-singular" value="${escapeHtml(META.entitySingular || preset().s)}">
           </div>
           <div class="form-group">
             <label class="form-label">نام موجودیت (جمع)</label>
-            <input class="form-input" id="wz-entity-plural" value="${META.entityPlural || preset().sp}">
+            <input class="form-input" id="wz-entity-plural" value="${escapeHtml(META.entityPlural || preset().sp)}">
           </div>
           <div class="form-group">
             <label class="form-label">نام رویداد (مفرد)</label>
-            <input class="form-input" id="wz-session-singular" value="${META.sessionSingular || preset().ss}">
+            <input class="form-input" id="wz-session-singular" value="${escapeHtml(META.sessionSingular || preset().ss)}">
           </div>
           <div class="form-group">
             <label class="form-label">نام رویداد (جمع)</label>
-            <input class="form-input" id="wz-session-plural" value="${META.sessionPlural || preset().ssp}">
+            <input class="form-input" id="wz-session-plural" value="${escapeHtml(META.sessionPlural || preset().ssp)}">
           </div>
         </div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
@@ -16958,13 +16952,6 @@ function _showAddStudentHint() {
     pulse.style.top = (rect.top + rect.height/2 - 27) + 'px';
     pulse.style.left = (rect.left + rect.width/2 - 27) + 'px';
     document.body.appendChild(pulse);
-
-    if (!document.getElementById('tp-hint-keyframes')) {
-      const style = document.createElement('style');
-      style.id = 'tp-hint-keyframes';
-      style.textContent = `@keyframes tpHintPulse{0%{transform:scale(.8);opacity:1}100%{transform:scale(1.6);opacity:0}}`;
-      document.head.appendChild(style);
-    }
 
     setTimeout(() => { const p = document.getElementById('add-student-pulse-hint'); if (p) p.remove(); }, 8000);
     target.addEventListener('click', () => {
@@ -22050,7 +22037,7 @@ function openEditTodo(id) {
               <button type="button" onclick="_setTodoDateShortcut('tomorrow')">فردا</button>
               <button type="button" onclick="_setTodoDateShortcut('nextweek')">هفته دیگر</button>
             </div>
-            <input class="form-input jdate" id="todo-date" value="${t.date_jalali||''}">
+            <input class="form-input jdate" id="todo-date" value="${escapeHtml(t.date_jalali||'')}">
           </div>
           <div class="form-group">
             <label class="form-label">ساعت</label>
