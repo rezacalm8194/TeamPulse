@@ -2621,6 +2621,11 @@ function _instrCurrentLevel() {
   if (node.type === 'kcategory') return 'category';
   return 'folder';
 }
+/* CSP binder (tp-inline-bind) only accepts literals in onclick — not live
+   identifiers like `_instrParentId`. Bake the current folder id at render time. */
+function _instrParentLiteral() {
+  return (_instrParentId == null || _instrParentId === '') ? 'null' : String(+_instrParentId);
+}
 function _parseTags(value) {
   return String(value||'').split(/[،,\n#]+/).map(t => t.trim()).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
 }
@@ -2797,8 +2802,8 @@ async function renderInstructions(instrSearch) {
       : 'اینجا می‌توانی زیرپوشه بسازی یا مستقیم یادداشت اضافه کنی.';
     const emptyCreate = currentLevel === 'root'
       ? `<button class="btn btn-primary" onclick="openAddInstruction(null,'kcategory')">🗂 دسته‌بندی جدید</button>`
-      : `<button class="btn btn-primary" onclick="openAddInstruction(_instrParentId,'category')">📁 پوشه جدید</button>
-         <button class="btn btn-ghost" onclick="openAddInstruction(_instrParentId,'note')">📝 یادداشت جدید</button>`;
+      : `<button class="btn btn-primary" onclick="openAddInstruction(${_instrParentLiteral()},'category')">📁 پوشه جدید</button>
+         <button class="btn btn-ghost" onclick="openAddInstruction(${_instrParentLiteral()},'note')">📝 یادداشت جدید</button>`;
     setContent(statsBar + breadcrumb + toolbar + pinnedBar + recentBar + `
       <div class="empty" style="padding:48px 24px">
         <span style="font-size:52px">${emptyIcon}</span>
@@ -3133,10 +3138,10 @@ function _instrToolbarHtml() {
       <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(null,'kcategory')" style="font-size:12px">
         <span class="btn-icon">🗂</span><span> دسته‌بندی جدید</span>
       </button>` : `
-      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'category')" style="font-size:12px">
+      <button class="btn btn-primary instr-toolbar-create-btn" onclick="openAddInstruction(${_instrParentLiteral()},'category')" style="font-size:12px">
         <span class="btn-icon">📁</span><span> پوشه جدید</span>
       </button>
-      <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(_instrParentId,'note')" style="font-size:12px">
+      <button class="btn btn-ghost instr-toolbar-create-btn" onclick="openAddInstruction(${_instrParentLiteral()},'note')" style="font-size:12px">
         <span class="btn-icon">📝</span><span> یادداشت جدید</span>
       </button>`;
   return `
@@ -3194,7 +3199,7 @@ function _instrFabHtml() {
     <div class="instr-fab-spacer"></div>
     <div class="instr-fab-wrap" id="instr-fab-wrap">
       <div class="instr-fab-menu" id="instr-fab-menu">
-        ${actions.map(a => `<button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(${level === 'root' ? 'null' : '_instrParentId'},${escapeAttr(a.type)})">
+        ${actions.map(a => `<button type="button" class="instr-fab-menu-item" onclick="_closeInstrFab();openAddInstruction(${level === 'root' ? 'null' : _instrParentLiteral()},${escapeAttr(a.type)})">
           <span>${escapeHtml(a.icon)}</span><span>${escapeHtml(a.label)}</span>
         </button>`).join('')}
       </div>

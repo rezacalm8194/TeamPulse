@@ -91,6 +91,13 @@ test('inline parser keeps habit card toggle handlers', () => {
   assert.ok(ctx._tpParseInline('event.stopPropagation();toggleHabitToday(12)'));
 });
 
+test('inline parser rejects live identifiers like _instrParentId', () => {
+  const ctx = loadBinder();
+  assert.equal(ctx._tpParseInline("openAddInstruction(_instrParentId,'category')"), null);
+  assert.ok(ctx._tpParseInline("openAddInstruction(42,'category')"));
+  assert.ok(ctx._tpParseInline("openAddInstruction(null,'note')"));
+});
+
 test('inline CSS sanitizer strips scripted urls', () => {
   const ctx = loadBinder();
   assert.equal(ctx._tpSanitizeCss('color:red;background:url(javascript:alert(1))'), '');
