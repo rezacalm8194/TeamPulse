@@ -82,6 +82,7 @@ function mergeOwnerTodosWithPrevious(previousData, nextData) {
 
 module.exports = {
   todoRecency,
+  scheduledKey,
   pickMergedTodo,
   mergeOwnerTodosWithPrevious,
   isCompletionArtifact,

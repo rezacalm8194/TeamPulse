@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp96';
+const TP_ASSET_V = 'tp97';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -16004,7 +16004,8 @@ async function _pollServerStatus() {
 function _refreshUiAfterServerLoad(updated) {
   if (currentPage === 'todolist') {
     if (updated) window._todoListServerRefreshPending = true;
-    if (!window._todoListServerRefreshPending || !_canAutoRefresh({ allowTodoList: true })) return;
+    const watchingStaff = _todoActiveTab === 'staff';
+    if (!window._todoListServerRefreshPending || !_canAutoRefresh({ allowTodoList: true, forceStaffLive: watchingStaff })) return;
     const content = document.getElementById('content');
     const scrollTop = content?.scrollTop || 0;
     renderTodoList();
@@ -17994,9 +17995,9 @@ function _todoStaffDashboardHtml() {
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
   const staff = (_db.staff || []).filter(s => staffIsPersonnel(s) && s.is_active !== false && s.is_active !== 0);
-  const tasks = (_db.todos || []).filter(t => _todoCanView(t) && (t.assignee_id || t.assignee_email));
+  const tasks = (_db.todos || []).filter(t => _todoCanView(t) && (t.assignee_id || t.staff_id || t.assignee_email));
   const rows = staff.map(s => {
-    const mine = tasks.filter(t => String(t.assignee_id) === String(s.id));
+    const mine = tasks.filter(t => String(t.assignee_id || t.staff_id) === String(s.id));
     const todayTasks = mine.filter(t => _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) === todayKey);
     const done = todayTasks.filter(t => t.done).length;
     const overdue = mine.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey).length;
@@ -18151,8 +18152,8 @@ function _renderTodoStaffFilteredList() {
   const tomorrowKey = tomorrowStr ? _jalaliKey(tomorrowStr) : 0;
   const todaySnapshots = (_db.todos || []).filter(t => _todoCanView(t) && t.archived && t._snapshot && _todoStaffDoneToday(t, todayKey));
   let list = [...(_db.todos || []).filter(t => _todoCanView(t) && !t.archived), ...todaySnapshots]
-    .filter(t => t.assignee_id || t.assignee_email);
-  if (_todoStaffFilter.staffId !== 'all') list = list.filter(t => String(t.assignee_id) === String(_todoStaffFilter.staffId));
+    .filter(t => t.assignee_id || t.staff_id || t.assignee_email);
+  if (_todoStaffFilter.staffId !== 'all') list = list.filter(t => String(t.assignee_id || t.staff_id) === String(_todoStaffFilter.staffId));
   const todayMode = _todoStaffFilter.range === 'today';
   if (!todayMode) list = list.filter(t => _todoInRange(t, _todoStaffFilter.range, _todoStaffFilter.from, _todoStaffFilter.to));
   const report = _todoStaffReportId ? _todoReportForStaffHtml(_todoStaffReportId) : '';
@@ -18317,7 +18318,7 @@ function _updateTodoEndPreview() {
     : 'با انتخاب ساعت، زمان پایان نمایش داده می‌شود';
 }
 
-function _canAutoRefresh({ allowTodoList = false } = {}) {
+function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false } = {}) {
   // لیست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
   // کل صفحه را rebuild کند و حس «ریلـود کوچک» یا پریدن کارها بسازد.
   if (currentPage === 'todolist' && !allowTodoList) return false;
@@ -18325,11 +18326,15 @@ function _canAutoRefresh({ allowTodoList = false } = {}) {
   if (document.querySelector('.modal-overlay.open')) return false;
   // اگه روی input/textarea focus هست (کیبورد موبایل باز)
   const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return false;
+  // SELECT روی لیست کارها فیلتر است، نه فرم در حال ویرایش.
+  if (tag === 'SELECT' && currentPage !== 'todolist' && !forceStaffLive) return false;
   // اگه contenteditable داره ویرایش میشه
   if (document.activeElement?.contentEditable === 'true') return false;
   // کیبورد مجازی موبایل باز هست
   if (window._mobileKeyboardOpen) return false;
+  // تب کارهای پرسنل باید تیک لحظه‌ای هم‌تیمی را نشان بدهد.
+  if (forceStaffLive) return true;
   // کاربر همین الان در حال اسکرول/خواندن صفحه است؛ رندر خودکار نباید جای صفحه را بپراند.
   if (Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
   return true;
@@ -21034,7 +21039,11 @@ function _scheduleTodoListReconcile() {
 }
 
 function _queueTodoTickPersist(todo, operation, extraTodos) {
-  _todoPersistQueue.push({ todo, operation, extraTodos });
+  _todoPersistQueue.push({
+    todo,
+    operation,
+    extraTodos: Array.isArray(extraTodos) ? extraTodos.slice() : extraTodos,
+  });
   if (_todoPersistQueued) return;
   _todoPersistQueued = true;
   queueMicrotask(() => {
