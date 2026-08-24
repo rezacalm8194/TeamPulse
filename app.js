@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp98';
+const TP_ASSET_V = 'tp99';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -15804,14 +15804,20 @@ async function _loadFromServer() {
         return false;
       }
       if (localTime > serverTime && localTime > (window._teamLastOwnerDataSavedAt || 0)) {
-        clearTimeout(window._serverSyncTimer);
-        window._serverSyncTimer = setTimeout(_syncToServer, 50);
-        return false;
-      }
-      if (serverTime && localTime && serverTime < localTime) {
+        const mergedTodos = _mergeServerTodosIntoLocal(data);
         window._teamOwnerDataReady = true;
         window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
-        return false;
+        if (mergedTodos && incomingEtag) window._serverDataEtag = incomingEtag;
+        clearTimeout(window._serverSyncTimer);
+        window._serverSyncTimer = setTimeout(_syncToServer, 50);
+        return mergedTodos;
+      }
+      if (serverTime && localTime && serverTime < localTime) {
+        const mergedTodos = _mergeServerTodosIntoLocal(data);
+        window._teamOwnerDataReady = true;
+        window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
+        if (mergedTodos && incomingEtag) window._serverDataEtag = incomingEtag;
+        return mergedTodos;
       }
       const pendingSync = _readServerSyncPending();
       if (pendingSync) {
@@ -15976,7 +15982,6 @@ async function _loadFromServer() {
 }
 
 async function _pollServerStatus() {
-  if (window._todoDeltaChain || _isTodoDeltaPendingReason()) return false;
   // Keep the existing full-load conflict protections in charge while a local
   // save is pending; the lightweight shortcut must not make that decision.
   if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
@@ -16001,11 +16006,17 @@ async function _pollServerStatus() {
   }
 }
 
-function _refreshUiAfterServerLoad(updated) {
+function _refreshUiAfterServerLoad(updated, opts = {}) {
+  const force = opts.force === true;
   if (currentPage === 'todolist') {
     if (updated) window._todoListServerRefreshPending = true;
     const watchingStaff = _todoActiveTab === 'staff';
-    if (!window._todoListServerRefreshPending || !_canAutoRefresh({ allowTodoList: true, forceStaffLive: watchingStaff })) return;
+    if (!window._todoListServerRefreshPending) return;
+    if (!_canAutoRefresh({
+      allowTodoList: true,
+      forceStaffLive: watchingStaff,
+      ignoreScroll: force || !!updated,
+    })) return;
     const content = document.getElementById('content');
     const scrollTop = content?.scrollTop || 0;
     renderTodoList();
@@ -16018,17 +16029,22 @@ function _refreshUiAfterServerLoad(updated) {
   if (updated && _canAutoRefresh()) renderPage();
 }
 
-function _startServerSyncLoops() {
-  clearInterval(window._syncInterval);
-  clearInterval(window._pollInterval);
-  clearTimeout(window._pollInterval);
-  _bindAppActivityTracking();
-  window._syncInterval = setInterval(_syncToServer, 15000);
+function _appLooksInUse() {
+  if (typeof document === 'undefined') return true;
+  if (document.visibilityState === 'visible' && !document.hidden) return true;
+  const last = Number(window._lastAppActivityAt || 0);
+  return !!last && (Date.now() - last) < 20000;
+}
+
+function _startServerPollLoop(firstDelay) {
+  const delay = Number.isFinite(firstDelay) ? Math.max(0, firstDelay) : 1500;
   const generation = (window._serverPollGeneration || 0) + 1;
   window._serverPollGeneration = generation;
+  clearTimeout(window._pollInterval);
   const poll = async () => {
     try {
-      if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && !document.hidden) {
+      window._lastServerPollAt = Date.now();
+      if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && _appLooksInUse()) {
         const updated = await _pollServerStatus();
         _refreshUiAfterServerLoad(updated);
       }
@@ -16038,39 +16054,56 @@ function _startServerSyncLoops() {
       }
     }
   };
-  window._pollInterval = setTimeout(poll, 8000);
+  window._pollInterval = setTimeout(poll, delay);
+}
+
+function _startServerSyncLoops() {
+  clearInterval(window._syncInterval);
+  clearInterval(window._pollInterval);
+  clearTimeout(window._pollInterval);
+  _bindAppActivityTracking();
+  window._syncInterval = setInterval(_syncToServer, 15000);
+  _startServerPollLoop(1500);
 }
 
 function _bindAppActivityTracking() {
   if (window._appActivityTrackingBound) return;
   window._appActivityTrackingBound = true;
   window._lastAppActivityAt = Date.now();
-  const mark = () => { window._lastAppActivityAt = Date.now(); };
-  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => {
+  const mark = () => {
+    window._lastAppActivityAt = Date.now();
+    if (Date.now() - (window._lastServerPollAt || 0) > 8000) _scheduleServerResumeSync(0);
+  };
+  ['pointerdown', 'keydown', 'touchstart'].forEach(type => {
     document.addEventListener(type, mark, { passive: true });
   });
   window.addEventListener('focus', mark);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) mark();
+    if (!document.hidden) {
+      window._lastAppActivityAt = Date.now();
+      _scheduleServerResumeSync(0);
+    }
   });
 }
 
 function _nextServerPollDelay() {
-  if (document.hidden) return 2 * 60 * 1000;
+  if (!_appLooksInUse()) return 30 * 1000;
   const idleFor = Date.now() - (window._lastAppActivityAt || Date.now());
-  if (idleFor > 5 * 60 * 1000) return 90 * 1000;
-  if (idleFor > 90 * 1000) return 45 * 1000;
-  return 5 * 1000;
+  if (idleFor > 5 * 60 * 1000) return 45 * 1000;
+  if (idleFor > 90 * 1000) return 12 * 1000;
+  return 4 * 1000;
 }
 
 async function _syncFromServerOnResume() {
-  if (document.hidden || document.visibilityState === 'hidden') return false;
+  if (!_appLooksInUse() && (document.hidden || document.visibilityState === 'hidden')) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._resumeServerSyncInFlight) return window._resumeServerSyncInFlight;
   window._lastAppActivityAt = Date.now();
   const run = (async () => {
+    window._lastServerPollAt = Date.now();
     const updated = await _pollServerStatus();
-    _refreshUiAfterServerLoad(updated);
+    _refreshUiAfterServerLoad(updated, { force: true });
+    _startServerPollLoop(_nextServerPollDelay());
     return updated;
   })();
   window._resumeServerSyncInFlight = run;
@@ -16080,14 +16113,14 @@ async function _syncFromServerOnResume() {
   }
 }
 
-function _scheduleServerResumeSync(delay = 500) {
-  if (document.hidden || document.visibilityState === 'hidden') return;
+function _scheduleServerResumeSync(delay = 0) {
+  if (!_appLooksInUse() && (document.hidden || document.visibilityState === 'hidden')) return;
   window._lastAppActivityAt = Date.now();
   clearTimeout(window._resumeServerSyncTimer);
   window._resumeServerSyncTimer = setTimeout(() => {
     window._resumeServerSyncTimer = null;
     void _syncFromServerOnResume();
-  }, delay);
+  }, Math.max(0, delay));
 }
 
 function _startKeyEventReminderLoop() {
@@ -16210,7 +16243,7 @@ function _bindServerSyncLifecycleHandlers() {
   });
   window.addEventListener('pageshow', () => _scheduleServerResumeSync());
   window.addEventListener('online', () => _scheduleServerResumeSync());
-  _scheduleServerResumeSync(500);
+  _scheduleServerResumeSync(0);
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
     _adoptManualRestoreFromLocalStorage('beforeunload');
@@ -18318,7 +18351,7 @@ function _updateTodoEndPreview() {
     : 'با انتخاب ساعت، زمان پایان نمایش داده می‌شود';
 }
 
-function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false } = {}) {
+function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false, ignoreScroll = false } = {}) {
   // لیست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
   // کل صفحه را rebuild کند و حس «ریلـود کوچک» یا پریدن کارها بسازد.
   if (currentPage === 'todolist' && !allowTodoList) return false;
@@ -18336,7 +18369,7 @@ function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false } = {})
   // تب کارهای پرسنل باید تیک لحظه‌ای هم‌تیمی را نشان بدهد.
   if (forceStaffLive) return true;
   // کاربر همین الان در حال اسکرول/خواندن صفحه است؛ رندر خودکار نباید جای صفحه را بپراند.
-  if (Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
+  if (!ignoreScroll && Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
   return true;
 }
 
@@ -24792,7 +24825,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v88';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v99';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
