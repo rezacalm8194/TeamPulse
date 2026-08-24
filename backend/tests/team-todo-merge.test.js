@@ -4,6 +4,8 @@ const {
   ownStaffIdsForGrant,
   todoAssignedToMember,
   mergeAllowedTeamTodos,
+  mergeAllowedTeamDocument,
+  allowedTeamDocumentPatch,
 } = require('../utils/teamTodoMerge');
 
 const grant = {
@@ -87,4 +89,70 @@ test('recurring overdue tick stores snapshot and advances the template', () => {
   assert.equal(template.done, false);
   assert.ok(snapshot);
   assert.equal(snapshot.done, true);
+});
+
+test('archive-permission team write keeps student upsert and owner-only rows', () => {
+  const previous = {
+    students: [
+      { id: 1, name: 'OwnerRow', archived: true },
+      { id: 2, name: 'OldName', archived: true, phone: '1' },
+    ],
+    todos: [],
+    archive_categories: ['تولیدی'],
+  };
+  const grant = {
+    email: 'mahdi@example.test',
+    permissions: ['archive'],
+  };
+  const next = mergeAllowedTeamDocument(previous, {
+    students: [
+      { id: 2, name: 'NewName', archived: true, phone: '2' },
+      { id: 3, name: 'MahdiAdded', archived: true },
+    ],
+    archive_categories: ['تولیدی', 'خدماتی'],
+    _lastSaved: 123,
+  }, grant);
+  assert.equal(next.students.length, 3);
+  assert.equal(next.students.find(s => s.id === 1).name, 'OwnerRow');
+  assert.equal(next.students.find(s => s.id === 2).name, 'NewName');
+  assert.equal(next.students.find(s => s.id === 3).name, 'MahdiAdded');
+  assert.deepEqual(next.archive_categories, ['تولیدی', 'خدماتی']);
+});
+
+test('team without archive permission cannot persist student edits', () => {
+  const previous = {
+    students: [{ id: 1, name: 'Keep' }],
+    todos: [],
+  };
+  const next = mergeAllowedTeamDocument(previous, {
+    students: [{ id: 1, name: 'Hacked' }, { id: 2, name: 'New' }],
+  }, { email: 'x@test', permissions: ['todolist', 'todo_complete_own'] });
+  assert.equal(next.students.length, 1);
+  assert.equal(next.students[0].name, 'Keep');
+});
+
+test('allowed team patch ignores wallet and team_members', () => {
+  const patch = allowedTeamDocumentPatch({
+    collections: {
+      students: { upsert: [{ id: 9, name: 'A', archived: true }], delete: [] },
+      team_members: { upsert: [{ id: 'x' }], delete: [] },
+    },
+    scalars: { wallet: 999, archive_categories: ['تولیدی'], _lastSaved: 1 },
+  }, { email: 'mahdi@test', permissions: ['archive'] });
+  assert.ok(patch.collections.students);
+  assert.equal(patch.collections.team_members, undefined);
+  assert.equal(patch.scalars.wallet, undefined);
+  assert.deepEqual(patch.scalars.archive_categories, ['تولیدی']);
+});
+
+test('archive team delete removes tombstoned students without wiping others', () => {
+  const previous = {
+    students: [{ id: 1, name: 'Keep' }, { id: 2, name: 'Gone' }],
+    todos: [],
+  };
+  const next = mergeAllowedTeamDocument(previous, {
+    students: [{ id: 1, name: 'Keep' }],
+    _deletedItems: { students: { 2: '2026-08-24T10:00:00.000Z' } },
+  }, { email: 'mahdi@test', permissions: ['archive'] });
+  assert.deepEqual(next.students.map(s => s.id), [1]);
 });

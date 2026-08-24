@@ -27,6 +27,10 @@ const {
   todoVisibleToTeamMember,
   mergeTodoTombstones,
   mergeAllowedTeamTodos,
+  mergeAllowedTeamDocument,
+  allowedTeamDocumentPatch,
+  canWriteTeamStudents,
+  TEAM_STUDENT_RELATED_COLLECTIONS,
 } = require('../utils/teamTodoMerge');
 const {
   MAX_VERSIONS_PER_WORKSPACE,
@@ -288,6 +292,10 @@ function keysNeededForPatch(patch, grant) {
   if (grant) {
     keys.add('todos');
     keys.add('staff');
+    if (canWriteTeamStudents(grant.permissions)) {
+      keys.add('students');
+      TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => keys.add(key));
+    }
   }
   const deletedItems = patch?.scalars?._deletedItems;
   if (deletedItems && typeof deletedItems === 'object' && !Array.isArray(deletedItems)) {
@@ -450,7 +458,7 @@ async function persistWorkspaceDocumentLocked(req, res, {
       });
     }
     if (grant) {
-      data = mergeAllowedTeamTodos(previousData, data, grant);
+      data = mergeAllowedTeamDocument(previousData, data, grant);
     } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {
       data = mergeOwnerTodosWithPrevious(previousData, data);
       const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
@@ -578,12 +586,10 @@ async function handleDocumentDelta(req, res) {
     }
     let data;
     if (grant) {
-      data = {
-        ...previousData,
-        todos: candidateTodosFromPatch(previousData, patch),
-        _deletedTodoIds: Array.isArray(patch.collections?.todos?.delete) ? patch.collections.todos.delete : [],
-        _lastSaved: patch.scalars?._lastSaved || previousData?._lastSaved,
-      };
+      data = applyDocumentPatch(previousData, allowedTeamDocumentPatch(patch, grant));
+      data.todos = candidateTodosFromPatch(previousData, patch);
+      data._deletedTodoIds = Array.isArray(patch.collections?.todos?.delete) ? patch.collections.todos.delete : [];
+      data._lastSaved = patch.scalars?._lastSaved || previousData?._lastSaved;
     } else {
       data = applyDocumentPatch(previousData, patch);
     }

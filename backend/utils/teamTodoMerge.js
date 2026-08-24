@@ -91,6 +91,86 @@ function historyHasCompletedAfter(todo, afterMs) {
   });
 }
 
+const TEAM_STUDENT_WRITE_PERMISSIONS = ['archive', 'customerlist', 'students', 'sessions'];
+const TEAM_STUDENT_RELATED_COLLECTIONS = [
+  'packages',
+  'payments',
+  'sessions',
+  'wallet_tx',
+  'reminders',
+  'topics',
+  'key_events',
+];
+const ARCHIVE_SCALAR_KEYS = [
+  'archive_columns',
+  'archive_categories',
+  'archive_relationship_statuses',
+];
+
+function canWriteTeamStudents(permissions) {
+  const list = Array.isArray(permissions) ? permissions : [];
+  return TEAM_STUDENT_WRITE_PERMISSIONS.some(key => list.includes(key));
+}
+
+function mergeTeamIdCollection(previousItems, incomingItems, deletedIds) {
+  const deleted = new Set((deletedIds || []).map(id => String(id)).filter(Boolean));
+  const incoming = Array.isArray(incomingItems) ? incomingItems : [];
+  const incomingById = new Map();
+  incoming.forEach(item => {
+    if (!item || item.id == null) return;
+    incomingById.set(String(item.id), item);
+  });
+  const next = [];
+  const seen = new Set();
+  (Array.isArray(previousItems) ? previousItems : []).forEach(item => {
+    if (!item || item.id == null) return;
+    const id = String(item.id);
+    if (deleted.has(id)) return;
+    seen.add(id);
+    next.push(incomingById.has(id) ? incomingById.get(id) : item);
+  });
+  incoming.forEach(item => {
+    if (!item || item.id == null) return;
+    const id = String(item.id);
+    if (deleted.has(id) || seen.has(id)) return;
+    seen.add(id);
+    next.push(item);
+  });
+  return next;
+}
+
+function deletedIdsFromTombstones(tombstones, key) {
+  const map = tombstones && typeof tombstones === 'object' && !Array.isArray(tombstones)
+    ? tombstones[key]
+    : null;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return [];
+  return Object.keys(map);
+}
+
+function allowedTeamDocumentPatch(patch, grant) {
+  const collections = {};
+  const scalars = {};
+  const srcCollections = patch?.collections && typeof patch.collections === 'object' ? patch.collections : {};
+  const srcScalars = patch?.scalars && typeof patch.scalars === 'object' ? patch.scalars : {};
+  const permissions = grant?.permissions || [];
+  if (Object.prototype.hasOwnProperty.call(srcScalars, '_lastSaved')) {
+    scalars._lastSaved = srcScalars._lastSaved;
+  }
+  if (canWriteTeamStudents(permissions)) {
+    if (srcCollections.students) collections.students = srcCollections.students;
+    TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => {
+      if (srcCollections[key]) collections[key] = srcCollections[key];
+    });
+    if (Object.prototype.hasOwnProperty.call(srcScalars, '_deletedItems')) {
+      scalars._deletedItems = srcScalars._deletedItems;
+    }
+    ARCHIVE_SCALAR_KEYS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(srcScalars, key)) scalars[key] = srcScalars[key];
+    });
+  }
+  return { collections, scalars };
+}
+
 function mergeAllowedTeamTodos(previousData, nextData, grant) {
   if (!grant || !previousData || !nextData) return nextData;
   const memberEmail = grant.email;
@@ -205,6 +285,31 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   };
 }
 
+function mergeAllowedTeamDocument(previousData, nextData, grant) {
+  const merged = mergeAllowedTeamTodos(previousData, nextData, grant);
+  if (!grant || !previousData || !nextData || !canWriteTeamStudents(grant.permissions)) return merged;
+  const tombstones = nextData._deletedItems;
+  merged.students = mergeTeamIdCollection(
+    previousData.students,
+    nextData.students,
+    deletedIdsFromTombstones(tombstones, 'students')
+  );
+  TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => {
+    if (!Array.isArray(nextData[key]) && !deletedIdsFromTombstones(tombstones, key).length) return;
+    merged[key] = mergeTeamIdCollection(
+      previousData[key],
+      nextData[key],
+      deletedIdsFromTombstones(tombstones, key)
+    );
+  });
+  ARCHIVE_SCALAR_KEYS.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(nextData, key)) merged[key] = nextData[key];
+  });
+  if (tombstones && typeof tombstones === 'object') merged._deletedItems = tombstones;
+  merged._lastSaved = nextData._lastSaved || previousData._lastSaved;
+  return merged;
+}
+
 module.exports = {
   staffEmail,
   ownStaffRowsForGrant,
@@ -216,5 +321,9 @@ module.exports = {
   existingTodoTombstones,
   mergeTodoTombstones,
   mergeAllowedTeamTodos,
+  mergeAllowedTeamDocument,
+  allowedTeamDocumentPatch,
+  canWriteTeamStudents,
+  TEAM_STUDENT_RELATED_COLLECTIONS,
   isCompletionSnapshot,
 };

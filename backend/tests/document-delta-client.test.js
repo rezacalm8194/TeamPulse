@@ -40,3 +40,9 @@ test('complete todo deletion syncs through todo delta instead of a full document
   assert.match(appSource, /_syncTodoDelta\(t, 'delete', removedTodos\)/);
   assert.match(appSource, /operation === 'complete' \|\| operation === 'reopen' \|\| operation === 'delete'/);
 });
+
+test('invited teammates keep pending archive student changes until they persist', () => {
+  assert.match(appSource, /function _teamCanWriteOwnerStudents\(/);
+  assert.match(appSource, /_TEAM_STUDENT_PENDING_KEYS/);
+  assert.match(appSource, /allowLocal && localTime === serverTime/);
+});

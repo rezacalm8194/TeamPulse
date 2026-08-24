@@ -1798,9 +1798,10 @@ window.api = {
     addArchiveOption: (p)=>{const key=p?.kind==='status'?'archive_relationship_statuses':'archive_categories';const value=String(p?.value||'').trim();_db[key]=Array.isArray(_db[key])?_db[key]:[];if(value&&!_db[key].some(x=>String(x).trim()===value))_db[key].push(value);_save();return _P({ok:true,value});},
     bulkArchiveAction: (p)=>{
       const ids=new Set((p?.ids||[]).map(Number));
-      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.archived=false;});
-      if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.customer_category=String(p.value||'شخصی');});
-      if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id)))s.relationship_status=String(p.value||'');});
+      const touchedAt=new Date().toISOString();
+      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.archived=false;s.updated_at=touchedAt;}});
+      if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.customer_category=String(p.value||'شخصی');s.updated_at=touchedAt;}});
+      if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.relationship_status=String(p.value||'');s.updated_at=touchedAt;}});
       if(p?.action==='delete'){
         const deleteIds=[...ids];
         _recordStudentAndRelatedDeletions(deleteIds);
@@ -1815,7 +1816,7 @@ window.api = {
       }
       _save();return _P({ok:true,count:ids.size});
     },
-    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;_save();} return _P({ok:true}); },
+    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     addArchivedBulk: (payload)=>{
       const rows=Array.isArray(payload)?payload:(payload?.rows||[]);
       const columns=Array.isArray(payload?.columns)?payload.columns:[];
@@ -1825,7 +1826,8 @@ window.api = {
         const name=String(p.name||'').trim(), lname=String(p.lname||'').trim();
         const id=_nextId('students');
         const description=String(p.description||p.address||p.main_need||'');
-        const item={id,name,lname,phone:String(p.phone||''),date_jalali:String(p.date||''),customer_category:String(p.customer_category||'شخصی'),referral_source:String(p.referral_source||'متفرقه'),organization_name:String(p.organization_name||''),description,address:description,main_need:'',relationship_status:String(p.relationship_status||''),archive_data:{...(p.archive_data||{})},note:String(p.note||''),family_id:null,is_supplier:false,wallet:0,archived:true,created_at:new Date().toISOString()};
+        const createdAt=new Date().toISOString();
+        const item={id,name,lname,phone:String(p.phone||''),date_jalali:String(p.date||''),customer_category:String(p.customer_category||'شخصی'),referral_source:String(p.referral_source||'متفرقه'),organization_name:String(p.organization_name||''),description,address:description,main_need:'',relationship_status:String(p.relationship_status||''),archive_data:{...(p.archive_data||{})},note:String(p.note||''),family_id:null,is_supplier:false,wallet:0,archived:true,created_at:createdAt,updated_at:createdAt};
         if(item.customer_category&&!_db.archive_categories.includes(item.customer_category))_db.archive_categories.push(item.customer_category);
         if(item.relationship_status&&!_db.archive_relationship_statuses.includes(item.relationship_status))_db.archive_relationship_statuses.push(item.relationship_status);
         _db.students.push(item); added.push(item);
@@ -1836,7 +1838,8 @@ window.api = {
     add: (p)=>{
       const id=_nextId('students');
       const description=p.description||p.address||p.main_need||'';
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',archive_data:{...(p.archive_data||{})},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:new Date().toISOString()});
+      const createdAt=new Date().toISOString();
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',archive_data:{...(p.archive_data||{})},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -1849,7 +1852,7 @@ window.api = {
     update: (p)=>{
       const s=_db.students.find(x=>x.id===p.id); if(!s)return _P({ok:false});
       const description=p.description??p.address??p.main_need??s.description??s.address??s.main_need??'';
-      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status??s.relationship_status??'',archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false});
+      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status??s.relationship_status??'',archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,updated_at:new Date().toISOString()});
       const selectedPackages = p.packages || [];
       const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
       const removedPackageIds = _db.packages
@@ -4124,6 +4127,11 @@ function _teamCan(page) {
   if (page === 'transactions' && permissions.includes('dashboard')) return true;
   return permissions.includes(page);
 }
+function _teamCanWriteOwnerStudents() {
+  if (!_teamAccessSession()) return true;
+  return ['archive','customerlist','students','sessions'].some(key => _teamPerm(key));
+}
+const _TEAM_STUDENT_PENDING_KEYS = ['students','packages','payments','sessions','wallet_tx','reminders','key_events','topics'];
 function _teamPerm(key) {
   const s = _teamAccessSession();
   if (!s) return true;
@@ -14789,7 +14797,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     : {};
 
   Object.entries(localDeleted).forEach(([key, tombstones]) => {
-    if (options.teamSafe && key !== 'todos') return;
+    if (options.teamSafe && key !== 'todos' && !( _teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key))) return;
     if (!tombstones || typeof tombstones !== 'object') return;
     merged._deletedItems[key] = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
       ? merged._deletedItems[key]
@@ -14809,7 +14817,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       : {};
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
       .filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
-    const allowLocal = !options.teamSafe || key === 'todos';
+    const allowLocal = !options.teamSafe || key === 'todos' || (_teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key));
     if (!allowLocal || !localArr.length) {
       merged[key] = serverArr;
       return;
@@ -14844,7 +14852,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
       if (key === 'todos') {
         Object.assign(serverItem, _pickMergedTodo(localItem, serverItem));
-      } else if (localTime > serverTime) {
+      } else if (localTime > serverTime || (allowLocal && localTime === serverTime)) {
         Object.assign(serverItem, _cloneData(localItem));
       }
     });
@@ -14853,6 +14861,12 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     const maxAfter = Math.max(0, ...(serverArr.map(item => +item.id || 0)));
     merged._nextId[key] = Math.max(+(merged._nextId[key] || 1), maxAfter + 1);
   });
+
+  if (!options.teamSafe || _teamCanWriteOwnerStudents()) {
+    ['archive_columns','archive_categories','archive_relationship_statuses'].forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(localBeforeLoad, key)) merged[key] = _cloneData(localBeforeLoad[key]);
+    });
+  }
 
   merged._lastSaved = Math.max(Date.now(), localBeforeLoad._lastSaved || 0, merged._lastSaved || 0);
   return merged;
