@@ -2233,6 +2233,25 @@ body.light mark { background: rgba(251,191,36,.5); }
 .habit-day-dot:hover { transform: scale(1.3); }
 .habit-card-clickable { cursor: pointer; }
 .habit-card-clickable:hover { border-color: var(--border2) !important; }
+.habit-check-btn {
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: var(--bg3);
+  border: 2px solid var(--border2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+}
 
 /* ── Trend blocks / Salary report cards ──────────────────────────────────── */
 .trend-block {

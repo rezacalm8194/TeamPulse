@@ -113,8 +113,8 @@
 
   function parseCall(s, i) {
     i = skipWs(s, i);
-    if (s.slice(i, i + 22) === 'event.stopPropagation' && s.charAt(i + 22) === '(') {
-      i = skipWs(s, i + 23);
+    if (s.slice(i, i + 21) === 'event.stopPropagation' && s.charAt(i + 21) === '(') {
+      i = skipWs(s, i + 22);
       if (s.charAt(i) !== ')') return null;
       return { kind: 'stop', i: i + 1 };
     }
@@ -123,8 +123,8 @@
       if (s.charAt(i) !== ')') return null;
       return { kind: 'prevent', i: i + 1 };
     }
-    if (s.slice(i, i + 16) === 'location.reload' && s.charAt(i + 16) === '(') {
-      i = skipWs(s, i + 17);
+    if (s.slice(i, i + 15) === 'location.reload' && s.charAt(i + 15) === '(') {
+      i = skipWs(s, i + 16);
       if (s.charAt(i) !== ')') return null;
       return { kind: 'reload', i: i + 1 };
     }

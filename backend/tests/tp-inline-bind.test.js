@@ -85,6 +85,12 @@ test('_tpSafeCall cannot reach eval or Function', () => {
   assert.equal(ctx._tpSafeCall('okFn', 7), 7);
 });
 
+test('inline parser keeps habit card toggle handlers', () => {
+  const ctx = loadBinder();
+  assert.ok(ctx._tpParseInline('_onHabitCardClick(event, 12)'));
+  assert.ok(ctx._tpParseInline('event.stopPropagation();toggleHabitToday(12)'));
+});
+
 test('inline CSS sanitizer strips scripted urls', () => {
   const ctx = loadBinder();
   assert.equal(ctx._tpSanitizeCss('color:red;background:url(javascript:alert(1))'), '');

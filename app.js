@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp95';
+const TP_ASSET_V = 'tp96';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -27083,13 +27083,13 @@ function renderHabits() {
     const borderColor = doneToday ? 'var(--green)' : (wasBroken ? 'rgba(248,113,113,.35)' : 'var(--border)');
     const cardGlow = doneToday ? '0 0 0 1px var(--green), 0 4px 18px rgba(62,207,142,.18)' : 'none';
 
-    return `<div class="habit-card-clickable ${justToggled ? 'habit-card-flash' : ''}" onclick="openHabitDetail(${h.id})" style="background:var(--bg2);border:1px solid ${borderColor};box-shadow:${cardGlow};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
+    return `<div class="habit-card-clickable ${justToggled ? 'habit-card-flash' : ''}" onclick="_onHabitCardClick(event,${h.id})" style="background:var(--bg2);border:1px solid ${borderColor};box-shadow:${cardGlow};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
 
       <!-- ردیف اول: چک‌باکس واقعی + عنوان (بزرگ‌ترین متن) + منوی سه‌نقطه -->
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px">
-        <button onclick="event.stopPropagation();toggleHabitToday(${h.id})" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
-          class="${justToggled ? 'habit-checkbox-pop' : ''}"
-          style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;margin-top:1px;
+        <button type="button" data-habit-check="1" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
+          class="habit-check-btn ${justToggled ? 'habit-checkbox-pop' : ''}"
+          style="width:32px;height:32px;border-radius:50%;flex-shrink:0;cursor:pointer;margin-top:1px;
           background:${doneToday?'var(--green)':'var(--bg3)'};
           border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
           font-size:16px;font-weight:800;color:white;transition:all .2s;display:flex;align-items:center;justify-content:center">
@@ -27099,16 +27099,19 @@ function renderHabits() {
           <div style="font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4">
             ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span><span>${escapeHtml(h.icon || '🔥')}</span>
           </div>
-          <div style="font-size:11px;font-weight:700;color:${status.color};margin-top:2px">${escapeHtml(status.icon)} ${escapeHtml(status.text)}</div>
+          <button type="button" data-habit-check="1" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
+            style="display:block;margin-top:2px;padding:0;border:none;background:transparent;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:700;color:${status.color};text-align:right">
+            ${escapeHtml(status.icon)} ${escapeHtml(status.text)}
+          </button>
         </div>
-        <button onclick="event.stopPropagation();openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
+        <button type="button" data-habit-skip="1" onclick="openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
       </div>
 
       <!-- ردیف دوم: زمان، آخرین انجام، هدف مرتبط -->
       <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 38px">
         ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
         ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
-        ${linkedGoal ? `<span onclick="event.stopPropagation();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
+        ${linkedGoal ? `<span data-habit-skip="1" onclick="openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
       </div>
 
       <!-- ردیف سوم: استمرار (بزرگ‌تر و مهم‌تر)، رکورد (کوچک‌تر)، درصد موفقیت -->
@@ -27185,11 +27188,11 @@ function renderHabits() {
             else { statusIcon = '⭕'; statusColor = 'var(--text3)'; }
             const borderColor2 = doneToday ? 'var(--green)' : 'var(--border)';
             const cardGlow2 = doneToday ? '0 0 0 1px var(--green),0 4px 18px rgba(62,207,142,.15)' : 'none';
-            return `<div onclick="openHabitDetail(${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
+            return `<div onclick="_onHabitCardClick(event,${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
               onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','$borderColor2')">
               <div style="display:flex;align-items:flex-start;gap:10px">
-                <button onclick="event.stopPropagation();toggleHabitToday(${h.id})"
-                  style="width:28px;height:28px;border-radius:8px;flex-shrink:0;cursor:pointer;
+                <button type="button" data-habit-check="1" class="habit-check-btn"
+                  style="width:32px;height:32px;border-radius:50%;flex-shrink:0;cursor:pointer;
                   background:${doneToday?'var(--green)':'var(--bg3)'};
                   border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
                   font-size:16px;color:white;display:flex;align-items:center;justify-content:center;transition:all .2s">
@@ -27197,7 +27200,7 @@ function renderHabits() {
                 </button>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escapeHtml(h.title)} ${escapeHtml(h.icon||'🔥')}</div>
-                  <div style="font-size:11px;font-weight:600;color:${statusColor};margin-top:2px">${statusIcon} ${doneToday?'انجام شد':timeNotYetDue?`هنوز نرسیده (${h.time})`:'انجام نشده'}</div>
+                  <button type="button" data-habit-check="1" style="display:block;margin-top:2px;padding:0;border:none;background:transparent;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;color:${statusColor};text-align:right">${statusIcon} ${doneToday?'انجام شد':timeNotYetDue?`هنوز نرسیده (${h.time})`:'انجام نشده'}</button>
                 </div>
                 <div style="text-align:center;flex-shrink:0">
                   <div style="font-size:18px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
@@ -27219,6 +27222,19 @@ function renderHabits() {
       ${html}
       </div>
     </div>`);
+}
+
+function _onHabitCardClick(event, habitId) {
+  let t = event && event.target;
+  if (t && t.nodeType === 3) t = t.parentElement;
+  if (t && typeof t.closest === 'function') {
+    if (t.closest('[data-habit-skip]')) return;
+    if (t.closest('[data-habit-check]')) {
+      toggleHabitToday(habitId);
+      return;
+    }
+  }
+  openHabitDetail(habitId);
 }
 
 function toggleHabitToday(habitId) {
