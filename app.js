@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp99';
+const TP_ASSET_V = 'tp100';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -13772,6 +13772,7 @@ async function init() {
   // اشتراک موجود مرورگر را در هر ورود دوباره با سرور همگام کن؛ ممکن است
   // رکورد سمت سرور پاک/منقضی شده باشد، درحالی‌که مرورگر هنوز آن را فعال نشان دهد.
   setTimeout(_refreshReminderPushRegistration, 2500);
+  setTimeout(_showLaptopPushEnableBanner, 2800);
     // Sync default account name to separate storage key
     // نکته: در دسترسی هم‌تیمی META.appTitle نام/عنوان کسب‌وکار کارفرماست، نه
     // میزکار خودِ کاربر؛ اگر اینجا ذخیره‌اش کنیم روی حساب account-name-display
@@ -21297,6 +21298,44 @@ async function _handleTodoNotificationDone(todoId) {
   }
 }
 
+function _handlePushReceivedInApp(payload) {
+  const title = String(payload?.title || 'یادآور TeamPulse').trim();
+  const body = String(payload?.body || '').trim();
+  showToast((title + (body ? ' — ' + body : '')).slice(0, 180), 'success');
+  const banner = document.getElementById('laptop-push-banner');
+  if (banner) banner.remove();
+}
+
+function _showLaptopPushEnableBanner() {
+  if (_isMobilePushDevice()) return;
+  if (!('Notification' in window) || !('PushManager' in window) || !('serviceWorker' in navigator)) return;
+  if (Notification.permission !== 'default') return;
+  if (document.getElementById('laptop-push-banner')) return;
+  try { if (sessionStorage.getItem('tp_laptop_push_hidden') === '1') return; } catch (e) {}
+
+  const banner = document.createElement('div');
+  banner.id = 'laptop-push-banner';
+  banner.style.cssText = 'position:fixed;bottom:0;right:0;left:0;z-index:9997;background:linear-gradient(135deg,#1e2130,#2a2d45);border-top:1px solid rgba(124,106,247,.35);padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;box-shadow:0 -8px 32px rgba(0,0,0,.35)';
+  banner.innerHTML = `
+    <div style="min-width:220px;flex:1">
+      <div style="font-size:13px;font-weight:700;color:#fff">نوتیفیکیشن این لپ‌تاپ هنوز فعال نیست</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.7">موبایل جداگانه ثبت شده؛ برای یادآور روی همین دستگاه باید اجازه مرورگر را بدهی.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" data-enable style="padding:9px 14px;border-radius:10px;border:0;background:#7c6af7;color:#fff;font-family:var(--font);font-weight:700;cursor:pointer">فعال‌سازی</button>
+      <button type="button" data-dismiss style="padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:transparent;color:rgba(255,255,255,.8);font-family:var(--font);cursor:pointer">بعداً</button>
+    </div>`;
+  document.body.appendChild(banner);
+  banner.querySelector('[data-enable]')?.addEventListener('click', async () => {
+    const ok = await _ensureReminderPushEnabled();
+    if (ok) banner.remove();
+  });
+  banner.querySelector('[data-dismiss]')?.addEventListener('click', () => {
+    try { sessionStorage.setItem('tp_laptop_push_hidden', '1'); } catch (e) {}
+    banner.remove();
+  });
+}
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', event => {
     const data = event.data || {};
@@ -21305,6 +21344,9 @@ if ('serviceWorker' in navigator) {
     }
     if (data.type === 'TODO_NOTIFICATION_DONE') {
       _handleTodoNotificationDone(data.todoId);
+    }
+    if (data.type === 'PUSH_RECEIVED') {
+      _handlePushReceivedInApp(data);
     }
   });
 }
@@ -21537,16 +21579,27 @@ function _requestNotifPermission() {
   _ensureReminderPushEnabled('notif-status');
 }
 
+function _normalizePushWorkspaceId(value) {
+  const workspaceId = String(value || 'default').trim() || 'default';
+  if (workspaceId === 'default') return 'default';
+  return /^acc_[a-zA-Z0-9_-]{6,80}$/.test(workspaceId) ? workspaceId : 'default';
+}
+
+function _isMobilePushDevice() {
+  return (typeof _isIOSDeviceForPush === 'function' && _isIOSDeviceForPush()) ||
+    /android/i.test(navigator.userAgent || '');
+}
+
 function _pushSubscriptionContext() {
   const teamSession = _teamAccessSession?.();
   if (teamSession?.ownerUserId) {
     return {
       ownerAccountId: teamSession.ownerUserId,
-      workspaceId: teamSession.accountId || 'default',
+      workspaceId: _normalizePushWorkspaceId(teamSession.accountId || teamSession.workspaceId),
       scope: 'team',
     };
   }
-  return { workspaceId: _currentAccountId(), scope: 'owner' };
+  return { workspaceId: _normalizePushWorkspaceId(_currentAccountId()), scope: 'owner' };
 }
 
 function _isIOSDeviceForPush() {
@@ -24839,7 +24892,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v99';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v100';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

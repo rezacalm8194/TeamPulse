@@ -231,7 +231,7 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     title: `${prefixByKind[kind] || '🔔'} ${cleanTitle}`,
     body,
     icon: '/app-icon-192-v3.png',
-    badge: '/notification-badge.svg',
+    badge: '/app-icon-192-v3.png',
     tag: options.tag || 'push-' + Date.now(),
     todoId: options.todoId || null,
     kind,
@@ -245,7 +245,10 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     if (sentEndpoints.has(s.endpoint)) continue;
     sentEndpoints.add(s.endpoint);
     try {
-      await webpush.sendNotification(JSON.parse(s.subscription), payload);
+      await webpush.sendNotification(JSON.parse(s.subscription), payload, {
+        TTL: 12 * 60 * 60,
+        urgency: 'high',
+      });
       sent++;
     } catch (e) {
       failed++;
@@ -487,9 +490,8 @@ console.log('[Push] Cron started — due-index scan every minute');
 router.post('/subscribe', auth, (req, res) => {
   try {
     const { subscription, ownerAccountId } = req.body;
-    const workspaceId = normalizeWorkspaceId(req.body?.workspaceId || 'default');
+    const workspaceId = normalizeWorkspaceId(req.body?.workspaceId || 'default') || 'default';
     if (!subscription?.endpoint) return res.status(400).json({ error: 'invalid' });
-    if (!workspaceId) return res.status(400).json({ error: 'invalid_workspace' });
 
     const requesterEmail = String(req.user.email || '').trim().toLowerCase();
     const requestedOwnerId = String(ownerAccountId || '').trim();

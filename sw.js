@@ -1,13 +1,12 @@
-const CACHE = 'team-pulse-static-v99';
+const CACHE = 'team-pulse-static-v100';
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp99',
-  '/app.js?v=tp99',
-  '/tp-inline-bind.js?v=tp99',
+  '/app.css?v=tp100',
+  '/app.js?v=tp100',
+  '/tp-inline-bind.js?v=tp100',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
-  '/notification-badge.svg',
   '/logo.png',
   '/sw.js',
 ];
@@ -109,17 +108,75 @@ self.addEventListener('fetch', event => {
 });
 
 const _t = new Map();
-const NOTIFICATION_ICON = '/app-icon-192-v3.png';
-const NOTIFICATION_BADGE = '/notification-badge.svg';
+const NOTIFICATION_ICON = new URL('/app-icon-192-v3.png', self.location.origin).href;
+const NOTIFICATION_BADGE = NOTIFICATION_ICON;
 function notificationActionsFor(data) {
   return data?.kind === 'todo' && data?.todoId
     ? [
-        { action: 'done', title: '✅ انجام شد' },
-        { action: 'open', title: '📋 مشاهده' },
+        { action: 'done', title: 'انجام شد' },
+        { action: 'open', title: 'مشاهده' },
       ]
     : [
-        { action: 'open', title: '📋 مشاهده' },
+        { action: 'open', title: 'مشاهده' },
       ];
+}
+
+function assetUrl(value, fallback) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.endsWith('.svg')) return fallback;
+  try { return new URL(raw, self.location.origin).href; } catch { return fallback; }
+}
+
+async function displayAppNotification(title, options = {}) {
+  const data = options.data || {};
+  const attempts = [
+    {
+      body: options.body || '',
+      icon: assetUrl(options.icon, NOTIFICATION_ICON),
+      badge: assetUrl(options.badge, NOTIFICATION_BADGE),
+      tag: options.tag || 'tp',
+      data,
+      requireInteraction: true,
+      renotify: true,
+      silent: false,
+      dir: 'rtl',
+      lang: 'fa',
+      vibrate: options.vibrate || [300, 100, 300],
+      actions: options.actions || notificationActionsFor(data),
+    },
+    {
+      body: options.body || '',
+      icon: NOTIFICATION_ICON,
+      badge: NOTIFICATION_BADGE,
+      tag: options.tag || 'tp',
+      data,
+      requireInteraction: true,
+      renotify: true,
+    },
+    {
+      body: options.body || '',
+      icon: NOTIFICATION_ICON,
+      tag: options.tag || 'tp',
+      data,
+    },
+  ];
+  let lastError = null;
+  for (const opts of attempts) {
+    try {
+      await self.registration.showNotification(title, opts);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('showNotification failed');
+}
+
+async function notifyOpenClients(payload) {
+  const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  clientList.forEach(client => {
+    if (client.postMessage) client.postMessage(payload);
+  });
 }
 
 self.addEventListener('message', event => {
@@ -130,16 +187,10 @@ self.addEventListener('message', event => {
   }
   if (event.data.type === 'SHOW_NOTIFICATION') {
     const data = event.data.data || {};
-    event.waitUntil(self.registration.showNotification(event.data.title, {
+    event.waitUntil(displayAppNotification(event.data.title, {
       body: event.data.body || '',
-      icon: NOTIFICATION_ICON,
-      badge: NOTIFICATION_BADGE,
       tag: event.data.tag || 'tp',
       data,
-      requireInteraction: true,
-      renotify: true,
-      silent: false,
-      dir: 'rtl',
       vibrate: [200, 100, 200],
       actions: notificationActionsFor(data),
     }));
@@ -150,19 +201,13 @@ self.addEventListener('message', event => {
     (event.data.notifications || []).forEach(notification => {
       if (notification.delayMs > 0 && notification.delayMs < 86400000) {
         _t.set(notification.id, setTimeout(() => {
-          self.registration.showNotification(notification.title, {
+          const data = notification.data || { todoId: notification.id, kind: 'todo' };
+          displayAppNotification(notification.title, {
             body: notification.body || '',
-            icon: NOTIFICATION_ICON,
-            badge: NOTIFICATION_BADGE,
             tag: notification.tag,
-            data: notification.data || { todoId: notification.id, kind: 'todo' },
-            requireInteraction: true,
-            renotify: true,
-            silent: false,
-            dir: 'rtl',
-            vibrate: [300, 100, 300],
-            actions: notificationActionsFor(notification.data || { todoId: notification.id, kind: 'todo' }),
-          });
+            data,
+            actions: notificationActionsFor(data),
+          }).catch(() => {});
           _t.delete(notification.id);
         }, notification.delayMs));
       }
@@ -171,29 +216,35 @@ self.addEventListener('message', event => {
 });
 
 self.addEventListener('push', event => {
-  if (!event.data) return;
-  let data;
-  try { data = event.data.json(); } catch { data = { title: '⏰ یادآور', body: event.data.text() }; }
-  const notificationData = {
-    todoId: data.todoId || null,
-    kind: data.kind || '',
-    url: data.url || '/app#todolist',
-  };
-  event.waitUntil(
-    self.registration.showNotification(data.title || '⏰ یادآور TeamPulse', {
-      body: data.body || '',
-      icon: data.icon || NOTIFICATION_ICON,
-      badge: data.badge || NOTIFICATION_BADGE,
+  event.waitUntil((async () => {
+    let data = { title: 'یادآور TeamPulse', body: '' };
+    try {
+      if (event.data) data = event.data.json();
+    } catch {
+      data = { title: 'یادآور TeamPulse', body: event.data ? event.data.text() : '' };
+    }
+    const notificationData = {
+      todoId: data.todoId || null,
+      kind: data.kind || '',
+      url: data.url || '/app#todolist',
+    };
+    const title = data.title || 'یادآور TeamPulse';
+    const body = data.body || '';
+    await displayAppNotification(title, {
+      body,
+      icon: data.icon,
+      badge: data.badge,
       tag: data.tag || 'push-' + Date.now(),
       data: notificationData,
-      requireInteraction: true,
-      renotify: true,
-      silent: false,
-      dir: 'rtl',
-      vibrate: [300, 100, 300],
       actions: notificationActionsFor(notificationData),
-    })
-  );
+    });
+    await notifyOpenClients({
+      type: 'PUSH_RECEIVED',
+      title,
+      body,
+      data: notificationData,
+    });
+  })());
 });
 
 async function focusOrOpenApp(targetUrl = '/app', navigateExisting = true) {
