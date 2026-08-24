@@ -33,12 +33,17 @@ function isSameOrigin(request) {
   return new URL(request.url).origin === self.location.origin;
 }
 
+function isAppShellPath(pathname) {
+  return pathname === '/app' || pathname.startsWith('/app/');
+}
+
 function shouldSkip(request) {
   const url = new URL(request.url);
   return request.method !== 'GET' ||
     !isSameOrigin(request) ||
     url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/share/');
+    url.pathname.startsWith('/share/') ||
+    url.pathname.startsWith('/blog');
 }
 
 function cacheableResponse(response) {
@@ -89,13 +94,13 @@ function isVersionedAppBundle(url) {
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (shouldSkip(request)) return;
+  const url = new URL(request.url);
   if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
-    // Small HTML shell: paint cached markup immediately and refresh in the
-    // background. JS/CSS are versioned and served cache-first separately.
+    // صفحه معرفی و بلاگ را از کش اپ جدا نگه دار؛ وگرنه HTML بدون استایل می‌آید.
+    if (!isAppShellPath(url.pathname)) return;
     event.respondWith(staleWhileRevalidate(request));
     return;
   }
-  const url = new URL(request.url);
   if (isVersionedAppBundle(url)) {
     event.respondWith(cacheFirst(request));
     return;
