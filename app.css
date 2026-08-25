@@ -499,7 +499,7 @@ button { cursor: pointer; font-family: var(--font); }
   color: var(--text); border-color: var(--accent); background: rgba(124,106,247,.12); outline: none;
 }
 .family-actions-menu {
-  position: absolute; z-index: 80; top: calc(100% + 6px); left: 0; width: 220px; display: none;
+  position: absolute; z-index: 80; top: calc(100% + 6px); left: 0; width: 240px; display: none;
   padding: 6px; border: 1px solid var(--border2); border-radius: 12px; background: var(--bg2);
   box-shadow: 0 14px 35px rgba(0,0,0,.38);
 }
@@ -515,6 +515,27 @@ button { cursor: pointer; font-family: var(--font); }
 .family-history-summary strong { color: var(--green); }
 .family-history-table { max-height: min(58vh, 520px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
 .family-history-table table { min-width: 650px; }
+.tx-invoice-overlay .modal { width: 860px; max-width: 96vw; }
+.tx-invoice-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--border2); margin-bottom: 14px; }
+.tx-invoice-brand { font-size: 16px; font-weight: 800; }
+.tx-invoice-kicker { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.tx-invoice-issued { font-size: 11px; color: var(--text3); }
+.tx-invoice-party { margin-bottom: 12px; }
+.tx-invoice-party-name { font-size: 15px; font-weight: 800; }
+.tx-invoice-party-sub { font-size: 11px; color: var(--text3); margin: 3px 0 8px; }
+.tx-invoice-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.tx-invoice-stat { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.tx-invoice-stat .k { font-size: 10px; color: var(--text3); margin-bottom: 3px; }
+.tx-invoice-stat .v { font-size: 13px; font-weight: 800; }
+.tx-invoice-table { max-height: min(52vh, 480px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.tx-invoice-table table { min-width: 720px; width: 100%; }
+.tx-kind { font-weight: 700; font-size: 11px; }
+.tx-kind.buy { color: var(--text); }
+.tx-kind.pay { color: var(--green); }
+.tx-debit { color: var(--red); white-space: nowrap; }
+.tx-credit { color: var(--green); white-space: nowrap; }
+.tx-invoice-empty { text-align: center; color: var(--text3); padding: 28px 10px; }
+.tx-invoice-foot { margin-top: 12px; font-size: 12px; color: var(--text2); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 @media (max-width: 640px) {
   .family-actions-menu { position: fixed; top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; }
 }

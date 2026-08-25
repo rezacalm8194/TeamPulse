@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp102';
+const TP_ASSET_V = 'tp103';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -5566,6 +5566,7 @@ async function renderStudents(search = '') {
               <button class="row-menu-btn" onclick="toggleRowMenu(event,'${tableMenuId}')" aria-label="عملیات">⋮</button>
               <div class="row-menu-panel" id="${tableMenuId}">
                 <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+                <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
                 <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
                 <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
                 <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
@@ -5604,6 +5605,7 @@ async function renderStudents(search = '') {
             <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
             <div class="row-menu-panel" id="${menuId}">
               <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+              <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
               <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
               <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
               <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
@@ -5747,6 +5749,7 @@ async function openStudentDetail(id) {
       ${payRows}
     </div>
   `, [
+    { label: '📑 تراکنش‌ها', cls: 'btn-ghost', action: `closeModal();openStudentTransactions(${id})` },
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openStudentModal(${id})` },
     { label: '💳 افزودن پرداخت', cls: 'btn-primary', action: `closeModal();openAddPayment(${id})` },
     { label: `📅 ثبت ${META.sessionSingular || 'جلسه'}`, cls: 'btn-ghost', action: `closeModal();openAddSessionGeneral(${id})` },
@@ -8021,6 +8024,7 @@ function familyActionsHtml(familyId) {
   return `<div class="family-actions" data-family-actions="${familyId}">
     <button type="button" class="family-actions-trigger" aria-label="عملیات گروه" aria-haspopup="menu" aria-expanded="false" onclick="toggleFamilyActions(event, ${familyId})">•••</button>
     <div class="family-actions-menu" role="menu" aria-label="عملیات گروه">
+      <button role="menuitem" onclick="openFamilyTransactions(${familyId})">📑 تراکنش‌ها</button>
       <button role="menuitem" onclick="openFamilySalesHistory(${familyId})">🛒 تاریخچه فروش به گروه</button>
       <button role="menuitem" onclick="openFamilyPaymentsHistory(${familyId})">💳 تاریخچه دریافت از گروه</button>
       <button role="menuitem" onclick="openAddFamilyMemberById(${familyId})">＋ افزودن عضو</button>
@@ -8444,6 +8448,253 @@ async function getFamilyFinancialHistory(familyId) {
   const payments = paymentsByMember.flat().map(p => ({...p, member: memberById.get(p.student_id)}))
     .sort((a,b) => jalaliKey(b.date_jalali || '') - jalaliKey(a.date_jalali || '') || b.id - a.id);
   return {family, sales, payments};
+}
+
+function _partyTxSortKey(date, createdAt, id) {
+  return [jalaliKey(date || '') || 0, Date.parse(createdAt || '') || 0, Number(id) || 0];
+}
+
+function _buildPartyTxItems(payload) {
+  const items = [];
+  (payload.sales || []).forEach(p => {
+    const amount = Number(p.total_amount || 0) + Number(p.initial_cost || 0);
+    items.push({
+      kind: 'purchase',
+      date: p.start_date || '',
+      created_at: p.created_at || '',
+      id: p.id,
+      memberName: `${p.member?.name || p.name || ''} ${p.member?.lname || p.lname || ''}`.trim(),
+      title: p.type_label || 'خرید',
+      note: p.note || '',
+      debit: amount,
+      credit: 0,
+      currency: 'تومان',
+      affectsBalance: true,
+    });
+  });
+  (payload.payments || []).forEach(p => {
+    const currency = p.currency || 'تومان';
+    items.push({
+      kind: 'payment',
+      date: p.date_jalali || '',
+      created_at: p.created_at || '',
+      id: p.id,
+      memberName: `${p.member?.name || p.name || ''} ${p.member?.lname || p.lname || ''}`.trim(),
+      title: [p.pkg_label, p.method, p.account_label].filter(Boolean).join(' · ') || 'دریافت',
+      note: p.note || '',
+      debit: 0,
+      credit: Number(p.amount || 0),
+      currency,
+      affectsBalance: currency === 'تومان',
+    });
+  });
+  items.sort((a, b) => {
+    const ka = _partyTxSortKey(a.date, a.created_at, a.id);
+    const kb = _partyTxSortKey(b.date, b.created_at, b.id);
+    if (ka[0] !== kb[0]) return ka[0] - kb[0];
+    if (ka[1] !== kb[1]) return ka[1] - kb[1];
+    if (a.kind !== b.kind) return a.kind === 'purchase' ? -1 : 1;
+    return ka[2] - kb[2];
+  });
+  let running = 0;
+  items.forEach(it => {
+    if (it.kind === 'purchase' && it.affectsBalance) running += it.debit;
+    else if (it.kind === 'payment' && it.affectsBalance) running -= it.credit;
+    it.running = running;
+  });
+  return items;
+}
+
+function _partyTxRowsHtml(view) {
+  const showMember = !!view.isGroup;
+  const cols = showMember ? 7 : 6;
+  if (!(view.items || []).length) {
+    return `<tr><td colspan="${cols}" class="tx-invoice-empty">خرید یا پرداختی ثبت نشده</td></tr>`;
+  }
+  return view.items.map(it => {
+    const kind = it.kind === 'purchase' ? 'خرید' : 'دریافت';
+    const debit = it.debit ? fmt(it.debit) : '—';
+    const credit = it.credit
+      ? `${fmt(it.credit)}${it.currency && it.currency !== 'تومان' ? ' ' + escapeHtml(it.currency) : ''}`
+      : '—';
+    const desc = [it.title, it.note].filter(Boolean).map(escapeHtml).join(' — ');
+    return `<tr>
+      <td>${DateService.disp(it.date) || '—'}</td>
+      ${showMember ? `<td>${escapeHtml(it.memberName || '—')}</td>` : ''}
+      <td><span class="tx-kind ${it.kind === 'purchase' ? 'buy' : 'pay'}">${kind}</span></td>
+      <td>${desc || '—'}</td>
+      <td class="tx-debit">${debit}</td>
+      <td class="tx-credit">${credit}</td>
+      <td>${it.affectsBalance ? fmt(it.running) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function _partyTxModalHtml(view) {
+  const showMember = !!view.isGroup;
+  const balanceLabel = view.balance > 0 ? 'مانده بدهی' : view.balance < 0 ? 'اعتبار' : 'مانده حساب';
+  const groupLink = view.familyId
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="closeModal();openFamilyTransactions(${view.familyId})">صورتحساب گروه «${escapeHtml(view.familyName || '')}»</button>`
+    : '';
+  return `
+    <div class="tx-invoice" id="tx-invoice-sheet">
+      <div class="tx-invoice-head">
+        <div>
+          <div class="tx-invoice-brand">${escapeHtml(view.brand)}</div>
+          <div class="tx-invoice-kicker">صورتحساب خرید و دریافت</div>
+        </div>
+        <div class="tx-invoice-issued">تاریخ صدور: ${DateService.disp(view.issued) || view.issued}</div>
+      </div>
+      <div class="tx-invoice-party">
+        <div class="tx-invoice-party-name">${escapeHtml(view.partyName)}</div>
+        ${view.partySub ? `<div class="tx-invoice-party-sub">${escapeHtml(view.partySub)}</div>` : ''}
+        ${groupLink}
+      </div>
+      <div class="tx-invoice-stats">
+        <div class="tx-invoice-stat"><div class="k">جمع خرید</div><div class="v">${fmt(view.totalAmount)} ت</div></div>
+        <div class="tx-invoice-stat"><div class="k">جمع دریافت</div><div class="v" style="color:var(--green)">${fmt(view.totalPaid)} ت</div></div>
+        <div class="tx-invoice-stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} ت</div></div>
+        <div class="tx-invoice-stat"><div class="k">${balanceLabel}</div><div class="v">${view.isGroup ? familyBalanceHtml(view.balance) : balanceHtml(view.balance)}</div></div>
+      </div>
+      <div class="tx-invoice-table">
+        <table>
+          <thead><tr>
+            <th>تاریخ</th>
+            ${showMember ? '<th>عضو</th>' : ''}
+            <th>نوع</th>
+            <th>شرح</th>
+            <th>بدهکار</th>
+            <th>بستانکار</th>
+            <th>مانده</th>
+          </tr></thead>
+          <tbody>${_partyTxRowsHtml(view)}</tbody>
+        </table>
+      </div>
+      <div class="tx-invoice-foot">مانده نهایی پس از کسر کیف پول: <strong>${view.isGroup ? familyBalanceHtml(view.balance) : balanceHtml(view.balance)}</strong></div>
+    </div>`;
+}
+
+function _partyTxDocumentHtml(view, autoPrint) {
+  const showMember = !!view.isGroup;
+  const printScript = autoPrint ? '<' + 'script>window.onload=()=>{window.focus();setTimeout(()=>window.print(),300);</' + 'script>' : '';
+  const balanceLabel = view.balance > 0 ? 'مانده بدهی' : view.balance < 0 ? 'اعتبار' : 'مانده حساب';
+  const balanceText = `${view.balance > 0 ? '' : view.balance < 0 ? 'اعتبار ' : ''}${fmt(Math.abs(view.balance))} تومان`;
+  const rows = _partyTxRowsHtml(view)
+    .replaceAll('class="tx-kind buy"', 'style="color:#111827;font-weight:700"')
+    .replaceAll('class="tx-kind pay"', 'style="color:#059669;font-weight:700"')
+    .replaceAll('class="tx-debit"', 'style="color:#b91c1c;white-space:nowrap"')
+    .replaceAll('class="tx-credit"', 'style="color:#059669;white-space:nowrap"')
+    .replaceAll('class="tx-invoice-empty"', 'style="text-align:center;color:#6b7280;padding:28px 10px"');
+  return `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(view.title)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{direction:rtl;font-family:Tahoma,Arial,sans-serif;color:#1f2937;background:#fff;max-width:860px;margin:0 auto;padding:28px 32px;font-size:12px;line-height:1.8}
+.brand{font-size:18px;font-weight:800;color:#111827}
+.kicker{font-size:11px;color:#6b7280;margin-top:2px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:14px;border-bottom:2px solid #111827;margin-bottom:16px}
+.issued{font-size:11px;color:#4b5563}
+.party{margin-bottom:16px}
+.party-name{font-size:16px;font-weight:800}
+.party-sub{font-size:11px;color:#6b7280;margin-top:2px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+.stat{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px}
+.stat .k{font-size:10px;color:#6b7280}
+.stat .v{font-size:13px;font-weight:800;margin-top:2px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:right;vertical-align:top}
+th{background:#f3f4f6;font-size:11px;color:#4b5563;border-bottom:1px solid #d1d5db}
+.foot{margin-top:16px;padding-top:12px;border-top:2px solid #111827;display:flex;justify-content:space-between;font-size:13px}
+.sign{margin-top:36px;display:flex;justify-content:space-between;gap:24px}
+.sign div{flex:1;text-align:center;font-size:11px;color:#6b7280}
+.sign span{display:block;margin-top:40px;border-top:1px dashed #d1d5db;padding-top:6px}
+@page{size:A4;margin:14mm}
+@media print{body{max-width:none;padding:0}}
+@media (max-width:700px){.stats{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<div class="head"><div><div class="brand">${escapeHtml(view.brand)}</div><div class="kicker">صورتحساب خرید و دریافت</div></div><div class="issued">تاریخ صدور: ${DateService.disp(view.issued) || escapeHtml(view.issued || '')}</div></div>
+<div class="party"><div class="party-name">${escapeHtml(view.partyName)}</div>${view.partySub ? `<div class="party-sub">${escapeHtml(view.partySub)}</div>` : ''}</div>
+<div class="stats">
+  <div class="stat"><div class="k">جمع خرید</div><div class="v">${fmt(view.totalAmount)} تومان</div></div>
+  <div class="stat"><div class="k">جمع دریافت</div><div class="v" style="color:#059669">${fmt(view.totalPaid)} تومان</div></div>
+  <div class="stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} تومان</div></div>
+  <div class="stat"><div class="k">${balanceLabel}</div><div class="v">${balanceText}</div></div>
+</div>
+<table><thead><tr><th>تاریخ</th>${showMember ? '<th>عضو</th>' : ''}<th>نوع</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="foot"><span>مانده نهایی پس از کسر کیف پول</span><strong>${balanceText}</strong></div>
+<div class="sign"><div>مهر و امضای صادرکننده<span></span></div><div>رسید مشتری<span></span></div></div>
+${printScript}</body></html>`;
+}
+
+function _openPartyTransactions(payload) {
+  const items = _buildPartyTxItems(payload);
+  const view = {
+    ...payload,
+    items,
+    issued: formatJalali(...todayJalali()),
+    brand: (META && META.appTitle) || 'TeamPulse',
+  };
+  window._partyTxPrintPayload = view;
+  openModal('📑 تراکنش‌ها', _partyTxModalHtml(view), [
+    { label: '🖨 چاپ فاکتور', cls: 'btn-primary', action: 'printPartyTransactions()' },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ], { overlayClass: 'tx-invoice-overlay' });
+}
+
+function printPartyTransactions() {
+  const view = window._partyTxPrintPayload;
+  if (!view) { showToast('صورتحساب آماده چاپ نیست', 'error'); return; }
+  const popup = window.open('', '_blank', 'width=900,height=760');
+  if (!popup) { showToast('مرورگر اجازه بازکردن پنجره پرینت را نداد', 'error'); return; }
+  popup.document.open();
+  popup.document.write(_partyTxDocumentHtml(view, true));
+  popup.document.close();
+}
+
+async function openStudentTransactions(studentId) {
+  if (!allStudents.length) allStudents = await window.api.students.getAll();
+  if (!FAMILIES.length) FAMILIES = await window.api.families.getAll();
+  const s = allStudents.find(x => x.id === studentId);
+  if (!s) return showToast('مشتری پیدا نشد', 'error');
+  const fam = FAMILIES.find(f => f.id === s.family_id);
+  const [sales, payments] = await Promise.all([
+    window.api.packages.getByStudent(studentId),
+    window.api.payments.getByStudent(studentId),
+  ]);
+  const member = { id: s.id, name: s.name, lname: s.lname };
+  _openPartyTransactions({
+    title: `صورتحساب ${s.name} ${s.lname}`.trim(),
+    partyName: `${s.name} ${s.lname}`.trim(),
+    partySub: [s.phone, s.organization_name].filter(Boolean).join(' · '),
+    isGroup: false,
+    familyId: fam ? fam.id : null,
+    familyName: fam ? fam.name : '',
+    sales: sales.map(p => ({ ...p, member })),
+    payments: payments.map(p => ({ ...p, member })),
+    totalAmount: s.totalAmount,
+    totalPaid: s.totalPaid,
+    wallet: s.wallet || 0,
+    balance: s.balance,
+  });
+}
+
+async function openFamilyTransactions(familyId) {
+  closeFamilyActions();
+  const data = await getFamilyFinancialHistory(familyId);
+  if (!data) return showToast('گروه پیدا نشد', 'error');
+  const f = data.family;
+  _openPartyTransactions({
+    title: `صورتحساب گروه ${f.name}`,
+    partyName: f.name,
+    partySub: (f.members || []).map(m => `${m.name} ${m.lname}`.trim()).join('، '),
+    isGroup: true,
+    familyId: null,
+    sales: data.sales,
+    payments: data.payments,
+    totalAmount: f.totalAmount,
+    totalPaid: f.totalPaid,
+    wallet: f.totalWallet,
+    balance: f.totalBalance,
+  });
 }
 
 async function openFamilySalesHistory(familyId) {
