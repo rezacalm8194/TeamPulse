@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp101';
+const TP_ASSET_V = 'tp102';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -733,7 +733,7 @@ function _packageExactKey(p) {
   return [
     p?.student_id, p?.type_id, p?.staff_id || '', Number(p?.total_amount || 0),
     Number(p?.initial_cost || 0), Number(p?.repeat_months || 0),
-    String(p?.start_date || ''), String(p?.payment_due_date || p?.start_date || ''),
+    String(p?.start_date || ''), String(p?.payment_due_date || ''),
     String(p?.note || '').trim()
   ].map(value => String(value ?? '')).join('\u001f');
 }
@@ -1671,7 +1671,9 @@ function _familySummary(f) {
 }
 
 function _packagePaymentDueDate(pkg) {
-  return pkg?.payment_due_date || pkg?.first_payment_due_date || pkg?.due_date_jalali || pkg?.start_date || '';
+  // Only an explicit due date creates a payment reminder. Start date is
+  // service start, not an implied installment due date.
+  return String(pkg?.payment_due_date || pkg?.first_payment_due_date || pkg?.due_date_jalali || '').trim();
 }
 
 function _isPackageChargeable(pkg) {
@@ -1843,7 +1845,7 @@ window.api = {
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
-        _db.packages.push({id:pkgId,student_id:id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:pkg.payment_due_date||startDate,note:pkg.note||''});
+        _db.packages.push({id:pkgId,student_id:id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||''});
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:id,amount:pkg.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت اولیه',created_at:new Date().toISOString()});}
         _createRepeatReminder(id,pkgId,pkg,p.date);
       });
@@ -1870,14 +1872,14 @@ window.api = {
         const pkgId = target ? target.id : _nextId('packages');
         if(target){
           const startDate = pkg.start_date||target.start_date||s.date_jalali||'';
-          Object.assign(target,{type_id:pkg.type_id,staff_id:pkg.staff_id||target.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:pkg.payment_due_date||target.payment_due_date||startDate,note:pkg.note||''});
+          Object.assign(target,{type_id:pkg.type_id,staff_id:pkg.staff_id||target.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:Object.prototype.hasOwnProperty.call(pkg,'payment_due_date')?_packagePaymentDueDate(pkg):(target.payment_due_date||''),note:pkg.note||''});
         }else{
           const startDate = pkg.start_date||s.date_jalali||'';
-          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:pkg.payment_due_date||startDate,note:pkg.note||''};
+          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||''};
           _db.packages.push(target);
         }
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
-        _syncPackageReminder(s.id,pkgId,pkg,pkg.start_date||target.start_date||s.date_jalali);
+        _syncPackageReminder(s.id,pkgId,target,target.start_date);
       });
       _save(); return _P({ok:true});
     },
@@ -1901,7 +1903,7 @@ window.api = {
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
-      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:p.payment_due_date||startDate,note:p.note||'',created_at:new Date().toISOString()};
+      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString()};
       const duplicate=_db.packages.find(existing=>{
         const age=Date.now()-(Date.parse(existing.created_at||'')||0);
         return age>=0&&age<=15000&&_packageExactKey(existing)===_packageExactKey(newPackage);
@@ -1912,7 +1914,7 @@ window.api = {
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       _save(); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:p.payment_due_date??pkg.payment_due_date??p.start_date??pkg.start_date,note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
     delete: (id)=>{
       const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
       _recordDeletedItems('packages',id);
@@ -5850,7 +5852,7 @@ function openNewPurchase(studentId, preset = {}) {
   const current = Number(preset.current_payment || 0);
   const repeat = Number(preset.repeat_months || 0);
   const date = preset.date || formatJalali(...todayJalali());
-  const paymentDueDate = preset.payment_due_date || date;
+  const paymentDueDate = preset.payment_due_date || '';
   const note = preset.note || '';
   const reminderId = preset.reminder_id ? Number(preset.reminder_id) : 0;
   const typeOptions = purchaseTypeOptionsHtml(defaultPkgId);
@@ -5879,12 +5881,11 @@ function openNewPurchase(studentId, preset = {}) {
         <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}">
       </div>
       <div class="form-group">
-        <label class="form-label">تاریخ شروع خدمت (شمسی)</label>
-        <input class="form-input jdate" id="np-date" value="${escapeHtml(date)}">
+        ${calendarDateFieldHtml('np-date', date, 'تاریخ شروع خدمت')}
       </div>
       <div class="form-group">
-        <label class="form-label">سررسید اولین پرداخت (شمسی)</label>
-        <input class="form-input jdate" id="np-payment-due" value="${escapeHtml(paymentDueDate)}">
+        ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید اولین پرداخت', false)}
+        <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری ساخته نمی‌شود.</p>
       </div>
       <div class="form-group full">
         <label class="form-label">🔁 تکرار / یادآوری تجدید</label>
@@ -5914,10 +5915,14 @@ async function saveNewPurchase(studentId, reminderId = 0) {
   window._savingNewPurchase = true;
   try {
   const type_id = await resolvePurchaseTypeId('np');
-  const date = document.getElementById('np-date')?.value;
-  const paymentDueDate = document.getElementById('np-payment-due')?.value || date;
+  const date = readCalendarDateField('np-date');
+  const paymentDueDate = readCalendarDateField('np-payment-due');
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
   if (!type_id) return;
+  if (repeat_months > 0 && !paymentDueDate) {
+    showToast('برای تکرار، سررسید پرداخت را وارد کنید یا تکرار را روی «بدون تکرار» بگذارید', 'error');
+    return;
+  }
   if (reminderId && repeat_months > 0 && !_nextFuturePaymentReminderDate(paymentDueDate, repeat_months)) {
     showToast('تاریخ سررسید معتبر نیست؛ تاریخ را اصلاح کنید', 'error');
     return;
@@ -5945,7 +5950,7 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     }
   }
   closeModal();
-  showToast(repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید جدید ثبت شد ✓', 'success');
+  showToast(paymentDueDate ? (repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید ثبت شد و یادآوری سررسید ساخته شد ✓') : 'خرید جدید ثبت شد ✓', 'success');
   if (currentPage === 'reminders') await renderReminders();
   else if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments();
   else if (currentPage === 'payments') await renderPayments();
@@ -6497,7 +6502,7 @@ async function renderPurchases(search = '') {
         <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
         <td style="color:var(--text2)">
           <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
-          <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date||p.start_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
+          <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
         </td>
         <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
         <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -6549,7 +6554,8 @@ async function openEditPackage(id) {
         ${calendarDateFieldHtml('ep-start', p.start_date||'', 'تاریخ شروع')}
       </div>
       <div class="form-group">
-        ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || p.start_date || '', 'سررسید اولین پرداخت')}
+        ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || '', 'سررسید اولین پرداخت', false)}
+        <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری این خرید حذف می‌شود.</p>
       </div>
       <div class="form-group">
         <label class="form-label">🔁 تکرار</label>
@@ -6574,14 +6580,21 @@ async function openEditPackage(id) {
   onPurchaseTypeChange('ep');
 }
 async function saveEditPackage(id, studentId) {
+  const startDate = readCalendarDateField('ep-start');
+  const paymentDueDate = readCalendarDateField('ep-payment-due');
+  const repeat_months = +(document.getElementById('ep-repeat')?.value||0);
+  if (repeat_months > 0 && !paymentDueDate) {
+    showToast('برای تکرار، سررسید پرداخت را وارد کنید یا تکرار را روی «بدون تکرار» بگذارید', 'error');
+    return;
+  }
   await window.api.packages.update({
     id, type_id: +(document.getElementById('ep-type')?.value||0),
     staff_id: document.getElementById('ep-staff')?.value || null,
     total_amount: +(document.getElementById('ep-total')?.value||0),
     initial_cost: +(document.getElementById('ep-initial')?.value||0),
-    start_date: readCalendarDateField('ep-start'),
-    payment_due_date: readCalendarDateField('ep-payment-due') || readCalendarDateField('ep-start'),
-    repeat_months: +(document.getElementById('ep-repeat')?.value||0),
+    start_date: startDate,
+    payment_due_date: paymentDueDate,
+    repeat_months,
     note: document.getElementById('ep-note')?.value,
   });
   closeModal();
@@ -6898,7 +6911,7 @@ async function renderPayments(search = '') {
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
           <td style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
-            <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date||p.start_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
+            <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
           </td>
           <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
           <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
@@ -24911,7 +24924,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v101';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v102';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
