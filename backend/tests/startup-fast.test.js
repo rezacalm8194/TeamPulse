@@ -44,10 +44,13 @@ test('workspace registry sync is not on the first-paint path', () => {
 test('desktop push uses PNG assets and in-app fallback', () => {
   const swJs = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const remindersJs = fs.readFileSync(path.join(root, 'backend', 'routes', 'reminders.js'), 'utf8');
-  assert.match(swJs, /NOTIFICATION_BADGE = NOTIFICATION_ICON/);
+  assert.match(swJs, /NOTIFICATION_ICON = new URL\('\/app-icon-192-v3\.png'/);
+  assert.match(swJs, /NOTIFICATION_BADGE = new URL\('\/notification-badge\.png'/);
   assert.match(swJs, /type: 'PUSH_RECEIVED'/);
   assert.doesNotMatch(swJs, /notification-badge\.svg/);
+  assert.doesNotMatch(swJs, /NOTIFICATION_BADGE = NOTIFICATION_ICON/);
   assert.match(appJs, /_showLaptopPushEnableBanner/);
-  assert.match(remindersJs, /badge: '\/app-icon-192-v3\.png'/);
+  assert.match(remindersJs, /badge: '\/notification-badge\.png'/);
   assert.match(remindersJs, /urgency: 'high'/);
+  assert.equal(fs.existsSync(path.join(root, 'notification-badge.png')), true);
 });

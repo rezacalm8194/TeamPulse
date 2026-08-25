@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp104';
+const TP_ASSET_V = 'tp105';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -10013,7 +10013,8 @@ async function renderSettings() {
       <h3>🔔 نوتیفیکیشن‌های یادآور</h3>
       <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
         <span class="help-ic" title="هر دستگاهی که وارد حساب بشه باید جداگانه فعال بشه">؟</span>
-        برای دریافت یادآور کارها روی این دستگاه، نوتیفیکیشن رو فعال کن.
+        فعال بودن نوتیفیکیشن روی موبایل برای لپ‌تاپ کافی نیست؛ همین دستگاه را جداگانه فعال کن.
+        اگر تب برنامه باز باشد، یادآور داخل خود صفحه هم نمایش داده می‌شود. برای اعلان سیستم وقتی پنجره بسته است، Chrome باید در پس‌زمینه در حال اجرا بماند.
       </p>
       <div id="push-status-box" style="padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;
         background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);color:var(--amber)">
@@ -21638,25 +21639,61 @@ function _handlePushReceivedInApp(payload) {
   showToast((title + (body ? ' — ' + body : '')).slice(0, 180), 'success');
   const banner = document.getElementById('laptop-push-banner');
   if (banner) banner.remove();
+  if (!_isMobilePushDevice()) _showLaptopInAppPush(title, body, payload?.data);
 }
 
-function _showLaptopPushEnableBanner() {
+function _showLaptopInAppPush(title, body, data) {
+  document.getElementById('laptop-inapp-push')?.remove();
+  const el = document.createElement('div');
+  el.id = 'laptop-inapp-push';
+  el.setAttribute('role', 'alert');
+  el.style.cssText = 'position:fixed;top:12px;right:12px;left:12px;z-index:9998;max-width:420px;margin:0 auto;background:linear-gradient(135deg,#1e2130,#2a2d45);border:1px solid rgba(124,106,247,.45);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 16px 40px rgba(0,0,0,.4);cursor:pointer';
+  el.innerHTML = `
+    <div style="width:36px;height:36px;border-radius:10px;background:rgba(124,106,247,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">🔔</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:800;color:#fff;line-height:1.6">${escapeHtml(title)}</div>
+      ${body ? `<div style="font-size:12px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.7">${escapeHtml(body)}</div>` : ''}
+    </div>
+    <button type="button" data-dismiss style="border:0;background:transparent;color:rgba(255,255,255,.55);font-size:18px;cursor:pointer;line-height:1;padding:0 2px">×</button>`;
+  el.addEventListener('click', event => {
+    if (event.target.closest('[data-dismiss]')) {
+      el.remove();
+      return;
+    }
+    el.remove();
+    if (data?.kind === 'todo') _openTodoListFromNotification(data.todoId);
+  });
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.isConnected) el.remove(); }, 14000);
+}
+
+async function _showLaptopPushEnableBanner() {
   if (_isMobilePushDevice()) return;
   if (!('Notification' in window) || !('PushManager' in window) || !('serviceWorker' in navigator)) return;
-  if (Notification.permission !== 'default') return;
   if (document.getElementById('laptop-push-banner')) return;
   try { if (sessionStorage.getItem('tp_laptop_push_hidden') === '1') return; } catch (e) {}
 
+  const permission = Notification.permission;
+  if (permission === 'granted') {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (await reg.pushManager.getSubscription()) return;
+    } catch (e) {}
+  }
+
+  const denied = permission === 'denied';
   const banner = document.createElement('div');
   banner.id = 'laptop-push-banner';
   banner.style.cssText = 'position:fixed;bottom:0;right:0;left:0;z-index:9997;background:linear-gradient(135deg,#1e2130,#2a2d45);border-top:1px solid rgba(124,106,247,.35);padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;box-shadow:0 -8px 32px rgba(0,0,0,.35)';
   banner.innerHTML = `
     <div style="min-width:220px;flex:1">
-      <div style="font-size:13px;font-weight:700;color:#fff">نوتیفیکیشن این لپ‌تاپ هنوز فعال نیست</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.7">موبایل جداگانه ثبت شده؛ برای یادآور روی همین دستگاه باید اجازه مرورگر را بدهی.</div>
+      <div style="font-size:13px;font-weight:700;color:#fff">${denied ? 'نوتیفیکیشن این لپ‌تاپ مسدود شده' : 'نوتیفیکیشن این لپ‌تاپ هنوز فعال نیست'}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.7">${denied
+        ? 'از قفل کنار آدرس مرورگر، Notifications را روی Allow بگذار. فعال بودن روی موبایل برای این دستگاه کافی نیست.'
+        : 'موبایل جداگانه ثبت شده؛ برای یادآور روی همین دستگاه باید اجازه مرورگر را بدهی. Chrome را هم کاملاً نبند تا اعلان سیستم برسد.'}</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button type="button" data-enable style="padding:9px 14px;border-radius:10px;border:0;background:#7c6af7;color:#fff;font-family:var(--font);font-weight:700;cursor:pointer">فعال‌سازی</button>
+      ${denied ? '' : '<button type="button" data-enable style="padding:9px 14px;border-radius:10px;border:0;background:#7c6af7;color:#fff;font-family:var(--font);font-weight:700;cursor:pointer">فعال‌سازی</button>'}
       <button type="button" data-dismiss style="padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:transparent;color:rgba(255,255,255,.8);font-family:var(--font);cursor:pointer">بعداً</button>
     </div>`;
   document.body.appendChild(banner);
@@ -23090,9 +23127,15 @@ function _deleteTodoForever(id) {
 }
 
 function _requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'granted') {
+    _refreshReminderPushRegistration();
+    return;
   }
+  Notification.requestPermission().then(perm => {
+    if (perm === 'granted') _ensureReminderPushEnabled();
+  }).catch(() => {});
 }
 
 function _checkKeyEventReminders() {

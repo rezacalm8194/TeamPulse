@@ -231,7 +231,7 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     title: `${prefixByKind[kind] || '🔔'} ${cleanTitle}`,
     body,
     icon: '/app-icon-192-v3.png',
-    badge: '/app-icon-192-v3.png',
+    badge: '/notification-badge.png',
     tag: options.tag || 'push-' + Date.now(),
     todoId: options.todoId || null,
     kind,

@@ -1,12 +1,13 @@
-const CACHE = 'team-pulse-static-v104';
+const CACHE = 'team-pulse-static-v105';
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp104',
-  '/app.js?v=tp104',
-  '/tp-inline-bind.js?v=tp104',
+  '/app.css?v=tp105',
+  '/app.js?v=tp105',
+  '/tp-inline-bind.js?v=tp105',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
+  '/notification-badge.png',
   '/logo.png',
   '/sw.js',
 ];
@@ -109,7 +110,7 @@ self.addEventListener('fetch', event => {
 
 const _t = new Map();
 const NOTIFICATION_ICON = new URL('/app-icon-192-v3.png', self.location.origin).href;
-const NOTIFICATION_BADGE = NOTIFICATION_ICON;
+const NOTIFICATION_BADGE = new URL('/notification-badge.png', self.location.origin).href;
 function notificationActionsFor(data) {
   return data?.kind === 'todo' && data?.todoId
     ? [
@@ -133,7 +134,7 @@ async function displayAppNotification(title, options = {}) {
     {
       body: options.body || '',
       icon: assetUrl(options.icon, NOTIFICATION_ICON),
-      badge: assetUrl(options.badge, NOTIFICATION_BADGE),
+      badge: NOTIFICATION_BADGE,
       tag: options.tag || 'tp',
       data,
       requireInteraction: true,
