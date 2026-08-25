@@ -26,3 +26,13 @@ test('first-session helpers stay in the core parse path', () => {
   assert.match(appSource, /async function renderSettings\(/);
   assert.match(appSource, /function staffIsPersonnel\(/);
 });
+
+test('customer account tab hosts the case financial table', () => {
+  assert.match(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
+  assert.doesNotMatch(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
+  assert.match(appSource, /function studentAccountOverviewHtml\(/);
+  assert.match(appSource, /studentAccountOverviewHtml\(allStudents, filtered, \{ showSessions: false, menuPrefix: 'acct' \}\)/);
+  assert.match(appSource, /<th>پکیج‌ها<\/th>/);
+  assert.match(appSource, /<th>مانده حساب<\/th>/);
+  assert.match(appSource, /<th>وضعیت<\/th>/);
+});

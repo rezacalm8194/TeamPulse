@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp107';
+const TP_ASSET_V = 'tp108';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4021,6 +4021,7 @@ function _getInitialPage() {
 }
 let currentPage = _getInitialPage();
 let _studentsTab = currentPage === 'students' ? 'sessions' : (currentPage === 'sessions' ? 'sessions' : 'students');
+let _paymentsTab = 'purchases';
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
 let _keySessionsExpanded = false;
@@ -4038,8 +4039,8 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'staff', label:'حساب پرسنل و اعضا', icon:'💼', desc:'پرسنل، اعضای پرداختی، نقش‌ها، حقوق و یادآوری‌ها'},
   {key:'customerlist', label:'لیست شاگردان', icon:'📋', desc:'نمای جدولی شاگردان و اطلاعات تماس'},
   {key:'archive', label:'بایگانی', icon:'🗃️', desc:'مشاهده و بازیابی موارد بایگانی‌شده'},
-  {key:'families', label:'حساب‌های مشترک', icon:'👨‍👩‍👧', desc:'گروه‌ها و حساب‌های خانوادگی'},
-  {key:'payments', label:'حساب مشتریان', icon:'🛒', desc:'فروش، دریافت، یادآوری و حساب مشترک'},
+  {key:'families', label:'حساب مشتری', icon:'👨‍👩‍👧', desc:'پرونده مالی مشتریان، مانده حساب و گروه‌های مشترک'},
+  {key:'payments', label:'حساب مشتریان', icon:'🛒', desc:'فروش، دریافت، یادآوری و حساب مشتری'},
   {key:'reminders', label:'یادآوری', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
   {key:'dashboard', label:'داشبورد مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
 ];
@@ -5208,17 +5209,199 @@ async function renderPage() {
 // ════════════════════════════════════════════════════════════════════════════
 let stuChip = 'all';
 let stuChipsExpanded = false;
-function setStuChip(val) {
-  stuChip = val;
+function currentStudentAccountSearch() {
   const cur = document.querySelector('#topbar-actions .table-search input') ||
               document.querySelector('#content .table-search input');
-  renderStudents(cur ? cur.value : '');
+  return cur ? cur.value : '';
+}
+function isCustomerAccountTab() {
+  return currentPage === 'payments' && _paymentsTab === 'families';
+}
+function refreshStudentAccountView() {
+  const search = currentStudentAccountSearch();
+  if (isCustomerAccountTab()) renderPayments(search);
+  else renderStudents(search);
+}
+async function refreshOpenStudentSurface() {
+  if (isCustomerAccountTab()) await renderPayments(currentStudentAccountSearch());
+  else if (currentPage === 'payments') await renderPayments();
+  else if (currentPage === 'students') await renderStudents(currentStudentAccountSearch());
+  else await renderPage();
+}
+function setStuChip(val) {
+  stuChip = val;
+  refreshStudentAccountView();
 }
 function toggleStuChipsExpanded() {
   stuChipsExpanded = !stuChipsExpanded;
-  const cur = document.querySelector('#topbar-actions .table-search input') ||
-              document.querySelector('#content .table-search input');
-  renderStudents(cur ? cur.value : '');
+  refreshStudentAccountView();
+}
+function filterAccountStudents(students, search) {
+  let filtered = search
+    ? students.filter(s => (s.name + s.lname).includes(search))
+    : students;
+  if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
+  else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0);
+  else if (stuChip && stuChip !== 'all') filtered = filtered.filter(s => (s.packages || []).some(p => p.type_label === stuChip));
+  return filtered;
+}
+function studentAccountChipBarHtml(students) {
+  const typeCounts = {};
+  students.forEach(s => (s.packages || []).forEach(p => { typeCounts[p.type_label] = (typeCounts[p.type_label] || 0) + 1; }));
+  const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
+  return `<div class="stu-tools-row">
+      <div class="chip-bar">
+        <button class="chip ${stuChip==='all'?'active':''}" onclick="setStuChip('all')">همه</button>
+        <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
+        <button class="chip ${stuChip==='paid'?'active':''}" onclick="setStuChip('paid')">🟢 تسویه</button>
+        ${topTypes.length ? (stuChipsExpanded
+          ? topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip(${escapeAttr(t)})">${escapeHtml(t)}</button>`).join('')
+            + `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="بستن فیلترهای بیشتر">−</button>`
+          : `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="فیلترهای بیشتر">+</button>`
+        ) : ''}
+      </div>
+    </div>`;
+}
+function studentAccountRowMenuHtml(s, menuId) {
+  return `<div class="stu-table-actions">
+            <div class="row-menu">
+              <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')" aria-label="عملیات">⋮</button>
+              <div class="row-menu-panel" id="${menuId}">
+                <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+                <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
+                <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
+                <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
+                <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
+                <div class="row-menu-divider"></div>
+                <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
+              </div>
+            </div>
+          </div>`;
+}
+function studentAccountNameCellHtml(s, i) {
+  const fam = FAMILIES.find(f => f.id === s.family_id);
+  return `<div class="name-cell">
+            ${avatar(s.name, i)}
+            <div>
+              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
+              <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
+            </div>
+          </div>`;
+}
+function studentAccountTableRowsHtml(filtered, menuPrefix) {
+  if (filtered.length === 0) {
+    return `<tr><td colspan="8"><div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div></td></tr>`;
+  }
+  return filtered.map((s, i) => {
+    const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
+    return `<tr>
+        <td>${studentAccountNameCellHtml(s, i)}</td>
+        <td>${(s.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+        <td><span class="amount amount-neutral">${fmt(s.totalAmount)}</span></td>
+        <td><span class="amount amount-paid">${fmt(s.totalPaid)}</span></td>
+        <td>${s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
+        <td>${balanceHtml(s.balance)}</td>
+        <td>${statusHtml(s.balance)}</td>
+        <td>${studentAccountRowMenuHtml(s, tableMenuId)}</td>
+      </tr>`;
+  }).join('');
+}
+function studentAccountMobileHtml(filtered, menuPrefix) {
+  if (filtered.length === 0) {
+    return `<div class="mstu-list"><div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div></div>`;
+  }
+  return `<div class="mstu-list">${filtered.map((s, i) => {
+    const fam = FAMILIES.find(f => f.id === s.family_id);
+    const pkgs = s.packages || [];
+    const visiblePkgs = pkgs.slice(0, 2);
+    const extra = pkgs.length - visiblePkgs.length;
+    const menuId = `${menuPrefix}-menu-${s.id}`;
+    return `
+      <div class="mstu-card student-record-row" onclick="openStudentDetail(${s.id})">
+        <div class="mstu-top">
+          ${avatar(s.name, i)}
+          <div class="mstu-name-wrap">
+            <div class="mstu-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
+            ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${escapeHtml(fam.name)}</div>` : ''}
+          </div>
+          <div class="row-menu">
+            <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
+            <div class="row-menu-panel" id="${menuId}">
+              <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
+              <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
+              <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
+              <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
+              <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
+              <div class="row-menu-divider"></div>
+              <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
+            </div>
+          </div>
+        </div>
+        ${mstuStatusLine(s.balance)}
+        <div class="mstu-pkgs">
+          ${visiblePkgs.map(pkgTag).join('')}
+          ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
+          ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+function studentAccountOverviewHtml(students, filtered, { showSessions = true, menuPrefix = 'stu' } = {}) {
+  const totalDebt = students.reduce((a, s) => a + Math.max(0, s.balance), 0);
+  const totalPaid = students.reduce((a, s) => a + s.totalPaid, 0);
+  const debtorCount = students.filter(s => s.balance > 0).length;
+  const settledCount = students.length - debtorCount;
+  const fourthStat = showSessions ? `
+    <div class="stat-card">
+      <div class="stat-label">کل ${META.sessionPlural || 'جلسات'}</div>
+      <div class="stat-value">${fa(students.reduce((a,s) => a + s.sessionCount, 0))}</div>
+      <div class="stat-sub">برگزارشده</div>
+    </div>` : `
+    <div class="stat-card">
+      <div class="stat-label">بدهکار / تسویه</div>
+      <div class="stat-value">${fa(debtorCount)} / ${fa(settledCount)}</div>
+      <div class="stat-sub">نفر</div>
+    </div>`;
+  return `
+  <div class="stats-row stu-stats-row">
+    <div class="stat-card s-accent">
+      <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
+      <div class="stat-value">${fa(students.length)}</div>
+      <div class="stat-sub">نفر ثبت‌شده</div>
+    </div>
+    <div class="stat-card s-green">
+      <div class="stat-label">کل دریافتی</div>
+      <div class="stat-value">${fmt(totalPaid)}</div>
+      <div class="stat-sub">تومان</div>
+    </div>
+    <div class="stat-card s-red">
+      <div class="stat-label">کل مانده بدهی</div>
+      <div class="stat-value">${fmt(totalDebt)}</div>
+      <div class="stat-sub">تومان</div>
+    </div>
+    ${fourthStat}
+  </div>
+
+  <div class="table-card">
+    ${studentAccountChipBarHtml(students)}
+    <div class="stu-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>نام</th>
+          <th>پکیج‌ها</th>
+          <th>قرارداد کل</th>
+          <th>پرداخت‌شده</th>
+          <th>کیف پول</th>
+          <th>مانده حساب</th>
+          <th>وضعیت</th>
+          <th>عملیات</th>
+        </tr>
+      </thead>
+      <tbody>${studentAccountTableRowsHtml(filtered, menuPrefix)}</tbody>
+    </table></div>
+    ${studentAccountMobileHtml(filtered, menuPrefix)}
+  </div>`;
 }
 function goStudentSection(page) {
   if (page === 'sessions' || page === 'students') {
@@ -5466,166 +5649,11 @@ async function renderStudents(search = '') {
   FAMILIES = await window.api.families.getAll();
   { const _sb = document.getElementById('student-badge'); _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; }
 
-  let filtered = search
-    ? allStudents.filter(s => (s.name + s.lname).includes(search))
-    : allStudents;
-
-  if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
-  else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0);
-  else if (stuChip && stuChip !== 'all') filtered = filtered.filter(s => (s.packages || []).some(p => p.type_label === stuChip));
-
-  const totalDebt = allStudents.reduce((a, s) => a + Math.max(0, s.balance), 0);
-  const totalPaid = allStudents.reduce((a, s) => a + s.totalPaid, 0);
-
-  // Top package types present (for filter chips)
-  const typeCounts = {};
-  allStudents.forEach(s => (s.packages || []).forEach(p => { typeCounts[p.type_label] = (typeCounts[p.type_label] || 0) + 1; }));
-  const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
-
-  let html = `
+  const filtered = filterAccountStudents(allStudents, search);
+  const html = `
   ${studentSectionNav('students')}
   ${renderCaseFormsSection(search)}
-  <div class="stats-row stu-stats-row">
-    <div class="stat-card s-accent">
-      <div class="stat-label">کل ${META.entityPlural || 'شاگردان'}</div>
-      <div class="stat-value">${fa(allStudents.length)}</div>
-      <div class="stat-sub">نفر ثبت‌شده</div>
-    </div>
-    <div class="stat-card s-green">
-      <div class="stat-label">کل دریافتی</div>
-      <div class="stat-value">${fmt(totalPaid)}</div>
-      <div class="stat-sub">تومان</div>
-    </div>
-    <div class="stat-card s-red">
-      <div class="stat-label">کل مانده بدهی</div>
-      <div class="stat-value">${fmt(totalDebt)}</div>
-      <div class="stat-sub">تومان</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">کل ${META.sessionPlural || 'جلسات'}</div>
-      <div class="stat-value">${fa(allStudents.reduce((a,s) => a + s.sessionCount, 0))}</div>
-      <div class="stat-sub">برگزارشده</div>
-    </div>
-  </div>
-
-  <div class="table-card">
-    <div class="stu-tools-row">
-      <div class="chip-bar">
-        <button class="chip ${stuChip==='all'?'active':''}" onclick="setStuChip('all')">همه</button>
-        <button class="chip ${stuChip==='debt'?'active':''}" onclick="setStuChip('debt')">🔴 بدهکار</button>
-        <button class="chip ${stuChip==='paid'?'active':''}" onclick="setStuChip('paid')">🟢 تسویه</button>
-        ${topTypes.length ? (stuChipsExpanded
-          ? topTypes.map(t => `<button class="chip ${stuChip===t?'active':''}" onclick="setStuChip(${escapeAttr(t)})">${escapeHtml(t)}</button>`).join('')
-            + `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="بستن فیلترهای بیشتر">−</button>`
-          : `<button class="chip chip-more" onclick="toggleStuChipsExpanded()" title="فیلترهای بیشتر">+</button>`
-        ) : ''}
-      </div>
-    </div>
-
-    <div class="stu-table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>نام</th>
-          <th>پکیج‌ها</th>
-          <th>قرارداد کل</th>
-          <th>پرداخت‌شده</th>
-          <th>کیف پول</th>
-          <th>مانده حساب</th>
-          <th>وضعیت</th>
-          <th>عملیات</th>
-        </tr>
-      </thead>
-      <tbody>`;
-
-  if (filtered.length === 0) {
-    html += `<tr><td colspan="8"><div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div></td></tr>`;
-  } else {
-    filtered.forEach((s, i) => {
-      const fam = FAMILIES.find(f => f.id === s.family_id);
-      const tableMenuId = `stu-table-menu-${s.id}`;
-      html += `<tr>
-        <td>
-          <div class="name-cell">
-            ${avatar(s.name, i)}
-            <div>
-              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
-              <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
-            </div>
-          </div>
-        </td>
-        <td>${(s.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
-        <td><span class="amount amount-neutral">${fmt(s.totalAmount)}</span></td>
-        <td><span class="amount amount-paid">${fmt(s.totalPaid)}</span></td>
-        <td>${s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
-        <td>${balanceHtml(s.balance)}</td>
-        <td>${statusHtml(s.balance)}</td>
-        <td>
-          <div class="stu-table-actions">
-            <div class="row-menu">
-              <button class="row-menu-btn" onclick="toggleRowMenu(event,'${tableMenuId}')" aria-label="عملیات">⋮</button>
-              <div class="row-menu-panel" id="${tableMenuId}">
-                <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
-                <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
-                <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
-                <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
-                <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
-                <div class="row-menu-divider"></div>
-                <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
-              </div>
-            </div>
-          </div>
-        </td>
-      </tr>`;
-    });
-  }
-
-  html += `</tbody></table></div>`;
-
-  // ── Compact mobile card list (shown only on narrow screens; see CSS) ──
-  html += `<div class="mstu-list">`;
-  if (filtered.length === 0) {
-    html += `<div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div>`;
-  } else {
-    filtered.forEach((s, i) => {
-      const fam = FAMILIES.find(f => f.id === s.family_id);
-      const pkgs = s.packages || [];
-      const visiblePkgs = pkgs.slice(0, 2);
-      const extra = pkgs.length - visiblePkgs.length;
-      const menuId = `stu-menu-${s.id}`;
-      html += `
-      <div class="mstu-card student-record-row" onclick="openStudentDetail(${s.id})">
-        <div class="mstu-top">
-          ${avatar(s.name, i)}
-          <div class="mstu-name-wrap">
-            <div class="mstu-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
-            ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${escapeHtml(fam.name)}</div>` : ''}
-          </div>
-          <div class="row-menu">
-            <button class="row-menu-btn" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
-            <div class="row-menu-panel" id="${menuId}">
-              <div class="row-menu-item" onclick="openStudentDetail(${s.id})">📋 جزئیات</div>
-              <div class="row-menu-item" onclick="openStudentTransactions(${s.id})">📑 تراکنش‌ها</div>
-              <div class="row-menu-item" onclick="openAddPayment(${s.id})">💳 پرداخت</div>
-              <div class="row-menu-item" onclick="openNewPurchase(${s.id})">🛍 خرید</div>
-              <div class="row-menu-item" onclick="openStudentModal(${s.id})">✏️ ویرایش</div>
-              <div class="row-menu-divider"></div>
-              <div class="row-menu-item danger" onclick="deleteStudent(${s.id})">🗑 حذف</div>
-            </div>
-          </div>
-        </div>
-        ${mstuStatusLine(s.balance)}
-        <div class="mstu-pkgs">
-          ${visiblePkgs.map(pkgTag).join('')}
-          ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
-          ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
-        </div>
-      </div>`;
-    });
-  }
-  html += `</div>`;
-
-  html += `</div>`; // .table-card
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: true, menuPrefix: 'stu' })}`;
   setContent(html);
 
   // Restore focus to search box (it's in topbar, so look there first)
@@ -6001,7 +6029,7 @@ async function saveWalletAdjust(studentId, sign) {
   });
   closeModal();
   showToast(sign > 0 ? 'به کیف پول اضافه شد ✓' : 'از کیف پول کسر شد ✓', 'success');
-  await renderStudents();
+  await refreshOpenStudentSurface();
 }
 
 // ── Add/Edit Student Modal ────────────────────────────────────────────────────
@@ -6281,7 +6309,7 @@ async function saveStudentNew() {
 
   closeModal();
   showToast(`${name} ${lname} اضافه شد ✓`, 'success');
-  await renderStudents();
+  await refreshOpenStudentSurface();
 }
 
 async function saveStudentEdit(id) {
@@ -6314,7 +6342,7 @@ async function saveStudentEdit(id) {
 
   closeModal();
   showToast('تغییرات ذخیره شد ✓', 'success');
-  await renderStudents();
+  await refreshOpenStudentSurface();
 }
 
 async function deleteStudent(id) {
@@ -6322,7 +6350,7 @@ async function deleteStudent(id) {
   if (!confirm(`آیا مطمئنی؟ "${s?.name} ${s?.lname}" و تمام اطلاعاتش حذف می‌شود.`)) return;
   await window.api.students.delete(id);
   showToast('حذف شد', 'error');
-  await renderStudents();
+  await refreshOpenStudentSurface();
 }
 
 // ── Add Payment Modal ─────────────────────────────────────────────────────────
@@ -6835,8 +6863,6 @@ async function saveGeneralPayment() {
 // ════════════════════════════════════════════════════════════════════════════
 // PAYMENTS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-let _paymentsTab = 'purchases';
-
 function accountCustomerTabsHtml(tab, search = '') {
   return `
     <div class="payments-toolbar account-tabs-toolbar">
@@ -6844,14 +6870,18 @@ function accountCustomerTabsHtml(tab, search = '') {
         <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_tpPaymentsTab('purchases')">🛒 فروش</button>
         <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_tpPaymentsTab('payments')">💳 دریافت</button>
         <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_tpPaymentsTab('reminders')">🔔 یادآوری</button>
-        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👥 حساب مشترک</button>
+        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👤 حساب مشتری</button>
       </div>
     </div>`;
 }
 
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
-    return `<button class="btn btn-primary" onclick="openNewFamily()"><span class="btn-icon">+</span><span> افزودن گروه جدید</span></button>`;
+    return `<div class="table-search">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input placeholder="جستجوی مشتری..." oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
+  </div>
+  <button class="btn btn-primary" onclick="openNewFamily()"><span class="btn-icon">+</span><span> افزودن گروه جدید</span></button>`;
   }
   if (!['purchases', 'payments', 'reminders'].includes(tab)) return '';
   const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
@@ -6889,7 +6919,7 @@ async function renderPayments(search = '') {
   const q = search.trim().toLowerCase();
 
   if (tab === 'families') {
-    await renderFamilies(true);
+    await renderFamilies(true, search);
     return;
   }
 
@@ -8063,26 +8093,40 @@ document.addEventListener('keydown', event => {
   }
 });
 
-async function renderFamilies(embedded = currentPage === 'payments') {
-  if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ افزودن گروه جدید</button>`);
-  else updateTopbarActions(accountCustomerTopbarHtml('families'));
-  FAMILIES = await window.api.families.getAll();
-  allStudents = await window.api.students.getAll();
-  const prefix = embedded ? accountCustomerTabsHtml('families') : '';
+function familyGroupsSectionHtml(families, search = '') {
+  const q = String(search || '').trim().toLowerCase();
+  let list = families;
+  if (q) {
+    list = list.filter(f => String(f.name || '').toLowerCase().includes(q) ||
+      (f.members || []).some(m => `${m.name || ''} ${m.lname || ''}`.toLowerCase().includes(q)));
+  }
+  if (stuChip === 'debt') list = list.filter(f => f.totalBalance > 0);
+  else if (stuChip === 'paid') list = list.filter(f => f.totalBalance <= 0);
 
-  if (FAMILIES.length === 0) {
-    setContent(`${prefix}<div class="table-card"><div class="empty"><span>👨‍👩‍👧</span>
-      هنوز حساب مشترکی ایجاد نشده. اگر چند ${META.entitySingular||'شاگرد'} با هم (مثلاً زن و شوهر) پرداخت می‌کنند،
-      یک حساب مشترک بساز.
-    </div></div>`);
-    return;
+  if (!families.length) {
+    return `<div class="table-card" style="margin-top:16px">
+      <div class="table-header"><span class="title">گروه‌های مشترک</span></div>
+      <div class="empty"><span>👨‍👩‍👧</span>
+        هنوز گروه مشترکی ساخته نشده. اگر چند ${META.entitySingular||'شاگرد'} با هم (مثلاً زن و شوهر) پرداخت می‌کنند، یک گروه بسازید.
+        <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="openNewFamily()">+ افزودن گروه</button></div>
+      </div>
+    </div>`;
+  }
+  if (!list.length) {
+    return `<div class="table-card" style="margin-top:16px">
+      <div class="table-header"><span class="title">گروه‌های مشترک</span></div>
+      <div class="empty"><span>🔎</span>گروهی با این فیلتر پیدا نشد</div>
+    </div>`;
   }
 
-  let html = prefix;
-  FAMILIES.forEach(f => {
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 2px 10px">
+    <div style="font-size:13px;font-weight:800;color:var(--text)">گروه‌های مشترک</div>
+    <div style="font-size:11px;color:var(--text3)">${fa(list.length)} گروه</div>
+  </div>`;
+  list.forEach(f => {
     const familyBalanceLabel = f.totalBalance > 0 ? 'بدهی مشترک' : f.totalBalance < 0 ? 'اعتبار مشترک' : 'مانده مشترک';
     html += `
-    <div class="table-card family-card">
+    <div class="table-card family-card tbl-responsive">
       <div class="table-header">
         <span class="title">👨‍👩‍👧 ${escapeHtml(f.name)}</span>
         <span style="margin-right:auto;font-size:12px;font-weight:700">${familyBalanceLabel}: ${familyBalanceHtml(f.totalBalance)}</span>
@@ -8095,23 +8139,39 @@ async function renderFamilies(embedded = currentPage === 'payments') {
         <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">${familyBalanceLabel}</div><div style="font-size:13px;font-weight:800">${familyBalanceHtml(f.totalBalance)}</div></div>
       </div>
       <table>
-        <thead><tr><th>عضو</th><th>قرارداد</th><th>پرداخت‌شده</th><th>کیف پول</th><th>مانده فردی</th></tr></thead>
+        <thead><tr><th>نام</th><th>پکیج‌ها</th><th>قرارداد کل</th><th>پرداخت‌شده</th><th>کیف پول</th><th>مانده حساب</th><th>وضعیت</th><th>عملیات</th></tr></thead>
         <tbody>
           ${f.members.length === 0
-            ? `<tr><td colspan="5"><div class="empty">عضوی ندارد — از صفحه ${META.entityPlural||'شاگردان'} با ویرایش، عضو اضافه کن</div></td></tr>`
+            ? `<tr><td colspan="8"><div class="empty">عضوی ندارد — از ویرایش مشتری، عضو اضافه کن</div></td></tr>`
             : f.members.map(m => `
               <tr>
                 <td style="font-weight:500">${escapeHtml(m.name)} ${escapeHtml(m.lname)}</td>
-                <td>${fmt(m.totalAmount)}</td>
-                <td><span class="amount-paid">${fmt(m.totalPaid)}</span></td>
-                <td>${m.wallet > 0 ? fmt(m.wallet) : '—'}</td>
+                <td>${(m.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+                <td><span class="amount amount-neutral">${fmt(m.totalAmount)}</span></td>
+                <td><span class="amount amount-paid">${fmt(m.totalPaid)}</span></td>
+                <td>${m.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(m.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
                 <td>${balanceHtml(m.balance)}</td>
+                <td>${statusHtml(m.balance)}</td>
+                <td>${studentAccountRowMenuHtml(m, `fam-${f.id}-menu-${m.id}`)}</td>
               </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
   });
+  return html;
+}
 
+async function renderFamilies(embedded = currentPage === 'payments', search = '') {
+  if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ افزودن گروه جدید</button>`);
+  else updateTopbarActions(accountCustomerTopbarHtml('families', search));
+  FAMILIES = await window.api.families.getAll();
+  allStudents = await window.api.students.getAll();
+  { const _sb = document.getElementById('student-badge'); if (_sb) { _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; } }
+  const prefix = embedded ? accountCustomerTabsHtml('families') : '';
+  const filtered = filterAccountStudents(allStudents, search);
+  const html = `${prefix}
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: false, menuPrefix: 'acct' })}
+  ${familyGroupsSectionHtml(FAMILIES, search)}`;
   setContent(html);
 }
 
@@ -8142,14 +8202,14 @@ async function saveNewFamily() {
   await window.api.families.add({ name, member_ids: memberIds });
   closeModal();
   showToast('گروه ایجاد شد ✓', 'success');
-  await renderFamilies();
+  await renderFamilies(currentPage === 'payments', currentStudentAccountSearch());
 }
 
 async function deleteFamily(id, name) {
   if (!confirm(`آیا مطمئن هستی به حذف حساب مشترک "${name}" یا خیر؟ (اعضا حذف نمی‌شوند، فقط اتصال‌شان قطع می‌شود)`)) return;
   await window.api.families.delete(id);
   showToast('گروه حذف شد', 'error');
-  await renderFamilies();
+  await renderFamilies(currentPage === 'payments', currentStudentAccountSearch());
 }
 
 function openAddFamilyMember(familyId, familyName) {
@@ -8185,7 +8245,7 @@ async function saveAddFamilyMembers(familyId, familyName) {
   closeModal();
   showToast('اضافه شد ✓', 'success');
   allStudents = await window.api.students.getAll();
-  await renderFamilies();
+  await renderFamilies(currentPage === 'payments', currentStudentAccountSearch());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -14248,7 +14308,7 @@ const DEFAULT_NAV_ORDER = [
   { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
   { page: 'transactions', icon: '📒', label: () => 'تراکنش‌های مالی' },
   { page: 'reminders',    icon: '⏰', label: () => 'یادآوری' },
-  { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب‌های مشترک' },
+  { page: 'families',     icon: '👨‍👩‍👧', label: () => 'حساب مشتری' },
   { page: 'admin_panel',  icon: '👑', label: () => 'پنل مدیریت' },
   { page: 'settings',     icon: '⚙️', label: () => 'تنظیمات' },
   { page: 'tutorial',     icon: '🎓', label: () => 'آموزش‌ها' },
