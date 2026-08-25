@@ -2854,13 +2854,17 @@ body.light mark { background: rgba(251,191,36,.5); }
   cursor:pointer;
 }
 .instr-crumb-link{
+  appearance:none;
   display:inline-flex;
   align-items:center;
   max-width:220px;
   min-height:28px;
   padding:4px 8px;
   border-radius:8px;
+  border:1px solid transparent;
+  background:transparent;
   color:var(--accent2);
+  font-family:var(--font);
   font-size:12px;
   font-weight:800;
   cursor:pointer;

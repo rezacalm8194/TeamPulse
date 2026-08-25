@@ -2687,14 +2687,18 @@ async function renderInstructions(instrSearch) {
   if (_instrPath.length) {
     const backTargetPath = _instrPath.slice(0, -1);
     const backTarget = backTargetPath.length ? backTargetPath[backTargetPath.length - 1] : null;
-    const backAction = `_instrGoTo(${backTarget ? backTarget.id : 'null'}, ${JSON.stringify(backTargetPath).replace(/'/g,"&#39;")})`;
+    const crumbButton = (label, parentId, path, className, extraStyle) => {
+      const encodedPath = encodeURIComponent(JSON.stringify(path || [])).replace(/'/g, '%27');
+      const parentValue = parentId == null ? '' : String(+parentId);
+      return `<button type="button" class="${className}" data-instr-parent="${parentValue}" data-instr-path="${encodedPath}" onclick="_instrCrumbGo(this)"${extraStyle ? ` style="${extraStyle}"` : ''}>${label}</button>`;
+    };
     let full = `<div class="instr-breadcrumb instr-breadcrumb-full">
-      <button type="button" class="instr-crumb-back" onclick='${backAction}' title="یک مرحله عقب">‹ عقب</button>
-      <span onclick="_instrGoTo(null,[])" class="instr-crumb-link">🏠 مرکز دانش</span>`;
+      ${crumbButton('‹ عقب', backTarget ? backTarget.id : null, backTargetPath, 'instr-crumb-back')}
+      ${crumbButton('🏠 مرکز دانش', null, [], 'instr-crumb-link')}`;
     _instrPath.forEach((p, i) => {
       const isCurrent = i === _instrPath.length - 1;
       full += `<span class="instr-crumb-sep">‹</span>
-        <span onclick='_instrGoTo(${p.id}, ${JSON.stringify(_instrPath.slice(0,i+1)).replace(/'/g,"&#39;")})' class="instr-crumb-link ${isCurrent ? 'instr-crumb-current' : ''}">${escapeHtml(p.icon||'📁')} ${escapeHtml(p.title)}</span>`;
+        ${crumbButton(`${escapeHtml(p.icon||'📁')} ${escapeHtml(p.title)}`, p.id, _instrPath.slice(0,i+1), `instr-crumb-link ${isCurrent ? 'instr-crumb-current' : ''}`)}`;
     });
     full += `</div>`;
 
@@ -2702,9 +2706,9 @@ async function renderInstructions(instrSearch) {
     /* روی موبایل جای کم است و عنوان پوشه‌ی فعلی همین حالا توی هدر (کنار دکمه‌ی بازگشت) دیده می‌شه،
        پس این‌جا فقط «خانه ‹ بالادست» به‌صورت کوتاه نشون داده می‌شه — نه کل مسیر که باعث بریدگی می‌شد */
     const compact = `<div class="instr-breadcrumb instr-breadcrumb-compact" style="max-width:100%;min-width:0">
-      <button type="button" class="instr-crumb-back" onclick='${backAction}' title="یک مرحله عقب">‹ عقب</button>
-      <span onclick="_instrGoTo(null,[])" class="instr-crumb-link" style="flex-shrink:0">🏠</span>
-      ${parent ? `<span class="instr-crumb-sep">‹</span><span onclick='_instrGoTo(${parent.id}, ${JSON.stringify(_instrPath.slice(0,_instrPath.length-1)).replace(/'/g,"&#39;")})' class="instr-crumb-link" style="max-width:30vw">${escapeHtml(parent.title)}</span>` : ''}
+      ${crumbButton('‹ عقب', backTarget ? backTarget.id : null, backTargetPath, 'instr-crumb-back')}
+      ${crumbButton('🏠', null, [], 'instr-crumb-link', 'flex-shrink:0')}
+      ${parent ? `<span class="instr-crumb-sep">‹</span>${crumbButton(escapeHtml(parent.title), parent.id, _instrPath.slice(0,_instrPath.length-1), 'instr-crumb-link', 'max-width:30vw')}` : ''}
       <span class="instr-crumb-sep">‹</span><span class="instr-crumb-link instr-crumb-current" style="max-width:36vw">${escapeHtml(_instrPath[_instrPath.length-1].title)}</span>
     </div>`;
 
@@ -3802,6 +3806,14 @@ function _instrGoTo(parentId, path) {
   _instrPath = path || [];
   _instrPushHistory();
   renderInstructions();
+}
+
+function _instrCrumbGo(el) {
+  if (!el) return;
+  const parentValue = el.dataset.instrParent;
+  let path = [];
+  try { path = JSON.parse(decodeURIComponent(el.dataset.instrPath || '%5B%5D')); } catch (e) {}
+  _instrGoTo(parentValue === '' ? null : +parentValue, path);
 }
 
 function _instrPushHistory() {
