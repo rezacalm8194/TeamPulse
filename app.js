@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp100';
+const TP_ASSET_V = 'tp101';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -17481,6 +17481,38 @@ function _setRecurringTodoOnOrAfterToday(t) {
   t.scheduledDate = today;
 }
 
+function _todoInstantJalaliKey(iso) {
+  const parts = _jalaliFromInstant(iso);
+  if (!parts) return 0;
+  return _jalaliKey(_formatJalali(...parts));
+}
+
+function _todoHasCatchUpOnScheduledDay(t) {
+  const scheduled = _todoScheduledDate(t);
+  const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
+  if (!scheduledKey) return false;
+  const rootId = String(_todoRootId(t));
+  const todoId = String(t?.id ?? '');
+  const historyRows = [
+    ...(Array.isArray(t.history) ? t.history : []),
+    ...(Array.isArray(_db.todo_history) ? _db.todo_history.filter(row => {
+      const taskId = String(row?.task_id ?? '');
+      return taskId === todoId || taskId === rootId;
+    }) : []),
+  ];
+  if (historyRows.some(row =>
+    (row?.action === 'completed' || row?.action === 'skipped') &&
+    _todoInstantJalaliKey(row.created_at) === scheduledKey
+  )) return true;
+  return (_db.todos || []).some(x => {
+    if (!x || String(_todoRootId(x)) !== rootId) return false;
+    if (!(x.archived && (x._snapshot || x._occurrence))) return false;
+    if (_todoDoneDayKey(x) === scheduledKey) return true;
+    if (x.skipped_at && _todoInstantJalaliKey(x.skipped_at) === scheduledKey) return true;
+    return false;
+  });
+}
+
 function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   if (!_isTodoRecurring(t)) return;
   t.recurrence_parent_id = _todoRootId(t);
@@ -17494,9 +17526,9 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   if (scheduledKey && scheduledKey < todayKey) {
-    // نوبت عقب‌افتاده بسته شد؛ نوبت باز بعدی باید امروز (یا اولین روز مجاز از امروز)
-    // باشد تا لیست امروز خالی نماند.
-    _setRecurringTodoOnOrAfterToday(t);
+    // نوبت عقب‌افتاده بسته شد؛ نوبت باز بعدی از فردای همان روز تیک است
+    // تا همان شب روی «امروز» نماند و صبح بعد دوباره عقب‌افتاده نشود.
+    _advanceTodoDate(t, _todayJalaliStr());
   } else {
     _advanceTodoDate(t, scheduledDate);
   }
@@ -20205,23 +20237,10 @@ function renderTodoList(options = {}) {
       const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
       if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
-    if (!t.done && !t.archived && _isTodoRecurring(t) && _todoScheduledDate(t) === _tomorrowJalaliStr()) {
-      const rootId = _todoRootId(t);
-      const hasTodayOccurrence = (_db.todos || []).some(x => {
-        if (!x || String(x.id) === String(t.id) || x.status === 'deleted') return false;
-        return String(_todoRootId(x)) === String(rootId) && _jalaliKey(_todoScheduledDate(x) || '') === _todayK;
-      });
-      const caughtUpOverdueToday = (_db.todos || []).some(x =>
-        x && x._snapshot && x.archived &&
-        String(_todoRootId(x)) === String(rootId) &&
-        _todoIsDoneToday(x, _todayK) &&
-        _jalaliKey(_todoScheduledDate(x) || '') > 0 &&
-        _jalaliKey(_todoScheduledDate(x) || '') < _todayK
-      );
-      if (!hasTodayOccurrence && caughtUpOverdueToday) {
-        t.date_jalali = _todayStr;
-        t.scheduled_date = _todayStr;
-        t.scheduledDate = _todayStr;
+    if (!t.done && !t.archived && _isTodoRecurring(t)) {
+      const scheduledKey = _jalaliKey(_todoScheduledDate(t) || '');
+      if (scheduledKey && scheduledKey < _todayK && _todoHasCatchUpOnScheduledDay(t)) {
+        _setRecurringTodoOnOrAfterToday(t);
         t.updated_at = new Date().toISOString();
         _archiveChanged = true;
       }
@@ -24892,7 +24911,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v100';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v101';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

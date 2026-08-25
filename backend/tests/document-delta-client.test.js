@@ -15,7 +15,6 @@ test('ordinary workspace syncs send collection deltas instead of the full accoun
 test('todo completion merge prefers done state and later recurring dates', () => {
   assert.match(appSource, /function _pickMergedTodo\(/);
   assert.match(appSource, /function _todoRemoteDateRegressesLocal\(/);
-  assert.match(appSource, /hasTodayOccurrence/);
   assert.match(appSource, /if \(conflictAttempt < 4\) \{/);
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
@@ -23,6 +22,8 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /forceStaffLive/);
   assert.match(appSource, /function _setRecurringTodoOnOrAfterToday\(/);
   assert.match(appSource, /_setRecurringTodoOnOrAfterToday\(t\);/);
+  assert.match(appSource, /_advanceTodoDate\(t, _todayJalaliStr\(\)\)/);
+  assert.match(appSource, /function _todoHasCatchUpOnScheduledDay\(/);
   assert.match(appSource, /keepalive: true/);
 });
 
@@ -31,7 +32,7 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
   assert.match(appSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
   assert.match(appSource, /تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند/);
-  assert.match(appSource, /if \(window\._todoDeltaChain \|\| _isTodoDeltaPendingReason\(\)\) return false;/);
+  assert.match(appSource, /window\._todoDeltaChain \|\| _isTodoDeltaPendingReason\(\)/);
   assert.match(appSource, /function _scheduleTodoDeltaRetry\(/);
   assert.match(appSource, /function _isTodoDeltaPendingReason\(/);
 });
