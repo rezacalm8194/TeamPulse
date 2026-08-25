@@ -442,6 +442,11 @@ function _tpHideAuthShowApp() {
   var app = document.getElementById('app');
   if (a) a.style.display = 'none';
   if (app) app.style.display = '';
+  // Guest entry must actively resolve the requested hash; merely revealing the
+  // shell leaves #calendar on the startup placeholder until the watchdog fires.
+  window.setTimeout(function () {
+    if (typeof renderPage === 'function') renderPage();
+  }, 0);
 }
 function _tpCopyElText(id, msg) {
   var el = document.getElementById(id);
