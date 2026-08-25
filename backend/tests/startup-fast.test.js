@@ -14,12 +14,16 @@ test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
-test('CSP does not allow unsafe-inline for scripts or styles', () => {
-  assert.doesNotMatch(appHtml, /unsafe-inline/);
+test('CSP blocks inline scripts, not the UI styles the app still renders', () => {
+  assert.doesNotMatch(appHtml, /script-src [^;]*'unsafe-inline'/);
+  assert.match(appHtml, /style-src 'self' 'unsafe-inline' https:/);
   assert.doesNotMatch(appHtml, /<style>/);
   assert.doesNotMatch(appHtml, /<script>/);
   assert.match(appHtml, /<script src="\/tp-inline-bind\.js/);
-  assert.doesNotMatch(serverJs, /'unsafe-inline'/);
+  const serverScriptSrc = serverJs.match(/"script-src[^"]+"/);
+  assert.ok(serverScriptSrc);
+  assert.doesNotMatch(serverScriptSrc[0], /unsafe-inline/);
+  assert.match(serverJs, /style-src 'self' 'unsafe-inline' https:/);
   assert.equal(fs.existsSync(path.join(root, 'tp-inline-bind.js')), true);
 });
 

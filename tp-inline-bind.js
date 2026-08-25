@@ -264,10 +264,22 @@
     for (var i = 0; i < list.length; i++) {
       var el = list[i];
       if (!el || el.nodeType !== 1 || !el.style || !el.getAttribute) continue;
-      var css = el.getAttribute('style');
+      var css = el.getAttribute('data-tp-style') || el.getAttribute('style');
       if (!css) continue;
+      if (el.removeAttribute) {
+        el.removeAttribute('data-tp-style');
+        el.removeAttribute('style');
+      }
       el.style.cssText = sanitizeCss(css);
     }
+  }
+
+  function hoistStyleAttrs(html) {
+    var s = String(html == null ? '' : html);
+    if (s.length < 8 || s.indexOf('style') === -1) return s;
+    return s.replace(/(\s)style\s*=\s*(["'])([\s\S]*?)\2/gi, function (_, sp, q, css) {
+      return sp + 'data-tp-style=' + q + css + q;
+    });
   }
 
   function sanitizeTree(root) {
@@ -366,7 +378,7 @@
       enumerable: desc.enumerable,
       get: function () { return desc.get.call(this); },
       set: function (v) {
-        desc.set.call(this, v);
+        desc.set.call(this, hoistStyleAttrs(v));
         afterHtmlWrite(this);
       }
     });
@@ -377,7 +389,7 @@
   var adj = Element.prototype.insertAdjacentHTML;
   if (adj) {
     Element.prototype.insertAdjacentHTML = function (pos, html) {
-      adj.call(this, pos, html);
+      adj.call(this, pos, hoistStyleAttrs(html));
       var root = (pos === 'beforebegin' || pos === 'afterend') ? this.parentNode : this;
       if (root) afterHtmlWrite(root);
     };
@@ -386,6 +398,7 @@
   global._tpBindInline = bindTree;
   global._tpParseInline = parseProgram;
   global._tpSanitizeCss = sanitizeCss;
+  global._tpHoistStyles = hoistStyleAttrs;
   global._tpInlineDeny = DENY;
 
   function onReady(fn) {

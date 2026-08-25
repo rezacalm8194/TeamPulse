@@ -104,3 +104,11 @@ test('inline CSS sanitizer strips scripted urls', () => {
   assert.equal(ctx._tpSanitizeCss('background:url(https://evil.example/x)'), 'background:none');
   assert.match(ctx._tpSanitizeCss('color:var(--accent);background:var(--bg2)'), /color:var\(--accent\)/);
 });
+
+test('style attributes are hoisted off HTML before innerHTML parse', () => {
+  const ctx = loadBinder();
+  const hoisted = ctx._tpHoistStyles('<div style="display:flex;gap:8px" class="x">x</div>');
+  assert.match(hoisted, /data-tp-style="display:flex;gap:8px"/);
+  assert.doesNotMatch(hoisted, /\sstyle="/);
+  assert.equal(ctx._tpHoistStyles('<b>no style</b>'), '<b>no style</b>');
+});
