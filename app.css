@@ -4127,7 +4127,18 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .student-record-row:hover td{background:rgba(124,106,247,.055)}
 .archive-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:14px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
 .archive-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
-.archive-search{min-width:260px;max-width:420px;flex:1}
+.archive-toolbar-filters{display:flex;gap:8px;align-items:center;flex:1;min-width:240px}
+.archive-category-filter{
+  width:200px;
+  flex:0 0 200px;
+  min-width:0;
+  padding-left:28px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%239399ab' d='M1.2 1.2L6 6l4.8-4.8'/></svg>");
+  background-repeat:no-repeat;
+  background-position:left 10px center;
+  cursor:pointer;
+}
+.archive-search{min-width:180px;max-width:none;flex:1}
 .archive-sheet{overflow:auto;max-height:calc(100vh - 285px)}
 .archive-sheet table{min-width:1007px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
@@ -4162,7 +4173,31 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-bulkbar{display:flex;min-height:52px;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2);visibility:hidden;pointer-events:none}
 .archive-bulkbar.active{visibility:visible;pointer-events:auto}
 .archive-bulkbar .archive-selected-count{font-size:12px;font-weight:700;color:var(--accent2);margin-left:auto}
-.archive-check{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+.archive-check-wrap{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:32px;
+  min-height:32px;
+  margin:0;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+  user-select:none;
+  flex-shrink:0;
+}
+.archive-check{
+  width:18px;
+  height:18px;
+  margin:0;
+  accent-color:var(--accent);
+  cursor:pointer;
+  pointer-events:auto;
+  flex-shrink:0;
+  -webkit-appearance:checkbox;
+  appearance:auto;
+}
+.archive-mobile-selectbar{display:none}
 .archive-mobile-list{display:none}
 .archive-mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:13px;padding:10px 11px;margin-bottom:8px;box-shadow:0 3px 12px rgba(0,0,0,.11)}
 .archive-mobile-card.selected{border-color:var(--accent);background:rgba(124,106,247,.07)}
@@ -4220,6 +4255,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .archive-search{min-width:100%;max-width:none}
   .archive-toolbar{padding:12px 10px;gap:9px}
   .archive-toolbar>div:first-child{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .archive-toolbar-filters{width:100%;flex-direction:column;align-items:stretch}
+  .archive-category-filter{width:100%;flex:none;min-height:44px;font-size:13px}
   .archive-toolbar-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7px}
   .archive-toolbar-actions .btn:nth-child(3){grid-column:1/-1}
   .archive-bulkbar{display:none;visibility:visible;min-height:0}
@@ -4228,7 +4265,21 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .archive-bulkbar .btn{min-height:40px;flex:1;justify-content:center}
   .archive-toolbar-actions .btn{width:100%;min-height:40px;justify-content:center;font-size:11.5px}
   .archive-sheet{display:none}
+  .archive-mobile-selectbar{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    padding:4px 8px 2px;
+    color:var(--text2);
+    font-size:12px;
+    font-weight:700;
+    border-bottom:1px solid var(--border);
+  }
+  .archive-mobile-selectbar .archive-check-wrap{min-width:44px;min-height:44px}
   .archive-mobile-list{display:block;padding:10px 8px calc(82px + env(safe-area-inset-bottom,0px))}
+  .archive-mobile-list.has-selection{padding-bottom:calc(200px + env(safe-area-inset-bottom,0px))}
+  .archive-mobile-card .archive-check-wrap{min-width:44px;min-height:44px;margin-inline:-6px}
+  .archive-mobile-card .archive-check{width:22px;height:22px}
   .archive-preview{max-height:42dvh;-webkit-overflow-scrolling:touch}
   .archive-preview table{min-width:820px;font-size:10.5px}
   #archive-file{min-height:48px;padding:10px;font-size:11px}
