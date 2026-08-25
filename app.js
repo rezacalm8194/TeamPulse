@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp103';
+const TP_ASSET_V = 'tp104';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -8596,7 +8596,7 @@ body{direction:rtl;font-family:Tahoma,Arial,sans-serif;color:#1f2937;background:
 .party{margin-bottom:16px}
 .party-name{font-size:16px;font-weight:800}
 .party-sub{font-size:11px;color:#6b7280;margin-top:2px}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:16px}
 .stat{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px}
 .stat .k{font-size:10px;color:#6b7280}
 .stat .v{font-size:13px;font-weight:800;margin-top:2px}
@@ -8609,14 +8609,11 @@ th{background:#f3f4f6;font-size:11px;color:#4b5563;border-bottom:1px solid #d1d5
 .sign span{display:block;margin-top:40px;border-top:1px dashed #d1d5db;padding-top:6px}
 @page{size:A4;margin:14mm}
 @media print{body{max-width:none;padding:0}}
-@media (max-width:700px){.stats{grid-template-columns:1fr 1fr}}
 </style></head><body>
 <div class="head"><div><div class="brand">${escapeHtml(view.brand)}</div><div class="kicker">صورتحساب خرید و دریافت</div></div><div class="issued">تاریخ صدور: ${DateService.disp(view.issued) || escapeHtml(view.issued || '')}</div></div>
 <div class="party"><div class="party-name">${escapeHtml(view.partyName)}</div>${view.partySub ? `<div class="party-sub">${escapeHtml(view.partySub)}</div>` : ''}</div>
 <div class="stats">
-  <div class="stat"><div class="k">جمع خرید</div><div class="v">${fmt(view.totalAmount)} تومان</div></div>
-  <div class="stat"><div class="k">جمع دریافت</div><div class="v" style="color:#059669">${fmt(view.totalPaid)} تومان</div></div>
-  <div class="stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} تومان</div></div>
+  ${Number(view.wallet || 0) ? `<div class="stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} تومان</div></div>` : ''}
   <div class="stat"><div class="k">${balanceLabel}</div><div class="v">${balanceText}</div></div>
 </div>
 <table><thead><tr><th>تاریخ</th>${showMember ? '<th>عضو</th>' : ''}<th>نوع</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده</th></tr></thead><tbody>${rows}</tbody></table>
@@ -8636,8 +8633,41 @@ function _openPartyTransactions(payload) {
   window._partyTxPrintPayload = view;
   openModal('📑 تراکنش‌ها', _partyTxModalHtml(view), [
     { label: '🖨 چاپ فاکتور', cls: 'btn-primary', action: 'printPartyTransactions()' },
+    { label: '⬇ دانلود', cls: 'btn-ghost', action: 'downloadPartyTransactions()' },
+    { label: '📋 کپی', cls: 'btn-ghost', action: 'copyPartyTransactions()' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ], { overlayClass: 'tx-invoice-overlay' });
+}
+
+function _partyTxFilename(view) {
+  return String(view?.title || 'صورتحساب').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 70) || 'صورتحساب';
+}
+
+function _partyTxPlainText(view) {
+  const showMember = !!view.isGroup;
+  const balanceLabel = view.balance > 0 ? 'مانده بدهی' : view.balance < 0 ? 'اعتبار' : 'مانده حساب';
+  const balanceText = `${view.balance < 0 ? 'اعتبار ' : ''}${fmt(Math.abs(view.balance))} تومان`;
+  const lines = [
+    view.brand,
+    'صورتحساب خرید و دریافت',
+    view.partyName,
+    view.partySub,
+    `تاریخ صدور: ${DateService.disp(view.issued) || view.issued || ''}`,
+    '',
+  ];
+  (view.items || []).forEach(it => {
+    const kind = it.kind === 'purchase' ? 'خرید' : 'دریافت';
+    const amount = it.kind === 'purchase'
+      ? fmt(it.debit)
+      : `${fmt(it.credit)}${it.currency && it.currency !== 'تومان' ? ' ' + it.currency : ''}`;
+    const desc = [it.title, it.note].filter(Boolean).join(' — ');
+    const member = showMember && it.memberName ? ` · ${it.memberName}` : '';
+    lines.push(`${DateService.disp(it.date) || '—'} · ${kind}${member} · ${desc || '—'} · ${amount} · مانده ${it.affectsBalance ? fmt(it.running) : '—'}`);
+  });
+  if (!(view.items || []).length) lines.push('خرید یا پرداختی ثبت نشده');
+  if (Number(view.wallet || 0)) lines.push(`کیف پول: ${fmt(view.wallet)} تومان`);
+  lines.push(`${balanceLabel}: ${balanceText}`);
+  return lines.filter(line => line !== undefined && line !== null).join('\n');
 }
 
 function printPartyTransactions() {
@@ -8648,6 +8678,27 @@ function printPartyTransactions() {
   popup.document.open();
   popup.document.write(_partyTxDocumentHtml(view, true));
   popup.document.close();
+}
+
+function downloadPartyTransactions() {
+  const view = window._partyTxPrintPayload;
+  if (!view) { showToast('صورتحساب آماده دانلود نیست', 'error'); return; }
+  const blob = new Blob(['\ufeff' + _partyTxDocumentHtml(view, false)], { type: 'application/msword;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = _partyTxFilename(view) + '.doc';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  showToast('فایل صورتحساب آماده دانلود شد ✓', 'success');
+}
+
+function copyPartyTransactions() {
+  const view = window._partyTxPrintPayload;
+  if (!view) { showToast('صورتحساب آماده کپی نیست', 'error'); return; }
+  copyToClipboard(_partyTxPlainText(view), 'متن صورتحساب کپی شد ✓');
 }
 
 async function openStudentTransactions(studentId) {
