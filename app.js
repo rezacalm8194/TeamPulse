@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp112';
+const TP_ASSET_V = 'tp113';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -640,6 +640,10 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
   }
 
   d.service_type_aliases = Array.isArray(d.service_type_aliases) ? d.service_type_aliases : [];
+  d._deletedItems = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
+  d._deletedItems.package_types = d._deletedItems.package_types && typeof d._deletedItems.package_types === 'object'
+    ? d._deletedItems.package_types
+    : {};
   const archivedIds = new Set(d.service_type_aliases.map(alias => String(alias.id)));
   const retiredIds = new Set();
   let reassigned = 0;
@@ -660,6 +664,7 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
         d.service_type_aliases.push({...item,merged_into_id:canonical.id,merged_at:new Date().toISOString()});
         archivedIds.add(String(item.id));
       }
+      d._deletedItems.package_types[String(item.id)] = new Date().toISOString();
       retiredIds.add(String(item.id));
     });
   });
@@ -858,7 +863,7 @@ function _recordStudentAndRelatedDeletions(studentIds) {
 function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
   const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
-  ['students', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
+  ['students','package_types', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
     const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
     d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
@@ -1818,6 +1823,7 @@ window.api = {
     getAll: ()=>{
       if (_db._serviceCatalogMergeNeedsSave) {
         delete _db._serviceCatalogMergeNeedsSave;
+        _forceNextServerSync();
         _save();
       }
       return _P([..._db.package_types]);
@@ -1834,8 +1840,8 @@ window.api = {
       _save();
       return _P(item);
     },
-    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id);let merge={merged:0,reassigned:0};if(pt){pt.label=String(p.label||'').trim();pt.color=p.color;merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;_save();} return _P({ok:true,...merge}); },
-    mergeDuplicates: ()=>{const result=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(result.merged)_save();return _P({ok:true,...result});},
+    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id);let merge={merged:0,reassigned:0};if(pt){pt.label=String(p.label||'').trim();pt.color=p.color;merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(merge.merged)_forceNextServerSync();_save();} return _P({ok:true,...merge}); },
+    mergeDuplicates: ()=>{const result=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(result.merged){_forceNextServerSync();_save();}return _P({ok:true,...result});},
     delete: (id)=>{ if(_db.packages.some(p=>p.type_id===id))return _P({ok:false,error:'این نوع پکیج در حال استفاده است'}); _db.package_types=_db.package_types.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     reorder: (order)=>{ const s=[]; order.forEach(id=>{const pt=_db.package_types.find(x=>x.id===id);if(pt)s.push(pt);}); _db.package_types.filter(x=>!order.includes(x.id)).forEach(x=>s.push(x)); _db.package_types=s; _save(); return _P({ok:true}); },
   },
