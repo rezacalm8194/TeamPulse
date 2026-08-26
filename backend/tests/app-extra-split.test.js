@@ -27,6 +27,14 @@ test('first-session helpers stay in the core parse path', () => {
   assert.match(appSource, /function staffIsPersonnel\(/);
 });
 
+test('staff role rows all include add-item UI like bonus', () => {
+  assert.match(extraSource, /function staffRoleRowHtml\(/);
+  assert.match(extraSource, /class="role-row staff-items-row"/);
+  assert.match(extraSource, /آیتم‌های \$\{escapeHtml\(role\.label\)\}/);
+  assert.match(extraSource, /bonus_items: bonusItems\.length \? bonusItems : \[\{ amount: 0, note: '' \}\]/);
+  assert.match(extraSource, /container\.insertAdjacentHTML\('beforeend', staffRoleRowHtml\(newRole/);
+});
+
 test('customer account tab hosts the case financial table', () => {
   assert.match(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
   assert.doesNotMatch(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);

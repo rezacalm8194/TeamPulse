@@ -623,7 +623,7 @@ async function renderStaff() {
     staffList.forEach((s,i) => {
       const roleTags = [
         s.salary > 0 ? `<span class="tag tag-coaching">حقوق ثابت: ${fmt(s.salary)}</span>` : '',
-        ...(s.roles||[]).map(r => `<span class="tag" style="background:var(--accent2)22;color:var(--accent2)">${escapeHtml(r.role_label)}${r.amount?`: ${fmt(r.amount)}×${fa(r.count??1)}`:''}</span>`)
+        ...(s.roles||[]).map(r => `<span class="tag" style="background:var(--accent2)22;color:var(--accent2)">${escapeHtml(r.role_label)}${staffRoleTagSuffix(r)}</span>`)
       ].filter(Boolean).join(' ') || '<span style="color:var(--text3)">—</span>';
 
       // سررسید این ماه = تاریخ سررسید یادآوری
@@ -1125,6 +1125,17 @@ async function saveQuickStaff() {
   await renderStaff();
 }
 
+function staffRoleTagSuffix(r) {
+  const items = Array.isArray(r.bonus_items) ? r.bonus_items.filter(i => i.amount > 0 || String(i.note || '').trim()) : [];
+  const total = items.length
+    ? items.reduce((a, i) => a + (i.amount || 0), 0)
+    : (r.amount || 0) * (r.count ?? 1);
+  if (!total && !items.length) return '';
+  if (items.length > 1) return `: ${fmt(total)} (${fa(items.length)} آیتم)`;
+  if (!items.length && (r.count ?? 1) > 1) return `: ${fmt(r.amount)}×${fa(r.count)}`;
+  return `: ${fmt(total)}`;
+}
+
 function isStaffBonusRoleLabel(label) {
   return /پاداش|bonus/i.test(label || '');
 }
@@ -1136,18 +1147,59 @@ function staffBonusItemsFromRole(role) {
   return legacyAmount > 0 ? [{ amount: legacyAmount, note: '' }] : [{ amount: 0, note: '' }];
 }
 
-function staffBonusItemHtml(item = {}, disabled = false) {
+function staffBonusItemHtml(item = {}, disabled = false, roleLabel = '') {
+  const isBonus = isStaffBonusRoleLabel(roleLabel);
   return `
     <div class="bonus-item">
       <div class="role-field">
-        <label class="form-label">مبلغ پاداش</label>
+        <label class="form-label">${isBonus ? 'مبلغ پاداش' : 'مبلغ'}</label>
         <input class="form-input bonus-amount amount-input" type="number" min="0" value="${item.amount || 0}" ${disabled ? 'disabled' : ''} oninput="updateStaffBonusTotal(this)">
       </div>
       <div class="role-field">
         <label class="form-label">دلیل / توضیحات</label>
-        <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="مثلاً عملکرد عالی، جذب شاگرد، انجام پروژه...">
+        <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="${isBonus ? 'مثلاً عملکرد عالی، جذب شاگرد، انجام پروژه...' : 'مثلاً جلسه، پروژه، شیفت...'}">
       </div>
       <button type="button" class="bonus-remove" onclick="removeStaffBonusItem(this)" title="حذف آیتم">×</button>
+    </div>`;
+}
+
+function staffRoleRowHtml(role, existing) {
+  const checked = !!existing;
+  const items = staffBonusItemsFromRole(existing);
+  const total = items.reduce((a, item) => a + (+(item.amount || 0)), 0);
+  const isBonus = isStaffBonusRoleLabel(role.label);
+  return `
+    <div class="role-row staff-items-row" data-role-label="${escapeHtml(role.label)}">
+      <label class="role-row-label">
+        <input type="checkbox" class="role-checkbox" data-role-id="${role.id}" ${checked ? 'checked' : ''}
+          onchange="onRoleCheckChange(this)">
+        <span>${escapeHtml(role.label)}</span>
+      </label>
+      <details class="bonus-details" ${checked ? 'open' : ''}>
+        <summary>
+          آیتم‌های ${escapeHtml(role.label)}
+          <button type="button" class="bonus-add-btn" onclick="event.preventDefault();event.stopPropagation();addStaffBonusItem(this)" title="${isBonus ? 'افزودن پاداش' : 'افزودن آیتم'}">+</button>
+          <span class="bonus-summary-amount">${fmt(total)} تومان</span>
+        </summary>
+        <div class="bonus-items">
+          ${items.map(item => staffBonusItemHtml(item, !checked, role.label)).join('')}
+        </div>
+      </details>
+      <div class="role-row-fields">
+        <div class="role-field">
+          <label class="form-label">قیمت هر بار (تومان)</label>
+          <input class="form-input role-amount" type="number" placeholder="0" value="${total}" ${checked ? '' : 'disabled'} readonly oninput="updateRoleRowTotal(this)">
+        </div>
+        <div class="role-field role-field-sm">
+          <label class="form-label">تعداد دفعات</label>
+          <input class="form-input role-count" type="number" min="0" placeholder="1" value="1" ${checked ? '' : 'disabled'} readonly oninput="updateRoleRowTotal(this)">
+        </div>
+        <div class="role-field role-total-wrap">
+          <label class="form-label">جمع کل این نقش</label>
+          <div class="role-total-amount">${fmt(total)} تومان</div>
+          <div class="role-total-words">${total > 0 ? numberToPersianWords(total) + ' تومان' : ''}</div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -1164,49 +1216,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
   const allReminders = editing ? await window.api.staffReminders.getAll() : [];
   const existingRem = allReminders.find(r => r.staff_id === id);
   const currentRepeat = existingRem ? existingRem.repeat_months : (editing ? -1 : 1); // -1 = no reminder yet
-  const roleRows = STAFF_ROLES.map(r => {
-    const existing = (s?.roles || []).find(x => x.role_id === r.id);
-    const checked = !!existing;
-    const isBonus = isStaffBonusRoleLabel(r.label);
-    const amt = existing?.amount || 0;
-    const cnt = existing?.count ?? 1;
-    const bonusItems = isBonus ? staffBonusItemsFromRole(existing) : [];
-    const total = isBonus ? bonusItems.reduce((a, item) => a + (+(item.amount || 0)), 0) : amt * cnt;
-    return `
-    <div class="role-row ${isBonus ? 'staff-bonus-row' : ''}" data-role-label="${escapeHtml(r.label)}">
-      <label class="role-row-label">
-        <input type="checkbox" class="role-checkbox" data-role-id="${r.id}" ${checked?'checked':''}
-          onchange="onRoleCheckChange(this)">
-        <span>${escapeHtml(r.label)}</span>
-      </label>
-      ${isBonus ? `
-      <details class="bonus-details" ${checked ? 'open' : ''}>
-        <summary>
-          آیتم‌های پاداش
-          <button type="button" class="bonus-add-btn" onclick="event.preventDefault();event.stopPropagation();addStaffBonusItem(this)" title="افزودن پاداش">+</button>
-          <span class="bonus-summary-amount">${fmt(total)} تومان</span>
-        </summary>
-        <div class="bonus-items">
-          ${bonusItems.map(item => staffBonusItemHtml(item, !checked)).join('')}
-        </div>
-      </details>` : ''}
-      <div class="role-row-fields">
-        <div class="role-field">
-          <label class="form-label">قیمت هر بار (تومان)</label>
-          <input class="form-input role-amount" type="number" placeholder="0" value="${isBonus ? total : amt}" ${checked?'':'disabled'} ${isBonus ? 'readonly' : ''} oninput="updateRoleRowTotal(this)">
-        </div>
-        <div class="role-field role-field-sm">
-          <label class="form-label">تعداد دفعات</label>
-          <input class="form-input role-count" type="number" min="0" placeholder="1" value="${isBonus ? 1 : cnt}" ${checked?'':'disabled'} ${isBonus ? 'readonly' : ''} oninput="updateRoleRowTotal(this)">
-        </div>
-        <div class="role-field role-total-wrap">
-          <label class="form-label">جمع کل این نقش</label>
-          <div class="role-total-amount">${fmt(total)} تومان</div>
-          <div class="role-total-words">${total>0?numberToPersianWords(total)+' تومان':''}</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  const roleRows = STAFF_ROLES.map(r => staffRoleRowHtml(r, (s?.roles || []).find(x => x.role_id === r.id))).join('');
 
   openModal(editing ? 'تنظیمات حساب' : (isPersonnel ? 'افزودن پرسنل' : 'افزودن عضو'), `
     ${!editing ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
@@ -1294,7 +1304,7 @@ function onRoleCheckChange(checkbox) {
 
 function updateRoleRowTotal(input) {
   const row = input.closest('.role-row');
-  if (row.classList.contains('staff-bonus-row')) {
+  if (row.classList.contains('staff-items-row') || row.classList.contains('staff-bonus-row') || row.querySelector('.bonus-items')) {
     updateStaffBonusTotal(row);
     return;
   }
@@ -1320,8 +1330,13 @@ function updateStaffBonusTotal(elOrRow) {
 
 function addStaffBonusItem(button) {
   const row = button.closest('.role-row');
+  const checkbox = row.querySelector('.role-checkbox');
+  if (checkbox && !checkbox.checked) {
+    checkbox.checked = true;
+    onRoleCheckChange(checkbox);
+  }
   const box = row.querySelector('.bonus-items');
-  box.insertAdjacentHTML('beforeend', staffBonusItemHtml({}, !row.querySelector('.role-checkbox')?.checked));
+  box.insertAdjacentHTML('beforeend', staffBonusItemHtml({}, false, row.dataset.roleLabel || ''));
   updateStaffBonusTotal(row);
   initAmountHints();
 }
@@ -1343,63 +1358,43 @@ async function addRoleInline() {
   const label = document.getElementById('st-newrole')?.value.trim();
   if (!label) return;
   await window.api.staffRoles.add({ label });
-  // Re-open modal preserving currently entered values is complex; simplest: refresh roles and re-render rows only
   STAFF_ROLES = await window.api.staffRoles.getAll();
   const newRole = STAFF_ROLES[STAFF_ROLES.length-1];
   const container = document.getElementById('staff-role-rows');
-  const row = document.createElement('div');
-  row.className = 'role-row';
-  row.innerHTML = `
-    <label class="role-row-label">
-      <input type="checkbox" class="role-checkbox" data-role-id="${newRole.id}" checked onchange="onRoleCheckChange(this)">
-      <span>${escapeHtml(newRole.label)}</span>
-    </label>
-    <div class="role-row-fields">
-      <div class="role-field">
-        <label class="form-label">قیمت هر بار (تومان)</label>
-        <input class="form-input role-amount" type="number" placeholder="0" value="0" oninput="updateRoleRowTotal(this)">
-      </div>
-      <div class="role-field role-field-sm">
-        <label class="form-label">تعداد دفعات</label>
-        <input class="form-input role-count" type="number" min="0" placeholder="1" value="1" oninput="updateRoleRowTotal(this)">
-      </div>
-      <div class="role-field role-total-wrap">
-        <label class="form-label">جمع کل این نقش</label>
-        <div class="role-total-amount">۰ تومان</div>
-        <div class="role-total-words"></div>
-      </div>
-    </div>`;
-  container.appendChild(row);
+  container.insertAdjacentHTML('beforeend', staffRoleRowHtml(newRole, { amount: 0, count: 1 }));
   document.getElementById('st-newrole').value = '';
   initAmountHints();
   showToast('نقش اضافه شد ✓', 'success');
+}
+
+function collectStaffRoleItems(row) {
+  return [...row.querySelectorAll('.bonus-item')].map(item => ({
+    amount: +(item.querySelector('.bonus-amount')?.value || 0),
+    note: item.querySelector('.bonus-note')?.value || '',
+  })).filter(item => item.amount > 0 || item.note.trim());
 }
 
 function collectStaffRoles() {
   const roles = [];
   document.querySelectorAll('#staff-role-rows .role-row').forEach(row => {
     const cb = row.querySelector('.role-checkbox');
-    if (cb.checked) {
-      if (row.classList.contains('staff-bonus-row')) {
-        const bonusItems = [...row.querySelectorAll('.bonus-item')].map(item => ({
-          amount: +(item.querySelector('.bonus-amount')?.value || 0),
-          note: item.querySelector('.bonus-note')?.value || '',
-        })).filter(item => item.amount > 0 || item.note.trim());
-        const total = bonusItems.reduce((a, item) => a + item.amount, 0);
-        roles.push({
-          role_id: +cb.dataset.roleId,
-          amount: total,
-          count: 1,
-          bonus_items: bonusItems.length ? bonusItems : [{ amount: 0, note: '' }],
-        });
-      } else {
-        roles.push({
-          role_id: +cb.dataset.roleId,
-          amount: +(row.querySelector('.role-amount').value || 0),
-          count: +(row.querySelector('.role-count').value || 0),
-        });
-      }
+    if (!cb.checked) return;
+    if (row.querySelector('.bonus-items')) {
+      const bonusItems = collectStaffRoleItems(row);
+      const total = bonusItems.reduce((a, item) => a + item.amount, 0);
+      roles.push({
+        role_id: +cb.dataset.roleId,
+        amount: total,
+        count: 1,
+        bonus_items: bonusItems.length ? bonusItems : [{ amount: 0, note: '' }],
+      });
+      return;
     }
+    roles.push({
+      role_id: +cb.dataset.roleId,
+      amount: +(row.querySelector('.role-amount').value || 0),
+      count: +(row.querySelector('.role-count').value || 0),
+    });
   });
   return roles;
 }
@@ -1569,7 +1564,12 @@ async function openStaffDetail(id) {
   openModal(`📊 جزئیات و عملکرد — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="detail-section">
       <h3>اطلاعات پایه</h3>
-      <div class="detail-row"><span class="detail-key">نقش‌ها</span><span class="detail-val">${(s.roles||[]).map(r=>r.role_label).join('، ')||'—'}</span></div>
+      <div class="detail-row"><span class="detail-key">نقش‌ها</span><span class="detail-val">${(s.roles||[]).map(r=>{
+        const items = (r.bonus_items||[]).filter(i => i.amount > 0 || String(i.note||'').trim());
+        if (!items.length) return escapeHtml(r.role_label);
+        const bits = items.map(i => `${fmt(i.amount)}${i.note?` (${escapeHtml(i.note)})`:''}`).join('، ');
+        return `${escapeHtml(r.role_label)}: ${bits}`;
+      }).join('؛ ')||'—'}</span></div>
       <div class="detail-row"><span class="detail-key">تلفن</span><span class="detail-val">${escapeHtml(s.phone||'—')}</span></div>
       <div class="detail-row"><span class="detail-key">شماره کارت</span><span class="detail-val" style="direction:ltr">${s.card_number||'—'}</span></div>
       <div class="detail-row"><span class="detail-key">حقوق ثابت ماهانه</span><span class="detail-val">${fmt(s.salary)} تومان</span></div>
