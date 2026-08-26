@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp116';
+const TP_ASSET_V = 'tp117';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1822,10 +1822,30 @@ const DateService = {
   },
 };
 
+function _resolvePackageType(typeId) {
+  const id = String(typeId ?? '');
+  if (!id) return null;
+  const types = _db.package_types || [];
+  const direct = types.find(t => String(t.id) === id);
+  if (direct) return direct;
+  const aliases = _db.service_type_aliases || [];
+  const seen = new Set();
+  let currentId = id;
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const alias = aliases.find(a => String(a.id) === currentId);
+    if (!alias?.merged_into_id) break;
+    currentId = String(alias.merged_into_id);
+    const canonical = types.find(t => String(t.id) === currentId);
+    if (canonical) return canonical;
+  }
+  return null;
+}
+
 // ── Student summary ─────────────────────────────────────────────────────────
 function _studentSummary(s) {
   const packages=_db.packages.filter(p=>p.student_id===s.id).map(p=>{
-    const pt=_db.package_types.find(t=>t.id===p.type_id);
+    const pt=_resolvePackageType(p.type_id);
     const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));
     const paymentDueDate = _packagePaymentDueDate(p);
     const chargeable = _isPackageChargeable(p);
@@ -2091,8 +2111,8 @@ window.api = {
   },
 
   packages: {
-    getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_db.package_types.find(x=>x.id===p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
-    getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_db.package_types.find(x=>x.id===p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
+    getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
+    getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
@@ -4761,8 +4781,45 @@ function avatar(name, idx) {
   const initial = escapeHtml(String(name || '').charAt(0) || '؟');
   return `<div class="avatar" style="background:${c}22;color:${c}">${initial}</div>`;
 }
+function _isPlaceholderPackageLabel(label) {
+  const text = String(label || '').trim();
+  return !text || text === '—' || /^[-–—]+$/.test(text);
+}
+
+function uniqueDisplayPackages(packages = []) {
+  const seen = new Map();
+  (packages || []).forEach(pkg => {
+    const label = String(pkg?.type_label || '').trim();
+    if (_isPlaceholderPackageLabel(label)) return;
+    const key = _serviceMergeKey(label) || String(pkg.type_id || pkg.id || label);
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, { ...pkg, type_label: label, _count: 1 });
+      return;
+    }
+    existing._count += 1;
+    if (_serviceLabelKey(label) === key && _serviceLabelKey(existing.type_label) !== key) {
+      existing.type_label = label;
+      if (pkg.type_color) existing.type_color = pkg.type_color;
+    }
+  });
+  return [...seen.values()];
+}
+
 function pkgTag(pkg) {
-  return `<span class="tag" style="background:${pkg.type_color}22;color:${pkg.type_color}">${escapeHtml(pkg.type_label)}</span>`;
+  if (_isPlaceholderPackageLabel(pkg?.type_label)) return '';
+  const count = pkg._count > 1 ? ` ×${fa(pkg._count)}` : '';
+  const color = pkg.type_color || pkg.pkg_color || '#888';
+  return `<span class="tag" style="background:${color}22;color:${color}">${escapeHtml(pkg.type_label)}${count}</span>`;
+}
+
+function pkgTagsHtml(packages, { emptyHtml = '<span style="color:var(--text3)">—</span>', max } = {}) {
+  let items = uniqueDisplayPackages(packages);
+  const extra = max && items.length > max ? items.length - max : 0;
+  if (max) items = items.slice(0, max);
+  const html = items.map(pkgTag).join('');
+  if (!html) return emptyHtml;
+  return html + (extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : '');
 }
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
@@ -5438,12 +5495,15 @@ function filterAccountStudents(students, search) {
     : students;
   if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
   else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0);
-  else if (stuChip && stuChip !== 'all') filtered = filtered.filter(s => (s.packages || []).some(p => p.type_label === stuChip));
+  else if (stuChip && stuChip !== 'all') {
+    const chipKey = _serviceMergeKey(stuChip);
+    filtered = filtered.filter(s => uniqueDisplayPackages(s.packages || []).some(p => _serviceMergeKey(p.type_label) === chipKey));
+  }
   return filtered;
 }
 function studentAccountChipBarHtml(students) {
   const typeCounts = {};
-  students.forEach(s => (s.packages || []).forEach(p => { typeCounts[p.type_label] = (typeCounts[p.type_label] || 0) + 1; }));
+  students.forEach(s => uniqueDisplayPackages(s.packages || []).forEach(p => { typeCounts[p.type_label] = (typeCounts[p.type_label] || 0) + 1; }));
   const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
   return `<div class="stu-tools-row">
       <div class="chip-bar">
@@ -5492,7 +5552,7 @@ function studentAccountTableRowsHtml(filtered, menuPrefix) {
     const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
     return `<tr>
         <td>${studentAccountNameCellHtml(s, i)}</td>
-        <td>${(s.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${pkgTagsHtml(s.packages)}</td>
         <td><span class="amount amount-neutral">${fmt(s.totalAmount)}</span></td>
         <td><span class="amount amount-paid">${fmt(s.totalPaid)}</span></td>
         <td>${s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
@@ -5508,7 +5568,7 @@ function studentAccountMobileHtml(filtered, menuPrefix) {
   }
   return `<div class="mstu-list">${filtered.map((s, i) => {
     const fam = FAMILIES.find(f => f.id === s.family_id);
-    const pkgs = s.packages || [];
+    const pkgs = uniqueDisplayPackages(s.packages || []);
     const visiblePkgs = pkgs.slice(0, 2);
     const extra = pkgs.length - visiblePkgs.length;
     const menuId = `${menuPrefix}-menu-${s.id}`;
@@ -8342,7 +8402,7 @@ function familyGroupsSectionHtml(families, search = '') {
             : f.members.map(m => `
               <tr>
                 <td style="font-weight:500">${escapeHtml(m.name)} ${escapeHtml(m.lname)}</td>
-                <td>${(m.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+                <td>${pkgTagsHtml(m.packages)}</td>
                 <td><span class="amount amount-neutral">${fmt(m.totalAmount)}</span></td>
                 <td><span class="amount amount-paid">${fmt(m.totalPaid)}</span></td>
                 <td>${m.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(m.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
@@ -9131,7 +9191,7 @@ async function renderCustomerList() {
         <td style="font-weight:500">${escapeHtml(s.name)}</td>
         <td style="font-weight:500">${escapeHtml(s.lname)}</td>
         <td style="direction:ltr;text-align:right">${escapeHtml(s.phone || '—')}</td>
-        <td>${(s.packages||[]).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${pkgTagsHtml(s.packages)}</td>
       </tr>`;
     });
   }
@@ -9143,7 +9203,7 @@ async function exportCustomerList() {
   const rows = [['نام','نام خانوادگی','شماره تماس','پکیج‌ها']];
   allStudents.slice().reverse().forEach(s => rows.push([
     s.name, s.lname, s.phone || '',
-    (s.packages||[]).map(p=>p.type_label).join('، ')
+    uniqueDisplayPackages(s.packages||[]).map(p=>p.type_label).join('، ')
   ]));
   const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const result = await window.api.exportCsv({ filename: 'customers.csv', content: csv });
@@ -25722,7 +25782,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v116';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v117';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
