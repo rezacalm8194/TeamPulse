@@ -1473,6 +1473,9 @@ async function deleteStaff(id, name) {
 async function openManageRoles() {
   STAFF_ROLES = await window.api.staffRoles.getAll();
   openModal('🏷 مدیریت نقش‌ها', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <button class="btn btn-ghost btn-sm" onclick="mergeDuplicateStaffRoles()">پاک‌سازی و ادغام نقش‌های تکراری</button>
+    </div>
     <div class="settings-list" id="staff-roles-list">
       ${STAFF_ROLES.map(r => `
         <div class="settings-pkg-row">
@@ -1494,8 +1497,16 @@ async function addStaffRole() {
   await openManageRoles();
 }
 async function updateStaffRole(id, label) {
-  await window.api.staffRoles.update({ id, label });
+  const result=await window.api.staffRoles.update({ id, label });
+  if(result.merged||result.retired){showToast(`${fa(result.merged+result.retired)} نقش با حفظ سوابق یکپارچه شد ✓`,'success');await openManageRoles();return;}
   showToast('ذخیره شد ✓', 'success');
+}
+async function mergeDuplicateStaffRoles() {
+  if(!confirm('نقش‌های هم‌نام و نقش‌های بدون استفاده‌ای که از خدمات وارد شده‌اند یکپارچه شوند؟ تمام ارجاع‌ها و مبالغ حفظ می‌شوند و نسخه قبلی در آرشیو داخلی می‌ماند.'))return;
+  const result=await window.api.staffRoles.mergeDuplicates();
+  const total=Number(result.merged||0)+Number(result.retired||0);
+  showToast(total?`${fa(total)} نقش یکپارچه و ${fa(result.reassigned||0)} ارجاع منتقل شد ✓`:'مورد تکراری یا اضافی پیدا نشد','success');
+  await openManageRoles();
 }
 // ── اصلاح ماه یک رکورد حقوق ماهانه (وقتی پرداخت زودتر/دیرتر از موعد ثبت شده) ──
 function openFixMonthlyMonth(monthlyId, staffId, name, curJy, curJm, returnToStaffPage = false) {

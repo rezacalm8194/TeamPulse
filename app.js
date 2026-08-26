@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp113';
+const TP_ASSET_V = 'tp114';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -673,6 +673,136 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
   return { merged:retiredIds.size, reassigned };
 }
 
+function _staffRoleUsage(d, roleId) {
+  const id=String(roleId);
+  let count=0;
+  (d.staff||[]).forEach(staff=>{
+    if(String(staff.role_id)===id)count++;
+    (staff.roles||[]).forEach(role=>{if(String(role.role_id)===id)count++;});
+  });
+  (d.staff_role_entries||[]).forEach(entry=>{if(String(entry.role_id)===id)count++;});
+  (d.staff_monthly||[]).forEach(month=>{
+    (month.roles||[]).forEach(role=>{if(String(role.role_id)===id)count++;});
+  });
+  return count;
+}
+
+function _mergeCurrentStaffRoleRows(rows, idMap) {
+  const merged=[];
+  (Array.isArray(rows)?rows:[]).forEach(role=>{
+    const mappedId=idMap.get(String(role.role_id))??role.role_id;
+    const next={...role,role_id:mappedId};
+    const existing=merged.find(item=>String(item.role_id)===String(mappedId));
+    if(!existing){merged.push(next);return;}
+    const existingTotal=Number(existing.amount||0)*Number(existing.count??1);
+    const nextTotal=Number(next.amount||0)*Number(next.count??1);
+    if(Array.isArray(existing.bonus_items)||Array.isArray(next.bonus_items)){existing.amount=existingTotal+nextTotal;existing.count=1;}
+    else if(Number(existing.amount||0)===Number(next.amount||0))existing.count=Number(existing.count??1)+Number(next.count??1);
+    else{existing.amount=existingTotal+nextTotal;existing.count=1;}
+    if(Array.isArray(next.bonus_items))existing.bonus_items=[...(existing.bonus_items||[]),...next.bonus_items];
+  });
+  return merged;
+}
+
+function _mergeMonthlyStaffRoleRows(rows, idMap, labels) {
+  const merged=[];
+  (Array.isArray(rows)?rows:[]).forEach(role=>{
+    const mappedId=idMap.get(String(role.role_id))??role.role_id;
+    const next={...role,role_id:mappedId,role_label:labels.get(String(mappedId))||role.role_label};
+    const existing=merged.find(item=>String(item.role_id)===String(mappedId));
+    if(!existing){merged.push(next);return;}
+    existing.amount=Number(existing.amount||0)+Number(next.amount||0);
+    existing.rate=existing.amount;
+    existing.count=1;
+  });
+  return merged;
+}
+
+function _mergeDuplicateStaffRoles(d, { keepBackup=true, retireMirrored=true } = {}) {
+  if(!d||!Array.isArray(d.staff_roles)||!d.staff_roles.length)return{merged:0,retired:0,reassigned:0};
+  const groups=new Map();
+  d.staff_roles.forEach((item,index)=>{
+    const key=_serviceMergeKey(item?.label);
+    if(!key)return;
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push({item,index});
+  });
+  const idMap=new Map();
+  const retiredIds=new Set();
+  const archiveRows=[];
+  const mirroredKeys=retireMirrored?new Set([...(d.package_types||[]),...(d.service_type_aliases||[])].map(item=>_serviceMergeKey(item?.label)).filter(Boolean)):new Set();
+  const hasUnusedMirrored=retireMirrored&&d.staff_roles.some(role=>{
+    const key=_serviceMergeKey(role.label);
+    return key&&!_isGenericStaffServiceLabel(role.label)&&mirroredKeys.has(key)&&_staffRoleUsage(d,role.id)===0;
+  });
+  [...groups.values()].filter(group=>group.length>1).forEach(group=>{
+    group.sort((a,b)=>{
+      const aClean=_serviceLabelKey(a.item.label)===_serviceMergeKey(a.item.label)?1:0;
+      const bClean=_serviceLabelKey(b.item.label)===_serviceMergeKey(b.item.label)?1:0;
+      if(aClean!==bClean)return bClean-aClean;
+      const usageDiff=_staffRoleUsage(d,b.item.id)-_staffRoleUsage(d,a.item.id);
+      return usageDiff||a.index-b.index||Number(a.item.id)-Number(b.item.id);
+    });
+    const canonical=group[0].item;
+    group.slice(1).forEach(({item})=>{
+      idMap.set(String(item.id),canonical.id);
+      retiredIds.add(String(item.id));
+      archiveRows.push({...item,merged_into_id:canonical.id,retired_reason:'duplicate'});
+    });
+  });
+
+  if(keepBackup&&(idMap.size||hasUnusedMirrored)){
+    d._migrationBackups=d._migrationBackups&&typeof d._migrationBackups==='object'?d._migrationBackups:{};
+    if(!d._migrationBackups.staffRoleCatalogCleanupV1)d._migrationBackups.staffRoleCatalogCleanupV1={
+      created_at:new Date().toISOString(),staff_roles:d.staff_roles.map(role=>({...role})),
+      staff_references:(d.staff||[]).map(staff=>({staff_id:staff.id,role_id:staff.role_id,roles:_cloneData(staff.roles||[])})),
+    };
+  }
+
+  let reassigned=0;
+  if(idMap.size){
+    const labels=new Map(d.staff_roles.filter(role=>!retiredIds.has(String(role.id))).map(role=>[String(role.id),role.label]));
+    (d.staff||[]).forEach(staff=>{
+      const mapped=idMap.get(String(staff.role_id));
+      if(mapped!=null){staff.role_id=mapped;reassigned++;}
+      const before=JSON.stringify(staff.roles||[]);
+      staff.roles=_mergeCurrentStaffRoleRows(staff.roles,idMap);
+      if(JSON.stringify(staff.roles)!==before)reassigned++;
+    });
+    (d.staff_role_entries||[]).forEach(entry=>{
+      const mapped=idMap.get(String(entry.role_id));
+      if(mapped!=null){entry.role_id=mapped;entry.role_label=labels.get(String(mapped))||entry.role_label;reassigned++;}
+    });
+    (d.staff_monthly||[]).forEach(month=>{
+      const before=JSON.stringify(month.roles||[]);
+      month.roles=_mergeMonthlyStaffRoleRows(month.roles,idMap,labels);
+      if(JSON.stringify(month.roles)!==before)reassigned++;
+    });
+  }
+
+  if(retireMirrored){
+    d.staff_roles.forEach(role=>{
+      const id=String(role.id),key=_serviceMergeKey(role.label);
+      if(retiredIds.has(id)||!key||_isGenericStaffServiceLabel(role.label))return;
+      if(mirroredKeys.has(key)&&_staffRoleUsage(d,role.id)===0){
+        retiredIds.add(id);
+        archiveRows.push({...role,merged_into_id:null,retired_reason:'unused_mirrored_service'});
+      }
+    });
+  }
+  if(!retiredIds.size)return{merged:0,retired:0,reassigned:0};
+
+  d.staff_role_aliases=Array.isArray(d.staff_role_aliases)?d.staff_role_aliases:[];
+  const archived=new Set(d.staff_role_aliases.map(role=>String(role.id)));
+  archiveRows.forEach(role=>{if(!archived.has(String(role.id))){d.staff_role_aliases.push({...role,retired_at:new Date().toISOString()});archived.add(String(role.id));}});
+  d._deletedItems=d._deletedItems&&typeof d._deletedItems==='object'?d._deletedItems:{};
+  d._deletedItems.staff_roles=d._deletedItems.staff_roles&&typeof d._deletedItems.staff_roles==='object'?d._deletedItems.staff_roles:{};
+  retiredIds.forEach(id=>{d._deletedItems.staff_roles[id]=new Date().toISOString();});
+  d.staff_roles=d.staff_roles.filter(role=>!retiredIds.has(String(role.id)));
+  d._staffRoleCatalogNeedsSave=true;
+  return{merged:idMap.size,retired:retiredIds.size-idMap.size,reassigned};
+}
+
 function _freshData() {
   return {
     meta: {...DEFAULT_META},
@@ -771,6 +901,7 @@ function _migrate(d) {
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   _dedupeExactPackages(d);
   _mergeDuplicatePackageTypes(d);
+  _mergeDuplicateStaffRoles(d);
   d._nextId = d._nextId||{};
   ['students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
@@ -863,7 +994,7 @@ function _recordStudentAndRelatedDeletions(studentIds) {
 function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
   const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
-  ['students','package_types', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
+  ['students','package_types','staff_roles', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
     const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
     d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
@@ -2344,10 +2475,13 @@ window.api = {
   onReloaded: ()=>{},
 
   staffRoles: {
-    getAll: ()=>_P([..._db.staff_roles]),
+    getAll: ()=>{
+      if(_db._staffRoleCatalogNeedsSave){delete _db._staffRoleCatalogNeedsSave;_forceNextServerSync();_save();}
+      return _P([..._db.staff_roles]);
+    },
     add: (p)=>{
       const label = String(p.label || '').trim();
-      const existing = _db.staff_roles.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label));
+      const existing = _db.staff_roles.find(x => _serviceMergeKey(x.label) === _serviceMergeKey(label));
       const item = existing || (() => {
         const id=_nextId('staff_roles');
         const next={id,label};
@@ -2357,7 +2491,8 @@ window.api = {
       _save();
       return _P(item);
     },
-    update: (p)=>{ const r=_db.staff_roles.find(x=>x.id===p.id); if(r){r.label=String(p.label||'').trim();_save();} return _P({ok:true}); },
+    update: (p)=>{const r=_db.staff_roles.find(x=>x.id===p.id);let result={merged:0,retired:0,reassigned:0};if(r){r.label=String(p.label||'').trim();result=_mergeDuplicateStaffRoles(_db);delete _db._staffRoleCatalogNeedsSave;if(result.merged||result.retired)_forceNextServerSync();_save();}return _P({ok:true,...result});},
+    mergeDuplicates: ()=>{const result=_mergeDuplicateStaffRoles(_db);delete _db._staffRoleCatalogNeedsSave;if(result.merged||result.retired){_forceNextServerSync();_save();}return _P({ok:true,...result});},
     delete: (id)=>{ if(_db.staff.some(s=>s.role_id===id))return _P({ok:false,error:'این نقش در حال استفاده است'}); _db.staff_roles=_db.staff_roles.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
