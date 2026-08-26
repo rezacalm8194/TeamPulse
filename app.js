@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp111';
+const TP_ASSET_V = 'tp112';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -587,6 +587,22 @@ function _serviceLabelKey(label) {
     .toLowerCase();
 }
 
+function _serviceMergeKey(label) {
+  let key = _serviceLabelKey(label);
+  const lifecyclePrefix = /^(?:(?:تجدید|تمدید)\s*پکیج|سررسید\s*پرداخت)\s*[:：،,؛;\-–—]*\s*/;
+  let previous = '';
+  while (key && key !== previous) {
+    previous = key;
+    key = key.replace(lifecyclePrefix, '').trim();
+  }
+  const aliases = {
+    'طراحی کاور':'طراح کاور',
+    'ادیت ویدیو':'ادیتور',
+    'ادیت ویدئو':'ادیتور',
+  };
+  return aliases[key] || key;
+}
+
 function _isGenericStaffServiceLabel(label) {
   return /^(پرسنل|کارمند|عضو|همکار)$/i.test(String(label || '').trim()) || /پاداش|bonus/i.test(label || '');
 }
@@ -604,7 +620,7 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
   packages.forEach(pkg => usage.set(String(pkg.type_id), (usage.get(String(pkg.type_id)) || 0) + 1));
   const groups = new Map();
   d.package_types.forEach((item, index) => {
-    const key = _serviceLabelKey(item?.label);
+    const key = _serviceMergeKey(item?.label);
     if (!key) return;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push({ item, index });
@@ -614,8 +630,8 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
 
   if (keepBackup) {
     d._migrationBackups = d._migrationBackups && typeof d._migrationBackups === 'object' ? d._migrationBackups : {};
-    if (!d._migrationBackups.serviceCatalogMergeV1) {
-      d._migrationBackups.serviceCatalogMergeV1 = {
+    if (!d._migrationBackups.serviceCatalogSemanticMergeV2) {
+      d._migrationBackups.serviceCatalogSemanticMergeV2 = {
         created_at:new Date().toISOString(),
         package_types:d.package_types.map(item => ({...item})),
         package_references:packages.map(pkg => ({package_id:pkg.id,type_id:pkg.type_id})),
@@ -629,6 +645,9 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
   let reassigned = 0;
   duplicateGroups.forEach(group => {
     group.sort((a,b) => {
+      const aClean = _serviceLabelKey(a.item.label) === _serviceMergeKey(a.item.label) ? 1 : 0;
+      const bClean = _serviceLabelKey(b.item.label) === _serviceMergeKey(b.item.label) ? 1 : 0;
+      if (aClean !== bClean) return bClean - aClean;
       const usageDiff = (usage.get(String(b.item.id)) || 0) - (usage.get(String(a.item.id)) || 0);
       return usageDiff || a.index - b.index || Number(a.item.id) - Number(b.item.id);
     });
@@ -1805,7 +1824,7 @@ window.api = {
     },
     add: (p)=>{
       const label = String(p.label || '').trim();
-      const existing = _db.package_types.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label));
+      const existing = _db.package_types.find(x => _serviceMergeKey(x.label) === _serviceMergeKey(label));
       const item = existing || (() => {
         const id=_nextId('package_types');
         const next={id,key:'pt'+id,label,color:p.color||'#7c6af7'};
@@ -10030,7 +10049,7 @@ async function renderSettings() {
         <button class="btn btn-ghost btn-sm" onclick="mergeDuplicatePkgTypes()">بررسی و ادغام تکراری‌ها</button>
       </div>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        این لیست در فرم افزودن ${META.entitySingular||'شاگرد'} و در داشبورد استفاده می‌شود. موارد هم‌نام با حفظ تمام سوابق در یک خدمت ادغام می‌شوند.
+        این لیست در فرم افزودن ${META.entitySingular||'شاگرد'} و در داشبورد استفاده می‌شود. موارد هم‌نام و عنوان‌های معادل مانند «تجدید پکیج» با حفظ تمام سوابق ادغام می‌شوند.
       </p>
       ${pkgSectionHtml}
     </div>
@@ -10304,10 +10323,10 @@ async function updatePkgType(id, color, label) {
 }
 
 async function mergeDuplicatePkgTypes() {
-  if (!confirm('مواردی که پس از یکسان‌سازی نوشتاری دقیقاً هم‌نام هستند ادغام شوند؟ تمام سوابق به خدمت اصلی منتقل می‌شوند و نسخه موارد ادغام‌شده در آرشیو داخلی محفوظ می‌ماند.')) return;
+  if (!confirm('موارد هم‌نام و عنوان‌های معادل مشخص‌شده ادغام شوند؟ تمام سوابق به نام تمیز و اصلی منتقل می‌شوند و نسخه موارد ادغام‌شده در آرشیو داخلی محفوظ می‌ماند.')) return;
   const result = await window.api.packageTypes.mergeDuplicates();
   if (!result.merged) {
-    showToast('مورد تکراری هم‌نامی پیدا نشد', 'success');
+    showToast('مورد تکراری هم‌نام یا معادلی پیدا نشد', 'success');
     return;
   }
   showToast(`${fa(result.merged)} مورد ادغام و ${fa(result.reassigned)} سابقه منتقل شد ✓`, 'success');
