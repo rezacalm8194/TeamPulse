@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp114';
+const TP_ASSET_V = 'tp115';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1394,7 +1394,7 @@ function _trimStoredVersions() {
   } catch(e) {}
 }
 
-function _save(stamp=true, { scheduleServerSync = true, quiet = false } = {}) {
+function _save(stamp=true, { scheduleServerSync = true, quiet = false, urgent = false } = {}) {
   if (stamp) _db._lastSaved = Date.now();
   const key = window._activeDBKey || DB_KEY;
   let localSaved = false;
@@ -1417,17 +1417,18 @@ function _save(stamp=true, { scheduleServerSync = true, quiet = false } = {}) {
     }
   }
   if (stamp) {
-    if (localSaved) _markServerSyncPending(scheduleServerSync ? 'save' : 'todo-delta-save');
+    if (localSaved) _markServerSyncPending(scheduleServerSync ? (urgent ? 'urgent-save' : 'save') : 'todo-delta-save');
     _saveVersion();
     if (scheduleServerSync) {
       clearTimeout(window._serverSyncTimer);
+      const delay = urgent ? 0 : (_teamAccessSession() ? 20 : 200);
       if (_teamAccessSession()) {
         window._serverSyncTimer = setTimeout(() => {
           _syncToServer();
-        }, 20);
+        }, delay);
       } else {
-        // sync به سرور با debounce
-        window._serverSyncTimer = setTimeout(_syncToServer, 200);
+        // sync به سرور با debounce (یا فوری برای بایگانی/حذف‌های حساس)
+        window._serverSyncTimer = setTimeout(_syncToServer, delay);
       }
     }
   }
@@ -1987,9 +1988,9 @@ window.api = {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(_studentSummary).reverse()),
     getArchived: ()=>_P(_db.students.filter(s=>s.archived).map(_studentSummary).reverse()),
     getArchiveColumns: ()=>_P([...(_db.archive_columns||[])]),
-    setArchiveColumns: (columns)=>{_db.archive_columns=normalizeArchiveColumns(columns);_save();return _P({ok:true});},
+    setArchiveColumns: (columns)=>{_db.archive_columns=normalizeArchiveColumns(columns);_save(true,{urgent:true});return _P({ok:true});},
     getArchiveOptions: ()=>_P({categories:[...(_db.archive_categories||[])],statuses:[...(_db.archive_relationship_statuses||[])]}),
-    addArchiveOption: (p)=>{const key=p?.kind==='status'?'archive_relationship_statuses':'archive_categories';const value=String(p?.value||'').trim();_db[key]=Array.isArray(_db[key])?_db[key]:[];if(value&&!_db[key].some(x=>String(x).trim()===value))_db[key].push(value);_save();return _P({ok:true,value});},
+    addArchiveOption: (p)=>{const key=p?.kind==='status'?'archive_relationship_statuses':'archive_categories';const value=String(p?.value||'').trim();_db[key]=Array.isArray(_db[key])?_db[key]:[];if(value&&!_db[key].some(x=>String(x).trim()===value))_db[key].push(value);_save(true,{urgent:true});return _P({ok:true,value});},
     bulkArchiveAction: (p)=>{
       const ids=new Set((p?.ids||[]).map(Number));
       const touchedAt=new Date().toISOString();
@@ -2008,9 +2009,9 @@ window.api = {
         _db.topics=_db.topics.filter(x=>!ids.has(Number(x.student_id)));
         _db.key_events=_db.key_events.filter(x=>!ids.has(Number(x.student_id)));
       }
-      _save();return _P({ok:true,count:ids.size});
+      _save(true,{urgent:true});return _P({ok:true,count:ids.size});
     },
-    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;s.updated_at=new Date().toISOString();_save(true,{urgent:true});} return _P({ok:true}); },
     addArchivedBulk: (payload)=>{
       const rows=Array.isArray(payload)?payload:(payload?.rows||[]);
       const columns=Array.isArray(payload?.columns)?payload.columns:[];
@@ -2026,7 +2027,7 @@ window.api = {
         if(item.relationship_status&&!_db.archive_relationship_statuses.includes(item.relationship_status))_db.archive_relationship_statuses.push(item.relationship_status);
         _db.students.push(item); added.push(item);
       });
-      _save(); return _P({ok:true,count:added.length});
+      _save(true,{urgent:true}); return _P({ok:true,count:added.length});
     },
     setFamily: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.family_id=p.family_id;_save();} return _P({ok:true}); },
     add: (p)=>{
@@ -2041,7 +2042,7 @@ window.api = {
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:id,amount:pkg.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت اولیه',created_at:new Date().toISOString()});}
         _createRepeatReminder(id,pkgId,pkg,p.date);
       });
-      _save(); return _P({id});
+      _save(true,{urgent:true}); return _P({id});
     },
     update: (p)=>{
       const s=_db.students.find(x=>x.id===p.id); if(!s)return _P({ok:false});
@@ -2073,7 +2074,7 @@ window.api = {
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
         _syncPackageReminder(s.id,pkgId,target,target.start_date);
       });
-      _save(); return _P({ok:true});
+      _save(true,{urgent:true}); return _P({ok:true});
     },
     delete: (id)=>{
       _recordStudentAndRelatedDeletions(id);
@@ -2085,7 +2086,7 @@ window.api = {
       _db.reminders=_db.reminders.filter(x=>x.student_id!==id);
       _db.topics=_db.topics.filter(x=>x.student_id!==id);
       _db.key_events=_db.key_events.filter(x=>x.student_id!==id);
-      _save(); return _P({ok:true});
+      _save(true,{urgent:true}); return _P({ok:true});
     },
   },
 
@@ -15703,11 +15704,118 @@ function _notifyRecentCreatedTodos(accountId) {
 // concurrent requests into one trailing pass, which will no-op when data did not
 // change while the first save was running.
 function _isTodoDeltaPendingReason(reason = _readServerSyncPending()?.reason) {
-  return ['todo-delta-http', 'todo-delta-network', 'todo-delta-collision-remapped']
+  return ['todo-delta-http', 'todo-delta-network', 'todo-delta-collision-remapped', 'todo-delta-save']
     .includes(String(reason || ''));
 }
 
+function _todoDeltaQueueKey() {
+  return 'teampulse_todo_delta_q_' + (window._activeDBKey || DB_KEY || 'local');
+}
+
+function _readDurableTodoDeltaQueue() {
+  try {
+    const raw = localStorage.getItem(_todoDeltaQueueKey());
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function _writeDurableTodoDeltaQueue(list) {
+  try {
+    const next = (Array.isArray(list) ? list : []).slice(-48);
+    if (!next.length) localStorage.removeItem(_todoDeltaQueueKey());
+    else localStorage.setItem(_todoDeltaQueueKey(), JSON.stringify(next));
+  } catch (e) {
+    console.warn('[TeamPulse] durable todo-delta queue write failed:', e.message);
+  }
+}
+
+function _enqueueDurableTodoDelta(todo, operation, extraTodos = []) {
+  if (!todo || todo.id == null) return;
+  const todoId = String(todo.id);
+  const op = String(operation || 'upsert');
+  const list = _readDurableTodoDeltaQueue().filter(item =>
+    !(String(item?.todoId) === todoId && String(item?.operation || '') === op)
+  );
+  list.push({
+    todoId,
+    operation: op,
+    todo: _cloneData(todo),
+    extraTodos: (Array.isArray(extraTodos) ? extraTodos : [])
+      .map(item => _cloneData(item))
+      .filter(item => item && item.id != null),
+    enqueuedAt: Date.now(),
+  });
+  _writeDurableTodoDeltaQueue(list);
+}
+
+function _dequeueDurableTodoDelta(todoId, operation) {
+  if (todoId == null) return;
+  const id = String(todoId);
+  const op = operation != null ? String(operation) : null;
+  const list = _readDurableTodoDeltaQueue().filter(item => {
+    if (String(item?.todoId) !== id) return true;
+    if (op == null) return false;
+    return String(item?.operation || '') !== op;
+  });
+  _writeDurableTodoDeltaQueue(list);
+}
+
+function _rebuildDurableTodoDeltasFromPendingMarker() {
+  const pending = _readServerSyncPending();
+  if (!pending || !_isTodoDeltaPendingReason(pending.reason)) return;
+  const ids = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
+  if (!ids.length) return;
+  const existing = new Set(_readDurableTodoDeltaQueue().map(item => String(item?.todoId)));
+  ids.forEach(id => {
+    if (existing.has(id)) return;
+    const local = (_db?.todos || []).find(todo => String(todo?.id) === id);
+    if (!local) return;
+    const op = local.done ? 'complete' : 'reopen';
+    _enqueueDurableTodoDelta(local, op);
+  });
+}
+
+async function _drainDurableTodoDeltaQueue() {
+  _rebuildDurableTodoDeltasFromPendingMarker();
+  const queue = _readDurableTodoDeltaQueue();
+  if (!queue.length) return false;
+  if (window._todoDeltaDrainInFlight) return window._todoDeltaDrainInFlight;
+  const run = (async () => {
+    // Snapshot ids first; successful syncs dequeue themselves.
+    for (const item of queue) {
+      if (!item?.todo || item.todo.id == null) {
+        _dequeueDurableTodoDelta(item?.todoId, item?.operation);
+        continue;
+      }
+      // Prefer live local copy so the newest tick wins over a stale queue snapshot.
+      const live = (_db?.todos || []).find(todo => String(todo?.id) === String(item.todoId));
+      const todo = item.operation === 'delete'
+        ? item.todo
+        : (live ? _cloneData(live) : item.todo);
+      if (item.operation !== 'delete' && !live && !item.todo) continue;
+      try {
+        await _syncTodoDelta(todo, item.operation || 'upsert', item.extraTodos || []);
+      } catch (e) {
+        console.warn('[TeamPulse] durable todo-delta drain failed:', e?.message || e);
+      }
+    }
+    return _readDurableTodoDeltaQueue().length === 0;
+  })();
+  window._todoDeltaDrainInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (window._todoDeltaDrainInFlight === run) window._todoDeltaDrainInFlight = null;
+  }
+}
+
 function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots) {
+  if (todoSnapshot && todoSnapshot.id != null) {
+    _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
+  }
   window._pendingTodoDeltaRetry = {
     todo: todoSnapshot,
     operation,
@@ -15716,10 +15824,41 @@ function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots) {
   if (window._todoDeltaRetryTimer) return;
   window._todoDeltaRetryTimer = setTimeout(() => {
     window._todoDeltaRetryTimer = 0;
-    const pending = window._pendingTodoDeltaRetry;
-    if (!pending?.todo) return;
-    void _syncTodoDelta(pending.todo, pending.operation, pending.extraTodos);
-  }, 2500);
+    void _drainDurableTodoDeltaQueue().then(drained => {
+      if (!drained && _hasServerSyncPending()) void _syncToServer();
+    });
+  }, 1800);
+}
+
+async function _flushPendingLocalWritesOnResume() {
+  if (!_sbUser || !_sbSession?.token) return false;
+  if (window._resumeLocalFlushInFlight) return window._resumeLocalFlushInFlight;
+  const run = (async () => {
+    try {
+      // 1) First push any unfinished todo ticks/deletes so a later poll cannot roll them back.
+      await _drainDurableTodoDeltaQueue();
+      // 2) If a delta marker remains but the durable queue is empty, fall through to full sync
+      //    so archive/student edits and missed ticks still reach the server.
+      const pending = _readServerSyncPending();
+      if (pending && _isTodoDeltaPendingReason(pending.reason) && !_readDurableTodoDeltaQueue().length) {
+        _markServerSyncPending('resume-flush');
+      }
+      const diverged = _localDataDivergedFromServerBaseline();
+      if (_hasServerSyncPending() || diverged) {
+        await _syncToServer();
+      }
+      return true;
+    } catch (e) {
+      console.warn('[TeamPulse] resume local flush failed:', e?.message || e);
+      return false;
+    }
+  })();
+  window._resumeLocalFlushInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (window._resumeLocalFlushInFlight === run) window._resumeLocalFlushInFlight = null;
+  }
 }
 
 function _isTerminalTodoCollisionPending() {
@@ -15892,6 +16031,9 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   clearTimeout(window._serverSyncTimer);
   let todoSnapshot = _cloneData(todo);
   let extraSnapshots = (Array.isArray(extraTodos) ? extraTodos : []).map(item => _cloneData(item)).filter(item => item && item.id != null);
+  if (todoSnapshot && todoSnapshot.id != null) {
+    _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
+  }
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
@@ -15928,8 +16070,15 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           const syncPayload = _serverSafeData(_db);
           window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
           _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
-          _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoSnapshot.id);
-          resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
+          _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+          resolvedCollisionIds.forEach(id => _dequeueDurableTodoDelta(id));
+          const remainingDeltaIds = _readDurableTodoDeltaQueue().map(item => String(item?.todoId)).filter(Boolean);
+          if (remainingDeltaIds.length) {
+            _markServerSyncPending('todo-delta-save', { todoIds: remainingDeltaIds });
+          } else {
+            _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoSnapshot.id);
+            resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
+          }
           window._pendingTodoDeltaRetry = null;
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
           if (operation === 'create' || operation === 'upsert') {
@@ -16051,8 +16200,16 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
 }
 
 async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
-  if (window._todoDeltaChain) return null;
-  if (_isTodoDeltaPendingReason()) return null;
+  if (window._todoDeltaChain || window._todoDeltaDrainInFlight) return null;
+  if (_isTodoDeltaPendingReason()) {
+    // Delta ops must land first, but never block document sync forever (archive /
+    // mobile background kills leave a marker with an empty in-memory retry).
+    if (_readDurableTodoDeltaQueue().length || window._pendingTodoDeltaRetry?.todo) {
+      void _drainDurableTodoDeltaQueue();
+      return null;
+    }
+    _markServerSyncPending('resume-flush');
+  }
   if (_isTerminalTodoCollisionPending()) {
     _stopTerminalTodoCollisionSync();
     return null;
@@ -16835,6 +16992,9 @@ async function _syncFromServerOnResume() {
   if (window._resumeServerSyncInFlight) return window._resumeServerSyncInFlight;
   window._lastAppActivityAt = Date.now();
   const run = (async () => {
+    // Push local ticks/archive edits before polling, otherwise the server's
+    // older document paints over changes that never left the phone.
+    await _flushPendingLocalWritesOnResume();
     window._lastServerPollAt = Date.now();
     const updated = await _pollServerStatus();
     _refreshUiAfterServerLoad(updated, { force: true });
@@ -16938,7 +17098,13 @@ function _flushPendingServerSyncKeepalive() {
           referrerPolicy: 'no-referrer',
         }).catch(() => {});
       }
-      return;
+      // Also flush the document below when students/archive (or other collections)
+      // changed in the same session — do not return early on todo-only beacon.
+      const onlyTodosChanged = patch &&
+        Object.keys(patch.collections || {}).length === 1 &&
+        patch.collections.todos &&
+        !Object.keys(patch.scalars || {}).length;
+      if (onlyTodosChanged) return;
     }
   }
   if (data.length > 60000) return;
@@ -16961,6 +17127,7 @@ function _bindServerSyncLifecycleHandlers() {
       _flushPendingServerSyncKeepalive();
     } else {
       _refreshReminderPushRegistration();
+      void _flushPendingLocalWritesOnResume();
       _scheduleServerResumeSync();
     }
   });
@@ -16970,14 +17137,18 @@ function _bindServerSyncLifecycleHandlers() {
   });
   window.addEventListener('focus', () => {
     _refreshReminderPushRegistration();
-    if ((_db?._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
-      clearTimeout(window._serverSyncTimer);
-      void _syncToServer();
-    }
+    void _flushPendingLocalWritesOnResume();
     _scheduleServerResumeSync();
   });
-  window.addEventListener('pageshow', () => _scheduleServerResumeSync());
-  window.addEventListener('online', () => _scheduleServerResumeSync());
+  window.addEventListener('pageshow', () => {
+    void _flushPendingLocalWritesOnResume();
+    _scheduleServerResumeSync();
+  });
+  window.addEventListener('online', () => {
+    void _flushPendingLocalWritesOnResume();
+    _scheduleServerResumeSync();
+  });
+  void _flushPendingLocalWritesOnResume();
   _scheduleServerResumeSync(0);
   window.addEventListener('beforeunload', () => {
     clearTimeout(window._serverSyncTimer);
@@ -21701,6 +21872,9 @@ function _scheduleTodoListReconcile() {
 }
 
 function _queueTodoTickPersist(todo, operation, extraTodos) {
+  if (todo && todo.id != null) {
+    _enqueueDurableTodoDelta(todo, operation, extraTodos);
+  }
   _todoPersistQueue.push({
     todo,
     operation,
@@ -25548,7 +25722,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v102';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v115';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

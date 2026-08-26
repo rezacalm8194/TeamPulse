@@ -35,6 +35,12 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /window\._todoDeltaChain \|\| _isTodoDeltaPendingReason\(\)/);
   assert.match(appSource, /function _scheduleTodoDeltaRetry\(/);
   assert.match(appSource, /function _isTodoDeltaPendingReason\(/);
+  assert.match(appSource, /function _enqueueDurableTodoDelta\(/);
+  assert.match(appSource, /function _drainDurableTodoDeltaQueue\(/);
+  assert.match(appSource, /function _flushPendingLocalWritesOnResume\(/);
+  assert.match(appSource, /await _flushPendingLocalWritesOnResume\(\)/);
+  assert.match(appSource, /todo-delta-save/);
+  assert.match(appSource, /urgent\s*[:=]\s*true/);
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
@@ -46,4 +52,13 @@ test('invited teammates keep pending archive student changes until they persist'
   assert.match(appSource, /function _teamCanWriteOwnerStudents\(/);
   assert.match(appSource, /_TEAM_STUDENT_PENDING_KEYS/);
   assert.match(appSource, /allowLocal && localTime === serverTime/);
+  assert.match(appSource, /_save\(true,\{urgent:true\}\)/);
+});
+
+test('mobile resume flushes local writes before polling the server', () => {
+  assert.match(appSource, /async function _syncFromServerOnResume\(/);
+  assert.match(appSource, /await _flushPendingLocalWritesOnResume\(\)/);
+  assert.match(appSource, /await _pollServerStatus\(\)/);
+  assert.match(appSource, /resume-flush/);
+  assert.match(appSource, /onlyTodosChanged/);
 });
