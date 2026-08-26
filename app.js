@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp110';
+const TP_ASSET_V = 'tp111';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -576,7 +576,15 @@ function _detectUserLocale() {
 let _db = null;
 
 function _serviceLabelKey(label) {
-  return String(label || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return String(label || '')
+    .normalize('NFKC')
+    .replace(/[يى]/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[\u200C\u200D\u2060]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 function _isGenericStaffServiceLabel(label) {
@@ -584,40 +592,61 @@ function _isGenericStaffServiceLabel(label) {
 }
 
 function _syncServiceCatalogs(d, { from = 'both' } = {}) {
-  if (!d || typeof d !== 'object') return false;
-  d.package_types = Array.isArray(d.package_types) ? d.package_types : [];
-  d.staff_roles = Array.isArray(d.staff_roles) && d.staff_roles.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
-  d._nextId = d._nextId || {};
-  let changed = false;
-  const pkgKeys = new Set(d.package_types.map(p => _serviceLabelKey(p.label)).filter(Boolean));
-  const roleKeys = new Set(d.staff_roles.map(r => _serviceLabelKey(r.label)).filter(Boolean));
+  // نقش پرسنلی و خدمت قابل‌فروش دو مفهوم مستقل‌اند. این تابع فقط برای
+  // سازگاری با فراخوانی‌های نسخه‌های قدیمی باقی مانده و عمداً چیزی نمی‌سازد.
+  return false;
+}
 
-  if (from === 'both' || from === 'staff') {
-    d.staff_roles.forEach(role => {
-      const label = String(role?.label || '').trim();
-      const key = _serviceLabelKey(label);
-      if (!key || pkgKeys.has(key) || _isGenericStaffServiceLabel(label)) return;
-      const id = d._nextId.package_types || (Math.max(0, ...d.package_types.map(x => +x.id || 0)) + 1);
-      d.package_types.push({ id, key:'pt'+id, label, color:'#7c6af7' });
-      d._nextId.package_types = id + 1;
-      pkgKeys.add(key);
-      changed = true;
-    });
+function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
+  if (!d || !Array.isArray(d.package_types) || d.package_types.length < 2) return { merged:0, reassigned:0 };
+  const packages = Array.isArray(d.packages) ? d.packages : [];
+  const usage = new Map();
+  packages.forEach(pkg => usage.set(String(pkg.type_id), (usage.get(String(pkg.type_id)) || 0) + 1));
+  const groups = new Map();
+  d.package_types.forEach((item, index) => {
+    const key = _serviceLabelKey(item?.label);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ item, index });
+  });
+  const duplicateGroups = [...groups.values()].filter(group => group.length > 1);
+  if (!duplicateGroups.length) return { merged:0, reassigned:0 };
+
+  if (keepBackup) {
+    d._migrationBackups = d._migrationBackups && typeof d._migrationBackups === 'object' ? d._migrationBackups : {};
+    if (!d._migrationBackups.serviceCatalogMergeV1) {
+      d._migrationBackups.serviceCatalogMergeV1 = {
+        created_at:new Date().toISOString(),
+        package_types:d.package_types.map(item => ({...item})),
+        package_references:packages.map(pkg => ({package_id:pkg.id,type_id:pkg.type_id})),
+      };
+    }
   }
 
-  if (from === 'both' || from === 'package') {
-    d.package_types.forEach(pkg => {
-      const label = String(pkg?.label || '').trim();
-      const key = _serviceLabelKey(label);
-      if (!key || roleKeys.has(key)) return;
-      const id = d._nextId.staff_roles || (Math.max(0, ...d.staff_roles.map(x => +x.id || 0)) + 1);
-      d.staff_roles.push({ id, label });
-      d._nextId.staff_roles = id + 1;
-      roleKeys.add(key);
-      changed = true;
+  d.service_type_aliases = Array.isArray(d.service_type_aliases) ? d.service_type_aliases : [];
+  const archivedIds = new Set(d.service_type_aliases.map(alias => String(alias.id)));
+  const retiredIds = new Set();
+  let reassigned = 0;
+  duplicateGroups.forEach(group => {
+    group.sort((a,b) => {
+      const usageDiff = (usage.get(String(b.item.id)) || 0) - (usage.get(String(a.item.id)) || 0);
+      return usageDiff || a.index - b.index || Number(a.item.id) - Number(b.item.id);
     });
-  }
-  return changed;
+    const canonical = group[0].item;
+    group.slice(1).forEach(({item}) => {
+      packages.forEach(pkg => {
+        if (String(pkg.type_id) === String(item.id)) { pkg.type_id = canonical.id; reassigned++; }
+      });
+      if (!archivedIds.has(String(item.id))) {
+        d.service_type_aliases.push({...item,merged_into_id:canonical.id,merged_at:new Date().toISOString()});
+        archivedIds.add(String(item.id));
+      }
+      retiredIds.add(String(item.id));
+    });
+  });
+  d.package_types = d.package_types.filter(item => !retiredIds.has(String(item.id)));
+  d._serviceCatalogMergeNeedsSave = true;
+  return { merged:retiredIds.size, reassigned };
 }
 
 function _freshData() {
@@ -717,6 +746,7 @@ function _migrate(d) {
   d.payments.forEach(p=>{if(!p.currency)p.currency='تومان';});
   d.packages.forEach(p=>{if(p.initial_cost===undefined)p.initial_cost=0;});
   _dedupeExactPackages(d);
+  _mergeDuplicatePackageTypes(d);
   d._nextId = d._nextId||{};
   ['students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
@@ -1766,7 +1796,13 @@ window.api = {
   },
 
   packageTypes: {
-    getAll: ()=>_P([..._db.package_types]),
+    getAll: ()=>{
+      if (_db._serviceCatalogMergeNeedsSave) {
+        delete _db._serviceCatalogMergeNeedsSave;
+        _save();
+      }
+      return _P([..._db.package_types]);
+    },
     add: (p)=>{
       const label = String(p.label || '').trim();
       const existing = _db.package_types.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label));
@@ -1776,11 +1812,11 @@ window.api = {
         _db.package_types.push(next);
         return next;
       })();
-      _syncServiceCatalogs(_db,{from:'package'});
       _save();
       return _P(item);
     },
-    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id); if(pt){const oldLabel=pt.label;pt.label=p.label;pt.color=p.color;const role=_db.staff_roles.find(x=>_serviceLabelKey(x.label)===_serviceLabelKey(oldLabel));if(role&&!_isGenericStaffServiceLabel(oldLabel))role.label=p.label;_syncServiceCatalogs(_db,{from:'package'});_save();} return _P({ok:true}); },
+    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id);let merge={merged:0,reassigned:0};if(pt){pt.label=String(p.label||'').trim();pt.color=p.color;merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;_save();} return _P({ok:true,...merge}); },
+    mergeDuplicates: ()=>{const result=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(result.merged)_save();return _P({ok:true,...result});},
     delete: (id)=>{ if(_db.packages.some(p=>p.type_id===id))return _P({ok:false,error:'این نوع پکیج در حال استفاده است'}); _db.package_types=_db.package_types.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     reorder: (order)=>{ const s=[]; order.forEach(id=>{const pt=_db.package_types.find(x=>x.id===id);if(pt)s.push(pt);}); _db.package_types.filter(x=>!order.includes(x.id)).forEach(x=>s.push(x)); _db.package_types=s; _save(); return _P({ok:true}); },
   },
@@ -2293,11 +2329,10 @@ window.api = {
         _db.staff_roles.push(next);
         return next;
       })();
-      _syncServiceCatalogs(_db,{from:'staff'});
       _save();
       return _P(item);
     },
-    update: (p)=>{ const r=_db.staff_roles.find(x=>x.id===p.id); if(r){const oldLabel=r.label;r.label=p.label;const pt=_db.package_types.find(x=>_serviceLabelKey(x.label)===_serviceLabelKey(oldLabel));if(pt&&!_isGenericStaffServiceLabel(p.label))pt.label=p.label;_syncServiceCatalogs(_db,{from:'staff'});_save();} return _P({ok:true}); },
+    update: (p)=>{ const r=_db.staff_roles.find(x=>x.id===p.id); if(r){r.label=String(p.label||'').trim();_save();} return _P({ok:true}); },
     delete: (id)=>{ if(_db.staff.some(s=>s.role_id===id))return _P({ok:false,error:'این نقش در حال استفاده است'}); _db.staff_roles=_db.staff_roles.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -9990,9 +10025,12 @@ async function renderSettings() {
 
   <div class="settings-pane ${_settingsActiveTab==='services'?'active':''}" id="pane-services">
     <div class="detail-section">
-      <h3>خدمات قابل ارائه</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <h3 style="margin:0">خدمات قابل ارائه</h3>
+        <button class="btn btn-ghost btn-sm" onclick="mergeDuplicatePkgTypes()">بررسی و ادغام تکراری‌ها</button>
+      </div>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        این لیست در فرم افزودن ${META.entitySingular||'شاگرد'} و در داشبورد استفاده می‌شود.
+        این لیست در فرم افزودن ${META.entitySingular||'شاگرد'} و در داشبورد استفاده می‌شود. موارد هم‌نام با حفظ تمام سوابق در یک خدمت ادغام می‌شوند.
       </p>
       ${pkgSectionHtml}
     </div>
@@ -10251,13 +10289,29 @@ async function addPkgType() {
 
 async function updatePkgType(id, color, label) {
   const pt = PKG_TYPES.find(x => x.id === id);
-  await window.api.packageTypes.update({
+  const result = await window.api.packageTypes.update({
     id,
     color: color !== null ? color : pt.color,
     label: label !== null ? label : pt.label,
   });
+  if (result.merged) {
+    showToast(`${fa(result.merged)} مورد تکراری با حفظ سوابق ادغام شد ✓`, 'success');
+    await renderSettings();
+    return;
+  }
   showToast('ذخیره شد ✓', 'success');
   PKG_TYPES = await window.api.packageTypes.getAll();
+}
+
+async function mergeDuplicatePkgTypes() {
+  if (!confirm('مواردی که پس از یکسان‌سازی نوشتاری دقیقاً هم‌نام هستند ادغام شوند؟ تمام سوابق به خدمت اصلی منتقل می‌شوند و نسخه موارد ادغام‌شده در آرشیو داخلی محفوظ می‌ماند.')) return;
+  const result = await window.api.packageTypes.mergeDuplicates();
+  if (!result.merged) {
+    showToast('مورد تکراری هم‌نامی پیدا نشد', 'success');
+    return;
+  }
+  showToast(`${fa(result.merged)} مورد ادغام و ${fa(result.reassigned)} سابقه منتقل شد ✓`, 'success');
+  await renderSettings();
 }
 
 async function deletePkgType(id) {
