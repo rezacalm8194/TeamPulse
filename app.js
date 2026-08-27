@@ -10340,7 +10340,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>↩️ بازگشت به نسخه‌های قبلی</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        نسخه‌های ساعتی سه روز اخیر سرور، به‌همراه نسخه‌های همین دستگاه نمایش داده می‌شود. تاریخ و خلاصه هر نسخه را ببین، سپس آگاهانه نسخه موردنظر را انتخاب کن؛ هیچ نسخه‌ای خودکار بازیابی نمی‌شود.
+        نسخه‌های ساعتی یک روز اخیر، روزانه هفته اخیر، و نسخه‌های هفتگی و ماهانه سرور به‌همراه نسخه‌های همین دستگاه نمایش داده می‌شود. تاریخ و خلاصه هر نسخه را ببین، سپس آگاهانه نسخه موردنظر را انتخاب کن؛ هیچ نسخه‌ای خودکار بازیابی نمی‌شود.
       </p>
       <div id="versions-list">در حال بارگذاری...</div>
     </div>
@@ -24231,6 +24231,26 @@ function _adminMetricCard({type,title,value,current,previous,series,inverse=fals
       <span class="admin-stat-compare">در مقایسه با دوره قبل</span></span>${_adminSparkline(series)}
   </button>`;
 }
+function _adminFormatBytes(n) {
+  const v = Number(n) || 0;
+  if (v < 1024) return fa(Math.round(v)) + ' B';
+  if (v < 1048576) return fa(Math.round(v / 1024)) + ' KB';
+  if (v < 1073741824) return fa(Number((v / 1048576).toFixed(1))) + ' MB';
+  return fa(Number((v / 1073741824).toFixed(2))) + ' GB';
+}
+function _adminStorageHtml(storage) {
+  if (!storage) return '';
+  const files = storage.files || {};
+  const snaps = storage.snapshots || {};
+  const docs = storage.documents || {};
+  return `<div class="detail-section" style="margin-bottom:16px">
+    <h3 style="margin-bottom:8px">ذخیره‌سازی سرور</h3>
+    <p style="margin:0 0 8px;font-size:11px;color:var(--text3);line-height:1.8">حجم فایل‌های داخل دیتابیس، نسخه‌های پشتیبان و سندهای JSON. فایل‌ها هنوز از SQLite خارج نشده‌اند.</p>
+    <div class="detail-row"><span class="detail-key">فایل‌ها</span><span class="detail-val">${fa(files.count||0)} فایل · ${_adminFormatBytes(files.bytes)}</span></div>
+    <div class="detail-row"><span class="detail-key">نسخه‌های تاریخچه</span><span class="detail-val">${fa(snaps.count||0)} نسخه · ${_adminFormatBytes(snaps.bytes)}</span></div>
+    <div class="detail-row"><span class="detail-key">اسناد ورک‌اسپیس</span><span class="detail-val">${fa(docs.workspaces||0)} میزکار · ${_adminFormatBytes((docs.parts_bytes||0)+(docs.legacy_blob_bytes||0))}</span></div>
+  </div>`;
+}
 function _adminStatsHtml(d,users) {
   const registrations=d?.series?.registrations||[];
   return `<details class="admin-status-summary"><summary>خلاصه وضعیت</summary><div class="admin-stats-grid">
@@ -24260,6 +24280,7 @@ async function renderAdminPanel() {
   let allUsers = [];
   let serverOnline = false;
   let dashboard = null;
+  let storageReport = null;
 
   try {
     const res = await Promise.race([
@@ -24271,6 +24292,7 @@ async function renderAdminPanel() {
       serverOnline = true;
       allUsers = stats.users || [];
       dashboard = stats.dashboard || null;
+      storageReport = stats.storage || null;
       if (stats.settings) Object.assign(localSettings, stats.settings);
     }
   } catch(e) { console.log('Admin API not available'); }
@@ -24303,6 +24325,7 @@ async function renderAdminPanel() {
         <span>${serverOnline?'سرور متصل است':'سرور در دسترس نیست'}</span>
       </div>
       ${_adminStatsHtml(dashboard||{},allUsers)}
+      ${_adminStorageHtml(storageReport)}
 
       <div class="detail-section" style="margin-bottom:16px;border:1px solid rgba(124,106,247,.28);background:linear-gradient(135deg,rgba(124,106,247,.07),rgba(96,165,250,.03))">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">

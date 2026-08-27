@@ -2,11 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const {
-  MAX_VERSIONS_PER_WORKSPACE,
+  VERSION_RETENTION,
   versionSummaryFromSerialized,
+  selectRetainedVersionIds,
   ensureVersionSnapshotSchema,
   backfillVersionSummaries,
   saveVersionSnapshot,
+  pruneVersionSnapshots,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
 
@@ -84,18 +86,56 @@ test('identical snapshots are skipped using the stored hash, not the blob', () =
   assert.equal(listVersionSummaries(db, 'acc-3', 72).length, 1);
 });
 
-test('retention still caps stored versions and cascaded summaries', () => {
+test('same-hour force snapshots keep only the newest safety copies', () => {
   const db = makeDb();
-  for (let i = 0; i < MAX_VERSIONS_PER_WORKSPACE + 5; i++) {
+  for (let i = 0; i < 8; i++) {
     saveVersionSnapshot(db, 'acc-4', payload({ todos: [{ id: i }] }), { force: true });
   }
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-4').n,
-    MAX_VERSIONS_PER_WORKSPACE
-  );
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-4').n,
-    MAX_VERSIONS_PER_WORKSPACE
-  );
-  assert.equal(listVersionSummaries(db, 'acc-4', 200).length, MAX_VERSIONS_PER_WORKSPACE);
+  const versions = db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-4').n;
+  const summaries = db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-4').n;
+  assert.equal(versions, VERSION_RETENTION.keepNewest);
+  assert.equal(summaries, VERSION_RETENTION.keepNewest);
+  assert.equal(listVersionSummaries(db, 'acc-4', 200).length, VERSION_RETENTION.keepNewest);
+});
+
+test('GFS retention keeps hourly, daily, weekly, and monthly slots', () => {
+  const now = Date.parse('2026-08-27T12:00:00Z');
+  const rows = [];
+  let id = 1;
+  for (let hour = 0; hour < 30; hour++) {
+    rows.push({ id: id++, created_at: new Date(now - hour * 3600000).toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  for (let day = 2; day <= 10; day++) {
+    rows.push({ id: id++, created_at: new Date(now - day * 86400000).toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  for (let month = 1; month <= 14; month++) {
+    const date = new Date(Date.UTC(2026, 7 - month, 15, 8, 0, 0));
+    rows.push({ id: id++, created_at: date.toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  const keep = selectRetainedVersionIds(rows, now);
+  assert.ok(keep.has(rows[0].id));
+  assert.ok(keep.size >= 20);
+  assert.ok(keep.size < rows.length);
+  assert.equal(keep.has(rows[rows.length - 1].id), false);
+});
+
+test('prune deletes old snapshots and cascaded summaries', () => {
+  const db = makeDb();
+  const insert = db.prepare('INSERT INTO user_data_versions (account_id,data,created_at) VALUES (?,?,?)');
+  const now = Date.parse('2026-08-27T12:00:00Z');
+  for (let i = 0; i < 40; i++) {
+    const createdAt = new Date(now - i * 3600000).toISOString().replace('T', ' ').replace('.000Z', '');
+    const result = insert.run('acc-5', payload({ todos: [{ id: i }] }), createdAt);
+    db.prepare(`
+      INSERT INTO user_data_version_summaries (version_id,account_id,created_at,data_size,data_hash,todos,students,staff,instructions)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(result.lastInsertRowid, 'acc-5', createdAt, 10, `h${i}`, i, 0, 0, 0);
+  }
+  const deleted = pruneVersionSnapshots(db, 'acc-5', now);
+  assert.ok(deleted > 0);
+  const left = db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-5').n;
+  const summaries = db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-5').n;
+  assert.equal(left, summaries);
+  assert.ok(left <= 40 - deleted);
+  assert.ok(left >= VERSION_RETENTION.keepNewest);
 });
