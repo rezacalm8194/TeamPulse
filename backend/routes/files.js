@@ -1,39 +1,142 @@
 const router = require('express').Router();
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const multer = require('multer');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { storedMime, applyFileDownloadHeaders } = require('../utils/safeFileServe');
+const { createStorageDriver } = require('../utils/storage');
+const {
+  ensureSharedFilesSchema,
+  objectKey,
+  assertQuota,
+  storageUsage,
+  hashFileSync,
+  readHeadSync,
+  readStoredFile,
+  upsertSharedFile,
+  migrateSharedFilesToDisk,
+} = require('../utils/fileStore');
 
-db.prepare(`CREATE TABLE IF NOT EXISTS shared_files (id TEXT PRIMARY KEY,owner_account_id TEXT NOT NULL,workspace_id TEXT NOT NULL DEFAULT 'default',name TEXT NOT NULL,mime_type TEXT,size INTEGER NOT NULL DEFAULT 0,data BLOB NOT NULL,created_by TEXT,created_at TEXT DEFAULT (datetime('now')))` ).run();
-db.prepare('CREATE INDEX IF NOT EXISTS idx_shared_files_owner ON shared_files(owner_account_id,workspace_id)').run();
-const upload = multer({ storage:multer.memoryStorage(), limits:{fileSize:12*1024*1024,files:1} });
-const workspaceId = value => (/^[a-zA-Z0-9_-]{1,80}$/.test(String(value||'')) ? String(value) : 'default');
-function canAccess(req,owner,workspace){if(String(req.user.id)===String(owner)||req.user.role==='admin')return true;const email=String(req.user.email||'').trim().toLowerCase();return !!email&&!!db.prepare(`SELECT 1 FROM team_access_grants WHERE owner_account_id=? AND workspace_id=? AND lower(trim(member_email))=? AND status='active' LIMIT 1`).get(owner,workspace,email);}
-function fileBuffer(data){return Buffer.isBuffer(data)?data:Buffer.from(data||'');}
-
-router.post('/',auth,upload.single('file'),(req,res)=>{
-  if(!req.file)return res.status(400).json({error:'file_required'});
-  const owner=String(req.body.owner_account_id||req.user.id);
-  const workspace=workspaceId(req.body.workspace_id);
-  const id=String(req.body.id||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,120);
-  if(!canAccess(req,owner,workspace))return res.status(403).json({error:'forbidden'});
-  if(!id)return res.status(400).json({error:'invalid_file_id'});
-  const mime=storedMime(req.file.mimetype,req.file.buffer);
-  const result=db.prepare(`INSERT INTO shared_files(id,owner_account_id,workspace_id,name,mime_type,size,data,created_by) VALUES(?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name,mime_type=excluded.mime_type,size=excluded.size,data=excluded.data
-    WHERE shared_files.owner_account_id=excluded.owner_account_id AND shared_files.workspace_id=excluded.workspace_id`).run(
-    id,owner,workspace,String(req.file.originalname||'file'),mime,req.file.size,req.file.buffer,req.user.id
-  );
-  if(!result.changes)return res.status(409).json({error:'file_id_conflict'});
-  res.json({success:true,id});
+ensureSharedFilesSchema(db);
+const driver = createStorageDriver();
+migrateSharedFilesToDisk(db, driver);
+const uploadDir = path.join(os.tmpdir(), 'teampulse-uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename(_req, _file, cb) {
+      cb(null, `up-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    },
+  }),
+  limits: { fileSize: 12 * 1024 * 1024, files: 1 },
 });
-router.get('/:id',auth,(req,res)=>{
-  const row=db.prepare('SELECT * FROM shared_files WHERE id=?').get(String(req.params.id));
-  if(!row)return res.status(404).json({error:'file_not_found'});
-  if(!canAccess(req,row.owner_account_id,row.workspace_id))return res.status(403).json({error:'forbidden'});
-  const data=fileBuffer(row.data);
-  applyFileDownloadHeaders(res,row.name,row.mime_type,data);
+
+const workspaceId = value => (/^[a-zA-Z0-9_-]{1,80}$/.test(String(value || '')) ? String(value) : 'default');
+
+function canAccess(req, owner, workspace) {
+  if (String(req.user.id) === String(owner) || req.user.role === 'admin') return true;
+  const email = String(req.user.email || '').trim().toLowerCase();
+  return !!email && !!db.prepare(`
+    SELECT 1 FROM team_access_grants
+    WHERE owner_account_id=? AND workspace_id=? AND lower(trim(member_email))=? AND status='active'
+    LIMIT 1
+  `).get(owner, workspace, email);
+}
+
+function unlinkQuiet(filePath) {
+  if (!filePath) return;
+  try { fs.unlinkSync(filePath); } catch {}
+}
+
+router.get('/usage', auth, (req, res) => {
+  const owner = String(req.query.owner_account_id || req.user.id);
+  if (!canAccess(req, owner, workspaceId(req.query.workspace_id))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  res.json(storageUsage(db, owner));
+});
+
+router.post('/', auth, upload.single('file'), (req, res) => {
+  const tempPath = req.file?.path;
+  let moved = false;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file_required' });
+    const owner = String(req.body.owner_account_id || req.user.id);
+    const workspace = workspaceId(req.body.workspace_id);
+    const id = String(req.body.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
+    if (!canAccess(req, owner, workspace)) return res.status(403).json({ error: 'forbidden' });
+    if (!id) return res.status(400).json({ error: 'invalid_file_id' });
+    const existing = db.prepare(
+      'SELECT size FROM shared_files WHERE id=? AND owner_account_id=? AND workspace_id=?'
+    ).get(id, owner, workspace);
+    try {
+      assertQuota(db, owner, req.file.size, existing?.size || 0);
+    } catch (error) {
+      if (error.code === 'storage_quota') {
+        return res.status(413).json({ error: 'storage_quota', ...error.usage });
+      }
+      throw error;
+    }
+    const head = readHeadSync(tempPath);
+    const mime = storedMime(req.file.mimetype, head);
+    const sha256 = hashFileSync(tempPath);
+    const storageKey = objectKey(owner, workspace, id);
+    driver.moveFromPathSync(storageKey, tempPath);
+    moved = true;
+    const result = upsertSharedFile(db, {
+      id,
+      owner,
+      workspace,
+      name: String(req.file.originalname || 'file'),
+      mime,
+      size: req.file.size,
+      storageKey,
+      sha256,
+      createdBy: req.user.id,
+    });
+    if (!result.changes) {
+      driver.deleteSync(storageKey);
+      return res.status(409).json({ error: 'file_id_conflict' });
+    }
+    res.json({ success: true, id, storage_key: storageKey, sha256 });
+  } catch (error) {
+    if (error.code === 'storage_quota') {
+      return res.status(413).json({ error: 'storage_quota', ...error.usage });
+    }
+    res.status(500).json({ error: error.message });
+  } finally {
+    if (!moved) unlinkQuiet(tempPath);
+  }
+});
+
+router.get('/:id', auth, (req, res) => {
+  const row = db.prepare('SELECT * FROM shared_files WHERE id=?').get(String(req.params.id));
+  if (!row) return res.status(404).json({ error: 'file_not_found' });
+  if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
+  let data;
+  try {
+    data = readStoredFile(row, driver);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return res.status(404).json({ error: 'file_not_found' });
+    throw error;
+  }
+  if (!data) return res.status(404).json({ error: 'file_not_found' });
+  applyFileDownloadHeaders(res, row.name, row.mime_type, data);
   res.end(data);
 });
-router.delete('/:id',auth,(req,res)=>{const row=db.prepare('SELECT owner_account_id,workspace_id FROM shared_files WHERE id=?').get(String(req.params.id));if(!row)return res.json({success:true});if(!canAccess(req,row.owner_account_id,row.workspace_id))return res.status(403).json({error:'forbidden'});db.prepare('DELETE FROM shared_files WHERE id=?').run(String(req.params.id));res.json({success:true});});
-module.exports=router;
+
+router.delete('/:id', auth, (req, res) => {
+  const row = db.prepare(
+    'SELECT owner_account_id, workspace_id, storage_key FROM shared_files WHERE id=?'
+  ).get(String(req.params.id));
+  if (!row) return res.json({ success: true });
+  if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
+  if (row.storage_key) driver.deleteSync(row.storage_key);
+  db.prepare('DELETE FROM shared_files WHERE id=?').run(String(req.params.id));
+  res.json({ success: true });
+});
+
+module.exports = router;

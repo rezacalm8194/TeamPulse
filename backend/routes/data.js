@@ -39,6 +39,8 @@ const {
   isVersionSnapshotDue,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
+const { createStorageDriver } = require('../utils/storage');
+const { deleteStoredFiles } = require('../utils/fileStore');
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceMeta,
@@ -868,6 +870,7 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
     db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
     deleteWorkspaceDocument(db, storageKey);
+    deleteStoredFiles(db, createStorageDriver(), { ownerAccountId: targetId, workspaceId });
     return true;
   });
   if (!run()) return res.status(404).json({ error: 'workspace_not_found' });

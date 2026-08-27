@@ -9,6 +9,8 @@ const { isProtectedAccount, withProtectedFlag } = require('../utils/protectedAdm
 const { ensureTokenRevocationSchema, bumpTokenVersion } = require('../utils/tokenRevocation');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
 const { collectStorageReport } = require('../utils/storageReport');
+const { deleteStoredFiles } = require('../utils/fileStore');
+const { createStorageDriver } = require('../utils/storage');
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceDocument,
@@ -520,6 +522,8 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
       return res.status(403).json({ error: 'cannot delete your own account while logged in' });
     }
 
+    const fileDriver = createStorageDriver();
+    deleteStoredFiles(db, fileDriver, { ownerAccountId: targetId });
     const deleteAccountCascade = db.transaction((accountId) => {
       db.prepare("DELETE FROM payments WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM sessions WHERE account_id=?").run(accountId);

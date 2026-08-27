@@ -11,6 +11,8 @@ const { logger, classifySyncOutcome } = require('./utils/logger');
 const { resolveCorsOrigins, isCorsOriginAllowed } = require('./utils/corsOrigins');
 const { initTodoAuditStore, seedHistoricalRecurringSnapshots, migrateTodoAuditOccurrenceIdentityV2, flushPendingTodoAudits } = require('./utils/todoAuditStore');
 const { backfillVersionSummaries, pruneAllVersionSnapshots } = require('./utils/versionSnapshots');
+const { createStorageDriver } = require('./utils/storage');
+const { migrateSharedFilesToDisk, gcOrphanFiles } = require('./utils/fileStore');
 initTodoAuditStore(db);
 const app = express();
 app.set('trust proxy', 1);
@@ -236,6 +238,11 @@ const server = app.listen(PORT, HOST, () => {
       backfillVersionSummaries(db);
       const prunedSnapshots = pruneAllVersionSnapshots(db);
       if (prunedSnapshots) logger.info('version_snapshots_pruned', { deleted: prunedSnapshots });
+      const fileDriver = createStorageDriver();
+      const migratedFiles = migrateSharedFilesToDisk(db, fileDriver);
+      if (migratedFiles.migrated) logger.info('shared_files_migrated', migratedFiles);
+      const orphans = gcOrphanFiles(db, fileDriver);
+      if (orphans) logger.info('shared_files_orphans_deleted', { deleted: orphans });
       void flushPendingTodoAudits(db, logger);
     } catch (error) {
       logger.error('startup_job_failed', { error });

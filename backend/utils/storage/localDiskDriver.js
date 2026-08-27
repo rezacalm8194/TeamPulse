@@ -37,8 +37,24 @@ function createLocalDiskDriver(rootDir) {
       const stat = await fs.promises.stat(target);
       return { key, bytes: stat.size };
     },
+    putSync(key, buffer) {
+      const target = resolveKey(root, key);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, buffer);
+      return { key, bytes: fs.statSync(target).size };
+    },
+    moveFromPathSync(key, srcPath) {
+      const target = resolveKey(root, key);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(srcPath, target);
+      fs.unlinkSync(srcPath);
+      return { key, bytes: fs.statSync(target).size };
+    },
     async read(key) {
       return fs.promises.readFile(resolveKey(root, key));
+    },
+    readSync(key) {
+      return fs.readFileSync(resolveKey(root, key));
     },
     async stat(key) {
       try {
@@ -52,6 +68,15 @@ function createLocalDiskDriver(rootDir) {
     async delete(key) {
       try {
         await fs.promises.unlink(resolveKey(root, key));
+        return true;
+      } catch (error) {
+        if (error && error.code === 'ENOENT') return false;
+        throw error;
+      }
+    },
+    deleteSync(key) {
+      try {
+        fs.unlinkSync(resolveKey(root, key));
         return true;
       } catch (error) {
         if (error && error.code === 'ENOENT') return false;
