@@ -34,6 +34,25 @@ fi
 
 cd "$SITE_DIR/backend"
 npm install --omit=dev
-pm2 restart "$PM2_APP"
+pm2 restart "$PM2_APP" --update-env
+
+# Wait for the process to bind PORT before health-checking.
+ok=0
+i=1
+while [ "$i" -le 20 ]; do
+  if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 1
+  i=$((i + 1))
+done
+
+if [ "$ok" -ne 1 ]; then
+  echo "health check failed: $HEALTH_URL" >&2
+  pm2 logs "$PM2_APP" --err --lines 40 --nostream >&2 || true
+  exit 1
+fi
+
 curl -fsS "$HEALTH_URL"
 echo
