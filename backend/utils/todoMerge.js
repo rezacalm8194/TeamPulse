@@ -45,6 +45,28 @@ function pickMergedTodo(incoming, previous) {
   return todoRecency(incoming) >= todoRecency(previous) ? incoming : previous;
 }
 
+function deletedTodoIdSet(previousData, nextData) {
+  const ids = new Set();
+  const addAll = (list) => {
+    (Array.isArray(list) ? list : []).forEach(id => {
+      if (id != null && id !== '') ids.add(String(id));
+    });
+  };
+  const addMap = (map) => {
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+    Object.keys(map).forEach(id => {
+      if (id) ids.add(String(id));
+    });
+  };
+  addAll(previousData?._todoTombstones);
+  addAll(nextData?._todoTombstones);
+  addAll(previousData?._deletedTodoIds);
+  addAll(nextData?._deletedTodoIds);
+  addMap(previousData?._deletedItems?.todos);
+  addMap(nextData?._deletedItems?.todos);
+  return ids;
+}
+
 function mergeOwnerTodosWithPrevious(previousData, nextData) {
   if (!nextData || typeof nextData !== 'object') return nextData;
   const previousTodos = Array.isArray(previousData?.todos) ? previousData.todos : [];
@@ -54,9 +76,7 @@ function mergeOwnerTodosWithPrevious(previousData, nextData) {
     if (!todo || todo.id == null) return;
     incomingById.set(String(todo.id), todo);
   });
-  const explicitDeletes = new Set(
-    (Array.isArray(nextData._deletedTodoIds) ? nextData._deletedTodoIds : []).map(id => String(id))
-  );
+  const explicitDeletes = deletedTodoIdSet(previousData, nextData);
   const merged = [];
   const seen = new Set();
   previousTodos.forEach(prev => {
@@ -86,4 +106,5 @@ module.exports = {
   pickMergedTodo,
   mergeOwnerTodosWithPrevious,
   isCompletionArtifact,
+  deletedTodoIdSet,
 };

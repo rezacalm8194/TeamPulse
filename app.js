@@ -974,6 +974,64 @@ function _recordDeletedItems(collection, ids) {
   _db._deletedItems[collection] = tombstones;
 }
 
+const _MAX_LOCAL_DELETED_TODO_IDS = 500;
+
+function _rememberDeletedTodos(ids) {
+  const deletedIds = (Array.isArray(ids) ? ids : [ids])
+    .filter(id => id !== null && id !== undefined && id !== '')
+    .map(id => String(id));
+  if (!deletedIds.length) return;
+  _recordDeletedItems('todos', deletedIds);
+  const known = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
+  deletedIds.forEach(id => known.add(id));
+  _db._deletedTodoIds = [...known].slice(-_MAX_LOCAL_DELETED_TODO_IDS);
+}
+
+function _localDeletedTodoIds(db = _db) {
+  const ids = new Set();
+  const items = db?._deletedItems?.todos;
+  if (items && typeof items === 'object' && !Array.isArray(items)) {
+    Object.keys(items).forEach(id => { if (id) ids.add(String(id)); });
+  }
+  (Array.isArray(db?._deletedTodoIds) ? db._deletedTodoIds : []).forEach(id => {
+    if (id != null && id !== '') ids.add(String(id));
+  });
+  try {
+    (_readDurableTodoDeltaQueue() || []).forEach(item => {
+      if (String(item?.operation || '') !== 'delete') return;
+      if (item?.todoId != null && item.todoId !== '') ids.add(String(item.todoId));
+      if (item?.todo?.id != null) ids.add(String(item.todo.id));
+      (Array.isArray(item?.extraTodos) ? item.extraTodos : []).forEach(todo => {
+        if (todo && todo.id != null) ids.add(String(todo.id));
+      });
+    });
+  } catch (e) {}
+  return ids;
+}
+
+function _applyLocalTodoDeletionsToIncoming(data) {
+  if (!data || typeof data !== 'object') return data;
+  const deleted = _localDeletedTodoIds();
+  if (!deleted.size) return data;
+  data._deletedItems = data._deletedItems && typeof data._deletedItems === 'object' ? data._deletedItems : {};
+  const localMap = (_db?._deletedItems?.todos && typeof _db._deletedItems.todos === 'object' && !Array.isArray(_db._deletedItems.todos))
+    ? _db._deletedItems.todos
+    : {};
+  data._deletedItems.todos = data._deletedItems.todos && typeof data._deletedItems.todos === 'object'
+    ? { ...data._deletedItems.todos }
+    : {};
+  deleted.forEach(id => {
+    if (!data._deletedItems.todos[id]) data._deletedItems.todos[id] = localMap[id] || new Date().toISOString();
+  });
+  const known = new Set(Array.isArray(data._deletedTodoIds) ? data._deletedTodoIds.map(String) : []);
+  deleted.forEach(id => known.add(String(id)));
+  data._deletedTodoIds = [...known].slice(-_MAX_LOCAL_DELETED_TODO_IDS);
+  if (Array.isArray(data.todos)) {
+    data.todos = data.todos.filter(item => !item || item.id == null || !deleted.has(String(item.id)));
+  }
+  return data;
+}
+
 const _STUDENT_TOMBSTONE_RELATIONS = ['packages','payments','sessions','wallet_tx','reminders','topics','key_events'];
 
 function _idsRelatedToStudents(collection, studentIds) {
@@ -994,7 +1052,7 @@ function _recordStudentAndRelatedDeletions(studentIds) {
 function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
   const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
-  ['students','package_types','staff_roles', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
+  ['students','package_types','staff_roles','todos', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
     const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
     d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
@@ -15577,6 +15635,20 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
   const localDeleted = localBeforeLoad._deletedItems && typeof localBeforeLoad._deletedItems === 'object'
     ? localBeforeLoad._deletedItems
     : {};
+  const deletedTodoIds = _localDeletedTodoIds(localBeforeLoad);
+  (Array.isArray(merged._deletedTodoIds) ? merged._deletedTodoIds : []).forEach(id => {
+    if (id != null && id !== '') deletedTodoIds.add(String(id));
+  });
+  if (deletedTodoIds.size) {
+    merged._deletedTodoIds = [...deletedTodoIds].slice(-_MAX_LOCAL_DELETED_TODO_IDS);
+    merged._deletedItems.todos = merged._deletedItems.todos && typeof merged._deletedItems.todos === 'object'
+      ? merged._deletedItems.todos
+      : {};
+    const now = new Date().toISOString();
+    deletedTodoIds.forEach(id => {
+      if (!merged._deletedItems.todos[id]) merged._deletedItems.todos[id] = now;
+    });
+  }
 
   Object.entries(localDeleted).forEach(([key, tombstones]) => {
     if (options.teamSafe && key !== 'todos' && !( _teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key))) return;
@@ -15598,7 +15670,13 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       ? merged._deletedItems[key]
       : {};
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
-      .filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
+      .filter(item => {
+        if (!item || item.id == null) return true;
+        const idKey = String(item.id);
+        if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) return false;
+        if (key === 'todos' && deletedTodoIds.has(idKey)) return false;
+        return true;
+      });
     const allowLocal = !options.teamSafe || key === 'todos' || (_teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key));
     if (!allowLocal || !localArr.length) {
       merged[key] = serverArr;
@@ -15611,6 +15689,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       if (!localItem || localItem.id == null) return;
       const idKey = String(localItem.id);
       if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) return;
+      if (key === 'todos' && deletedTodoIds.has(idKey)) return;
       const serverItem = byId.get(idKey);
       if (!serverItem) {
         serverArr.push(_cloneData(localItem));
@@ -16578,10 +16657,17 @@ function _mergeServerTodosIntoLocal(serverData) {
   if (!serverData || !Array.isArray(serverData.todos)) return false;
   if (!_db.todos) _db.todos = [];
   let changed = false;
+  const locallyDeleted = _localDeletedTodoIds();
+  if (locallyDeleted.size) {
+    const before = (_db.todos || []).length;
+    _db.todos = (_db.todos || []).filter(t => !t || t.id == null || !locallyDeleted.has(String(t.id)));
+    if (_db.todos.length !== before) changed = true;
+  }
   const localById = new Map((_db.todos || []).map(t => [String(t.id), t]));
   serverData.todos.forEach(remote => {
     if (!remote || remote.id == null) return;
     const key = String(remote.id);
+    if (locallyDeleted.has(key)) return;
     const local = localById.get(key);
     if (!local) {
       _db.todos.push({ ...remote });
@@ -16726,6 +16812,7 @@ async function _loadFromServer() {
     const incomingEtag = payload.etag || null;
     if (!data) return false;
     if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
+    _applyLocalTodoDeletionsToIncoming(data);
     if (!teamSession && activeWorkspaceId !== 'default') window._workspaceDataReady = true;
     if (_isManualRestoreProtected()) {
       const expectedSig = _getManualRestoreExpectedSignature();
@@ -23400,6 +23487,7 @@ async function deleteTodo(id) {
   if (t && t.gcal_event_id) {
     _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
   }
+  _rememberDeletedTodos([t.id, _todoRootId(t)]);
   _db.todos = _db.todos.filter(x => x.id != id);
   _save();
   await _syncToServer();
@@ -23430,11 +23518,7 @@ async function _deleteTodoCompletely(id, options = {}) {
   if (!confirm(msg)) return;
   const removedTodos = (_db.todos || []).filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId);
   removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id, x.gcal_calendar_id); });
-  const deletedIds = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
-  deletedIds.add(String(t.id));
-  deletedIds.add(rootId);
-  removedTodos.forEach(x => deletedIds.add(String(x.id)));
-  _db._deletedTodoIds = [...deletedIds];
+  _rememberDeletedTodos([t.id, rootId, ...removedTodos.map(x => x.id)]);
   _db.todos = (_db.todos || []).filter(x => String(x.id) !== String(t.id) && String(_todoRootId(x)) !== rootId);
   _save(true, { scheduleServerSync: false });
   removedTodos.forEach(x => {
@@ -23446,11 +23530,6 @@ async function _deleteTodoCompletely(id, options = {}) {
   if (_sbUser && (!res || !res.ok)) {
     showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
     return;
-  }
-  if (Array.isArray(_db._deletedTodoIds)) {
-    const removedIds = new Set(removedTodos.map(x => String(x.id)).concat([String(t.id), rootId]));
-    _db._deletedTodoIds = _db._deletedTodoIds.filter(x => !removedIds.has(String(x)));
-    _save(false);
   }
   showToast('کار حذف شد', 'success');
 }
@@ -23635,6 +23714,7 @@ function _deleteTodoForever(id) {
   if (t && t.gcal_event_id) {
     _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
   }
+  _rememberDeletedTodos([id, t ? _todoRootId(t) : id]);
   _db.todos = _db.todos.filter(x => x.id != id);
   _save(); openTodoArchive(window._todoArchiveTab || 'mine');
 }

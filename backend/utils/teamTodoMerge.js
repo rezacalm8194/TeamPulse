@@ -70,10 +70,11 @@ function existingTodoTombstones(data) {
   );
 }
 
-function mergeTodoTombstones(previousData, nextTodoIds, removedTodoIds) {
+function mergeTodoTombstones(previousData, _nextTodoIds, removedTodoIds) {
   const tombstones = existingTodoTombstones(previousData);
   (removedTodoIds || []).forEach(id => tombstones.add(String(id)));
-  (nextTodoIds || []).forEach(id => tombstones.delete(String(id)));
+  // Do not clear tombstones just because a stale payload reintroduces an id;
+  // owner/team merge already refuses to resurrect tombstoned todos.
   const list = [...tombstones];
   return list.length > MAX_TODO_TOMBSTONES ? list.slice(list.length - MAX_TODO_TOMBSTONES) : list;
 }
@@ -185,6 +186,13 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
       .map(id => String(id))
       .filter(Boolean)
   );
+  const addDeletedMap = (map) => {
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+    Object.keys(map).forEach(id => { if (id) deletedTodoIds.add(String(id)); });
+  };
+  addDeletedMap(previousData._deletedItems?.todos);
+  addDeletedMap(nextData._deletedItems?.todos);
+  existingTodoTombstones(previousData).forEach(id => deletedTodoIds.add(id));
   const canDeleteTodos = permissions.includes('todo_delete') ||
     permissions.includes('todo_manage_staff') ||
     permissions.includes('todo_edit_manager');
@@ -280,7 +288,13 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
   return {
     ...previousData,
     todos: nextTodos,
-    _todoTombstones: mergeTodoTombstones(previousData, nextTodos.map(t => t.id), []),
+    _todoTombstones: mergeTodoTombstones(
+      previousData,
+      nextTodos.map(t => t.id),
+      previousTodos
+        .map(todo => String(todo?.id))
+        .filter(id => id && !nextTodos.some(todo => String(todo?.id) === id))
+    ),
     _lastSaved: nextData._lastSaved || previousData._lastSaved,
   };
 }
