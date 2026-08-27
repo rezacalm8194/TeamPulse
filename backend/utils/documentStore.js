@@ -57,6 +57,12 @@ function assembleDocument(scalars, collections) {
 function ensureDocumentStoreSchema(db) {
   if (readyDbs.has(db)) return;
   db.exec(`
+    CREATE TABLE IF NOT EXISTS user_data (
+      account_id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      data_etag TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS user_data_parts (
       account_id TEXT NOT NULL,
       part_key TEXT NOT NULL,

@@ -143,6 +143,15 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase
   ON accounts(lower(trim(email)));
 
+-- سند اصلی workspace هر حساب (todos، students، …)
+CREATE TABLE IF NOT EXISTS user_data (
+  account_id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  data_etag TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
 CREATE TABLE IF NOT EXISTS task_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL,
