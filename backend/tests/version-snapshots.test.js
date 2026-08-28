@@ -103,12 +103,14 @@ test('part snapshots store only one students blob when only todos change', () =>
     _lastSaved: 1,
   }, { replaceAll: true });
   assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
-  const studentHash = db.prepare(
-    "SELECT data_hash FROM user_data_parts WHERE account_id=? AND part_key='students'"
-  ).get('acc-parts').data_hash;
+  const studentRowHash = db.prepare(`
+    SELECT payload_hash FROM workspace_business_rows
+    WHERE storage_key=? AND collection_key='students' AND row_id='s1'
+  `).get('acc-parts').payload_hash;
   const studentBefore = db.prepare(`
-    SELECT data FROM user_data_version_part_blobs WHERE account_id=? AND data_hash=?
-  `).get('acc-parts', studentHash).data;
+    SELECT payload FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).payload;
 
   writeWorkspaceDocument(db, 'acc-parts', {
     todos: [{ id: 1, title: 'after' }],
@@ -117,12 +119,13 @@ test('part snapshots store only one students blob when only todos change', () =>
   }, { replaceAll: true });
   assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
   assert.equal(db.prepare(`
-    SELECT COUNT(*) AS n FROM user_data_version_part_blobs
-    WHERE account_id=? AND data_hash=?
-  `).get('acc-parts', studentHash).n, 1);
+    SELECT COUNT(*) AS n FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).n, 1);
   assert.equal(db.prepare(`
-    SELECT data FROM user_data_version_part_blobs WHERE account_id=? AND data_hash=?
-  `).get('acc-parts', studentHash).data, studentBefore);
+    SELECT payload FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).payload, studentBefore);
   assert.equal(db.prepare(`
     SELECT COUNT(*) AS n FROM user_data_version_todo_blobs WHERE account_id=?
   `).get('acc-parts').n, 2);

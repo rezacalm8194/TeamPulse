@@ -11,9 +11,19 @@ const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 test('client loads todos from the paginated endpoint instead of document include', () => {
   assert.match(app, /TODO_SERVER_PAGE_SIZE\s*=\s*200/);
   assert.match(app, /'\/todos'\s*\+\s*query/);
-  assert.match(app, /documentKeys\s*=\s*\(keys\s*\|\|\s*\[\]\)\.filter\(key\s*=>\s*key\s*!==\s*'todos'\)/);
+  assert.match(app, /!\['students', 'sessions', 'payments'\]\.includes\(key\)/);
   const core = app.match(/const _CORE_DOCUMENT_PARTS = \[([\s\S]*?)\];/)?.[1] || '';
   assert.doesNotMatch(core, /'todos'/);
+  assert.doesNotMatch(core, /'students'/);
+  assert.doesNotMatch(core, /'sessions'/);
+  assert.doesNotMatch(core, /'payments'/);
+});
+
+test('client loads business collections from paginated endpoints', () => {
+  assert.match(app, /BUSINESS_SERVER_PAGE_SIZE\s*=\s*200/);
+  assert.match(app, /function _ensureBusinessPartLoaded\(/);
+  assert.match(app, /function _loadMoreBusiness\(/);
+  assert.match(app, /'\/students'\s*\+\s*query|'\/'\s*\+\s*collection\s*\+\s*query/);
 });
 
 test('todo archive and show-more can fetch additional server pages', () => {
@@ -28,10 +38,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 4 client assets are consistently bumped to tp122', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp122'/);
-  assert.doesNotMatch(html, /tp121/);
-  assert.match(html, /app\.js\?v=tp122/);
-  assert.match(sw, /team-pulse-static-v122/);
-  assert.doesNotMatch(sw, /tp121/);
+test('phase 5 client assets are consistently bumped to tp123', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp123'/);
+  assert.match(app, /team-pulse-static-v123/);
+  assert.doesNotMatch(html, /tp122/);
+  assert.match(html, /app\.js\?v=tp123/);
+  assert.match(sw, /team-pulse-static-v123/);
+  assert.doesNotMatch(sw, /tp122/);
 });

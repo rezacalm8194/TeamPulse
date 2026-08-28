@@ -3858,9 +3858,10 @@ function _workspaceQuery(separator='?') {
   return separator + 'workspace=' + encodeURIComponent(_currentAccountId());
 }
 const _CORE_DOCUMENT_PARTS = [
-  'habits', 'habit_logs', 'sessions', 'staff', 'team_members',
+  'habits', 'habit_logs', 'staff', 'team_members',
   'session_order', 'package_types', 'staff_roles', 'staff_role_entries'
 ];
+const _PAGINATED_PART_KEYS = new Set(['todos', 'students', 'sessions', 'payments']);
 const _PAGE_DOCUMENT_PARTS = {
   students: ['students', 'packages', 'payments', 'sessions', 'families'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
@@ -3925,6 +3926,7 @@ function _rememberServerParts(payload) {
 function _tpPartLoaded(key) {
   if (!window._tpLoadedParts) return true;
   if (window._tpLoadedParts.has(key)) return true;
+  if (_PAGINATED_PART_KEYS.has(key)) return false;
   const value = _db?.[key];
   if (Array.isArray(value) && value.length) {
     window._tpLoadedParts.add(key);
@@ -3982,7 +3984,7 @@ async function _ensureDocumentParts(keys) {
     await _loadTodoPage(true, { reset: true });
   }
   for (const key of ['students', 'sessions', 'payments']) {
-    if (requested.includes(key) && !_tpPartLoaded(key)) await _loadBusinessPage(key, { reset: true });
+    if (requested.includes(key)) await _ensureBusinessPartLoaded(key);
   }
   const needed = requested.filter(key =>
     key !== 'todos' && !['students', 'sessions', 'payments'].includes(key) && !_tpPartLoaded(key));
@@ -4092,6 +4094,14 @@ window._tpBusinessPaging = window._tpBusinessPaging || {};
 function _businessPagingState(collection) {
   return window._tpBusinessPaging[collection] ||
     (window._tpBusinessPaging[collection] = { cursor: null, done: false, loading: null, search: '' });
+}
+async function _ensureBusinessPartLoaded(collection, { reset = false, search = '' } = {}) {
+  const paging = _businessPagingState(collection);
+  const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
+  if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
+  if (!_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
+    await _loadBusinessPage(collection, { reset, search: normalizedSearch });
+  }
 }
 async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
   if (!['students', 'sessions', 'payments'].includes(collection)) return false;
@@ -6239,8 +6249,8 @@ function deleteCaseForm(id) {
 }
 
 async function renderStudents(search = '') {
+  await _ensureBusinessPartLoaded('students', { search });
   const studentPaging = _businessPagingState('students');
-  if (search.trim() !== studentPaging.search) await _loadBusinessPage('students', { reset: true, search });
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
@@ -7519,6 +7529,11 @@ async function renderPayments(search = '') {
 
   updateTopbarActions(accountCustomerTopbarHtml(tab, search));
 
+  if (tab === 'payments') {
+    await _ensureBusinessPartLoaded('students');
+    await _ensureBusinessPartLoaded('payments');
+  }
+
   allStudents = await window.api.students.getAll();
   try {
     const remindersForBadge = await window.api.reminders.getAll();
@@ -7609,7 +7624,10 @@ async function renderPayments(search = '') {
       });
     }
     html += `</tbody></table></div>`;
-    setContent(html);
+    const paymentPaging = _businessPagingState('payments');
+    const morePayments = paymentPaging.done ? '' :
+      '<button class="todo-show-more" onclick="_loadMoreBusiness(\'payments\')">دریافت دریافت‌های بیشتر</button>';
+    setContent(html + morePayments);
   } else {
     await renderReminders(search, true, accountCustomerTabsHtml(tab, search));
   }
@@ -7627,6 +7645,9 @@ async function renderPayments(search = '') {
 // SESSIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 async function renderSessions(search = '') {
+  await _ensureBusinessPartLoaded('students');
+  await _ensureBusinessPartLoaded('sessions');
+  const sessionPaging = _businessPagingState('sessions');
   const prevScroll = document.getElementById('sessions-board')?.scrollLeft || 0;
   updateTopbarActions(`
     <div class="table-search stu-topbar-search" style="margin-left:8px">
@@ -7725,7 +7746,8 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
-  setContent(html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`);
+  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) +
+    (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
 
   const board = document.getElementById('sessions-board');
@@ -17113,10 +17135,11 @@ async function _loadFromServer() {
     if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
       await _loadTodoPage(false, { reset: true });
     }
-    if (Array.isArray(includeKeys)) {
-      for (const key of ['students', 'sessions', 'payments']) {
-        if (includeKeys.includes(key)) await _loadBusinessPage(key, { reset: true });
-      }
+    const businessKeys = !Array.isArray(includeKeys)
+      ? ['students', 'sessions', 'payments']
+      : ['students', 'sessions', 'payments'].filter(key => includeKeys.includes(key));
+    for (const key of businessKeys) {
+      await _ensureBusinessPartLoaded(key, { reset: true });
     }
     if (payload.partial) {
       _rememberServerParts(payload);
@@ -26286,7 +26309,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v122';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v123';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
