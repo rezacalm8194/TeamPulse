@@ -35,6 +35,9 @@ function collectStorageReport(db) {
   const todoRows = tableExists(db, 'workspace_todos')
     ? safeQuery(db, 'SELECT COUNT(*) AS count, IFNULL(SUM(octet_length(payload)),0) AS bytes FROM workspace_todos', { count: 0, bytes: 0 })
     : { count: 0, bytes: 0 };
+  const businessRows = tableExists(db, 'workspace_business_rows')
+    ? safeQuery(db, 'SELECT COUNT(*) AS count, IFNULL(SUM(octet_length(payload)),0) AS bytes FROM workspace_business_rows', { count: 0, bytes: 0 })
+    : { count: 0, bytes: 0 };
 
   const documents = tableExists(db, 'user_data')
     ? safeQuery(db, `
@@ -52,8 +55,8 @@ function collectStorageReport(db) {
     snapshots: { count: Number(snapshots.count) || 0, bytes: Number(snapshots.bytes) || 0 },
     documents: {
       workspaces: Number(documents.workspaces) || 0,
-      parts_count: (Number(parts.count) || 0) + (Number(todoRows.count) || 0),
-      parts_bytes: (Number(parts.bytes) || 0) + (Number(todoRows.bytes) || 0),
+      parts_count: (Number(parts.count) || 0) + (Number(todoRows.count) || 0) + (Number(businessRows.count) || 0),
+      parts_bytes: (Number(parts.bytes) || 0) + (Number(todoRows.bytes) || 0) + (Number(businessRows.bytes) || 0),
       legacy_blob_bytes: Number(documents.legacy_blob_bytes) || 0,
     },
     largest_files: tableExists(db, 'shared_files')

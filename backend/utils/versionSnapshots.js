@@ -1,4 +1,5 @@
 const { createHash } = require('crypto');
+const { BUSINESS_COLLECTIONS } = require('./businessStore');
 
 const VERSION_PARTS_MARKER = '{"_layout":"version_parts"}';
 
@@ -189,6 +190,21 @@ function ensureVersionSnapshotSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_user_data_version_todos_hash
       ON user_data_version_todos(todo_hash);
+    CREATE TABLE IF NOT EXISTS user_data_version_business_blobs (
+      account_id TEXT NOT NULL,
+      collection_key TEXT NOT NULL,
+      row_hash TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      PRIMARY KEY(account_id,collection_key,row_hash)
+    );
+    CREATE TABLE IF NOT EXISTS user_data_version_business_rows (
+      version_id INTEGER NOT NULL,
+      collection_key TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      row_hash TEXT NOT NULL,
+      PRIMARY KEY(version_id,collection_key,row_id),
+      FOREIGN KEY(version_id) REFERENCES user_data_versions(id) ON DELETE CASCADE
+    );
     DROP TRIGGER IF EXISTS trg_user_data_versions_cleanup_part_blobs;
     CREATE TRIGGER trg_user_data_versions_cleanup_part_blobs
     AFTER DELETE ON user_data_versions
@@ -211,6 +227,14 @@ function ensureVersionSnapshotSchema(db) {
           WHERE v.account_id=OLD.account_id
             AND t.todo_hash=user_data_version_todo_blobs.todo_hash
         );
+      DELETE FROM user_data_version_business_blobs
+      WHERE account_id=OLD.account_id AND NOT EXISTS (
+        SELECT 1 FROM user_data_version_business_rows r
+        JOIN user_data_versions v ON v.id=r.version_id
+        WHERE v.account_id=OLD.account_id
+          AND r.collection_key=user_data_version_business_blobs.collection_key
+          AND r.row_hash=user_data_version_business_blobs.row_hash
+      );
     END
   `);
 }
@@ -220,8 +244,9 @@ function versionPartsSummary(db, accountId, hashes) {
   const sizeRow = db.prepare(`
     SELECT
       COALESCE((SELECT SUM(length(CAST(data AS BLOB))) FROM user_data_parts WHERE account_id=?),0)
-      + COALESCE((SELECT SUM(length(CAST(payload AS BLOB))) FROM workspace_todos WHERE storage_key=?),0) AS n
-  `).get(accountId, accountId);
+      + COALESCE((SELECT SUM(length(CAST(payload AS BLOB))) FROM workspace_todos WHERE storage_key=?),0)
+      + COALESCE((SELECT SUM(length(CAST(payload AS BLOB))) FROM workspace_business_rows WHERE storage_key=?),0) AS n
+  `).get(accountId, accountId, accountId);
   const counts = { todos: 0, students: 0, staff: 0, instructions: 0 };
   const countPart = db.prepare(
     'SELECT data FROM user_data_parts WHERE account_id=? AND part_key=?'
@@ -230,6 +255,14 @@ function versionPartsSummary(db, accountId, hashes) {
     if (key === 'todos') {
       const row = db.prepare('SELECT todo_count AS n FROM workspace_todo_state WHERE storage_key=?').get(accountId);
       if (row) counts.todos = Number(row.n || 0);
+      return;
+    }
+    if (BUSINESS_COLLECTIONS.includes(key)) {
+      const row = db.prepare(`
+        SELECT row_count AS n FROM workspace_business_state
+        WHERE storage_key=? AND collection_key=?
+      `).get(accountId, key);
+      if (row && Object.prototype.hasOwnProperty.call(counts, key)) counts[key] = Number(row.n || 0);
       return;
     }
     const row = countPart.get(accountId, key);
@@ -271,6 +304,10 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
     'SELECT data_hash FROM workspace_todo_state WHERE storage_key=?'
   ).get(accountId);
   if (todoState) rows.push({ part_key: 'todos', data_hash: todoState.data_hash });
+  db.prepare(`
+    SELECT collection_key AS part_key,data_hash FROM workspace_business_state
+    WHERE storage_key=?
+  `).all(accountId).forEach(row => rows.push(row));
   if (!rows.length) return false;
   const hashes = Object.fromEntries(rows.map(row => [row.part_key, row.data_hash]));
   const summary = versionPartsSummary(db, accountId, hashes);
@@ -307,6 +344,17 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
       WHERE b.account_id=? AND b.todo_hash=w.payload_hash
     )
   `).all(accountId, accountId) : [];
+  const businessRows = db.prepare(`
+    SELECT collection_key,row_id,payload_hash FROM workspace_business_rows WHERE storage_key=?
+  `).all(accountId);
+  const changedBusinessData = db.prepare(`
+    SELECT w.collection_key,w.payload_hash,w.payload
+    FROM workspace_business_rows w
+    WHERE w.storage_key=? AND NOT EXISTS (
+      SELECT 1 FROM user_data_version_business_blobs b
+      WHERE b.account_id=? AND b.collection_key=w.collection_key AND b.row_hash=w.payload_hash
+    )
+  `).all(accountId, accountId);
 
   const save = db.transaction(() => {
     const createdAt = db.prepare("SELECT datetime('now') AS t").get().t;
@@ -321,7 +369,7 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
       INSERT INTO user_data_version_parts(version_id,part_key,data_hash) VALUES (?,?,?)
     `);
     for (const row of rows) {
-      if (row.part_key !== 'todos' && changedKeys.has(row.part_key)) {
+      if (row.part_key !== 'todos' && !BUSINESS_COLLECTIONS.includes(row.part_key) && changedKeys.has(row.part_key)) {
         const data = changedData.get(row.part_key);
         if (data === undefined) throw new Error(`version_part_missing:${row.part_key}`);
         addBlob.run(accountId, row.data_hash, data);
@@ -343,6 +391,18 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
         addTodoRef.run(inserted.lastInsertRowid, todo.todo_id, todo.payload_hash);
       }
     }
+    const addBusinessBlob = db.prepare(`
+      INSERT OR IGNORE INTO user_data_version_business_blobs(account_id,collection_key,row_hash,payload)
+      VALUES (?,?,?,?)
+    `);
+    const addBusinessRef = db.prepare(`
+      INSERT INTO user_data_version_business_rows(version_id,collection_key,row_id,row_hash)
+      VALUES (?,?,?,?)
+    `);
+    changedBusinessData.forEach(row => addBusinessBlob.run(
+      accountId, row.collection_key, row.payload_hash, row.payload));
+    businessRows.forEach(row => addBusinessRef.run(
+      inserted.lastInsertRowid, row.collection_key, row.row_id, row.payload_hash));
     insertSummaryValues(db, inserted.lastInsertRowid, accountId, createdAt, summary);
   });
   save();
@@ -391,6 +451,30 @@ function loadVersionSnapshot(db, accountId, versionId) {
         try {
           const legacyTodos = JSON.parse(row.data || '[]');
           data.todos = Array.isArray(legacyTodos) ? legacyTodos : [];
+        } catch (_) { return undefined; }
+      }
+      continue;
+    }
+    if (BUSINESS_COLLECTIONS.includes(row.part_key)) {
+      const businessRows = db.prepare(`
+        SELECT b.payload FROM user_data_version_business_rows r
+        JOIN user_data_version_business_blobs b
+          ON b.account_id=? AND b.collection_key=r.collection_key AND b.row_hash=r.row_hash
+        WHERE r.version_id=? AND r.collection_key=? ORDER BY r.row_id
+      `).all(accountId, version.id, row.part_key);
+      const refs = db.prepare(`
+        SELECT COUNT(*) AS n FROM user_data_version_business_rows
+        WHERE version_id=? AND collection_key=?
+      `).get(version.id, row.part_key).n;
+      if (refs) {
+        if (businessRows.length !== refs) return undefined;
+        data[row.part_key] = businessRows.map(item => {
+          try { return JSON.parse(item.payload); } catch (_) { return null; }
+        }).filter(Boolean);
+      } else {
+        try {
+          const legacy = JSON.parse(row.data || '[]');
+          data[row.part_key] = Array.isArray(legacy) ? legacy : [];
         } catch (_) { return undefined; }
       }
       continue;
@@ -480,6 +564,16 @@ function pruneVersionSnapshots(db, accountId, nowMs = Date.now()) {
         JOIN user_data_versions v ON v.id=t.version_id
         WHERE v.account_id=?
           AND t.todo_hash=user_data_version_todo_blobs.todo_hash
+      )
+    `).run(accountId, accountId);
+    db.prepare(`
+      DELETE FROM user_data_version_business_blobs
+      WHERE account_id=? AND NOT EXISTS (
+        SELECT 1 FROM user_data_version_business_rows r
+        JOIN user_data_versions v ON v.id=r.version_id
+        WHERE v.account_id=?
+          AND r.collection_key=user_data_version_business_blobs.collection_key
+          AND r.row_hash=user_data_version_business_blobs.row_hash
       )
     `).run(accountId, accountId);
   }

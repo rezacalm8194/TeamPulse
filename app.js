@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp122';
+const TP_ASSET_V = 'tp123';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3885,7 +3885,8 @@ function _partsForPage(page = currentPage) {
   return [...new Set([..._CORE_DOCUMENT_PARTS, ...extra])];
 }
 function _documentIncludeQuery(keys) {
-  const documentKeys = (keys || []).filter(key => key !== 'todos');
+  const documentKeys = (keys || []).filter(key =>
+    key !== 'todos' && !['students', 'sessions', 'payments'].includes(key));
   if (!documentKeys.length) return '';
   return '&include=' + encodeURIComponent(documentKeys.join(','));
 }
@@ -3980,7 +3981,11 @@ async function _ensureDocumentParts(keys) {
     await _loadTodoPage(false, { reset: true });
     await _loadTodoPage(true, { reset: true });
   }
-  const needed = requested.filter(key => key !== 'todos' && !_tpPartLoaded(key));
+  for (const key of ['students', 'sessions', 'payments']) {
+    if (requested.includes(key) && !_tpPartLoaded(key)) await _loadBusinessPage(key, { reset: true });
+  }
+  const needed = requested.filter(key =>
+    key !== 'todos' && !['students', 'sessions', 'payments'].includes(key) && !_tpPartLoaded(key));
   if (!needed.length) return true;
   if (!_sbUser || !_sbSession?.token) return false;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
@@ -4080,6 +4085,57 @@ async function _loadTodoStats() {
     updateSidebarGreeting();
     return stats;
   } catch(e) { return null; }
+}
+
+const BUSINESS_SERVER_PAGE_SIZE = 200;
+window._tpBusinessPaging = window._tpBusinessPaging || {};
+function _businessPagingState(collection) {
+  return window._tpBusinessPaging[collection] ||
+    (window._tpBusinessPaging[collection] = { cursor: null, done: false, loading: null, search: '' });
+}
+async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
+  if (!['students', 'sessions', 'payments'].includes(collection)) return false;
+  if (!_sbUser || !_sbSession?.token) return false;
+  const state = _businessPagingState(collection);
+  const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
+  if (normalizedSearch !== state.search) reset = true;
+  if (state.loading) return state.loading;
+  if (state.done && !reset) return true;
+  const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
+  if (!accId) return false;
+  if (reset) { state.cursor = null; state.done = false; state.search = normalizedSearch; }
+  state.loading = (async () => {
+    let query = _workspaceQuery() + '&limit=' + BUSINESS_SERVER_PAGE_SIZE;
+    if (state.cursor) query += '&cursor=' + encodeURIComponent(state.cursor);
+    if (normalizedSearch) query += '&search=' + encodeURIComponent(normalizedSearch);
+    const res = await _apiFetch('/api/data/' + accId + '/' + collection + query);
+    if (!res.ok) return false;
+    const payload = await res.json();
+    const incoming = Array.isArray(payload.items) ? payload.items : [];
+    const existing = new Map((Array.isArray(_db?.[collection]) ? _db[collection] : [])
+      .map(row => [String(row?.id), row]));
+    if (reset && !_hasServerSyncPending()) existing.clear();
+    incoming.forEach(row => existing.set(String(row?.id), row));
+    _db[collection] = [...existing.values()];
+    state.cursor = payload.next_cursor || null;
+    state.done = !state.cursor;
+    if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
+    window._tpLoadedParts.add(collection);
+    if (!window._tpAvailableParts) window._tpAvailableParts = new Set();
+    window._tpAvailableParts.add(collection);
+    if (payload.etag) window._serverDataEtag = payload.etag;
+    _persistPartLoadState();
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    return true;
+  })().finally(() => { state.loading = null; });
+  return state.loading;
+}
+async function _loadMoreBusiness(collection) {
+  const ok = await _loadBusinessPage(collection);
+  if (!ok) return;
+  if (collection === 'students') return renderStudents(currentStudentAccountSearch());
+  if (collection === 'sessions') return renderSessions();
+  if (collection === 'payments') return renderPayments();
 }
 function _localWorkspaceDBKey(id=_currentAccountId()) {
   const uid = String(_workspaceAuthUser()?.id || '').slice(0, 8) || 'guest';
@@ -6183,6 +6239,8 @@ function deleteCaseForm(id) {
 }
 
 async function renderStudents(search = '') {
+  const studentPaging = _businessPagingState('students');
+  if (search.trim() !== studentPaging.search) await _loadBusinessPage('students', { reset: true, search });
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
@@ -6203,7 +6261,8 @@ async function renderStudents(search = '') {
   ${studentSectionNav('students')}
   ${renderCaseFormsSection(search)}
   ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: true, menuPrefix: 'stu' })}`;
-  setContent(html);
+  setContent(html + (studentPaging.done ? '' :
+    '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
 
   // Restore focus to search box (it's in topbar, so look there first)
   const si = document.querySelector('#topbar-actions .table-search input') ||
@@ -17053,6 +17112,11 @@ async function _loadFromServer() {
     const payload = await res.json();
     if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
       await _loadTodoPage(false, { reset: true });
+    }
+    if (Array.isArray(includeKeys)) {
+      for (const key of ['students', 'sessions', 'payments']) {
+        if (includeKeys.includes(key)) await _loadBusinessPage(key, { reset: true });
+      }
     }
     if (payload.partial) {
       _rememberServerParts(payload);

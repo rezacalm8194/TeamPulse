@@ -55,6 +55,12 @@ const {
   replaceTodos,
 } = require('../utils/todoStore');
 const {
+  BUSINESS_COLLECTIONS,
+  ensureBusinessStoreSchema,
+  collectionState,
+  loadRowsPage,
+} = require('../utils/businessStore');
+const {
   ensureDocumentStoreSchema,
   loadWorkspaceMeta,
   loadWorkspaceMetaAsync,
@@ -130,6 +136,7 @@ setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
 ensureTodoStoreSchema(db);
+ensureBusinessStoreSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
   return persistVersionSnapshot(db, accountId, serializedData, { force });
@@ -425,6 +432,7 @@ async function persistWorkspaceDocument(req, res, {
   previousLayout = 'blob',
   replaceAll = true,
   replaceTodoCollection = false,
+  replaceBusinessCollections = [],
   patched = false,
 }) {
   return withPersistLock(storageKey, () => persistWorkspaceDocumentLocked(req, res, {
@@ -440,6 +448,7 @@ async function persistWorkspaceDocument(req, res, {
     previousLayout,
     replaceAll,
     replaceTodoCollection,
+    replaceBusinessCollections,
     patched,
   }));
 }
@@ -457,6 +466,7 @@ async function persistWorkspaceDocumentLocked(req, res, {
   previousLayout = 'blob',
   replaceAll = true,
   replaceTodoCollection = false,
+  replaceBusinessCollections = [],
   patched = false,
 }) {
   data = sanitizeUserDataForStorage(data);
@@ -533,6 +543,7 @@ async function persistWorkspaceDocumentLocked(req, res, {
     savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, {
       replaceAll,
       replaceTodoCollection,
+      replaceBusinessCollections,
     })).etag;
     db.transaction(() => {
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
@@ -644,6 +655,7 @@ async function handleDocumentDelta(req, res) {
       previousLayout: meta.layout,
       replaceAll: !useParts,
       replaceTodoCollection: !!patch.collections?.todos,
+      replaceBusinessCollections: BUSINESS_COLLECTIONS.filter(key => !!patch.collections?.[key]),
       patched: true,
     });
   } catch (e) {
@@ -715,6 +727,43 @@ router.get('/:accountId/todos', auth, async (req, res) => {
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+for (const collection of BUSINESS_COLLECTIONS) {
+  router.get(`/:accountId/${collection}/stats`, auth, async (req, res) => {
+    try {
+      const targetId = req.params.accountId;
+      const workspace = resolveWorkspace(req, res, targetId);
+      if (!workspace) return;
+      if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+      const state = collectionState(db, workspace.storageKey, collection);
+      res.json({
+        total: Number(state?.row_count || 0),
+        archived: Number(state?.archived_count || 0),
+        active: Math.max(0, Number(state?.row_count || 0) - Number(state?.archived_count || 0)),
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  router.get(`/:accountId/${collection}`, auth, async (req, res) => {
+    try {
+      const targetId = req.params.accountId;
+      const workspace = resolveWorkspace(req, res, targetId);
+      if (!workspace) return;
+      if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+      const page = loadRowsPage(db, workspace.storageKey, collection, {
+        limit: req.query.limit,
+        cursor: req.query.cursor,
+        archived: collection === 'students' && req.query.archived != null
+          ? String(req.query.archived) === '1'
+          : null,
+        search: collection === 'students' ? req.query.search : null,
+        dateFrom: collection === 'sessions' ? req.query.date_from : null,
+        dateTo: collection === 'sessions' ? req.query.date_to : null,
+      });
+      const state = collectionState(db, workspace.storageKey, collection);
+      res.json({ ...page, total: Number(state?.row_count || 0), etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+}
 
 router.post('/:accountId/todos/delta', auth, async (req, res) => {
   try {
@@ -1025,6 +1074,7 @@ router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) =>
       savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, {
         replaceAll: true,
         replaceTodoCollection: true,
+        replaceBusinessCollections: BUSINESS_COLLECTIONS,
       })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
@@ -1063,7 +1113,8 @@ router.get('/:accountId', auth, async (req, res) => {
     if (meta.layout === 'parts') {
       const hashes = loadPartHashes(db, workspace.storageKey);
       availableParts = Object.keys(hashes).filter(key => key !== SCALARS_PART);
-      const selectedKeys = (includeKeys || availableParts).filter(key => key !== 'todos');
+      const selectedKeys = (includeKeys || availableParts).filter(key =>
+        key !== 'todos' && !BUSINESS_COLLECTIONS.includes(key));
       const parts = await loadDocumentPartsAsync(db, workspace.storageKey, selectedKeys);
       loaded = { ...meta, data: parts.data };
       if (!includeKeys) {
