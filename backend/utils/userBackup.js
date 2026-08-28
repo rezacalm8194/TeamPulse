@@ -217,7 +217,10 @@ function restoreAccountAppBackup(db, accountId, backup) {
       if (meta?.layout === 'parts') saveVersionSnapshotParts(db, storageKey, { force: true });
       else saveVersionSnapshot(db, storageKey, meta?.serialized || serializeWorkspaceDocument(db, storageKey), { force: true });
     }
-    writeWorkspaceDocument(db, storageKey, doc.data, { replaceAll: true });
+    writeWorkspaceDocument(db, storageKey, doc.data, {
+      replaceAll: true,
+      replaceTodoCollection: true,
+    });
     if (doc.workspaceId === 'default') return;
     const name = doc.name || doc.workspaceId;
     const row = db.prepare(

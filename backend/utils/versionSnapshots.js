@@ -174,6 +174,21 @@ function ensureVersionSnapshotSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_user_data_version_parts_hash
       ON user_data_version_parts(data_hash);
+    CREATE TABLE IF NOT EXISTS user_data_version_todo_blobs (
+      account_id TEXT NOT NULL,
+      todo_hash TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      PRIMARY KEY (account_id, todo_hash)
+    );
+    CREATE TABLE IF NOT EXISTS user_data_version_todos (
+      version_id INTEGER NOT NULL,
+      todo_id TEXT NOT NULL,
+      todo_hash TEXT NOT NULL,
+      PRIMARY KEY (version_id, todo_id),
+      FOREIGN KEY (version_id) REFERENCES user_data_versions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_data_version_todos_hash
+      ON user_data_version_todos(todo_hash);
     DROP TRIGGER IF EXISTS trg_user_data_versions_cleanup_part_blobs;
     CREATE TRIGGER trg_user_data_versions_cleanup_part_blobs
     AFTER DELETE ON user_data_versions
@@ -187,6 +202,15 @@ function ensureVersionSnapshotSchema(db) {
           WHERE v.account_id=OLD.account_id
             AND p.data_hash=user_data_version_part_blobs.data_hash
         );
+      DELETE FROM user_data_version_todo_blobs
+      WHERE account_id=OLD.account_id
+        AND NOT EXISTS (
+          SELECT 1
+          FROM user_data_version_todos t
+          JOIN user_data_versions v ON v.id=t.version_id
+          WHERE v.account_id=OLD.account_id
+            AND t.todo_hash=user_data_version_todo_blobs.todo_hash
+        );
     END
   `);
 }
@@ -194,14 +218,20 @@ function ensureVersionSnapshotSchema(db) {
 function versionPartsSummary(db, accountId, hashes) {
   const keys = Object.keys(hashes || {});
   const sizeRow = db.prepare(`
-    SELECT COALESCE(SUM(length(CAST(data AS BLOB))),0) AS n
-    FROM user_data_parts WHERE account_id=?
-  `).get(accountId);
+    SELECT
+      COALESCE((SELECT SUM(length(CAST(data AS BLOB))) FROM user_data_parts WHERE account_id=?),0)
+      + COALESCE((SELECT SUM(length(CAST(payload AS BLOB))) FROM workspace_todos WHERE storage_key=?),0) AS n
+  `).get(accountId, accountId);
   const counts = { todos: 0, students: 0, staff: 0, instructions: 0 };
   const countPart = db.prepare(
     'SELECT data FROM user_data_parts WHERE account_id=? AND part_key=?'
   );
   Object.keys(counts).forEach(key => {
+    if (key === 'todos') {
+      const row = db.prepare('SELECT todo_count AS n FROM workspace_todo_state WHERE storage_key=?').get(accountId);
+      if (row) counts.todos = Number(row.n || 0);
+      return;
+    }
     const row = countPart.get(accountId, key);
     if (!row) return;
     try {
@@ -237,6 +267,10 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
   const rows = db.prepare(
     'SELECT part_key,data_hash FROM user_data_parts WHERE account_id=? ORDER BY part_key'
   ).all(accountId);
+  const todoState = db.prepare(
+    'SELECT data_hash FROM workspace_todo_state WHERE storage_key=?'
+  ).get(accountId);
+  if (todoState) rows.push({ part_key: 'todos', data_hash: todoState.data_hash });
   if (!rows.length) return false;
   const hashes = Object.fromEntries(rows.map(row => [row.part_key, row.data_hash]));
   const summary = versionPartsSummary(db, accountId, hashes);
@@ -262,6 +296,17 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
       WHERE account_id=? AND part_key IN (${placeholders})
     `).all(accountId, ...changedKeys).forEach(row => changedData.set(row.part_key, row.data));
   }
+  const todoRows = todoState ? db.prepare(
+    'SELECT todo_id,payload_hash FROM workspace_todos WHERE storage_key=?'
+  ).all(accountId) : [];
+  const changedTodoData = todoState ? db.prepare(`
+    SELECT w.payload_hash,w.payload
+    FROM workspace_todos w
+    WHERE w.storage_key=? AND NOT EXISTS (
+      SELECT 1 FROM user_data_version_todo_blobs b
+      WHERE b.account_id=? AND b.todo_hash=w.payload_hash
+    )
+  `).all(accountId, accountId) : [];
 
   const save = db.transaction(() => {
     const createdAt = db.prepare("SELECT datetime('now') AS t").get().t;
@@ -276,12 +321,27 @@ function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
       INSERT INTO user_data_version_parts(version_id,part_key,data_hash) VALUES (?,?,?)
     `);
     for (const row of rows) {
-      if (changedKeys.has(row.part_key)) {
+      if (row.part_key !== 'todos' && changedKeys.has(row.part_key)) {
         const data = changedData.get(row.part_key);
         if (data === undefined) throw new Error(`version_part_missing:${row.part_key}`);
         addBlob.run(accountId, row.data_hash, data);
       }
       addRef.run(inserted.lastInsertRowid, row.part_key, row.data_hash);
+    }
+    if (todoState) {
+      const addTodoBlob = db.prepare(`
+        INSERT OR IGNORE INTO user_data_version_todo_blobs(account_id,todo_hash,payload)
+        VALUES (?,?,?)
+      `);
+      const addTodoRef = db.prepare(`
+        INSERT INTO user_data_version_todos(version_id,todo_id,todo_hash) VALUES (?,?,?)
+      `);
+      for (const todo of changedTodoData) {
+        addTodoBlob.run(accountId, todo.payload_hash, todo.payload);
+      }
+      for (const todo of todoRows) {
+        addTodoRef.run(inserted.lastInsertRowid, todo.todo_id, todo.payload_hash);
+      }
     }
     insertSummaryValues(db, inserted.lastInsertRowid, accountId, createdAt, summary);
   });
@@ -301,7 +361,7 @@ function loadVersionSnapshot(db, accountId, versionId) {
   const rows = db.prepare(`
     SELECT p.part_key,b.data
     FROM user_data_version_parts p
-    JOIN user_data_version_part_blobs b
+    LEFT JOIN user_data_version_part_blobs b
       ON b.account_id=? AND b.data_hash=p.data_hash
     WHERE p.version_id=?
   `).all(accountId, version.id);
@@ -311,6 +371,30 @@ function loadVersionSnapshot(db, accountId, versionId) {
   if (!refs || rows.length !== refs) return undefined;
   const data = {};
   for (const row of rows) {
+    if (row.part_key === 'todos') {
+      const todoRows = db.prepare(`
+        SELECT b.payload
+        FROM user_data_version_todos t
+        JOIN user_data_version_todo_blobs b
+          ON b.account_id=? AND b.todo_hash=t.todo_hash
+        WHERE t.version_id=? ORDER BY t.todo_id
+      `).all(accountId, version.id);
+      const todoRefs = db.prepare(
+        'SELECT COUNT(*) AS n FROM user_data_version_todos WHERE version_id=?'
+      ).get(version.id).n;
+      if (todoRefs) {
+        if (todoRows.length !== todoRefs) return undefined;
+        data.todos = todoRows.map(todo => {
+          try { return JSON.parse(todo.payload); } catch (_) { return null; }
+        }).filter(Boolean);
+      } else {
+        try {
+          const legacyTodos = JSON.parse(row.data || '[]');
+          data.todos = Array.isArray(legacyTodos) ? legacyTodos : [];
+        } catch (_) { return undefined; }
+      }
+      continue;
+    }
     let value;
     try { value = JSON.parse(row.data); } catch (_) { return undefined; }
     if (row.part_key === '__scalars__') Object.assign(data, value && typeof value === 'object' ? value : {});
@@ -386,6 +470,16 @@ function pruneVersionSnapshots(db, accountId, nowMs = Date.now()) {
         JOIN user_data_versions v ON v.id=p.version_id
         WHERE v.account_id=?
           AND p.data_hash=user_data_version_part_blobs.data_hash
+      )
+    `).run(accountId, accountId);
+    db.prepare(`
+      DELETE FROM user_data_version_todo_blobs
+      WHERE account_id=? AND NOT EXISTS (
+        SELECT 1
+        FROM user_data_version_todos t
+        JOIN user_data_versions v ON v.id=t.version_id
+        WHERE v.account_id=?
+          AND t.todo_hash=user_data_version_todo_blobs.todo_hash
       )
     `).run(accountId, accountId);
   }

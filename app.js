@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp120';
+const TP_ASSET_V = 'tp121';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3858,7 +3858,7 @@ function _workspaceQuery(separator='?') {
   return separator + 'workspace=' + encodeURIComponent(_currentAccountId());
 }
 const _CORE_DOCUMENT_PARTS = [
-  'todos', 'habits', 'habit_logs', 'sessions', 'staff', 'team_members',
+  'habits', 'habit_logs', 'sessions', 'staff', 'team_members',
   'session_order', 'package_types', 'staff_roles', 'staff_role_entries'
 ];
 const _PAGE_DOCUMENT_PARTS = {
@@ -3885,8 +3885,9 @@ function _partsForPage(page = currentPage) {
   return [...new Set([..._CORE_DOCUMENT_PARTS, ...extra])];
 }
 function _documentIncludeQuery(keys) {
-  if (!keys || !keys.length) return '';
-  return '&include=' + encodeURIComponent(keys.join(','));
+  const documentKeys = (keys || []).filter(key => key !== 'todos');
+  if (!documentKeys.length) return '';
+  return '&include=' + encodeURIComponent(documentKeys.join(','));
 }
 function _persistPartLoadState() {
   if (!_db || typeof _db !== 'object') return;
@@ -3972,7 +3973,14 @@ function _shouldLoadFullDocument() {
   return false;
 }
 async function _ensureDocumentParts(keys) {
-  const needed = [...new Set(keys || [])].filter(key => !_tpPartLoaded(key));
+  const requested = [...new Set(keys || [])];
+  const todoPaging = _todoPagingState(false);
+  if (requested.includes('todos') &&
+      (!_tpPartLoaded('todos') || (!todoPaging.cursor && !todoPaging.done))) {
+    await _loadTodoPage(false, { reset: true });
+    await _loadTodoPage(true, { reset: true });
+  }
+  const needed = requested.filter(key => key !== 'todos' && !_tpPartLoaded(key));
   if (!needed.length) return true;
   if (!_sbUser || !_sbSession?.token) return false;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
@@ -3997,6 +4005,81 @@ async function _ensureDocumentParts(keys) {
     console.warn('[TeamPulse] part load failed:', e.message);
     return false;
   }
+}
+
+const TODO_SERVER_PAGE_SIZE = 200;
+window._tpTodoPaging = window._tpTodoPaging || {
+  active: { cursor: null, done: false, loading: null },
+  archived: { cursor: null, done: false, loading: null },
+  stats: null,
+};
+function _todoPagingState(archived = false) {
+  const key = archived ? 'archived' : 'active';
+  window._tpTodoPaging = window._tpTodoPaging || {};
+  return window._tpTodoPaging[key] || (window._tpTodoPaging[key] = { cursor: null, done: false, loading: null });
+}
+async function _loadTodoPage(archived = false, { reset = false } = {}) {
+  if (!_sbUser || !_sbSession?.token) return false;
+  const state = _todoPagingState(archived);
+  if (state.loading) return state.loading;
+  if (state.done && !reset) return true;
+  const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
+  if (!accId) return false;
+  if (reset) { state.cursor = null; state.done = false; }
+  state.loading = (async () => {
+    const query = _workspaceQuery() + '&limit=' + TODO_SERVER_PAGE_SIZE +
+      '&archived=' + (archived ? '1' : '0') + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
+    const res = await _apiFetch('/api/data/' + accId + '/todos' + query);
+    if (!res.ok) return false;
+    const payload = await res.json();
+    const incoming = Array.isArray(payload.items) ? payload.items : [];
+    const existing = new Map((Array.isArray(_db?.todos) ? _db.todos : []).map(todo => [String(todo?.id), todo]));
+    if (reset) {
+      for (const [id, todo] of existing) {
+        const pending = _readDurableTodoDeltaQueue().some(item => String(item?.todoId) === id);
+        if (!!todo?.archived === !!archived && !pending) existing.delete(id);
+      }
+    }
+    incoming.forEach(todo => {
+      const id = String(todo?.id);
+      const local = existing.get(id);
+      existing.set(id, local ? _pickMergedTodo(local, todo) : todo);
+    });
+    _db.todos = [...existing.values()];
+    state.cursor = payload.next_cursor || null;
+    state.done = !state.cursor;
+    window._tpTodoPaging.stats = {
+      ...(window._tpTodoPaging.stats || {}),
+      [archived ? 'archived' : 'active']: Number(payload.total || incoming.length),
+    };
+    if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
+    window._tpLoadedParts.add('todos');
+    if (!window._tpAvailableParts) window._tpAvailableParts = new Set();
+    window._tpAvailableParts.add('todos');
+    _applyTodoIdHighWater(payload.todo_id_high_water);
+    if (payload.etag) window._serverDataEtag = payload.etag;
+    _persistPartLoadState();
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    return true;
+  })().finally(() => { state.loading = null; });
+  return state.loading;
+}
+async function _loadMoreTodos(archived = false) {
+  const loaded = await _loadTodoPage(archived);
+  if (loaded) renderTodoList({ skipMaintenance: true });
+}
+async function _loadTodoStats() {
+  if (!_sbUser || !_sbSession?.token) return null;
+  const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
+  if (!accId) return null;
+  try {
+    const res = await _apiFetch('/api/data/' + accId + '/todos/stats' + _workspaceQuery());
+    if (!res.ok) return null;
+    const stats = await res.json();
+    window._tpTodoPaging.stats = { ...(window._tpTodoPaging.stats || {}), ...stats };
+    updateSidebarGreeting();
+    return stats;
+  } catch(e) { return null; }
 }
 function _localWorkspaceDBKey(id=_currentAccountId()) {
   const uid = String(_workspaceAuthUser()?.id || '').slice(0, 8) || 'guest';
@@ -5484,7 +5567,8 @@ function updateSidebarGreeting() {
 
     const today = (typeof _todayJalaliStr === 'function') ? _todayJalaliStr() : '';
     const sessionsToday = (_db.sessions || []).filter(s => s.date_jalali === today).length;
-    const tasksPending = (_db.todos || []).filter(t => !t.done && !t.archived).length;
+    const tasksPending = Number(window._tpTodoPaging?.stats?.pending ??
+      (_db.todos || []).filter(t => !t.done && !t.archived).length);
     const activeHabits = (_db.habits || []).filter(h => !h.archived);
     const doneTodaySet = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => l.habit_id));
     const habitsOverdue = activeHabits.filter(h => !doneTodaySet.has(h.id)).length;
@@ -16951,6 +17035,7 @@ async function _loadFromServer() {
     }
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
+    void _loadTodoStats();
     const includeKeys = _shouldLoadFullDocument() ? null : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students');
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(includeKeys));
     if (res.status === 429) {
@@ -16966,6 +17051,9 @@ async function _loadFromServer() {
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const payload = await res.json();
+    if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
+      await _loadTodoPage(false, { reset: true });
+    }
     if (payload.partial) {
       _rememberServerParts(payload);
       if (_db && typeof _db === 'object' && payload.data) {
@@ -21754,6 +21842,10 @@ function renderTodoList(options = {}) {
     // اگه بدون تاریخ هستن و امروز نیستن (نباید پیش بیاد ولی safety)
   }
 
+  const paging = _todoPagingState(false);
+  if (!paging.done) {
+    html += '<button type="button" class="todo-show-more" onclick="_loadMoreTodos(false)">دریافت کارهای بیشتر از سرور</button>';
+  }
   setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${html}</div>`);
   if (!skipMaintenance) _checkTodoReminders();
   _initTodoDragDrop();
@@ -23789,6 +23881,8 @@ function _refreshTodoAfterDelete(refresh = '') {
 async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine') {
   _todosInit();
   window._todoArchiveTab = activeArchive;
+  const archivePaging = _todoPagingState(true);
+  if (!archivePaging.done) await _loadTodoPage(true);
 
   // Safety: اگه در حال impersonate هستیم و todos خالیه، یه بار دیگه از سرور بکش
   // (جلوگیری از باگ احتمالی sync بعد از رفرش صفحه)
@@ -23812,7 +23906,7 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
   // چک اتوماتیک: اگه الان ۱ فروردین هست، بایگانی سال قبل رو پاک کن
   const todayJ = _todayJalaliStr();
   const todayParts = _jalaliParse(todayJ);
-  if (todayParts[1] === 1 && todayParts[2] === 1) {
+  if (archivePaging.done && todayParts[1] === 1 && todayParts[2] === 1) {
     const lastClear = localStorage.getItem('tp_archive_clear_year');
     if (lastClear !== String(todayParts[0])) {
       _db.todos = _db.todos.filter(t => !t.archived);
@@ -23924,8 +24018,14 @@ async function openTodoArchive(activeArchive = window._todoArchiveTab || 'mine')
       <span style="opacity:.6">هر سال ۱ فروردین خودکار پاک می‌شه</span>
     </div>
     <div style="max-height:420px;overflow-y:auto">${rows || '<p style="color:var(--text3);font-size:13px;text-align:center;padding:30px">در این بخش هنوز کاری نیست.</p>'}</div>
+    ${archivePaging.done ? '' : '<button type="button" class="todo-show-more" onclick="_loadMoreTodoArchive()">دریافت بایگانی بیشتر از سرور</button>'}
     ${clearAllBtn}
   `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
+}
+
+async function _loadMoreTodoArchive() {
+  await _loadTodoPage(true);
+  return openTodoArchive(window._todoArchiveTab || 'mine');
 }
 
 function _clearTodoArchive(kind = window._todoArchiveTab || 'mine') {

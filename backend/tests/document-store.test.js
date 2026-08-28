@@ -57,7 +57,10 @@ test('writing a document stores collections as separate SQLite parts', () => {
   assert.equal(row.data, PARTS_MARKER);
   assert.equal(row.data_etag, first.etag);
   const parts = db.prepare('SELECT part_key FROM user_data_parts WHERE account_id=? ORDER BY part_key').all('acc-1');
-  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART, 'students', 'todos'].sort());
+  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART, 'students'].sort());
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) AS n FROM workspace_todos WHERE storage_key=?'
+  ).get('acc-1').n, 1);
   const loaded = loadWorkspaceDocument(db, 'acc-1');
   assert.equal(loaded.layout, 'parts');
   assert.equal(loaded.data.todos[0].title, 'keep');
@@ -80,7 +83,10 @@ test('a later patch stringify/writes only the changed collection', () => {
     collections: { todos: { upsert: [{ id: 10, title: 'new' }], delete: [] } },
     scalars: { _lastSaved: 2 },
   });
-  writeWorkspaceDocument(db, 'acc-1', next, { replaceAll: false });
+  writeWorkspaceDocument(db, 'acc-1', next, {
+    replaceAll: false,
+    replaceTodoCollection: true,
+  });
 
   const afterStudents = db.prepare(
     'SELECT data, data_hash, updated_at FROM user_data_parts WHERE account_id=? AND part_key=?'

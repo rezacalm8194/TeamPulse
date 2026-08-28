@@ -44,6 +44,17 @@ const {
 const { createStorageDriver } = require('../utils/storage');
 const { deleteStoredFiles } = require('../utils/fileStore');
 const {
+  ensureTodoStoreSchema,
+  todoState,
+  loadAllTodos,
+  loadTodosByIds,
+  loadTodosPage,
+  countTodos,
+  upsertTodos,
+  deleteTodos,
+  replaceTodos,
+} = require('../utils/todoStore');
+const {
   ensureDocumentStoreSchema,
   loadWorkspaceMeta,
   loadWorkspaceMetaAsync,
@@ -118,6 +129,7 @@ setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
+ensureTodoStoreSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
   return persistVersionSnapshot(db, accountId, serializedData, { force });
@@ -412,6 +424,7 @@ async function persistWorkspaceDocument(req, res, {
   previousSerialized = null,
   previousLayout = 'blob',
   replaceAll = true,
+  replaceTodoCollection = false,
   patched = false,
 }) {
   return withPersistLock(storageKey, () => persistWorkspaceDocumentLocked(req, res, {
@@ -426,6 +439,7 @@ async function persistWorkspaceDocument(req, res, {
     previousSerialized,
     previousLayout,
     replaceAll,
+    replaceTodoCollection,
     patched,
   }));
 }
@@ -442,6 +456,7 @@ async function persistWorkspaceDocumentLocked(req, res, {
   previousSerialized = null,
   previousLayout = 'blob',
   replaceAll = true,
+  replaceTodoCollection = false,
   patched = false,
 }) {
   data = sanitizeUserDataForStorage(data);
@@ -472,6 +487,14 @@ async function persistWorkspaceDocumentLocked(req, res, {
       data = mergeAllowedTeamDocument(previousData, data, grant);
     } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {
       data = mergeOwnerTodosWithPrevious(previousData, data);
+      if (!replaceTodoCollection && previousLayout === 'parts') {
+        const safeTodos = new Map((previousData?.todos || []).map(todo => [String(todo?.id), todo]));
+        (data.todos || []).forEach(todo => {
+          const id = String(todo?.id);
+          safeTodos.set(id, safeTodos.has(id) ? pickMergedTodo(todo, safeTodos.get(id)) : todo);
+        });
+        data.todos = [...safeTodos.values()];
+      }
       const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
       const nextTodoIds = new Set((Array.isArray(data?.todos) ? data.todos : []).map(t => String(t.id)));
       const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
@@ -507,7 +530,10 @@ async function persistWorkspaceDocumentLocked(req, res, {
       if (previousLayout === 'parts') saveVersionSnapshotParts(db, storageKey);
       else persistVersionSnapshot(db, storageKey, previousSerialized || JSON.stringify(previousData || {}));
     }
-    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, { replaceAll })).etag;
+    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, {
+      replaceAll,
+      replaceTodoCollection,
+    })).etag;
     db.transaction(() => {
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
@@ -617,6 +643,7 @@ async function handleDocumentDelta(req, res) {
       previousSerialized: meta.serialized,
       previousLayout: meta.layout,
       replaceAll: !useParts,
+      replaceTodoCollection: !!patch.collections?.todos,
       patched: true,
     });
   } catch (e) {
@@ -631,6 +658,64 @@ async function handleDocumentDelta(req, res) {
 router.use(express.json({ type: 'text/plain', limit: '10mb' }));
 router.put('/:accountId', auth, handleSaveData);
 router.post('/:accountId/delta', auth, handleDocumentDelta);
+router.get('/:accountId/todos/stats', auth, async (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    if (grant) {
+      const staffData = (await loadDocumentPartsAsync(db, workspace.storageKey, ['staff'])).data;
+      const ownStaffIds = ownStaffIdsForGrant(staffData, grant);
+      const visible = loadAllTodos(db, workspace.storageKey)
+        .filter(todo => todoVisibleToTeamMember(todo, grant.email, grant.permissions || [], ownStaffIds));
+      return res.json({
+        total: visible.length,
+        active: visible.filter(todo => !todo.archived).length,
+        archived: visible.filter(todo => !!todo.archived).length,
+        pending: visible.filter(todo => !todo.archived && !todo.done).length,
+      });
+    }
+    const todoMeta = todoState(db, workspace.storageKey);
+    res.json({
+      total: countTodos(db, workspace.storageKey),
+      active: countTodos(db, workspace.storageKey, false),
+      archived: countTodos(db, workspace.storageKey, true),
+      pending: Number(todoMeta?.pending_count || 0),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/:accountId/todos', auth, async (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const archived = String(req.query.archived || '0') === '1' ? 1 : 0;
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    let filter = null;
+    if (grant) {
+      const staffData = (await loadDocumentPartsAsync(db, workspace.storageKey, ['staff'])).data;
+      const ownStaffIds = ownStaffIdsForGrant(staffData, grant);
+      filter = todo => todoVisibleToTeamMember(todo, grant.email, grant.permissions || [], ownStaffIds);
+    }
+    const page = loadTodosPage(db, workspace.storageKey, {
+      limit: req.query.limit,
+      cursor: req.query.cursor,
+      archived,
+      filter,
+    });
+    res.json({
+      ...page,
+      ...(grant ? {} : { total: countTodos(db, workspace.storageKey, !!archived) }),
+      todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/:accountId/todos/delta', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
@@ -660,7 +745,10 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
-      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['todos', 'staff'] : ['todos'])).data;
+      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['staff'] : [])).data;
+      previousData.todos = grant
+        ? loadAllTodos(db, storageKey)
+        : loadTodosByIds(db, storageKey, incomingTodos.map(todo => todo.id));
     } else {
       try { previousData = JSON.parse(meta.serialized); }
       catch { return res.status(500).json({ error: 'invalid_server_data' }); }
@@ -694,7 +782,6 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     if (operation === 'delete') nextData._deletedTodoIds = deletedTodoIds;
     if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
     else if (operation === 'delete') {
-      nextData = mergeOwnerTodosWithPrevious(previousData, nextData);
       const nextTodoIds = (nextData.todos || []).map(todo => String(todo.id));
       const removedTodoIds = previousTodos
         .map(todo => String(todo?.id))
@@ -736,7 +823,16 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       if (isVersionSnapshotDue(db, storageKey)) {
         saveCurrentVersionSnapshot(storageKey, meta);
       }
-      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: !useParts })).etag;
+      if (useParts) {
+        if (grant) replaceTodos(db, storageKey, nextData.todos || []);
+        else if (operation === 'delete') deleteTodos(db, storageKey, deletedTodoIds);
+        else upsertTodos(db, storageKey, nextData.todos || []);
+        const scalarData = { ...nextData };
+        delete scalarData.todos;
+        savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, scalarData, { replaceAll: false })).etag;
+      } else {
+        savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: true })).etag;
+      }
       db.transaction(() => {
         writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
         enqueueTodoAuditEvents(db, storageKey, {
@@ -926,7 +1022,10 @@ router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) =>
     await withPersistLock(storageKey, async () => {
       const currentMeta = loadWorkspaceMeta(db, storageKey);
       saveCurrentVersionSnapshot(storageKey, currentMeta, { force: true });
-      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, { replaceAll: true })).etag;
+      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, {
+        replaceAll: true,
+        replaceTodoCollection: true,
+      })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
     res.json({ success: true, data: restored, etag: savedEtag });
@@ -961,12 +1060,19 @@ router.get('/:accountId', auth, async (req, res) => {
     let partial = false;
     let loadedParts = null;
     let availableParts = null;
-    if (includeKeys && meta.layout === 'parts') {
+    if (meta.layout === 'parts') {
       const hashes = loadPartHashes(db, workspace.storageKey);
       availableParts = Object.keys(hashes).filter(key => key !== SCALARS_PART);
-      const parts = await loadDocumentPartsAsync(db, workspace.storageKey, includeKeys);
+      const selectedKeys = (includeKeys || availableParts).filter(key => key !== 'todos');
+      const parts = await loadDocumentPartsAsync(db, workspace.storageKey, selectedKeys);
       loaded = { ...meta, data: parts.data };
-      loadedParts = [SCALARS_PART, ...includeKeys];
+      if (!includeKeys) {
+        const activePage = loadTodosPage(db, workspace.storageKey, { limit: 200, archived: 0 });
+        const archivedPage = loadTodosPage(db, workspace.storageKey, { limit: 200, archived: 1 });
+        loaded.data.todos = [...activePage.items, ...archivedPage.items];
+        loaded.data._todosPartial = !!(activePage.next_cursor || archivedPage.next_cursor);
+      }
+      loadedParts = [SCALARS_PART, ...selectedKeys];
       partial = true;
     } else {
       loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);

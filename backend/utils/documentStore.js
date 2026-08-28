@@ -1,5 +1,15 @@
 const { createHash } = require('crypto');
 const { isMainThread } = require('worker_threads');
+const {
+  ensureTodoStoreSchema,
+  migrateTodosFromDocumentPart,
+  hasMigratedTodos,
+  todoState,
+  loadAllTodos,
+  upsertTodos,
+  replaceTodos,
+  deleteTodoWorkspace,
+} = require('./todoStore');
 
 const SCALARS_PART = '__scalars__';
 const PARTS_MARKER = '{"_layout":"parts"}';
@@ -95,6 +105,8 @@ function ensureDocumentStoreSchema(db) {
       db.exec('ALTER TABLE user_data ADD COLUMN data_etag TEXT');
     }
   } catch (_) { /* user_data may not exist in isolated unit tests */ }
+  ensureTodoStoreSchema(db);
+  migrateTodosFromDocumentPart(db);
   readyDbs.add(db);
 }
 
@@ -117,6 +129,8 @@ function loadPartHashes(db, accountId) {
   ).all(accountId);
   const hashes = {};
   rows.forEach(row => { hashes[row.part_key] = row.data_hash; });
+  const todoMeta = todoState(db, accountId);
+  if (todoMeta) hashes.todos = todoMeta.data_hash;
   return hashes;
 }
 
@@ -168,6 +182,9 @@ function loadDocumentParts(db, accountId, collectionKeys = []) {
     if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
     else collections[row.part_key] = value;
   });
+  if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
+    collections.todos = loadAllTodos(db, accountId);
+  }
   collectionKeys.forEach(key => {
     if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
       collections[key] = [];
@@ -190,6 +207,7 @@ function loadWorkspaceDocument(db, accountId) {
       if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
       else collections[row.part_key] = value;
     });
+    if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
     return {
       ...meta,
       data: assembleDocument(scalars, collections),
@@ -237,7 +255,7 @@ function upsertUserDataMeta(db, accountId, etag) {
   }
 }
 
-function writeWorkspaceDocument(db, accountId, data, { replaceAll = true } = {}) {
+function writeWorkspaceDocument(db, accountId, data, { replaceAll = true, replaceTodoCollection = false } = {}) {
   ensureDocumentStoreSchema(db);
   const persist = db.transaction(() => {
     if (accountId === ADMIN_SETTINGS_ID) {
@@ -257,10 +275,18 @@ function writeWorkspaceDocument(db, accountId, data, { replaceAll = true } = {})
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
     const writtenCollections = Object.keys(collections);
     writtenCollections.forEach(key => {
-      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
+      if (key === 'todos') {
+        if (!hasMigratedTodos(db, accountId) || replaceTodoCollection) {
+          hashes.todos = replaceTodos(db, accountId, collections.todos);
+        } else {
+          upsertTodos(db, accountId, collections.todos);
+          hashes.todos = todoState(db, accountId)?.data_hash;
+        }
+      }
+      else hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
     });
     if (replaceAll) {
-      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      const keep = new Set([SCALARS_PART, ...writtenCollections.filter(key => key !== 'todos')]);
       db.prepare(
         'SELECT part_key FROM user_data_parts WHERE account_id=?'
       ).all(accountId).forEach(row => {
@@ -280,6 +306,7 @@ function deleteWorkspaceDocument(db, accountId) {
   ensureDocumentStoreSchema(db);
   db.prepare('DELETE FROM user_data_parts WHERE account_id=?').run(accountId);
   db.prepare('DELETE FROM user_data WHERE account_id=?').run(accountId);
+  deleteTodoWorkspace(db, accountId);
 }
 
 function deleteWorkspaceDocumentsForAccount(db, accountId) {
@@ -288,6 +315,10 @@ function deleteWorkspaceDocumentsForAccount(db, accountId) {
     .run(accountId, `${accountId}::workspace::%`);
   db.prepare('DELETE FROM user_data WHERE account_id=? OR account_id LIKE ?')
     .run(accountId, `${accountId}::workspace::%`);
+  const keys = db.prepare(
+    'SELECT storage_key FROM workspace_todo_state WHERE storage_key=? OR storage_key LIKE ?'
+  ).all(accountId, `${accountId}::workspace::%`);
+  keys.forEach(row => deleteTodoWorkspace(db, row.storage_key));
 }
 
 function yieldEventLoop() {
@@ -348,6 +379,9 @@ async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
       else collections[row.part_key] = value;
       await yieldEventLoop();
     }
+    if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
+      collections.todos = loadAllTodos(db, accountId);
+    }
     collectionKeys.forEach(key => {
       if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
         collections[key] = [];
@@ -373,6 +407,7 @@ async function loadWorkspaceDocumentAsync(db, accountId) {
         else collections[row.part_key] = value;
         await yieldEventLoop();
       }
+      if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
       return { ...meta, data: assembleDocument(scalars, collections) };
     }
     await yieldEventLoop();
@@ -392,12 +427,12 @@ async function serializeWorkspaceDocumentAsync(db, accountId) {
   });
 }
 
-async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = true } = {}) {
-  return offloadOrInline(db, 'writeWorkspaceDocument', [accountId, data, { replaceAll }], async () => {
+async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = true, replaceTodoCollection = false } = {}) {
+  return offloadOrInline(db, 'writeWorkspaceDocument', [accountId, data, { replaceAll, replaceTodoCollection }], async () => {
     ensureDocumentStoreSchema(db);
     if (accountId === ADMIN_SETTINGS_ID) {
       await yieldEventLoop();
-      return writeWorkspaceDocument(db, accountId, data, { replaceAll });
+      return writeWorkspaceDocument(db, accountId, data, { replaceAll, replaceTodoCollection });
     }
     const { scalars, collections } = splitDocument(data);
     const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
@@ -405,11 +440,19 @@ async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = t
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
     const writtenCollections = Object.keys(collections);
     for (const key of writtenCollections) {
-      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
+      if (key === 'todos') {
+        if (!hasMigratedTodos(db, accountId) || replaceTodoCollection) {
+          hashes.todos = replaceTodos(db, accountId, collections.todos);
+        } else {
+          upsertTodos(db, accountId, collections.todos);
+          hashes.todos = todoState(db, accountId)?.data_hash;
+        }
+      }
+      else hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
       await yieldEventLoop();
     }
     if (replaceAll) {
-      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      const keep = new Set([SCALARS_PART, ...writtenCollections.filter(key => key !== 'todos')]);
       const extra = db.prepare(
         'SELECT part_key FROM user_data_parts WHERE account_id=?'
       ).all(accountId);

@@ -123,6 +123,9 @@ test('part snapshots store only one students blob when only todos change', () =>
   assert.equal(db.prepare(`
     SELECT data FROM user_data_version_part_blobs WHERE account_id=? AND data_hash=?
   `).get('acc-parts', studentHash).data, studentBefore);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_todo_blobs WHERE account_id=?
+  `).get('acc-parts').n, 2);
 });
 
 test('part snapshot restore reassembles a full document', () => {
@@ -147,7 +150,7 @@ test('GFS pruning cascades part manifests and removes orphaned blobs', () => {
       todos: [{ id: i }],
       students: [{ id: 'stable' }],
       _lastSaved: i,
-    }, { replaceAll: true });
+    }, { replaceAll: true, replaceTodoCollection: true });
     saveVersionSnapshotParts(db, 'acc-prune-parts', { force: true });
   }
   assert.equal(db.prepare(
@@ -162,6 +165,9 @@ test('GFS pruning cascades part manifests and removes orphaned blobs', () => {
       WHERE v.account_id=? AND p.data_hash=b.data_hash
     )
   `).get('acc-prune-parts', 'acc-prune-parts').n, 0);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_todo_blobs WHERE account_id=?
+  `).get('acc-prune-parts').n, VERSION_RETENTION.keepNewest);
 });
 
 test('legacy full JSON snapshots still restore', () => {
