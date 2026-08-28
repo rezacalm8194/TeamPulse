@@ -36,6 +36,8 @@ const {
   MAX_VERSIONS_PER_WORKSPACE,
   ensureVersionSnapshotSchema,
   saveVersionSnapshot: persistVersionSnapshot,
+  saveVersionSnapshotParts,
+  loadVersionSnapshot,
   isVersionSnapshotDue,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
@@ -51,7 +53,6 @@ const {
   loadPartHashes,
   parseCollectionInclude,
   SCALARS_PART,
-  serializeWorkspaceDocumentAsync,
   writeWorkspaceDocumentAsync,
   deleteWorkspaceDocument,
 } = require('../utils/documentStore');
@@ -120,6 +121,11 @@ ensureDocumentStoreSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
   return persistVersionSnapshot(db, accountId, serializedData, { force });
+}
+
+function saveCurrentVersionSnapshot(accountId, meta, { force = false } = {}) {
+  if (meta?.layout === 'parts') return saveVersionSnapshotParts(db, accountId, { force });
+  return saveVersionSnapshot(accountId, meta?.serialized || '{}', { force });
 }
 db.prepare(`
   CREATE TABLE IF NOT EXISTS account_workspaces (
@@ -498,8 +504,8 @@ async function persistWorkspaceDocumentLocked(req, res, {
     data._workspaceId = workspace.workspaceId;
     todoChanges = diffTodos(previousData?.todos, data?.todos);
     if (isVersionSnapshotDue(db, storageKey)) {
-      const previousBlob = previousSerialized || await serializeWorkspaceDocumentAsync(db, storageKey);
-      persistVersionSnapshot(db, storageKey, previousBlob);
+      if (previousLayout === 'parts') saveVersionSnapshotParts(db, storageKey);
+      else persistVersionSnapshot(db, storageKey, previousSerialized || JSON.stringify(previousData || {}));
     }
     savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, { replaceAll })).etag;
     db.transaction(() => {
@@ -728,7 +734,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     let savedEtag = null;
     await withPersistLock(storageKey, async () => {
       if (isVersionSnapshotDue(db, storageKey)) {
-        saveVersionSnapshot(storageKey, meta.serialized || await serializeWorkspaceDocumentAsync(db, storageKey));
+        saveCurrentVersionSnapshot(storageKey, meta);
       }
       savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: !useParts })).etag;
       db.transaction(() => {
@@ -906,20 +912,20 @@ router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) =>
     if (!workspace) return;
     const storageKey = workspace.storageKey;
     const selected = db.prepare(
-      'SELECT id,data FROM user_data_versions WHERE id=? AND account_id=?'
+      'SELECT id FROM user_data_versions WHERE id=? AND account_id=?'
     ).get(req.params.versionId, storageKey);
     if (!selected) return res.status(404).json({ error: 'version_not_found' });
     if (!loadWorkspaceMeta(db, storageKey)) return res.status(404).json({ error: 'data_not_found' });
-    let restored;
-    try { restored = JSON.parse(selected.data); }
-    catch { return res.status(422).json({ error: 'invalid_version_data' }); }
+    let restored = loadVersionSnapshot(db, storageKey, selected.id);
+    if (restored === undefined) return res.status(422).json({ error: 'invalid_version_data' });
     restored = sanitizeUserDataForStorage(restored);
     restored._restored_at = new Date().toISOString();
     restored._lastSaved = Date.now();
     restored._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(restored));
     let savedEtag = null;
     await withPersistLock(storageKey, async () => {
-      saveVersionSnapshot(storageKey, await serializeWorkspaceDocumentAsync(db, storageKey), { force:true });
+      const currentMeta = loadWorkspaceMeta(db, storageKey);
+      saveCurrentVersionSnapshot(storageKey, currentMeta, { force: true });
       savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, { replaceAll: true })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });

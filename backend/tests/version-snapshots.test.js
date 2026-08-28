@@ -8,14 +8,23 @@ const {
   ensureVersionSnapshotSchema,
   backfillVersionSummaries,
   saveVersionSnapshot,
+  saveVersionSnapshotParts,
+  loadVersionSnapshot,
   pruneVersionSnapshots,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
+const { ensureDocumentStoreSchema, writeWorkspaceDocument } = require('../utils/documentStore');
 
 function makeDb() {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   ensureVersionSnapshotSchema(db);
+  return db;
+}
+
+function makePartsDb() {
+  const db = makeDb();
+  ensureDocumentStoreSchema(db);
   return db;
 }
 
@@ -84,6 +93,85 @@ test('identical snapshots are skipped using the stored hash, not the blob', () =
   db.prepare("UPDATE user_data_versions SET data='changed-on-disk'").run();
   assert.equal(saveVersionSnapshot(db, 'acc-3', body, { force: true }), false);
   assert.equal(listVersionSummaries(db, 'acc-3', 72).length, 1);
+});
+
+test('part snapshots store only one students blob when only todos change', () => {
+  const db = makePartsDb();
+  writeWorkspaceDocument(db, 'acc-parts', {
+    todos: [{ id: 1, title: 'before' }],
+    students: [{ id: 's1', name: 'Keep' }],
+    _lastSaved: 1,
+  }, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
+  const studentHash = db.prepare(
+    "SELECT data_hash FROM user_data_parts WHERE account_id=? AND part_key='students'"
+  ).get('acc-parts').data_hash;
+  const studentBefore = db.prepare(`
+    SELECT data FROM user_data_version_part_blobs WHERE account_id=? AND data_hash=?
+  `).get('acc-parts', studentHash).data;
+
+  writeWorkspaceDocument(db, 'acc-parts', {
+    todos: [{ id: 1, title: 'after' }],
+    students: [{ id: 's1', name: 'Keep' }],
+    _lastSaved: 2,
+  }, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_part_blobs
+    WHERE account_id=? AND data_hash=?
+  `).get('acc-parts', studentHash).n, 1);
+  assert.equal(db.prepare(`
+    SELECT data FROM user_data_version_part_blobs WHERE account_id=? AND data_hash=?
+  `).get('acc-parts', studentHash).data, studentBefore);
+});
+
+test('part snapshot restore reassembles a full document', () => {
+  const db = makePartsDb();
+  const source = {
+    todos: [{ id: 2, title: 'round trip' }],
+    students: [{ id: 's2' }],
+    meta: { title: 'Workspace' },
+  };
+  writeWorkspaceDocument(db, 'acc-roundtrip', source, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-roundtrip', { force: true }), true);
+  const id = db.prepare(
+    'SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC'
+  ).get('acc-roundtrip').id;
+  assert.deepEqual(loadVersionSnapshot(db, 'acc-roundtrip', id), source);
+});
+
+test('GFS pruning cascades part manifests and removes orphaned blobs', () => {
+  const db = makePartsDb();
+  for (let i = 0; i < 6; i++) {
+    writeWorkspaceDocument(db, 'acc-prune-parts', {
+      todos: [{ id: i }],
+      students: [{ id: 'stable' }],
+      _lastSaved: i,
+    }, { replaceAll: true });
+    saveVersionSnapshotParts(db, 'acc-prune-parts', { force: true });
+  }
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?'
+  ).get('acc-prune-parts').n, VERSION_RETENTION.keepNewest);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM user_data_version_part_blobs b
+    WHERE b.account_id=? AND NOT EXISTS (
+      SELECT 1 FROM user_data_version_parts p
+      JOIN user_data_versions v ON v.id=p.version_id
+      WHERE v.account_id=? AND p.data_hash=b.data_hash
+    )
+  `).get('acc-prune-parts', 'acc-prune-parts').n, 0);
+});
+
+test('legacy full JSON snapshots still restore', () => {
+  const db = makeDb();
+  const source = JSON.parse(payload({ todos: [{ id: 99, title: 'legacy' }] }));
+  assert.equal(saveVersionSnapshot(db, 'acc-legacy', JSON.stringify(source), { force: true }), true);
+  const id = db.prepare(
+    'SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC'
+  ).get('acc-legacy').id;
+  assert.deepEqual(loadVersionSnapshot(db, 'acc-legacy', id), source);
 });
 
 test('same-hour force snapshots keep only the newest safety copies', () => {
