@@ -4356,6 +4356,7 @@ body { top: 0 !important; }
     .todo-filter-clear{margin-right:auto;color:var(--red);border-color:rgba(255,107,107,.25);background:rgba(255,107,107,.06)}
     .todo-filter-clear:disabled{opacity:.4;cursor:not-allowed}
     .todo-more-badge{align-self:flex-start;min-width:28px;height:24px;border:1px solid rgba(124,106,247,.42);border-radius:999px;background:rgba(124,106,247,.14);color:var(--accent2);font-family:var(--font);font-size:10px;font-weight:900;padding:0 8px;cursor:pointer}
+    .todo-show-more{width:100%;margin:8px 0 4px;padding:10px 12px;border:1px dashed rgba(124,106,247,.38);border-radius:10px;background:rgba(124,106,247,.08);color:var(--accent2);font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer}
     .calendar-add-wrap{position:relative;display:inline-flex}
     .calendar-add-menu{position:absolute;top:calc(100% + 7px);left:0;z-index:120;width:210px;padding:7px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.34);display:flex;flex-direction:column;gap:3px}
     .calendar-add-menu button{border:0;background:transparent;color:var(--text2);font-family:var(--font);font-size:12px;font-weight:700;text-align:right;padding:9px 10px;border-radius:8px;cursor:pointer}

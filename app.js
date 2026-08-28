@@ -43,7 +43,8 @@ function _tpLazy(name) {
   'renderStaff', 'openStaffDetail', 'openStaffModal', 'openAddStaffChoice', 'openAddStaffReminder',
   'openStaffPayment', 'openStaffAdjustment', 'openStaffMonthly', 'openAddPersonnelFromTodo',
   'renderInstructions', 'openNoteDetail', 'openAddInstruction', 'openEditInstruction',
-  'renderTutorial'
+  'renderTutorial',
+  'renderGoals', 'renderHabits', 'openHabitDetail'
 ].forEach(_tpLazy);
 function _tpPrefetchExtra() {
   const run = () => { _tpEnsureExtra().catch(() => {}); };
@@ -1066,6 +1067,7 @@ function _load() {
   try { const s = localStorage.getItem(key); _db = s ? JSON.parse(s) : null; } catch(e) { _db = null; }
   if (!_db) _db = _freshData();
   _migrate(_db);
+  _restorePartLoadState(_db);
   // در اولین بارگذاری نسخه جدید نیز فوراً کپی‌های قدیمی و حجیم را آزاد کن؛
   // لازم نیست کاربر تا تغییر بعدی و بروز خطای Quota صبر کند.
   try {
@@ -1366,6 +1368,7 @@ async function _loadPrimaryDatabase() {
     window._workspaceDataReady = true;
   }
   _migrate(_db);
+  _restorePartLoadState(_db);
   _restoreServerSyncEtagFromBaseline();
 
   let idbVerified = false;
@@ -1543,7 +1546,8 @@ function _readServerSyncBaseline() {
 
 const _SYNC_SKIP_KEYS = new Set([
   '_gdrive_token', '_gdrive_token_expiry', '_gcal_token', '_gcal_token_expiry',
-  '_todoTombstones', '_workspaceId', '_deletedTodoIds'
+  '_todoTombstones', '_workspaceId', '_deletedTodoIds',
+  '_loadedParts', '_availableParts'
 ]);
 const _SYNC_ID_COLLECTION_KEYS = new Set([
   'families','students','packages','payments','sessions','expenses','expense_reminders',
@@ -1566,6 +1570,7 @@ function _syncCollectionHashes(data) {
   const scalars = {};
   Object.keys(data || {}).forEach(key => {
     if (_SYNC_SKIP_KEYS.has(key)) return;
+    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key) && (Array.isArray(data[key]) || _SYNC_ID_COLLECTION_KEYS.has(key))) return;
     const value = data[key];
     if (_isSyncIdCollection(key, value)) {
       const hashes = {};
@@ -1633,6 +1638,7 @@ function _buildServerSyncPatch(data) {
   const seenKeys = new Set();
   Object.keys(data || {}).forEach(key => {
     if (_SYNC_SKIP_KEYS.has(key)) return;
+    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) return;
     seenKeys.add(key);
     const value = data[key];
     if (_isSyncIdCollection(key, value)) {
@@ -1659,6 +1665,7 @@ function _buildServerSyncPatch(data) {
   });
   Object.keys(hashes.collections || {}).forEach(key => {
     if (seenKeys.has(key) || _SYNC_SKIP_KEYS.has(key)) return;
+    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) return;
     const del = Object.keys(hashes.collections[key] || {});
     if (!del.length) return;
     collections[key] = { upsert: [], delete: del };
@@ -3850,6 +3857,147 @@ function _currentAccountId() {
 function _workspaceQuery(separator='?') {
   return separator + 'workspace=' + encodeURIComponent(_currentAccountId());
 }
+const _CORE_DOCUMENT_PARTS = [
+  'todos', 'habits', 'habit_logs', 'sessions', 'staff', 'team_members',
+  'session_order', 'package_types', 'staff_roles', 'staff_role_entries'
+];
+const _PAGE_DOCUMENT_PARTS = {
+  students: ['students', 'packages', 'payments', 'sessions', 'families'],
+  payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
+  families: ['students', 'packages', 'payments', 'sessions', 'families'],
+  reminders: ['reminders', 'students', 'packages'],
+  customerlist: ['students', 'packages', 'families'],
+  archive: ['students', 'packages', 'families'],
+  staff: ['staff', 'staff_payments', 'staff_reminders', 'staff_adjustments', 'staff_monthly', 'staff_roles', 'staff_role_entries', 'team_members', 'team_invites'],
+  instructions: ['instructions', 'guide_categories', 'guide_items', 'case_forms'],
+  todolist: ['todos', 'todo_history', 'todo_calendar_events', 'staff', 'habits', 'habit_logs'],
+  calendar: ['todos', 'todo_calendar_events', 'sessions', 'habits', 'habit_logs', 'reminders', 'staff_reminders', 'key_events', 'students'],
+  goals: ['goals', 'goal_achievements', 'todos', 'habits', 'habit_logs'],
+  habits: ['habits', 'habit_logs', 'goals'],
+  dashboard: ['payments', 'packages', 'students', 'sessions', 'expenses', 'financial_accounts', 'financial_budgets', 'fiscal_year_closings', 'wallet_tx'],
+  transactions: ['payments', 'expenses', 'wallet_tx', 'financial_accounts', 'students', 'packages'],
+  settings: ['team_members', 'team_invites', 'staff'],
+  tutorial: [],
+  admin_panel: [],
+};
+function _partsForPage(page = currentPage) {
+  const extra = _PAGE_DOCUMENT_PARTS[page] || _PAGE_DOCUMENT_PARTS.students;
+  return [...new Set([..._CORE_DOCUMENT_PARTS, ...extra])];
+}
+function _documentIncludeQuery(keys) {
+  if (!keys || !keys.length) return '';
+  return '&include=' + encodeURIComponent(keys.join(','));
+}
+function _persistPartLoadState() {
+  if (!_db || typeof _db !== 'object') return;
+  if (!window._tpLoadedParts) {
+    delete _db._loadedParts;
+    delete _db._availableParts;
+    return;
+  }
+  _db._loadedParts = [...window._tpLoadedParts];
+  _db._availableParts = window._tpAvailableParts ? [...window._tpAvailableParts] : [];
+}
+function _restorePartLoadState(data = _db) {
+  if (Array.isArray(data?._loadedParts)) {
+    window._tpLoadedParts = new Set(data._loadedParts);
+    window._tpAvailableParts = new Set(Array.isArray(data._availableParts) ? data._availableParts : []);
+    return;
+  }
+  window._tpLoadedParts = null;
+  window._tpAvailableParts = null;
+}
+function _rememberServerParts(payload) {
+  if (!payload?.partial) {
+    window._tpLoadedParts = null;
+    window._tpAvailableParts = null;
+    _persistPartLoadState();
+    return;
+  }
+  window._tpLoadedParts = new Set(
+    (payload.loaded_parts || []).filter(key => key && key !== '__scalars__')
+  );
+  window._tpAvailableParts = new Set(payload.available_parts || []);
+  _persistPartLoadState();
+}
+function _tpPartLoaded(key) {
+  if (!window._tpLoadedParts) return true;
+  if (window._tpLoadedParts.has(key)) return true;
+  const value = _db?.[key];
+  if (Array.isArray(value) && value.length) {
+    window._tpLoadedParts.add(key);
+    _persistPartLoadState();
+    return true;
+  }
+  return false;
+}
+function _documentHasUnloadedParts() {
+  if (!window._tpLoadedParts) return false;
+  const available = window._tpAvailableParts;
+  if (!available || !available.size) return false;
+  for (const key of available) {
+    if (key === '__scalars__') continue;
+    if (!_tpPartLoaded(key)) return true;
+  }
+  return false;
+}
+function _overlayPartialServerData(target, payload) {
+  const src = payload?.data;
+  if (!src || typeof src !== 'object') return target;
+  Object.keys(src).forEach(key => {
+    if (_SYNC_SKIP_KEYS.has(key)) return;
+    if (Array.isArray(src[key]) || _SYNC_ID_COLLECTION_KEYS.has(key)) return;
+    target[key] = src[key];
+  });
+  (payload.loaded_parts || []).forEach(key => {
+    if (!key || key === '__scalars__') return;
+    if (Object.prototype.hasOwnProperty.call(src, key)) target[key] = src[key];
+  });
+  return target;
+}
+function _mergeLoadedPartHashes(keys) {
+  const hashes = _readServerSyncHashes();
+  if (!hashes) return;
+  (keys || []).forEach(key => {
+    const extra = _syncCollectionHashes({ [key]: _db?.[key] });
+    if (extra.collections?.[key]) hashes.collections[key] = extra.collections[key];
+    else if (Object.prototype.hasOwnProperty.call(extra.scalars || {}, key)) hashes.scalars[key] = extra.scalars[key];
+  });
+  if (window._serverSyncHashCache) window._serverSyncHashCache.hashes = hashes;
+}
+function _shouldLoadFullDocument() {
+  if (window._forceNextSync) return true;
+  if (_hasServerSyncPending()) return true;
+  if (typeof _isTerminalTodoCollisionPending === 'function' && _isTerminalTodoCollisionPending()) return true;
+  return false;
+}
+async function _ensureDocumentParts(keys) {
+  const needed = [...new Set(keys || [])].filter(key => !_tpPartLoaded(key));
+  if (!needed.length) return true;
+  if (!_sbUser || !_sbSession?.token) return false;
+  const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
+  if (!accId) return false;
+  try {
+    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(needed));
+    if (!res.ok) return false;
+    const payload = await res.json();
+    if (!payload?.data) return false;
+    needed.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(payload.data, key)) _db[key] = payload.data[key];
+      if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
+      window._tpLoadedParts.add(key);
+    });
+    if (Array.isArray(payload.available_parts)) window._tpAvailableParts = new Set(payload.available_parts);
+    _persistPartLoadState();
+    _mergeLoadedPartHashes(needed);
+    _migrate(_db);
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    return true;
+  } catch (e) {
+    console.warn('[TeamPulse] part load failed:', e.message);
+    return false;
+  }
+}
 function _localWorkspaceDBKey(id=_currentAccountId()) {
   const uid = String(_workspaceAuthUser()?.id || '').slice(0, 8) || 'guest';
   return id === 'default' ? 'tp_' + uid + '_v3' : 'tp_' + uid + '_v3_' + id;
@@ -5436,6 +5584,9 @@ function _selectGoogleTranslateLanguage(lang) {
 async function renderPage() {
   document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
   document.body.classList.toggle('primary-mobile-page', ['goals','habits','todolist'].includes(currentPage));
+  if (_sbSession?.token) {
+    try { await _ensureDocumentParts(_partsForPage(currentPage)); } catch (e) {}
+  }
   if (currentPage === 'sessions') {
     currentPage = 'students';
     _studentsTab = 'sessions';
@@ -9727,7 +9878,7 @@ async function _verifyTeamGrantStored(member) {
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt) await new Promise(resolve => setTimeout(resolve, 700));
     try {
-      const res = await _apiFetch('/api/data/' + encodeURIComponent(_sbUser.id) + _workspaceQuery());
+      const res = await _apiFetch('/api/data/' + encodeURIComponent(_sbUser.id) + _workspaceQuery() + _documentIncludeQuery(['team_members']));
       if (!res.ok) continue;
       const payload = await res.json();
       const stored = (payload?.data?.team_members || []).find(item =>
@@ -15780,6 +15931,16 @@ function _serverSafeData(data) {
   delete copy._gdrive_token_expiry;
   delete copy._gcal_token;
   delete copy._gcal_token_expiry;
+  delete copy._loadedParts;
+  delete copy._availableParts;
+  if (window._tpLoadedParts) {
+    Object.keys(copy).forEach(key => {
+      if (_SYNC_SKIP_KEYS.has(key)) return;
+      if ((Array.isArray(copy[key]) || _SYNC_ID_COLLECTION_KEYS.has(key)) && !_tpPartLoaded(key)) {
+        delete copy[key];
+      }
+    });
+  }
   return copy;
 }
 
@@ -16072,7 +16233,7 @@ async function _reconcileTerminalTodoCollisions(pending) {
     recoveryKey = `${TODO_COLLISION_REPAIR_VERSION}:${todoIds.join(',')}:${serverHighWater}`;
     if (pending?.recoveryFailed && pending?.recoveryKey === recoveryKey) return false;
 
-    const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery());
+    const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(['todos']));
     if (!currentRes.ok) throw new Error('collision_server_data_unavailable');
     const currentPayload = await currentRes.json();
     if (currentPayload?.workspace_id && String(currentPayload.workspace_id) !== _currentAccountId()) {
@@ -16478,13 +16639,30 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       base_etag: window._serverDataEtag || null,
     };
     const documentPatch = forceSync ? null : _buildServerSyncPatch(syncPayload);
-    const useDocumentDelta = _preferDocumentDelta(documentPatch, fullRequestPayload);
-    const sendFullDocument = async () => {
-      const rawRequestSize = JSON.stringify(fullRequestPayload).length;
-      if (rawRequestSize > 700 * 1024) {
-        return _sendChunkedWorkspacePayload(accId, fullRequestPayload);
+    let useDocumentDelta = _preferDocumentDelta(documentPatch, fullRequestPayload);
+    if (_documentHasUnloadedParts()) {
+      if (documentPatch) useDocumentDelta = true;
+      else {
+        await _ensureDocumentParts([...(window._tpAvailableParts || [])]);
+        if (_documentHasUnloadedParts() && !forceSync) return null;
       }
-      const encodedRequest = await _compressedJsonRequestBody(fullRequestPayload);
+    }
+    const sendFullDocument = async () => {
+      if (_documentHasUnloadedParts()) {
+        await _ensureDocumentParts([...(window._tpAvailableParts || [])]);
+        if (_documentHasUnloadedParts()) return null;
+      }
+      const latestPayload = {
+        data: _serverSafeData(_db),
+        force: forceSync,
+        client_saved_at: syncSavedAt,
+        base_etag: window._serverDataEtag || null,
+      };
+      const rawRequestSize = JSON.stringify(latestPayload).length;
+      if (rawRequestSize > 700 * 1024) {
+        return _sendChunkedWorkspacePayload(accId, latestPayload);
+      }
+      const encodedRequest = await _compressedJsonRequestBody(latestPayload);
       return _apiFetch('/api/data/' + accId + _workspaceQuery(), {
         method: 'PUT',
         body: encodedRequest.body,
@@ -16512,6 +16690,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     } else {
       res = await sendFullDocument();
     }
+    if (!res) return null;
     let responseData = null;
     try { responseData = await res.clone().json(); } catch(e) {}
 
@@ -16523,7 +16702,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         const ids = new Set(collisionIds.map(item => String(item?.id ?? item)));
         let serverTodos = null;
         try {
-          const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery());
+          const currentRes = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(['todos']));
           if (currentRes.ok) {
             const currentPayload = await currentRes.json();
             if (Array.isArray(currentPayload?.data?.todos)) serverTodos = currentPayload.data.todos;
@@ -16772,7 +16951,8 @@ async function _loadFromServer() {
     }
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
-    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery());
+    const includeKeys = _shouldLoadFullDocument() ? null : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students');
+    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(includeKeys));
     if (res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
       return false;
@@ -16786,6 +16966,22 @@ async function _loadFromServer() {
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const payload = await res.json();
+    if (payload.partial) {
+      _rememberServerParts(payload);
+      if (_db && typeof _db === 'object' && payload.data) {
+        payload.data = _overlayPartialServerData(_cloneData(_db), payload);
+      }
+      if (payload.data) {
+        payload.data._loadedParts = window._tpLoadedParts ? [...window._tpLoadedParts] : [];
+        payload.data._availableParts = window._tpAvailableParts ? [...window._tpAvailableParts] : [];
+      }
+    } else {
+      _rememberServerParts(payload);
+      if (payload.data) {
+        delete payload.data._loadedParts;
+        delete payload.data._availableParts;
+      }
+    }
     const { data } = payload;
     const activeWorkspaceId = _currentAccountId();
     if (payload.workspace_id && String(payload.workspace_id) !== activeWorkspaceId) {
@@ -17214,7 +17410,11 @@ function _flushPendingServerSyncKeepalive() {
     base_etag: window._serverDataEtag || null,
   };
   const patch = window._forceNextSync ? null : _buildServerSyncPatch(syncPayload);
-  const useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
+  let useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
+  if (_documentHasUnloadedParts()) {
+    if (patch) useDelta = true;
+    else return;
+  }
   const payloadObj = useDelta ? {
     workspace: _currentAccountId(),
     collections: patch.collections,
@@ -21122,9 +21322,27 @@ async function renderCalendar() {
   _checkTodoReminders();
 }
 
+const TODO_LIST_CHUNK = 40;
+let _todoListShown = {};
+function _todoShowMore(key) {
+  _todoListShown[key] = (_todoListShown[key] || TODO_LIST_CHUNK) + TODO_LIST_CHUNK;
+  renderTodoList({ skipMaintenance: true });
+}
+function _todoRenderedListHtml(items, key, renderFn = renderTodo) {
+  if (!items.length) return '';
+  const cap = Math.max(TODO_LIST_CHUNK, Number(_todoListShown[key] || TODO_LIST_CHUNK));
+  const slice = items.slice(0, cap);
+  let html = slice.map(renderFn).join('');
+  if (items.length > cap) {
+    html += `<button type="button" class="todo-show-more" onclick="_todoShowMore('${key}')">نمایش بیشتر · ${fa(items.length - cap)} کار باقی‌مانده</button>`;
+  }
+  return html;
+}
+
 function renderTodoList(options = {}) {
   _todosInit();
   const skipMaintenance = options.skipMaintenance === true;
+  if (!skipMaintenance) _todoListShown = {};
   if (_todoViewMode !== 'list') {
     _todoViewMode = 'list';
     localStorage.setItem('tp_todo_view_mode', _todoViewMode);
@@ -21402,7 +21620,7 @@ function renderTodoList(options = {}) {
   if (overdueTodos.length > 0) {
     html += sectionHeader('🚨', 'عقب‌افتاده', `${fa(overdueTodos.length)} کار از قبل`, 'var(--red)');
     html += `<div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:8px;margin-bottom:8px">`;
-    html += overdueTodos.map(renderTodo).join('');
+    html += _todoRenderedListHtml(overdueTodos, 'overdue');
     html += `</div>`;
   }
 
@@ -21423,9 +21641,9 @@ function renderTodoList(options = {}) {
   } else {
     // ناتمام اول — مرتب‌شده بر اساس ساعت (زودتر = بالاتر)، بدون ساعت = آخر
     const regularTodayOpen = todayTodos.filter(t=>!t.done && !mainTodayIds.has(t.id)).sort(_sortByTime);
-    html += regularTodayOpen.length ? regularTodayOpen.map(renderTodo).join('') : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
+    html += regularTodayOpen.length ? _todoRenderedListHtml(regularTodayOpen, 'today') : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
     if (doneCnt > 0) {
-      html += `<details class="todo-done-details" style="margin-top:10px">
+      html += `<details class="todo-done-details" ${ _todoListShown.doneToday ? 'open' : ''} style="margin-top:10px">
         <summary style="font-size:12px;color:var(--green);cursor:pointer;margin-bottom:8px;
           padding:8px 12px;background:rgba(62,207,142,.06);border:1px solid rgba(62,207,142,.2);
           border-radius:8px;display:flex;align-items:center;gap:6px;list-style:none;user-select:none">
@@ -21433,13 +21651,13 @@ function renderTodoList(options = {}) {
           <span style="opacity:.5;font-size:10px;margin-right:auto">▾ کلیک برای مشاهده</span>
         </summary>
         <div style="margin-top:6px;opacity:.7">`;
-      html += todayTodos.filter(t=>t.done).map(renderTodo).join('');
+      html += _todoRenderedListHtml(todayTodos.filter(t=>t.done), 'doneToday');
       html += `</div></details>`;
     }
   }
 
   if (lateDoneTodayTodos.length > 0) {
-    html += `<details class="todo-late-done-details" style="margin-top:12px">
+    html += `<details class="todo-late-done-details" ${ _todoListShown.lateDone ? 'open' : ''} style="margin-top:12px">
       <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:8px">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:10px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22)">
           <span style="font-size:13px;font-weight:800;color:var(--amber);display:flex;align-items:center;gap:6px">✅ عقب‌افتاده‌های تکمیل‌شده امروز</span>
@@ -21447,7 +21665,7 @@ function renderTodoList(options = {}) {
         </div>
       </summary>
       <div style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.16);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">
-        ${lateDoneTodayTodos.map(renderTodo).join('')}
+        ${_todoRenderedListHtml(lateDoneTodayTodos, 'lateDone')}
       </div>
     </details>`;
   }
@@ -21455,12 +21673,12 @@ function renderTodoList(options = {}) {
   // ── فردا (کشویی - بسته) ──
   if (tomorrowTodos.length > 0) {
     const _tomorrowSorted = tomorrowTodos.sort(_sortByTime);
-    html += `<details ${_todoTomorrowExpanded ? 'open' : ''} ontoggle="_setTodoTomorrowExpanded(this.open)" style="margin-top:12px">
+    html += `<details ${_todoTomorrowExpanded || _todoListShown.tomorrow ? 'open' : ''} ontoggle="_setTodoTomorrowExpanded(this.open)" style="margin-top:12px">
       <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">
         ${sectionHeader('🌙', 'فردا', tomorrowStr + ' · ' + fa(tomorrowTodos.length) + ' کار', 'var(--accent2)')}
       </summary>
       <div style="margin-top:4px">
-        ${_tomorrowSorted.map(renderTodo).join('')}
+        ${_todoRenderedListHtml(_tomorrowSorted, 'tomorrow')}
       </div>
     </details>`;
   }
@@ -21492,7 +21710,7 @@ function renderTodoList(options = {}) {
   if (futureTodos.length > 0) {
     const _renderCollapsible = (key, icon, title, subtitle, color, items) => {
       if (!items.length) return '';
-      const itemsHTML = items.sort(_sortByTime).map(renderTodo).join('');
+      const itemsHTML = _todoRenderedListHtml(items.sort(_sortByTime), 'future-' + key);
       const isOpen = !!_todoFutureExpanded[key];
       return '<details ' + (isOpen ? 'open ' : '') + 'ontoggle="_setTodoFutureExpanded(\'' + key + '\', this.open)" style="margin-top:10px">' +
         '<summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">' +
@@ -26324,1625 +26542,6 @@ function _goalsInit() {
   if (!_db._nextId.goals) _db._nextId.goals = 1;
   if (!_db._nextId.goal_achievements) _db._nextId.goal_achievements = 1;
 }
-let _goalAchievementsOpen = false;
-
-function toggleGoalAchievements() {
-  _goalAchievementsOpen = !_goalAchievementsOpen;
-  const panel = document.getElementById('goal-achievements-panel');
-  const chevron = document.getElementById('goal-achievements-chevron');
-  const trigger = document.getElementById('goal-achievements-trigger');
-  if (panel) panel.hidden = !_goalAchievementsOpen;
-  if (chevron) chevron.textContent = '⌄';
-  if (trigger) trigger.setAttribute('aria-expanded', String(_goalAchievementsOpen));
-}
-
-const GOAL_PERIODS = [
-  { key:'yearly', label:'سالانه', icon:'🗓️' },
-  { key:'seasonal', label:'فصلی', icon:'🍃' },
-  { key:'monthly', label:'ماهانه', icon:'📅' },
-  { key:'weekly', label:'هفتگی', icon:'📆' },
-];
-function _goalPeriod(g) {
-  const p = g?.period || g?.period_type || 'yearly';
-  return GOAL_PERIODS.some(x => x.key === p) ? p : 'yearly';
-}
-function _goalPeriodMeta(period) {
-  return GOAL_PERIODS.find(x => x.key === period) || GOAL_PERIODS[0];
-}
-function _goalPeriodSelectHtml(prefix, value) {
-  const current = _goalPeriod({ period:value });
-  return `
-    <div class="form-group">
-      <label class="form-label">بازه هدف</label>
-      <select class="form-select" id="${prefix}-period">
-        ${GOAL_PERIODS.map(p => `<option value="${p.key}" ${current===p.key?'selected':''}>${escapeHtml(p.icon)} ${escapeHtml(p.label)}</option>`).join('')}
-      </select>
-    </div>`;
-}
-
-function _goalAchievementDate(g) {
-  if (g.completed_date_jalali) return g.completed_date_jalali;
-  if (g.completed_at) {
-    try {
-      if (typeof _jalaliFromInstant === 'function') {
-        const parts = _jalaliFromInstant(g.completed_at);
-        if (parts) return _formatJalali(...parts);
-      }
-    } catch(e) {}
-  }
-  return _todayJalaliStr ? _todayJalaliStr() : '';
-}
-
-function _goalAchievementYear(date) {
-  return String(date || '').split('/')[0] || (_todayJalaliStr ? _todayJalaliStr().split('/')[0] : '');
-}
-
-function _isGoalAchieved(g) {
-  return !!g && ((g.status || 'active') === 'done' || +(g.progress || 0) >= 100);
-}
-
-function _ensureGoalAchievement(g) {
-  _goalsInit();
-  if (!g || !g.id) return null;
-  if (!g.completed_at) g.completed_at = new Date().toISOString();
-  if (!g.completed_date_jalali) g.completed_date_jalali = _goalAchievementDate(g);
-  const completedDate = _goalAchievementDate(g);
-  const year = _goalAchievementYear(completedDate);
-  let ach = (_db.goal_achievements || []).find(x => x.goal_id === g.id);
-  if (!ach) {
-    ach = { id: _db._nextId.goal_achievements++, goal_id: g.id, created_at: new Date().toISOString() };
-    _db.goal_achievements.push(ach);
-  }
-  ach.title = g.title || '';
-  ach.icon = g.icon || '🎯';
-  ach.category = g.category || '';
-  ach.period = _goalPeriod(g);
-  ach.why = g.why || '';
-  ach.completed_at = g.completed_at;
-  ach.completed_date_jalali = completedDate;
-  ach.year = year;
-  return ach;
-}
-
-function _removeGoalAchievement(goalId) {
-  _db.goal_achievements = (_db.goal_achievements || []).filter(x => x.goal_id !== goalId);
-}
-
-function _syncGoalAchievements() {
-  _goalsInit();
-  const goals = _db.goals || [];
-  const goalIds = new Set(goals.map(g => g.id));
-  _db.goal_achievements = (_db.goal_achievements || []).filter(a => goalIds.has(a.goal_id));
-  goals.forEach(g => {
-    if (_isGoalAchieved(g)) _ensureGoalAchievement(g);
-    else _removeGoalAchievement(g.id);
-  });
-}
-
-function setGoalAchievementYear(year) {
-  localStorage.setItem('tp_goal_achievement_year', year);
-  if (currentPage === 'goals') renderGoals();
-}
-
-function _goalAchievementsHtml() {
-  _syncGoalAchievements();
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const list = (_db.goal_achievements || []).slice().sort((a,b) => String(b.completed_date_jalali||'').localeCompare(String(a.completed_date_jalali||'')));
-  const currentYear = _todayJalaliStr ? _todayJalaliStr().split('/')[0] : '';
-  const years = Array.from(new Set([currentYear, ...list.map(a => a.year || _goalAchievementYear(a.completed_date_jalali)).filter(Boolean)])).sort((a,b) => String(b).localeCompare(String(a)));
-  const selectedYear = localStorage.getItem('tp_goal_achievement_year') || years[0] || currentYear;
-  const yearItems = list.filter(a => (a.year || _goalAchievementYear(a.completed_date_jalali)) === selectedYear);
-  const yearButtons = years.map(y => `
-    <button onclick="event.stopPropagation();setGoalAchievementYear(${escapeAttr(y)})" style="padding:7px 12px;border-radius:9px;border:1px solid ${y===selectedYear?'var(--accent)':'var(--border2)'};background:${y===selectedYear?'rgba(124,106,247,.22)':'var(--bg3)'};color:${y===selectedYear?'var(--accent2)':'var(--text2)'};font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer">${fa(y)}</button>
-  `).join('');
-  const cards = yearItems.length ? yearItems.map(a => `
-    <div class="goal-achievement-card" onclick="openGoalDetail(${a.goal_id})" style="background:var(--bg3);border:1px solid rgba(62,207,142,.24);border-radius:12px;padding:12px;cursor:pointer">
-      <div style="display:flex;align-items:flex-start;gap:10px">
-        <span style="font-size:24px;line-height:1">${escapeHtml(a.icon || '🏆')}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:900;color:var(--text);line-height:1.6">${escapeHtml(a.title || 'هدف تکمیل‌شده')}</div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
-            <span style="font-size:11px;color:var(--green);font-weight:800">🏆 ${DateService.disp(a.completed_date_jalali || '')}</span>
-            <span style="font-size:10px;color:var(--accent2);background:rgba(124,106,247,.12);padding:2px 8px;border-radius:999px">${_goalPeriodMeta(a.period || 'yearly').icon} ${_goalPeriodMeta(a.period || 'yearly').label}</span>
-            ${a.category ? `<span style="font-size:10px;color:var(--text3);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:999px">${escapeHtml(a.category)}</span>` : ''}
-          </div>
-        </div>
-      </div>
-      ${a.why ? `<div style="font-size:11px;color:var(--text2);line-height:1.8;margin-top:8px;opacity:.85">${escapeHtml(a.why)}</div>` : ''}
-    </div>
-  `).join('') : `
-    <div style="text-align:center;color:var(--text3);font-size:12px;padding:18px;border:1px dashed var(--border2);border-radius:12px;background:rgba(255,255,255,.02)">
-      هنوز برای سال ${fa(selectedYear || '')} دستاوردی ثبت نشده.
-    </div>`;
-
-  return `
-    <div class="goal-achievements-shell ${_goalAchievementsOpen?'is-open':''}" style="background:linear-gradient(135deg,rgba(62,207,142,.10),rgba(124,106,247,.08));border:1px solid rgba(62,207,142,.24);border-radius:14px;padding:14px 16px;margin-bottom:18px">
-      <div id="goal-achievements-trigger" role="button" tabindex="0" aria-expanded="${_goalAchievementsOpen}" onclick="toggleGoalAchievements()" onkeydown="_tpOnEnterOrSpace(event,'toggleGoalAchievements')" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;cursor:pointer">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span id="goal-achievements-chevron" class="goal-achievements-chevron">⌄</span>
-          <div>
-          <h2 style="font-size:15px;font-weight:900;color:var(--text);margin:0 0 4px">🏆 دستاوردها</h2>
-          <div style="font-size:11px;color:var(--text3)">${fa(yearItems.length)} دستاورد در سال ${fa(selectedYear || '')}</div>
-          </div>
-          ${yearItems.length > 3 ? `<span class="goal-achievements-more">+${fa(yearItems.length - 3)} بیشتر</span>` : ''}
-        </div>
-        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <button onclick="event.stopPropagation();openAddAchievementGoal()" style="padding:7px 12px;border-radius:9px;border:1px solid rgba(62,207,142,.45);background:rgba(62,207,142,.12);color:var(--green);font-family:var(--font);font-size:12px;font-weight:900;cursor:pointer">+ افزودن دستاورد</button>
-          ${yearButtons}
-        </div>
-      </div>
-      <div id="goal-achievements-panel" class="goal-achievements-panel" ${_goalAchievementsOpen?'':'hidden'}>
-        ${yearItems.length > 3 ? `<div class="goal-achievements-scroll-hint"><span>برای دیدن بقیه، افقی بکشید</span><span class="goal-achievements-arrows">‹—›</span></div>` : ''}
-        <div class="goal-achievements-viewport">
-          <div class="goal-achievements-track">${cards}</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function _goalDaysLeft(deadline) {
-  if (!deadline) return null;
-  try {
-    const [jy,jm,jd] = parseJalali ? parseJalali(deadline) : [0,0,0];
-    const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-    return Math.ceil((new Date(gy,gm-1,gd) - new Date()) / 86400000);
-  } catch(e) { return null; }
-}
-function _formatDaysLeft(daysLeft, fa) {
-  if (daysLeft === null) return '';
-  if (daysLeft < 0) return fa(Math.abs(daysLeft)) + ' روز گذشت';
-  if (daysLeft === 0) return 'امروز آخرین مهلته!';
-  if (daysLeft < 30) return fa(daysLeft) + ' روز مانده';
-  const months = Math.floor(daysLeft / 30);
-  const days = daysLeft % 30;
-  return days > 0 ? `${fa(months)} ماه و ${fa(days)} روز مانده` : `${fa(months)} ماه مانده`;
-}
-
-function _goalVisionImages(g) {
-  return _goalVisionItems(g).map(x => x.src).filter(Boolean);
-}
-
-function _goalVisionItems(g) {
-  if (!g) return [];
-  if (Array.isArray(g.vision_assets)) return g.vision_assets.filter(x => x && x.src);
-  const raw = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
-  return raw.split(/\n+/).map(x => x.trim()).filter(Boolean).map((src, i) => ({
-    id: 'url-' + i + '-' + Date.now(),
-    type: 'image',
-    src,
-    name: 'تصویر ' + (i + 1),
-    category: '',
-    source: 'url'
-  }));
-}
-
-function _goalLinkedStats(goalId) {
-  if (typeof _todosInit === 'function') _todosInit();
-  if (typeof _habitsInit === 'function') _habitsInit();
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const tasks = (_db.todos || []).filter(t => t.goal_id === goalId && !t.archived);
-  const habits = (_db.habits || []).filter(h => h.goal_id === goalId && !h.archived);
-  const doneTasks = tasks.filter(t => t.done).length;
-  const doneHabitsToday = habits.filter(h => (_db.habit_logs || []).some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
-  return { tasks, habits, doneTasks, doneHabitsToday };
-}
-
-function _goalHealth(g) {
-  const progress = +(g.progress || 0);
-  const milestones = g.milestones || [];
-  const doneMilestones = milestones.filter(m => m.done).length;
-  const linked = _goalLinkedStats(g.id);
-  const taskScore = linked.tasks.length ? (linked.doneTasks / linked.tasks.length) * 100 : progress;
-  const habitScore = linked.habits.length ? (linked.doneHabitsToday / linked.habits.length) * 100 : progress;
-  const milestoneScore = milestones.length ? (doneMilestones / milestones.length) * 100 : progress;
-  const deadline = _goalDaysLeft(g.deadline);
-  let score = Math.round((progress * .4) + (taskScore * .2) + (habitScore * .2) + (milestoneScore * .2));
-  if (deadline !== null && deadline < 0 && progress < 100) score -= 25;
-  if (deadline !== null && deadline <= 7 && progress < 70) score -= 10;
-  score = Math.max(0, Math.min(100, score));
-  if (score >= 75) return { score, icon:'🟢', label:'عالی', color:'var(--green)' };
-  if (score >= 45) return { score, icon:'🟡', label:'متوسط', color:'var(--amber)' };
-  return { score, icon:'🔴', label:'در خطر', color:'var(--red)' };
-}
-
-function _goalPrediction(g) {
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const daysLeft = _goalDaysLeft(g.deadline);
-  const progress = +(g.progress || 0);
-  const health = _goalHealth(g);
-  const probability = Math.max(8, Math.min(96, Math.round((progress * .55) + (health.score * .45))));
-  if (progress >= 100) return { value:'۱۰۰٪', text:'هدف تکمیل شده؛ حالا وقت ثبت خاطرات مسیر است.' };
-  if (daysLeft === null) return { value: fa(probability) + '٪', text:'ددلاین نداری؛ برای پیش‌بینی دقیق‌تر یک تاریخ پایان بگذار.' };
-  if (daysLeft < 0) return { value: fa(probability) + '٪', text:`با روند فعلی ${fa(Math.abs(daysLeft))} روز از زمان هدف گذشته‌ای.` };
-  const neededPerDay = daysLeft > 0 ? Math.ceil((100 - progress) / daysLeft) : 100 - progress;
-  if (neededPerDay > 4) return { value: fa(probability) + '٪', text:`برای رسیدن به‌موقع، هر روز حدود ${fa(neededPerDay)}٪ حرکت لازم داری.` };
-  return { value: fa(probability) + '٪', text:'با روند فعلی در مسیر قابل قبولی هستی؛ قدم امروز را کوچک اما واقعی نگه دار.' };
-}
-
-function _goalMotivationToday(g) {
-  const chunks = String(g.why || g.vision || '').split(/[.\n،؛]+/).map(x => x.trim()).filter(x => x.length > 8);
-  if (!chunks.length) return '';
-  const day = new Date().getDate();
-  return chunks[day % chunks.length];
-}
-
-function _goalTimelineHtml(g) {
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const progress = Math.max(0, Math.min(100, +(g.progress || 0)));
-  const daysLeft = _goalDaysLeft(g.deadline);
-  const deadlineLabel = g.deadline ? DateService.disp(g.deadline) : 'پایان باز';
-  return `
-    <div style="background:var(--bg3);border-radius:10px;padding:12px;margin:12px 0">
-      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:10px">
-        <span>شروع</span><span>امروز</span><span>${deadlineLabel}</span>
-      </div>
-      <div style="height:4px;background:var(--bg4);border-radius:999px;position:relative">
-        <div style="position:absolute;inset:0 auto 0 0;width:${progress}%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:999px"></div>
-        <div style="position:absolute;top:50%;left:${progress}%;width:14px;height:14px;border-radius:50%;background:var(--accent2);box-shadow:0 0 0 4px rgba(124,106,247,.18);transform:translate(-50%,-50%)"></div>
-      </div>
-      <div style="font-size:11px;color:var(--text2);margin-top:10px">${daysLeft === null ? 'برای تایم‌لاین دقیق‌تر ددلاین تعیین کن.' : _formatDaysLeft(daysLeft, fa)}</div>
-    </div>`;
-}
-
-function renderGoals() {
-  _goalsInit();
-  _syncGoalAchievements();
-  updateTopbarActions(`
-    <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
-  `);
-
-  const goals = _db.goals || [];
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const today = _todayJalaliStr ? _todayJalaliStr() : '';
-
-  if (goals.length === 0) {
-    setContent(`
-      <div style="max-width:920px;margin:40px auto;text-align:center;padding:40px 20px">
-        <div style="font-size:56px;margin-bottom:16px">🎯</div>
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز هدفی تعریف نکرده‌ای</h2>
-        <p style="color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.8">
-          اهداف بزرگ‌ات را اینجا ثبت کن. هر هدف می‌تواند مراحل، یادداشت و deadline داشته باشد.
-        </p>
-        <button class="btn btn-primary" style="padding:12px 28px;font-size:14px" onclick="openAddGoal()">
-          🎯 اولین هدفم را بسازم
-        </button>
-      </div>`);
-    return;
-  }
-
-  const statusColors = {
-    active: { bg: 'rgba(96,165,250,.12)', color: '#60a5fa', label: 'در جریان' },
-    done:   { bg: 'rgba(62,207,142,.12)', color: 'var(--green)', label: 'تکمیل شده' },
-    paused: { bg: 'rgba(251,191,36,.12)', color: 'var(--amber)', label: 'متوقف' },
-  };
-  const diffColors = { easy: 'var(--green)', medium: 'var(--amber)', hard: 'var(--red)' };
-  const diffLabels = { easy: 'آسان', medium: 'متوسط', hard: 'سخت' };
-
-  // ── آمار بالای صفحه ─────────────────────────────
-  const activeCount = goals.filter(g => (g.status||'active') === 'active').length;
-  const doneCount = goals.filter(g => g.status === 'done').length;
-  const pausedCount = goals.filter(g => g.status === 'paused').length;
-  const avgProgress = goals.length ? Math.round(goals.reduce((s,g)=>s+(g.progress||0),0) / goals.length) : 0;
-
-  const statItem = (icon, label, value, color) => `
-    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 4px">
-      <span style="font-size:13px;line-height:1;flex-shrink:0">${icon}</span>
-      <div style="display:flex;flex-direction:column;align-items:center;line-height:1.3;min-width:0">
-        <span style="font-size:13px;font-weight:800;color:${color||'var(--text)'};white-space:nowrap">${value}</span>
-        <span style="font-size:9px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${label}</span>
-      </div>
-    </div>`;
-  const statDivider = `<div style="width:1px;align-self:stretch;background:var(--border);margin:6px 0;flex-shrink:0"></div>`;
-
-  const statsHTML = `
-    <div style="display:flex;align-items:stretch;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden">
-      ${statItem('🎯','کل اهداف', fa(goals.length))}
-      ${statDivider}
-      ${statItem('🚀','در حال انجام', fa(activeCount), '#60a5fa')}
-      ${statDivider}
-      ${statItem('🏆','تکمیل‌شده', fa(doneCount), 'var(--green)')}
-      ${statDivider}
-      ${statItem('📈','میانگین پیشرفت', fa(avgProgress)+'٪', 'var(--accent2)')}
-    </div>`;
-
-  const todayGoal = goals.filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
-    .sort((a,b) => (a.progress || 0) - (b.progress || 0))[0];
-  const todayMotivation = todayGoal ? _goalMotivationToday(todayGoal) : '';
-  const todayWidgetHTML = todayGoal ? `
-    <div onclick="openGoalDetail(${todayGoal.id})" style="cursor:pointer;background:linear-gradient(135deg,rgba(124,106,247,.16),rgba(62,207,142,.10));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:14px 16px;margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div style="min-width:0">
-          <div style="font-size:11px;color:var(--accent2);font-weight:800;margin-bottom:4px">امروز فقط برای این هدف یک قدم بردار</div>
-          <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.5">${escapeHtml(todayGoal.icon || '🎯')} ${escapeHtml(todayGoal.title)}</div>
-          ${todayMotivation ? `<div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:5px">چون: «${escapeHtml(todayMotivation)}»</div>` : ''}
-        </div>
-        <span style="font-size:22px;color:var(--green)">›</span>
-      </div>
-    </div>` : '';
-
-  const renderGoalCard = (g) => {
-    const sc = statusColors[g.status || 'active'] || statusColors.active;
-    const progress = g.progress || 0;
-    const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
-    const milestones = g.milestones || [];
-    const doneMilestones = milestones.filter(m => m.done).length;
-    const daysLeft = _goalDaysLeft(g.deadline);
-    const linkedTaskCount = (_db.todos||[]).filter(t => t.goal_id === g.id && !t.archived).length;
-    const linkedHabitCount = (_db.habits||[]).filter(h => h.goal_id === g.id).length;
-    const health = _goalHealth(g);
-
-    // رنگ‌بندی کارت بر اساس فوریت ددلاین
-    let urgencyColor = 'var(--border)';
-    if (g.status !== 'done' && daysLeft !== null) {
-      if (daysLeft < 0) urgencyColor = 'rgba(239,68,68,.5)';
-      else if (daysLeft <= 3) urgencyColor = 'rgba(239,68,68,.4)';
-      else if (daysLeft <= 7) urgencyColor = 'rgba(251,191,36,.4)';
-      else if (daysLeft <= 30) urgencyColor = 'rgba(96,165,250,.35)';
-      else urgencyColor = 'rgba(62,207,142,.3)';
-    } else if (g.status === 'done') {
-      urgencyColor = 'rgba(62,207,142,.35)';
-    }
-
-    const msPreview = milestones.slice(0, 4).map((m, i) => `
-      <div onclick="event.stopPropagation();toggleMilestone(${g.id},${i})" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer">
-        <div style="width:16px;height:16px;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-          background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
-          ${m.done?'<span style="color:white;font-size:10px">✓</span>':''}
-        </div>
-        <span style="font-size:11.5px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text2)'}">${escapeHtml(m.title)}</span>
-      </div>`).join('');
-
-    return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
-      onclick="openGoalDetail(${g.id})"
-      onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.6)')"
-      onmouseleave="_tpStyle(this,'borderColor','$urgencyColor')">
-      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
-        <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
-          style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
-            border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:15px;font-weight:900">
-          ${_isGoalAchieved(g) ? '✓' : ''}
-        </button>
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            <span style="font-size:15px;font-weight:700;color:var(--text)">${escapeHtml(g.title)}</span>
-            <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${escapeHtml(sc.label)}</span>
-            ${g.difficulty ? `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:${diffColors[g.difficulty] || 'var(--text2)'}">⚡ ${diffLabels[g.difficulty] || g.difficulty}</span>` : ''}
-            <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(124,106,247,.10);color:var(--accent2);font-weight:700">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
-          </div>
-          ${g.category ? `<span style="font-size:11px;color:var(--text3)">${escapeHtml(g.category)}</span>` : ''}
-        </div>
-        <div style="text-align:center;flex-shrink:0">
-          <div style="font-size:22px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
-          <div style="font-size:9px;color:var(--text3)">پیشرفت</div>
-        </div>
-      </div>
-
-      <div style="margin-bottom:12px">
-        <div style="height:14px;background:var(--bg4);border-radius:7px;overflow:hidden">
-          <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:7px;transition:width .5s"></div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:${msPreview?'10px':'0'}">
-        ${g.deadline ? `<span style="font-size:11px;font-weight:600;color:${daysLeft !== null && daysLeft < 0 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--amber)' : 'var(--text3)'}">
-          ⏳ ${_formatDaysLeft(daysLeft, fa)}
-        </span>` : ''}
-        ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
-        <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${escapeHtml(health.icon)} سلامت ${escapeHtml(health.label)}</span>
-        ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
-        ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
-      </div>
-
-      ${msPreview ? `<div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:${g.why?'10px':'0'}">${msPreview}</div>` : ''}
-
-      ${g.why ? `<div style="background:rgba(62,207,142,.07);border-radius:8px;padding:8px 10px;font-size:11.5px;color:var(--text2);line-height:1.6">
-        💡 ${g.why}
-      </div>` : ''}
-    </div>`;
-  };
-  const html = GOAL_PERIODS.map(period => {
-    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key);
-    if (!periodGoals.length) return '';
-    return `
-      <section style="margin-bottom:18px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
-          <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
-          <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
-        </div>
-        ${periodGoals.map(renderGoalCard).join('')}
-      </section>`;
-  }).join('');
-
-  setContent(`
-    <div style="max-width:920px;margin:0 auto">
-      <div style="margin-bottom:16px">
-        <button onclick="openAddGoal()"
-          style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
-            font-family:var(--font);font-size:15px;font-weight:700;
-            background:linear-gradient(135deg,#7c6af7,#5b4de0);
-            color:white;letter-spacing:.01em;
-            box-shadow:0 4px 20px rgba(124,106,247,.4);
-            display:flex;align-items:center;justify-content:center;gap:10px;
-            transition:all .2s"
-          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(124,106,247,.5)')"
-          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(124,106,247,.4)')">
-          <span>🎯 هدف جدید اضافه کن</span>
-          <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
-            display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
-        </button>
-      </div>
-      ${statsHTML}
-      ${_goalAchievementsHtml()}
-      ${todayWidgetHTML}
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
-          <button id="goals-view-toggle" onclick="_toggleGoalsView()" title="تغییر نما"
-            style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
-            <span id="goals-view-icon">${_goalsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="goals-view-label">${_goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
-          </button>
-        </div>
-      </div>
-      <div id="goals-compact-view" style="display:${_goalsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-          ${goals.map(g => {
-            const sc = statusColors[g.status || 'active'] || statusColors.active;
-            const progress = g.progress || 0;
-            const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
-            const daysLeft = _goalDaysLeft(g.deadline);
-            const milestones = g.milestones || [];
-            const doneMilestones = milestones.filter(m => m.done).length;
-            const linkedTaskCount = (_db.todos||[]).filter(t => t.goal_id === g.id && !t.archived).length;
-            const linkedHabitCount = (_db.habits||[]).filter(h => h.goal_id === g.id).length;
-            return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
-              onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','var(--border)')">
-              <div style="display:flex;align-items:flex-start;gap:10px">
-                <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
-                  style="width:26px;height:26px;border-radius:8px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;
-                    border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:14px;font-weight:900">
-                  ${_isGoalAchieved(g) ? '✓' : ''}
-                </button>
-                <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.5">${escapeHtml(g.title)}</div>
-                  <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
-                    <span style="font-size:10px;padding:2px 9px;border-radius:20px;background:${sc.bg};color:${sc.color};font-weight:600">${escapeHtml(sc.label)}</span>
-                    ${g.category ? `<span style="font-size:10px;color:var(--text3)">${escapeHtml(g.category)}</span>` : ''}
-                    <span style="font-size:10px;color:var(--accent2)">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
-                  </div>
-                </div>
-                <div style="text-align:center;flex-shrink:0">
-                  <div style="font-size:18px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
-                  <div style="font-size:9px;color:var(--text3)">پیشرفت</div>
-                </div>
-              </div>
-              <div style="height:7px;background:var(--bg4);border-radius:4px;overflow:hidden">
-                <div style="height:100%;width:${progress}%;background:${progressColor};border-radius:4px;transition:width .4s"></div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                ${g.deadline ? `<span style="font-size:11px;color:${daysLeft!==null&&daysLeft<0?'var(--red)':daysLeft!==null&&daysLeft<=7?'var(--amber)':'var(--text3)'}">⏳ ${_formatDaysLeft(daysLeft, fa)}</span>` : ''}
-                ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)}</span>` : ''}
-                ${linkedTaskCount > 0 ? `<span style="font-size:11px;color:#60a5fa">✅ ${fa(linkedTaskCount)}</span>` : ''}
-                ${linkedHabitCount > 0 ? `<span style="font-size:11px;color:var(--amber)">🔥 ${fa(linkedHabitCount)}</span>` : ''}
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>
-      <div id="goals-full-view" style="display:${_goalsViewMode === 'compact' ? 'none' : 'block'}">
-      ${html}
-      </div>
-    </div>`);
-}
-
-function _toggleHabitsView() {
-  _habitsViewMode = _habitsViewMode === 'compact' ? 'full' : 'compact';
-  const compact = document.getElementById('habits-compact-view');
-  const full = document.getElementById('habits-full-view');
-  const icon = document.getElementById('habits-view-icon');
-  const label = document.getElementById('habits-view-label');
-  if (!compact || !full) return;
-  compact.style.display = _habitsViewMode === 'compact' ? 'block' : 'none';
-  full.style.display = _habitsViewMode === 'compact' ? 'none' : 'block';
-  if (icon) icon.textContent = _habitsViewMode === 'compact' ? '📋' : '🗂';
-  if (label) label.textContent = _habitsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
-}
-
-function _toggleGoalsView() {
-  _goalsViewMode = _goalsViewMode === 'compact' ? 'full' : 'compact';
-  const compact = document.getElementById('goals-compact-view');
-  const full = document.getElementById('goals-full-view');
-  const icon = document.getElementById('goals-view-icon');
-  const label = document.getElementById('goals-view-label');
-  if (!compact || !full) return;
-  compact.style.display = _goalsViewMode === 'compact' ? 'block' : 'none';
-  full.style.display = _goalsViewMode === 'compact' ? 'none' : 'block';
-  if (icon) icon.textContent = _goalsViewMode === 'compact' ? '📋' : '🗂';
-  if (label) label.textContent = _goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
-}
-
-function _goalFormCompletion(prefix) {
-  const checks = [
-    !!document.getElementById(prefix + '-title')?.value.trim(),
-    !!document.getElementById(prefix + '-category')?.value.trim(),
-    !!document.getElementById(prefix + '-icon')?.value.trim(),
-    !!document.getElementById(prefix + '-why')?.value.trim(),
-    !!document.getElementById(prefix + '-vision')?.value.trim(),
-    !!readCalendarDateField(prefix + '-deadline'),
-    !!((window._goalFormVisionAssets && window._goalFormVisionAssets[prefix] || []).length)
-  ];
-  return Math.round(checks.filter(Boolean).length / checks.length * 100);
-}
-
-function _goalMusicOptions(selected) {
-  const opts = [
-    ['none','بدون موسیقی'],
-    ['preset:calm','🌿 آرامش'],
-    ['preset:inspire','✨ انگیزشی'],
-    ['preset:nature','🌊 طبیعت'],
-    ['preset:rain','🌧 باران'],
-    ['preset:piano','🎹 پیانو'],
-    ['custom','آپلود / لینک اختصاصی'],
-  ];
-  return opts.map(([v,l]) => `<option value="${v}" ${selected===v?'selected':''}>${l}</option>`).join('');
-}
-
-const GOAL_CATEGORY_PRESETS = [
-  { label:'سلامتی', icon:'💪', hint:'بدن، انرژی، تغذیه' },
-  { label:'رابطه عاطفی', icon:'❤️', hint:'عشق، صمیمیت، همراهی' },
-  { label:'رابطه خانوادگی', icon:'👨‍👩‍👧', hint:'خانواده، والدین، فرزندان' },
-  { label:'آرامش', icon:'🌿', hint:'ذهن آرام، تنفس، تعادل' },
-  { label:'شخصیت', icon:'🧠', hint:'رشد فردی و هویت' },
-  { label:'سبک زندگی', icon:'🏡', hint:'خانه، سفر، کیفیت زندگی' },
-  { label:'ایمان', icon:'🤲', hint:'معنا، معنویت، باور' },
-  { label:'درآمد و کسب‌وکار', icon:'💼', hint:'پول، فروش، رشد شغلی' },
-];
-
-const GOAL_ICON_PRESETS = ['🎯','🚀','💪','❤️','👨‍👩‍👧','🌿','🧠','🏡','🤲','💼','💰','📚','✨','🏆','🔥','🧘','🌱','🛡️'];
-
-function _goalCategoryPickerHtml(prefix, value) {
-  const current = value || '';
-  const preset = GOAL_CATEGORY_PRESETS.some(c => c.label === current);
-  const customOpen = current && !preset;
-  const options = GOAL_CATEGORY_PRESETS.map(c =>
-    `<option value="${escapeHtml(c.label)}" ${current === c.label ? 'selected' : ''}>${escapeHtml(c.icon)} ${escapeHtml(c.label)}</option>`
-  ).join('');
-  return `
-    <div class="form-group">
-      <label class="form-label">دسته‌بندی</label>
-      <input type="hidden" id="${prefix}-category" value="${escapeHtml(current)}">
-      <select class="form-select" id="${prefix}-category-select" onchange="_syncGoalCategorySelect('${prefix}')">
-        <option value="" ${current ? '' : 'selected'}>انتخاب دسته‌بندی</option>
-        ${options}
-        <option value="__custom__" ${customOpen ? 'selected' : ''}>✏️ دلخواه</option>
-      </select>
-      <input class="form-input" id="${prefix}-category-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="نام دسته‌بندی دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:8px" oninput="_syncGoalCustomCategory('${prefix}')">
-    </div>`;
-}
-
-function _goalIconPickerHtml(prefix, value) {
-  const current = value || '🎯';
-  const preset = GOAL_ICON_PRESETS.includes(current);
-  const customOpen = current && !preset;
-  const options = GOAL_ICON_PRESETS.map(icon =>
-    `<option value="${escapeHtml(icon)}" ${current === icon ? 'selected' : ''}>${icon}</option>`
-  ).join('');
-  return `
-    <div class="form-group">
-      <label class="form-label">آیکون هدف</label>
-      <input type="hidden" id="${prefix}-icon" value="${escapeHtml(current)}">
-      <select class="form-select" id="${prefix}-icon-select" onchange="_syncGoalIconSelect('${prefix}')" style="font-size:18px;text-align:center">
-        ${options}
-        <option value="__custom__" ${customOpen ? 'selected' : ''}>✏️ دلخواه</option>
-      </select>
-      <input class="form-input" id="${prefix}-icon-custom" value="${customOpen ? escapeHtml(current) : ''}" placeholder="آیکون دلخواه" style="display:${customOpen ? 'block' : 'none'};margin-top:8px;text-align:center;font-size:20px" oninput="_syncGoalCustomIcon('${prefix}')">
-    </div>`;
-}
-
-function _syncGoalCategorySelect(prefix) {
-  const select = document.getElementById(prefix + '-category-select');
-  const input = document.getElementById(prefix + '-category');
-  const custom = document.getElementById(prefix + '-category-custom');
-  const value = select?.value || '';
-  if (value === '__custom__') {
-    if (custom) { custom.style.display = 'block'; custom.focus(); }
-    if (input && custom) input.value = custom.value.trim();
-  } else {
-    if (input) input.value = value;
-    if (custom) { custom.value = ''; custom.style.display = 'none'; }
-  }
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _syncGoalCustomCategory(prefix) {
-  const input = document.getElementById(prefix + '-category');
-  const custom = document.getElementById(prefix + '-category-custom');
-  if (input && custom) input.value = custom.value.trim();
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _syncGoalIconSelect(prefix) {
-  const select = document.getElementById(prefix + '-icon-select');
-  const input = document.getElementById(prefix + '-icon');
-  const custom = document.getElementById(prefix + '-icon-custom');
-  const value = select?.value || '🎯';
-  if (value === '__custom__') {
-    if (custom) { custom.style.display = 'block'; custom.focus(); }
-    if (input && custom) input.value = custom.value.trim() || '🎯';
-  } else {
-    if (input) input.value = value;
-    if (custom) { custom.value = ''; custom.style.display = 'none'; }
-  }
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _syncGoalCustomIcon(prefix) {
-  const input = document.getElementById(prefix + '-icon');
-  const custom = document.getElementById(prefix + '-icon-custom');
-  if (input && custom) input.value = custom.value.trim() || '🎯';
-  _refreshGoalFormCompletion(prefix);
-}
-
-function _goalFormHtml(prefix, g) {
-  g = g || {};
-  const imageCount = _goalVisionItems(g).length;
-  return `
-    <div style="background:linear-gradient(135deg,rgba(124,106,247,.18),rgba(62,207,142,.08));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:16px;margin-bottom:14px">
-      <div style="font-size:28px;margin-bottom:6px">🎯</div>
-      <div style="font-size:16px;font-weight:900;color:var(--text);line-height:1.5">این هدف زندگی تو را تغییر می‌دهد.</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px">هر روز فقط یک قدم.</div>
-      <div style="margin-top:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:11px;color:var(--text3)">کامل بودن هدف</span>
-          <span id="${prefix}-completion-label" style="font-size:12px;font-weight:800;color:var(--accent2)">۰٪</span>
-        </div>
-        <div style="height:8px;border-radius:999px;background:var(--bg4);overflow:hidden">
-          <div id="${prefix}-completion-bar" style="height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width .2s"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="form-grid">
-      <div class="form-group full" style="background:var(--bg3);border:1px solid var(--border2);border-radius:12px;padding:12px">
-        <label class="form-label">هدف *</label>
-        <input class="form-input" id="${prefix}-title" value="${escapeHtml(g.title||'')}" placeholder="مثلاً: ساختن بدن سالم و قوی" autofocus>
-      </div>
-      ${_goalCategoryPickerHtml(prefix, g.category || '')}
-      ${_goalPeriodSelectHtml(prefix, g.period || 'yearly')}
-      ${_goalIconPickerHtml(prefix, g.icon || '🎯')}
-    </div>
-
-    <details open style="background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.2);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--green)">🧠 چرا این هدف برای من مهم است؟</summary>
-      <textarea class="form-textarea" id="${prefix}-why" rows="3" placeholder="دلیل واقعی‌ات را بنویس؛ همان چیزی که روزهای سخت نگهت می‌دارد..." style="margin-top:10px">${escapeHtml(g.why||'')}</textarea>
-    </details>
-
-    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">👁 تصویر ذهنی</summary>
-      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0">
-        وقتی رسیدی چه می‌بینی؟ چه می‌شنوی؟ کنارت چه کسانی هستند؟ چه احساسی داری؟
-      </div>
-      <textarea class="form-textarea" id="${prefix}-vision" rows="3" placeholder="مثلاً صبح بیدار می‌شوم و..." >${escapeHtml(g.vision||'')}</textarea>
-    </details>
-
-    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 تابلو آرزو</summary>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0">
-        <div style="min-width:0">
-          <div style="font-size:12px;font-weight:700;color:var(--text)">تابلوی آرزوها را جداگانه مدیریت کن</div>
-          <div id="${prefix}-vision-summary" style="font-size:11px;color:var(--text3);margin-top:4px">${imageCount ? imageCount + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده'}</div>
-        </div>
-        <button type="button" onclick="openGoalVisionBoardManagerForForm('${prefix}')" style="font-size:12px;padding:8px 12px;border-radius:10px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800">✨ مدیریت تابلو آرزو</button>
-      </div>
-      <div id="${prefix}-vision-preview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px;margin-top:10px"></div>
-    </details>
-
-    <details style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">📅 برنامه‌ریزی هدف</summary>
-      <div class="form-grid" style="margin-top:10px">
-        <div class="form-group">
-          ${calendarDateFieldHtml(prefix + '-deadline', g.deadline||'', '📅 تاریخ پایان')}
-        </div>
-        <div class="form-group">
-          <label class="form-label">سختی</label>
-          <select class="form-select" id="${prefix}-difficulty">
-            <option value="easy" ${(g.difficulty||'medium')==='easy'?'selected':''}>آسان</option>
-            <option value="medium" ${(g.difficulty||'medium')==='medium'?'selected':''}>متوسط</option>
-            <option value="hard" ${(g.difficulty||'medium')==='hard'?'selected':''}>سخت</option>
-          </select>
-        </div>
-        ${prefix === 'eg' ? `<div class="form-group">
-          <label class="form-label">وضعیت</label>
-          <select class="form-select" id="eg-status">
-            <option value="active" ${(g.status||'active')==='active'?'selected':''}>در جریان</option>
-            <option value="done" ${g.status==='done'?'selected':''}>تکمیل شده</option>
-            <option value="paused" ${g.status==='paused'?'selected':''}>متوقف</option>
-          </select>
-        </div>` : ''}
-      </div>
-    </details>`;
-}
-
-function _initGoalFormUX(prefix) {
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  if (!window._goalFormVisionAssets[prefix]) {
-    window._goalFormVisionAssets[prefix] = [];
-  }
-  const refresh = () => {
-    const pct = _goalFormCompletion(prefix);
-    const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-    const bar = document.getElementById(prefix + '-completion-bar');
-    const label = document.getElementById(prefix + '-completion-label');
-    if (bar) bar.style.width = pct + '%';
-    if (label) label.textContent = fa(pct) + '٪';
-    _renderGoalVisionPreview(prefix);
-  };
-  ['title','why','vision'].forEach(k => {
-    const el = document.getElementById(prefix + '-' + k);
-    if (el) el.addEventListener('input', refresh);
-  });
-  refresh();
-}
-
-function _renderGoalVisionPreview(prefix) {
-  const box = document.getElementById(prefix + '-vision-preview');
-  if (!box) return;
-  const imgs = (window._goalFormVisionAssets && window._goalFormVisionAssets[prefix]) || [];
-  const summary = document.getElementById(prefix + '-vision-summary');
-  if (summary) summary.textContent = imgs.length ? imgs.length + ' تصویر اضافه شده' : 'هنوز تصویری اضافه نشده';
-  box.innerHTML = imgs.length ? imgs.slice(0, 6).map(item => `
-    <div style="aspect-ratio:1.15;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);overflow:hidden;position:relative">
-      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="_tpImgParentPlaceholder(this)">
-    </div>`).join('') : `
-    <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:18px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg3)">
-      📷 هنوز تصویری اضافه نشده
-    </div>`;
-}
-
-function _refreshGoalFormCompletion(prefix) {
-  const pct = _goalFormCompletion(prefix);
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const bar = document.getElementById(prefix + '-completion-bar');
-  const label = document.getElementById(prefix + '-completion-label');
-  if (bar) bar.style.width = pct + '%';
-  if (label) label.textContent = fa(pct) + '٪';
-}
-
-function _readGoalMusic(prefix) {
-  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-  return window._goalFormVisionMusic[prefix] || '';
-}
-
-function _readGoalVisionAssets(prefix) {
-  return ((window._goalFormVisionAssets && window._goalFormVisionAssets[prefix]) || []).map(x => ({...x}));
-}
-
-function openGoalVisionBoardManagerForForm(prefix) {
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-  window._goalFormVisionAssets[prefix] = window._goalFormVisionAssets[prefix] || [];
-  if (typeof window._goalFormVisionMusic[prefix] === 'undefined') window._goalFormVisionMusic[prefix] = '';
-  _openGoalVisionBoardManager({ prefix });
-}
-
-function openGoalVisionBoardManager(goalId) {
-  const g = (_db.goals || []).find(x => x.id === goalId);
-  if (!g) return;
-  _openGoalVisionBoardManager({ goalId });
-}
-
-function _goalManagerState(ctx) {
-  if (ctx.goalId) {
-    const g = (_db.goals || []).find(x => x.id === ctx.goalId);
-    return {
-      items: _goalVisionItems(g).map(x => ({...x})),
-      music: g.music_url || '',
-      goal: g
-    };
-  }
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  return {
-    items: (window._goalFormVisionAssets[ctx.prefix] || []).map(x => ({...x})),
-    music: _readGoalMusic(ctx.prefix),
-    goal: null
-  };
-}
-
-function _openGoalVisionBoardManager(ctx) {
-  const state = _goalManagerState(ctx);
-  window._visionManager = { ctx, items: state.items, music: state.music };
-  document.getElementById('vision-manager-overlay')?.remove();
-  const body = `
-    <div>
-      <div id="vision-drop-zone" ondragover="event.preventDefault();_tpStyle(this,'borderColor','var(--accent2)')" ondragleave="_tpStyle(this,'borderColor','var(--border2)')" ondrop="_visionDropFiles(event)"
-        style="border:1.5px dashed var(--border2);border-radius:14px;padding:18px;text-align:center;background:var(--bg3);margin-bottom:12px">
-        <div style="font-size:32px;margin-bottom:8px">🖼</div>
-        <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:5px">تصاویر را اینجا رها کن یا از دستگاه انتخاب کن</div>
-        <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">تصویرهای رایج مثل جی‌پی‌جی، پی‌ان‌جی، وب‌پی و هیک - حداکثر ۱۰ مگابایت برای هر تصویر</div>
-        <button type="button" onclick="_tpClickId('vision-image-picker')" class="btn btn-primary" style="padding:9px 14px">📷 افزودن تصاویر</button>
-        <button type="button" onclick="_visionPromptUrl()" class="btn btn-ghost" style="padding:9px 12px">افزودن لینک</button>
-        <input id="vision-image-picker" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple style="display:none" onchange="_visionHandleFiles(this.files)">
-      </div>
-      <div id="vision-manager-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-bottom:14px"></div>
-
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎵 موسیقی نمایش رؤیا</div>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
-          <div>
-            <label class="form-label">انتخاب موسیقی</label>
-            <select class="form-select" id="vision-music-choice" onchange="_visionToggleMusicUpload()">
-              ${_goalMusicOptions(state.music && !state.music.startsWith('preset:') ? 'custom' : (state.music || 'none'))}
-            </select>
-          </div>
-          <button type="button" onclick="_visionPreviewMusic()" class="btn btn-ghost" style="height:38px">▶ پیش‌نمایش</button>
-        </div>
-        <div id="vision-music-upload-wrap" style="display:${state.music && !state.music.startsWith('preset:') ? 'block' : 'none'};margin-top:10px">
-          <button type="button" onclick="_tpClickId('vision-music-picker')" class="btn btn-ghost">⬆ آپلود موسیقی</button>
-          <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'فایل‌های صوتی رایج - حداکثر ۲۰ مگابایت'}</span>
-          <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_visionHandleMusic(this.files && this.files[0])">
-        </div>
-      </div>
-    </div>
-  `;
-  document.getElementById('modals').insertAdjacentHTML('beforeend', `
-    <div class="modal-overlay open" id="vision-manager-overlay" style="z-index:10050" onclick="if(event.target===this)closeVisionBoardManager()">
-      <div class="modal" style="max-width:720px">
-        <div class="modal-header">
-          <div class="modal-title">✨ مدیریت تابلو آرزو</div>
-          <button class="modal-close" onclick="closeVisionBoardManager()">×</button>
-        </div>
-        <div class="modal-body">${body}</div>
-        <div class="modal-actions">
-          <button class="btn btn-primary" onclick="_saveVisionBoardManager()">💾 ذخیره تابلو آرزو</button>
-          <button class="btn btn-ghost" onclick="_previewVisionBoardManager()">پیش‌نمایش رؤیا</button>
-          <button class="btn btn-ghost" onclick="closeVisionBoardManager()">بستن</button>
-        </div>
-      </div>
-    </div>`);
-  setTimeout(_renderVisionManager, 20);
-}
-
-function closeVisionBoardManager() {
-  if (window._visionMusicPreview) {
-    try { window._visionMusicPreview.stop ? window._visionMusicPreview.stop() : window._visionMusicPreview.pause(); } catch(e) {}
-    window._visionMusicPreview = null;
-  }
-  document.getElementById('vision-manager-overlay')?.remove();
-}
-
-function _renderVisionManager() {
-  const box = document.getElementById('vision-manager-grid');
-  if (!box || !window._visionManager) return;
-  const items = window._visionManager.items || [];
-  box.innerHTML = items.length ? items.map((item, i) => `
-    <div draggable="true" ondragstart="_visionDragStart(event,${i})" ondragover="event.preventDefault()" ondrop="_visionDropReorder(event,${i})"
-      style="position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--border2);background:var(--bg3);cursor:grab">
-      <img src="${escapeHtml(item.src)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="_tpHideBrokenImg(this)">
-      <button type="button" onclick="_visionRemove(${i})" style="position:absolute;top:5px;left:5px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.62);color:white;cursor:pointer">×</button>
-      <div style="position:absolute;right:5px;bottom:5px;font-size:10px;color:white;background:rgba(0,0,0,.55);border-radius:999px;padding:2px 6px">${i+1}</div>
-    </div>`).join('') : `
-    <div style="grid-column:1/-1;border:1px dashed var(--border2);border-radius:12px;padding:24px;text-align:center;color:var(--text3);background:var(--bg2)">
-      🖼 هیچ تصویری اضافه نشده است
-    </div>`;
-}
-
-function _visionDropFiles(e) {
-  e.preventDefault();
-  const dz = document.getElementById('vision-drop-zone');
-  if (dz) dz.style.borderColor = 'var(--border2)';
-  _visionHandleFiles(e.dataTransfer.files);
-}
-
-function _visionHandleFiles(files) {
-  const list = Array.from(files || []);
-  list.forEach(file => _visionAddImageFile(file));
-}
-
-function _visionAddImageFile(file) {
-  const ok = /image\/(jpeg|png|webp|heic|heif)/i.test(file.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
-  if (!ok) { showToast('این بخش فقط فایل تصویری را می‌پذیرد.', 'error'); return; }
-  if (file.size > 10 * 1024 * 1024) { showToast('حداکثر حجم هر تصویر ۱۰ مگابایت است.', 'error'); return; }
-  const reader = new FileReader();
-  reader.onload = () => _visionCompressImage(reader.result, file.name, file.type).then(src => {
-    window._visionManager.items.push({ id:'img-' + Date.now() + Math.random(), type:'image', src, name:file.name, category:'', source:'upload' });
-    _renderVisionManager();
-  });
-  reader.readAsDataURL(file);
-}
-
-function _visionCompressImage(dataUrl, name, type) {
-  return new Promise(resolve => {
-    if (/heic|heif/i.test(type || name)) { resolve(dataUrl); return; }
-    const img = new Image();
-    img.onload = () => {
-      const max = 1600;
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', .84));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
-function _visionPromptUrl() {
-  const url = prompt('لینک تصویر:');
-  if (!url) return;
-  window._visionManager.items.push({ id:'url-' + Date.now(), type:'image', src:url.trim(), name:'تصویر لینک', category:'', source:'url' });
-  _renderVisionManager();
-}
-
-function _visionRemove(i) {
-  window._visionManager.items.splice(i, 1);
-  _renderVisionManager();
-}
-
-function _visionDragStart(e, i) { e.dataTransfer.setData('text/plain', String(i)); }
-function _visionDropReorder(e, to) {
-  e.preventDefault();
-  const from = +e.dataTransfer.getData('text/plain');
-  if (Number.isNaN(from) || from === to) return;
-  const arr = window._visionManager.items;
-  const [item] = arr.splice(from, 1);
-  arr.splice(to, 0, item);
-  _renderVisionManager();
-}
-
-function _visionToggleMusicUpload() {
-  const choice = document.getElementById('vision-music-choice')?.value || 'none';
-  const wrap = document.getElementById('vision-music-upload-wrap');
-  if (wrap) wrap.style.display = choice === 'custom' ? 'block' : 'none';
-}
-
-function _visionHandleMusic(file) {
-  if (!file) return;
-  const ok = /audio\/(mpeg|wav|mp4|aac|ogg)/i.test(file.type) || /\.(mp3|wav|m4a|aac|ogg)$/i.test(file.name);
-  if (!ok) { showToast('این بخش فقط فایل صوتی را می‌پذیرد.', 'error'); return; }
-  if (file.size > 20 * 1024 * 1024) { showToast('حداکثر حجم موسیقی ۲۰ مگابایت است.', 'error'); return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    window._visionManager.music = reader.result;
-    const name = document.getElementById('vision-music-name');
-    if (name) name.textContent = '🎵 ' + file.name;
-  };
-  reader.readAsDataURL(file);
-}
-
-function _visionSelectedMusic() {
-  const choice = document.getElementById('vision-music-choice')?.value || 'none';
-  if (choice === 'custom') return window._visionManager.music || '';
-  return choice === 'none' ? '' : choice;
-}
-
-function _visionPreviewMusic() {
-  const music = _visionSelectedMusic();
-  if (!music) { showToast('موسیقی انتخاب نشده', 'error'); return; }
-  if (window._visionMusicPreview) {
-    try { window._visionMusicPreview.stop ? window._visionMusicPreview.stop() : window._visionMusicPreview.pause(); } catch(e) {}
-    window._visionMusicPreview = null;
-    return;
-  }
-  if (music.startsWith('preset:')) {
-    window._visionMusicPreview = _startGoalPresetMusic(music);
-    setTimeout(() => { if (window._visionMusicPreview?.stop) { window._visionMusicPreview.stop(); window._visionMusicPreview = null; } }, 5000);
-  } else if (music.startsWith('data:')) {
-    const audio = new Audio(music);
-    audio.volume = .45;
-    audio.play().then(() => {
-      window._visionMusicPreview = audio;
-      setTimeout(() => { try { audio.pause(); } catch(e) {} window._visionMusicPreview = null; }, 5000);
-    }).catch(() => showToast('مرورگر اجازه پخش نداد', 'error'));
-  }
-}
-
-function _saveVisionBoardManager() {
-  const vm = window._visionManager;
-  if (!vm) return;
-  const music = _visionSelectedMusic();
-  if (vm.ctx.goalId) {
-    const g = (_db.goals || []).find(x => x.id === vm.ctx.goalId);
-    if (g) { g.vision_assets = vm.items; g.vision_images = ''; g.music_url = music; _save(); }
-    closeVisionBoardManager(); openGoalDetail(vm.ctx.goalId);
-  } else {
-    window._goalFormVisionAssets[vm.ctx.prefix] = vm.items.map(x => ({...x}));
-    window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-    window._goalFormVisionMusic[vm.ctx.prefix] = music || '';
-    closeVisionBoardManager(); _renderGoalVisionPreview(vm.ctx.prefix); _refreshGoalFormCompletion(vm.ctx.prefix);
-  }
-  showToast('تابلو آرزو ذخیره شد ✓', 'success');
-}
-
-function _previewVisionBoardManager() {
-  const vm = window._visionManager;
-  if (!vm) return;
-  const items = vm.items.map(x => ({...x}));
-  const music = _visionSelectedMusic();
-  if (vm.ctx.goalId) {
-    _saveVisionBoardManager();
-    openGoalVisionMode(vm.ctx.goalId);
-    return;
-  }
-  const prefix = vm.ctx.prefix;
-  const tempId = -Date.now();
-  window._goalTempExperienceId = tempId;
-  _db.goals = _db.goals || [];
-  _db.goals.push({
-    id: tempId,
-    title: document.getElementById(prefix + '-title')?.value || 'هدف جدید',
-    icon: document.getElementById(prefix + '-icon')?.value || '🎯',
-    why: document.getElementById(prefix + '-why')?.value || '',
-    vision: document.getElementById(prefix + '-vision')?.value || '',
-    vision_assets: items,
-    music_url: music,
-    progress: 0,
-    milestones: []
-  });
-  _saveVisionBoardManager();
-  openGoalVisionMode(tempId);
-}
-
-function openAddGoal() {
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-  window._goalFormVisionAssets.goal = [];
-  window._goalFormVisionMusic.goal = '';
-  openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
-    { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('goal'); }, 50);
-}
-
-function openAddAchievementGoal() {
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-  window._goalFormVisionAssets.ach = [];
-  window._goalFormVisionMusic.ach = '';
-  openModal('🏆 دستاورد جدید', _goalFormHtml('ach', { status:'done', progress:100, period:'yearly' }), [
-    { label: 'ثبت دستاورد', cls: 'btn-primary', action: 'saveAchievementGoal()' },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('ach'); }, 50);
-}
-
-function saveNewGoal() {
-  _goalsInit();
-  const title = document.getElementById('goal-title')?.value.trim();
-  if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
-  const goal = {
-    id: _db._nextId.goals++,
-    title,
-    icon: document.getElementById('goal-icon')?.value || '🎯',
-    category: document.getElementById('goal-category')?.value || '',
-    period: document.getElementById('goal-period')?.value || 'yearly',
-    why: document.getElementById('goal-why')?.value || '',
-    vision: document.getElementById('goal-vision')?.value || '',
-    vision_assets: _readGoalVisionAssets('goal'),
-    vision_images: '',
-    music_url: _readGoalMusic('goal'),
-    deadline: readCalendarDateField('goal-deadline') || '',
-    difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
-    status: 'active',
-    progress: 0,
-    milestones: [],
-    notes: '',
-    created_at: new Date().toISOString(),
-  };
-  _db.goals.push(goal);
-  _save();
-  closeModal();
-  showToast('هدف ذخیره شد ✓', 'success');
-  if (currentPage === 'goals') renderGoals();
-}
-
-function saveAchievementGoal() {
-  _goalsInit();
-  const title = document.getElementById('ach-title')?.value.trim();
-  if (!title) { showToast('عنوان دستاورد را وارد کنید', 'error'); return; }
-  const now = new Date().toISOString();
-  const goal = {
-    id: _db._nextId.goals++,
-    title,
-    icon: document.getElementById('ach-icon')?.value || '🏆',
-    category: document.getElementById('ach-category')?.value || '',
-    period: document.getElementById('ach-period')?.value || 'yearly',
-    why: document.getElementById('ach-why')?.value || '',
-    vision: document.getElementById('ach-vision')?.value || '',
-    vision_assets: _readGoalVisionAssets('ach'),
-    vision_images: '',
-    music_url: _readGoalMusic('ach'),
-    deadline: readCalendarDateField('ach-deadline') || '',
-    difficulty: document.getElementById('ach-difficulty')?.value || 'medium',
-    status: 'done',
-    progress: 100,
-    milestones: [],
-    notes: '',
-    created_at: now,
-    completed_at: now,
-    completed_date_jalali: _todayJalaliStr ? _todayJalaliStr() : '',
-  };
-  _db.goals.push(goal);
-  _ensureGoalAchievement(goal);
-  _save();
-  closeModal();
-  showToast('دستاورد ثبت شد ✓', 'success');
-  if (currentPage === 'goals') renderGoals();
-}
-
-function openGoalDetail(id) {
-  _goalsInit();
-  const g = _db.goals.find(x => x.id === id);
-  if (!g) return;
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const milestones = g.milestones || [];
-  const linked = _goalLinkedStats(id);
-  const health = _goalHealth(g);
-  const prediction = _goalPrediction(g);
-  const visionImages = _goalVisionImages(g);
-  const motivationToday = _goalMotivationToday(g);
-  const msHTML = milestones.map((m, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
-      <div onclick="toggleMilestone(${id},${i})" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;
-        background:${m.done?'var(--green)':'transparent'};border:2px solid ${m.done?'var(--green)':'var(--border2)'}">
-        ${m.done?'<span style="color:white;font-size:13px">✓</span>':''}
-      </div>
-      <span style="flex:1;font-size:13px;${m.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(m.title)}</span>
-      <button onclick="deleteMilestone(${id},${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px">🗑</button>
-    </div>`).join('');
-
-  openModal(`${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}`, `
-    <div>
-      ${g.why ? `<div style="background:rgba(62,207,142,.09);border:1px solid rgba(62,207,142,.25);border-radius:12px;padding:14px 16px;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--green);font-weight:800;margin-bottom:6px">💡 چرا؟</div>
-        <div style="font-size:14px;color:var(--text);line-height:1.9;font-weight:600">${escapeHtml(g.why)}</div>
-      </div>` : ''}
-
-      ${motivationToday ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:10px;padding:11px 14px;margin-bottom:14px">
-        <div style="font-size:10px;color:var(--accent2);font-weight:800;margin-bottom:4px">انگیزه امروز از متن خودت</div>
-        <div style="font-size:13px;color:var(--text);line-height:1.8">«${escapeHtml(motivationToday)}»</div>
-      </div>` : ''}
-
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
-        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:16px;font-weight:800;color:${health.color}">${escapeHtml(health.icon)} ${escapeHtml(health.label)}</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:3px">سلامت هدف ${fa(health.score)}٪</div>
-        </div>
-        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:16px;font-weight:800;color:var(--accent2)">${prediction.value}</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:3px">احتمال موفقیت</div>
-        </div>
-        <div style="background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:16px;font-weight:800;color:#60a5fa">${fa(linked.doneTasks)}/${fa(linked.tasks.length)}</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:3px">کارهای مرتبط</div>
-        </div>
-      </div>
-
-      <div style="font-size:12px;color:var(--text2);line-height:1.8;background:rgba(96,165,250,.07);border-radius:10px;padding:10px 12px;margin-bottom:14px">
-        ${escapeHtml(prediction.text)}
-      </div>
-
-      ${_goalTimelineHtml(g)}
-
-      ${visionImages.length ? `<div style="margin:14px 0">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:700;color:var(--text2)">🖼 تابلو آرزوها</span>
-          <div style="display:flex;gap:6px">
-            <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">مدیریت</button>
-            <button onclick="openGoalVisionMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.13);color:var(--accent2);cursor:pointer;font-family:var(--font)">نمایش انگیزشی</button>
-            <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-          ${visionImages.map(src => `<img src="${escapeHtml(src)}" alt="" style="width:120px;height:82px;object-fit:cover;border-radius:10px;border:1px solid var(--border2);flex-shrink:0" onerror="_tpHideBrokenImg(this)">`).join('')}
-        </div>
-      </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
-        <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت تابلو آرزو</button>
-        <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز هدف</button>
-      </div>`}
-
-      <div style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:12px;font-weight:600;color:var(--text2)">پیشرفت</span>
-          <span id="goal-progress-label-${id}" style="font-size:18px;font-weight:800;color:var(--accent2)">${fa(g.progress || 0)}٪</span>
-        </div>
-        <input type="range" min="0" max="100" value="${g.progress||0}" style="width:100%;accent-color:var(--accent)"
-          oninput="updateGoalProgress(${id},this.value)"
-          onchange="updateGoalProgress(${id},this.value)">
-      </div>
-
-      <div style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:600;color:var(--text2)">🏁 مراحل (Milestones)</span>
-          <button onclick="addMilestone(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer">+ مرحله</button>
-        </div>
-        <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز مرحله‌ای اضافه نشده</div>'}</div>
-      </div>
-
-      ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${DateService.disp(g.deadline)}</strong></div>` : ''}
-
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:600;color:var(--text2)">🔗 ارتباط با کارها و عادت‌ها</span>
-          <button onclick="closeModal();openGoalLinkedItems(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer">مشاهده همه</button>
-        </div>
-        <div style="display:flex;gap:8px">
-          <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:#60a5fa">✅ ${fa(linked.tasks.length)}</div>
-            <div style="font-size:9px;color:var(--text3)">کار مرتبط</div>
-          </div>
-          <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:var(--amber)">🔥 ${fa(linked.habits.length)}</div>
-            <div style="font-size:9px;color:var(--text3)">عادت مرتبط</div>
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-top:14px;background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(124,106,247,.10));border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px 14px">
-        <div style="font-size:12px;font-weight:800;color:#60a5fa;margin-bottom:5px">🚀 اولین قدم امروز</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">امروز چه کاری انجام می‌دهی که این هدف یک میلی‌متر جلو برود؟</div>
-        <button onclick="closeModal();openAddTodoForGoal(${id})" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:800">➕ تبدیل اولین قدم به کار</button>
-      </div>
-    </div>
-  `, [
-    { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditGoal(${id})` },
-    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteGoal(${id})` },
-    { label: '💾 ذخیره', cls: 'btn-primary', action: `saveGoalDetailAndClose(${id})` },
-    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-}
-
-// ذخیره تغییرات این مودال (پیشرفت/مراحل) و به‌روزرسانی زنده صفحه پشت مودال بدون نیاز به رفرش
-function saveGoalDetailAndClose(id) {
-  _save();
-  if (currentPage === 'goals') renderGoals();
-  closeModal();
-  showToast('تغییرات هدف ذخیره شد ✓', 'success');
-}
-
-function openGoalLinkedItems(id) {
-  _goalsInit(); _todosInit(); _habitsInit();
-  const g = _db.goals.find(x => x.id === id);
-  if (!g) return;
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const tasks = (_db.todos||[]).filter(t => t.goal_id === id && !t.archived);
-  const habits = (_db.habits||[]).filter(h => h.goal_id === id);
-
-  const tasksHTML = tasks.length ? tasks.map(t => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
-      <button onclick="_toggleTodo(${t.id});openGoalLinkedItems(${id})" style="width:20px;height:20px;border-radius:50%;flex-shrink:0;cursor:pointer;
-        border:2px solid ${t.done?'var(--green)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:11px;font-weight:700">
-        ${t.done?'✓':''}
-      </button>
-      <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(t.title)}</span>
-    </div>`).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">کاری به این هدف لینک نشده</div>';
-
-  const habitsHTML = habits.length ? habits.map(h => {
-    const doneToday = (_db.habit_logs||[]).some(l => l.habit_id === h.id && l.date === todayStr && l.done);
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
-      <button onclick="toggleHabitToday(${h.id});openGoalLinkedItems(${id})" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;cursor:pointer;
-        background:${doneToday?'var(--green)':'var(--bg4)'};border:2px solid ${doneToday?'var(--green)':'var(--border2)'};font-size:12px;display:flex;align-items:center;justify-content:center">
-        ${doneToday?'✅':(h.icon||'🔥')}
-      </button>
-      <span style="flex:1;font-size:13px;color:var(--text)">${escapeHtml(h.title)}</span>
-    </div>`;
-  }).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">عادتی به این هدف لینک نشده</div>';
-
-  openModal(`🔗 ارتباط‌های «${escapeHtml(g.title)}»`, `
-    <div>
-      <div style="margin-bottom:16px">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">✅ کارهای مرتبط (${fa(tasks.length)})</div>
-        ${tasksHTML}
-      </div>
-      <div>
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">🔥 عادت‌های مرتبط (${fa(habits.length)})</div>
-        ${habitsHTML}
-      </div>
-    </div>
-  `, [
-    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
-  ]);
-}
-
-function openAddTodoForGoal(goalId) {
-  openAddTodo();
-  setTimeout(() => {
-    const sel = document.getElementById('todo-goal');
-    if (sel) sel.value = String(goalId);
-    const title = document.getElementById('todo-title');
-    if (title) title.placeholder = 'اولین قدم امروز برای این هدف...';
-  }, 80);
-}
-
-function updateGoalProgress(id, val) {
-  const g = (_db.goals||[]).find(x=>x.id===id);
-  if (!g) return;
-  const prevAchieved = _isGoalAchieved(g);
-  if (+val < 100 && !prevAchieved) g.progress_before_done = +val;
-  g.progress = +val;
-  if (g.progress >= 100) {
-    g.progress = 100;
-    g.status = 'done';
-    if (!g.completed_at) g.completed_at = new Date().toISOString();
-    g.completed_date_jalali = _goalAchievementDate(g);
-    _ensureGoalAchievement(g);
-    if (!prevAchieved) showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
-  } else if ((g.status || 'active') === 'done') {
-    g.status = 'active';
-    g.completed_at = '';
-    g.completed_date_jalali = '';
-    _removeGoalAchievement(g.id);
-  }
-  _save(false);
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const label = document.getElementById('goal-progress-label-'+id);
-  if (label) label.textContent = fa(g.progress) + '٪';
-  // به‌روزرسانی زنده صفحه اهداف پشت مودال، بدون نیاز به رفرش
-  if (currentPage === 'goals') renderGoals();
-}
-
-function toggleGoalAchievement(id) {
-  _goalsInit();
-  const g = (_db.goals || []).find(x => x.id === id);
-  if (!g) return;
-  if (_isGoalAchieved(g)) {
-    g.status = 'active';
-    g.progress = Math.max(0, Math.min(99, +(g.progress_before_done ?? 99)));
-    g.completed_at = '';
-    g.completed_date_jalali = '';
-    _removeGoalAchievement(g.id);
-    showToast('هدف به لیست اهداف برگشت', 'success');
-  } else {
-    g.progress_before_done = +(g.progress || 0);
-    g.progress = 100;
-    g.status = 'done';
-    g.completed_at = new Date().toISOString();
-    g.completed_date_jalali = _goalAchievementDate(g);
-    _ensureGoalAchievement(g);
-    showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
-  }
-  _save();
-  if (currentPage === 'goals') renderGoals();
-}
-
-function toggleMilestone(goalId, idx) {
-  const g = (_db.goals||[]).find(x=>x.id===goalId);
-  if (!g || !g.milestones[idx]) return;
-  g.milestones[idx].done = !g.milestones[idx].done;
-  _save();
-  if (currentPage === 'goals') renderGoals();
-  openGoalDetail(goalId);
-}
-function deleteMilestone(goalId, idx) {
-  const g = (_db.goals||[]).find(x=>x.id===goalId);
-  if (!g) return;
-  g.milestones.splice(idx, 1);
-  _save();
-  if (currentPage === 'goals') renderGoals();
-  openGoalDetail(goalId);
-}
-function addMilestone(goalId) {
-  const g = (_db.goals||[]).find(x=>x.id===goalId);
-  if (!g) return;
-  const title = prompt('عنوان مرحله:');
-  if (!title) return;
-  if (!g.milestones) g.milestones = [];
-  g.milestones.push({ title, done: false });
-  _save();
-  if (currentPage === 'goals') renderGoals();
-  openGoalDetail(goalId);
-}
-
-function closeGoalExperience() {
-  if (window._goalExperienceCleanup) {
-    try { window._goalExperienceCleanup(); } catch(e) {}
-    window._goalExperienceCleanup = null;
-  }
-  if (window._goalTempExperienceId) {
-    _db.goals = (_db.goals || []).filter(g => g.id !== window._goalTempExperienceId);
-    window._goalTempExperienceId = null;
-  }
-  const el = document.getElementById('goal-experience-overlay');
-  if (el) el.remove();
-}
-
-function _openGoalExperience(id, mode) {
-  _goalsInit();
-  const g = (_db.goals || []).find(x => x.id === id);
-  if (!g) return;
-  closeGoalExperience();
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const images = _goalVisionImages(g);
-  const milestones = g.milestones || [];
-  const health = _goalHealth(g);
-  const prediction = _goalPrediction(g);
-  const motivation = _goalMotivationToday(g);
-  const cinematic = mode === 'vision';
-  const hasPresetMusic = !!(g.music_url && String(g.music_url).startsWith('preset:'));
-  const hasAudioMusic = !!(g.music_url && !hasPresetMusic);
-  let index = 0;
-
-  const overlay = document.createElement('div');
-  overlay.id = 'goal-experience-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#05060a;color:white;display:flex;flex-direction:column;overflow:hidden;direction:rtl';
-
-  const slideHtml = images.length
-    ? images.map((src, i) => `<img class="gv-slide" src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:${i===0?'1':'0'};transform:scale(${i===0?'1.02':'1'});transition:opacity 1.2s ease,transform 6s ease" onerror="_tpHideBrokenImg(this)">`).join('')
-    : `<div style="position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(124,106,247,.35),transparent 34%),radial-gradient(circle at 80% 40%,rgba(62,207,142,.18),transparent 30%),#0f1117"></div>`;
-
-  const milestoneHtml = milestones.length
-    ? milestones.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)"><span>${m.done?'✅':'⭕'}</span><span style="${m.done?'opacity:.65;text-decoration:line-through':''}">${escapeHtml(m.title)}</span></div>`).join('')
-    : '<div style="opacity:.65;font-size:13px">هنوز مرحله‌ای تعریف نشده.</div>';
-
-  overlay.innerHTML = `
-    <div style="position:absolute;inset:0">${slideHtml}</div>
-    <div style="position:absolute;inset:0;background:${cinematic?'linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.78))':'rgba(5,6,10,.84)'}"></div>
-    <div style="position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top,0px) + 16px) max(20px,env(safe-area-inset-right,0px)) 12px max(20px,env(safe-area-inset-left,0px));flex-shrink:0">
-      <button onclick="closeGoalExperience()" style="width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-size:18px">✕</button>
-      <div style="display:flex;align-items:center;gap:8px">
-        ${g.music_url ? `<button id="goal-music-toggle" data-music="${escapeHtml(g.music_url)}" onclick="_toggleGoalExperienceMusic()" style="padding:10px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:white;cursor:pointer;font-family:var(--font);font-size:12px">🔇 موسیقی خاموش</button>` : ''}
-        <span style="font-size:12px;opacity:.65">${cinematic ? 'نمایش انگیزشی' : 'حالت تمرکز'}</span>
-      </div>
-    </div>
-    <div style="position:relative;z-index:1;flex:1;display:flex;align-items:${cinematic?'center':'stretch'};justify-content:center;padding:20px max(22px,env(safe-area-inset-right,0px)) max(28px,env(safe-area-inset-bottom,0px)) max(22px,env(safe-area-inset-left,0px));overflow:auto">
-      <div style="width:100%;max-width:${cinematic?'760px':'860px'};text-align:${cinematic?'center':'right'};display:flex;flex-direction:column;gap:16px;justify-content:${cinematic?'center':'flex-start'}">
-        <div style="font-size:${cinematic?'46px':'34px'};line-height:1">${escapeHtml(g.icon || '🎯')}</div>
-        <h1 style="font-size:${cinematic?'clamp(28px,6vw,56px)':'clamp(24px,5vw,42px)'};line-height:1.45;margin:0;font-weight:900">${escapeHtml(g.title)}</h1>
-        ${g.why ? `<div style="font-size:${cinematic?'clamp(18px,3vw,28px)':'clamp(16px,2.4vw,22px)'};line-height:1.9;font-weight:700;color:#e8eaf0;background:${cinematic?'transparent':'rgba(255,255,255,.06)'};border:${cinematic?'none':'1px solid rgba(255,255,255,.10)'};border-radius:16px;padding:${cinematic?'0':'16px'}">چرا؟<br>${escapeHtml(g.why)}</div>` : ''}
-        ${motivation ? `<div style="font-size:15px;line-height:1.9;color:#c8cce0;opacity:.95">امروز یادت باشد: «${escapeHtml(motivation)}»</div>` : ''}
-        ${!cinematic && g.vision ? `<div style="background:rgba(124,106,247,.12);border:1px solid rgba(124,106,247,.18);border-radius:16px;padding:16px;font-size:14px;line-height:1.9;color:#dfe2ff">${escapeHtml(g.vision)}</div>` : ''}
-        ${!cinematic ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:${health.color}">${escapeHtml(health.icon)} ${escapeHtml(health.label)}</b><div style="font-size:11px;opacity:.7;margin-top:4px">سلامت ${fa(health.score)}٪</div></div>
-          <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:#b8adff">${prediction.value}</b><div style="font-size:11px;opacity:.7;margin-top:4px">${escapeHtml(prediction.text)}</div></div>
-        </div>
-        <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:16px">
-          <div style="font-size:13px;font-weight:800;margin-bottom:8px">مراحل</div>${milestoneHtml}
-        </div>` : ''}
-      </div>
-    </div>
-    ${hasAudioMusic ? `<audio id="goal-experience-audio" src="${escapeHtml(g.music_url)}" loop preload="none"></audio>` : ''}
-  `;
-
-  document.body.appendChild(overlay);
-  const escClose = function(e) { if (e.key === 'Escape') closeGoalExperience(); };
-  document.addEventListener('keydown', escClose);
-  let timer = null;
-  if (images.length > 1) {
-    timer = setInterval(() => {
-      const slides = overlay.querySelectorAll('.gv-slide');
-      if (!slides.length) return;
-      slides[index].style.opacity = '0';
-      slides[index].style.transform = 'scale(1)';
-      index = (index + 1) % slides.length;
-      slides[index].style.opacity = '1';
-      slides[index].style.transform = 'scale(1.05)';
-    }, cinematic ? 5200 : 6200);
-  }
-  window._goalExperienceCleanup = function() {
-    document.removeEventListener('keydown', escClose);
-    if (timer) clearInterval(timer);
-    const audio = document.getElementById('goal-experience-audio');
-    if (audio) { try { audio.pause(); } catch(e) {} }
-    if (window._goalPresetAudio) {
-      try { window._goalPresetAudio.stop(); } catch(e) {}
-      window._goalPresetAudio = null;
-    }
-  };
-}
-
-function openGoalVisionMode(id) { _openGoalExperience(id, 'vision'); }
-function openGoalFocusMode(id) { _openGoalExperience(id, 'focus'); }
-
-function _toggleGoalExperienceMusic() {
-  const audio = document.getElementById('goal-experience-audio');
-  const btn = document.getElementById('goal-music-toggle');
-  if (!btn) return;
-  const music = btn.dataset.music || '';
-  if (music.startsWith('preset:')) {
-    if (window._goalPresetAudio) {
-      window._goalPresetAudio.stop();
-      window._goalPresetAudio = null;
-      btn.textContent = '🔇 موسیقی خاموش';
-    } else {
-      window._goalPresetAudio = _startGoalPresetMusic(music);
-      if (window._goalPresetAudio) btn.textContent = '🔉 موسیقی روشن';
-    }
-    return;
-  }
-  if (!audio) return;
-  if (audio.paused) {
-    audio.play().then(() => { btn.textContent = '🔉 موسیقی روشن'; }).catch(() => showToast('مرورگر اجازه پخش موسیقی نداد', 'error'));
-  } else {
-    audio.pause();
-    btn.textContent = '🔇 موسیقی خاموش';
-  }
-}
-
-function _startGoalPresetMusic(kind) {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) { showToast('مرورگر از موسیقی داخلی پشتیبانی نمی‌کند', 'error'); return null; }
-  const ctx = new AudioCtx();
-  const master = ctx.createGain();
-  master.gain.value = 0.045;
-  master.connect(ctx.destination);
-  const presets = {
-    'preset:calm': [196, 246.94, 329.63],
-    'preset:inspire': [261.63, 329.63, 392],
-    'preset:nature': [174.61, 220, 293.66],
-    'preset:rain': [130.81, 196, 261.63],
-    'preset:piano': [220, 277.18, 329.63],
-  };
-  const freqs = presets[kind] || presets['preset:calm'];
-  const nodes = freqs.map((f, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = i === 0 ? 'sine' : 'triangle';
-    osc.frequency.value = f;
-    gain.gain.value = 0.18 / freqs.length;
-    osc.connect(gain); gain.connect(master); osc.start();
-    return { osc, gain };
-  });
-  return {
-    stop() {
-      nodes.forEach(n => { try { n.gain.gain.setTargetAtTime(0, ctx.currentTime, .08); n.osc.stop(ctx.currentTime + .25); } catch(e) {} });
-      setTimeout(() => { try { ctx.close(); } catch(e) {} }, 350);
-    }
-  };
-}
-
-function openEditGoal(id) {
-  const g = (_db.goals||[]).find(x=>x.id===id);
-  if (!g) return;
-  window._goalFormVisionAssets = window._goalFormVisionAssets || {};
-  window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-  window._goalFormVisionAssets.eg = _goalVisionItems(g).map(x => ({...x}));
-  window._goalFormVisionMusic.eg = g.music_url || '';
-  openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
-    { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-  setTimeout(() => { initDatePickers && initDatePickers(); _initGoalFormUX('eg'); }, 50);
-}
-function saveEditGoal(id) {
-  const g = (_db.goals||[]).find(x=>x.id===id);
-  if (!g) return;
-  g.title = document.getElementById('eg-title')?.value || g.title;
-  g.icon = document.getElementById('eg-icon')?.value || g.icon;
-  g.category = document.getElementById('eg-category')?.value || '';
-  g.period = document.getElementById('eg-period')?.value || 'yearly';
-  g.deadline = readCalendarDateField('eg-deadline') || '';
-  g.status = document.getElementById('eg-status')?.value || 'active';
-  g.why = document.getElementById('eg-why')?.value || '';
-  g.vision = document.getElementById('eg-vision')?.value || '';
-  g.vision_assets = _readGoalVisionAssets('eg');
-  g.vision_images = '';
-  g.music_url = _readGoalMusic('eg');
-  g.difficulty = document.getElementById('eg-difficulty')?.value || g.difficulty || 'medium';
-  if (_isGoalAchieved(g)) {
-    if (g.progress < 100 && g.status === 'done') g.progress = 100;
-    if (!g.completed_at) g.completed_at = new Date().toISOString();
-    g.completed_date_jalali = _goalAchievementDate(g);
-    _ensureGoalAchievement(g);
-  } else {
-    g.completed_at = '';
-    g.completed_date_jalali = '';
-    _removeGoalAchievement(g.id);
-  }
-  _save(); closeModal(); if (currentPage === 'goals') renderGoals();
-  showToast('تغییرات هدف ذخیره شد ✓', 'success');
-}
-function deleteGoal(id) {
-  if (!confirm('این هدف حذف شود؟')) return;
-  _db.goals = (_db.goals||[]).filter(x=>x.id!==id);
-  _removeGoalAchievement(id);
-  _save(); showToast('حذف شد','error'); if (currentPage === 'goals') renderGoals();
-}
-
-// ── Habits Page ──────────────────────────────────────────────
 function _habitsInit() {
   if (!_db.habits) _db.habits = [];
   if (!_db.habit_logs) _db.habit_logs = [];
@@ -27952,783 +26551,6 @@ function _habitsInit() {
     if ((h.remind_min === undefined || h.remind_min === null) && h.time) h.remind_min = 15;
   });
 }
-
-let _habitFilter = 'active';
-let _justToggledHabitId = null;
-
-function _jalaliOrdinal(dateStr) {
-  const [jy,jm,jd] = parseJalali(dateStr);
-  const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-  return Math.floor(new Date(gy,gm-1,gd).getTime() / 86400000);
-}
-
-function _habitStreak(habitId) {
-  _habitsInit();
-  const logs = _db.habit_logs || [];
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const habitLogs = logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date).sort().reverse();
-  if (!habitLogs.length) return 0;
-  let streak = 0;
-  let checkDate = todayStr;
-  for (let i = 0; i < 365; i++) {
-    if (habitLogs.includes(checkDate)) { streak++; }
-    else if (i === 0) { /* امروز هنوز نزده */ }
-    else break;
-    try {
-      const [jy,jm,jd] = parseJalali(checkDate);
-      const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-      const prev = new Date(gy,gm-1,gd-1);
-      const pj = gregorianToJalali(prev.getFullYear(),prev.getMonth()+1,prev.getDate());
-      checkDate = formatJalali(...pj);
-    } catch(e) { break; }
-  }
-  return streak;
-}
-
-function _habitBestStreak(habitId) {
-  _habitsInit();
-  const logs = _db.habit_logs || [];
-  try {
-    const ordinals = [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => _jalaliOrdinal(l.date)))].sort((a,b)=>a-b);
-    let best = 0, cur = 0, prev = null;
-    for (const o of ordinals) {
-      cur = (prev !== null && o === prev + 1) ? cur + 1 : 1;
-      if (cur > best) best = cur;
-      prev = o;
-    }
-    return best;
-  } catch(e) { return 0; }
-}
-
-function _habitMonthSuccess(habitId) {
-  _habitsInit();
-  const logs = _db.habit_logs || [];
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  try {
-    const [ty, tm, td] = parseJalali(todayStr);
-    const doneThisMonth = new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))
-      .size ? [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))].filter(d => {
-        const [jy, jm] = parseJalali(d);
-        return jy === ty && jm === tm;
-      }).length : 0;
-    return td > 0 ? Math.round(doneThisMonth / td * 100) : 0;
-  } catch(e) { return 0; }
-}
-
-function _habitLastDone(habitId) {
-  _habitsInit();
-  const logs = _db.habit_logs || [];
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const doneLogs = logs.filter(l => l.habit_id === habitId && l.done && l.logged_at).sort((a,b)=> new Date(b.logged_at)-new Date(a.logged_at));
-  if (!doneLogs.length) return null;
-  const last = doneLogs[0];
-  const dt = _timeZoneParts(new Date(last.logged_at));
-  const timeStr = fa(String(dt.hour).padStart(2,'0')) + ':' + fa(String(dt.minute).padStart(2,'0'));
-  if (last.date === todayStr) return `امروز ساعت ${timeStr}`;
-  try {
-    const daysAgo = _jalaliOrdinal(todayStr) - _jalaliOrdinal(last.date);
-    if (daysAgo === 1) return 'دیروز';
-    return `${fa(daysAgo)} روز پیش`;
-  } catch(e) { return last.date; }
-}
-
-function renderHabits() {
-  _habitsInit();
-  updateTopbarActions(`<button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>`);
-
-  const habits = _db.habits || [];
-  const logs = _db.habit_logs || [];
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const weekdayLabels = ['ش','ی','د','س','چ','پ','ج'];
-
-  if (habits.length === 0) {
-    setContent(`
-      <div style="max-width:920px;margin:40px auto;text-align:center;padding:40px 20px">
-        <div style="font-size:56px;margin-bottom:16px">🔥</div>
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز عادتی تعریف نکرده‌ای</h2>
-        <p style="color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.8">
-          عادت‌های مثبت روزانه‌ات را اینجا پیگیری کن. Streak بساز و ثابت‌قدم باش!
-        </p>
-        <button class="btn btn-primary" style="padding:12px 28px;font-size:14px" onclick="openAddHabit()">
-          🔥 اولین عادتم را بسازم
-        </button>
-      </div>`);
-    return;
-  }
-
-  const getStreak = _habitStreak;
-  const getBestStreak = _habitBestStreak;
-  const getMonthSuccess = _habitMonthSuccess;
-  const getLastDone = _habitLastDone;
-
-  // ── فیلتر و آرشیو ─────────────────────────────
-  const activeHabits = habits.filter(h => !h.archived);
-  const archivedHabits = habits.filter(h => h.archived);
-  let displayHabits;
-  if (_habitFilter === 'archived') displayHabits = archivedHabits;
-  else if (_habitFilter === 'today_done') displayHabits = activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done));
-  else if (_habitFilter === 'today_undone') displayHabits = activeHabits.filter(h => !logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done));
-  else displayHabits = activeHabits;
-  displayHabits = [...displayHabits].sort((a,b) => (b.pinned?1:0) - (a.pinned?1:0));
-
-  const filterTabs = [
-    { key:'active', label:'همه', icon:'📋', count: activeHabits.length },
-    { key:'today_done', label:'انجام‌شده', icon:'✅', count: activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length },
-    { key:'today_undone', label:'انجام‌نشده', icon:'⭕', count: activeHabits.filter(h => !logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length },
-    { key:'archived', label:'آرشیو', icon:'🗃', count: archivedHabits.length },
-  ];
-  const filterHTML = `
-    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px">
-      ${filterTabs.map(t => `
-        <button onclick="_tpHabitFilter('${t.key}')" style="flex-shrink:0;padding:7px 14px;border-radius:20px;cursor:pointer;
-          border:1px solid ${_habitFilter===t.key ? 'var(--amber)' : 'var(--border)'};
-          background:${_habitFilter===t.key ? 'rgba(251,191,36,.12)' : 'var(--bg2)'};
-          color:${_habitFilter===t.key ? 'var(--amber)' : 'var(--text2)'};
-          font-size:12px;font-weight:600;white-space:nowrap;font-family:var(--font)">
-          ${escapeHtml(t.icon)} ${escapeHtml(t.label)} (${fa(t.count)})
-        </button>`).join('')}
-    </div>`;
-
-  // ── آمار بالای صفحه ─────────────────────────────
-  const bestStreakOverall = Math.max(0, ...activeHabits.map(h => getStreak(h.id)));
-  const doneTodayCount = activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
-  const avgMonthSuccess = activeHabits.length ? Math.round(activeHabits.reduce((s,h)=>s+getMonthSuccess(h.id),0) / activeHabits.length) : 0;
-
-  const statItem = (icon, label, value, color) => `
-    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 4px">
-      <span style="font-size:13px;line-height:1;flex-shrink:0">${icon}</span>
-      <div style="display:flex;flex-direction:column;align-items:center;line-height:1.3;min-width:0">
-        <span style="font-size:13px;font-weight:800;color:${color||'var(--text)'};white-space:nowrap">${value}</span>
-        <span style="font-size:9px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${label}</span>
-      </div>
-    </div>`;
-  const statDivider = `<div style="width:1px;align-self:stretch;background:var(--border);margin:6px 0;flex-shrink:0"></div>`;
-
-  const statsHTML = `
-    <div style="display:flex;align-items:stretch;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden">
-      ${statItem('🔥','عادت فعال', fa(activeHabits.length), '#fb923c')}
-      ${statDivider}
-      ${statItem('🏆','بهترین استمرار', fa(bestStreakOverall)+' روز', 'var(--amber)')}
-      ${statDivider}
-      ${statItem('📈','موفقیت این ماه', fa(avgMonthSuccess)+'٪', '#60a5fa')}
-      ${statDivider}
-      ${statItem('✅','امروز', fa(doneTodayCount)+'/'+fa(activeHabits.length), 'var(--green)')}
-    </div>`;
-
-  if (displayHabits.length === 0) {
-    setContent(`
-      <div style="max-width:920px;margin:0 auto">
-        <div style="margin-bottom:16px">
-          <button onclick="openAddHabit()"
-            style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
-              font-family:var(--font);font-size:15px;font-weight:700;
-              background:linear-gradient(135deg,#fbbf24,#f59e0b);
-              color:white;letter-spacing:.01em;
-              box-shadow:0 4px 20px rgba(251,191,36,.35);
-              display:flex;align-items:center;justify-content:center;gap:10px">
-            <span>🔥 عادت جدید اضافه کن</span>
-            <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
-              display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
-          </button>
-        </div>
-        ${statsHTML}
-        ${filterHTML}
-        <div style="text-align:center;color:var(--text3);font-size:13px;padding:40px 20px">
-          موردی برای این فیلتر پیدا نشد.
-        </div>
-      </div>`);
-    return;
-  }
-
-  const justToggledId = _justToggledHabitId;
-  _justToggledHabitId = null;
-
-  const nowHHMM = _appTimeLabel();
-
-  const html = displayHabits.map(h => {
-    const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
-    const streak = getStreak(h.id);
-    const bestStreak = getBestStreak(h.id);
-    const monthSuccess = getMonthSuccess(h.id);
-    const lastDone = getLastDone(h.id);
-    const color = h.color || 'var(--amber)';
-    const justToggled = h.id === justToggledId;
-
-    const last7 = Array.from({length: 7}, (_, i) => {
-      try {
-        const [jy,jm,jd] = parseJalali(todayStr);
-        const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
-        const d = new Date(gy,gm-1,gd - (6-i));
-        const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
-        const dateStr = formatJalali(...dj);
-        const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
-        const isToday = dateStr === todayStr;
-        const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
-        return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">
-          <span style="font-size:9px;color:${isToday ? 'var(--amber)' : 'var(--text3)'};font-weight:${isToday?'800':'400'}">${wLabel}</span>
-          <div class="habit-day-dot" title="${dateStr}${isToday?' (امروز)':''}" style="width:13px;height:13px;border-radius:50%;
-            background:${done ? 'var(--green)' : 'var(--bg4)'};
-            box-shadow:${isToday ? '0 0 0 3px rgba(251,191,36,.35)' : 'none'}"></div>
-        </div>`;
-      } catch(e) { return '<div style="flex:1"></div>'; }
-    }).join('');
-
-    const wasBroken = !doneToday && bestStreak > 0 && streak === 0;
-
-    // ── وضعیت با سه حالت (نه فقط قرمز/سبز) ─────────────
-    const timeNotYetDue = !!h.time && !doneToday && nowHHMM < h.time;
-    let status;
-    if (doneToday) status = { icon:'✅', text:'انجام شد', color:'var(--green)' };
-    else if (timeNotYetDue) status = { icon:'⏳', text:`هنوز زمانش نرسیده (${h.time})`, color:'var(--text3)' };
-    else status = { icon:'⭕', text:'انجام نشده', color:'var(--text3)' };
-
-    // ── پیام انگیزشی هوشمند و پلکانی ─────────────
-    let motivation;
-    if (wasBroken) {
-      motivation = '💪 استمرارت قطع شد، ولی مهم نیست. از امروز دوباره شروع کن.';
-    } else if (streak === 0 && !doneToday) {
-      motivation = '🚀 امروز اولین قدم رو بردار.';
-    } else if (bestStreak > streak && bestStreak - streak <= 5) {
-      motivation = `🔥 فقط ${fa(bestStreak - streak)} روز دیگه تا رکورد جدیدت.`;
-    } else if (streak >= 50) {
-      motivation = '🏆 فوق‌العاده پیش می‌ری، همینطور ادامه بده.';
-    } else if (doneToday) {
-      motivation = '✅ آفرین! امروز رو ثبت کردی.';
-    } else {
-      motivation = '👏 داری خوب پیش می‌ری، ادامه بده.';
-    }
-
-    const linkedGoal = h.goal_id ? (_db.goals||[]).find(x=>x.id===h.goal_id) : null;
-    const borderColor = doneToday ? 'var(--green)' : (wasBroken ? 'rgba(248,113,113,.35)' : 'var(--border)');
-    const cardGlow = doneToday ? '0 0 0 1px var(--green), 0 4px 18px rgba(62,207,142,.18)' : 'none';
-
-    return `<div class="habit-card-clickable ${justToggled ? 'habit-card-flash' : ''}" onclick="_onHabitCardClick(event,${h.id})" style="background:var(--bg2);border:1px solid ${borderColor};box-shadow:${cardGlow};border-radius:14px;padding:16px;margin-bottom:12px;transition:border-color .15s;opacity:${h.archived?0.6:1}">
-
-      <!-- ردیف اول: چک‌باکس واقعی + عنوان (بزرگ‌ترین متن) + منوی سه‌نقطه -->
-      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px">
-        <button type="button" data-habit-check="1" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
-          class="habit-check-btn ${justToggled ? 'habit-checkbox-pop' : ''}"
-          style="width:32px;height:32px;border-radius:50%;flex-shrink:0;cursor:pointer;margin-top:1px;
-          background:${doneToday?'var(--green)':'var(--bg3)'};
-          border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
-          font-size:16px;font-weight:800;color:white;transition:all .2s;display:flex;align-items:center;justify-content:center">
-          ${doneToday ? '✓' : ''}
-        </button>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:15px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4">
-            ${h.pinned ? '<span title="پین شده">📌</span>' : ''}<span>${escapeHtml(h.title)}</span><span>${escapeHtml(h.icon || '🔥')}</span>
-          </div>
-          <button type="button" data-habit-check="1" title="${doneToday ? 'برای لغو ثبت امروز بزن' : 'برای ثبت انجام امروز بزن'}"
-            style="display:block;margin-top:2px;padding:0;border:none;background:transparent;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:700;color:${status.color};text-align:right">
-            ${escapeHtml(status.icon)} ${escapeHtml(status.text)}
-          </button>
-        </div>
-        <button type="button" data-habit-skip="1" onclick="openHabitMenu(${h.id})" title="گزینه‌ها" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text2);font-size:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center">⋮</button>
-      </div>
-
-      <!-- ردیف دوم: زمان، آخرین انجام، هدف مرتبط -->
-      <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 38px">
-        ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
-        ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
-        ${linkedGoal ? `<span data-habit-skip="1" onclick="openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
-      </div>
-
-      <!-- ردیف سوم: استمرار (بزرگ‌تر و مهم‌تر)، رکورد (کوچک‌تر)، درصد موفقیت -->
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-          <div class="${justToggled ? 'habit-streak-pop' : ''}" style="font-size:20px;font-weight:800;color:${color};line-height:1.1">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-          <div style="font-size:9px;color:var(--text3);margin-top:2px">روز استمرار</div>
-        </div>
-        <div style="flex:.7;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-          <div style="font-size:12px;font-weight:700;color:var(--text)">🏆 ${fa(bestStreak)}</div>
-          <div style="font-size:9px;color:var(--text3)">رکورد</div>
-        </div>
-        <div style="flex:1.6;background:var(--bg3);border-radius:8px;padding:8px 10px">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
-            <span style="font-size:9px;color:var(--text3)">موفقیت این ماه</span>
-            <span style="font-size:15px;font-weight:800;color:var(--green)">${fa(monthSuccess)}٪</span>
-          </div>
-          <div style="width:100%;height:10px;border-radius:5px;background:var(--bg4);overflow:hidden">
-            <div style="width:${monthSuccess}%;height:100%;background:var(--green);border-radius:5px;transition:width .3s"></div>
-          </div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:4px;margin-bottom:10px">${last7}</div>
-
-      <div style="font-size:11px;color:var(--text2);background:rgba(251,191,36,.08);border-radius:8px;padding:7px 10px;text-align:left">
-        ${motivation}
-      </div>
-    </div>`;
-  }).join('');
-
-  setContent(`
-    <div style="max-width:920px;margin:0 auto">
-      <div style="margin-bottom:16px">
-        <button onclick="openAddHabit()"
-          style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
-            font-family:var(--font);font-size:15px;font-weight:700;
-            background:linear-gradient(135deg,#fbbf24,#f59e0b);
-            color:white;letter-spacing:.01em;
-            box-shadow:0 4px 20px rgba(251,191,36,.35);
-            display:flex;align-items:center;justify-content:center;gap:10px;
-            transition:all .2s"
-          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(251,191,36,.45)')"
-          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(251,191,36,.35)')">
-          <span>🔥 عادت جدید اضافه کن</span>
-          <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
-            display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
-        </button>
-      </div>
-      ${statsHTML}
-      ${filterHTML}
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2 style="font-size:15px;font-weight:700">لیست عادت‌ها</h2>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;color:var(--text3)">${fa(displayHabits.length)} عادت</span>
-          <button id="habits-view-toggle" onclick="_toggleHabitsView()" title="تغییر نما"
-            style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
-            <span id="habits-view-icon">${_habitsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="habits-view-label">${_habitsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
-          </button>
-        </div>
-      </div>
-      <div id="habits-compact-view" style="display:${_habitsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-          ${displayHabits.map(h => {
-            const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
-            const streak = getStreak(h.id);
-            const monthSuccess = getMonthSuccess(h.id);
-            const color = h.color || 'var(--amber)';
-            const nowHHMM2 = _appTimeLabel();
-            const timeNotYetDue = !!h.time && !doneToday && nowHHMM2 < h.time;
-            let statusIcon, statusColor;
-            if (doneToday) { statusIcon = '✅'; statusColor = 'var(--green)'; }
-            else if (timeNotYetDue) { statusIcon = '⏳'; statusColor = 'var(--text3)'; }
-            else { statusIcon = '⭕'; statusColor = 'var(--text3)'; }
-            const borderColor2 = doneToday ? 'var(--green)' : 'var(--border)';
-            const cardGlow2 = doneToday ? '0 0 0 1px var(--green),0 4px 18px rgba(62,207,142,.15)' : 'none';
-            return `<div onclick="_onHabitCardClick(event,${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
-              onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','$borderColor2')">
-              <div style="display:flex;align-items:flex-start;gap:10px">
-                <button type="button" data-habit-check="1" class="habit-check-btn"
-                  style="width:32px;height:32px;border-radius:50%;flex-shrink:0;cursor:pointer;
-                  background:${doneToday?'var(--green)':'var(--bg3)'};
-                  border:2px solid ${doneToday?'var(--green)':'var(--border2)'};
-                  font-size:16px;color:white;display:flex;align-items:center;justify-content:center;transition:all .2s">
-                  ${doneToday ? '✓' : ''}
-                </button>
-                <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escapeHtml(h.title)} ${escapeHtml(h.icon||'🔥')}</div>
-                  <button type="button" data-habit-check="1" style="display:block;margin-top:2px;padding:0;border:none;background:transparent;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;color:${statusColor};text-align:right">${statusIcon} ${doneToday?'انجام شد':timeNotYetDue?`هنوز نرسیده (${h.time})`:'انجام نشده'}</button>
-                </div>
-                <div style="text-align:center;flex-shrink:0">
-                  <div style="font-size:18px;font-weight:800;color:${color}">${streak > 0 ? '🔥' : ''} ${fa(streak)}</div>
-                  <div style="font-size:9px;color:var(--text3)">استمرار</div>
-                </div>
-              </div>
-              <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
-                <div style="height:100%;width:${monthSuccess}%;background:var(--green);border-radius:3px;transition:width .3s"></div>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:10px;color:var(--text3)">موفقیت این ماه</span>
-                <span style="font-size:12px;font-weight:700;color:var(--green)">${fa(monthSuccess)}٪</span>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>
-      <div id="habits-full-view" style="display:${_habitsViewMode === 'compact' ? 'none' : 'block'}">
-      ${html}
-      </div>
-    </div>`);
-}
-
-function _onHabitCardClick(event, habitId) {
-  let t = event && event.target;
-  if (t && t.nodeType === 3) t = t.parentElement;
-  if (t && typeof t.closest === 'function') {
-    if (t.closest('[data-habit-skip]')) return;
-    if (t.closest('[data-habit-check]')) {
-      toggleHabitToday(habitId);
-      return;
-    }
-  }
-  openHabitDetail(habitId);
-}
-
-function toggleHabitToday(habitId) {
-  _habitsInit();
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const existing = _db.habit_logs.find(l => l.habit_id === habitId && l.date === todayStr);
-  let nowDone;
-  if (existing) { existing.done = !existing.done; nowDone = existing.done; }
-  else { _db.habit_logs.push({ habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
-  _justToggledHabitId = nowDone ? habitId : null;
-  _save(); renderHabits();
-}
-
-function openAddHabit() {
-  openModal('🔥 عادت جدید', `
-    <div class="form-grid">
-      <div class="form-group full">
-        <label class="form-label">نام عادت *</label>
-        <input class="form-input" id="hab-title" placeholder="مثلاً: ورزش صبحگاهی" autofocus>
-      </div>
-      <div class="form-group">
-        <label class="form-label">آیکون</label>
-        <input class="form-input" id="hab-icon" value="🔥" placeholder="🔥" style="font-size:18px">
-      </div>
-      <div class="form-group">
-        <label class="form-label">رنگ</label>
-        <select class="form-select" id="hab-color">
-          <option value="#fbbf24">🟡 طلایی</option>
-          <option value="#3ecf8e">🟢 سبز</option>
-          <option value="#60a5fa">🔵 آبی</option>
-          <option value="#f472b6">🩷 صورتی</option>
-          <option value="#f87171">🔴 قرمز</option>
-          <option value="#a78bfa">🟣 بنفش</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">⏰ زمان انجام</label>
-        <input class="form-input" id="hab-time" type="time" style="direction:ltr">
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🎯 مرتبط با هدف (اختیاری)</label>
-        <select class="form-input" id="hab-goal">${_buildGoalSelectOptions('')}</select>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">📝 توضیحات</label>
-        <input class="form-input" id="hab-desc" placeholder="توضیح کوتاه...">
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🔔 یادآوری</label>
-        <select class="form-input" id="hab-remind">
-          <option value="0">بدون یادآوری</option>
-          <option value="5">۵ دقیقه قبل</option>
-          <option value="10">۱۰ دقیقه قبل</option>
-          <option value="15" selected>۱۵ دقیقه قبل</option>
-          <option value="30">۳۰ دقیقه قبل</option>
-          <option value="60">۱ ساعت قبل</option>
-          <option value="120">۲ ساعت قبل</option>
-        </select>
-      </div>
-      <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
-        background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-        color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
-        ${('Notification' in window && Notification.permission==='granted')
-          ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
-          : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
-        ${!('Notification' in window && Notification.permission==='granted')
-          ? '<button onclick="_requestHabitNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
-          : ''}
-      </div>
-    </div>
-  `, [
-    { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewHabit()' },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-}
-
-async function saveNewHabit() {
-  _habitsInit();
-  const title = document.getElementById('hab-title')?.value.trim();
-  if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
-  const goalId = document.getElementById('hab-goal')?.value || '';
-  const habitTime = document.getElementById('hab-time')?.value || '';
-  const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
-  if (remindMin > 0 && !habitTime) {
-    showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
-    return;
-  }
-  if (remindMin > 0 && !(await _ensureReminderPushEnabled('hab-notif-status'))) return;
-  const newId = _db._nextId.habits++;
-  _db.habits.push({
-    id: newId,
-    title,
-    icon: document.getElementById('hab-icon')?.value || '🔥',
-    color: document.getElementById('hab-color')?.value || '#fbbf24',
-    time: habitTime,
-    remind_min: remindMin,
-    goal_id: goalId ? +goalId : null,
-    desc: document.getElementById('hab-desc')?.value || '',
-    created_at: new Date().toISOString(),
-  });
-  _save();
-  if (remindMin > 0 && habitTime) _scheduleHabitNotification(newId, title, habitTime, remindMin);
-  closeModal(); showToast('عادت ذخیره شد ✓', 'success');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function openEditHabit(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  const colors = ['#fbbf24','#3ecf8e','#60a5fa','#f472b6','#f87171','#a78bfa'];
-  const colorLabels = ['🟡 طلایی','🟢 سبز','🔵 آبی','🩷 صورتی','🔴 قرمز','🟣 بنفش'];
-  openModal('✏️ ویرایش عادت', `
-    <div class="form-grid">
-      <div class="form-group full">
-        <label class="form-label">نام عادت *</label>
-        <input class="form-input" id="hab-title" value="${escapeHtml(h.title||'')}" autofocus>
-      </div>
-      <div class="form-group">
-        <label class="form-label">آیکون</label>
-        <input class="form-input" id="hab-icon" value="${escapeHtml(h.icon||'🔥')}" style="font-size:18px">
-      </div>
-      <div class="form-group">
-        <label class="form-label">رنگ</label>
-        <select class="form-select" id="hab-color">
-          ${colors.map((c,i)=>`<option value="${c}" ${h.color===c?'selected':''}>${colorLabels[i]}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">⏰ زمان انجام</label>
-        <input class="form-input" id="hab-time" type="time" value="${h.time||''}" style="direction:ltr">
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🎯 مرتبط با هدف (اختیاری)</label>
-        <select class="form-input" id="hab-goal">${_buildGoalSelectOptions(h.goal_id||'')}</select>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">📝 توضیحات</label>
-        <input class="form-input" id="hab-desc" value="${escapeHtml(h.desc||'')}">
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🔔 یادآوری</label>
-        <select class="form-input" id="hab-remind">
-          <option value="0" ${(h.remind_min||0)===0?'selected':''}>بدون یادآوری</option>
-          <option value="5" ${(h.remind_min||0)===5?'selected':''}>۵ دقیقه قبل</option>
-          <option value="10" ${(h.remind_min||0)===10?'selected':''}>۱۰ دقیقه قبل</option>
-          <option value="15" ${(h.remind_min||0)===15?'selected':''}>۱۵ دقیقه قبل</option>
-          <option value="30" ${(h.remind_min||0)===30?'selected':''}>۳۰ دقیقه قبل</option>
-          <option value="60" ${(h.remind_min||0)===60?'selected':''}>۱ ساعت قبل</option>
-          <option value="120" ${(h.remind_min||0)===120?'selected':''}>۲ ساعت قبل</option>
-        </select>
-      </div>
-      <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
-        background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
-        color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
-        ${('Notification' in window && Notification.permission==='granted')
-          ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
-          : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
-        ${!('Notification' in window && Notification.permission==='granted')
-          ? '<button onclick="_requestHabitNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
-          : ''}
-      </div>
-    </div>
-  `, [
-    { label: '💾 ذخیره', cls: 'btn-primary', action: `saveEditHabit(${id})` },
-    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteHabit(${id})` },
-    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-}
-
-async function saveEditHabit(id) {
-  const h = (_db.habits||[]).find(x => x.id === id);
-  if (!h) return;
-  const title = document.getElementById('hab-title')?.value.trim();
-  if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
-  const goalId = document.getElementById('hab-goal')?.value || '';
-  const habitTime = document.getElementById('hab-time')?.value || '';
-  const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
-  if (remindMin > 0 && !habitTime) {
-    showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
-    return;
-  }
-  if (remindMin > 0 && !(await _ensureReminderPushEnabled('hab-notif-status'))) return;
-  Object.assign(h, {
-    title,
-    icon: document.getElementById('hab-icon')?.value || '🔥',
-    color: document.getElementById('hab-color')?.value || '#fbbf24',
-    time: habitTime,
-    remind_min: remindMin,
-    goal_id: goalId ? +goalId : null,
-    desc: document.getElementById('hab-desc')?.value || '',
-  });
-  _save();
-  if (remindMin > 0 && habitTime) _scheduleHabitNotification(id, title, habitTime, remindMin);
-  closeModal(); showToast('ذخیره شد ✓', 'success');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function _requestHabitNotifPermission() {
-  _ensureReminderPushEnabled('hab-notif-status');
-}
-
-function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
-  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if (!habitTime || remindMinutes <= 0) return;
-  try {
-    const [h, m] = habitTime.split(':').map(Number);
-    if (isNaN(h) || isNaN(m)) return;
-    const now = new Date();
-    const today = _appTodayGregorianParts();
-    const notifDate = _zonedWallTimeToLocalDate(today.year, today.month, today.day, h, m, 0);
-    notifDate.setMinutes(notifDate.getMinutes() - remindMinutes);
-    if (notifDate <= now) {
-      const tomorrowJ = _addDays(..._todayJalali(), 1);
-      const [gy, gm, gd] = jalaliToGregorian(tomorrowJ[0], tomorrowJ[1], tomorrowJ[2]);
-      const nextDate = _zonedWallTimeToLocalDate(gy, gm, gd, h, m, 0);
-      notifDate.setTime(nextDate.getTime() - remindMinutes * 60000);
-    }
-    const delay = notifDate.getTime() - now.getTime();
-    if (delay > 0 && delay < 48 * 3600 * 1000) {
-      setTimeout(() => {
-        _notify('🔥 ' + title, {
-          body: 'وقت انجام عادتته — TeamPulse',
-          icon: '/favicon.png',
-          tag: 'habit-' + id,
-        });
-      }, delay);
-    }
-  } catch(e) { console.warn('Habit notification schedule failed:', e); }
-}
-
-function deleteHabit(id) {
-  if (!confirm('این عادت حذف شود؟ این کار قابل بازگشت نیست.')) return;
-  _db.habits = (_db.habits||[]).filter(x => x.id !== id);
-  _db.habit_logs = (_db.habit_logs||[]).filter(x => x.habit_id !== id);
-  _save(); showToast('حذف شد', 'error');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function openHabitDetail(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const logs = _db.habit_logs || [];
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const doneToday = logs.some(l => l.habit_id === id && l.date === todayStr && l.done);
-  const streak = _habitStreak(id);
-  const bestStreak = _habitBestStreak(id);
-  const monthSuccess = _habitMonthSuccess(id);
-  const lastDone = _habitLastDone(id);
-  const totalDone = logs.filter(l => l.habit_id === id && l.done).length;
-  const linkedGoal = h.goal_id ? (_db.goals||[]).find(x => x.id === h.goal_id) : null;
-  const color = h.color || 'var(--amber)';
-
-  const statBox = (icon, value, label, c) => `
-    <div style="flex:1;background:var(--bg3);border-radius:10px;padding:10px;text-align:center">
-      <div style="font-size:16px;font-weight:800;color:${c||'var(--text)'}">${icon} ${value}</div>
-      <div style="font-size:9px;color:var(--text3);margin-top:2px">${label}</div>
-    </div>`;
-
-  openModal(`${escapeHtml(h.icon || '🔥')} ${escapeHtml(h.title)}`, `
-    <div>
-      ${h.desc ? `<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:14px;background:var(--bg3);border-radius:10px;padding:10px 12px">📝 ${escapeHtml(h.desc)}</div>` : ''}
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-        ${h.time ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">⏰ ${h.time}</span>` : ''}
-        ${linkedGoal ? `<span onclick="closeModal();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;font-size:12px;border-radius:20px;padding:5px 12px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
-        ${h.pinned ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">📌 پین شده</span>` : ''}
-        ${h.archived ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">🗃 آرشیو شده</span>` : ''}
-      </div>
-
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        ${statBox(streak>0?'🔥':'', fa(streak), 'روز استمرار', color)}
-        ${statBox('🏆', fa(bestStreak), 'رکورد', 'var(--amber)')}
-        ${statBox('📈', fa(monthSuccess)+'٪', 'موفقیت ماه', 'var(--green)')}
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
-        ${statBox('✅', fa(totalDone), 'کل دفعات انجام', '#60a5fa')}
-        ${statBox('🕐', lastDone || '—', 'آخرین انجام', 'var(--text)')}
-      </div>
-
-      <button onclick="closeModal();toggleHabitToday(${id})" style="width:100%;padding:12px;border-radius:10px;border:none;cursor:pointer;
-        font-family:var(--font);font-size:14px;font-weight:700;margin-bottom:16px;
-        background:${doneToday ? 'var(--bg3)' : 'var(--green)'};color:${doneToday?'var(--text)':'white'}">
-        ${doneToday ? '↩️ لغو ثبت امروز' : '✅ ثبت انجام امروز'}
-      </button>
-
-      <div style="display:flex;gap:8px">
-        <button onclick="closeModal();openHabitHistory(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">📊 تاریخچه</button>
-        <button onclick="closeModal();openEditHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ ویرایش</button>
-        <button onclick="closeModal();toggleArchiveHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${h.archived?'↩️ بازگرداندن':'🗃 آرشیو'}</button>
-      </div>
-    </div>
-  `, [
-    { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteHabit(${id})` },
-    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
-  ]);
-}
-
-function openHabitMenu(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  const rowBtn = (icon, label, action, danger) => `
-    <button onclick="${action}" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;
-      border:1px solid var(--border);background:var(--bg2);color:${danger ? 'var(--red)' : 'var(--text)'};
-      font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:var(--font);text-align:right">
-      <span style="font-size:16px">${icon}</span><span>${label}</span>
-    </button>`;
-  openModal(`${escapeHtml(h.icon || '🔥')} ${escapeHtml(h.title)}`, `
-    <div>
-      ${rowBtn('✏️', 'ویرایش', `closeModal();openEditHabit(${id})`)}
-      ${rowBtn('📊', 'آمار و تاریخچه', `closeModal();openHabitHistory(${id})`)}
-      ${rowBtn(h.pinned ? '📌' : '📍', h.pinned ? 'حذف پین' : 'پین کردن بالای لیست', `closeModal();togglePinHabit(${id})`)}
-      ${rowBtn('📋', 'کپی کردن این عادت', `closeModal();duplicateHabit(${id})`)}
-      ${rowBtn(h.archived ? '↩️' : '🗃', h.archived ? 'بازگرداندن از آرشیو' : 'آرشیو کردن', `closeModal();toggleArchiveHabit(${id})`)}
-      ${rowBtn('🗑', 'حذف', `closeModal();deleteHabit(${id})`, true)}
-    </div>
-  `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
-}
-
-function duplicateHabit(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  _db.habits.push({
-    ...h,
-    id: _db._nextId.habits++,
-    title: h.title + ' (کپی)',
-    pinned: false,
-    archived: false,
-    created_at: new Date().toISOString(),
-  });
-  _save(); showToast('عادت کپی شد ✓', 'success');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function togglePinHabit(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  h.pinned = !h.pinned;
-  _save(); showToast(h.pinned ? 'به بالای لیست پین شد 📌' : 'پین برداشته شد', 'success');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function toggleArchiveHabit(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  h.archived = !h.archived;
-  _save(); showToast(h.archived ? 'آرشیو شد 🗃' : 'از آرشیو خارج شد ↩️', 'success');
-  if (currentPage === 'habits') renderHabits();
-}
-
-function openHabitHistory(id) {
-  _habitsInit();
-  const h = _db.habits.find(x => x.id === id);
-  if (!h) return;
-  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const doneDates = (_db.habit_logs||[]).filter(l => l.habit_id === id && l.done).map(l => l.date).sort().reverse();
-  const rows = doneDates.slice(0, 60).map(d => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);font-size:12px">
-      <span style="color:var(--text)">${d}</span><span style="color:var(--green);font-weight:600">✓ انجام شد</span>
-    </div>`).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:24px">هنوز سابقه‌ای ثبت نشده</div>';
-  openModal(`📊 تاریخچه: ${escapeHtml(h.title)}`, `
-    <div style="margin-bottom:10px;font-size:12px;color:var(--text2)">مجموع ${fa(doneDates.length)} بار انجام شده</div>
-    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px">${rows}</div>
-  `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
-}
-
 
 // NOTE: goals/habits routing and titles are now handled natively inside
 // renderPage() and updatePageTitle() above — no monkey-patching needed.

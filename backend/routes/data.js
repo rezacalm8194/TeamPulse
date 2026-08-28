@@ -48,6 +48,9 @@ const {
   loadWorkspaceDocumentAsync,
   loadDocumentParts,
   loadDocumentPartsAsync,
+  loadPartHashes,
+  parseCollectionInclude,
+  SCALARS_PART,
   serializeWorkspaceDocumentAsync,
   writeWorkspaceDocumentAsync,
   deleteWorkspaceDocument,
@@ -945,7 +948,23 @@ router.get('/:accountId', auth, async (req, res) => {
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);
+    const includeKeys = parseCollectionInclude(req.query.include);
+    const meta = await loadWorkspaceMetaAsync(db, workspace.storageKey);
+    if (!meta) return res.json({ data: null });
+    let loaded;
+    let partial = false;
+    let loadedParts = null;
+    let availableParts = null;
+    if (includeKeys && meta.layout === 'parts') {
+      const hashes = loadPartHashes(db, workspace.storageKey);
+      availableParts = Object.keys(hashes).filter(key => key !== SCALARS_PART);
+      const parts = await loadDocumentPartsAsync(db, workspace.storageKey, includeKeys);
+      loaded = { ...meta, data: parts.data };
+      loadedParts = [SCALARS_PART, ...includeKeys];
+      partial = true;
+    } else {
+      loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);
+    }
     if (!loaded) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     res.json({
@@ -953,6 +972,8 @@ router.get('/:accountId', auth, async (req, res) => {
       workspace_id: workspace.workspaceId,
       updated_at: loaded.updated_at,
       etag: loaded.etag,
+      todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      ...(partial ? { partial: true, loaded_parts: loadedParts, available_parts: availableParts } : {}),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

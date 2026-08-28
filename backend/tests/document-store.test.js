@@ -15,6 +15,7 @@ const {
   loadWorkspaceDocumentAsync,
   loadDocumentPartsAsync,
   serializeWorkspaceDocumentAsync,
+  parseCollectionInclude,
 } = require('../utils/documentStore');
 const { applyDocumentPatch } = require('../utils/documentPatch');
 
@@ -158,4 +159,25 @@ test('file-backed async path round-trips through a worker thread', async t => {
   assert.equal(loaded.data.students.length, 30);
   const serialized = await serializeWorkspaceDocumentAsync(db, 'acc-worker');
   assert.equal(JSON.parse(serialized).todos[0].title, 'worker');
+});
+
+test('parseCollectionInclude keeps only safe part keys', () => {
+  assert.equal(parseCollectionInclude(undefined), null);
+  assert.equal(parseCollectionInclude('*'), null);
+  assert.deepEqual(parseCollectionInclude('todos,students,todos,__scalars__,bad-key'), ['todos', 'students']);
+});
+
+test('loading selected parts does not pull sibling collections', () => {
+  const db = makeDb();
+  writeWorkspaceDocument(db, 'acc-1', {
+    students: [{ id: 1, name: 'keep-out' }],
+    todos: [{ id: 10, title: 'needed' }],
+    instructions: [{ id: 3, title: 'heavy' }],
+    meta: { title: 'x' },
+  }, { replaceAll: true });
+  const parts = loadDocumentParts(db, 'acc-1', ['todos']);
+  assert.equal(parts.data.todos[0].title, 'needed');
+  assert.equal(parts.data.meta.title, 'x');
+  assert.equal(parts.data.students, undefined);
+  assert.equal(parts.data.instructions, undefined);
 });

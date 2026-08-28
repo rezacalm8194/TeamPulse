@@ -28,6 +28,21 @@ function isSafePartKey(key) {
   return typeof key === 'string' && key.length > 0 && key.length <= 80 && /^[A-Za-z0-9_]+$/.test(key);
 }
 
+function parseCollectionInclude(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (!text || text === '*') return null;
+  const keys = [];
+  const seen = new Set();
+  text.split(/[,+\s]+/).forEach(part => {
+    const key = String(part || '').trim();
+    if (!key || key === SCALARS_PART || !isSafePartKey(key) || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+  return keys.length ? keys : null;
+}
+
 function isPartsMarker(raw) {
   const text = String(raw || '').trim();
   return text === PARTS_MARKER || text === '{"_layout": "parts"}';
@@ -415,6 +430,8 @@ module.exports = {
   PARTS_MARKER,
   blobEtag,
   documentEtagFromHashes,
+  isSafePartKey,
+  parseCollectionInclude,
   splitDocument,
   assembleDocument,
   ensureDocumentStoreSchema,
