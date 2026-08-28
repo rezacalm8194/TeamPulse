@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp123';
+const TP_ASSET_V = 'tp124';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3861,7 +3861,10 @@ const _CORE_DOCUMENT_PARTS = [
   'habits', 'habit_logs', 'staff', 'team_members',
   'session_order', 'package_types', 'staff_roles', 'staff_role_entries'
 ];
-const _PAGINATED_PART_KEYS = new Set(['todos', 'students', 'sessions', 'payments']);
+const BUSINESS_PAGINATED_KEYS = Object.freeze([
+  'students', 'sessions', 'payments', 'packages', 'families', 'reminders', 'expenses', 'wallet_tx',
+]);
+const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
   students: ['students', 'packages', 'payments', 'sessions', 'families'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
@@ -3887,7 +3890,7 @@ function _partsForPage(page = currentPage) {
 }
 function _documentIncludeQuery(keys) {
   const documentKeys = (keys || []).filter(key =>
-    key !== 'todos' && !['students', 'sessions', 'payments'].includes(key));
+    key !== 'todos' && !BUSINESS_PAGINATED_KEYS.includes(key));
   if (!documentKeys.length) return '';
   return '&include=' + encodeURIComponent(documentKeys.join(','));
 }
@@ -3983,11 +3986,11 @@ async function _ensureDocumentParts(keys) {
     await _loadTodoPage(false, { reset: true });
     await _loadTodoPage(true, { reset: true });
   }
-  for (const key of ['students', 'sessions', 'payments']) {
+  for (const key of BUSINESS_PAGINATED_KEYS) {
     if (requested.includes(key)) await _ensureBusinessPartLoaded(key);
   }
   const needed = requested.filter(key =>
-    key !== 'todos' && !['students', 'sessions', 'payments'].includes(key) && !_tpPartLoaded(key));
+    key !== 'todos' && !BUSINESS_PAGINATED_KEYS.includes(key) && !_tpPartLoaded(key));
   if (!needed.length) return true;
   if (!_sbUser || !_sbSession?.token) return false;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
@@ -4104,7 +4107,7 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   }
 }
 async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
-  if (!['students', 'sessions', 'payments'].includes(collection)) return false;
+  if (!BUSINESS_PAGINATED_KEYS.includes(collection)) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   const state = _businessPagingState(collection);
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
@@ -4145,7 +4148,14 @@ async function _loadMoreBusiness(collection) {
   if (!ok) return;
   if (collection === 'students') return renderStudents(currentStudentAccountSearch());
   if (collection === 'sessions') return renderSessions();
-  if (collection === 'payments') return renderPayments();
+  if (collection === 'payments' || collection === 'packages') return renderPayments(currentStudentAccountSearch());
+  if (collection === 'families') return renderFamilies(currentPage === 'payments', currentStudentAccountSearch());
+  if (collection === 'reminders') return refreshReminderSurface(currentStudentAccountSearch());
+  if (collection === 'expenses' || collection === 'wallet_tx') {
+    return _tpEnsureExtra().then(() => {
+      if (typeof renderFinancialTransactions === 'function') renderFinancialTransactions();
+    });
+  }
 }
 function _localWorkspaceDBKey(id=_currentAccountId()) {
   const uid = String(_workspaceAuthUser()?.id || '').slice(0, 8) || 'guest';
@@ -7532,6 +7542,12 @@ async function renderPayments(search = '') {
   if (tab === 'payments') {
     await _ensureBusinessPartLoaded('students');
     await _ensureBusinessPartLoaded('payments');
+  } else if (tab === 'purchases') {
+    await _ensureBusinessPartLoaded('students');
+    await _ensureBusinessPartLoaded('packages');
+  } else if (tab === 'reminders') {
+    await _ensureBusinessPartLoaded('students');
+    await _ensureBusinessPartLoaded('reminders');
   }
 
   allStudents = await window.api.students.getAll();
@@ -7585,7 +7601,10 @@ async function renderPayments(search = '') {
       });
     }
     html += `</tbody></table></div>`;
-    setContent(html);
+    const packagePaging = _businessPagingState('packages');
+    const morePackages = packagePaging.done ? '' :
+      '<button class="todo-show-more" onclick="_loadMoreBusiness(\'packages\')">دریافت فروش‌های بیشتر</button>';
+    setContent(html + morePackages);
 
   } else if (tab === 'payments') {
     const allPayments = await window.api.payments.getAll();
@@ -8792,6 +8811,9 @@ function familyGroupsSectionHtml(families, search = '') {
 }
 
 async function renderFamilies(embedded = currentPage === 'payments', search = '') {
+  await _ensureBusinessPartLoaded('students');
+  await _ensureBusinessPartLoaded('families');
+  const familyPaging = _businessPagingState('families');
   if (!embedded) updateTopbarActions(`<button class="btn btn-primary" onclick="openNewFamily()">+ افزودن گروه جدید</button>`);
   else updateTopbarActions(accountCustomerTopbarHtml('families', search));
   FAMILIES = await window.api.families.getAll();
@@ -8802,7 +8824,8 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
   const html = `${prefix}
   ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: false, menuPrefix: 'acct' })}
   ${familyGroupsSectionHtml(FAMILIES, search)}`;
-  setContent(html);
+  setContent(html + (familyPaging.done ? '' :
+    '<button class="todo-show-more" onclick="_loadMoreBusiness(\'families\')">دریافت گروه‌های بیشتر</button>'));
 }
 
 function openNewFamily() {
@@ -8897,6 +8920,9 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
       </div>
     `);
   }
+  await _ensureBusinessPartLoaded('students');
+  await _ensureBusinessPartLoaded('reminders');
+  const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
   const reminders = await window.api.reminders.getAll();
   const today = jalaliKey(formatJalali(...todayJalali()));
@@ -8981,7 +9007,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   });
 
   html += `</tbody></table></div>`;
-  setContent(html);
+  setContent(html + (reminderPaging.done ? '' :
+    '<button class="todo-show-more" onclick="_loadMoreBusiness(\'reminders\')">دریافت یادآوری‌های بیشتر</button>'));
 }
 
 function openAddReminder(presetStudentId = null) {
@@ -17136,8 +17163,8 @@ async function _loadFromServer() {
       await _loadTodoPage(false, { reset: true });
     }
     const businessKeys = !Array.isArray(includeKeys)
-      ? ['students', 'sessions', 'payments']
-      : ['students', 'sessions', 'payments'].filter(key => includeKeys.includes(key));
+      ? [...BUSINESS_PAGINATED_KEYS]
+      : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     for (const key of businessKeys) {
       await _ensureBusinessPartLoaded(key, { reset: true });
     }
@@ -26309,7 +26336,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v123';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v124';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

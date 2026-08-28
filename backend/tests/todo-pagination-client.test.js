@@ -11,19 +11,18 @@ const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 test('client loads todos from the paginated endpoint instead of document include', () => {
   assert.match(app, /TODO_SERVER_PAGE_SIZE\s*=\s*200/);
   assert.match(app, /'\/todos'\s*\+\s*query/);
-  assert.match(app, /!\['students', 'sessions', 'payments'\]\.includes\(key\)/);
+  assert.match(app, /BUSINESS_PAGINATED_KEYS/);
+  assert.match(app, /!BUSINESS_PAGINATED_KEYS\.includes\(key\)/);
   const core = app.match(/const _CORE_DOCUMENT_PARTS = \[([\s\S]*?)\];/)?.[1] || '';
   assert.doesNotMatch(core, /'todos'/);
-  assert.doesNotMatch(core, /'students'/);
-  assert.doesNotMatch(core, /'sessions'/);
-  assert.doesNotMatch(core, /'payments'/);
+  assert.doesNotMatch(core, /'packages'/);
 });
 
 test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /BUSINESS_SERVER_PAGE_SIZE\s*=\s*200/);
   assert.match(app, /function _ensureBusinessPartLoaded\(/);
   assert.match(app, /function _loadMoreBusiness\(/);
-  assert.match(app, /'\/students'\s*\+\s*query|'\/'\s*\+\s*collection\s*\+\s*query/);
+  assert.match(app, /'packages', 'families', 'reminders', 'expenses', 'wallet_tx'/);
 });
 
 test('todo archive and show-more can fetch additional server pages', () => {
@@ -38,11 +37,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 5 client assets are consistently bumped to tp123', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp123'/);
-  assert.match(app, /team-pulse-static-v123/);
-  assert.doesNotMatch(html, /tp122/);
-  assert.match(html, /app\.js\?v=tp123/);
-  assert.match(sw, /team-pulse-static-v123/);
-  assert.doesNotMatch(sw, /tp122/);
+test('phase 6 client assets are consistently bumped to tp124', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp124'/);
+  assert.match(app, /team-pulse-static-v124/);
+  assert.doesNotMatch(html, /tp123/);
+  assert.match(html, /app\.js\?v=tp124/);
+  assert.match(sw, /team-pulse-static-v124/);
+  assert.doesNotMatch(sw, /tp123/);
 });

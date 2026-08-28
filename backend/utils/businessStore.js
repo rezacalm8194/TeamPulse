@@ -1,7 +1,11 @@
 const { createHash } = require('crypto');
 
-const BUSINESS_COLLECTIONS = Object.freeze(['students', 'sessions', 'payments']);
-const BUSINESS_MIGRATION = 'phase5_business_rows_v1';
+const PHASE5_COLLECTIONS = Object.freeze(['students', 'sessions', 'payments']);
+const PHASE6_COLLECTIONS = Object.freeze(['packages', 'families', 'reminders', 'expenses', 'wallet_tx']);
+const BUSINESS_COLLECTIONS = Object.freeze([...PHASE5_COLLECTIONS, ...PHASE6_COLLECTIONS]);
+const BUSINESS_MIGRATION_PHASE5 = 'phase5_business_rows_v1';
+const BUSINESS_MIGRATION_PHASE6 = 'phase6_business_rows_v2';
+const BUSINESS_MIGRATION = BUSINESS_MIGRATION_PHASE5;
 
 function hashText(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
@@ -17,14 +21,27 @@ function rowId(row) {
   return value == null ? '' : String(value);
 }
 
-function dateKey(row) {
-  const value = String(row?.date_jalali || row?.date || row?.created_at || '').replace(/\D/g, '').slice(0, 8);
+function dateKey(row, collection) {
+  let raw = row?.date_jalali || row?.date || row?.created_at || '';
+  if (collection === 'packages') raw = row?.start_date || row?.payment_due_date || raw;
+  if (collection === 'reminders') raw = row?.due_date || row?.date_jalali || raw;
+  const value = String(raw).replace(/\D/g, '').slice(0, 8);
   return Number(value) || 0;
 }
 
-function searchableText(row) {
-  return [row?.name, row?.lname, row?.phone, row?.organization_name, row?.title, row?.note]
-    .filter(Boolean).join(' ').toLocaleLowerCase('fa').slice(0, 1200);
+function searchableText(row, collection) {
+  const fieldsByCollection = {
+    students: [row?.name, row?.lname, row?.phone, row?.organization_name],
+    sessions: [row?.title, row?.note, row?.type],
+    payments: [row?.note, row?.method],
+    packages: [row?.note, row?.type_label],
+    families: [row?.name],
+    reminders: [row?.title, row?.text, row?.note],
+    expenses: [row?.category, row?.description, row?.payment_method, row?.note],
+    wallet_tx: [row?.note],
+  };
+  const fields = fieldsByCollection[collection] || [row?.name, row?.lname, row?.title, row?.note];
+  return fields.filter(Boolean).join(' ').toLocaleLowerCase('fa').slice(0, 1200);
 }
 
 function ensureBusinessStoreSchema(db) {
@@ -125,7 +142,7 @@ function upsertRows(db, storageKey, collection, rows, { refresh = true } = {}) {
     const payloadHash = hashText(payload);
     if (find.get(storageKey, collection, id)?.payload_hash === payloadHash) continue;
     put.run(storageKey, collection, id, payload, payloadHash, row?.archived ? 1 : 0,
-      dateKey(row), searchableText(row), row?.updated_at || row?.created_at || null);
+      dateKey(row, collection), searchableText(row, collection), row?.updated_at || row?.created_at || null);
     changed++;
   }
   if (refresh && changed) refreshState(db, storageKey, collection);
@@ -197,6 +214,7 @@ function loadRowsPage(db, storageKey, collection, options = {}) {
   if (options.dateFrom) { where.push('date_key>=?'); params.push(Number(String(options.dateFrom).replace(/\D/g, '').slice(0, 8)) || 0); }
   if (options.dateTo) { where.push('date_key<=?'); params.push(Number(String(options.dateTo).replace(/\D/g, '').slice(0, 8)) || 99999999); }
   if (options.search) { where.push('search_text LIKE ?'); params.push(`%${String(options.search).toLocaleLowerCase('fa').slice(0, 100)}%`); }
+  if (options.studentId) { where.push("json_extract(payload,'$.student_id')=?"); params.push(String(options.studentId)); }
   if (cursor) {
     where.push('(date_key>? OR (date_key=? AND row_id>?))');
     params.push(Number(cursor[0]) || 0, Number(cursor[0]) || 0, String(cursor[1]));
@@ -213,15 +231,34 @@ function loadRowsPage(db, storageKey, collection, options = {}) {
   };
 }
 
-function migrateBusinessParts(db) {
+function refreshWorkspaceEtag(db, storageKey) {
+  const hashes = db.prepare(
+    'SELECT part_key,data_hash FROM user_data_parts WHERE account_id=?'
+  ).all(storageKey);
+  const hasTodoState = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_todo_state'"
+  ).get();
+  const todo = hasTodoState ? db.prepare(
+    'SELECT data_hash FROM workspace_todo_state WHERE storage_key=?'
+  ).get(storageKey) : null;
+  if (todo) hashes.push({ part_key: 'todos', data_hash: todo.data_hash });
+  db.prepare(`
+    SELECT collection_key AS part_key,data_hash FROM workspace_business_state WHERE storage_key=?
+  `).all(storageKey).forEach(row => hashes.push(row));
+  const etag = hashText(hashes.sort((a, b) => a.part_key.localeCompare(b.part_key))
+    .map(part => `${part.part_key}:${part.data_hash}`).join('|'));
+  db.prepare('UPDATE user_data SET data_etag=? WHERE account_id=?').run(etag, storageKey);
+}
+
+function migrateCollectionParts(db, migrationName, collections) {
   ensureBusinessStoreSchema(db);
-  if (db.prepare('SELECT 1 FROM app_migrations WHERE name=?').get(BUSINESS_MIGRATION)) {
+  if (db.prepare('SELECT 1 FROM app_migrations WHERE name=?').get(migrationName)) {
     return { applied: false, collections: 0, rows: 0 };
   }
-  const placeholders = BUSINESS_COLLECTIONS.map(() => '?').join(',');
+  const placeholders = collections.map(() => '?').join(',');
   const parts = db.prepare(`
     SELECT account_id,part_key,data FROM user_data_parts WHERE part_key IN (${placeholders})
-  `).all(...BUSINESS_COLLECTIONS);
+  `).all(...collections);
   let migratedRows = 0;
   const affected = new Set(parts.map(part => part.account_id));
   db.transaction(() => {
@@ -234,27 +271,22 @@ function migrateBusinessParts(db) {
       db.prepare('DELETE FROM user_data_parts WHERE account_id=? AND part_key=?')
         .run(part.account_id, part.part_key);
     }
-    for (const storageKey of affected) {
-      const hashes = db.prepare(
-        'SELECT part_key,data_hash FROM user_data_parts WHERE account_id=?'
-      ).all(storageKey);
-      const hasTodoState = db.prepare(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_todo_state'"
-      ).get();
-      const todo = hasTodoState ? db.prepare(
-        'SELECT data_hash FROM workspace_todo_state WHERE storage_key=?'
-      ).get(storageKey) : null;
-      if (todo) hashes.push({ part_key: 'todos', data_hash: todo.data_hash });
-      db.prepare(`
-        SELECT collection_key AS part_key,data_hash FROM workspace_business_state WHERE storage_key=?
-      `).all(storageKey).forEach(row => hashes.push(row));
-      const etag = hashText(hashes.sort((a, b) => a.part_key.localeCompare(b.part_key))
-        .map(part => `${part.part_key}:${part.data_hash}`).join('|'));
-      db.prepare('UPDATE user_data SET data_etag=? WHERE account_id=?').run(etag, storageKey);
-    }
-    db.prepare('INSERT INTO app_migrations(name) VALUES (?)').run(BUSINESS_MIGRATION);
+    for (const storageKey of affected) refreshWorkspaceEtag(db, storageKey);
+    db.prepare('INSERT INTO app_migrations(name) VALUES (?)').run(migrationName);
   })();
   return { applied: true, collections: parts.length, rows: migratedRows };
+}
+
+function migrateBusinessParts(db) {
+  const phase5 = migrateCollectionParts(db, BUSINESS_MIGRATION_PHASE5, PHASE5_COLLECTIONS);
+  const phase6 = migrateCollectionParts(db, BUSINESS_MIGRATION_PHASE6, PHASE6_COLLECTIONS);
+  return {
+    applied: phase5.applied || phase6.applied,
+    collections: phase5.collections + phase6.collections,
+    rows: phase5.rows + phase6.rows,
+    phase5,
+    phase6,
+  };
 }
 
 function deleteBusinessWorkspace(db, storageKey) {
@@ -266,7 +298,11 @@ function deleteBusinessWorkspace(db, storageKey) {
 
 module.exports = {
   BUSINESS_COLLECTIONS,
+  PHASE5_COLLECTIONS,
+  PHASE6_COLLECTIONS,
   BUSINESS_MIGRATION,
+  BUSINESS_MIGRATION_PHASE5,
+  BUSINESS_MIGRATION_PHASE6,
   ensureBusinessStoreSchema,
   migrateBusinessParts,
   hasMigratedCollection,
