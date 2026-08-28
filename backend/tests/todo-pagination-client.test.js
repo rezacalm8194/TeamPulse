@@ -22,10 +22,16 @@ test('todo archive and show-more can fetch additional server pages', () => {
   assert.match(app, /\/todos\/stats/);
 });
 
-test('phase 4 client assets are consistently bumped to tp121', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp121'/);
-  assert.doesNotMatch(html, /tp120/);
-  assert.match(html, /app\.js\?v=tp121/);
-  assert.match(sw, /team-pulse-static-v121/);
-  assert.doesNotMatch(sw, /tp120/);
+test('todo list virtualization passes the row renderer explicitly', () => {
+  assert.match(app, /function _todoRenderedListHtml\(items, key, renderFn\)/);
+  assert.doesNotMatch(app, /renderFn\s*=\s*renderTodo/);
+  assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
+});
+
+test('phase 4 client assets are consistently bumped to tp122', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp122'/);
+  assert.doesNotMatch(html, /tp121/);
+  assert.match(html, /app\.js\?v=tp122/);
+  assert.match(sw, /team-pulse-static-v122/);
+  assert.doesNotMatch(sw, /tp121/);
 });

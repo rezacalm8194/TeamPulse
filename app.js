@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp121';
+const TP_ASSET_V = 'tp122';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -21416,8 +21416,8 @@ function _todoShowMore(key) {
   _todoListShown[key] = (_todoListShown[key] || TODO_LIST_CHUNK) + TODO_LIST_CHUNK;
   renderTodoList({ skipMaintenance: true });
 }
-function _todoRenderedListHtml(items, key, renderFn = renderTodo) {
-  if (!items.length) return '';
+function _todoRenderedListHtml(items, key, renderFn) {
+  if (!items.length || typeof renderFn !== 'function') return '';
   const cap = Math.max(TODO_LIST_CHUNK, Number(_todoListShown[key] || TODO_LIST_CHUNK));
   const slice = items.slice(0, cap);
   let html = slice.map(renderFn).join('');
@@ -21708,7 +21708,7 @@ function renderTodoList(options = {}) {
   if (overdueTodos.length > 0) {
     html += sectionHeader('🚨', 'عقب‌افتاده', `${fa(overdueTodos.length)} کار از قبل`, 'var(--red)');
     html += `<div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:10px;padding:8px;margin-bottom:8px">`;
-    html += _todoRenderedListHtml(overdueTodos, 'overdue');
+    html += _todoRenderedListHtml(overdueTodos, 'overdue', renderTodo);
     html += `</div>`;
   }
 
@@ -21729,7 +21729,7 @@ function renderTodoList(options = {}) {
   } else {
     // ناتمام اول — مرتب‌شده بر اساس ساعت (زودتر = بالاتر)، بدون ساعت = آخر
     const regularTodayOpen = todayTodos.filter(t=>!t.done && !mainTodayIds.has(t.id)).sort(_sortByTime);
-    html += regularTodayOpen.length ? _todoRenderedListHtml(regularTodayOpen, 'today') : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
+    html += regularTodayOpen.length ? _todoRenderedListHtml(regularTodayOpen, 'today', renderTodo) : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
     if (doneCnt > 0) {
       html += `<details class="todo-done-details" ${ _todoListShown.doneToday ? 'open' : ''} style="margin-top:10px">
         <summary style="font-size:12px;color:var(--green);cursor:pointer;margin-bottom:8px;
@@ -21739,7 +21739,7 @@ function renderTodoList(options = {}) {
           <span style="opacity:.5;font-size:10px;margin-right:auto">▾ کلیک برای مشاهده</span>
         </summary>
         <div style="margin-top:6px;opacity:.7">`;
-      html += _todoRenderedListHtml(todayTodos.filter(t=>t.done), 'doneToday');
+      html += _todoRenderedListHtml(todayTodos.filter(t=>t.done), 'doneToday', renderTodo);
       html += `</div></details>`;
     }
   }
@@ -21753,7 +21753,7 @@ function renderTodoList(options = {}) {
         </div>
       </summary>
       <div style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.16);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">
-        ${_todoRenderedListHtml(lateDoneTodayTodos, 'lateDone')}
+        ${_todoRenderedListHtml(lateDoneTodayTodos, 'lateDone', renderTodo)}
       </div>
     </details>`;
   }
@@ -21766,7 +21766,7 @@ function renderTodoList(options = {}) {
         ${sectionHeader('🌙', 'فردا', tomorrowStr + ' · ' + fa(tomorrowTodos.length) + ' کار', 'var(--accent2)')}
       </summary>
       <div style="margin-top:4px">
-        ${_todoRenderedListHtml(_tomorrowSorted, 'tomorrow')}
+        ${_todoRenderedListHtml(_tomorrowSorted, 'tomorrow', renderTodo)}
       </div>
     </details>`;
   }
@@ -21798,7 +21798,7 @@ function renderTodoList(options = {}) {
   if (futureTodos.length > 0) {
     const _renderCollapsible = (key, icon, title, subtitle, color, items) => {
       if (!items.length) return '';
-      const itemsHTML = _todoRenderedListHtml(items.sort(_sortByTime), 'future-' + key);
+      const itemsHTML = _todoRenderedListHtml(items.sort(_sortByTime), 'future-' + key, renderTodo);
       const isOpen = !!_todoFutureExpanded[key];
       return '<details ' + (isOpen ? 'open ' : '') + 'ontoggle="_setTodoFutureExpanded(\'' + key + '\', this.open)" style="margin-top:10px">' +
         '<summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">' +
@@ -26222,7 +26222,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v120';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v122';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
