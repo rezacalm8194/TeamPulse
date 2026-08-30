@@ -14,10 +14,14 @@ test('startup bundle defers dashboard/staff/knowledge/tutorial parse', () => {
   assert.doesNotMatch(appSource, /async function renderStaff\(/);
   assert.doesNotMatch(appSource, /async function renderInstructions\(/);
   assert.doesNotMatch(appSource, /async function renderTutorial\(/);
+  assert.doesNotMatch(appSource, /function renderGoals\(/);
+  assert.doesNotMatch(appSource, /function renderHabits\(/);
   assert.match(extraSource, /async function renderDashboard\(/);
   assert.match(extraSource, /async function renderStaff\(/);
   assert.match(extraSource, /async function renderInstructions\(/);
   assert.match(extraSource, /async function renderTutorial\(/);
+  assert.match(extraSource, /function renderGoals\(/);
+  assert.match(extraSource, /function renderHabits\(/);
 });
 
 test('first-session helpers stay in the core parse path', () => {
@@ -25,6 +29,10 @@ test('first-session helpers stay in the core parse path', () => {
   assert.match(appSource, /function openEvaluation\(/);
   assert.match(appSource, /async function renderSettings\(/);
   assert.match(appSource, /function staffIsPersonnel\(/);
+  assert.match(appSource, /function _goalsInit\(/);
+  assert.match(appSource, /function _habitsInit\(/);
+  assert.match(appSource, /function _ensureDocumentParts\(/);
+  assert.match(appSource, /function _todoRenderedListHtml\(/);
 });
 
 test('staff role rows all include add-item UI like bonus', () => {

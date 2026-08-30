@@ -36,9 +36,30 @@ const {
   MAX_VERSIONS_PER_WORKSPACE,
   ensureVersionSnapshotSchema,
   saveVersionSnapshot: persistVersionSnapshot,
+  saveVersionSnapshotParts,
+  loadVersionSnapshot,
   isVersionSnapshotDue,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
+const { createStorageDriver } = require('../utils/storage');
+const { deleteStoredFiles } = require('../utils/fileStore');
+const {
+  ensureTodoStoreSchema,
+  todoState,
+  loadAllTodos,
+  loadTodosByIds,
+  loadTodosPage,
+  countTodos,
+  upsertTodos,
+  deleteTodos,
+  replaceTodos,
+} = require('../utils/todoStore');
+const {
+  BUSINESS_COLLECTIONS,
+  ensureBusinessStoreSchema,
+  collectionState,
+  loadRowsPage,
+} = require('../utils/businessStore');
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceMeta,
@@ -46,7 +67,9 @@ const {
   loadWorkspaceDocumentAsync,
   loadDocumentParts,
   loadDocumentPartsAsync,
-  serializeWorkspaceDocumentAsync,
+  loadPartHashes,
+  parseCollectionInclude,
+  SCALARS_PART,
   writeWorkspaceDocumentAsync,
   deleteWorkspaceDocument,
 } = require('../utils/documentStore');
@@ -112,9 +135,16 @@ setInterval(cleanExpiredChunkUploads, 60 * 1000).unref();
 
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
+ensureTodoStoreSchema(db);
+ensureBusinessStoreSchema(db);
 
 function saveVersionSnapshot(accountId, serializedData, { force = false } = {}) {
   return persistVersionSnapshot(db, accountId, serializedData, { force });
+}
+
+function saveCurrentVersionSnapshot(accountId, meta, { force = false } = {}) {
+  if (meta?.layout === 'parts') return saveVersionSnapshotParts(db, accountId, { force });
+  return saveVersionSnapshot(accountId, meta?.serialized || '{}', { force });
 }
 db.prepare(`
   CREATE TABLE IF NOT EXISTS account_workspaces (
@@ -401,6 +431,8 @@ async function persistWorkspaceDocument(req, res, {
   previousSerialized = null,
   previousLayout = 'blob',
   replaceAll = true,
+  replaceTodoCollection = false,
+  replaceBusinessCollections = [],
   patched = false,
 }) {
   return withPersistLock(storageKey, () => persistWorkspaceDocumentLocked(req, res, {
@@ -415,6 +447,8 @@ async function persistWorkspaceDocument(req, res, {
     previousSerialized,
     previousLayout,
     replaceAll,
+    replaceTodoCollection,
+    replaceBusinessCollections,
     patched,
   }));
 }
@@ -431,6 +465,8 @@ async function persistWorkspaceDocumentLocked(req, res, {
   previousSerialized = null,
   previousLayout = 'blob',
   replaceAll = true,
+  replaceTodoCollection = false,
+  replaceBusinessCollections = [],
   patched = false,
 }) {
   data = sanitizeUserDataForStorage(data);
@@ -461,6 +497,14 @@ async function persistWorkspaceDocumentLocked(req, res, {
       data = mergeAllowedTeamDocument(previousData, data, grant);
     } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {
       data = mergeOwnerTodosWithPrevious(previousData, data);
+      if (!replaceTodoCollection && previousLayout === 'parts') {
+        const safeTodos = new Map((previousData?.todos || []).map(todo => [String(todo?.id), todo]));
+        (data.todos || []).forEach(todo => {
+          const id = String(todo?.id);
+          safeTodos.set(id, safeTodos.has(id) ? pickMergedTodo(todo, safeTodos.get(id)) : todo);
+        });
+        data.todos = [...safeTodos.values()];
+      }
       const previousTodoIds = (Array.isArray(previousData?.todos) ? previousData.todos : []).map(t => String(t.id));
       const nextTodoIds = new Set((Array.isArray(data?.todos) ? data.todos : []).map(t => String(t.id)));
       const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
@@ -493,10 +537,14 @@ async function persistWorkspaceDocumentLocked(req, res, {
     data._workspaceId = workspace.workspaceId;
     todoChanges = diffTodos(previousData?.todos, data?.todos);
     if (isVersionSnapshotDue(db, storageKey)) {
-      const previousBlob = previousSerialized || await serializeWorkspaceDocumentAsync(db, storageKey);
-      persistVersionSnapshot(db, storageKey, previousBlob);
+      if (previousLayout === 'parts') saveVersionSnapshotParts(db, storageKey);
+      else persistVersionSnapshot(db, storageKey, previousSerialized || JSON.stringify(previousData || {}));
     }
-    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, { replaceAll })).etag;
+    savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, data, {
+      replaceAll,
+      replaceTodoCollection,
+      replaceBusinessCollections,
+    })).etag;
     db.transaction(() => {
       writeTodoHighWater(db, storageKey, data._todoIdHighWater);
       enqueueTodoAuditEvents(db, storageKey, {
@@ -606,6 +654,8 @@ async function handleDocumentDelta(req, res) {
       previousSerialized: meta.serialized,
       previousLayout: meta.layout,
       replaceAll: !useParts,
+      replaceTodoCollection: !!patch.collections?.todos,
+      replaceBusinessCollections: BUSINESS_COLLECTIONS.filter(key => !!patch.collections?.[key]),
       patched: true,
     });
   } catch (e) {
@@ -620,6 +670,101 @@ async function handleDocumentDelta(req, res) {
 router.use(express.json({ type: 'text/plain', limit: '10mb' }));
 router.put('/:accountId', auth, handleSaveData);
 router.post('/:accountId/delta', auth, handleDocumentDelta);
+router.get('/:accountId/todos/stats', auth, async (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    if (grant) {
+      const staffData = (await loadDocumentPartsAsync(db, workspace.storageKey, ['staff'])).data;
+      const ownStaffIds = ownStaffIdsForGrant(staffData, grant);
+      const visible = loadAllTodos(db, workspace.storageKey)
+        .filter(todo => todoVisibleToTeamMember(todo, grant.email, grant.permissions || [], ownStaffIds));
+      return res.json({
+        total: visible.length,
+        active: visible.filter(todo => !todo.archived).length,
+        archived: visible.filter(todo => !!todo.archived).length,
+        pending: visible.filter(todo => !todo.archived && !todo.done).length,
+      });
+    }
+    const todoMeta = todoState(db, workspace.storageKey);
+    res.json({
+      total: countTodos(db, workspace.storageKey),
+      active: countTodos(db, workspace.storageKey, false),
+      archived: countTodos(db, workspace.storageKey, true),
+      pending: Number(todoMeta?.pending_count || 0),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/:accountId/todos', auth, async (req, res) => {
+  try {
+    const targetId = req.params.accountId;
+    const workspace = resolveWorkspace(req, res, targetId);
+    if (!workspace) return;
+    if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+    const archived = String(req.query.archived || '0') === '1' ? 1 : 0;
+    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    let filter = null;
+    if (grant) {
+      const staffData = (await loadDocumentPartsAsync(db, workspace.storageKey, ['staff'])).data;
+      const ownStaffIds = ownStaffIdsForGrant(staffData, grant);
+      filter = todo => todoVisibleToTeamMember(todo, grant.email, grant.permissions || [], ownStaffIds);
+    }
+    const page = loadTodosPage(db, workspace.storageKey, {
+      limit: req.query.limit,
+      cursor: req.query.cursor,
+      archived,
+      filter,
+    });
+    res.json({
+      ...page,
+      ...(grant ? {} : { total: countTodos(db, workspace.storageKey, !!archived) }),
+      todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+for (const collection of BUSINESS_COLLECTIONS) {
+  router.get(`/:accountId/${collection}/stats`, auth, async (req, res) => {
+    try {
+      const targetId = req.params.accountId;
+      const workspace = resolveWorkspace(req, res, targetId);
+      if (!workspace) return;
+      if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+      const state = collectionState(db, workspace.storageKey, collection);
+      res.json({
+        total: Number(state?.row_count || 0),
+        archived: Number(state?.archived_count || 0),
+        active: Math.max(0, Number(state?.row_count || 0) - Number(state?.archived_count || 0)),
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  router.get(`/:accountId/${collection}`, auth, async (req, res) => {
+    try {
+      const targetId = req.params.accountId;
+      const workspace = resolveWorkspace(req, res, targetId);
+      if (!workspace) return;
+      if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+      const page = loadRowsPage(db, workspace.storageKey, collection, {
+        limit: req.query.limit,
+        cursor: req.query.cursor,
+        archived: collection === 'students' && req.query.archived != null
+          ? String(req.query.archived) === '1'
+          : null,
+        search: collection === 'students' ? req.query.search : null,
+        dateFrom: collection === 'sessions' ? req.query.date_from : null,
+        dateTo: collection === 'sessions' ? req.query.date_to : null,
+      });
+      const state = collectionState(db, workspace.storageKey, collection);
+      res.json({ ...page, total: Number(state?.row_count || 0), etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+}
+
 router.post('/:accountId/todos/delta', auth, async (req, res) => {
   try {
     const targetId = req.params.accountId;
@@ -649,7 +794,10 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
-      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['todos', 'staff'] : ['todos'])).data;
+      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['staff'] : [])).data;
+      previousData.todos = grant
+        ? loadAllTodos(db, storageKey)
+        : loadTodosByIds(db, storageKey, incomingTodos.map(todo => todo.id));
     } else {
       try { previousData = JSON.parse(meta.serialized); }
       catch { return res.status(500).json({ error: 'invalid_server_data' }); }
@@ -683,7 +831,6 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     if (operation === 'delete') nextData._deletedTodoIds = deletedTodoIds;
     if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
     else if (operation === 'delete') {
-      nextData = mergeOwnerTodosWithPrevious(previousData, nextData);
       const nextTodoIds = (nextData.todos || []).map(todo => String(todo.id));
       const removedTodoIds = previousTodos
         .map(todo => String(todo?.id))
@@ -723,9 +870,18 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     let savedEtag = null;
     await withPersistLock(storageKey, async () => {
       if (isVersionSnapshotDue(db, storageKey)) {
-        saveVersionSnapshot(storageKey, meta.serialized || await serializeWorkspaceDocumentAsync(db, storageKey));
+        saveCurrentVersionSnapshot(storageKey, meta);
       }
-      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: !useParts })).etag;
+      if (useParts) {
+        if (grant) replaceTodos(db, storageKey, nextData.todos || []);
+        else if (operation === 'delete') deleteTodos(db, storageKey, deletedTodoIds);
+        else upsertTodos(db, storageKey, nextData.todos || []);
+        const scalarData = { ...nextData };
+        delete scalarData.todos;
+        savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, scalarData, { replaceAll: false })).etag;
+      } else {
+        savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, nextData, { replaceAll: true })).etag;
+      }
       db.transaction(() => {
         writeTodoHighWater(db, storageKey, nextData._todoIdHighWater);
         enqueueTodoAuditEvents(db, storageKey, {
@@ -868,6 +1024,7 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
     db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=?').run(storageKey);
     db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
     deleteWorkspaceDocument(db, storageKey);
+    deleteStoredFiles(db, createStorageDriver(), { ownerAccountId: targetId, workspaceId });
     return true;
   });
   if (!run()) return res.status(404).json({ error: 'workspace_not_found' });
@@ -900,21 +1057,25 @@ router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) =>
     if (!workspace) return;
     const storageKey = workspace.storageKey;
     const selected = db.prepare(
-      'SELECT id,data FROM user_data_versions WHERE id=? AND account_id=?'
+      'SELECT id FROM user_data_versions WHERE id=? AND account_id=?'
     ).get(req.params.versionId, storageKey);
     if (!selected) return res.status(404).json({ error: 'version_not_found' });
     if (!loadWorkspaceMeta(db, storageKey)) return res.status(404).json({ error: 'data_not_found' });
-    let restored;
-    try { restored = JSON.parse(selected.data); }
-    catch { return res.status(422).json({ error: 'invalid_version_data' }); }
+    let restored = loadVersionSnapshot(db, storageKey, selected.id);
+    if (restored === undefined) return res.status(422).json({ error: 'invalid_version_data' });
     restored = sanitizeUserDataForStorage(restored);
     restored._restored_at = new Date().toISOString();
     restored._lastSaved = Date.now();
     restored._todoIdHighWater = Math.max(getTodoHighWater(db, storageKey), documentTodoHighWater(restored));
     let savedEtag = null;
     await withPersistLock(storageKey, async () => {
-      saveVersionSnapshot(storageKey, await serializeWorkspaceDocumentAsync(db, storageKey), { force:true });
-      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, { replaceAll: true })).etag;
+      const currentMeta = loadWorkspaceMeta(db, storageKey);
+      saveCurrentVersionSnapshot(storageKey, currentMeta, { force: true });
+      savedEtag = (await writeWorkspaceDocumentAsync(db, storageKey, restored, {
+        replaceAll: true,
+        replaceTodoCollection: true,
+        replaceBusinessCollections: BUSINESS_COLLECTIONS,
+      })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
     res.json({ success: true, data: restored, etag: savedEtag });
@@ -942,7 +1103,31 @@ router.get('/:accountId', auth, async (req, res) => {
     const workspace = resolveWorkspace(req, res, targetId);
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
-    const loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);
+    const includeKeys = parseCollectionInclude(req.query.include);
+    const meta = await loadWorkspaceMetaAsync(db, workspace.storageKey);
+    if (!meta) return res.json({ data: null });
+    let loaded;
+    let partial = false;
+    let loadedParts = null;
+    let availableParts = null;
+    if (meta.layout === 'parts') {
+      const hashes = loadPartHashes(db, workspace.storageKey);
+      availableParts = Object.keys(hashes).filter(key => key !== SCALARS_PART);
+      const selectedKeys = (includeKeys || availableParts).filter(key =>
+        key !== 'todos' && !BUSINESS_COLLECTIONS.includes(key));
+      const parts = await loadDocumentPartsAsync(db, workspace.storageKey, selectedKeys);
+      loaded = { ...meta, data: parts.data };
+      if (!includeKeys) {
+        const activePage = loadTodosPage(db, workspace.storageKey, { limit: 200, archived: 0 });
+        const archivedPage = loadTodosPage(db, workspace.storageKey, { limit: 200, archived: 1 });
+        loaded.data.todos = [...activePage.items, ...archivedPage.items];
+        loaded.data._todosPartial = !!(activePage.next_cursor || archivedPage.next_cursor);
+      }
+      loadedParts = [SCALARS_PART, ...selectedKeys];
+      partial = true;
+    } else {
+      loaded = await loadWorkspaceDocumentAsync(db, workspace.storageKey);
+    }
     if (!loaded) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     res.json({
@@ -950,6 +1135,8 @@ router.get('/:accountId', auth, async (req, res) => {
       workspace_id: workspace.workspaceId,
       updated_at: loaded.updated_at,
       etag: loaded.etag,
+      todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      ...(partial ? { partial: true, loaded_parts: loadedParts, available_parts: availableParts } : {}),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

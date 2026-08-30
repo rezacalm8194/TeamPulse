@@ -1,11 +1,13 @@
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceDocument,
+  loadWorkspaceMeta,
   serializeWorkspaceDocument,
   writeWorkspaceDocument,
 } = require('./documentStore');
 const { normalizeWorkspaceId, workspaceStorageKey } = require('./teamAccessSchema');
-const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('./versionSnapshots');
+const { ensureVersionSnapshotSchema, saveVersionSnapshot, saveVersionSnapshotParts } = require('./versionSnapshots');
+const { BUSINESS_COLLECTIONS } = require('./businessStore');
 
 const DATA_ARRAY_KEYS = [
   'students',
@@ -212,9 +214,15 @@ function restoreAccountAppBackup(db, accountId, backup) {
     const storageKey = workspaceStorageKey(accountId, doc.workspaceId);
     const existing = loadWorkspaceDocument(db, storageKey);
     if (existing) {
-      saveVersionSnapshot(db, storageKey, serializeWorkspaceDocument(db, storageKey), { force: true });
+      const meta = loadWorkspaceMeta(db, storageKey);
+      if (meta?.layout === 'parts') saveVersionSnapshotParts(db, storageKey, { force: true });
+      else saveVersionSnapshot(db, storageKey, meta?.serialized || serializeWorkspaceDocument(db, storageKey), { force: true });
     }
-    writeWorkspaceDocument(db, storageKey, doc.data, { replaceAll: true });
+    writeWorkspaceDocument(db, storageKey, doc.data, {
+      replaceAll: true,
+      replaceTodoCollection: true,
+      replaceBusinessCollections: BUSINESS_COLLECTIONS,
+    });
     if (doc.workspaceId === 'default') return;
     const name = doc.name || doc.workspaceId;
     const row = db.prepare(

@@ -2,18 +2,29 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const {
-  MAX_VERSIONS_PER_WORKSPACE,
+  VERSION_RETENTION,
   versionSummaryFromSerialized,
+  selectRetainedVersionIds,
   ensureVersionSnapshotSchema,
   backfillVersionSummaries,
   saveVersionSnapshot,
+  saveVersionSnapshotParts,
+  loadVersionSnapshot,
+  pruneVersionSnapshots,
   listVersionSummaries,
 } = require('../utils/versionSnapshots');
+const { ensureDocumentStoreSchema, writeWorkspaceDocument } = require('../utils/documentStore');
 
 function makeDb() {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   ensureVersionSnapshotSchema(db);
+  return db;
+}
+
+function makePartsDb() {
+  const db = makeDb();
+  ensureDocumentStoreSchema(db);
   return db;
 }
 
@@ -84,18 +95,144 @@ test('identical snapshots are skipped using the stored hash, not the blob', () =
   assert.equal(listVersionSummaries(db, 'acc-3', 72).length, 1);
 });
 
-test('retention still caps stored versions and cascaded summaries', () => {
+test('part snapshots store only one students blob when only todos change', () => {
+  const db = makePartsDb();
+  writeWorkspaceDocument(db, 'acc-parts', {
+    todos: [{ id: 1, title: 'before' }],
+    students: [{ id: 's1', name: 'Keep' }],
+    _lastSaved: 1,
+  }, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
+  const studentRowHash = db.prepare(`
+    SELECT payload_hash FROM workspace_business_rows
+    WHERE storage_key=? AND collection_key='students' AND row_id='s1'
+  `).get('acc-parts').payload_hash;
+  const studentBefore = db.prepare(`
+    SELECT payload FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).payload;
+
+  writeWorkspaceDocument(db, 'acc-parts', {
+    todos: [{ id: 1, title: 'after' }],
+    students: [{ id: 's1', name: 'Keep' }],
+    _lastSaved: 2,
+  }, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-parts', { force: true }), true);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).n, 1);
+  assert.equal(db.prepare(`
+    SELECT payload FROM user_data_version_business_blobs
+    WHERE account_id=? AND collection_key='students' AND row_hash=?
+  `).get('acc-parts', studentRowHash).payload, studentBefore);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_todo_blobs WHERE account_id=?
+  `).get('acc-parts').n, 2);
+});
+
+test('part snapshot restore reassembles a full document', () => {
+  const db = makePartsDb();
+  const source = {
+    todos: [{ id: 2, title: 'round trip' }],
+    students: [{ id: 's2' }],
+    meta: { title: 'Workspace' },
+  };
+  writeWorkspaceDocument(db, 'acc-roundtrip', source, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-roundtrip', { force: true }), true);
+  const id = db.prepare(
+    'SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC'
+  ).get('acc-roundtrip').id;
+  assert.deepEqual(loadVersionSnapshot(db, 'acc-roundtrip', id), source);
+});
+
+test('GFS pruning cascades part manifests and removes orphaned blobs', () => {
+  const db = makePartsDb();
+  for (let i = 0; i < 6; i++) {
+    writeWorkspaceDocument(db, 'acc-prune-parts', {
+      todos: [{ id: i }],
+      students: [{ id: 'stable' }],
+      _lastSaved: i,
+    }, { replaceAll: true, replaceTodoCollection: true });
+    saveVersionSnapshotParts(db, 'acc-prune-parts', { force: true });
+  }
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?'
+  ).get('acc-prune-parts').n, VERSION_RETENTION.keepNewest);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM user_data_version_part_blobs b
+    WHERE b.account_id=? AND NOT EXISTS (
+      SELECT 1 FROM user_data_version_parts p
+      JOIN user_data_versions v ON v.id=p.version_id
+      WHERE v.account_id=? AND p.data_hash=b.data_hash
+    )
+  `).get('acc-prune-parts', 'acc-prune-parts').n, 0);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS n FROM user_data_version_todo_blobs WHERE account_id=?
+  `).get('acc-prune-parts').n, VERSION_RETENTION.keepNewest);
+});
+
+test('legacy full JSON snapshots still restore', () => {
   const db = makeDb();
-  for (let i = 0; i < MAX_VERSIONS_PER_WORKSPACE + 5; i++) {
+  const source = JSON.parse(payload({ todos: [{ id: 99, title: 'legacy' }] }));
+  assert.equal(saveVersionSnapshot(db, 'acc-legacy', JSON.stringify(source), { force: true }), true);
+  const id = db.prepare(
+    'SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC'
+  ).get('acc-legacy').id;
+  assert.deepEqual(loadVersionSnapshot(db, 'acc-legacy', id), source);
+});
+
+test('same-hour force snapshots keep only the newest safety copies', () => {
+  const db = makeDb();
+  for (let i = 0; i < 8; i++) {
     saveVersionSnapshot(db, 'acc-4', payload({ todos: [{ id: i }] }), { force: true });
   }
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-4').n,
-    MAX_VERSIONS_PER_WORKSPACE
-  );
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-4').n,
-    MAX_VERSIONS_PER_WORKSPACE
-  );
-  assert.equal(listVersionSummaries(db, 'acc-4', 200).length, MAX_VERSIONS_PER_WORKSPACE);
+  const versions = db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-4').n;
+  const summaries = db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-4').n;
+  assert.equal(versions, VERSION_RETENTION.keepNewest);
+  assert.equal(summaries, VERSION_RETENTION.keepNewest);
+  assert.equal(listVersionSummaries(db, 'acc-4', 200).length, VERSION_RETENTION.keepNewest);
+});
+
+test('GFS retention keeps hourly, daily, weekly, and monthly slots', () => {
+  const now = Date.parse('2026-08-27T12:00:00Z');
+  const rows = [];
+  let id = 1;
+  for (let hour = 0; hour < 30; hour++) {
+    rows.push({ id: id++, created_at: new Date(now - hour * 3600000).toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  for (let day = 2; day <= 10; day++) {
+    rows.push({ id: id++, created_at: new Date(now - day * 86400000).toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  for (let month = 1; month <= 14; month++) {
+    const date = new Date(Date.UTC(2026, 7 - month, 15, 8, 0, 0));
+    rows.push({ id: id++, created_at: date.toISOString().replace('T', ' ').replace('Z', '') });
+  }
+  const keep = selectRetainedVersionIds(rows, now);
+  assert.ok(keep.has(rows[0].id));
+  assert.ok(keep.size >= 20);
+  assert.ok(keep.size < rows.length);
+  assert.equal(keep.has(rows[rows.length - 1].id), false);
+});
+
+test('prune deletes old snapshots and cascaded summaries', () => {
+  const db = makeDb();
+  const insert = db.prepare('INSERT INTO user_data_versions (account_id,data,created_at) VALUES (?,?,?)');
+  const now = Date.parse('2026-08-27T12:00:00Z');
+  for (let i = 0; i < 40; i++) {
+    const createdAt = new Date(now - i * 3600000).toISOString().replace('T', ' ').replace('.000Z', '');
+    const result = insert.run('acc-5', payload({ todos: [{ id: i }] }), createdAt);
+    db.prepare(`
+      INSERT INTO user_data_version_summaries (version_id,account_id,created_at,data_size,data_hash,todos,students,staff,instructions)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(result.lastInsertRowid, 'acc-5', createdAt, 10, `h${i}`, i, 0, 0, 0);
+  }
+  const deleted = pruneVersionSnapshots(db, 'acc-5', now);
+  assert.ok(deleted > 0);
+  const left = db.prepare('SELECT COUNT(*) AS n FROM user_data_versions WHERE account_id=?').get('acc-5').n;
+  const summaries = db.prepare('SELECT COUNT(*) AS n FROM user_data_version_summaries WHERE account_id=?').get('acc-5').n;
+  assert.equal(left, summaries);
+  assert.ok(left <= 40 - deleted);
+  assert.ok(left >= VERSION_RETENTION.keepNewest);
 });

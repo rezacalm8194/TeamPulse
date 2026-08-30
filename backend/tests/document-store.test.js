@@ -15,6 +15,7 @@ const {
   loadWorkspaceDocumentAsync,
   loadDocumentPartsAsync,
   serializeWorkspaceDocumentAsync,
+  parseCollectionInclude,
 } = require('../utils/documentStore');
 const { applyDocumentPatch } = require('../utils/documentPatch');
 
@@ -56,7 +57,10 @@ test('writing a document stores collections as separate SQLite parts', () => {
   assert.equal(row.data, PARTS_MARKER);
   assert.equal(row.data_etag, first.etag);
   const parts = db.prepare('SELECT part_key FROM user_data_parts WHERE account_id=? ORDER BY part_key').all('acc-1');
-  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART, 'students', 'todos'].sort());
+  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART, 'students'].sort());
+  assert.equal(db.prepare(
+    'SELECT COUNT(*) AS n FROM workspace_todos WHERE storage_key=?'
+  ).get('acc-1').n, 1);
   const loaded = loadWorkspaceDocument(db, 'acc-1');
   assert.equal(loaded.layout, 'parts');
   assert.equal(loaded.data.todos[0].title, 'keep');
@@ -79,7 +83,10 @@ test('a later patch stringify/writes only the changed collection', () => {
     collections: { todos: { upsert: [{ id: 10, title: 'new' }], delete: [] } },
     scalars: { _lastSaved: 2 },
   });
-  writeWorkspaceDocument(db, 'acc-1', next, { replaceAll: false });
+  writeWorkspaceDocument(db, 'acc-1', next, {
+    replaceAll: false,
+    replaceTodoCollection: true,
+  });
 
   const afterStudents = db.prepare(
     'SELECT data, data_hash, updated_at FROM user_data_parts WHERE account_id=? AND part_key=?'
@@ -158,4 +165,25 @@ test('file-backed async path round-trips through a worker thread', async t => {
   assert.equal(loaded.data.students.length, 30);
   const serialized = await serializeWorkspaceDocumentAsync(db, 'acc-worker');
   assert.equal(JSON.parse(serialized).todos[0].title, 'worker');
+});
+
+test('parseCollectionInclude keeps only safe part keys', () => {
+  assert.equal(parseCollectionInclude(undefined), null);
+  assert.equal(parseCollectionInclude('*'), null);
+  assert.deepEqual(parseCollectionInclude('todos,students,todos,__scalars__,bad-key'), ['todos', 'students']);
+});
+
+test('loading selected parts does not pull sibling collections', () => {
+  const db = makeDb();
+  writeWorkspaceDocument(db, 'acc-1', {
+    students: [{ id: 1, name: 'keep-out' }],
+    todos: [{ id: 10, title: 'needed' }],
+    instructions: [{ id: 3, title: 'heavy' }],
+    meta: { title: 'x' },
+  }, { replaceAll: true });
+  const parts = loadDocumentParts(db, 'acc-1', ['todos']);
+  assert.equal(parts.data.todos[0].title, 'needed');
+  assert.equal(parts.data.meta.title, 'x');
+  assert.equal(parts.data.students, undefined);
+  assert.equal(parts.data.instructions, undefined);
 });

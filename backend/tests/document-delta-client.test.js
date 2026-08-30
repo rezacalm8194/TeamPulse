@@ -10,6 +10,9 @@ test('ordinary workspace syncs send collection deltas instead of the full accoun
   assert.match(appSource, /function _preferDocumentDelta\(/);
   assert.match(appSource, /\/delta' \+ _workspaceQuery\(\)/);
   assert.match(appSource, /hashes,/);
+  assert.match(appSource, /function _documentHasUnloadedParts\(/);
+  assert.match(appSource, /function _ensureDocumentParts\(/);
+  assert.match(appSource, /_documentIncludeQuery\(/);
 });
 
 test('todo completion merge prefers done state and later recurring dates', () => {

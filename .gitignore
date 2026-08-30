@@ -31,6 +31,16 @@ backend/speech-models/
 backend/database/*.db
 backend/database/*.db-shm
 backend/database/*.db-wal
+backend/database.db
+backend/database.db-shm
+backend/database.db-wal
+
+# Object storage (local disk driver)
+backend/storage/
+
+# Old local copies that must never ship
+.trash/
+
 logs/
 *.log
 *.log.*

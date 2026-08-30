@@ -1,5 +1,26 @@
 const { createHash } = require('crypto');
 const { isMainThread } = require('worker_threads');
+const {
+  ensureTodoStoreSchema,
+  migrateTodosFromDocumentPart,
+  hasMigratedTodos,
+  todoState,
+  loadAllTodos,
+  upsertTodos,
+  replaceTodos,
+  deleteTodoWorkspace,
+} = require('./todoStore');
+const {
+  BUSINESS_COLLECTIONS,
+  ensureBusinessStoreSchema,
+  migrateBusinessParts,
+  hasMigratedCollection,
+  collectionState,
+  loadAllRows,
+  upsertRows,
+  replaceRows,
+  deleteBusinessWorkspace,
+} = require('./businessStore');
 
 const SCALARS_PART = '__scalars__';
 const PARTS_MARKER = '{"_layout":"parts"}';
@@ -26,6 +47,21 @@ function documentEtagFromHashes(hashes) {
 function isSafePartKey(key) {
   if (key === SCALARS_PART) return true;
   return typeof key === 'string' && key.length > 0 && key.length <= 80 && /^[A-Za-z0-9_]+$/.test(key);
+}
+
+function parseCollectionInclude(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (!text || text === '*') return null;
+  const keys = [];
+  const seen = new Set();
+  text.split(/[,+\s]+/).forEach(part => {
+    const key = String(part || '').trim();
+    if (!key || key === SCALARS_PART || !isSafePartKey(key) || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+  return keys.length ? keys : null;
 }
 
 function isPartsMarker(raw) {
@@ -57,6 +93,12 @@ function assembleDocument(scalars, collections) {
 function ensureDocumentStoreSchema(db) {
   if (readyDbs.has(db)) return;
   db.exec(`
+    CREATE TABLE IF NOT EXISTS user_data (
+      account_id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      data_etag TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS user_data_parts (
       account_id TEXT NOT NULL,
       part_key TEXT NOT NULL,
@@ -74,6 +116,10 @@ function ensureDocumentStoreSchema(db) {
       db.exec('ALTER TABLE user_data ADD COLUMN data_etag TEXT');
     }
   } catch (_) { /* user_data may not exist in isolated unit tests */ }
+  ensureTodoStoreSchema(db);
+  migrateTodosFromDocumentPart(db);
+  ensureBusinessStoreSchema(db);
+  migrateBusinessParts(db);
   readyDbs.add(db);
 }
 
@@ -96,6 +142,12 @@ function loadPartHashes(db, accountId) {
   ).all(accountId);
   const hashes = {};
   rows.forEach(row => { hashes[row.part_key] = row.data_hash; });
+  const todoMeta = todoState(db, accountId);
+  if (todoMeta) hashes.todos = todoMeta.data_hash;
+  BUSINESS_COLLECTIONS.forEach(key => {
+    const state = collectionState(db, accountId, key);
+    if (state) hashes[key] = state.data_hash;
+  });
   return hashes;
 }
 
@@ -147,6 +199,14 @@ function loadDocumentParts(db, accountId, collectionKeys = []) {
     if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
     else collections[row.part_key] = value;
   });
+  if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
+    collections.todos = loadAllTodos(db, accountId);
+  }
+  BUSINESS_COLLECTIONS.forEach(key => {
+    if (wanted.has(key) && hasMigratedCollection(db, accountId, key)) {
+      collections[key] = loadAllRows(db, accountId, key);
+    }
+  });
   collectionKeys.forEach(key => {
     if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
       collections[key] = [];
@@ -168,6 +228,10 @@ function loadWorkspaceDocument(db, accountId) {
       const value = parsePartValue(row.part_key, row.data);
       if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
       else collections[row.part_key] = value;
+    });
+    if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
+    BUSINESS_COLLECTIONS.forEach(key => {
+      if (hasMigratedCollection(db, accountId, key)) collections[key] = loadAllRows(db, accountId, key);
     });
     return {
       ...meta,
@@ -216,7 +280,11 @@ function upsertUserDataMeta(db, accountId, etag) {
   }
 }
 
-function writeWorkspaceDocument(db, accountId, data, { replaceAll = true } = {}) {
+function writeWorkspaceDocument(db, accountId, data, {
+  replaceAll = true,
+  replaceTodoCollection = false,
+  replaceBusinessCollections = [],
+} = {}) {
   ensureDocumentStoreSchema(db);
   const persist = db.transaction(() => {
     if (accountId === ADMIN_SETTINGS_ID) {
@@ -236,10 +304,25 @@ function writeWorkspaceDocument(db, accountId, data, { replaceAll = true } = {})
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
     const writtenCollections = Object.keys(collections);
     writtenCollections.forEach(key => {
-      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
+      if (key === 'todos') {
+        if (!hasMigratedTodos(db, accountId) || replaceTodoCollection) {
+          hashes.todos = replaceTodos(db, accountId, collections.todos);
+        } else {
+          upsertTodos(db, accountId, collections.todos);
+          hashes.todos = todoState(db, accountId)?.data_hash;
+        }
+      } else if (BUSINESS_COLLECTIONS.includes(key)) {
+        if (!hasMigratedCollection(db, accountId, key) || replaceBusinessCollections.includes(key)) {
+          hashes[key] = replaceRows(db, accountId, key, collections[key]);
+        } else {
+          upsertRows(db, accountId, key, collections[key]);
+          hashes[key] = collectionState(db, accountId, key)?.data_hash;
+        }
+      } else hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
     });
     if (replaceAll) {
-      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      const keep = new Set([SCALARS_PART, ...writtenCollections.filter(key =>
+        key !== 'todos' && !BUSINESS_COLLECTIONS.includes(key))]);
       db.prepare(
         'SELECT part_key FROM user_data_parts WHERE account_id=?'
       ).all(accountId).forEach(row => {
@@ -259,6 +342,8 @@ function deleteWorkspaceDocument(db, accountId) {
   ensureDocumentStoreSchema(db);
   db.prepare('DELETE FROM user_data_parts WHERE account_id=?').run(accountId);
   db.prepare('DELETE FROM user_data WHERE account_id=?').run(accountId);
+  deleteTodoWorkspace(db, accountId);
+  deleteBusinessWorkspace(db, accountId);
 }
 
 function deleteWorkspaceDocumentsForAccount(db, accountId) {
@@ -267,6 +352,14 @@ function deleteWorkspaceDocumentsForAccount(db, accountId) {
     .run(accountId, `${accountId}::workspace::%`);
   db.prepare('DELETE FROM user_data WHERE account_id=? OR account_id LIKE ?')
     .run(accountId, `${accountId}::workspace::%`);
+  const keys = db.prepare(
+    'SELECT storage_key FROM workspace_todo_state WHERE storage_key=? OR storage_key LIKE ?'
+  ).all(accountId, `${accountId}::workspace::%`);
+  keys.forEach(row => deleteTodoWorkspace(db, row.storage_key));
+  const businessKeys = db.prepare(
+    'SELECT DISTINCT storage_key FROM workspace_business_state WHERE storage_key=? OR storage_key LIKE ?'
+  ).all(accountId, `${accountId}::workspace::%`);
+  businessKeys.forEach(row => deleteBusinessWorkspace(db, row.storage_key));
 }
 
 function yieldEventLoop() {
@@ -327,6 +420,14 @@ async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
       else collections[row.part_key] = value;
       await yieldEventLoop();
     }
+    if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
+      collections.todos = loadAllTodos(db, accountId);
+    }
+    BUSINESS_COLLECTIONS.forEach(key => {
+      if (wanted.has(key) && hasMigratedCollection(db, accountId, key)) {
+        collections[key] = loadAllRows(db, accountId, key);
+      }
+    });
     collectionKeys.forEach(key => {
       if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
         collections[key] = [];
@@ -352,6 +453,10 @@ async function loadWorkspaceDocumentAsync(db, accountId) {
         else collections[row.part_key] = value;
         await yieldEventLoop();
       }
+      if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
+      BUSINESS_COLLECTIONS.forEach(key => {
+        if (hasMigratedCollection(db, accountId, key)) collections[key] = loadAllRows(db, accountId, key);
+      });
       return { ...meta, data: assembleDocument(scalars, collections) };
     }
     await yieldEventLoop();
@@ -371,12 +476,20 @@ async function serializeWorkspaceDocumentAsync(db, accountId) {
   });
 }
 
-async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = true } = {}) {
-  return offloadOrInline(db, 'writeWorkspaceDocument', [accountId, data, { replaceAll }], async () => {
+async function writeWorkspaceDocumentAsync(db, accountId, data, {
+  replaceAll = true,
+  replaceTodoCollection = false,
+  replaceBusinessCollections = [],
+} = {}) {
+  return offloadOrInline(db, 'writeWorkspaceDocument', [accountId, data, {
+    replaceAll, replaceTodoCollection, replaceBusinessCollections,
+  }], async () => {
     ensureDocumentStoreSchema(db);
     if (accountId === ADMIN_SETTINGS_ID) {
       await yieldEventLoop();
-      return writeWorkspaceDocument(db, accountId, data, { replaceAll });
+      return writeWorkspaceDocument(db, accountId, data, {
+        replaceAll, replaceTodoCollection, replaceBusinessCollections,
+      });
     }
     const { scalars, collections } = splitDocument(data);
     const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
@@ -384,11 +497,26 @@ async function writeWorkspaceDocumentAsync(db, accountId, data, { replaceAll = t
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
     const writtenCollections = Object.keys(collections);
     for (const key of writtenCollections) {
-      hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
+      if (key === 'todos') {
+        if (!hasMigratedTodos(db, accountId) || replaceTodoCollection) {
+          hashes.todos = replaceTodos(db, accountId, collections.todos);
+        } else {
+          upsertTodos(db, accountId, collections.todos);
+          hashes.todos = todoState(db, accountId)?.data_hash;
+        }
+      } else if (BUSINESS_COLLECTIONS.includes(key)) {
+        if (!hasMigratedCollection(db, accountId, key) || replaceBusinessCollections.includes(key)) {
+          hashes[key] = replaceRows(db, accountId, key, collections[key]);
+        } else {
+          upsertRows(db, accountId, key, collections[key]);
+          hashes[key] = collectionState(db, accountId, key)?.data_hash;
+        }
+      } else hashes[key] = upsertPartRow(db, accountId, key, JSON.stringify(collections[key]));
       await yieldEventLoop();
     }
     if (replaceAll) {
-      const keep = new Set([SCALARS_PART, ...writtenCollections]);
+      const keep = new Set([SCALARS_PART, ...writtenCollections.filter(key =>
+        key !== 'todos' && !BUSINESS_COLLECTIONS.includes(key))]);
       const extra = db.prepare(
         'SELECT part_key FROM user_data_parts WHERE account_id=?'
       ).all(accountId);
@@ -409,6 +537,8 @@ module.exports = {
   PARTS_MARKER,
   blobEtag,
   documentEtagFromHashes,
+  isSafePartKey,
+  parseCollectionInclude,
   splitDocument,
   assembleDocument,
   ensureDocumentStoreSchema,

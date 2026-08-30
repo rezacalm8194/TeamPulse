@@ -8,6 +8,9 @@ const { logger } = require('../utils/logger');
 const { isProtectedAccount, withProtectedFlag } = require('../utils/protectedAdmin');
 const { ensureTokenRevocationSchema, bumpTokenVersion } = require('../utils/tokenRevocation');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
+const { collectStorageReport } = require('../utils/storageReport');
+const { deleteStoredFiles } = require('../utils/fileStore');
+const { createStorageDriver } = require('../utils/storage');
 const {
   ensureDocumentStoreSchema,
   loadWorkspaceDocument,
@@ -245,6 +248,14 @@ router.post('/backup/all/import', auth, adminOnly, (req, res) => {
   }
 });
 
+router.get('/storage', auth, adminOnly, (req, res) => {
+  try {
+    res.json(collectStorageReport(db));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/stats', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();
@@ -288,6 +299,7 @@ router.get('/stats', auth, adminOnly, (req, res) => {
       dashboard,
       chargeReqs,
       settings,
+      storage: collectStorageReport(db),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -510,6 +522,8 @@ router.delete('/users/:id', auth, adminOnly, (req, res) => {
       return res.status(403).json({ error: 'cannot delete your own account while logged in' });
     }
 
+    const fileDriver = createStorageDriver();
+    deleteStoredFiles(db, fileDriver, { ownerAccountId: targetId });
     const deleteAccountCascade = db.transaction((accountId) => {
       db.prepare("DELETE FROM payments WHERE account_id=?").run(accountId);
       db.prepare("DELETE FROM sessions WHERE account_id=?").run(accountId);
