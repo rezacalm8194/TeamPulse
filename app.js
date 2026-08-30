@@ -2783,7 +2783,11 @@ window.api = {
       };
       if (!_db.instructions) _db.instructions = [];
       _db.instructions.push(item);
-      _save(); return _P({ok:true, id});
+      // Knowledge-center changes are commonly created on one device and opened
+      // immediately on another. Queue these writes without the normal debounce
+      // so the server, rather than this device's cache, becomes authoritative as
+      // soon as the add call completes.
+      _save(true, { urgent: true }); return _P({ok:true, id});
     },
     update: (p) => {
       if (typeof _teamCanInstructionNode === 'function' && !_teamCanInstructionNode(p.id)) {

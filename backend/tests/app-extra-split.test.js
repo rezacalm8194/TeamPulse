@@ -52,3 +52,10 @@ test('customer account tab hosts the case financial table', () => {
   assert.match(appSource, /<th>مانده حساب<\/th>/);
   assert.match(appSource, /<th>وضعیت<\/th>/);
 });
+
+test('knowledge-center creates are confirmed across devices', () => {
+  assert.match(appSource, /_save\(true, \{ urgent: true \}\); return _P\(\{ok:true, id\}\)/);
+  assert.match(extraSource, /const syncResult = await _syncToServer\(\)/);
+  assert.match(extraSource, /!_hasServerSyncPending\(\)/);
+  assert.match(extraSource, /ذخیره و بین دستگاه‌ها همگام شد/);
+});

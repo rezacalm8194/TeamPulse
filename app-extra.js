@@ -4146,8 +4146,24 @@ async function saveAddInstruction(parentId, type) {
     instruction_scope: staffCtx ? 'staff' : ''
   });
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
+
+  // Do not claim cross-device success until the server has acknowledged this
+  // exact database revision. The local copy remains safe when offline, while
+  // the pending marker makes the next focus/online event retry automatically.
+  let synced = true;
+  if (typeof _syncToServer === 'function' && _sbSession?.token) {
+    try {
+      const syncResult = await _syncToServer();
+      synced = !!syncResult?.ok || (typeof _hasServerSyncPending === 'function' && !_hasServerSyncPending());
+    } catch (e) {
+      synced = false;
+    }
+  }
   closeModal();
-  showToast('ذخیره شد ✓', 'success');
+  showToast(
+    synced ? 'ذخیره و بین دستگاه‌ها همگام شد ✓' : 'روی این دستگاه ذخیره شد؛ همگام‌سازی با اینترنت دوباره انجام می‌شود',
+    synced ? 'success' : 'error'
+  );
   if (staffCtx) {
     _staffInstructionContext = null;
     _openStaffInstructions(staffCtx.staffId, _parentId);
