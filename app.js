@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp127';
+const TP_ASSET_V = 'tp128';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1628,6 +1628,14 @@ function _restoreServerSyncEtagFromBaseline() {
   if (baseline?.hashes) window._serverSyncHashCache = { etag: baseline.etag || window._serverDataEtag || null, hashes: baseline.hashes };
 }
 
+function _businessSyncDeleteBlocked(key, localItems, prevHashes) {
+  if (!BUSINESS_PAGINATED_KEYS.includes(key)) return false;
+  const localCount = Array.isArray(localItems) ? localItems.length : 0;
+  const baselineCount = Object.keys(prevHashes || {}).length;
+  // An empty in-memory business collection usually means pagination has not
+  // loaded yet, not that the user deleted everything.
+  return localCount === 0 && baselineCount > 0;
+}
 function _buildServerSyncPatch(data) {
   const hashes = _readServerSyncHashes();
   if (!hashes?.collections && !hashes?.scalars) return null;
@@ -1654,6 +1662,7 @@ function _buildServerSyncPatch(data) {
       const del = Object.keys(prevHashes).filter(id => !seen.has(id));
       baselineItems += Object.keys(prevHashes).length;
       changedItems += upsert.length + del.length;
+      if (_businessSyncDeleteBlocked(key, value, prevHashes)) return;
       if (upsert.length || del.length) collections[key] = { upsert, delete: del };
     } else if (hashes.scalars?.[key] !== _isolationItemHash(value)) {
       scalars[key] = value;
@@ -1666,7 +1675,9 @@ function _buildServerSyncPatch(data) {
   Object.keys(hashes.collections || {}).forEach(key => {
     if (seenKeys.has(key) || _SYNC_SKIP_KEYS.has(key)) return;
     if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) return;
-    const del = Object.keys(hashes.collections[key] || {});
+    const prevHashes = hashes.collections[key] || {};
+    if (_businessSyncDeleteBlocked(key, data?.[key], prevHashes)) return;
+    const del = Object.keys(prevHashes);
     if (!del.length) return;
     collections[key] = { upsert: [], delete: del };
     changedItems += del.length;
@@ -2501,7 +2512,14 @@ window.api = {
           };
           _db = {...(payload.data || {}),...creds};
           _migrate(_db);
+          _db._restored_at = new Date().toISOString();
+          _db._lastSaved = Date.now();
+          delete _db._loadedParts;
+          delete _db._availableParts;
+          window._tpLoadedParts = null;
+          window._tpAvailableParts = null;
           _markManualRestoreInProgress();
+          _forceNextServerSync();
           const key = window._activeDBKey || DB_KEY;
           _persistDatabaseSnapshot(key, _db);
           window._serverDataEtag = payload.etag || null;
@@ -2535,6 +2553,10 @@ window.api = {
         _migrate(_db);
         _db._restored_at = new Date().toISOString();
         _db._lastSaved = Date.now();
+        delete _db._loadedParts;
+        delete _db._availableParts;
+        window._tpLoadedParts = null;
+        window._tpAvailableParts = null;
         _markManualRestoreInProgress();
         _forceNextServerSync();
         _save(false);
@@ -4211,6 +4233,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     const existing = new Map((Array.isArray(_db?.[collection]) ? _db[collection] : [])
       .map(row => [String(row?.id), row]));
     const incomingIds = new Set(incoming.map(row => String(row?.id)));
+    if (reset && !incoming.length && existing.size > 0) {
+      // Never trust an empty server page to wipe a locally populated collection.
+      reset = false;
+    }
     if (reset) {
       for (const [id, row] of [...existing]) {
         if (incomingIds.has(id) || _keepLocalBusinessRow(row, collection)) continue;
@@ -17110,6 +17136,11 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       window._serverSyncRetryAttempt = 0;
       clearTimeout(window._serverSyncRetryTimer);
       _clearServerSyncPending(syncSavedAt);
+      if (_db?._restored_at) {
+        delete _db._restored_at;
+        _clearManualRestoreProtection();
+        try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+      }
       if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
       setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
     }
@@ -17253,7 +17284,20 @@ async function _loadFromServer() {
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   const localBeforeLoad = _db && typeof _db === 'object' ? _cloneData(_db) : null;
   const preserveLocalBusiness = _hasServerSyncPending() ||
-    _localDataDivergedFromServerBaseline(localBeforeLoad) !== false;
+    _localDataDivergedFromServerBaseline(localBeforeLoad) !== false ||
+    _isManualRestoreProtected() ||
+    !!localBeforeLoad?._restored_at;
+  if (_isManualRestoreProtected()) {
+    const expectedSig = _getManualRestoreExpectedSignature();
+    const localSig = _dataFingerprint(_serverDataSignature(localBeforeLoad || _db));
+    if (expectedSig && localSig === expectedSig) {
+      _forceNextServerSync();
+      clearTimeout(window._serverSyncTimer);
+      window._serverSyncTimer = setTimeout(_syncToServer, 100);
+      console.warn('[TeamPulse] kept restored local snapshot while manual restore is pending');
+      return false;
+    }
+  }
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
@@ -26466,7 +26510,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v127';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v128';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
