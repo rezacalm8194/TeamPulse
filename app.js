@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp125';
+const TP_ASSET_V = 'tp126';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1688,10 +1688,10 @@ function _preferDocumentDelta(patch, fullPayload) {
   return true;
 }
 
-function _localDataDivergedFromServerBaseline() {
+function _localDataDivergedFromServerBaseline(data = _db) {
   const baseline = _readServerSyncBaseline();
   if (!baseline?.fingerprint) return null;
-  return baseline.fingerprint !== _dataFingerprint(_serverDataSignature(_db || {}));
+  return baseline.fingerprint !== _dataFingerprint(_serverDataSignature(data || {}));
 }
 
 function _readServerSyncPending() {
@@ -3964,7 +3964,14 @@ function _overlayPartialServerData(target, payload) {
   });
   (payload.loaded_parts || []).forEach(key => {
     if (!key || key === '__scalars__') return;
-    if (Object.prototype.hasOwnProperty.call(src, key)) target[key] = src[key];
+    if (BUSINESS_PAGINATED_KEYS.includes(key)) return;
+    if (!Object.prototype.hasOwnProperty.call(src, key)) return;
+    const serverVal = src[key];
+    if (_SYNC_ID_COLLECTION_KEYS.has(key) || _isSyncIdCollection(key, serverVal)) {
+      target[key] = _mergeIdList(target[key], serverVal);
+    } else {
+      target[key] = serverVal;
+    }
   });
   return target;
 }
@@ -4007,7 +4014,13 @@ async function _ensureDocumentParts(keys) {
     const payload = await res.json();
     if (!payload?.data) return false;
     needed.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(payload.data, key)) _db[key] = payload.data[key];
+      if (!Object.prototype.hasOwnProperty.call(payload.data, key)) return;
+      const serverVal = payload.data[key];
+      if (_SYNC_ID_COLLECTION_KEYS.has(key) || _isSyncIdCollection(key, serverVal)) {
+        _db[key] = _mergeIdList(_db[key], serverVal);
+      } else {
+        _db[key] = serverVal;
+      }
       if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
       window._tpLoadedParts.add(key);
     });
@@ -4141,9 +4154,13 @@ function _mergeBusinessRow(collection, local, remote) {
 function _keepLocalBusinessRow(row) {
   if (!row) return false;
   if (typeof _hasServerSyncPending === 'function' && _hasServerSyncPending()) return true;
+  const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
+  const pendingSavedAt = Number(pending?.savedAt || 0) || 0;
   const ts = _businessRowTimestamp(row);
-  const lastSync = Number(window._lastServerSyncSavedAt || 0);
-  return ts > 0 && ts >= lastSync;
+  const lastSync = Math.max(Number(window._lastServerSyncSavedAt || 0), pendingSavedAt);
+  if (ts > 0) return ts >= lastSync;
+  const localSaved = Number(_db?._lastSaved || 0) || 0;
+  return localSaved > 0 && localSaved >= lastSync;
 }
 async function _ensureBusinessPartLoaded(collection, { reset = false, search = '' } = {}) {
   const paging = _businessPagingState(collection);
@@ -16055,7 +16072,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
   const collections = [
     'students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
-    'instructions','todos'
+    'instructions','guide_categories','guide_items','case_forms','todos'
   ];
   const merged = ownerData;
   merged._nextId = merged._nextId || {};
@@ -16212,10 +16229,10 @@ function _serverDataChanged(nextData, currentData) {
   return _serverDataSignature(nextData) !== _serverDataSignature(currentData || {});
 }
 
-function _serverTimes(data) {
+function _serverTimes(data, localData = _db) {
   return {
     serverTime: Number(data?._lastSaved || 0) || 0,
-    localTime: Number(_db?._lastSaved || 0) || 0,
+    localTime: Number(localData?._lastSaved || 0) || 0,
   };
 }
 
@@ -17198,6 +17215,9 @@ function _mergeServerTodosIntoLocal(serverData) {
 async function _loadFromServer() {
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
+  const localBeforeLoad = _db && typeof _db === 'object' ? _cloneData(_db) : null;
+  const preserveLocalBusiness = _hasServerSyncPending() ||
+    _localDataDivergedFromServerBaseline(localBeforeLoad) !== false;
   try {
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser.id;
@@ -17232,13 +17252,17 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     for (const key of businessKeys) {
-      await _ensureBusinessPartLoaded(key, { reset: true });
+      await _ensureBusinessPartLoaded(key, { reset: !preserveLocalBusiness });
     }
     if (payload.partial) {
       _rememberServerParts(payload);
       _invalidateUnfetchedDocumentParts(payload);
-      if (_db && typeof _db === 'object' && payload.data) {
-        payload.data = _overlayPartialServerData(_cloneData(_db), payload);
+      if (payload.data) {
+        const overlayBase = localBeforeLoad ? _cloneData(localBeforeLoad) : _cloneData(_db);
+        businessKeys.forEach(key => {
+          if (Array.isArray(_db?.[key])) overlayBase[key] = _cloneData(_db[key]);
+        });
+        payload.data = _overlayPartialServerData(overlayBase, payload);
       }
       if (payload.data) {
         payload.data._loadedParts = window._tpLoadedParts ? [...window._tpLoadedParts] : [];
@@ -17318,7 +17342,7 @@ async function _loadFromServer() {
       return false;
     }
     if (teamSession) {
-      const { serverTime, localTime } = _serverTimes(data);
+      const { serverTime, localTime } = _serverTimes(data, localBeforeLoad);
       if (serverTime && localTime && serverTime === localTime) {
         window._teamOwnerDataReady = true;
         window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, serverTime);
@@ -17354,11 +17378,11 @@ async function _loadFromServer() {
           return false;
         }
       }
-      const teamLocalHasData = !!(_db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length);
-      const teamLocalDiverged = _localDataDivergedFromServerBaseline();
-      if (teamLocalHasData && _serverDataChanged(data, _db) && teamLocalDiverged !== false) {
+      const teamLocalHasData = !!(localBeforeLoad?.students?.length || localBeforeLoad?.todos?.length || localBeforeLoad?.instructions?.length || localBeforeLoad?.staff?.length);
+      const teamLocalDiverged = _localDataDivergedFromServerBaseline(localBeforeLoad);
+      if (teamLocalHasData && _serverDataChanged(data, localBeforeLoad) && teamLocalDiverged !== false) {
         const serverSnapshot = _cloneData(data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data), { teamSafe: true });
+        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data), { teamSafe: true });
         _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
         const key = window._activeDBKey || _teamActiveDBKey();
@@ -17370,7 +17394,7 @@ async function _loadFromServer() {
         console.warn('[TeamPulse] prevented team data rollback and merged local changes');
         return true;
       }
-      if (!serverTime && !localTime && !_serverDataChanged(data, _db)) return false;
+      if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) return false;
       _db = data;
       _migrate(_db);
       const key = window._activeDBKey || _teamActiveDBKey();
@@ -17405,7 +17429,7 @@ async function _loadFromServer() {
         console.warn('[Workspace] replaced mismatched local cache with scoped server data');
         return true;
       }
-      const { serverTime, localTime } = _serverTimes(data);
+      const { serverTime, localTime } = _serverTimes(data, localBeforeLoad);
       const pendingSync = _readServerSyncPending();
       if (pendingSync) {
         const pendingSavedAt = Number(pendingSync.savedAt || 0) || 0;
@@ -17417,9 +17441,8 @@ async function _loadFromServer() {
           console.warn('[TeamPulse] kept newer local data while server sync is pending');
           return mergedTodos;
         }
-        const localPending = _cloneData(_db);
         const serverSnapshot = _cloneData(data);
-        const merged = _mergeLocalPendingChangesIntoOwnerData(localPending, data);
+        const merged = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, data);
         _db = merged;
         _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
@@ -17437,14 +17460,15 @@ async function _loadFromServer() {
       // برای نصب‌های قدیمی که هنوز baseline ندارند نیز در صورت اختلاف، یک‌بار
       // محافظه‌کارانه ادغام می‌کنیم تا هیچ داده‌ای از کاربر از دست نرود.
       const localHasMeaningfulData = !!(
-        _db.students?.length || _db.todos?.length || _db.instructions?.length || _db.staff?.length ||
-        _db.packages?.length || _db.payments?.length || _db.sessions?.length
+        localBeforeLoad?.students?.length || localBeforeLoad?.todos?.length || localBeforeLoad?.instructions?.length || localBeforeLoad?.staff?.length ||
+        localBeforeLoad?.packages?.length || localBeforeLoad?.payments?.length || localBeforeLoad?.sessions?.length ||
+        localBeforeLoad?.case_forms?.length || localBeforeLoad?.key_events?.length
       );
-      const localDiverged = _localDataDivergedFromServerBaseline();
-      if (localHasMeaningfulData && _serverDataChanged(data, _db) && localDiverged !== false) {
-        const beforeMergeFingerprint = _dataFingerprint(_serverDataSignature(_db));
+      const localDiverged = _localDataDivergedFromServerBaseline(localBeforeLoad);
+      if (localHasMeaningfulData && _serverDataChanged(data, localBeforeLoad) && localDiverged !== false) {
+        const beforeMergeFingerprint = _dataFingerprint(_serverDataSignature(localBeforeLoad));
         const serverSnapshot = _cloneData(data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
         _migrate(_db);
         const serverTodoStateChanged = _mergeServerTodosIntoLocal(serverSnapshot);
         const mergedChanged = beforeMergeFingerprint !== _dataFingerprint(_serverDataSignature(_db));
@@ -17456,13 +17480,13 @@ async function _loadFromServer() {
         console.warn('[TeamPulse] prevented automatic rollback and merged local data with server');
         return mergedChanged || serverTodoStateChanged;
       }
-      const localEmpty = !_db.students?.length && !_db.todos?.length && !_db.instructions?.length;
-      const memoryDiverged = _localDataDivergedFromServerBaseline();
+      const localEmpty = !localBeforeLoad?.students?.length && !localBeforeLoad?.todos?.length && !localBeforeLoad?.instructions?.length;
+      const memoryDiverged = _localDataDivergedFromServerBaseline(localBeforeLoad);
       // اگه سرور داده داشت و لوکال خالی بود، یا سرور جدیدتر بود
-      if ((localEmpty && _serverDataChanged(data, _db)) || (serverTime > localTime)) {
+      if ((localEmpty && _serverDataChanged(data, localBeforeLoad)) || (serverTime > localTime)) {
         if (!localEmpty && memoryDiverged) {
           const serverSnapshot = _cloneData(data);
-          _db = _mergeLocalPendingChangesIntoOwnerData(_cloneData(_db), _cloneData(data));
+          _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
           _mergeServerTodosIntoLocal(serverSnapshot);
           _migrate(_db);
           const key = window._activeDBKey || DB_KEY;
@@ -26403,7 +26427,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v125';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v126';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
