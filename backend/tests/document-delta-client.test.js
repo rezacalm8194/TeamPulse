@@ -65,3 +65,13 @@ test('mobile resume flushes local writes before polling the server', () => {
   assert.match(appSource, /resume-flush/);
   assert.match(appSource, /onlyTodosChanged/);
 });
+
+test('nested knowledge hashes restore the same folder on phone and laptop', () => {
+  assert.match(appSource, /function _parseAppHash\(/);
+  assert.match(appSource, /_parseAppHash\(\)\.page/);
+  assert.match(appSource, /_invalidateUnfetchedDocumentParts\(/);
+  assert.match(appSource, /function _mergeBusinessRow\(/);
+  assert.match(appSource, /function _keepLocalBusinessRow\(/);
+  assert.match(appSource, /reset \|\| !_tpPartLoaded\(collection\)/);
+  assert.match(appSource, /case_forms', 'key_events', 'topics'/);
+});
