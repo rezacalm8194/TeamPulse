@@ -2965,8 +2965,9 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   align-items:start;
 }
 ._ifcard-gallery{
-  height:222px;
-  overflow:hidden;
+  min-height:180px;
+  height:auto;
+  overflow:visible;
 }
 ._ifcard-subfolders{
   display:flex;
@@ -2974,8 +2975,8 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   gap:4px;
   margin-top:9px;
   min-height:22px;
-  max-height:72px;
-  overflow:hidden;
+  max-height:none;
+  overflow:visible;
   align-content:flex-start;
 }
 ._ifcard-subfolder-chip{
@@ -3044,13 +3045,12 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
 }
 
 @media(max-width:768px){
-  /* فیلتر و حالت نمایش: دو ردیف جدا و همیشه کامل دیده بشن، نه یک نوار اسکرول‌شونده */
+  /* فیلتر و حالت نمایش کامل دیده بشن؛ ساخت پوشه/یادداشت هم مثل لپ‌تاپ در تولبار بماند */
   .instr-toolbar{
-    flex-wrap:nowrap!important;
+    flex-wrap:wrap!important;
     align-items:center!important;
     gap:6px!important;
-    overflow-x:auto;
-    overflow-y:hidden;
+    overflow:visible;
     -webkit-overflow-scrolling:touch;
     scrollbar-width:none;
   }
@@ -3097,10 +3097,6 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   /* هدر شلوغ: دکمه خروج و دکمه‌های ایجاد قدیمی از تاپ‌بار حذف می‌شن — تولبار جایگزینشون شده */
   .topbar-logout-btn, .instr-topbar-create-btn{ display:none!important; }
 
-  /* دکمه‌های «پوشه جدید» و «یادداشت جدید» از بالای صفحه (تولبار) در موبایل حذف می‌شن؛
-     ساخت پوشه/یادداشت در موبایل فقط از طریق دکمه شناور (+) پایین صفحه انجام می‌شه */
-  .instr-toolbar-create-btn, .instr-toolbar-divider{ display:none!important; }
-
   /* Breadcrumb کامل جای خودش را به نسخه فشرده (خانه / بالادست / فعلی) می‌ده */
   .instr-breadcrumb-full{ display:none!important; }
   .instr-breadcrumb-compact{ display:flex!important; }
@@ -3113,9 +3109,9 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   /* کارت‌های گالری موبایل باید همان حس کارت‌های قبلی را حفظ کنند؛ فقط محتوای داخلی جمع‌وجورتر می‌شود. */
   ._ifcard-gallery{
     padding:12px 12px 10px!important;
-    height:222px!important;
-    min-height:222px!important;
-    overflow:hidden!important;
+    height:auto!important;
+    min-height:180px!important;
+    overflow:visible!important;
     border-radius:14px!important;
   }
   ._ifcard-gallery[data-type="folder"] ._ifcard-body{
@@ -3154,9 +3150,9 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
     display:grid!important;
     grid-template-columns:repeat(2,minmax(0,1fr));
     gap:4px!important;
-    max-height:82px!important;
+    max-height:none!important;
     min-height:0!important;
-    overflow:hidden!important;
+    overflow:visible!important;
     margin-top:8px!important;
   }
   ._ifcard-subfolder-chip{
@@ -3294,7 +3290,8 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   body.knowledge-page .instr-crumb-back{min-height:28px;padding:3px 7px;font-size:11px}
   body.knowledge-page .instr-crumb-link{min-height:26px;padding:3px 5px;font-size:11px}
   body.knowledge-page .instr-toolbar{
-    height:44px;
+    height:auto;
+    min-height:44px;
     margin-bottom:12px!important;
     padding:5px!important;
     overflow:visible;

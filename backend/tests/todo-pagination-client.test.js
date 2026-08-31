@@ -37,11 +37,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 6 client assets are consistently bumped to tp124', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp124'/);
-  assert.match(app, /team-pulse-static-v124/);
-  assert.doesNotMatch(html, /tp123/);
-  assert.match(html, /app\.js\?v=tp124/);
-  assert.match(sw, /team-pulse-static-v124/);
-  assert.doesNotMatch(sw, /tp123/);
+test('phase 6 client assets are consistently bumped to tp125', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp125'/);
+  assert.match(app, /team-pulse-static-v125/);
+  assert.doesNotMatch(html, /tp124/);
+  assert.match(html, /app\.js\?v=tp125/);
+  assert.match(sw, /team-pulse-static-v125/);
+  assert.doesNotMatch(sw, /tp124/);
 });
