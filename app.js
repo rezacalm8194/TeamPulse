@@ -4673,6 +4673,7 @@ function _parseAppHash() {
 function _getInitialPage() {
   // URL hash takes priority (works with back/forward + shareable links),
   // falls back to last page saved in localStorage, then default.
+  // Nested knowledge links look like #instructions/5 — only the page segment is restored here.
   const fromHash = _parseAppHash().page;
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
   const fromStorage = localStorage.getItem('tp_last_page');
