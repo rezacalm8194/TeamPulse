@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp126';
+const TP_ASSET_V = 'tp127';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4151,16 +4151,35 @@ function _mergeBusinessRow(collection, local, remote) {
   }
   return newer;
 }
-function _keepLocalBusinessRow(row) {
+function _keepLocalBusinessRow(row, collection) {
   if (!row) return false;
   if (typeof _hasServerSyncPending === 'function' && _hasServerSyncPending()) return true;
   const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
   const pendingSavedAt = Number(pending?.savedAt || 0) || 0;
   const ts = _businessRowTimestamp(row);
   const lastSync = Math.max(Number(window._lastServerSyncSavedAt || 0), pendingSavedAt);
+  const rowId = row?.id != null ? String(row.id) : '';
+  if (rowId && collection) {
+    const baselineHash = _readServerSyncHashes()?.collections?.[collection]?.[rowId];
+    if (baselineHash && baselineHash !== _isolationItemHash(row)) return true;
+  }
   if (ts > 0) return ts >= lastSync;
   const localSaved = Number(_db?._lastSaved || 0) || 0;
   return localSaved > 0 && localSaved >= lastSync;
+}
+function _mergeLocalBusinessCollections(localBeforeLoad, collections = []) {
+  if (!localBeforeLoad || typeof localBeforeLoad !== 'object') return;
+  collections.forEach(key => {
+    const localRows = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
+    if (!localRows.length) return;
+    const byId = new Map((Array.isArray(_db?.[key]) ? _db[key] : []).map(row => [String(row?.id), row]));
+    localRows.forEach(localRow => {
+      if (!localRow || localRow.id == null) return;
+      const id = String(localRow.id);
+      byId.set(id, _mergeBusinessRow(key, localRow, byId.get(id)));
+    });
+    _db[key] = [...byId.values()];
+  });
 }
 async function _ensureBusinessPartLoaded(collection, { reset = false, search = '' } = {}) {
   const paging = _businessPagingState(collection);
@@ -4194,7 +4213,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     const incomingIds = new Set(incoming.map(row => String(row?.id)));
     if (reset) {
       for (const [id, row] of [...existing]) {
-        if (incomingIds.has(id) || _keepLocalBusinessRow(row)) continue;
+        if (incomingIds.has(id) || _keepLocalBusinessRow(row, collection)) continue;
         existing.delete(id);
       }
     }
@@ -8038,15 +8057,32 @@ function _interactiveSessionNoteHtml(session) {
     <div style="font-size:13px;color:var(--text);line-height:1.9">${renderRich(note,{interactive:true,textareaId:sourceId})}</div>`;
 }
 
+function _flushInteractiveSessionNoteSave() {
+  clearTimeout(window._interactiveSessionNoteSaveTimer);
+  window._interactiveSessionNoteSaveTimer = null;
+  const pending = window._pendingInteractiveSessionNote;
+  if (!pending) return;
+  const session = (_db.sessions || []).find(item => +item.id === +pending.sessionId);
+  if (session) {
+    session.note = pending.value;
+    session.updated_at = new Date().toISOString();
+    _save(true, { urgent: true, quiet: true });
+  }
+  window._pendingInteractiveSessionNote = null;
+}
+
 function _saveInteractiveSessionNote(sessionId, value) {
   const session = (_db.sessions || []).find(item => +item.id === +sessionId);
   if (!session) return;
   session.note = value;
+  session.updated_at = new Date().toISOString();
+  window._pendingInteractiveSessionNote = { sessionId, value };
   clearTimeout(window._interactiveSessionNoteSaveTimer);
   window._interactiveSessionNoteSaveTimer = setTimeout(() => {
+    window._pendingInteractiveSessionNote = null;
     _save();
     showToast('پاسخ فرم ذخیره شد ✓', 'success');
-  }, 450);
+  }, 300);
 }
 
 async function openSessionDetail(sessionId) {
@@ -17254,6 +17290,7 @@ async function _loadFromServer() {
     for (const key of businessKeys) {
       await _ensureBusinessPartLoaded(key, { reset: !preserveLocalBusiness });
     }
+    if (localBeforeLoad && businessKeys.length) _mergeLocalBusinessCollections(localBeforeLoad, businessKeys);
     if (payload.partial) {
       _rememberServerParts(payload);
       _invalidateUnfetchedDocumentParts(payload);
@@ -17497,7 +17534,7 @@ async function _loadFromServer() {
           console.warn('[TeamPulse] merged in-memory local todos with newer server data');
           return true;
         }
-        _db = data;
+        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
         _persistDatabaseSnapshot(key, _db);
@@ -17791,6 +17828,7 @@ function _bindServerSyncLifecycleHandlers() {
     }
   });
   window.addEventListener('pagehide', () => {
+    _flushInteractiveSessionNoteSave();
     clearTimeout(window._serverSyncTimer);
     _flushPendingServerSyncKeepalive();
   });
@@ -17810,6 +17848,7 @@ function _bindServerSyncLifecycleHandlers() {
   void _flushPendingLocalWritesOnResume();
   _scheduleServerResumeSync(0);
   window.addEventListener('beforeunload', () => {
+    _flushInteractiveSessionNoteSave();
     clearTimeout(window._serverSyncTimer);
     _adoptManualRestoreFromLocalStorage('beforeunload');
     _flushPendingServerSyncKeepalive();
@@ -26427,7 +26466,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v126';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v127';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

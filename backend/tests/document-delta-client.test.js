@@ -83,4 +83,7 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
   assert.match(appSource, /target\[key\] = _mergeIdList\(target\[key\], serverVal\)/);
   assert.match(appSource, /'guide_categories','guide_items','case_forms','todos'/);
   assert.match(appSource, /localBeforeLoad\?\.case_forms\?\.length/);
+  assert.match(appSource, /function _mergeLocalBusinessCollections\(/);
+  assert.match(appSource, /function _flushInteractiveSessionNoteSave\(/);
+  assert.match(appSource, /baselineHash && baselineHash !== _isolationItemHash\(row\)/);
 });
