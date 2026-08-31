@@ -75,3 +75,12 @@ test('nested knowledge hashes restore the same folder on phone and laptop', () =
   assert.match(appSource, /reset \|\| !_tpPartLoaded\(collection\)/);
   assert.match(appSource, /case_forms', 'key_events', 'topics'/);
 });
+
+test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
+  assert.match(appSource, /const localBeforeLoad = _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
+  assert.match(appSource, /preserveLocalBusiness/);
+  assert.match(appSource, /reset: !preserveLocalBusiness/);
+  assert.match(appSource, /target\[key\] = _mergeIdList\(target\[key\], serverVal\)/);
+  assert.match(appSource, /'guide_categories','guide_items','case_forms','todos'/);
+  assert.match(appSource, /localBeforeLoad\?\.case_forms\?\.length/);
+});
