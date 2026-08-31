@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp124';
+const TP_ASSET_V = 'tp125';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2218,11 +2218,11 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[])});_save();} return _P({ok:true}); },
-    toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_save();}} return _P({ok:true}); },
-    addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});_save();} return _P({ok:true}); },
-    deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);_save();} return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
+    toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
+    addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali}));}); return _P(open); },
     getRecentAchievements: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid&&x.achievements&&x.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
     delete: (id)=>{ _db.sessions=_db.sessions.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
@@ -2234,17 +2234,17 @@ window.api = {
   topics: {
     getByStudent: (sid)=>_P(_db.topics.filter(t=>t.student_id===sid).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))),
     add: (p)=>{ _db.topics.push({id:_nextId('topics'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),title:p.title||'',text:p.text||'',checklist:(p.checklist||[]).map((c,i)=>({id:i+1,text:c.text||c,done:false})),created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    addChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){if(!t.checklist)t.checklist=[];const maxId=Math.max(0,...t.checklist.map(c=>c.id||0));t.checklist.push({id:maxId+1,text:p.text,done:false});_save();} return _P({ok:true}); },
-    toggleChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){const c=t.checklist.find(x=>x.id===p.item_id);if(c){c.done=!c.done;_save();}} return _P({ok:true}); },
-    deleteChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){t.checklist=t.checklist.filter(x=>x.id!==p.item_id);_save();} return _P({ok:true}); },
-    update: (p)=>{ const t=_db.topics.find(x=>x.id===p.id); if(t){if(p.title!==undefined)t.title=p.title;if(p.text!==undefined)t.text=p.text;if(p.date_jalali!==undefined)t.date_jalali=p.date_jalali;_save();} return _P({ok:true}); },
+    addChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){if(!t.checklist)t.checklist=[];const maxId=Math.max(0,...t.checklist.map(c=>c.id||0));t.checklist.push({id:maxId+1,text:p.text,done:false});t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    toggleChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){const c=t.checklist.find(x=>x.id===p.item_id);if(c){c.done=!c.done;t.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
+    deleteChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){t.checklist=t.checklist.filter(x=>x.id!==p.item_id);t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    update: (p)=>{ const t=_db.topics.find(x=>x.id===p.id); if(t){if(p.title!==undefined)t.title=p.title;if(p.text!==undefined)t.text=p.text;if(p.date_jalali!==undefined)t.date_jalali=p.date_jalali;t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.topics=_db.topics.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
   keyEvents: {
     getByStudent: (sid)=>_P(_db.key_events.filter(x=>x.student_id===sid).slice().reverse()),
-    add: (p)=>{ _db.key_events.push({id:_nextId('key_events'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),text:p.text||'',remind_date:p.remind_date||null,remind_done:false,repeat_type:p.repeat_type||'none',repeat_days:p.repeat_days||null,created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const e=_db.key_events.find(x=>x.id===p.id); if(e){if(p.text!==undefined)e.text=p.text;if(p.date_jalali!==undefined)e.date_jalali=p.date_jalali;if(p.remind_date!==undefined)e.remind_date=p.remind_date;if(p.repeat_type!==undefined)e.repeat_type=p.repeat_type;if(p.repeat_days!==undefined)e.repeat_days=p.repeat_days;if(p.remind_done!==undefined){if(p.remind_done&&e.repeat_type&&e.repeat_type!=='none'&&e.remind_date){e.remind_date=_nextRepeatDate(e.remind_date,e.repeat_type,e.repeat_days);e.remind_done=false;}else{e.remind_done=p.remind_done;}}_save();} return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); _db.key_events.push({id:_nextId('key_events'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),text:p.text||'',remind_date:p.remind_date||null,remind_done:false,repeat_type:p.repeat_type||'none',repeat_days:p.repeat_days||null,created_at:createdAt,updated_at:createdAt}); _save(); return _P({ok:true}); },
+    update: (p)=>{ const e=_db.key_events.find(x=>x.id===p.id); if(e){if(p.text!==undefined)e.text=p.text;if(p.date_jalali!==undefined)e.date_jalali=p.date_jalali;if(p.remind_date!==undefined)e.remind_date=p.remind_date;if(p.repeat_type!==undefined)e.repeat_type=p.repeat_type;if(p.repeat_days!==undefined)e.repeat_days=p.repeat_days;if(p.remind_done!==undefined){if(p.remind_done&&e.repeat_type&&e.repeat_type!=='none'&&e.remind_date){e.remind_date=_nextRepeatDate(e.remind_date,e.repeat_type,e.repeat_days);e.remind_done=false;}else{e.remind_done=p.remind_done;}}e.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     delete: (id)=>{ _db.key_events=_db.key_events.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -3870,7 +3870,7 @@ const BUSINESS_PAGINATED_KEYS = Object.freeze([
 ]);
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
-  students: ['students', 'packages', 'payments', 'sessions', 'families'],
+  students: ['students', 'packages', 'payments', 'sessions', 'families', 'case_forms', 'key_events', 'topics'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
   families: ['students', 'packages', 'payments', 'sessions', 'families'],
   reminders: ['reminders', 'students', 'packages'],
@@ -3933,14 +3933,16 @@ function _rememberServerParts(payload) {
 function _tpPartLoaded(key) {
   if (!window._tpLoadedParts) return true;
   if (window._tpLoadedParts.has(key)) return true;
-  if (_PAGINATED_PART_KEYS.has(key)) return false;
-  const value = _db?.[key];
-  if (Array.isArray(value) && value.length) {
-    window._tpLoadedParts.add(key);
-    _persistPartLoadState();
-    return true;
-  }
   return false;
+}
+function _invalidateUnfetchedDocumentParts(payload) {
+  if (!window._tpLoadedParts || !payload?.partial) return;
+  const fetched = new Set((payload.loaded_parts || []).filter(key => key && key !== '__scalars__'));
+  for (const key of [...window._tpLoadedParts]) {
+    if (_PAGINATED_PART_KEYS.has(key)) continue;
+    if (!fetched.has(key)) window._tpLoadedParts.delete(key);
+  }
+  _persistPartLoadState();
 }
 function _documentHasUnloadedParts() {
   if (!window._tpLoadedParts) return false;
@@ -4102,11 +4104,52 @@ function _businessPagingState(collection) {
   return window._tpBusinessPaging[collection] ||
     (window._tpBusinessPaging[collection] = { cursor: null, done: false, loading: null, search: '' });
 }
+function _businessRowTimestamp(row) {
+  return Date.parse(row?.updated_at || row?.created_at || '') || 0;
+}
+function _mergeIdList(localList, remoteList, idKey = 'id') {
+  const byId = new Map();
+  (Array.isArray(remoteList) ? remoteList : []).forEach(item => {
+    if (item && item[idKey] != null) byId.set(String(item[idKey]), item);
+  });
+  (Array.isArray(localList) ? localList : []).forEach(item => {
+    if (!item || item[idKey] == null) return;
+    const key = String(item[idKey]);
+    const remote = byId.get(key);
+    if (!remote) { byId.set(key, item); return; }
+    const localTs = _businessRowTimestamp(item);
+    const remoteTs = _businessRowTimestamp(remote);
+    byId.set(key, localTs >= remoteTs ? item : remote);
+  });
+  return [...byId.values()];
+}
+function _mergeBusinessRow(collection, local, remote) {
+  if (!local) return remote;
+  if (!remote) return local;
+  const localTs = _businessRowTimestamp(local);
+  const remoteTs = _businessRowTimestamp(remote);
+  const newer = localTs >= remoteTs ? local : remote;
+  if (collection === 'sessions') {
+    return {
+      ...newer,
+      followups: _mergeIdList(local.followups, remote.followups),
+      case_form_responses: _mergeIdList(local.case_form_responses, remote.case_form_responses, 'key'),
+    };
+  }
+  return newer;
+}
+function _keepLocalBusinessRow(row) {
+  if (!row) return false;
+  if (typeof _hasServerSyncPending === 'function' && _hasServerSyncPending()) return true;
+  const ts = _businessRowTimestamp(row);
+  const lastSync = Number(window._lastServerSyncSavedAt || 0);
+  return ts > 0 && ts >= lastSync;
+}
 async function _ensureBusinessPartLoaded(collection, { reset = false, search = '' } = {}) {
   const paging = _businessPagingState(collection);
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
-  if (!_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
+  if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
 }
@@ -4131,8 +4174,17 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     const incoming = Array.isArray(payload.items) ? payload.items : [];
     const existing = new Map((Array.isArray(_db?.[collection]) ? _db[collection] : [])
       .map(row => [String(row?.id), row]));
-    if (reset && !_hasServerSyncPending()) existing.clear();
-    incoming.forEach(row => existing.set(String(row?.id), row));
+    const incomingIds = new Set(incoming.map(row => String(row?.id)));
+    if (reset) {
+      for (const [id, row] of [...existing]) {
+        if (incomingIds.has(id) || _keepLocalBusinessRow(row)) continue;
+        existing.delete(id);
+      }
+    }
+    incoming.forEach(row => {
+      const id = String(row?.id);
+      existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
+    });
     _db[collection] = [...existing.values()];
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
@@ -4594,10 +4646,18 @@ let allStudents = [];
 // safe pages list (don't restore admin panel from refresh unless admin)
 const _SAFE_RESTORE_PAGES = ['students','payments','sessions','families','reminders',
   'customerlist','archive','staff','instructions','todolist','calendar','tutorial','settings','dashboard','transactions','admin_panel','goals','habits'];
+function _parseAppHash() {
+  const raw = (location.hash || '').replace(/^#/, '').trim();
+  const parts = raw ? raw.split('/').filter(Boolean) : [];
+  const page = parts[0] || '';
+  const ids = parts.slice(1).map(part => +part).filter(id => Number.isFinite(id) && id > 0);
+  return { page, ids, raw };
+}
 function _getInitialPage() {
   // URL hash takes priority (works with back/forward + shareable links),
   // falls back to last page saved in localStorage, then default.
-  const fromHash = (location.hash || '').replace('#', '').trim();
+  // Nested knowledge links look like #instructions/5 — only the page segment is restored here.
+  const fromHash = _parseAppHash().page;
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
   const fromStorage = localStorage.getItem('tp_last_page');
   if (fromStorage === 'sessions') return 'students';
@@ -5588,8 +5648,9 @@ bindNavItems();
 
 // Browser Back/Forward support: jump to whichever page the hash now points to.
 window.addEventListener('hashchange', () => {
-  const page = (location.hash || '').replace('#', '').trim();
-  if (page && page !== currentPage && _SAFE_RESTORE_PAGES.includes(page)) {
+  const parsed = _parseAppHash();
+  const page = parsed.page;
+  if (page && _SAFE_RESTORE_PAGES.includes(page) && (page !== currentPage || page === 'instructions')) {
     if (page === 'students' || page === 'sessions') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
     currentPage = page;
     if (currentPage === 'todolist') _todoActiveTab = 'mine';
@@ -5794,7 +5855,7 @@ async function renderPage() {
   // regardless of which handler triggered the navigation.
   setActiveMenu(currentPage);
   updateSidebarGreeting();
-  if (_SAFE_RESTORE_PAGES.includes(currentPage) && location.hash.replace('#', '') !== currentPage) {
+  if (_SAFE_RESTORE_PAGES.includes(currentPage) && _parseAppHash().page !== currentPage) {
     history.replaceState(null, '', '#' + currentPage);
   }
   try {
@@ -7947,6 +8008,7 @@ function _saveSessionCaseResponse(sessionId, control) {
     const label = control.nextElementSibling;
     if (label) label.style.cssText = control.checked ? 'font-size:12px;text-decoration:line-through;color:var(--text3)' : 'font-size:12px;color:var(--text)';
   } else response.value = control.value;
+  session.updated_at = new Date().toISOString();
   clearTimeout(control._sessionFormSaveTimer);
   control._sessionFormSaveTimer = setTimeout(() => _save(), 400);
 }
@@ -17174,6 +17236,7 @@ async function _loadFromServer() {
     }
     if (payload.partial) {
       _rememberServerParts(payload);
+      _invalidateUnfetchedDocumentParts(payload);
       if (_db && typeof _db === 'object' && payload.data) {
         payload.data = _overlayPartialServerData(_cloneData(_db), payload);
       }
@@ -26340,7 +26403,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v124';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v125';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

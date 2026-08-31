@@ -57,5 +57,7 @@ test('knowledge-center creates are confirmed across devices', () => {
   assert.match(appSource, /_save\(true, \{ urgent: true \}\); return _P\(\{ok:true, id\}\)/);
   assert.match(extraSource, /const syncResult = await _syncToServer\(\)/);
   assert.match(extraSource, /!_hasServerSyncPending\(\)/);
+  assert.match(extraSource, /function _restoreInstrNavFromHash\(/);
+  assert.match(extraSource, /function _instrSameParent\(/);
   assert.match(extraSource, /ذخیره و بین دستگاه‌ها همگام شد/);
 });

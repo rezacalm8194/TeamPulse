@@ -2622,6 +2622,36 @@ function _instrEnsureKnowledgeStructure() {
   _db._knowledgeSchemaVersion = 3;
   _save();
 }
+function _instrSameParent(nodeParentId, folderId) {
+  const left = nodeParentId == null || nodeParentId === '' ? null : +nodeParentId;
+  const right = folderId == null || folderId === '' ? null : +folderId;
+  if (!Number.isFinite(left) && left !== 0) return right == null || !Number.isFinite(right);
+  if (!Number.isFinite(right) && right !== 0) return false;
+  return left === right;
+}
+function _restoreInstrNavFromHash() {
+  if (typeof _parseAppHash !== 'function') return;
+  const parsed = _parseAppHash();
+  if (parsed.page !== 'instructions') return;
+  const targetId = parsed.ids.length ? parsed.ids[parsed.ids.length - 1] : null;
+  if (!targetId) {
+    _instrParentId = null;
+    _instrPath = [];
+    return;
+  }
+  const node = (_db.instructions || []).find(n => +n.id === +targetId);
+  if (!node) return;
+  const path = [];
+  let cur = node;
+  const seen = new Set();
+  while (cur && !seen.has(+cur.id)) {
+    seen.add(+cur.id);
+    path.unshift({ id: cur.id, icon: cur.icon || '📁', title: cur.title || '' });
+    cur = cur.parent_id ? (_db.instructions || []).find(n => +n.id === +cur.parent_id) : null;
+  }
+  _instrParentId = targetId;
+  _instrPath = path;
+}
 function _instrCurrentNode() {
   return _instrParentId ? (_db.instructions||[]).find(n => +n.id === +_instrParentId) : null;
 }
@@ -2675,6 +2705,7 @@ async function renderInstructions(instrSearch) {
   if (!_db) { _db = _freshData(); }
   if (!_db.instructions) { _db.instructions = []; }
   _instrEnsureKnowledgeStructure();
+  _restoreInstrNavFromHash();
   _instrLoadViewPreference();
 
   const rawFlat = (_db.instructions || []).filter(n => !n.staff_id);
@@ -2732,7 +2763,7 @@ async function renderInstructions(instrSearch) {
   const toolbar = _instrToolbarHtml();
 
   /* ── Get items for current folder ── */
-  let items = flat.filter(n => (n.parent_id||null) === (_instrParentId ? +_instrParentId : null));
+  let items = flat.filter(n => _instrSameParent(n.parent_id, _instrParentId));
   const currentLevel = _instrCurrentLevel();
   if (!instrSearch) {
     if (currentLevel === 'root') items = items.filter(n => n.type === 'kcategory');
@@ -2745,7 +2776,7 @@ async function renderInstructions(instrSearch) {
     const q = instrSearch.toLowerCase();
     function _getAllDesc(pid) {
       const res = [];
-      flat.filter(function(n){ return (n.parent_id||null)===(pid?+pid:null); }).forEach(function(c){
+      flat.filter(function(n){ return _instrSameParent(n.parent_id, pid); }).forEach(function(c){
         res.push(c);
         if (c.type==='category' || c.type==='kcategory') res.push.apply(res, _getAllDesc(c.id));
       });
