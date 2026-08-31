@@ -20,23 +20,20 @@ echo Files staged:
 git diff --cached --name-only
 echo.
 
-git diff --cached --quiet
-if %errorlevel%==0 (
-  echo No changes to commit.
-  echo.
-  pause
-  exit /b 0
-)
-
 set COMMIT_MSG=deploy: update TeamPulse
 
-echo Committing...
-git commit -m "%COMMIT_MSG%"
-if errorlevel 1 (
-  echo.
-  echo Commit failed. Please check the message above.
-  pause
-  exit /b 1
+git diff --cached --quiet
+if %errorlevel%==0 (
+  echo No local changes to commit; continuing promote to main...
+) else (
+  echo Committing...
+  git commit -m "%COMMIT_MSG%"
+  if errorlevel 1 (
+    echo.
+    echo Commit failed. Please check the message above.
+    pause
+    exit /b 1
+  )
 )
 
 echo.
