@@ -7,6 +7,46 @@ const {
   patchLooksDestructive,
 } = require('../utils/deletedItems');
 
+test('keeps deleted staff out even when a stale client sends them back', () => {
+  const previous = {
+    staff: [{ id: 2, name: 'kept' }],
+    staff_payments: [{ id: 20, staff_id: 2 }],
+    _deletedItems: {
+      staff: { '1': '2026-01-01T00:00:00.000Z' },
+      staff_payments: { '10': '2026-01-01T00:00:00.000Z' },
+    },
+  };
+  const next = mergeAndApplyDeletedItems(previous, {
+    staff: [
+      { id: 1, name: 'resurrected' },
+      { id: 2, name: 'kept' },
+    ],
+    staff_payments: [
+      { id: 10, staff_id: 1 },
+      { id: 20, staff_id: 2 },
+    ],
+    _deletedItems: {},
+  });
+  assert.deepEqual(next.staff, [{ id: 2, name: 'kept' }]);
+  assert.deepEqual(next.staff_payments, [{ id: 20, staff_id: 2 }]);
+  assert.equal(next._deletedItems.staff['1'], '2026-01-01T00:00:00.000Z');
+  assert.equal(next._deletedItems.staff_payments['10'], '2026-01-01T00:00:00.000Z');
+});
+
+test('an unloaded empty staff part does not tombstone existing personnel', () => {
+  const previous = {
+    staff: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    staff_payments: [{ id: 10, staff_id: 1 }],
+  };
+  const next = mergeAndApplyDeletedItems(previous, {
+    staff: [],
+    staff_payments: [],
+  });
+  assert.equal(next.staff.length, 3);
+  assert.equal(next.staff_payments.length, 1);
+  assert.equal(Object.keys(next._deletedItems.staff || {}).length, 0);
+});
+
 test('keeps deleted students out even when a stale client sends them back', () => {
   const previous = {
     students: [{ id: 2, name: 'kept' }],
