@@ -55,6 +55,8 @@ test('customer account tab hosts the case financial table', () => {
 
 test('knowledge-center creates are confirmed across devices', () => {
   assert.match(appSource, /_save\(true, \{ urgent: true \}\); return _P\(\{ok:true, id\}\)/);
+  assert.match(appSource, /function _mergeServerLoadedCollectionsIntoLocal\(/);
+  assert.match(appSource, /_KNOWLEDGE_SESSION_REFRESH_KEYS/);
   assert.match(extraSource, /const syncResult = await _syncToServer\(\)/);
   assert.match(extraSource, /!_hasServerSyncPending\(\)/);
   assert.match(extraSource, /function _restoreInstrNavFromHash\(/);

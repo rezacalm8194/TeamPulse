@@ -76,6 +76,14 @@ test('nested knowledge hashes restore the same folder on phone and laptop', () =
   assert.match(appSource, /case_forms', 'key_events', 'topics'/);
 });
 
+test('knowledge items created on another device are merged even when local data looks newer', () => {
+  assert.match(appSource, /function _mergeServerLoadedCollectionsIntoLocal\(/);
+  assert.match(appSource, /let changed = _mergeServerLoadedCollectionsIntoLocal\(serverData\)/);
+  assert.match(appSource, /_KNOWLEDGE_SESSION_REFRESH_KEYS/);
+  assert.match(appSource, /_tpSessionFetchedParts/);
+  assert.match(appSource, /partsWereFullyLoaded/);
+});
+
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
   assert.match(appSource, /const localBeforeLoad = _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
   assert.match(appSource, /preserveLocalBusiness/);
