@@ -29,6 +29,7 @@ test('todo archive and show-more can fetch additional server pages', () => {
   assert.match(app, /function _loadMoreTodos\(/);
   assert.match(app, /function _loadMoreTodoArchive\(/);
   assert.match(app, /\/todos\/stats/);
+  assert.doesNotMatch(app, /if \(!!todo\?\.archived === !!archived && !pending\) existing\.delete\(id\)/);
 });
 
 test('todo list virtualization passes the row renderer explicitly', () => {
@@ -37,11 +38,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 6 client assets are consistently bumped to tp130', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp130'/);
-  assert.match(app, /team-pulse-static-v130/);
-  assert.doesNotMatch(html, /tp129/);
-  assert.match(html, /app\.js\?v=tp130/);
-  assert.match(sw, /team-pulse-static-v130/);
-  assert.doesNotMatch(sw, /tp129/);
+test('phase 6 client assets are consistently bumped to tp132', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp132'/);
+  assert.match(app, /team-pulse-static-v132/);
+  assert.doesNotMatch(html, /tp131/);
+  assert.match(html, /app\.js\?v=tp132/);
+  assert.match(sw, /team-pulse-static-v132/);
+  assert.doesNotMatch(sw, /tp131/);
 });
