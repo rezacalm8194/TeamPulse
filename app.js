@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp130';
+const TP_ASSET_V = 'tp132';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1050,8 +1050,21 @@ function _recordStudentAndRelatedDeletions(studentIds) {
   _recordDeletedItems('students', ids);
 }
 
+function _pruneTombstonesForPresentItems(d) {
+  const deleted = d?._deletedItems;
+  if (!deleted || typeof deleted !== 'object') return;
+  Object.keys(deleted).forEach(key => {
+    const map = deleted[key];
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+    (Array.isArray(d[key]) ? d[key] : []).forEach(item => {
+      if (item && item.id != null) delete map[String(item.id)];
+    });
+  });
+}
+
 function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
+  if (d._restored_at) _pruneTombstonesForPresentItems(d);
   const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
   ['students','package_types','staff_roles','todos', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
     const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
@@ -1588,6 +1601,14 @@ function _syncCollectionHashes(data) {
 function _writeServerSyncBaseline(data, etag = null) {
   const safe = _serverSafeData(data || {});
   const hashes = _syncCollectionHashes(safe);
+  const prevHashes = _readServerSyncHashes();
+  if (prevHashes?.collections) {
+    hashes.collections = hashes.collections || {};
+    Object.keys(prevHashes.collections).forEach(key => {
+      if (typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded(key)) return;
+      hashes.collections[key] = { ...prevHashes.collections[key], ...(hashes.collections[key] || {}) };
+    });
+  }
   const record = {
     fingerprint: _dataFingerprint(_serverDataSignature(safe)),
     etag: etag || window._serverDataEtag || null,
@@ -1628,13 +1649,23 @@ function _restoreServerSyncEtagFromBaseline() {
   if (baseline?.hashes) window._serverSyncHashCache = { etag: baseline.etag || window._serverDataEtag || null, hashes: baseline.hashes };
 }
 
-function _businessSyncDeleteBlocked(key, localItems, prevHashes) {
-  if (!BUSINESS_PAGINATED_KEYS.includes(key)) return false;
+function _explicitDeletedIds(key) {
+  const map = _db?._deletedItems?.[key];
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return new Set();
+  return new Set(Object.keys(map).map(String));
+}
+function _collectionSyncDeleteBlocked(key, localItems, prevHashes) {
   const localCount = Array.isArray(localItems) ? localItems.length : 0;
   const baselineCount = Object.keys(prevHashes || {}).length;
-  // An empty in-memory business collection usually means pagination has not
-  // loaded yet, not that the user deleted everything.
-  return localCount === 0 && baselineCount > 0;
+  if (typeof _paginatedCollectionFullyLoaded === 'function' && !_paginatedCollectionFullyLoaded(key)) return true;
+  // An empty or first-page-only in-memory collection usually means pagination
+  // has not finished, not that the user deleted most of the account.
+  if (localCount === 0 && baselineCount > 0) return true;
+  if (baselineCount >= 20 && localCount < Math.ceil(baselineCount * 0.5)) return true;
+  return false;
+}
+function _businessSyncDeleteBlocked(key, localItems, prevHashes) {
+  return _collectionSyncDeleteBlocked(key, localItems, prevHashes);
 }
 function _buildServerSyncPatch(data) {
   const hashes = _readServerSyncHashes();
@@ -1659,10 +1690,13 @@ function _buildServerSyncPatch(data) {
         seen.add(id);
         if (prevHashes[id] !== _isolationItemHash(item)) upsert.push(item);
       });
-      const del = Object.keys(prevHashes).filter(id => !seen.has(id));
+      let del = Object.keys(prevHashes).filter(id => !seen.has(id));
+      if (_collectionSyncDeleteBlocked(key, value, prevHashes)) {
+        const explicit = _explicitDeletedIds(key);
+        del = del.filter(id => explicit.has(id));
+      }
       baselineItems += Object.keys(prevHashes).length;
       changedItems += upsert.length + del.length;
-      if (_businessSyncDeleteBlocked(key, value, prevHashes)) return;
       if (upsert.length || del.length) collections[key] = { upsert, delete: del };
     } else if (hashes.scalars?.[key] !== _isolationItemHash(value)) {
       scalars[key] = value;
@@ -1676,7 +1710,15 @@ function _buildServerSyncPatch(data) {
     if (seenKeys.has(key) || _SYNC_SKIP_KEYS.has(key)) return;
     if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) return;
     const prevHashes = hashes.collections[key] || {};
-    if (_businessSyncDeleteBlocked(key, data?.[key], prevHashes)) return;
+    if (_collectionSyncDeleteBlocked(key, data?.[key], prevHashes)) {
+      const explicit = _explicitDeletedIds(key);
+      const del = Object.keys(prevHashes).filter(id => explicit.has(id));
+      if (!del.length) return;
+      collections[key] = { upsert: [], delete: del };
+      changedItems += del.length;
+      baselineItems += del.length;
+      return;
+    }
     const del = Object.keys(prevHashes);
     if (!del.length) return;
     collections[key] = { upsert: [], delete: del };
@@ -2909,6 +2951,10 @@ function _importFile() {
         // حفظ session قبل از بازنویسی
         const savedSession = localStorage.getItem('tp_session');
         _db={...imported,...creds};
+        delete _db._loadedParts;
+        delete _db._availableParts;
+        window._tpLoadedParts = null;
+        window._tpAvailableParts = null;
         _migrate(_db);
         _db._restored_at = new Date().toISOString();
         _db._lastSaved = Date.now();
@@ -3933,7 +3979,18 @@ function _persistPartLoadState() {
 }
 function _restorePartLoadState(data = _db) {
   if (Array.isArray(data?._loadedParts)) {
-    window._tpLoadedParts = new Set(data._loadedParts);
+    const loaded = new Set(data._loadedParts);
+    const unmarkedPopulated = Object.keys(data).filter(key => {
+      if (_SYNC_SKIP_KEYS.has(key) || !_SYNC_ID_COLLECTION_KEYS.has(key)) return false;
+      if (!Array.isArray(data[key]) || !data[key].length) return false;
+      return !loaded.has(key);
+    });
+    if (unmarkedPopulated.length) {
+      window._tpLoadedParts = null;
+      window._tpAvailableParts = null;
+      return;
+    }
+    window._tpLoadedParts = loaded;
     window._tpAvailableParts = new Set(Array.isArray(data._availableParts) ? data._availableParts : []);
     return;
   }
@@ -3958,6 +4015,22 @@ function _tpPartLoaded(key) {
   if (window._tpLoadedParts.has(key)) return true;
   return false;
 }
+function _isPaginatedSyncKey(key) {
+  return key === 'todos' || BUSINESS_PAGINATED_KEYS.includes(key);
+}
+function _paginatedCollectionFullyLoaded(key) {
+  if (!window._tpLoadedParts) return true;
+  if (!_isPaginatedSyncKey(key)) return true;
+  if (key === 'todos') {
+    if (typeof _todoPagingState !== 'function') return false;
+    const active = _todoPagingState(false);
+    const archived = _todoPagingState(true);
+    return !!(active.done && archived.done);
+  }
+  if (typeof _businessPagingState !== 'function') return false;
+  const paging = _businessPagingState(key);
+  return !!(paging.done && !paging.search);
+}
 function _invalidateUnfetchedDocumentParts(payload) {
   if (!window._tpLoadedParts || !payload?.partial) return;
   const fetched = new Set((payload.loaded_parts || []).filter(key => key && key !== '__scalars__'));
@@ -3970,10 +4043,14 @@ function _invalidateUnfetchedDocumentParts(payload) {
 function _documentHasUnloadedParts() {
   if (!window._tpLoadedParts) return false;
   const available = window._tpAvailableParts;
-  if (!available || !available.size) return false;
-  for (const key of available) {
-    if (key === '__scalars__') continue;
-    if (!_tpPartLoaded(key)) return true;
+  if (available && available.size) {
+    for (const key of available) {
+      if (key === '__scalars__') continue;
+      if (!_tpPartLoaded(key)) return true;
+    }
+  }
+  for (const key of _PAGINATED_PART_KEYS) {
+    if (_tpPartLoaded(key) && !_paginatedCollectionFullyLoaded(key)) return true;
   }
   return false;
 }
@@ -4023,7 +4100,14 @@ async function _ensureDocumentParts(keys) {
     await _loadTodoPage(true, { reset: true });
   }
   for (const key of BUSINESS_PAGINATED_KEYS) {
-    if (requested.includes(key)) await _ensureBusinessPartLoaded(key);
+    if (!requested.includes(key)) continue;
+    await _ensureBusinessPartLoaded(key);
+    let pages = 0;
+    while (!_paginatedCollectionFullyLoaded(key) && pages < 100) {
+      const ok = await _loadBusinessPage(key);
+      pages += 1;
+      if (!ok) break;
+    }
   }
   window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
   const needed = requested.filter(key => {
@@ -4097,12 +4181,6 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     const payload = await res.json();
     const incoming = Array.isArray(payload.items) ? payload.items : [];
     const existing = new Map((Array.isArray(_db?.todos) ? _db.todos : []).map(todo => [String(todo?.id), todo]));
-    if (reset) {
-      for (const [id, todo] of existing) {
-        const pending = _readDurableTodoDeltaQueue().some(item => String(item?.todoId) === id);
-        if (!!todo?.archived === !!archived && !pending) existing.delete(id);
-      }
-    }
     incoming.forEach(todo => {
       const id = String(todo?.id);
       const local = existing.get(id);
@@ -4115,10 +4193,8 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
       ...(window._tpTodoPaging.stats || {}),
       [archived ? 'archived' : 'active']: Number(payload.total || incoming.length),
     };
-    if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
-    window._tpLoadedParts.add('todos');
-    if (!window._tpAvailableParts) window._tpAvailableParts = new Set();
-    window._tpAvailableParts.add('todos');
+    if (window._tpLoadedParts) window._tpLoadedParts.add('todos');
+    if (window._tpAvailableParts) window._tpAvailableParts.add('todos');
     _applyTodoIdHighWater(payload.todo_id_high_water);
     if (payload.etag) window._serverDataEtag = payload.etag;
     _persistPartLoadState();
@@ -4244,17 +4320,6 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     const incoming = Array.isArray(payload.items) ? payload.items : [];
     const existing = new Map((Array.isArray(_db?.[collection]) ? _db[collection] : [])
       .map(row => [String(row?.id), row]));
-    const incomingIds = new Set(incoming.map(row => String(row?.id)));
-    if (reset && !incoming.length && existing.size > 0) {
-      // Never trust an empty server page to wipe a locally populated collection.
-      reset = false;
-    }
-    if (reset) {
-      for (const [id, row] of [...existing]) {
-        if (incomingIds.has(id) || _keepLocalBusinessRow(row, collection)) continue;
-        existing.delete(id);
-      }
-    }
     incoming.forEach(row => {
       const id = String(row?.id);
       existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
@@ -4262,10 +4327,8 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     _db[collection] = [...existing.values()];
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
-    if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
-    window._tpLoadedParts.add(collection);
-    if (!window._tpAvailableParts) window._tpAvailableParts = new Set();
-    window._tpAvailableParts.add(collection);
+    if (window._tpLoadedParts) window._tpLoadedParts.add(collection);
+    if (window._tpAvailableParts) window._tpAvailableParts.add(collection);
     if (payload.etag) window._serverDataEtag = payload.etag;
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
@@ -16183,11 +16246,17 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     });
   });
 
+  const resurrectLocal = !!(localBeforeLoad._restored_at || options.resurrectPresent ||
+    (typeof _isManualRestoreProtected === 'function' && _isManualRestoreProtected()));
   collections.forEach(key => {
     const localArr = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
     const tombstones = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
       ? merged._deletedItems[key]
       : {};
+    const localIds = new Set(localArr.filter(item => item && item.id != null).map(item => String(item.id)));
+    if (resurrectLocal) {
+      localIds.forEach(id => { delete tombstones[id]; });
+    }
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
       .filter(item => {
         if (!item || item.id == null) return true;
@@ -16207,8 +16276,11 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     localArr.forEach(localItem => {
       if (!localItem || localItem.id == null) return;
       const idKey = String(localItem.id);
-      if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) return;
-      if (key === 'todos' && deletedTodoIds.has(idKey)) return;
+      if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) {
+        if (!resurrectLocal) return;
+        delete tombstones[idKey];
+      }
+      if (key === 'todos' && deletedTodoIds.has(idKey) && !resurrectLocal) return;
       const serverItem = byId.get(idKey);
       if (!serverItem) {
         serverArr.push(_cloneData(localItem));
@@ -16286,6 +16358,9 @@ function _serverSafeData(data) {
     Object.keys(copy).forEach(key => {
       if (_SYNC_SKIP_KEYS.has(key)) return;
       if ((Array.isArray(copy[key]) || _SYNC_ID_COLLECTION_KEYS.has(key)) && !_tpPartLoaded(key)) {
+        // Never strip a populated collection; pagination bookmarks must not
+        // make restore/sync look like the user deleted those rows.
+        if (Array.isArray(copy[key]) && copy[key].length) return;
         delete copy[key];
       }
     });
@@ -17337,20 +17412,12 @@ async function _loadFromServer() {
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   const localBeforeLoad = _db && typeof _db === 'object' ? _cloneData(_db) : null;
-  const preserveLocalBusiness = _hasServerSyncPending() ||
-    _localDataDivergedFromServerBaseline(localBeforeLoad) !== false ||
-    _isManualRestoreProtected() ||
-    !!localBeforeLoad?._restored_at;
-  if (_isManualRestoreProtected()) {
-    const expectedSig = _getManualRestoreExpectedSignature();
-    const localSig = _dataFingerprint(_serverDataSignature(localBeforeLoad || _db));
-    if (expectedSig && localSig === expectedSig) {
-      _forceNextServerSync();
-      clearTimeout(window._serverSyncTimer);
-      window._serverSyncTimer = setTimeout(_syncToServer, 100);
-      console.warn('[TeamPulse] kept restored local snapshot while manual restore is pending');
-      return false;
-    }
+  if (_isManualRestoreProtected() || !!localBeforeLoad?._restored_at) {
+    _forceNextServerSync();
+    clearTimeout(window._serverSyncTimer);
+    window._serverSyncTimer = setTimeout(_syncToServer, 100);
+    console.warn('[TeamPulse] kept restored local snapshot while manual restore is pending');
+    return false;
   }
   try {
     const teamSession = _teamAccessSession();
@@ -17386,7 +17453,7 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     for (const key of businessKeys) {
-      await _ensureBusinessPartLoaded(key, { reset: !preserveLocalBusiness });
+      await _ensureBusinessPartLoaded(key, { reset: false });
     }
     if (localBeforeLoad && businessKeys.length) _mergeLocalBusinessCollections(localBeforeLoad, businessKeys);
     if (payload.partial) {
@@ -26566,7 +26633,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v130';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v132';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

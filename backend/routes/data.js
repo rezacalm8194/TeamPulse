@@ -18,7 +18,12 @@ const {
   findTodoIdCollisions,
 } = require('../utils/todoAuditStore');
 const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
-const { mergeAndApplyDeletedItems } = require('../utils/deletedItems');
+const {
+  mergeAndApplyDeletedItems,
+  looksLikeDestructiveOverwrite,
+  looksLikeDestructiveCollectionOverwrite,
+  patchLooksDestructive,
+} = require('../utils/deletedItems');
 const { mergeOwnerTodosWithPrevious, pickMergedTodo } = require('../utils/todoMerge');
 const {
   staffEmail,
@@ -158,37 +163,6 @@ db.prepare(`
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_account_workspaces_owner ON account_workspaces(owner_account_id, created_at)").run();
 ensureTeamAccessSchema(db);
-
-const DATA_ARRAY_KEYS = [
-  'students',
-  'packages',
-  'payments',
-  'sessions',
-  'expenses',
-  'families',
-  'todos',
-  'staff',
-  'instructions',
-  'team_members',
-  'goals',
-  'habits'
-];
-
-function dataItemCount(data) {
-  if (!data || typeof data !== 'object') return 0;
-  return DATA_ARRAY_KEYS.reduce((sum, key) => {
-    const value = data[key];
-    return sum + (Array.isArray(value) ? value.length : 0);
-  }, 0);
-}
-
-function looksLikeDestructiveOverwrite(previousData, nextData) {
-  const previousCount = dataItemCount(previousData);
-  const nextCount = dataItemCount(nextData);
-  if (previousCount < 3) return false;
-  if (nextCount === 0) return true;
-  return previousCount >= 10 && nextCount < Math.ceil(previousCount * 0.1);
-}
 
 function sanitizeUserDataForStorage(data) {
   if (!data || typeof data !== 'object') return data;
@@ -469,8 +443,12 @@ async function persistWorkspaceDocumentLocked(req, res, {
   replaceBusinessCollections = [],
   patched = false,
 }) {
+  const resurrectPresent = !!force || !!(data && data._restored_at);
   data = sanitizeUserDataForStorage(data);
-  if (data) data._workspaceId = workspace.workspaceId;
+  if (data) {
+    delete data._restored_at;
+    data._workspaceId = workspace.workspaceId;
+  }
   let todoChanges = [];
   let savedEtag = null;
   if (existing) {
@@ -510,9 +488,16 @@ async function persistWorkspaceDocumentLocked(req, res, {
       const removedTodoIds = previousTodoIds.filter(id => !nextTodoIds.has(id));
       data._todoTombstones = mergeTodoTombstones(previousData, [...nextTodoIds], removedTodoIds);
     }
-    data = mergeAndApplyDeletedItems(previousData, data, { inferRemovals: !grant });
-    if (data && typeof data === 'object') delete data._deletedTodoIds;
-    if (!force && looksLikeDestructiveOverwrite(previousData, data)) {
+    data = mergeAndApplyDeletedItems(previousData, data, {
+      inferRemovals: !grant,
+      resurrectPresent,
+    });
+    if (data && typeof data === 'object') {
+      delete data._deletedTodoIds;
+      delete data._restored_at;
+    }
+    if (looksLikeDestructiveCollectionOverwrite(previousData, data) ||
+        (!force && looksLikeDestructiveOverwrite(previousData, data))) {
       return res.status(409).json({
         error: 'destructive_overwrite_blocked',
         message: 'Refusing to overwrite existing account data with an almost empty payload.'
@@ -642,6 +627,12 @@ async function handleDocumentDelta(req, res) {
       data = applyDocumentPatch(previousData, patch);
     }
     data._workspaceId = workspace.workspaceId;
+    if (patchLooksDestructive(previousData, patch)) {
+      return res.status(409).json({
+        error: 'destructive_overwrite_blocked',
+        message: 'Refusing to overwrite existing account data with an almost empty payload.'
+      });
+    }
     return persistWorkspaceDocument(req, res, {
       storageKey,
       workspace,

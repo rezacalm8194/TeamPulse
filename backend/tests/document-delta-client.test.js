@@ -89,12 +89,19 @@ test('knowledge items created on another device are merged even when local data 
 
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
   assert.match(appSource, /const localBeforeLoad = _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
-  assert.match(appSource, /preserveLocalBusiness/);
-  assert.match(appSource, /reset: !preserveLocalBusiness/);
+  assert.match(appSource, /function _collectionSyncDeleteBlocked\(/);
+  assert.match(appSource, /function _paginatedCollectionFullyLoaded\(/);
+  assert.match(appSource, /reset: false/);
+  assert.match(appSource, /if \(window\._tpLoadedParts\) window\._tpLoadedParts\.add\(collection\)/);
   assert.match(appSource, /target\[key\] = _mergeIdList\(target\[key\], serverVal\)/);
   assert.match(appSource, /'guide_categories','guide_items','case_forms','todos'/);
   assert.match(appSource, /localBeforeLoad\?\.case_forms\?\.length/);
   assert.match(appSource, /function _mergeLocalBusinessCollections\(/);
+  assert.match(appSource, /function _pruneTombstonesForPresentItems\(/);
+  assert.match(appSource, /resurrectLocal/);
+  assert.match(appSource, /while \(!_paginatedCollectionFullyLoaded\(key\) && pages < 100\)/);
   assert.match(appSource, /function _flushInteractiveSessionNoteSave\(/);
   assert.match(appSource, /baselineHash && baselineHash !== _isolationItemHash\(row\)/);
+  assert.match(appSource, /kept restored local snapshot while manual restore is pending/);
+  assert.doesNotMatch(appSource, /if \(!window\._tpLoadedParts\) window\._tpLoadedParts = new Set\(\);\s*window\._tpLoadedParts\.add\(collection\)/);
 });
