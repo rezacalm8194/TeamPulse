@@ -87,6 +87,7 @@ function _syncStaffPaymentExpense(payment) {
 }
 function _removeStaffPaymentExpense(payment) {
   if (!payment?.expense_id) return;
+  _recordDeletedItems('expenses', payment.expense_id);
   _db.expenses=(_db.expenses||[]).filter(e=>String(e.id)!==String(payment.expense_id));
 }
 function copyToClipboard(text, successMsg) {
@@ -1034,10 +1035,16 @@ function _applyLocalTodoDeletionsToIncoming(data) {
 }
 
 const _STUDENT_TOMBSTONE_RELATIONS = ['packages','payments','sessions','wallet_tx','reminders','topics','key_events'];
+const _STAFF_TOMBSTONE_RELATIONS = ['staff_payments','staff_reminders','staff_adjustments','staff_monthly','staff_role_entries'];
 
 function _idsRelatedToStudents(collection, studentIds) {
   const set = new Set((Array.isArray(studentIds) ? studentIds : [studentIds]).map(id => String(id)));
   return (_db[collection] || []).filter(row => set.has(String(row?.student_id))).map(row => row.id);
+}
+
+function _idsRelatedToStaff(collection, staffIds) {
+  const set = new Set((Array.isArray(staffIds) ? staffIds : [staffIds]).map(id => String(id)));
+  return (_db[collection] || []).filter(row => set.has(String(row?.staff_id))).map(row => row.id);
 }
 
 function _recordStudentAndRelatedDeletions(studentIds) {
@@ -1048,6 +1055,21 @@ function _recordStudentAndRelatedDeletions(studentIds) {
     _recordDeletedItems(collection, _idsRelatedToStudents(collection, ids));
   });
   _recordDeletedItems('students', ids);
+}
+
+function _recordStaffAndRelatedDeletions(staffIds) {
+  const ids = (Array.isArray(staffIds) ? staffIds : [staffIds])
+    .filter(id => id !== null && id !== undefined);
+  if (!ids.length) return;
+  (_db.staff_payments || []).forEach(payment => {
+    if (ids.some(id => String(payment?.staff_id) === String(id)) && payment?.expense_id) {
+      _recordDeletedItems('expenses', payment.expense_id);
+    }
+  });
+  _STAFF_TOMBSTONE_RELATIONS.forEach(collection => {
+    _recordDeletedItems(collection, _idsRelatedToStaff(collection, ids));
+  });
+  _recordDeletedItems('staff', ids);
 }
 
 function _pruneTombstonesForPresentItems(d) {
@@ -1066,8 +1088,10 @@ function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
   if (d._restored_at) _pruneTombstonesForPresentItems(d);
   const deleted = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
-  ['students','package_types','staff_roles','todos', ..._STUDENT_TOMBSTONE_RELATIONS].forEach(key => {
-    const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
+  Object.keys(deleted).forEach(key => {
+    const tombstones = deleted[key] && typeof deleted[key] === 'object' && !Array.isArray(deleted[key])
+      ? deleted[key]
+      : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
     d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
   });
@@ -2678,7 +2702,16 @@ window.api = {
       else if(rm===0&&er)_db.staff_reminders=_db.staff_reminders.filter(r=>r.staff_id!==s.id);
       _save(); return _P({ok:true});
     },
-    delete: (id)=>{ const payments=(_db.staff_payments||[]).filter(x=>x.staff_id===id);payments.forEach(_removeStaffPaymentExpense);_db.staff=_db.staff.filter(x=>x.id!==id);['staff_payments','staff_reminders','staff_adjustments','staff_monthly'].forEach(k=>{_db[k]=_db[k].filter(x=>x.staff_id!==id);}); _save(); return _P({ok:true}); },
+    delete: (id)=>{
+      const payments=(_db.staff_payments||[]).filter(x=>String(x.staff_id)===String(id));
+      _recordStaffAndRelatedDeletions(id);
+      payments.forEach(_removeStaffPaymentExpense);
+      _db.staff=_db.staff.filter(x=>x.id!==id);
+      ['staff_payments','staff_reminders','staff_adjustments','staff_monthly','staff_role_entries'].forEach(k=>{_db[k]=(_db[k]||[]).filter(x=>String(x.staff_id)!==String(id));});
+      _forceNextServerSync();
+      _save(true,{urgent:true});
+      return _P({ok:true});
+    },
     paySalary: (p)=>{
       const s=_db.staff.find(x=>x.id===p.staff_id); if(!s)return _P({ok:false});
       const[ty,tm]=_todayJalali();
@@ -2727,9 +2760,11 @@ window.api = {
       let monthly=pay.monthly_id!=null?_db.staff_monthly.find(m=>String(m.id)===String(pay.monthly_id)):null;
       if(!monthly&&String(pay.note||'').startsWith('حقوق ')) monthly=_db.staff_monthly.find(m=>m.staff_id===pay.staff_id&&m.paid&&m.paid_date===pay.date_jalali);
       if(monthly){monthly.paid=false;monthly.paid_date=null;}
+      _recordDeletedItems('staff_payments', id);
       _removeStaffPaymentExpense(pay);
       _db.staff_payments=_db.staff_payments.filter(x=>x.id!==id);
-      _save(); return _P({ok:true});
+      _forceNextServerSync();
+      _save(true,{urgent:true}); return _P({ok:true});
     },
   },
 
@@ -2745,7 +2780,7 @@ window.api = {
     },
     add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     update: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.staff_reminders=_db.staff_reminders.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    delete: (id)=>{ _recordDeletedItems('staff_reminders', id); _db.staff_reminders=_db.staff_reminders.filter(x=>x.id!==id); _forceNextServerSync(); _save(true,{urgent:true}); return _P({ok:true}); },
     markPaid: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){if(r.repeat_months>0){const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);const next=_addMonths(jy,jm,jd,r.repeat_months);r.due_date_jalali=_formatJalali(...next);r.done=false;r.notified_levels=[];}else r.done=true;_save();} return _P({ok:true}); },
   },
 
@@ -2753,7 +2788,7 @@ window.api = {
     getByStaff: (id)=>_P(_db.staff_adjustments.filter(a=>a.staff_id===id).reverse()),
     add: (p)=>{ _db.staff_adjustments.push({id:_nextId('staff_adjustments'),staff_id:p.staff_id,type:p.type,title:p.title||'',amount:p.amount||0,date_jalali:p.date,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     update: (p)=>{ const a=_db.staff_adjustments.find(x=>x.id===p.id); if(a){Object.assign(a,{type:p.type??a.type,title:p.title??a.title,amount:p.amount??a.amount,date_jalali:p.date??a.date_jalali,note:p.note??a.note});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.staff_adjustments=_db.staff_adjustments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    delete: (id)=>{ _recordDeletedItems('staff_adjustments', id); _db.staff_adjustments=_db.staff_adjustments.filter(x=>x.id!==id); _forceNextServerSync(); _save(true,{urgent:true}); return _P({ok:true}); },
   },
 
   staffMonthly: {
@@ -2805,9 +2840,11 @@ window.api = {
       const monthLabel=`حقوق ${['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'][m.jm-1]}`;
       const yearLabel=String(m.jy).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
       const linked=(_db.staff_payments||[]).find(p=>String(p.monthly_id)===String(m.id))||(_db.staff_payments||[]).find(p=>p.staff_id===m.staff_id&&String(p.note||'').includes(monthLabel)&&String(p.note||'').includes(yearLabel));
-      if(linked){_removeStaffPaymentExpense(linked);_db.staff_payments=_db.staff_payments.filter(p=>p.id!==linked.id);}
+      if(linked){_recordDeletedItems('staff_payments', linked.id);_removeStaffPaymentExpense(linked);_db.staff_payments=_db.staff_payments.filter(p=>p.id!==linked.id);}
+      _recordDeletedItems('staff_monthly', id);
       _db.staff_monthly=_db.staff_monthly.filter(x=>x.id!==id);
-      _save(); return _P({ok:true});
+      _forceNextServerSync();
+      _save(true,{urgent:true}); return _P({ok:true});
     },
     updateMonth: (p)=>{
       const m=_db.staff_monthly.find(x=>x.id===p.id); if(!m) return _P({ok:false});
@@ -24712,8 +24749,10 @@ function _addStaffRoleEntry(staffId) {
 
 function _deleteStaffRoleEntry(staffId, entryId) {
   if (!confirm('این ورودی حذف شود؟')) return;
+  _recordDeletedItems('staff_role_entries', entryId);
   _db.staff_role_entries = (_db.staff_role_entries||[]).filter(e => e.id !== entryId);
-  _save();
+  _forceNextServerSync();
+  _save(true,{urgent:true});
   renderStaffRolesPanel(staffId);
 }
 

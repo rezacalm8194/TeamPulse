@@ -7,6 +7,12 @@ const TOMBSTONE_COLLECTIONS = [
   'reminders',
   'topics',
   'key_events',
+  'staff',
+  'staff_payments',
+  'staff_reminders',
+  'staff_adjustments',
+  'staff_monthly',
+  'staff_role_entries',
 ];
 
 // These collections are served in pages of 200. A client that only loaded the
@@ -20,6 +26,14 @@ const PAGINATED_COLLECTIONS = [
   'reminders',
   'expenses',
   'wallet_tx',
+  // Staff is loaded as a workspace part, not a 200-row page. Treat it the same
+  // so an unloaded empty array is not inferred as "delete everyone".
+  'staff',
+  'staff_payments',
+  'staff_reminders',
+  'staff_adjustments',
+  'staff_monthly',
+  'staff_role_entries',
 ];
 
 const MAX_TOMBSTONES_PER_COLLECTION = 4000;

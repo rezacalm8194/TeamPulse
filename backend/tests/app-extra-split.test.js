@@ -35,6 +35,12 @@ test('first-session helpers stay in the core parse path', () => {
   assert.match(appSource, /function _todoRenderedListHtml\(/);
 });
 
+test('staff delete records tombstones so sync cannot resurrect people', () => {
+  assert.match(appSource, /function _recordStaffAndRelatedDeletions\(/);
+  assert.match(appSource, /_recordStaffAndRelatedDeletions\(id\)/);
+  assert.match(appSource, /_recordDeletedItems\('staff', ids\)/);
+});
+
 test('staff role rows all include add-item UI like bonus', () => {
   assert.match(extraSource, /function staffRoleRowHtml\(/);
   assert.match(extraSource, /class="role-row staff-items-row"/);
