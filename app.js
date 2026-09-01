@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp129';
+const TP_ASSET_V = 'tp130';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -19141,9 +19141,9 @@ function _createTodoOccurrenceRecord(t, status, completedAt = null) {
   return record;
 }
 
-function _setRecurringTodoOnOrAfterToday(t) {
+function _todoCatchUpDateOnOrAfterToday(t) {
   const today = _todayJalaliStr();
-  if (t.repeat === 'custom_weekdays' && t.weekdays) {
+  if (t?.repeat === 'custom_weekdays' && t.weekdays) {
     const days = String(t.weekdays).split(',');
     const dayMap = {sat:6, sun:0, mon:1, tue:2, wed:3, thu:4, fri:5};
     const parsed = _jalaliParse(today);
@@ -19154,18 +19154,18 @@ function _setRecurringTodoOnOrAfterToday(t) {
         const [gy, gm, gdayNum] = jalaliToGregorian(candidate[0], candidate[1], candidate[2]);
         const jsDay = new Date(gy, gm - 1, gdayNum).getDay();
         const dayName = Object.keys(dayMap).find(k => dayMap[k] === jsDay);
-        if (dayName && days.includes(dayName)) {
-          t.date_jalali = _formatJalali(...candidate);
-          t.scheduled_date = t.date_jalali;
-          t.scheduledDate = t.date_jalali;
-          return;
-        }
+        if (dayName && days.includes(dayName)) return _formatJalali(...candidate);
       }
     }
   }
-  t.date_jalali = today;
-  t.scheduled_date = today;
-  t.scheduledDate = today;
+  return today;
+}
+
+function _setRecurringTodoOnOrAfterToday(t) {
+  const date = _todoCatchUpDateOnOrAfterToday(t);
+  t.date_jalali = date;
+  t.scheduled_date = date;
+  t.scheduledDate = date;
 }
 
 function _todoInstantJalaliKey(iso) {
@@ -19213,9 +19213,9 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   const scheduledKey = scheduledDate ? _jalaliKey(scheduledDate) : 0;
   const todayKey = _jalaliToday();
   if (scheduledKey && scheduledKey < todayKey) {
-    // نوبت عقب‌افتاده بسته شد؛ نوبت باز بعدی از فردای همان روز تیک است
-    // تا همان شب روی «امروز» نماند و صبح بعد دوباره عقب‌افتاده نشود.
-    _advanceTodoDate(t, _todayJalaliStr());
+    // نوبت عقب‌افتاده بسته شد؛ نوبت باز بعدی همان امروز است
+    // تا کار تکراری از برنامه امروز جا نماند و به فردا نپرد.
+    _setRecurringTodoOnOrAfterToday(t);
   } else {
     _advanceTodoDate(t, scheduledDate);
   }
@@ -19235,6 +19235,7 @@ function _calcNextRepeatDate(t) {
   if (!t.repeat || t.repeat === 'none') return null;
   const todayKey = _jalaliToday();
   const taskKey = t.date_jalali ? _jalaliKey(t.date_jalali) : 0;
+  if (taskKey && taskKey < todayKey) return _todoCatchUpDateOnOrAfterToday(t);
   const baseKey = Math.max(todayKey, taskKey);
   let [jy, jm, jd] = baseKey === taskKey && t.date_jalali
     ? _jalaliParse(t.date_jalali)
@@ -21908,7 +21909,8 @@ function renderTodoList(options = {}) {
   const futureTodos    = todos.filter(t => t.date_jalali && _jalaliKey(t.date_jalali) > _afterKey)
     .sort((a,b) => _jalaliKey(a.date_jalali)-_jalaliKey(b.date_jalali));
 
-  // کارهای repeat عقب‌افتاده → نمایش "دوره بعدی" در فردا/آینده
+  // کارهای repeat عقب‌افتاده: پیش‌نمایش نوبت بعدی فقط اگر بعد از امروز باشد.
+  // نوبت امروز همان catch-up است و نباید جداگانه به «فردا» برود.
   const _repeatPreviewItems = [];
   overdueTodos.filter(t => t.repeat && t.repeat !== 'none' && !t.done).forEach(t => {
     const nextDate = _calcNextRepeatDate(t);
@@ -26564,7 +26566,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v129';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v130';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {

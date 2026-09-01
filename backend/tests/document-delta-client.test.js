@@ -23,10 +23,13 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);
   assert.match(appSource, /forceStaffLive/);
+  assert.match(appSource, /function _todoCatchUpDateOnOrAfterToday\(/);
   assert.match(appSource, /function _setRecurringTodoOnOrAfterToday\(/);
   assert.match(appSource, /_setRecurringTodoOnOrAfterToday\(t\);/);
-  assert.match(appSource, /_advanceTodoDate\(t, _todayJalaliStr\(\)\)/);
+  assert.match(appSource, /if \(scheduledKey && scheduledKey < todayKey\) \{[\s\S]*?_setRecurringTodoOnOrAfterToday\(t\);/);
+  assert.doesNotMatch(appSource, /_advanceTodoDate\(t, _todayJalaliStr\(\)\)/);
   assert.match(appSource, /function _todoHasCatchUpOnScheduledDay\(/);
+  assert.match(appSource, /if \(taskKey && taskKey < todayKey\) return _todoCatchUpDateOnOrAfterToday\(t\)/);
   assert.match(appSource, /keepalive: true/);
 });
 
