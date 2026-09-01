@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp128';
+const TP_ASSET_V = 'tp129';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3887,6 +3887,7 @@ const _CORE_DOCUMENT_PARTS = [
   'habits', 'habit_logs', 'staff', 'team_members',
   'session_order', 'package_types', 'staff_roles', 'staff_role_entries'
 ];
+const _KNOWLEDGE_SESSION_REFRESH_KEYS = new Set(['instructions', 'guide_categories', 'guide_items']);
 const BUSINESS_PAGINATED_KEYS = Object.freeze([
   'students', 'sessions', 'payments', 'packages', 'families', 'reminders', 'expenses', 'wallet_tx',
 ]);
@@ -4024,8 +4025,15 @@ async function _ensureDocumentParts(keys) {
   for (const key of BUSINESS_PAGINATED_KEYS) {
     if (requested.includes(key)) await _ensureBusinessPartLoaded(key);
   }
-  const needed = requested.filter(key =>
-    key !== 'todos' && !BUSINESS_PAGINATED_KEYS.includes(key) && !_tpPartLoaded(key));
+  window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+  const needed = requested.filter(key => {
+    if (key === 'todos' || BUSINESS_PAGINATED_KEYS.includes(key)) return false;
+    if (!_tpPartLoaded(key)) return true;
+    // Knowledge items created on another device must be pulled even when this
+    // device still thinks the cached instructions part is already loaded.
+    if (_KNOWLEDGE_SESSION_REFRESH_KEYS.has(key) && !window._tpSessionFetchedParts.has(key)) return true;
+    return false;
+  });
   if (!needed.length) return true;
   if (!_sbUser || !_sbSession?.token) return false;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
@@ -4035,6 +4043,7 @@ async function _ensureDocumentParts(keys) {
     if (!res.ok) return false;
     const payload = await res.json();
     if (!payload?.data) return false;
+    const partsWereFullyLoaded = !window._tpLoadedParts;
     needed.forEach(key => {
       if (!Object.prototype.hasOwnProperty.call(payload.data, key)) return;
       const serverVal = payload.data[key];
@@ -4043,8 +4052,11 @@ async function _ensureDocumentParts(keys) {
       } else {
         _db[key] = serverVal;
       }
-      if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
-      window._tpLoadedParts.add(key);
+      if (!partsWereFullyLoaded) {
+        if (!window._tpLoadedParts) window._tpLoadedParts = new Set();
+        window._tpLoadedParts.add(key);
+      }
+      window._tpSessionFetchedParts.add(key);
     });
     if (Array.isArray(payload.available_parts)) window._tpAvailableParts = new Set(payload.available_parts);
     _persistPartLoadState();
@@ -17193,10 +17205,59 @@ function _syncItemTime(item) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function _mergeServerTodosIntoLocal(serverData) {
-  if (!serverData || !Array.isArray(serverData.todos)) return false;
-  if (!_db.todos) _db.todos = [];
+function _mergeServerLoadedCollectionsIntoLocal(serverData) {
+  if (!serverData || typeof serverData !== 'object' || !_db) return false;
+  const deleted = (_db._deletedItems && typeof _db._deletedItems === 'object') ? _db._deletedItems : {};
   let changed = false;
+  Object.keys(serverData).forEach(key => {
+    if (key === 'todos') return;
+    if (_SYNC_SKIP_KEYS.has(key)) return;
+    const remoteList = serverData[key];
+    if (!Array.isArray(remoteList)) return;
+    if (!_SYNC_ID_COLLECTION_KEYS.has(key) && !_isSyncIdCollection(key, remoteList)) return;
+    const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
+    const remote = remoteList.filter(item => {
+      if (!item || item.id == null) return true;
+      return !Object.prototype.hasOwnProperty.call(tombstones, String(item.id));
+    });
+    const merged = _mergeIdList(_db[key], remote);
+    const localList = Array.isArray(_db[key]) ? _db[key] : [];
+    if (merged.length !== localList.length) {
+      _db[key] = merged;
+      changed = true;
+      return;
+    }
+    const localById = new Map(localList.map(item => [String(item?.id), item]));
+    for (const item of merged) {
+      if (!item || item.id == null) continue;
+      const local = localById.get(String(item.id));
+      if (!local || (typeof _isolationItemHash === 'function' && _isolationItemHash(local) !== _isolationItemHash(item))) {
+        _db[key] = merged;
+        changed = true;
+        return;
+      }
+    }
+  });
+  return changed;
+}
+
+function _persistMergedServerDocument(serverData) {
+  _db._lastSaved = Math.max(_db._lastSaved || 0, serverData?._lastSaved || 0);
+  _migrate(_db);
+  try {
+    const key = window._activeDBKey || DB_KEY;
+    _persistDatabaseSnapshot(key, _db);
+  } catch(e) {}
+}
+
+function _mergeServerTodosIntoLocal(serverData) {
+  if (!serverData || typeof serverData !== 'object') return false;
+  let changed = _mergeServerLoadedCollectionsIntoLocal(serverData);
+  if (!Array.isArray(serverData.todos)) {
+    if (changed) _persistMergedServerDocument(serverData);
+    return changed;
+  }
+  if (!_db.todos) _db.todos = [];
   const locallyDeleted = _localDeletedTodoIds();
   if (locallyDeleted.size) {
     const before = (_db.todos || []).length;
@@ -17267,14 +17328,7 @@ function _mergeServerTodosIntoLocal(serverData) {
       changed = true;
     }
   });
-  if (changed) {
-    _db._lastSaved = Math.max(_db._lastSaved || 0, serverData._lastSaved || 0);
-    _migrate(_db);
-    try {
-      const key = window._activeDBKey || DB_KEY;
-      _persistDatabaseSnapshot(key, _db);
-    } catch(e) {}
-  }
+  if (changed) _persistMergedServerDocument(serverData);
   return changed;
 }
 
@@ -26510,7 +26564,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v128';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v129';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
