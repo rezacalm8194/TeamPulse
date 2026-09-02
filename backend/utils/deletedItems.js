@@ -181,6 +181,29 @@ function looksLikeDestructiveOverwrite(previousData, nextData) {
   return previousCount >= 10 && nextCount < Math.ceil(previousCount * 0.1);
 }
 
+function stampPatchDeletesAsTombstones(data, patch) {
+  if (!data || typeof data !== 'object') return data;
+  const collections = patch?.collections && typeof patch.collections === 'object' ? patch.collections : {};
+  const now = new Date().toISOString();
+  data._deletedItems = data._deletedItems && typeof data._deletedItems === 'object' && !Array.isArray(data._deletedItems)
+    ? data._deletedItems
+    : {};
+  Object.entries(collections).forEach(([key, change]) => {
+    const deletes = Array.isArray(change?.delete) ? change.delete : [];
+    if (!deletes.length) return;
+    const col = data._deletedItems[key] && typeof data._deletedItems[key] === 'object' && !Array.isArray(data._deletedItems[key])
+      ? data._deletedItems[key]
+      : {};
+    deletes.forEach(id => {
+      if (id == null || id === '') return;
+      const sid = String(id);
+      if (!col[sid]) col[sid] = now;
+    });
+    data._deletedItems[key] = col;
+  });
+  return data;
+}
+
 function patchLooksDestructive(previousData, patch) {
   const collections = patch?.collections && typeof patch.collections === 'object' ? patch.collections : {};
   return Object.keys(collections).some(key => {
@@ -197,6 +220,7 @@ module.exports = {
   PAGINATED_COLLECTIONS,
   MAX_TOMBSTONES_PER_COLLECTION,
   mergeAndApplyDeletedItems,
+  stampPatchDeletesAsTombstones,
   retainUnsentPaginatedRows,
   filterCollectionByTombstones,
   looksLikeDestructiveOverwrite,
