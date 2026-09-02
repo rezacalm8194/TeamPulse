@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   mergeAndApplyDeletedItems,
+  stampPatchDeletesAsTombstones,
   looksLikeDestructiveOverwrite,
   looksLikeDestructiveCollectionOverwrite,
   patchLooksDestructive,
@@ -31,6 +32,21 @@ test('keeps deleted staff out even when a stale client sends them back', () => {
   assert.deepEqual(next.staff_payments, [{ id: 20, staff_id: 2 }]);
   assert.equal(next._deletedItems.staff['1'], '2026-01-01T00:00:00.000Z');
   assert.equal(next._deletedItems.staff_payments['10'], '2026-01-01T00:00:00.000Z');
+});
+
+test('delta staff deletes stay gone even if the client omitted _deletedItems', () => {
+  const previous = {
+    staff: [{ id: 1, name: 'gone' }, { id: 2, name: 'kept' }],
+  };
+  const patched = {
+    staff: [{ id: 2, name: 'kept' }],
+  };
+  stampPatchDeletesAsTombstones(patched, {
+    collections: { staff: { upsert: [], delete: [1] } },
+  });
+  const next = mergeAndApplyDeletedItems(previous, patched);
+  assert.deepEqual(next.staff, [{ id: 2, name: 'kept' }]);
+  assert.ok(next._deletedItems.staff['1']);
 });
 
 test('an unloaded empty staff part does not tombstone existing personnel', () => {

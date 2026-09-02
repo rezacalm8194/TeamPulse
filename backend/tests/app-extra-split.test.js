@@ -39,6 +39,9 @@ test('staff delete records tombstones so sync cannot resurrect people', () => {
   assert.match(appSource, /function _recordStaffAndRelatedDeletions\(/);
   assert.match(appSource, /_recordStaffAndRelatedDeletions\(id\)/);
   assert.match(appSource, /_recordDeletedItems\('staff', ids\)/);
+  assert.match(appSource, /_db\.staff=\(_db\.staff\|\|\[\]\)\.filter\(x=>String\(x\.id\)!==String\(id\)\)/);
+  assert.match(appSource, /scalars\._deletedItems = data\._deletedItems/);
+  assert.match(appSource, /function _mergeDeletedItemMaps\(/);
 });
 
 test('staff role rows all include add-item UI like bonus', () => {

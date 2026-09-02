@@ -20,6 +20,7 @@ const {
 const { applyDocumentPatch, candidateTodosFromPatch } = require('../utils/documentPatch');
 const {
   mergeAndApplyDeletedItems,
+  stampPatchDeletesAsTombstones,
   looksLikeDestructiveOverwrite,
   looksLikeDestructiveCollectionOverwrite,
   patchLooksDestructive,
@@ -625,6 +626,7 @@ async function handleDocumentDelta(req, res) {
       data._lastSaved = patch.scalars?._lastSaved || previousData?._lastSaved;
     } else {
       data = applyDocumentPatch(previousData, patch);
+      stampPatchDeletesAsTombstones(data, patch);
     }
     data._workspaceId = workspace.workspaceId;
     if (patchLooksDestructive(previousData, patch)) {

@@ -1749,6 +1749,10 @@ function _buildServerSyncPatch(data) {
     changedItems += del.length;
     baselineItems += del.length;
   });
+  const hasDeletes = Object.values(collections).some(change => Array.isArray(change?.delete) && change.delete.length);
+  if (hasDeletes && data && typeof data._deletedItems === 'object' && !Array.isArray(data._deletedItems)) {
+    scalars._deletedItems = data._deletedItems;
+  }
   if (!Object.keys(collections).length && !Object.keys(scalars).length) return null;
   return { collections, scalars, changedItems, baselineItems };
 }
@@ -2706,9 +2710,9 @@ window.api = {
       const payments=(_db.staff_payments||[]).filter(x=>String(x.staff_id)===String(id));
       _recordStaffAndRelatedDeletions(id);
       payments.forEach(_removeStaffPaymentExpense);
-      _db.staff=_db.staff.filter(x=>x.id!==id);
+      _db.staff=(_db.staff||[]).filter(x=>String(x.id)!==String(id));
       ['staff_payments','staff_reminders','staff_adjustments','staff_monthly','staff_role_entries'].forEach(k=>{_db[k]=(_db[k]||[]).filter(x=>String(x.staff_id)!==String(id));});
-      _forceNextServerSync();
+      _applyDeletedItemTombstones(_db);
       _save(true,{urgent:true});
       return _P({ok:true});
     },
@@ -4091,12 +4095,34 @@ function _documentHasUnloadedParts() {
   }
   return false;
 }
+function _mergeDeletedItemMaps(previous, incoming) {
+  const merged = {};
+  const keys = new Set([
+    ...Object.keys(previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {}),
+    ...Object.keys(incoming && typeof incoming === 'object' && !Array.isArray(incoming) ? incoming : {}),
+  ]);
+  keys.forEach(key => {
+    const prevCol = previous?.[key] && typeof previous[key] === 'object' && !Array.isArray(previous[key]) ? previous[key] : {};
+    const nextCol = incoming?.[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key]) ? incoming[key] : {};
+    const col = { ...prevCol };
+    Object.entries(nextCol).forEach(([id, deletedAt]) => {
+      const prevAt = col[id] || '';
+      if (!prevAt || String(deletedAt || '') >= String(prevAt)) col[id] = deletedAt || prevAt;
+    });
+    merged[key] = col;
+  });
+  return merged;
+}
 function _overlayPartialServerData(target, payload) {
   const src = payload?.data;
   if (!src || typeof src !== 'object') return target;
   Object.keys(src).forEach(key => {
     if (_SYNC_SKIP_KEYS.has(key)) return;
     if (Array.isArray(src[key]) || _SYNC_ID_COLLECTION_KEYS.has(key)) return;
+    if (key === '_deletedItems') {
+      target._deletedItems = _mergeDeletedItemMaps(target._deletedItems, src._deletedItems);
+      return;
+    }
     target[key] = src[key];
   });
   (payload.loaded_parts || []).forEach(key => {
@@ -4110,7 +4136,7 @@ function _overlayPartialServerData(target, payload) {
       target[key] = serverVal;
     }
   });
-  return target;
+  return _applyDeletedItemTombstones(target);
 }
 function _mergeLoadedPartHashes(keys) {
   const hashes = _readServerSyncHashes();
@@ -4182,6 +4208,7 @@ async function _ensureDocumentParts(keys) {
     if (Array.isArray(payload.available_parts)) window._tpAvailableParts = new Set(payload.available_parts);
     _persistPartLoadState();
     _mergeLoadedPartHashes(needed);
+    _applyDeletedItemTombstones(_db);
     _migrate(_db);
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     return true;
@@ -17328,11 +17355,13 @@ function _mergeServerLoadedCollectionsIntoLocal(serverData) {
     if (!Array.isArray(remoteList)) return;
     if (!_SYNC_ID_COLLECTION_KEYS.has(key) && !_isSyncIdCollection(key, remoteList)) return;
     const tombstones = deleted[key] && typeof deleted[key] === 'object' ? deleted[key] : {};
-    const remote = remoteList.filter(item => {
+    const keep = item => {
       if (!item || item.id == null) return true;
       return !Object.prototype.hasOwnProperty.call(tombstones, String(item.id));
-    });
-    const merged = _mergeIdList(_db[key], remote);
+    };
+    const remote = remoteList.filter(keep);
+    const localKept = (Array.isArray(_db[key]) ? _db[key] : []).filter(keep);
+    const merged = _mergeIdList(localKept, remote);
     const localList = Array.isArray(_db[key]) ? _db[key] : [];
     if (merged.length !== localList.length) {
       _db[key] = merged;
