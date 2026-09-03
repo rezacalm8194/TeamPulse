@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp149';
+const TP_ASSET_V = 'tp151';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1076,6 +1076,28 @@ function _pruneTombstonesForPresentItems(d) {
   });
 }
 
+function _collectionLooksTruncatedRelativeToLocal(localCount, otherCount) {
+  const local = Number(localCount || 0);
+  const other = Number(otherCount || 0);
+  if (local < 20 || other >= local) return false;
+  const pageSize = (typeof BUSINESS_SERVER_PAGE_SIZE === 'number' && BUSINESS_SERVER_PAGE_SIZE > 0)
+    ? BUSINESS_SERVER_PAGE_SIZE
+    : 200;
+  const dropped = local - other;
+  if (local >= pageSize && other <= pageSize + 5 && dropped >= 15) return true;
+  return other < Math.ceil(local * 0.85) && dropped >= 15;
+}
+function _serverPageTotalForKey(key) {
+  if (key === 'todos') return Number(window._tpTodoPaging?.stats?.total || 0);
+  if (typeof _businessPagingState === 'function') return Number(_businessPagingState(key)?.serverTotal || 0);
+  return 0;
+}
+function _tombstoneStripWouldTruncate(list, tombstones) {
+  if (!Array.isArray(list) || list.length < 20) return false;
+  if (!tombstones || typeof tombstones !== 'object' || Array.isArray(tombstones)) return false;
+  const kept = list.filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
+  return _collectionLooksTruncatedRelativeToLocal(list.length, kept.length);
+}
 function _applyDeletedItemTombstones(d) {
   if (!d || typeof d !== 'object') return d;
   if (d._restored_at) _pruneTombstonesForPresentItems(d);
@@ -1085,6 +1107,23 @@ function _applyDeletedItemTombstones(d) {
       ? deleted[key]
       : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
+    const serverTotal = _serverPageTotalForKey(key);
+    if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(d[key].length, serverTotal)) {
+      (d[key] || []).forEach(item => {
+        if (item && item.id != null) delete tombstones[String(item.id)];
+      });
+      return;
+    }
+    if (_tombstoneStripWouldTruncate(d[key], tombstones)) {
+      (d[key] || []).forEach(item => {
+        if (item && item.id != null) delete tombstones[String(item.id)];
+      });
+      return;
+    }
+    if (typeof _isPaginatedSyncKey === 'function' && _isPaginatedSyncKey(key) &&
+        typeof _paginatedCollectionFullyLoaded === 'function' && !_paginatedCollectionFullyLoaded(key)) {
+      return;
+    }
     d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
   });
   return d;
@@ -4066,6 +4105,7 @@ function _paginatedCollectionFullyLoaded(key) {
     const todoTotal = Number(window._tpTodoPaging?.stats?.total || 0);
     const localTodos = Array.isArray(_db?.todos) ? _db.todos.length : 0;
     if (todoTotal > 0 && localTodos < todoTotal) return false;
+    if (todoTotal > 0 && _collectionLooksTruncatedRelativeToLocal(localTodos, todoTotal)) return false;
     if (!window._tpLoadedParts) return true;
     return !!(active.done && archived.done);
   }
@@ -4074,6 +4114,7 @@ function _paginatedCollectionFullyLoaded(key) {
   const serverTotal = Number(paging.serverTotal || 0);
   const localCount = Array.isArray(_db?.[key]) ? _db[key].length : 0;
   if (serverTotal > 0 && localCount < serverTotal) return false;
+  if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(localCount, serverTotal)) return false;
   if (!window._tpLoadedParts) return true;
   return !!(paging.done && !paging.search);
 }
@@ -4125,7 +4166,25 @@ function _overlayPartialServerData(target, payload) {
     if (_SYNC_SKIP_KEYS.has(key)) return;
     if (Array.isArray(src[key]) || _SYNC_ID_COLLECTION_KEYS.has(key)) return;
     if (key === '_deletedItems') {
-      target._deletedItems = _mergeDeletedItemMaps(target._deletedItems, src._deletedItems);
+      const mergedDeletes = _mergeDeletedItemMaps(target._deletedItems, src._deletedItems);
+      const guarded = [...(typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : []), 'todos'];
+      guarded.forEach(col => {
+        const localCol = target._deletedItems?.[col] && typeof target._deletedItems[col] === 'object' && !Array.isArray(target._deletedItems[col])
+          ? { ...target._deletedItems[col] }
+          : {};
+        if (_tombstoneStripWouldTruncate(target[col], mergedDeletes[col])) {
+          mergedDeletes[col] = localCol;
+          return;
+        }
+        const serverTotal = _serverPageTotalForKey(col);
+        if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(
+          Array.isArray(target[col]) ? target[col].length : 0,
+          serverTotal
+        )) {
+          mergedDeletes[col] = localCol;
+        }
+      });
+      target._deletedItems = mergedDeletes;
       return;
     }
     target[key] = src[key];
@@ -4183,11 +4242,10 @@ function _syncCollectionCount(data, key) {
 function _incomingServerDocumentLooksTruncated(localData, serverData) {
   if (!localData || !serverData) return false;
   const keys = [...(typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : []), 'todos', 'staff', 'instructions'];
-  return keys.some(key => {
-    const localCount = _syncCollectionCount(localData, key);
-    const serverCount = _syncCollectionCount(serverData, key);
-    return localCount >= 20 && serverCount < Math.ceil(localCount * 0.5);
-  });
+  return keys.some(key => _collectionLooksTruncatedRelativeToLocal(
+    _syncCollectionCount(localData, key),
+    _syncCollectionCount(serverData, key)
+  ));
 }
 function _localCollectionsExceedServer(status) {
   const totals = status?.collections;
@@ -4196,11 +4254,11 @@ function _localCollectionsExceedServer(status) {
   for (const key of keys) {
     const serverTotal = Number(totals[key] || 0);
     const localCount = _syncCollectionCount(_db, key);
-    if (localCount >= 20 && serverTotal > 0 && serverTotal < Math.ceil(localCount * 0.5)) return true;
+    if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(localCount, serverTotal)) return true;
   }
   const todoTotal = Number(totals.todos || 0);
   const localTodos = _syncCollectionCount(_db, 'todos');
-  return localTodos >= 20 && todoTotal > 0 && todoTotal < Math.ceil(localTodos * 0.5);
+  return todoTotal > 0 && _collectionLooksTruncatedRelativeToLocal(localTodos, todoTotal);
 }
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
@@ -16545,6 +16603,8 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     const localIds = new Set(localArr.filter(item => item && item.id != null).map(item => String(item.id)));
     if (resurrectLocal) {
       localIds.forEach(id => { delete tombstones[id]; });
+    } else if (_tombstoneStripWouldTruncate(localArr, tombstones)) {
+      localIds.forEach(id => { delete tombstones[id]; });
     }
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
       .filter(item => {
@@ -17544,10 +17604,27 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     if (res.status === 409 && responseData?.error === 'sync_conflict' && responseData.data) {
       if (conflictAttempt < 4) {
         const localPending = _cloneData(_db);
+        if (_incomingServerDocumentLooksTruncated(localPending, responseData.data)) {
+          window._serverDataEtag = responseData.etag || window._serverDataEtag || null;
+          _markServerSyncPending('conflict-truncated-ignored');
+          _forceNextServerSync();
+          console.warn('[TeamPulse] ignored truncated sync_conflict payload');
+          return res;
+        }
         const serverBaseline = _cloneData(responseData.data);
         _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data, { teamSafe: !!teamSession });
         _mergeServerTodosIntoLocal(serverBaseline);
         _migrate(_db);
+        if (_incomingServerDocumentLooksTruncated(localPending, _db)) {
+          _db = localPending;
+          _migrate(_db);
+          window._serverDataEtag = responseData.etag || window._serverDataEtag || null;
+          try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+          _markServerSyncPending('conflict-truncated-ignored');
+          _forceNextServerSync();
+          console.warn('[TeamPulse] reverted truncated sync_conflict merge');
+          return res;
+        }
         window._serverDataEtag = responseData.etag || null;
         _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
         try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
@@ -17928,6 +18005,15 @@ async function _loadFromServer() {
         teamSafe: !!teamSession,
       });
       _migrate(_db);
+      if (_incomingServerDocumentLooksTruncated(localBeforeLoad, _db)) {
+        _db = localBeforeLoad;
+        _migrate(_db);
+        window._remoteServerDocumentChanged = false;
+        _forceNextServerSync();
+        _ensurePendingServerSync(50);
+        console.warn('[TeamPulse] ignored truncated adopt and kept local data');
+        return false;
+      }
       const persistKey = window._activeDBKey || (teamSession ? _teamActiveDBKey() : DB_KEY);
       try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
       if (incomingEtag) window._serverDataEtag = incomingEtag;
@@ -18001,6 +18087,10 @@ async function _loadFromServer() {
         return true;
       }
       if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) return false;
+      if (_incomingServerDocumentLooksTruncated(localBeforeLoad, data)) {
+        console.warn('[TeamPulse] skipped truncated team owner replace');
+        return false;
+      }
       _db = data;
       _migrate(_db);
       const key = window._activeDBKey || _teamActiveDBKey();
@@ -27114,7 +27204,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v149';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v151';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
