@@ -25,6 +25,16 @@ test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /'packages', 'families', 'reminders', 'expenses', 'wallet_tx'/);
 });
 
+test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {
+  const extra = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
+  assert.match(app, /async function _ensureCompleteBusinessParts\(/);
+  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'payments'\]\)/);
+  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'reminders'\]\)/);
+  assert.match(extra, /await _ensureCompleteBusinessParts\(\[\s*'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'/);
+  const dashboardParts = app.match(/dashboard:\s*\[([^\]]+)\]/)?.[1] || '';
+  assert.match(dashboardParts, /'reminders'/);
+});
+
 test('todo archive and show-more can fetch additional server pages', () => {
   assert.match(app, /function _loadMoreTodos\(/);
   assert.match(app, /function _loadMoreTodoArchive\(/);
@@ -38,13 +48,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 6 client assets are consistently bumped to tp138', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp138'/);
-  assert.match(app, /team-pulse-static-v138/);
-  assert.doesNotMatch(html, /tp137/);
-  assert.match(html, /app\.js\?v=tp138/);
-  assert.match(sw, /team-pulse-static-v138/);
-  assert.doesNotMatch(sw, /tp137/);
+test('client assets are consistently bumped to tp141', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp141'/);
+  assert.match(app, /team-pulse-static-v141/);
+  assert.match(html, /app\.js\?v=tp141/);
+  assert.match(sw, /team-pulse-static-v141/);
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
