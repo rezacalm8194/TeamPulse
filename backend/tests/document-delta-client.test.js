@@ -123,13 +123,17 @@ test('sign-in waits for the authoritative etag before sending a document delta',
 
 test('manual backup restore compresses before chunking and retries server confirmation', () => {
   assert.match(appSource, /async function _syncManualRestoreWithRetry\(/);
-  assert.match(appSource, /const syncRes = await _syncManualRestoreWithRetry\(\)/);
+  assert.match(appSource, /await _syncManualRestoreWithRetry\(\)/);
   assert.match(appSource, /const encodedRequest = await _compressedJsonRequestBody\(latestPayload\)/);
   assert.match(appSource, /if \(encodedSize > 700 \* 1024\)/);
   assert.match(appSource, /directResponse\.status === 413/);
-  assert.match(appSource, /در حال ارسال پشتیبان به سرور/);
+  assert.match(appSource, /title:'در حال ارسال پشتیبان'/);
   assert.match(appSource, /const concurrency = 3/);
   assert.match(appSource, /Promise\.all\(indexes\.map\(sendChunk\)\)/);
+  assert.match(appSource, /let successfulResult = null/);
+  assert.match(appSource, /return result \|\| successfulResult/);
+  assert.match(appSource, /function _backupProgressUpdate\(/);
+  assert.match(appSource, /function _backupProgressFinish\(/);
 });
 
 test('downloaded backups are gzip compressed while legacy json remains importable', () => {

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp144';
+const TP_ASSET_V = 'tp145';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3009,12 +3009,8 @@ function _importFile() {
         _save(false);
         // بازیابی session
         if (savedSession) localStorage.setItem('tp_session', savedSession);
-        const syncRes = await _syncManualRestoreWithRetry();
-        if (syncRes && syncRes.ok) {
-          showToast('پشتیبان وارد شد ✓ — در حال تثبیت روی سرور','success');
-        } else if (_sbUser && _sbSession?.token) {
-          showToast('پشتیبان وارد شد؛ سرور فعلاً تأیید نکرد، نسخه محلی محافظت شد','error');
-        } else {
+        await _syncManualRestoreWithRetry();
+        if (!_sbUser || !_sbSession?.token) {
           showToast('پشتیبان وارد شد ✓','success');
         }
         // بجای reload کامل، فقط re-render کن
@@ -5476,6 +5472,34 @@ function showToast(msg, type = '') {
   t.className = 'toast show' + (type ? ' ' + type : '');
   clearTimeout(t._t);
   t._t = setTimeout(() => t.classList.remove('show'), 2800);
+}
+function _backupProgressUpdate({ percent = null, title, detail = '', state = 'uploading' } = {}) {
+  let card = document.getElementById('backup-progress-card');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'backup-progress-card';
+    card.className = 'backup-progress-card';
+    card.innerHTML = `<div class="backup-progress-head"><span class="backup-progress-icon">↑</span><div class="backup-progress-copy"><b></b><small></small></div><strong></strong></div><div class="backup-progress-track"><i></i></div>`;
+    document.body.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('show'));
+  }
+  card.className = `backup-progress-card show ${state}`;
+  card.querySelector('b').textContent = title || 'در حال تثبیت پشتیبان';
+  card.querySelector('small').textContent = detail;
+  const value = percent == null ? null : Math.max(0, Math.min(100, Number(percent) || 0));
+  card.querySelector('strong').textContent = value == null ? '' : `${fa(Math.round(value))}٪`;
+  const bar = card.querySelector('i');
+  bar.style.width = value == null ? '38%' : `${value}%`;
+  card.classList.toggle('indeterminate', value == null);
+  return card;
+}
+function _backupProgressFinish(ok, detail = '') {
+  const card = _backupProgressUpdate({ percent:100, title:ok ? 'پشتیبان با موفقیت روی سرور ثبت شد' : 'تأیید سرور کامل نشد', detail, state:ok ? 'success' : 'error' });
+  clearTimeout(card._removeTimer);
+  card._removeTimer = setTimeout(() => {
+    card.classList.remove('show');
+    setTimeout(() => card.remove(), 300);
+  }, ok ? 3500 : 7000);
 }
 function balanceHtml(balance, isSupplier) {
   if (isSupplier) {
@@ -16016,7 +16040,7 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
     });
     completed += 1;
     if (window._manualRestoreSyncActive) {
-      showToast(`در حال ارسال پشتیبان به سرور… ${fa(Math.round(completed / total * 100))}٪`);
+      _backupProgressUpdate({ percent:Math.round(completed / total * 92), title:'در حال ارسال پشتیبان', detail:`ارسال امن بخش ${fa(completed)} از ${fa(total)}` });
     }
     if (!response.ok) throw response;
     let body = null;
@@ -16036,7 +16060,7 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
       status:503, headers:{ 'Content-Type':'application/json' }
     });
   }
-  if (window._manualRestoreSyncActive) showToast('ارسال کامل شد؛ در حال تأیید نهایی سرور…');
+  if (window._manualRestoreSyncActive) _backupProgressUpdate({ percent:96, title:'ارسال کامل شد', detail:'در حال ثبت و تأیید نهایی روی سرور…', state:'verifying' });
   return finalResponse;
 }
 
@@ -16044,14 +16068,24 @@ async function _syncManualRestoreWithRetry(maxAttempts = 4) {
   window._manualRestoreSyncActive = true;
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      showToast(attempt === 1
-        ? 'در حال ارسال و تثبیت پشتیبان روی سرور…'
-        : `تلاش دوباره برای تأیید سرور… (${fa(attempt)}/${fa(maxAttempts)})`);
+      _backupProgressUpdate({
+        percent:attempt === 1 ? 3 : null,
+        title:attempt === 1 ? 'در حال آماده‌سازی پشتیبان' : 'در حال بررسی تأیید سرور',
+        detail:attempt === 1 ? 'فایل شما روی این دستگاه محفوظ است' : `بررسی خودکار ${fa(attempt)} از ${fa(maxAttempts)}`,
+        state:attempt === 1 ? 'uploading' : 'verifying',
+      });
       const response = await _syncToServer();
-      if (response?.ok) return response;
-      if (response && ![409, 429, 503].includes(response.status)) return response;
+      if (response?.ok) {
+        _backupProgressFinish(true, 'اکنون دستگاه‌های دیگر می‌توانند نسخه کامل را دریافت کنند');
+        return response;
+      }
+      if (response && ![409, 429, 503].includes(response.status)) {
+        _backupProgressFinish(false, `سرور درخواست را نپذیرفت (خطای ${fa(response.status)})`);
+        return response;
+      }
       if (attempt < maxAttempts) await new Promise(resolve => setTimeout(resolve, attempt * 750));
     }
+    _backupProgressFinish(false, 'نسخه محلی محافظت شده و همگام‌سازی بعداً ادامه پیدا می‌کند');
     return null;
   } finally {
     window._manualRestoreSyncActive = false;
@@ -16860,13 +16894,15 @@ async function _syncToServer(conflictAttempt = 0) {
   if (_stopStaleFullSyncConflictPending()) return;
   const run = (async () => {
     let result = null;
+    let successfulResult = null;
     do {
       window._serverSyncQueued = false;
       result = await _syncToServerOnce(conflictAttempt);
+      if (result?.ok) successfulResult = result;
       conflictAttempt = 0;
     } while (window._serverSyncQueued && !_isTerminalTodoCollisionPending());
     if (_isTerminalTodoCollisionPending()) _stopTerminalTodoCollisionSync();
-    return result;
+    return result || successfulResult;
   })();
   window._serverSyncInFlight = run;
   try {
@@ -26836,7 +26872,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v144';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v145';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
