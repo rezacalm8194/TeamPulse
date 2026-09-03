@@ -38,16 +38,18 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('phase 6 client assets are consistently bumped to tp137', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp137'/);
-  assert.match(app, /team-pulse-static-v137/);
-  assert.doesNotMatch(html, /tp136/);
-  assert.match(html, /app\.js\?v=tp137/);
-  assert.match(sw, /team-pulse-static-v137/);
-  assert.doesNotMatch(sw, /tp136/);
+test('phase 6 client assets are consistently bumped to tp138', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp138'/);
+  assert.match(app, /team-pulse-static-v138/);
+  assert.doesNotMatch(html, /tp137/);
+  assert.match(html, /app\.js\?v=tp138/);
+  assert.match(sw, /team-pulse-static-v138/);
+  assert.doesNotMatch(sw, /tp137/);
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
   assert.match(app, /function _todoIsOverdue\(/);
+  assert.match(app, /const isOverdue = _todoIsOverdue\(t\)/);
+  assert.doesNotMatch(app, /_isTodoOverdue/);
   assert.match(app, /while \(!_todoPagingState\(false\)\.done && pages < 100\)/);
 });
