@@ -69,6 +69,15 @@ test('mobile resume flushes local writes before polling the server', () => {
   assert.match(appSource, /onlyTodosChanged/);
 });
 
+test('pending server sync does not refetch the full document on every poll or retrigger the offline toast', () => {
+  assert.match(appSource, /function _ensurePendingServerSync\(/);
+  assert.match(appSource, /function _scheduleServerSyncSoon\(/);
+  assert.match(appSource, /_ensurePendingServerSync\(0\)/);
+  assert.match(appSource, /res\.status === 400 && deltaBody\?\.error === 'empty_patch'/);
+  assert.doesNotMatch(appSource, /_hasServerSyncPending\(\) && !_isTerminalTodoCollisionPending\(\) &&[\s\S]{0,120}return _loadFromServer\(\)/);
+  assert.doesNotMatch(appSource, /setTimeout\(\(\) => \{ window\._serverSyncFailureWarned = false; \}, 30000\)/);
+});
+
 test('nested knowledge hashes restore the same folder on phone and laptop', () => {
   assert.match(appSource, /function _parseAppHash\(/);
   assert.match(appSource, /_parseAppHash\(\)\.page/);

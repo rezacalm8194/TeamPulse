@@ -1510,16 +1510,8 @@ function _save(stamp=true, { scheduleServerSync = true, quiet = false, urgent = 
     if (localSaved) _markServerSyncPending(scheduleServerSync ? (urgent ? 'urgent-save' : 'save') : 'todo-delta-save');
     _saveVersion();
     if (scheduleServerSync) {
-      clearTimeout(window._serverSyncTimer);
       const delay = urgent ? 0 : (_teamAccessSession() ? 20 : 200);
-      if (_teamAccessSession()) {
-        window._serverSyncTimer = setTimeout(() => {
-          _syncToServer();
-        }, delay);
-      } else {
-        // sync به سرور با debounce (یا فوری برای بایگانی/حذف‌های حساس)
-        window._serverSyncTimer = setTimeout(_syncToServer, delay);
-      }
+      _scheduleServerSyncSoon(delay);
     }
   }
 }
@@ -16455,7 +16447,33 @@ function _scheduleServerSyncRetry() {
   const attempt = Math.min(6, Number(window._serverSyncRetryAttempt || 0) + 1);
   window._serverSyncRetryAttempt = attempt;
   const delay = Math.min(60000, 1500 * Math.pow(2, attempt - 1));
-  window._serverSyncRetryTimer = setTimeout(() => _syncToServer(), delay);
+  window._serverSyncRetryTimer = setTimeout(() => {
+    window._serverSyncRetryTimer = null;
+    _syncToServer();
+  }, delay);
+}
+
+function _serverSyncPushAlreadyActive() {
+  return !!(window._serverSyncInFlight || window._serverSyncRetryTimer);
+}
+
+function _scheduleServerSyncSoon(delay = 0) {
+  clearTimeout(window._serverSyncTimer);
+  clearTimeout(window._serverSyncRetryTimer);
+  window._serverSyncRetryTimer = null;
+  window._serverSyncTimer = setTimeout(() => {
+    window._serverSyncTimer = null;
+    _syncToServer();
+  }, Math.max(0, delay));
+}
+
+function _ensurePendingServerSync(delay = 50) {
+  if (_serverSyncPushAlreadyActive()) return;
+  clearTimeout(window._serverSyncTimer);
+  window._serverSyncTimer = setTimeout(() => {
+    window._serverSyncTimer = null;
+    _syncToServer();
+  }, Math.max(0, delay));
 }
 
 function _fullSyncConflictPendingMatchesCurrentData(pending = _readServerSyncPending()) {
@@ -17172,6 +17190,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       let deltaBody = null;
       try { deltaBody = await res.clone().json(); } catch(e) {}
       if (res.status === 404 || res.status === 405 ||
+          (res.status === 400 && deltaBody?.error === 'empty_patch') ||
           (res.status === 409 && (deltaBody?.error === 'delta_requires_full_sync' || deltaBody?.error === 'empty_patch'))) {
         res = await sendFullDocument();
       }
@@ -17286,6 +17305,8 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
       window._serverSyncRetryAttempt = 0;
       clearTimeout(window._serverSyncRetryTimer);
+      window._serverSyncRetryTimer = null;
+      window._serverSyncFailureWarned = false;
       _clearServerSyncPending(syncSavedAt);
       if (_db?._restored_at) {
         delete _db._restored_at;
@@ -17319,10 +17340,10 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429) {
       _markServerSyncPending('http-' + res.status);
       _scheduleServerSyncRetry();
-      if (!window._serverSyncFailureWarned) {
+      const quietStatus = res.status === 401 || res.status === 403 || res.status === 409;
+      if (!quietStatus && !window._serverSyncFailureWarned) {
         window._serverSyncFailureWarned = true;
         showToast('تغییر روی این دستگاه ذخیره شد و به‌محض وصل شدن سرور فرستاده می‌شود');
-        setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
       }
     }
     return res || null;
@@ -17333,7 +17354,6 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     if (!window._serverSyncFailureWarned) {
       window._serverSyncFailureWarned = true;
       showToast('اینترنت یا سرور در دسترس نیست؛ داده روی دستگاه محفوظ است و خودکار دوباره ارسال می‌شود');
-      setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
     }
     return null;
   }
@@ -17640,8 +17660,7 @@ async function _loadFromServer() {
         if (serverTime && serverTime >= pendingSavedAt) {
           _clearServerSyncPending(serverTime);
         } else {
-          clearTimeout(window._serverSyncTimer);
-          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          _ensurePendingServerSync(50);
           console.warn('[TeamPulse] kept team local data while server sync is pending');
           return false;
         }
@@ -17704,8 +17723,7 @@ async function _loadFromServer() {
         if (localTime >= serverTime || pendingSavedAt >= serverTime) {
           const mergedTodos = _mergeServerTodosIntoLocal(_cloneData(data));
           if (incomingEtag) window._serverDataEtag = incomingEtag;
-          clearTimeout(window._serverSyncTimer);
-          window._serverSyncTimer = setTimeout(_syncToServer, 50);
+          _ensurePendingServerSync(50);
           console.warn('[TeamPulse] kept newer local data while server sync is pending');
           return mergedTodos;
         }
@@ -17800,7 +17818,10 @@ async function _pollServerStatus() {
   // Keep the existing full-load conflict protections in charge while a local
   // save is pending; the lightweight shortcut must not make that decision.
   if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
-      !_fullSyncConflictPendingMatchesCurrentData()) return _loadFromServer();
+      !_fullSyncConflictPendingMatchesCurrentData()) {
+    _ensurePendingServerSync(0);
+    return false;
+  }
   if (!_sbUser || !_sbSession?.token) return false;
   const teamSession = _teamAccessSession();
   const accId = teamSession?.ownerUserId || _sbUser.id;
