@@ -131,3 +131,12 @@ test('manual backup restore compresses before chunking and retries server confir
   assert.match(appSource, /const concurrency = 3/);
   assert.match(appSource, /Promise\.all\(indexes\.map\(sendChunk\)\)/);
 });
+
+test('downloaded backups are gzip compressed while legacy json remains importable', () => {
+  assert.match(appSource, /new CompressionStream\('gzip'\)/);
+  assert.match(appSource, /\.json\.gz/);
+  assert.match(appSource, /async function _readBackupFileText\(/);
+  assert.match(appSource, /new DecompressionStream\('gzip'\)/);
+  assert.match(appSource, /bytes\[0\] === 0x1f && bytes\[1\] === 0x8b/);
+  assert.match(appSource, /input\.accept='\.json,\.gz,\.json\.gz,application\/json,application\/gzip'/);
+});
