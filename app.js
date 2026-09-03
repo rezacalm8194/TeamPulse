@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp141';
+const TP_ASSET_V = 'tp142';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2992,7 +2992,7 @@ function _importFile() {
         _save(false);
         // بازیابی session
         if (savedSession) localStorage.setItem('tp_session', savedSession);
-        const syncRes = await _syncToServer();
+        const syncRes = await _syncManualRestoreWithRetry();
         if (syncRes && syncRes.ok) {
           showToast('پشتیبان وارد شد ✓ — در حال تثبیت روی سرور','success');
         } else if (_sbUser && _sbSession?.token) {
@@ -15988,6 +15988,9 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
   const uploadId = `sync_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   let response = null;
   for (let index = 0; index < total; index++) {
+    if (window._manualRestoreSyncActive) {
+      showToast(`در حال ارسال پشتیبان به سرور… ${fa(Math.round(index / total * 100))}٪`);
+    }
     response = await _apiFetch('/api/data/' + accId + '/chunks' + _workspaceQuery(), {
       method: 'POST',
       body: JSON.stringify({
@@ -15999,7 +16002,26 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
     });
     if (!response.ok) return response;
   }
+  if (window._manualRestoreSyncActive) showToast('ارسال کامل شد؛ در حال تأیید نهایی سرور…');
   return response;
+}
+
+async function _syncManualRestoreWithRetry(maxAttempts = 4) {
+  window._manualRestoreSyncActive = true;
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      showToast(attempt === 1
+        ? 'در حال ارسال و تثبیت پشتیبان روی سرور…'
+        : `تلاش دوباره برای تأیید سرور… (${fa(attempt)}/${fa(maxAttempts)})`);
+      const response = await _syncToServer();
+      if (response?.ok) return response;
+      if (response && ![409, 429, 503].includes(response.status)) return response;
+      if (attempt < maxAttempts) await new Promise(resolve => setTimeout(resolve, attempt * 750));
+    }
+    return null;
+  } finally {
+    window._manualRestoreSyncActive = false;
+  }
 }
 
 async function _readApiJson(res) {
@@ -17182,16 +17204,22 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         client_saved_at: syncSavedAt,
         base_etag: window._serverDataEtag || null,
       };
-      const rawRequestSize = JSON.stringify(latestPayload).length;
-      if (rawRequestSize > 700 * 1024) {
+      const encodedRequest = await _compressedJsonRequestBody(latestPayload);
+      const encodedSize = typeof encodedRequest.body === 'string'
+        ? encodedRequest.body.length
+        : Number(encodedRequest.body?.size || Infinity);
+      if (encodedSize > 700 * 1024) {
         return _sendChunkedWorkspacePayload(accId, latestPayload);
       }
-      const encodedRequest = await _compressedJsonRequestBody(latestPayload);
-      return _apiFetch('/api/data/' + accId + _workspaceQuery(), {
+      const directResponse = await _apiFetch('/api/data/' + accId + _workspaceQuery(), {
         method: 'PUT',
         body: encodedRequest.body,
         headers: encodedRequest.headers,
       });
+      // Some deployments enforce a smaller proxy limit. Retain chunking as an
+      // automatic fallback instead of making the user import the backup again.
+      if (directResponse.status === 413) return _sendChunkedWorkspacePayload(accId, latestPayload);
+      return directResponse;
     };
     let res;
     if (useDocumentDelta) {
@@ -26774,7 +26802,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v141';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v142';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
