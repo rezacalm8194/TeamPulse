@@ -96,6 +96,18 @@ test('knowledge items created on another device are merged even when local data 
   assert.match(appSource, /partsWereFullyLoaded/);
 });
 
+test('phones adopt a newer imported server document instead of keeping a partial cache', () => {
+  assert.match(appSource, /function _reloadCompleteBusinessPartsFromServer\(/);
+  assert.match(appSource, /function _reloadCompleteTodosFromServer\(/);
+  assert.match(appSource, /window\._remoteServerDocumentChanged/);
+  assert.match(appSource, /keepUnsyncedOnly: true/);
+  assert.match(appSource, /adopted newer server document on this device/);
+  assert.match(appSource, /unsynced-local-after-remote-replace/);
+  assert.match(appSource, /const etagChanged = !!\(status\.etag && status\.etag !== window\._serverDataEtag\)/);
+  assert.match(appSource, /if \(reset && !_keepLocalBusinessRow\(row, collection\)\) return;/);
+  assert.doesNotMatch(appSource, /if \(typeof _hasServerSyncPending === 'function' && _hasServerSyncPending\(\)\) return true;/);
+});
+
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
   assert.match(appSource, /const localBeforeLoad = _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
   assert.match(appSource, /function _collectionSyncDeleteBlocked\(/);
@@ -110,7 +122,7 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
   assert.match(appSource, /resurrectLocal/);
   assert.match(appSource, /while \(!_paginatedCollectionFullyLoaded\(key\) && pages < 100\)/);
   assert.match(appSource, /function _flushInteractiveSessionNoteSave\(/);
-  assert.match(appSource, /baselineHash && baselineHash !== _isolationItemHash\(row\)/);
+  assert.match(appSource, /if \(baselineHash\) return baselineHash !== _isolationItemHash\(row\)/);
   assert.match(appSource, /kept restored local snapshot while manual restore is pending/);
   assert.doesNotMatch(appSource, /if \(!window\._tpLoadedParts\) window\._tpLoadedParts = new Set\(\);\s*window\._tpLoadedParts\.add\(collection\)/);
 });
