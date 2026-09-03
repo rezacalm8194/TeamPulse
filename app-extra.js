@@ -348,6 +348,12 @@ function openExpenseManager() {
 
 async function renderDashboard() {
   updateTopbarActions('');
+  // Financial totals must be calculated from every server page. Desktop often
+  // already has the complete cache, while a new mobile install starts with
+  // only the first 200 rows and otherwise appears to have "lost" older data.
+  await _ensureCompleteBusinessParts([
+    'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'
+  ]);
   const stats = await window.api.dashboard.stats();
   const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount, staffPaymentAlerts, customerDueAlerts, expenseDueAlerts } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);

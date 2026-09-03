@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp140';
+const TP_ASSET_V = 'tp141';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -3976,7 +3976,7 @@ const _PAGE_DOCUMENT_PARTS = {
   calendar: ['todos', 'todo_calendar_events', 'sessions', 'habits', 'habit_logs', 'reminders', 'staff_reminders', 'key_events', 'students'],
   goals: ['goals', 'goal_achievements', 'todos', 'habits', 'habit_logs'],
   habits: ['habits', 'habit_logs', 'goals'],
-  dashboard: ['payments', 'packages', 'students', 'sessions', 'expenses', 'financial_accounts', 'financial_budgets', 'fiscal_year_closings', 'wallet_tx'],
+  dashboard: ['payments', 'packages', 'students', 'sessions', 'reminders', 'expenses', 'financial_accounts', 'financial_budgets', 'fiscal_year_closings', 'wallet_tx'],
   transactions: ['payments', 'expenses', 'wallet_tx', 'financial_accounts', 'students', 'packages'],
   settings: ['team_members', 'team_invites', 'staff'],
   tutorial: [],
@@ -4353,6 +4353,18 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
+  }
+}
+async function _ensureCompleteBusinessParts(collections = []) {
+  for (const collection of [...new Set(collections)]) {
+    if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
+    await _ensureBusinessPartLoaded(collection);
+    let pages = 0;
+    while (!_paginatedCollectionFullyLoaded(collection) && pages < 100) {
+      const ok = await _loadBusinessPage(collection);
+      pages += 1;
+      if (!ok) break;
+    }
   }
 }
 async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
@@ -7798,14 +7810,11 @@ async function renderPayments(search = '') {
   updateTopbarActions(accountCustomerTopbarHtml(tab, search));
 
   if (tab === 'payments') {
-    await _ensureBusinessPartLoaded('students');
-    await _ensureBusinessPartLoaded('payments');
+    await _ensureCompleteBusinessParts(['students', 'payments']);
   } else if (tab === 'purchases') {
-    await _ensureBusinessPartLoaded('students');
-    await _ensureBusinessPartLoaded('packages');
+    await _ensureCompleteBusinessParts(['students', 'packages']);
   } else if (tab === 'reminders') {
-    await _ensureBusinessPartLoaded('students');
-    await _ensureBusinessPartLoaded('reminders');
+    await _ensureCompleteBusinessParts(['students', 'reminders']);
   }
 
   allStudents = await window.api.students.getAll();
@@ -26765,7 +26774,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v138';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v141';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
