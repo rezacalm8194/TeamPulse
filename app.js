@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp151';
+const TP_ASSET_V = 'tp152';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4172,17 +4172,9 @@ function _overlayPartialServerData(target, payload) {
         const localCol = target._deletedItems?.[col] && typeof target._deletedItems[col] === 'object' && !Array.isArray(target._deletedItems[col])
           ? { ...target._deletedItems[col] }
           : {};
-        if (_tombstoneStripWouldTruncate(target[col], mergedDeletes[col])) {
-          mergedDeletes[col] = localCol;
-          return;
-        }
-        const serverTotal = _serverPageTotalForKey(col);
-        if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(
-          Array.isArray(target[col]) ? target[col].length : 0,
-          serverTotal
-        )) {
-          mergedDeletes[col] = localCol;
-        }
+        // Partial document payloads still carry inferred deletes from an older
+        // truncated phone write. Never import those over a larger local cache.
+        mergedDeletes[col] = localCol;
       });
       target._deletedItems = mergedDeletes;
       return;
@@ -27204,7 +27196,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v151';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v152';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
