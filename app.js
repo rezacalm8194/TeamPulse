@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp146';
+const TP_ASSET_V = 'tp147';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4145,6 +4145,7 @@ function _mergeLoadedPartHashes(keys) {
 }
 function _shouldLoadFullDocument() {
   if (window._forceNextSync) return true;
+  if (window._remoteServerDocumentChanged) return true;
   if (_hasServerSyncPending()) return true;
   if (typeof _isTerminalTodoCollisionPending === 'function' && _isTerminalTodoCollisionPending()) return true;
   return false;
@@ -4247,7 +4248,14 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     if (!res.ok) return false;
     const payload = await res.json();
     const incoming = Array.isArray(payload.items) ? payload.items : [];
-    const existing = new Map((Array.isArray(_db?.todos) ? _db.todos : []).map(todo => [String(todo?.id), todo]));
+    const existing = new Map();
+    (Array.isArray(_db?.todos) ? _db.todos : []).forEach(todo => {
+      if (!todo || todo.id == null) return;
+      const id = String(todo.id);
+      const onThisPage = !!todo.archived === !!archived;
+      if (reset && onThisPage && !_keepLocalBusinessRow(todo, 'todos')) return;
+      existing.set(id, todo);
+    });
     incoming.forEach(todo => {
       const id = String(todo?.id);
       const local = existing.get(id);
@@ -4330,15 +4338,23 @@ function _mergeBusinessRow(collection, local, remote) {
 }
 function _keepLocalBusinessRow(row, collection) {
   if (!row) return false;
-  if (typeof _hasServerSyncPending === 'function' && _hasServerSyncPending()) return true;
   const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
   const pendingSavedAt = Number(pending?.savedAt || 0) || 0;
   const ts = _businessRowTimestamp(row);
-  const lastSync = Math.max(Number(window._lastServerSyncSavedAt || 0), pendingSavedAt);
+  const lastSync = Math.max(
+    Number(window._lastServerSyncSavedAt || 0),
+    pendingSavedAt,
+    Number((typeof _readServerSyncBaseline === 'function' ? _readServerSyncBaseline() : null)?.savedAt || 0)
+  );
   const rowId = row?.id != null ? String(row.id) : '';
   if (rowId && collection) {
-    const baselineHash = _readServerSyncHashes()?.collections?.[collection]?.[rowId];
-    if (baselineHash && baselineHash !== _isolationItemHash(row)) return true;
+    const hashes = typeof _readServerSyncHashes === 'function' ? _readServerSyncHashes() : null;
+    const baselineHash = hashes?.collections?.[collection]?.[rowId];
+    if (baselineHash) return baselineHash !== _isolationItemHash(row);
+    if (hashes?.collections?.[collection]) {
+      if (ts > 0) return ts >= lastSync;
+      return !!pending;
+    }
   }
   if (ts > 0) return ts >= lastSync;
   const localSaved = Number(_db?._lastSaved || 0) || 0;
@@ -4378,6 +4394,37 @@ async function _ensureCompleteBusinessParts(collections = []) {
     }
   }
 }
+async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS) {
+  for (const collection of [...new Set(collections)]) {
+    if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
+    await _loadBusinessPage(collection, { reset: true });
+    let pages = 0;
+    while (!_businessPagingState(collection).done && pages < 100) {
+      const ok = await _loadBusinessPage(collection);
+      pages += 1;
+      if (!ok) break;
+    }
+  }
+}
+async function _reloadCompleteTodosFromServer() {
+  await _loadTodoPage(false, { reset: true });
+  await _loadTodoPage(true, { reset: true });
+  let pages = 0;
+  while (pages < 100) {
+    const active = _todoPagingState(false);
+    const archived = _todoPagingState(true);
+    if (active.done && archived.done) break;
+    if (!active.done) {
+      const ok = await _loadTodoPage(false);
+      if (!ok) break;
+    }
+    if (!archived.done) {
+      const ok = await _loadTodoPage(true);
+      if (!ok) break;
+    }
+    pages += 1;
+  }
+}
 async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
   if (!BUSINESS_PAGINATED_KEYS.includes(collection)) return false;
   if (!_sbUser || !_sbSession?.token) return false;
@@ -4397,8 +4444,13 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     if (!res.ok) return false;
     const payload = await res.json();
     const incoming = Array.isArray(payload.items) ? payload.items : [];
-    const existing = new Map((Array.isArray(_db?.[collection]) ? _db[collection] : [])
-      .map(row => [String(row?.id), row]));
+    const existing = new Map();
+    (Array.isArray(_db?.[collection]) ? _db[collection] : []).forEach(row => {
+      if (!row || row.id == null) return;
+      const id = String(row.id);
+      if (reset && !_keepLocalBusinessRow(row, collection)) return;
+      existing.set(id, row);
+    });
     incoming.forEach(row => {
       const id = String(row?.id);
       existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
@@ -16416,6 +16468,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
 
   const resurrectLocal = !!(localBeforeLoad._restored_at || options.resurrectPresent ||
     (typeof _isManualRestoreProtected === 'function' && _isManualRestoreProtected()));
+  let injectedLocal = false;
   collections.forEach(key => {
     const localArr = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
     const tombstones = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
@@ -16450,9 +16503,14 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       }
       if (key === 'todos' && deletedTodoIds.has(idKey) && !resurrectLocal) return;
       const serverItem = byId.get(idKey);
+      const keepUnsynced = options.keepUnsyncedOnly && typeof _keepLocalBusinessRow === 'function'
+        ? _keepLocalBusinessRow(localItem, key)
+        : true;
       if (!serverItem) {
+        if (!keepUnsynced) return;
         serverArr.push(_cloneData(localItem));
         maxId = Math.max(maxId, +localItem.id || 0);
+        injectedLocal = true;
         return;
       }
 
@@ -16462,9 +16520,11 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       const localCreated = localItem.created_at || '';
       const serverCreated = serverItem.created_at || '';
       if (localCreated && serverCreated && localCreated !== serverCreated) {
+        if (!keepUnsynced) return;
         const copy = _cloneData(localItem);
         copy.id = ++maxId;
         serverArr.push(copy);
+        injectedLocal = true;
         return;
       }
 
@@ -16472,8 +16532,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
       if (key === 'todos') {
         Object.assign(serverItem, _pickMergedTodo(localItem, serverItem));
-      } else if (localTime > serverTime || (allowLocal && localTime === serverTime)) {
+      } else if (keepUnsynced && (localTime > serverTime || (allowLocal && localTime === serverTime))) {
         Object.assign(serverItem, _cloneData(localItem));
+        injectedLocal = true;
       }
     });
 
@@ -16482,13 +16543,17 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     merged._nextId[key] = Math.max(+(merged._nextId[key] || 1), maxAfter + 1);
   });
 
-  if (!options.teamSafe || _teamCanWriteOwnerStudents()) {
+  if (!options.keepUnsyncedOnly && (!options.teamSafe || _teamCanWriteOwnerStudents())) {
     ['archive_columns','archive_categories','archive_relationship_statuses'].forEach(key => {
       if (Object.prototype.hasOwnProperty.call(localBeforeLoad, key)) merged[key] = _cloneData(localBeforeLoad[key]);
     });
   }
 
-  merged._lastSaved = Math.max(Date.now(), localBeforeLoad._lastSaved || 0, merged._lastSaved || 0);
+  if (options.keepUnsyncedOnly && !injectedLocal) {
+    merged._lastSaved = Number(merged._lastSaved || 0) || Number(localBeforeLoad._lastSaved || 0) || Date.now();
+  } else {
+    merged._lastSaved = Math.max(Date.now(), localBeforeLoad._lastSaved || 0, merged._lastSaved || 0);
+  }
   return merged;
 }
 
@@ -17646,6 +17711,7 @@ async function _loadFromServer() {
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
     void _loadTodoStats();
+    const previousEtag = window._serverDataEtag || null;
     const includeKeys = _shouldLoadFullDocument() ? null : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students');
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(includeKeys));
     if (res.status === 429) {
@@ -17661,16 +17727,27 @@ async function _loadFromServer() {
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const payload = await res.json();
-    if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
-      await _loadTodoPage(false, { reset: true });
+    const remoteDocumentChanged = !!window._remoteServerDocumentChanged ||
+      !!(payload.etag && previousEtag && payload.etag !== previousEtag);
+    if (remoteDocumentChanged && includeKeys) {
+      window._remoteServerDocumentChanged = true;
+      return _loadFromServer();
     }
     const businessKeys = !Array.isArray(includeKeys)
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
-    for (const key of businessKeys) {
-      await _ensureBusinessPartLoaded(key, { reset: false });
+    if (remoteDocumentChanged) {
+      await _reloadCompleteTodosFromServer();
+      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS]);
+    } else {
+      if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
+        await _loadTodoPage(false, { reset: true });
+      }
+      for (const key of businessKeys) {
+        await _ensureBusinessPartLoaded(key, { reset: false });
+      }
+      if (localBeforeLoad && businessKeys.length) _mergeLocalBusinessCollections(localBeforeLoad, businessKeys);
     }
-    if (localBeforeLoad && businessKeys.length) _mergeLocalBusinessCollections(localBeforeLoad, businessKeys);
     if (payload.partial) {
       _rememberServerParts(payload);
       _invalidateUnfetchedDocumentParts(payload);
@@ -17679,6 +17756,7 @@ async function _loadFromServer() {
         businessKeys.forEach(key => {
           if (Array.isArray(_db?.[key])) overlayBase[key] = _cloneData(_db[key]);
         });
+        if (remoteDocumentChanged && Array.isArray(_db?.todos)) overlayBase.todos = _cloneData(_db.todos);
         payload.data = _overlayPartialServerData(overlayBase, payload);
       }
       if (payload.data) {
@@ -17757,6 +17835,31 @@ async function _loadFromServer() {
       console.warn('[Impersonate] ignored admin-like server data during poll');
       window._impersonateServerBlocked = true;
       return false;
+    }
+    if (remoteDocumentChanged) {
+      _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data), {
+        keepUnsyncedOnly: true,
+        teamSafe: !!teamSession,
+      });
+      _migrate(_db);
+      const persistKey = window._activeDBKey || (teamSession ? _teamActiveDBKey() : DB_KEY);
+      try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
+      if (incomingEtag) window._serverDataEtag = incomingEtag;
+      window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, Number(_db._lastSaved || 0) || 0);
+      _writeServerSyncBaseline(_db, window._serverDataEtag);
+      if (teamSession) {
+        window._teamOwnerDataReady = true;
+        window._teamLastOwnerDataSavedAt = Number(_db._lastSaved || 0) || 0;
+      }
+      if (_localDataDivergedFromServerBaseline(_db) === true) {
+        _markServerSyncPending('unsynced-local-after-remote-replace');
+        _ensurePendingServerSync(50);
+      } else {
+        _clearServerSyncPending(Number(_db._lastSaved || Date.now()) || Date.now());
+      }
+      window._remoteServerDocumentChanged = false;
+      console.log('[TeamPulse] adopted newer server document on this device');
+      return true;
     }
     if (teamSession) {
       const { serverTime, localTime } = _serverTimes(data, localBeforeLoad);
@@ -17944,13 +18047,6 @@ async function _loadFromServer() {
 }
 
 async function _pollServerStatus() {
-  // Keep the existing full-load conflict protections in charge while a local
-  // save is pending; the lightweight shortcut must not make that decision.
-  if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
-      !_fullSyncConflictPendingMatchesCurrentData()) {
-    _ensurePendingServerSync(0);
-    return false;
-  }
   if (!_sbUser || !_sbSession?.token) return false;
   const teamSession = _teamAccessSession();
   const accId = teamSession?.ownerUserId || _sbUser.id;
@@ -17963,7 +18059,15 @@ async function _pollServerStatus() {
     const status = await res.json();
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
-    if (status.etag === window._serverDataEtag) return false;
+    const etagChanged = !!(status.etag && status.etag !== window._serverDataEtag);
+    if (!etagChanged) {
+      if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
+          !_fullSyncConflictPendingMatchesCurrentData()) {
+        _ensurePendingServerSync(0);
+      }
+      return false;
+    }
+    window._remoteServerDocumentChanged = true;
     return _loadFromServer();
   } catch(e) {
     console.warn('[TeamPulse] status poll skipped:', e.message);
@@ -26885,7 +26989,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v146';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v147';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
