@@ -6,7 +6,7 @@
       }
     }, 5000);
 
-const TP_ASSET_V = 'tp132';
+const TP_ASSET_V = 'tp133';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -23039,9 +23039,28 @@ async function _handleTodoNotificationDone(todoId) {
   }
 }
 
+function _appWindowIsForeground() {
+  if (typeof document === 'undefined') return false;
+  return document.visibilityState === 'visible' && !document.hidden && document.hasFocus();
+}
+
 function _handlePushReceivedInApp(payload) {
   const title = String(payload?.title || 'یادآور TeamPulse').trim();
   const body = String(payload?.body || '').trim();
+  const tag = String(payload?.tag || payload?.data?.tag || 'tp-push').trim() || 'tp-push';
+
+  if (!_appWindowIsForeground()) {
+    _notify(title, {
+      body,
+      icon: payload?.icon || '/app-icon-192-v3.png',
+      tag,
+      data: payload?.data || {},
+      requireInteraction: true,
+      renotify: true,
+    });
+    return;
+  }
+
   showToast((title + (body ? ' — ' + body : '')).slice(0, 180), 'success');
   const banner = document.getElementById('laptop-push-banner');
   if (banner) banner.remove();
@@ -23124,6 +23143,9 @@ if ('serviceWorker' in navigator) {
     }
     if (data.type === 'PUSH_RECEIVED') {
       _handlePushReceivedInApp(data);
+    }
+    if (data.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+      _ensureReminderPushEnabled();
     }
   });
 }
@@ -26701,7 +26723,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v132';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v133';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -26709,7 +26731,7 @@ if ('serviceWorker' in navigator) {
     _tpSwRefreshing = true;
     window.location.reload();
   });
-  navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
+  navigator.serviceWorker.register(TP_SERVICE_WORKER_URL, { updateViaCache: 'none' })
     .then(reg => {
       reg.update().catch(() => {});
       if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });

@@ -1,9 +1,9 @@
-const CACHE = 'team-pulse-static-v132';
+const CACHE = 'team-pulse-static-v133';
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp132',
-  '/app.js?v=tp132',
-  '/tp-inline-bind.js?v=tp132',
+  '/app.css?v=tp133',
+  '/app.js?v=tp133',
+  '/tp-inline-bind.js?v=tp133',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
@@ -173,11 +173,20 @@ async function displayAppNotification(title, options = {}) {
   throw lastError || new Error('showNotification failed');
 }
 
-async function notifyOpenClients(payload) {
-  const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  clientList.forEach(client => {
+async function listWindowClients() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+}
+
+function hasFocusedAppWindow(clientList) {
+  return clientList.some(client => client.focused && client.visibilityState === 'visible');
+}
+
+async function notifyOpenClients(payload, clientList) {
+  const clients = clientList || await listWindowClients();
+  clients.forEach(client => {
     if (client.postMessage) client.postMessage(payload);
   });
+  return clients;
 }
 
 self.addEventListener('message', event => {
@@ -231,21 +240,38 @@ self.addEventListener('push', event => {
     };
     const title = data.title || 'یادآور TeamPulse';
     const body = data.body || '';
-    await displayAppNotification(title, {
-      body,
-      icon: data.icon,
-      badge: data.badge,
-      tag: data.tag || 'push-' + Date.now(),
-      data: notificationData,
-      actions: notificationActionsFor(notificationData),
-    });
+    const tag = data.tag || 'push-' + Date.now();
+    const clientList = await listWindowClients();
+    const appInForeground = hasFocusedAppWindow(clientList);
+
+    // When the window is not focused, the OS toast is the only thing the user
+    // can see. An open background tab is not enough — Chrome often swallows the
+    // system banner if the page only paints an in-app card.
+    if (!appInForeground) {
+      await displayAppNotification(title, {
+        body,
+        icon: data.icon,
+        badge: data.badge,
+        tag,
+        data: notificationData,
+        actions: notificationActionsFor(notificationData),
+      });
+    }
+
     await notifyOpenClients({
       type: 'PUSH_RECEIVED',
       title,
       body,
+      tag,
+      icon: data.icon,
       data: notificationData,
-    });
+      appInForeground,
+    }, clientList);
   })());
+});
+
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil(notifyOpenClients({ type: 'PUSH_SUBSCRIPTION_CHANGED' }));
 });
 
 async function focusOrOpenApp(targetUrl = '/app', navigateExisting = true) {
