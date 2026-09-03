@@ -134,6 +134,8 @@ test('manual backup restore compresses before chunking and retries server confir
   assert.match(appSource, /return result \|\| successfulResult/);
   assert.match(appSource, /function _backupProgressUpdate\(/);
   assert.match(appSource, /function _backupProgressFinish\(/);
+  assert.match(appSource, /\/status' \+ _workspaceQuery\(\)/);
+  assert.match(appSource, /if \(status\?\.etag\) window\._serverDataEtag = status\.etag/);
 });
 
 test('downloaded backups are gzip compressed while legacy json remains importable', () => {

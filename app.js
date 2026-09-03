@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp145';
+const TP_ASSET_V = 'tp146';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -16067,6 +16067,19 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
 async function _syncManualRestoreWithRetry(maxAttempts = 4) {
   window._manualRestoreSyncActive = true;
   try {
+    const accountId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
+    if (accountId && _sbSession?.token) {
+      _backupProgressUpdate({ percent:1, title:'در حال آماده‌سازی پشتیبان', detail:'بررسی آخرین نسخه ثبت‌شده روی سرور…', state:'verifying' });
+      try {
+        const statusResponse = await _apiFetch('/api/data/' + accountId + '/status' + _workspaceQuery());
+        if (statusResponse.ok) {
+          const status = await statusResponse.json();
+          if (status?.etag) window._serverDataEtag = status.etag;
+        }
+      } catch(e) {
+        console.warn('[TeamPulse] restore preflight skipped:', e.message);
+      }
+    }
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       _backupProgressUpdate({
         percent:attempt === 1 ? 3 : null,
@@ -26872,7 +26885,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v145';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v146';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
