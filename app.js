@@ -4058,16 +4058,23 @@ function _isPaginatedSyncKey(key) {
   return key === 'todos' || BUSINESS_PAGINATED_KEYS.includes(key);
 }
 function _paginatedCollectionFullyLoaded(key) {
-  if (!window._tpLoadedParts) return true;
   if (!_isPaginatedSyncKey(key)) return true;
   if (key === 'todos') {
-    if (typeof _todoPagingState !== 'function') return false;
+    if (typeof _todoPagingState !== 'function') return !window._tpLoadedParts;
     const active = _todoPagingState(false);
     const archived = _todoPagingState(true);
+    const todoTotal = Number(window._tpTodoPaging?.stats?.total || 0);
+    const localTodos = Array.isArray(_db?.todos) ? _db.todos.length : 0;
+    if (todoTotal > 0 && localTodos < todoTotal) return false;
+    if (!window._tpLoadedParts) return true;
     return !!(active.done && archived.done);
   }
-  if (typeof _businessPagingState !== 'function') return false;
+  if (typeof _businessPagingState !== 'function') return !window._tpLoadedParts;
   const paging = _businessPagingState(key);
+  const serverTotal = Number(paging.serverTotal || 0);
+  const localCount = Array.isArray(_db?.[key]) ? _db[key].length : 0;
+  if (serverTotal > 0 && localCount < serverTotal) return false;
+  if (!window._tpLoadedParts) return true;
   return !!(paging.done && !paging.search);
 }
 function _invalidateUnfetchedDocumentParts(payload) {
@@ -4172,7 +4179,8 @@ function _localCollectionsLagServer(status) {
 }
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
-  if (status.etag && status.etag !== (window._serverHydratedEtag || '')) return true;
+  const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
+  if (status.etag && knownEtag && status.etag !== knownEtag) return true;
   return _localCollectionsLagServer(status);
 }
 function _markServerDocumentHydrated(etag) {
@@ -4280,10 +4288,7 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     const existing = new Map();
     (Array.isArray(_db?.todos) ? _db.todos : []).forEach(todo => {
       if (!todo || todo.id == null) return;
-      const id = String(todo.id);
-      const onThisPage = !!todo.archived === !!archived;
-      if (reset && onThisPage && !_keepLocalBusinessRow(todo, 'todos')) return;
-      existing.set(id, todo);
+      existing.set(String(todo.id), todo);
     });
     incoming.forEach(todo => {
       const id = String(todo?.id);
@@ -4423,16 +4428,21 @@ async function _ensureCompleteBusinessParts(collections = []) {
     }
   }
 }
-async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS) {
-  for (const collection of [...new Set(collections)]) {
-    if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
-    await _loadBusinessPage(collection, { reset: true });
-    let pages = 0;
-    while (!_businessPagingState(collection).done && pages < 100) {
-      const ok = await _loadBusinessPage(collection);
-      pages += 1;
-      if (!ok) break;
+async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS, { reset = false } = {}) {
+  window._tpHydratingFromServer = true;
+  try {
+    for (const collection of [...new Set(collections)]) {
+      if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
+      await _loadBusinessPage(collection, { reset });
+      let pages = 0;
+      while (!_businessPagingState(collection).done && pages < 100) {
+        const ok = await _loadBusinessPage(collection);
+        pages += 1;
+        if (!ok) break;
+      }
     }
+  } finally {
+    window._tpHydratingFromServer = false;
   }
 }
 async function _reloadCompleteTodosFromServer() {
@@ -4476,15 +4486,19 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     const existing = new Map();
     (Array.isArray(_db?.[collection]) ? _db[collection] : []).forEach(row => {
       if (!row || row.id == null) return;
-      const id = String(row.id);
-      if (reset && !_keepLocalBusinessRow(row, collection)) return;
-      existing.set(id, row);
+      existing.set(String(row.id), row);
     });
     incoming.forEach(row => {
       const id = String(row?.id);
       existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
     });
     _db[collection] = [...existing.values()];
+    if (reset) state.seenIds = new Set();
+    state.seenIds = state.seenIds || new Set();
+    incoming.forEach(row => {
+      if (row && row.id != null) state.seenIds.add(String(row.id));
+    });
+    if (payload.total != null) state.serverTotal = Number(payload.total) || 0;
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
     if (window._tpLoadedParts) window._tpLoadedParts.add(collection);
@@ -16522,6 +16536,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     }
     const byId = new Map(serverArr.map(item => [String(item.id), item]));
     let maxId = Math.max(0, ...(serverArr.map(item => +item.id || 0)), +(merged._nextId[key] || 1) - 1);
+    const serverLooksPartial = options.keepUnsyncedOnly
+      && localArr.length >= 20
+      && serverArr.length < Math.ceil(localArr.length * 0.85);
 
     localArr.forEach(localItem => {
       if (!localItem || localItem.id == null) return;
@@ -16533,7 +16550,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       if (key === 'todos' && deletedTodoIds.has(idKey) && !resurrectLocal) return;
       const serverItem = byId.get(idKey);
       const keepUnsynced = options.keepUnsyncedOnly && typeof _keepLocalBusinessRow === 'function'
-        ? _keepLocalBusinessRow(localItem, key)
+        ? (serverLooksPartial || _keepLocalBusinessRow(localItem, key))
         : true;
       if (!serverItem) {
         if (!keepUnsynced) return;
@@ -17240,6 +17257,10 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
   // it has either received the current document or exhausted its retries.
   if (window._initialServerLoadPending) {
     _markServerSyncPending('initial-server-load');
+    return null;
+  }
+  if (window._tpHydratingFromServer || window._remoteServerDocumentChanged) {
+    _markServerSyncPending('hydrate-from-server');
     return null;
   }
   if (window._todoDeltaChain || window._todoDeltaDrainInFlight) return null;
@@ -18095,6 +18116,20 @@ async function _pollServerStatus() {
         _ensurePendingServerSync(0);
       }
       return false;
+    }
+    const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
+    const etagChanged = !!(status.etag && knownEtag && status.etag !== knownEtag);
+    if (!etagChanged) {
+      window._remoteServerDocumentChanged = false;
+      window._tpHydratingFromServer = true;
+      try {
+        await _reloadCompleteTodosFromServer();
+        await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: false });
+        _markServerDocumentHydrated(status.etag);
+      } finally {
+        window._tpHydratingFromServer = false;
+      }
+      return true;
     }
     window._remoteServerDocumentChanged = true;
     return _loadFromServer();
