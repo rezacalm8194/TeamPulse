@@ -112,6 +112,7 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(dataSource, /collectionState\(db, workspace\.storageKey, key\)/);
   assert.match(appSource, /function _collectionLooksTruncatedRelativeToLocal\(/);
   assert.match(appSource, /function _tombstoneStripWouldTruncate\(/);
+  assert.match(appSource, /Partial document payloads still carry inferred deletes/);
   assert.match(appSource, /conflict-truncated-ignored/);
   assert.match(appSource, /ignored truncated adopt and kept local data/);
   assert.doesNotMatch(appSource, /if \(typeof _hasServerSyncPending === 'function' && _hasServerSyncPending\(\)\) return true;/);
