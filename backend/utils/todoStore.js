@@ -12,7 +12,11 @@ function todoId(todo) {
 }
 
 function todoDateKey(todo) {
-  const raw = String(todo?.date_jalali || todo?.date || '').replace(/\D/g, '');
+  const raw = String(
+    todo?.scheduled_date || todo?.scheduledDate || todo?.date_jalali || todo?.date || ''
+  )
+    .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/\D/g, '');
   const value = Number(raw.slice(0, 8));
   return Number.isFinite(value) ? value : 0;
 }
