@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp137';
+const TP_ASSET_V = 'tp138';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -22098,7 +22098,7 @@ function renderTodoList(options = {}) {
   const mainTodayIds = new Set(mainTodayTodos.map(t => t.id));
 
   const renderTodo = (t) => {
-    const isOverdue = _isTodoOverdue(t);
+    const isOverdue = _todoIsOverdue(t);
     const priority = t.priority || 'none';
     const repeatIcon = {none:'',daily:'🔄',every2days:'↩️',weekly:'📅',monthly:'🗓',custom_weekdays:'⚙️'}[t.repeat||'none'];
     const todoMenuId = `todo-menu-${t.id}`;
@@ -26748,7 +26748,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v137';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v138';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
