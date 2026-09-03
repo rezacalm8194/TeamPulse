@@ -1166,7 +1166,9 @@ function staffBonusItemHtml(item = {}, disabled = false, roleLabel = '') {
 function staffRoleRowHtml(role, existing) {
   const checked = !!existing;
   const items = staffBonusItemsFromRole(existing);
-  const total = items.reduce((a, item) => a + (+(item.amount || 0)), 0);
+  const amount = items.reduce((a, item) => a + (+(item.amount || 0)), 0);
+  const count = Math.max(0, +(existing?.count ?? 1));
+  const total = amount * count;
   const isBonus = isStaffBonusRoleLabel(role.label);
   return `
     <div class="role-row staff-items-row" data-role-label="${escapeHtml(role.label)}">
@@ -1179,7 +1181,7 @@ function staffRoleRowHtml(role, existing) {
         <summary>
           آیتم‌های ${escapeHtml(role.label)}
           <button type="button" class="bonus-add-btn" onclick="event.preventDefault();event.stopPropagation();addStaffBonusItem(this)" title="${isBonus ? 'افزودن پاداش' : 'افزودن آیتم'}">+</button>
-          <span class="bonus-summary-amount">${fmt(total)} تومان</span>
+          <span class="bonus-summary-amount">${fmt(amount)} تومان</span>
         </summary>
         <div class="bonus-items">
           ${items.map(item => staffBonusItemHtml(item, !checked, role.label)).join('')}
@@ -1188,11 +1190,11 @@ function staffRoleRowHtml(role, existing) {
       <div class="role-row-fields">
         <div class="role-field">
           <label class="form-label">قیمت هر بار (تومان)</label>
-          <input class="form-input role-amount" type="number" placeholder="0" value="${total}" ${checked ? '' : 'disabled'} readonly oninput="updateRoleRowTotal(this)">
+          <input class="form-input role-amount" type="number" placeholder="0" value="${amount}" ${checked ? '' : 'disabled'} readonly oninput="updateRoleRowTotal(this)">
         </div>
         <div class="role-field role-field-sm">
           <label class="form-label">تعداد دفعات</label>
-          <input class="form-input role-count" type="number" min="0" placeholder="1" value="1" ${checked ? '' : 'disabled'} readonly oninput="updateRoleRowTotal(this)">
+          <input class="form-input role-count" type="number" min="0" step="1" inputmode="numeric" placeholder="1" value="${count}" ${checked ? '' : 'disabled'} oninput="updateRoleRowTotal(this)">
         </div>
         <div class="role-field role-total-wrap">
           <label class="form-label">جمع کل این نقش</label>
@@ -1317,15 +1319,16 @@ function updateRoleRowTotal(input) {
 
 function updateStaffBonusTotal(elOrRow) {
   const row = elOrRow.closest ? elOrRow.closest('.role-row') : elOrRow;
-  const total = [...row.querySelectorAll('.bonus-amount')].reduce((a, input) => a + (+(input.value || 0)), 0);
+  const amountTotal = [...row.querySelectorAll('.bonus-amount')].reduce((a, input) => a + (+(input.value || 0)), 0);
   const amount = row.querySelector('.role-amount');
   const count = row.querySelector('.role-count');
-  if (amount) amount.value = total;
-  if (count) count.value = 1;
+  const countValue = Math.max(0, +(count?.value || 0));
+  const total = amountTotal * countValue;
+  if (amount) amount.value = amountTotal;
   row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
   row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
   const summaryAmount = row.querySelector('.bonus-summary-amount');
-  if (summaryAmount) summaryAmount.textContent = `${fmt(total)} تومان`;
+  if (summaryAmount) summaryAmount.textContent = `${fmt(amountTotal)} تومان`;
 }
 
 function addStaffBonusItem(button) {
@@ -1385,7 +1388,7 @@ function collectStaffRoles() {
       roles.push({
         role_id: +cb.dataset.roleId,
         amount: total,
-        count: 1,
+        count: Math.max(0, +(row.querySelector('.role-count')?.value || 0)),
         bonus_items: bonusItems.length ? bonusItems : [{ amount: 0, note: '' }],
       });
       return;

@@ -52,6 +52,13 @@ test('staff role rows all include add-item UI like bonus', () => {
   assert.match(extraSource, /container\.insertAdjacentHTML\('beforeend', staffRoleRowHtml\(newRole/);
 });
 
+test('staff role occurrence count is editable, persisted, and included in totals', () => {
+  assert.match(extraSource, /class="form-input role-count"[^>]*oninput="updateRoleRowTotal\(this\)"/);
+  assert.doesNotMatch(extraSource, /class="form-input role-count"[^>]*readonly/);
+  assert.match(extraSource, /const total = amountTotal \* countValue/);
+  assert.match(extraSource, /count: Math\.max\(0, \+\(row\.querySelector\('\.role-count'\)\?\.value \|\| 0\)\)/);
+});
+
 test('customer account tab hosts the case financial table', () => {
   assert.match(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
   assert.doesNotMatch(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
