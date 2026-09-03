@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.js'), 'utf8');
+const dataSource = fs.readFileSync(path.resolve(__dirname, '..', 'routes', 'data.js'), 'utf8');
 
 test('ordinary workspace syncs send collection deltas instead of the full account document', () => {
   assert.match(appSource, /function _buildServerSyncPatch\(/);
@@ -103,7 +104,12 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(appSource, /keepUnsyncedOnly: true/);
   assert.match(appSource, /adopted newer server document on this device/);
   assert.match(appSource, /unsynced-local-after-remote-replace/);
-  assert.match(appSource, /const etagChanged = !!\(status\.etag && status\.etag !== window\._serverDataEtag\)/);
+  assert.match(appSource, /function _localCollectionsLagServer\(/);
+  assert.match(appSource, /function _serverStatusRequiresHydration\(/);
+  assert.match(appSource, /_markServerDocumentHydrated\(/);
+  assert.match(appSource, /hydratedEtag/);
+  assert.match(dataSource, /collections\.todos = countTodos/);
+  assert.match(dataSource, /collectionState\(db, workspace\.storageKey, key\)/);
   assert.match(appSource, /if \(reset && !_keepLocalBusinessRow\(row, collection\)\) return;/);
   assert.doesNotMatch(appSource, /if \(typeof _hasServerSyncPending === 'function' && _hasServerSyncPending\(\)\) return true;/);
 });

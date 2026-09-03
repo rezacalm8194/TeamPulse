@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp147';
+const TP_ASSET_V = 'tp148';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1620,6 +1620,7 @@ function _writeServerSyncBaseline(data, etag = null) {
   const record = {
     fingerprint: _dataFingerprint(_serverDataSignature(safe)),
     etag: etag || window._serverDataEtag || null,
+    hydratedEtag: window._serverHydratedEtag || null,
     savedAt: Number(data?._lastSaved || 0) || 0,
     updatedAt: Date.now(),
     hashes,
@@ -1632,6 +1633,7 @@ function _writeServerSyncBaseline(data, etag = null) {
       localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify({
         fingerprint: record.fingerprint,
         etag: record.etag,
+        hydratedEtag: record.hydratedEtag,
         savedAt: record.savedAt,
         updatedAt: record.updatedAt,
       }));
@@ -1654,6 +1656,7 @@ function _readServerSyncHashes() {
 function _restoreServerSyncEtagFromBaseline() {
   const baseline = _readServerSyncBaseline();
   if (baseline?.etag && !window._serverDataEtag) window._serverDataEtag = baseline.etag;
+  if (baseline?.hydratedEtag) window._serverHydratedEtag = baseline.hydratedEtag;
   if (baseline?.hashes) window._serverSyncHashCache = { etag: baseline.etag || window._serverDataEtag || null, hashes: baseline.hashes };
 }
 
@@ -4149,6 +4152,32 @@ function _shouldLoadFullDocument() {
   if (_hasServerSyncPending()) return true;
   if (typeof _isTerminalTodoCollisionPending === 'function' && _isTerminalTodoCollisionPending()) return true;
   return false;
+}
+function _localCollectionsLagServer(status) {
+  const totals = status?.collections;
+  if (!totals || typeof totals !== 'object') return false;
+  const serverAny = Object.keys(totals).some(key => Number(totals[key] || 0) > 0);
+  if (!serverAny) return false;
+  const studentSearch = typeof _businessPagingState === 'function' ? _businessPagingState('students')?.search : '';
+  const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
+  for (const key of keys) {
+    if (key === 'students' && studentSearch) continue;
+    const serverTotal = Number(totals[key] || 0);
+    const localCount = Array.isArray(_db?.[key]) ? _db[key].length : 0;
+    if (serverTotal > localCount) return true;
+  }
+  const todoTotal = Number(totals.todos || 0);
+  const localTodos = Array.isArray(_db?.todos) ? _db.todos.length : 0;
+  return todoTotal > localTodos;
+}
+function _serverStatusRequiresHydration(status) {
+  if (!status) return false;
+  if (status.etag && status.etag !== (window._serverHydratedEtag || '')) return true;
+  return _localCollectionsLagServer(status);
+}
+function _markServerDocumentHydrated(etag) {
+  if (etag) window._serverDataEtag = etag;
+  window._serverHydratedEtag = window._serverDataEtag || etag || null;
 }
 async function _ensureDocumentParts(keys) {
   const requested = [...new Set(keys || [])];
@@ -17845,6 +17874,7 @@ async function _loadFromServer() {
       const persistKey = window._activeDBKey || (teamSession ? _teamActiveDBKey() : DB_KEY);
       try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
       if (incomingEtag) window._serverDataEtag = incomingEtag;
+      _markServerDocumentHydrated(incomingEtag || window._serverDataEtag);
       window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, Number(_db._lastSaved || 0) || 0);
       _writeServerSyncBaseline(_db, window._serverDataEtag);
       if (teamSession) {
@@ -18059,8 +18089,7 @@ async function _pollServerStatus() {
     const status = await res.json();
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
-    const etagChanged = !!(status.etag && status.etag !== window._serverDataEtag);
-    if (!etagChanged) {
+    if (!_serverStatusRequiresHydration(status)) {
       if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
           !_fullSyncConflictPendingMatchesCurrentData()) {
         _ensurePendingServerSync(0);
@@ -18662,6 +18691,10 @@ async function _authOnSuccess() {
       if (loadedFromServer) break;
       if (attempt < 2) await new Promise(r => setTimeout(r, 800));
     }
+    try {
+      const hydrated = await _pollServerStatus();
+      if (hydrated) loadedFromServer = true;
+    } catch (e) {}
     if (loadedFromServer) {
       console.log('[TeamPulse] Data synced from server');
       updateAccountDisplay();
@@ -26989,7 +27022,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v147';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v148';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
