@@ -128,4 +128,6 @@ test('manual backup restore compresses before chunking and retries server confir
   assert.match(appSource, /if \(encodedSize > 700 \* 1024\)/);
   assert.match(appSource, /directResponse\.status === 413/);
   assert.match(appSource, /در حال ارسال پشتیبان به سرور/);
+  assert.match(appSource, /const concurrency = 3/);
+  assert.match(appSource, /Promise\.all\(indexes\.map\(sendChunk\)\)/);
 });
