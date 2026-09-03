@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp143';
+const TP_ASSET_V = 'tp144';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2462,15 +2462,23 @@ window.api = {
       const pad = n => String(n).padStart(2,'0');
       const dateStr = `${jy}-${pad(jm)}-${pad(jd)}`;
       const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      const filename = `TeamPulse-backup-${dateStr}_${timeStr}.json`;
-      const json = JSON.stringify(_db, null, 2);
-      const blob = new Blob([json], {type:'application/json'});
+      const json = JSON.stringify(_db);
+      const canGzip = typeof CompressionStream !== 'undefined';
+      const filename = `TeamPulse-backup-${dateStr}_${timeStr}${canGzip?'.json.gz':'.json'}`;
+      let blob = new Blob([json], {type:'application/json'});
+      if (canGzip) {
+        const stream = blob.stream().pipeThrough(new CompressionStream('gzip'));
+        blob = await new Response(stream).blob();
+        blob = new Blob([blob], {type:'application/gzip'});
+      }
       // Use showSaveFilePicker if available (modern browsers)
       if (window.showSaveFilePicker) {
         try {
           const fh = await window.showSaveFilePicker({
             suggestedName: filename,
-            types: [{ description: 'JSON Backup', accept: {'application/json': ['.json']} }],
+            types: canGzip
+              ? [{ description: 'Compressed TeamPulse Backup', accept: {'application/gzip': ['.json.gz']} }]
+              : [{ description: 'JSON Backup', accept: {'application/json': ['.json']} }],
           });
           const ws = await fh.createWritable();
           await ws.write(blob);
@@ -2946,15 +2954,24 @@ window.api = {
 };
 
 // ── Web utilities ─────────────────────────────────────────────────────────────
+async function _readBackupFileText(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (!isGzip) return new TextDecoder().decode(bytes);
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('این مرورگر از بازکردن بکاپ فشرده پشتیبانی نمی‌کند؛ برنامه را به‌روز کنید');
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).text();
+}
+
 function _importFile() {
   const input=document.createElement('input');
-  input.type='file';input.accept='.json';
-  input.onchange=e=>{
+  input.type='file';input.accept='.json,.gz,.json.gz,application/json,application/gzip';
+  input.onchange=async e=>{
     const file=e.target.files[0]; if(!file)return;
-    const reader=new FileReader();
-    reader.onload=async ev=>{
-      try{
-        const imported=JSON.parse(ev.target.result);
+    try{
+        const imported=JSON.parse(await _readBackupFileText(file));
         if(!imported?.students){showToast('فایل پشتیبان معتبر نیست','error');return;}
         if(!confirm(`این فایل شامل ${imported.students.length} شاگرد است. وارد شود و داده‌های فعلی جایگزین شوند؟`))return;
         _saveVersion();
@@ -3005,9 +3022,7 @@ function _importFile() {
           allStudents = [];
           renderPage();
         }, 500);
-      }catch(e){showToast('خطا در خواندن فایل: ' + e.message,'error');}
-    };
-    reader.readAsText(file);
+    }catch(e){showToast('خطا در خواندن فایل: ' + e.message,'error');}
   };
   input.click();
 }
@@ -26821,7 +26836,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v143';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v144';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
