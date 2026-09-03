@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp142';
+const TP_ASSET_V = 'tp143';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -15986,12 +15986,11 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
   const chunkSize = 300 * 1024;
   const total = Math.ceil(json.length / chunkSize);
   const uploadId = `sync_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  let response = null;
-  for (let index = 0; index < total; index++) {
-    if (window._manualRestoreSyncActive) {
-      showToast(`در حال ارسال پشتیبان به سرور… ${fa(Math.round(index / total * 100))}٪`);
-    }
-    response = await _apiFetch('/api/data/' + accId + '/chunks' + _workspaceQuery(), {
+  const concurrency = 3;
+  let completed = 0;
+  let finalResponse = null;
+  const sendChunk = async index => {
+    const response = await _apiFetch('/api/data/' + accId + '/chunks' + _workspaceQuery(), {
       method: 'POST',
       body: JSON.stringify({
         upload_id: uploadId,
@@ -16000,10 +15999,30 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
         chunk: json.slice(index * chunkSize, (index + 1) * chunkSize),
       }),
     });
-    if (!response.ok) return response;
+    completed += 1;
+    if (window._manualRestoreSyncActive) {
+      showToast(`در حال ارسال پشتیبان به سرور… ${fa(Math.round(completed / total * 100))}٪`);
+    }
+    if (!response.ok) throw response;
+    let body = null;
+    try { body = await response.clone().json(); } catch(e) {}
+    if (body?.complete !== false) finalResponse = response;
+  };
+  try {
+    for (let start = 0; start < total; start += concurrency) {
+      const indexes = Array.from(
+        { length: Math.min(concurrency, total - start) },
+        (_, offset) => start + offset
+      );
+      await Promise.all(indexes.map(sendChunk));
+    }
+  } catch (response) {
+    return response instanceof Response ? response : new Response(JSON.stringify({ error:'chunk_upload_failed' }), {
+      status:503, headers:{ 'Content-Type':'application/json' }
+    });
   }
   if (window._manualRestoreSyncActive) showToast('ارسال کامل شد؛ در حال تأیید نهایی سرور…');
-  return response;
+  return finalResponse;
 }
 
 async function _syncManualRestoreWithRetry(maxAttempts = 4) {
@@ -26802,7 +26821,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v142';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v143';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
