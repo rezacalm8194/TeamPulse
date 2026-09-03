@@ -17316,12 +17316,12 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
       return res;
     }
-    if (res && !res.ok && responseData?.error !== 'todo_id_collision') {
+    if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429) {
       _markServerSyncPending('http-' + res.status);
       _scheduleServerSyncRetry();
       if (!window._serverSyncFailureWarned) {
         window._serverSyncFailureWarned = true;
-        showToast('ذخیره روی دستگاه انجام شد؛ ارتباط سرور برقرار شود خودکار دوباره ارسال می‌شود', 'error');
+        showToast('تغییر روی این دستگاه ذخیره شد و به‌محض وصل شدن سرور فرستاده می‌شود');
         setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
       }
     }
@@ -17332,7 +17332,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     _scheduleServerSyncRetry();
     if (!window._serverSyncFailureWarned) {
       window._serverSyncFailureWarned = true;
-      showToast('اینترنت یا سرور در دسترس نیست؛ داده روی دستگاه محفوظ است و خودکار دوباره ارسال می‌شود', 'error');
+      showToast('اینترنت یا سرور در دسترس نیست؛ داده روی دستگاه محفوظ است و خودکار دوباره ارسال می‌شود');
       setTimeout(() => { window._serverSyncFailureWarned = false; }, 30000);
     }
     return null;
