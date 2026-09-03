@@ -1,15 +1,12 @@
-const CACHE = 'team-pulse-static-v133';
+const CACHE = 'team-pulse-static-v134';
+// Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
-  '/app.css?v=tp133',
-  '/app.js?v=tp133',
-  '/tp-inline-bind.js?v=tp133',
   '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
   '/notification-badge.png',
   '/logo.png',
-  '/sw.js',
 ];
 
 self.addEventListener('install', event => {
@@ -244,19 +241,17 @@ self.addEventListener('push', event => {
     const clientList = await listWindowClients();
     const appInForeground = hasFocusedAppWindow(clientList);
 
-    // When the window is not focused, the OS toast is the only thing the user
-    // can see. An open background tab is not enough — Chrome often swallows the
-    // system banner if the page only paints an in-app card.
-    if (!appInForeground) {
-      await displayAppNotification(title, {
-        body,
-        icon: data.icon,
-        badge: data.badge,
-        tag,
-        data: notificationData,
-        actions: notificationActionsFor(notificationData),
-      });
-    }
+    // Chrome requires a user-visible notification in every push event.
+    // Always show the OS toast first; a focused tab may still hide it, and the
+    // page then paints the in-app card. A background/closed window keeps the toast.
+    await displayAppNotification(title, {
+      body,
+      icon: data.icon,
+      badge: data.badge,
+      tag,
+      data: notificationData,
+      actions: notificationActionsFor(notificationData),
+    });
 
     await notifyOpenClients({
       type: 'PUSH_RECEIVED',

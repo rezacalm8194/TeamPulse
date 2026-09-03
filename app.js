@@ -1,12 +1,4 @@
-// Watchdog: if app doesn't load in 5 seconds, show error
-    setTimeout(() => {
-      const el = document.getElementById('loading-msg');
-      if (el && el.parentElement.id === 'content') {
-        el.innerHTML = '<div style="text-align:center;padding:40px;color:#f87171"><h2>⚠️ خطا در بارگذاری</h2><p style="color:#9399ab;margin:10px 0">لطفاً F5 بزنید یا صفحه را refresh کنید.</p><button onclick="location.reload()" style="padding:10px 24px;background:#7c6af7;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px">🔄 تلاش مجدد</button></div>';
-      }
-    }, 5000);
-
-const TP_ASSET_V = 'tp133';
+const TP_ASSET_V = 'tp134';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -26723,7 +26715,7 @@ async function _copyPWAInstallUrl(btn) {
 }
 
 // Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v133';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v134';
 let _tpSwRefreshing = false;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -26731,7 +26723,7 @@ if ('serviceWorker' in navigator) {
     _tpSwRefreshing = true;
     window.location.reload();
   });
-  navigator.serviceWorker.register(TP_SERVICE_WORKER_URL, { updateViaCache: 'none' })
+  navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
       reg.update().catch(() => {});
       if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
