@@ -120,3 +120,12 @@ test('sign-in waits for the authoritative etag before sending a document delta',
   assert.match(appSource, /if \(window\._initialServerLoadPending\) \{[\s\S]{0,100}_markServerSyncPending\('initial-server-load'\)/);
   assert.match(appSource, /\}\)\(\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;[\s\S]{0,500}_ensurePendingServerSync\(0\)/);
 });
+
+test('manual backup restore compresses before chunking and retries server confirmation', () => {
+  assert.match(appSource, /async function _syncManualRestoreWithRetry\(/);
+  assert.match(appSource, /const syncRes = await _syncManualRestoreWithRetry\(\)/);
+  assert.match(appSource, /const encodedRequest = await _compressedJsonRequestBody\(latestPayload\)/);
+  assert.match(appSource, /if \(encodedSize > 700 \* 1024\)/);
+  assert.match(appSource, /directResponse\.status === 413/);
+  assert.match(appSource, /در حال ارسال پشتیبان به سرور/);
+});
