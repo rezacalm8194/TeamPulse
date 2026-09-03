@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp148';
+const TP_ASSET_V = 'tp149';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4177,6 +4177,31 @@ function _localCollectionsLagServer(status) {
   const localTodos = Array.isArray(_db?.todos) ? _db.todos.length : 0;
   return todoTotal > localTodos;
 }
+function _syncCollectionCount(data, key) {
+  return Array.isArray(data?.[key]) ? data[key].length : 0;
+}
+function _incomingServerDocumentLooksTruncated(localData, serverData) {
+  if (!localData || !serverData) return false;
+  const keys = [...(typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : []), 'todos', 'staff', 'instructions'];
+  return keys.some(key => {
+    const localCount = _syncCollectionCount(localData, key);
+    const serverCount = _syncCollectionCount(serverData, key);
+    return localCount >= 20 && serverCount < Math.ceil(localCount * 0.5);
+  });
+}
+function _localCollectionsExceedServer(status) {
+  const totals = status?.collections;
+  if (!totals || typeof totals !== 'object') return false;
+  const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
+  for (const key of keys) {
+    const serverTotal = Number(totals[key] || 0);
+    const localCount = _syncCollectionCount(_db, key);
+    if (localCount >= 20 && serverTotal > 0 && serverTotal < Math.ceil(localCount * 0.5)) return true;
+  }
+  const todoTotal = Number(totals.todos || 0);
+  const localTodos = _syncCollectionCount(_db, 'todos');
+  return localTodos >= 20 && todoTotal > 0 && todoTotal < Math.ceil(localTodos * 0.5);
+}
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
   const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
@@ -4192,8 +4217,8 @@ async function _ensureDocumentParts(keys) {
   const todoPaging = _todoPagingState(false);
   if (requested.includes('todos') &&
       (!_tpPartLoaded('todos') || (!todoPaging.cursor && !todoPaging.done))) {
-    await _loadTodoPage(false, { reset: true });
-    await _loadTodoPage(true, { reset: true });
+    await _loadTodoPage(false, { reset: false });
+    await _loadTodoPage(true, { reset: false });
   }
   if (requested.includes('todos')) {
     let pages = 0;
@@ -4445,9 +4470,9 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
     window._tpHydratingFromServer = false;
   }
 }
-async function _reloadCompleteTodosFromServer() {
-  await _loadTodoPage(false, { reset: true });
-  await _loadTodoPage(true, { reset: true });
+async function _reloadCompleteTodosFromServer({ reset = false } = {}) {
+  await _loadTodoPage(false, { reset });
+  await _loadTodoPage(true, { reset });
   let pages = 0;
   while (pages < 100) {
     const active = _todoPagingState(false);
@@ -17787,11 +17812,11 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     if (remoteDocumentChanged) {
-      await _reloadCompleteTodosFromServer();
-      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS]);
+      await _reloadCompleteTodosFromServer({ reset: false });
+      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: false });
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
-        await _loadTodoPage(false, { reset: true });
+        await _loadTodoPage(false, { reset: false });
       }
       for (const key of businessKeys) {
         await _ensureBusinessPartLoaded(key, { reset: false });
@@ -17866,6 +17891,17 @@ async function _loadFromServer() {
     if (!data) return false;
     if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
     _applyLocalTodoDeletionsToIncoming(data);
+    if (localBeforeLoad && _incomingServerDocumentLooksTruncated(localBeforeLoad, data)) {
+      _db = localBeforeLoad;
+      _migrate(_db);
+      const persistKey = window._activeDBKey || DB_KEY;
+      try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
+      window._remoteServerDocumentChanged = false;
+      _forceNextServerSync();
+      _ensurePendingServerSync(50);
+      console.warn('[TeamPulse] ignored truncated server snapshot and kept local data');
+      return false;
+    }
     if (!teamSession && activeWorkspaceId !== 'default') window._workspaceDataReady = true;
     if (_isManualRestoreProtected()) {
       const expectedSig = _getManualRestoreExpectedSignature();
@@ -18110,6 +18146,13 @@ async function _pollServerStatus() {
     const status = await res.json();
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
+    if (_localCollectionsExceedServer(status)) {
+      window._remoteServerDocumentChanged = false;
+      _forceNextServerSync();
+      _ensurePendingServerSync(0);
+      console.warn('[TeamPulse] kept larger local snapshot; server collections look truncated');
+      return false;
+    }
     if (!_serverStatusRequiresHydration(status)) {
       if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
           !_fullSyncConflictPendingMatchesCurrentData()) {
@@ -18120,11 +18163,25 @@ async function _pollServerStatus() {
     const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
     const etagChanged = !!(status.etag && knownEtag && status.etag !== knownEtag);
     if (!etagChanged) {
+      if (!_localCollectionsLagServer(status)) {
+        _markServerDocumentHydrated(status.etag);
+        return false;
+      }
+      const localBeforeHydrate = _cloneData(_db);
       window._remoteServerDocumentChanged = false;
       window._tpHydratingFromServer = true;
       try {
-        await _reloadCompleteTodosFromServer();
+        await _reloadCompleteTodosFromServer({ reset: false });
         await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: false });
+        if (_incomingServerDocumentLooksTruncated(localBeforeHydrate, _db)) {
+          _db = localBeforeHydrate;
+          _migrate(_db);
+          try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+          _forceNextServerSync();
+          _ensurePendingServerSync(50);
+          console.warn('[TeamPulse] ignored truncated hydration and kept local data');
+          return false;
+        }
         _markServerDocumentHydrated(status.etag);
       } finally {
         window._tpHydratingFromServer = false;
@@ -27057,7 +27114,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v148';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v149';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
