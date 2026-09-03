@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp134';
+const TP_ASSET_V = 'tp135';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -26714,28 +26714,14 @@ async function _copyPWAInstallUrl(btn) {
   }
 }
 
-// Register Service Worker
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v134';
-let _tpSwRefreshing = false;
+// Register Service Worker. Do not reload on controllerchange: skipWaiting +
+// clients.claim() already swap the worker, and a hard reload mid-boot shows a
+// brief error then opens the app a second time.
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v135';
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (_tpSwRefreshing) return;
-    _tpSwRefreshing = true;
-    window.location.reload();
-  });
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
-      reg.update().catch(() => {});
       if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      reg.addEventListener('updatefound', () => {
-        const worker = reg.installing;
-        if (!worker) return;
-        worker.addEventListener('statechange', () => {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-            worker.postMessage({ type: 'SKIP_WAITING' });
-          }
-        });
-      });
     })
     .catch(() => {});
 }

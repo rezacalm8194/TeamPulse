@@ -58,6 +58,8 @@ test('desktop push uses PNG assets and in-app fallback', () => {
   assert.doesNotMatch(appJs, /Watchdog: if app doesn't load in 5 seconds/);
   assert.doesNotMatch(swJs, /notification-badge\.svg/);
   assert.doesNotMatch(swJs, /NOTIFICATION_BADGE = NOTIFICATION_ICON/);
+  assert.match(swJs, /url\.pathname === '\/sw\.js'/);
+  assert.doesNotMatch(appJs, /controllerchange[\s\S]{0,120}location\.reload/);
   assert.match(appJs, /_showLaptopPushEnableBanner/);
   assert.match(appJs, /_appWindowIsForeground/);
   assert.match(remindersJs, /badge: '\/notification-badge\.png'/);
