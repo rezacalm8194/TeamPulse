@@ -114,3 +114,9 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
   assert.match(appSource, /kept restored local snapshot while manual restore is pending/);
   assert.doesNotMatch(appSource, /if \(!window\._tpLoadedParts\) window\._tpLoadedParts = new Set\(\);\s*window\._tpLoadedParts\.add\(collection\)/);
 });
+
+test('sign-in waits for the authoritative etag before sending a document delta', () => {
+  assert.match(appSource, /window\._initialServerLoadPending = true/);
+  assert.match(appSource, /if \(window\._initialServerLoadPending\) \{[\s\S]{0,100}_markServerSyncPending\('initial-server-load'\)/);
+  assert.match(appSource, /\}\)\(\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;[\s\S]{0,500}_ensurePendingServerSync\(0\)/);
+});

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp138';
+const TP_ASSET_V = 'tp139';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -17025,6 +17025,15 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
 }
 
 async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) {
+  // During sign-in the UI renders from the local cache before the authoritative
+  // document (and its etag) has arrived. Do not send a delta in that small
+  // window: it would necessarily be based on the previous session's etag and
+  // produce a needless 409. The initial loader releases this pending save once
+  // it has either received the current document or exhausted its retries.
+  if (window._initialServerLoadPending) {
+    _markServerSyncPending('initial-server-load');
+    return null;
+  }
   if (window._todoDeltaChain || window._todoDeltaDrainInFlight) return null;
   if (_isTodoDeltaPendingReason()) {
     // Delta ops must land first, but never block document sync forever (archive /
@@ -18385,6 +18394,9 @@ async function _authOnSuccess() {
   }
   window._activeDBKey = _teamActiveDBKey();
   await _loadPrimaryDatabase();
+  // init() can render the todo list and schedule a save. Keep that save local
+  // until the authoritative server etag has been refreshed below.
+  window._initialServerLoadPending = true;
   let loadedFromServer = false;
   const hasLocalDataAtStart = (_db.students?.length > 0) || (_db.todos?.length > 0) || (_db.instructions?.length > 0) || (_db.staff?.length > 0) || (_db.meta?.jobId) || (_db.meta?.appTitle && _db.meta.appTitle !== 'TeamPulse');
 
@@ -18443,7 +18455,12 @@ async function _authOnSuccess() {
     } else if (isNewUser) {
       setTimeout(() => _showWelcomeTour(), 800);
     }
-  })();
+  })().finally(() => {
+    window._initialServerLoadPending = false;
+    // A local edit made while the authoritative document was loading is now
+    // safe to send (or will use the normal offline retry path).
+    if (_hasServerSyncPending() || _localDataDivergedFromServerBaseline()) _ensurePendingServerSync(0);
+  });
 
   void (async () => {
     try {
