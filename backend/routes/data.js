@@ -1082,10 +1082,16 @@ router.get('/:accountId/status', auth, async (req, res) => {
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const meta = await loadWorkspaceMetaAsync(db, workspace.storageKey);
+    const collections = {};
+    BUSINESS_COLLECTIONS.forEach(key => {
+      collections[key] = Number(collectionState(db, workspace.storageKey, key)?.row_count || 0);
+    });
+    collections.todos = countTodos(db, workspace.storageKey);
     res.json({
       etag: meta?.etag || null,
       updated_at: meta?.updated_at || null,
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      collections,
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
