@@ -83,6 +83,21 @@ test('page filtering keeps scanning until it fills a team-visible page', () => {
   assert.ok(page.next_cursor);
 });
 
+test('Persian jalali dates get a real date_key so overdue pages sort by day', () => {
+  const db = makeDb();
+  replaceTodos(db, 'acc-fa', [
+    { id: 2, date_jalali: '۱۴۰۴/۰۶/۱۲' },
+    { id: 1, scheduled_date: '۱۴۰۴/۰۶/۱۰' },
+  ]);
+  const rows = db.prepare(
+    'SELECT todo_id,date_key FROM workspace_todos WHERE storage_key=? ORDER BY date_key,todo_id'
+  ).all('acc-fa');
+  assert.deepEqual(rows.map(row => ({ id: row.todo_id, key: row.date_key })), [
+    { id: '1', key: 14040610 },
+    { id: '2', key: 14040612 },
+  ]);
+});
+
 test('row upsert and delete change only addressed todos', () => {
   const db = makeDb();
   replaceTodos(db, 'acc-delta', [{ id: 1, done: false }, { id: 2, done: false }]);

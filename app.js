@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp135';
+const TP_ASSET_V = 'tp136';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4153,6 +4153,14 @@ async function _ensureDocumentParts(keys) {
       (!_tpPartLoaded('todos') || (!todoPaging.cursor && !todoPaging.done))) {
     await _loadTodoPage(false, { reset: true });
     await _loadTodoPage(true, { reset: true });
+  }
+  if (requested.includes('todos')) {
+    let pages = 0;
+    while (!_todoPagingState(false).done && pages < 100) {
+      const ok = await _loadTodoPage(false);
+      pages += 1;
+      if (!ok) break;
+    }
   }
   for (const key of BUSINESS_PAGINATED_KEYS) {
     if (!requested.includes(key)) continue;
@@ -19131,6 +19139,7 @@ function _todosInit() {
     if ((t.remind_min === undefined || t.remind_min === null) && t.time) t.remind_min = 15;
     if (t.scheduledDate && !t.scheduled_date) t.scheduled_date = t.scheduledDate;
     if (!t.scheduled_date && t.date_jalali) t.scheduled_date = t.date_jalali;
+    if (!t.date_jalali && t.scheduled_date) t.date_jalali = t.scheduled_date;
     if (!t.status) t.status = t.done ? 'completed' : 'pending';
     if (!t.visibility) t.visibility = t.assignee_id || t.assignee_email ? 'assignee' : 'private';
     if (!Array.isArray(t.shared_with)) t.shared_with = Array.isArray(t.sharedWith) ? t.sharedWith : [];
@@ -19180,6 +19189,13 @@ function _jalaliToday() { return _jalaliKey(_todayJalaliStr()); }
 
 function _todoScheduledDate(t) {
   return t?.scheduled_date || t?.scheduledDate || t?.date_jalali || '';
+}
+
+function _todoIsOverdue(t, todayKey = _jalaliToday()) {
+  if (!t || t.done || t.archived) return false;
+  const scheduled = _todoScheduledDate(t);
+  if (!scheduled) return false;
+  return _jalaliKey(scheduled) < todayKey;
 }
 
 function _todoRootId(t) {
@@ -19923,10 +19939,7 @@ function _todoStaffOverdueNoticeHtml(todayKey) {
   if (_isTeamGuest()) return '';
   const overdue = (_db.todos || [])
     .filter(t => _todoCanView(t) && !t.archived && !t.done && _todoIsStaffAssignedTask(t))
-    .filter(t => {
-      const scheduled = _todoScheduledDate(t);
-      return scheduled && _jalaliKey(scheduled) < todayKey;
-    });
+    .filter(t => _todoIsOverdue(t, todayKey));
   if (!overdue.length) return '';
 
   const grouped = new Map();
@@ -20053,7 +20066,7 @@ function _renderTodoStaffFilteredList() {
   const statusAllows = (t) => {
     if (_todoStaffFilter.status === 'done') return !!t.done;
     if (_todoStaffFilter.status === 'open') return !t.done;
-    if (_todoStaffFilter.status === 'overdue') return !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey;
+    if (_todoStaffFilter.status === 'overdue') return _todoIsOverdue(t, todayKey);
     return true;
   };
   list = list.filter(statusAllows);
@@ -20062,7 +20075,7 @@ function _renderTodoStaffFilteredList() {
     const bk = _jalaliKey(_todoScheduledDate(b) || today);
     return ak - bk || _sortByTime(a,b);
   };
-  const overdueItems = list.filter(t => !t.done && _todoScheduledDate(t) && _jalaliKey(_todoScheduledDate(t)) < todayKey).sort(sortByDateTime);
+  const overdueItems = list.filter(t => _todoIsOverdue(t, todayKey)).sort(sortByDateTime);
   const todayItems = list.filter(t => {
     const scheduled = _todoScheduledDate(t);
     const key = scheduled ? _jalaliKey(scheduled) : 0;
@@ -22003,19 +22016,11 @@ function renderTodoList(options = {}) {
 
   // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
   // کارهای امروز حتی اگر ساعتشان رد شده باشد باید در بخش «امروز» بمانند.
-  const _isTodoOverdue = (t) => {
-    if (t.done || !t.date_jalali) return false;
-    const dk = _jalaliKey(t.date_jalali);
-    if (dk < todayKey) return true; // روزهای قبل
-    return false;
-  };
-
-  // تابع کمکی: آیا این کار امروز done شده؟
   const _doneToday = (t) => _todoIsDoneToday(t, todayKey);
 
-  const overdueTodos = todos.filter(t => _isTodoOverdue(t) && !_doneToday(t))
+  const overdueTodos = todos.filter(t => _todoIsOverdue(t, todayKey) && !_doneToday(t))
     .sort((a,b) => {
-      const dk = _jalaliKey(a.date_jalali) - _jalaliKey(b.date_jalali);
+      const dk = _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b));
       if (dk !== 0) return dk;
       return (a.time||'').localeCompare(b.time||'');
     });
@@ -22025,14 +22030,19 @@ function renderTodoList(options = {}) {
     const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
     return !scheduled || scheduledKey === todayKey;
   });
+  const tomorrowTodos  = todos.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    return scheduled && tomorrowKey && _jalaliKey(scheduled) === tomorrowKey;
+  });
   const lateDoneTodayTodos = todos.filter(t => {
     const scheduled = _todoScheduledDate(t);
     return _doneToday(t) && scheduled && _jalaliKey(scheduled) < todayKey;
   }).sort((a,b) => _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) || _sortByTime(a,b));
-  const tomorrowTodos  = todos.filter(t => t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey);
   const _afterKey = tomorrowKey || todayKey;
-  const futureTodos    = todos.filter(t => t.date_jalali && _jalaliKey(t.date_jalali) > _afterKey)
-    .sort((a,b) => _jalaliKey(a.date_jalali)-_jalaliKey(b.date_jalali));
+  const futureTodos    = todos.filter(t => {
+    const scheduled = _todoScheduledDate(t);
+    return scheduled && _jalaliKey(scheduled) > _afterKey;
+  }).sort((a,b) => _jalaliKey(_todoScheduledDate(a))-_jalaliKey(_todoScheduledDate(b)));
 
   // کارهای repeat عقب‌افتاده: پیش‌نمایش نوبت بعدی فقط اگر بعد از امروز باشد.
   // نوبت امروز همان catch-up است و نباید جداگانه به «فردا» برود.
@@ -26717,7 +26727,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v135';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v136';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
