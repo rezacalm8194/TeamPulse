@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp163';
+const TP_ASSET_V = 'tp164';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4582,7 +4582,8 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
   const requestEpochs = { ...(window._todoDeltaEpoch || {}) };
   state.loading = (async () => {
     const query = _workspaceQuery() + '&limit=' + TODO_SERVER_PAGE_SIZE +
-      '&archived=' + (archived ? '1' : '0') + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
+      '&archived=' + (archived ? '1' : '0') + '&order=updated' +
+      (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
     const res = await _apiFetch('/api/data/' + accId + '/todos' + query);
     if (!res.ok) { state.failed = true; return false; }
     const payload = await res.json();
@@ -4613,7 +4614,6 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     if (window._tpLoadedParts) window._tpLoadedParts.add('todos');
     if (window._tpAvailableParts) window._tpAvailableParts.add('todos');
     _applyTodoIdHighWater(payload.todo_id_high_water);
-    if (payload.etag) window._serverDataEtag = payload.etag;
     if (payload.etag) state.fetchedEtag = payload.etag;
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
@@ -17709,6 +17709,9 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     return null;
   }
   if (window._tpHydratingFromServer || window._remoteServerDocumentChanged) {
+    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length) {
+      void _drainDurableTodoDeltaQueue();
+    }
     _markServerSyncPending('hydrate-from-server');
     return null;
   }
@@ -18719,9 +18722,12 @@ function _startServerPollLoop(firstDelay) {
   const poll = async () => {
     try {
       window._lastServerPollAt = Date.now();
-      if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) && _appLooksInUse()) {
-        const updated = await _pollServerStatus();
-        _refreshUiAfterServerLoad(updated);
+      if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil)) {
+        if (_readDurableTodoDeltaQueue().length) await _drainDurableTodoDeltaQueue();
+        if (_appLooksInUse()) {
+          const updated = await _pollServerStatus();
+          _refreshUiAfterServerLoad(updated);
+        }
       }
     } finally {
       if (window._serverPollGeneration === generation) {
@@ -27651,7 +27657,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v163';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v164';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

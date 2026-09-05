@@ -175,14 +175,21 @@ function loadTodosByIds(db, storageKey, ids) {
 }
 
 function encodeCursor(row) {
-  return Buffer.from(JSON.stringify([row.date_key, row.todo_id]), 'utf8').toString('base64url');
+  return Buffer.from(JSON.stringify({
+    v: 2,
+    u: row.updated_at || '',
+    id: String(row.todo_id),
+  }), 'utf8').toString('base64url');
 }
 
 function decodeCursor(cursor) {
   if (!cursor) return null;
   try {
     const value = JSON.parse(Buffer.from(String(cursor), 'base64url').toString('utf8'));
-    return Array.isArray(value) && value.length === 2 ? value : null;
+    if (value && value.v === 2 && value.id != null) {
+      return { u: String(value.u || ''), id: String(value.id) };
+    }
+    return null;
   } catch (_) { return null; }
 }
 
@@ -196,14 +203,14 @@ function loadTodosPage(db, storageKey, { limit = 200, cursor = null, archived = 
     const params = [storageKey, archived ? 1 : 0];
     let after = '';
     if (decoded) {
-      after = ' AND (date_key > ? OR (date_key = ? AND todo_id > ?))';
-      params.push(Number(decoded[0]) || 0, Number(decoded[0]) || 0, String(decoded[1]));
+      after = ' AND (COALESCE(updated_at,\'\') < ? OR (COALESCE(updated_at,\'\') = ? AND todo_id < ?))';
+      params.push(decoded.u, decoded.u, decoded.id);
     }
     const rows = db.prepare(`
-      SELECT todo_id,payload,date_key
+      SELECT todo_id,payload,date_key,updated_at
       FROM workspace_todos
       WHERE storage_key=? AND archived=?${after}
-      ORDER BY date_key,todo_id
+      ORDER BY COALESCE(updated_at,'') DESC, todo_id DESC
       LIMIT ?
     `).all(...params, safeLimit + 1);
     exhausted = rows.length < safeLimit + 1;
@@ -215,7 +222,7 @@ function loadTodosPage(db, storageKey, { limit = 200, cursor = null, archived = 
     }
     const lastScanned = rows[rows.length - 1];
     if (!lastScanned || visible.length > safeLimit) break;
-    decoded = [lastScanned.date_key, lastScanned.todo_id];
+    decoded = { u: lastScanned.updated_at || '', id: String(lastScanned.todo_id) };
   }
   const pageRows = visible.slice(0, safeLimit);
   const last = pageRows[pageRows.length - 1];
