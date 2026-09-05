@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp157';
+const TP_ASSET_V = 'tp158';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -18583,7 +18583,8 @@ async function _pollServerStatus() {
           _db = localBeforeHydrate;
           _migrate(_db);
           try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
-          _forceNextServerSync();
+          window._forceNextSync = false;
+          window._avoidFullDocumentSync = true;
           _ensurePendingServerSync(50);
           console.warn('[TeamPulse] ignored truncated hydration and kept local data');
           return false;
@@ -18702,6 +18703,7 @@ async function _syncFromServerOnResume() {
   const run = (async () => {
     // Push local ticks/archive edits before polling, otherwise the server's
     // older document paints over changes that never left the phone.
+    await _tpEnsureFreshClient();
     await _flushPendingLocalWritesOnResume();
     window._lastServerPollAt = Date.now();
     const updated = await _pollServerStatus();
@@ -23943,6 +23945,9 @@ async function _showLaptopPushEnableBanner() {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', event => {
     const data = event.data || {};
+    if (data.type === 'TP_SW_ACTIVATED') {
+      _tpReloadIfServiceWorkerCacheMoved(data.cache);
+    }
     if (data.type === 'TODO_NOTIFICATION_VIEW') {
       _openTodoListFromNotification(data.todoId);
     }
@@ -27530,14 +27535,60 @@ async function _copyPWAInstallUrl(btn) {
   }
 }
 
+function _tpReloadForFreshClient(wantAsset) {
+  const want = String(wantAsset || TP_ASSET_V);
+  try {
+    const at = Number(sessionStorage.getItem('tp_asset_reload_at') || 0);
+    if (Date.now() - at < 15000) return;
+    sessionStorage.setItem('tp_asset_reload_at', String(Date.now()));
+    sessionStorage.setItem('tp_asset_reload_want', want);
+  } catch (e) {}
+  location.reload();
+}
+
+function _tpReloadIfServiceWorkerCacheMoved(cacheName) {
+  const want = 'team-pulse-static-v' + String(TP_ASSET_V).replace(/^tp/, '');
+  if (!cacheName || cacheName === want) return;
+  _tpReloadForFreshClient(cacheName);
+}
+
+async function _tpEnsureFreshClient() {
+  try {
+    const res = await fetch('/api/health', { cache: 'no-store' });
+    if (res.ok) {
+      const health = await res.json();
+      const want = health?.client_asset;
+      if (want && want !== TP_ASSET_V) {
+        _tpReloadForFreshClient(want);
+        return true;
+      }
+    }
+  } catch (e) {}
+  if (!('serviceWorker' in navigator)) return false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return false;
+    if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    await reg.update();
+  } catch (e) {}
+  return false;
+}
+
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v157';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v158';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
       if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed') installing.postMessage({ type: 'SKIP_WAITING' });
+        });
+      });
     })
     .catch(() => {});
 }
