@@ -27,6 +27,11 @@ test('CSP blocks inline scripts, not the UI styles the app still renders', () =>
   assert.equal(fs.existsSync(path.join(root, 'tp-inline-bind.js')), true);
 });
 
+test('health advertises the running client asset so stale phones can reload', () => {
+  assert.match(serverJs, /client_asset: _clientAssetFromAppJs\(\)/);
+  assert.match(serverJs, /function _clientAssetFromAppJs\(/);
+});
+
 test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /require\('compression'\)/);
   assert.match(serverJs, /compression_unavailable/);
@@ -54,7 +59,8 @@ test('desktop push uses PNG assets and in-app fallback', () => {
   assert.match(swJs, /hasFocusedAppWindow/);
   assert.match(swJs, /await displayAppNotification\(title/);
   assert.match(swJs, /Keep install tiny/);
-  assert.doesNotMatch(swJs, /'\/app\.js\?v=/);
+  assert.match(swJs, /async function networkFirstAppShell\(/);
+  assert.match(swJs, /TP_SW_ACTIVATED/);
   assert.doesNotMatch(appJs, /Watchdog: if app doesn't load in 5 seconds/);
   assert.doesNotMatch(swJs, /notification-badge\.svg/);
   assert.doesNotMatch(swJs, /NOTIFICATION_BADGE = NOTIFICATION_ICON/);

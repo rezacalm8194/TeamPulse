@@ -187,9 +187,18 @@ app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/speech', speechLimiter, require('./routes/speech'));
 console.log('Speech API loaded');
+function _clientAssetFromAppJs() {
+  try {
+    const src = require('fs').readFileSync(path.join(__dirname, '../app.js'), 'utf8').slice(0, 240);
+    return src.match(/TP_ASSET_V\s*=\s*'([^']+)'/)?.[1] || null;
+  } catch (_) {
+    return null;
+  }
+}
 app.get('/api/health', (req, res) => res.json({
   status: 'ok',
   version: '1.0.0',
+  client_asset: _clientAssetFromAppJs(),
   capabilities: { workspaces: true },
 }));
 app.get('/share/:token', require('./routes/share').serveShare);

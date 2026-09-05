@@ -120,6 +120,9 @@ test('financial collections refetch from page one when another device changed th
   assert.match(appSource, /if \(currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag\) reset = true/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
   assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
+  assert.match(appSource, /async function _tpEnsureFreshClient\(/);
+  assert.match(appSource, /await _tpEnsureFreshClient\(\)/);
+  assert.match(appSource, /health\?\.client_asset/);
 });
 
 test('phones adopt a newer imported server document instead of keeping a partial cache', () => {

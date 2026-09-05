@@ -1,0 +1,24 @@
+---
+description: Prevent cross-device sync regressions (financial data, 413, stale PWA)
+globs: app.js,sw.js,backend/server.js,backend/tests/document-delta-client.test.js
+alwaysApply: true
+---
+
+# Device sync
+
+Financial collections (`payments`, `packages`, `reminders`, …) sync with **paginated GET + small `/delta`**. Do not PUT the whole workspace because the phone cache has more rows than `/status`.
+
+```javascript
+// BAD — 413 + desktop receipts never arrive on Android
+if (localCount > serverTotal) { _forceNextServerSync(); return; }
+
+// GOOD
+window._forceNextSync = false;
+window._avoidFullDocumentSync = true;
+// then hydrate pages with reset: true
+```
+
+- Todo ticks must not mark the document baseline as fully synced or drop the durable payments queue.
+- After a 413, set `_avoidFullDocumentSync` and retry a capped delta — never another full PUT.
+- Bump `TP_ASSET_V` and `team-pulse-static-v*` together in `app.js`, `app.html`, `sw.js`.
+- `/app` shell must stay **network-first** so phones pick up that version without a manual cache wipe.

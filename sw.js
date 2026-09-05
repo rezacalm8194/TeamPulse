@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v157';
+const CACHE = 'team-pulse-static-v158';
 // Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
@@ -19,11 +19,15 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)));
+    await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    clients.forEach(client => {
+      if (client.postMessage) client.postMessage({ type: 'TP_SW_ACTIVATED', cache: CACHE });
+    });
+  })());
 });
 
 function isSameOrigin(request) {
@@ -46,6 +50,22 @@ function shouldSkip(request) {
 
 function cacheableResponse(response) {
   return response && response.ok && response.type === 'basic';
+}
+
+async function networkFirstAppShell(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (cacheableResponse(response)) cache.put(request, response.clone());
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    return cached || new Response('', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }
 }
 
 async function cacheFirst(request) {
@@ -96,7 +116,7 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
     // صفحه معرفی و بلاگ را از کش اپ جدا نگه دار؛ وگرنه HTML بدون استایل می‌آید.
     if (!isAppShellPath(url.pathname)) return;
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(networkFirstAppShell(request));
     return;
   }
   if (isVersionedAppBundle(url)) {
