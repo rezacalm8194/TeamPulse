@@ -10,34 +10,22 @@ assert.match(source, /function _todoServerHydrateIsAuthoritative\(/);
 assert.match(source, /if \(authoritative\) return _cloneData\(remote\)/);
 assert.match(source, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
 
-function pickMergedTodo(localItem, serverItem) {
-  if (!localItem) return structuredClone(serverItem);
-  if (!serverItem) return structuredClone(localItem);
-  if (!!localItem.done !== !!serverItem.done) {
-    const doneItem = localItem.done ? localItem : serverItem;
-    const openItem = localItem.done ? serverItem : localItem;
-    const doneAt = Date.parse(doneItem.done_at || doneItem.updated_at || '') || 0;
-    const hasUncheck = (item) => (item.history || []).some(row =>
-      row?.action === 'unchecked' && (Date.parse(row.created_at || '') || 0) >= doneAt);
-    if (hasUncheck(openItem) || hasUncheck(doneItem)) return structuredClone(openItem);
-    return structuredClone(doneItem);
-  }
-  const localTime = Date.parse(localItem.updated_at || localItem.done_at || '') || 0;
-  const serverTime = Date.parse(serverItem.updated_at || serverItem.done_at || '') || 0;
-  if (localTime === serverTime) return structuredClone(serverItem);
-  return structuredClone(localTime > serverTime ? localItem : serverItem);
-}
-
+// Execute the shipped functions; copied merge implementations hid regressions.
+const vm = require('node:vm');
 function resolveIncomingTodo(local, remote, { authoritative = false, pendingOp = '' } = {}) {
-  if (!remote) return local ? structuredClone(local) : remote;
-  if (!local) return structuredClone(remote);
-  if (pendingOp === 'complete' || pendingOp === 'reopen' || pendingOp === 'edit' || pendingOp === 'create' || pendingOp === 'delete') {
-    return structuredClone(local);
+  const context = vm.createContext({
+    _readDurableTodoDeltaQueue: () => pendingOp ? [{ todoId: String(remote?.id ?? local?.id), operation: pendingOp }] : [],
+    _isTodoRecurring: () => false,
+  });
+  const names = ['_cloneData', '_todoMergeTime', '_todoHasReopenAfter', '_pickMergedTodo',
+    '_todoPendingDeltaOp', '_resolveIncomingTodo'];
+  for (const name of names) {
+    const start = source.indexOf(`function ${name}(`);
+    assert.ok(start >= 0, name);
+    vm.runInContext(source.slice(start, source.indexOf('\n}', start) + 2), context);
   }
-  if (authoritative) return structuredClone(remote);
-  return pickMergedTodo(local, remote);
+  return context._resolveIncomingTodo(local, remote, { authoritative });
 }
-
 const completed = {
   id: 1, done: true, archived: true, status: 'completed',
   done_at: '2026-09-05T08:00:00.000Z', updated_at: '2026-09-05T08:00:00.000Z',

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp162';
+const TP_ASSET_V = 'tp163';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4461,7 +4461,9 @@ function _businessPagesStaleForServerEtag(etag) {
 function _todoPagesStaleForServerEtag(etag) {
   if (!etag || typeof _todoPagingState !== 'function') return false;
   for (const archived of [false, true]) {
-    const fetched = _todoPagingState(archived)?.fetchedEtag;
+    const state = _todoPagingState(archived);
+    if (state.failed) return true;
+    const fetched = state.fetchedEtag;
     if (fetched && fetched !== etag) return true;
   }
   return false;
@@ -4564,18 +4566,25 @@ function _todoPagingState(archived = false) {
 async function _loadTodoPage(archived = false, { reset = false } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   const state = _todoPagingState(archived);
-  if (state.loading) return state.loading;
-  const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
-  if (currentEtag && state.fetchedEtag && currentEtag !== state.fetchedEtag) reset = true;
+  if (state.loading) {
+    if (!reset) return state.loading;
+    await state.loading;
+    return _loadTodoPage(archived, { reset: true });
+  }
+  // A hydration keeps the old document etag until all pages finish. Comparing
+  // each continuation against it restarts page one forever on large accounts.
+  const currentEtag = window._serverDataEtag || window._serverHydratedEtag || '';
+  if (state.done && currentEtag && state.fetchedEtag && currentEtag !== state.fetchedEtag) reset = true;
   if (state.done && !reset) return true;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return false;
   if (reset) { state.cursor = null; state.done = false; }
+  const requestEpochs = { ...(window._todoDeltaEpoch || {}) };
   state.loading = (async () => {
     const query = _workspaceQuery() + '&limit=' + TODO_SERVER_PAGE_SIZE +
       '&archived=' + (archived ? '1' : '0') + (state.cursor ? '&cursor=' + encodeURIComponent(state.cursor) : '');
     const res = await _apiFetch('/api/data/' + accId + '/todos' + query);
-    if (!res.ok) return false;
+    if (!res.ok) { state.failed = true; return false; }
     const payload = await res.json();
     const incoming = Array.isArray(payload.items) ? payload.items : [];
     const existing = new Map();
@@ -4588,11 +4597,15 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
       const id = String(todo?.id);
       if (!id) return;
       const local = existing.get(id);
+      // A local click may already have been acknowledged and removed from the
+      // pending queue while this older GET was in flight.
+      if (Number(requestEpochs[id] || 0) !== Number(window._todoDeltaEpoch?.[id] || 0)) return;
       existing.set(id, local ? _resolveIncomingTodo(local, todo, { authoritative }) : todo);
     });
     _db.todos = [...existing.values()];
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
+    state.failed = false;
     window._tpTodoPaging.stats = {
       ...(window._tpTodoPaging.stats || {}),
       [archived ? 'archived' : 'active']: Number(payload.total || incoming.length),
@@ -4605,7 +4618,11 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     return true;
-  })().finally(() => { state.loading = null; });
+  })().catch(error => {
+    state.failed = true;
+    console.warn('[TeamPulse] todo page load failed:', error.message);
+    return false;
+  }).finally(() => { state.loading = null; });
   return state.loading;
 }
 async function _loadMoreTodos(archived = false) {
@@ -4743,23 +4760,24 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
   }
 }
 async function _reloadCompleteTodosFromServer({ reset = true } = {}) {
-  await _loadTodoPage(false, { reset });
-  await _loadTodoPage(true, { reset });
+  if (!await _loadTodoPage(false, { reset })) return false;
+  if (!await _loadTodoPage(true, { reset })) return false;
   let pages = 0;
   while (pages < 100) {
     const active = _todoPagingState(false);
     const archived = _todoPagingState(true);
-    if (active.done && archived.done) break;
+    if (active.done && archived.done) return true;
     if (!active.done) {
       const ok = await _loadTodoPage(false);
-      if (!ok) break;
+      if (!ok) return false;
     }
     if (!archived.done) {
       const ok = await _loadTodoPage(true);
-      if (!ok) break;
+      if (!ok) return false;
     }
     pages += 1;
   }
+  return _todoPagingState(false).done && _todoPagingState(true).done;
 }
 async function _loadBusinessPage(collection, { reset = false, search = '' } = {}) {
   if (!BUSINESS_PAGINATED_KEYS.includes(collection)) return false;
@@ -18258,7 +18276,7 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     if (remoteDocumentChanged) {
-      await _reloadCompleteTodosFromServer({ reset: true });
+      if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
       await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: true });
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
@@ -18633,7 +18651,7 @@ async function _pollServerStatus() {
       window._remoteServerDocumentChanged = false;
       window._tpHydratingFromServer = true;
       try {
-        await _reloadCompleteTodosFromServer({ reset: true });
+        if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
         await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: true });
         if (_incomingServerDocumentLooksTruncated(localBeforeHydrate, _db)) {
           _db = localBeforeHydrate;
@@ -27633,7 +27651,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v162';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v163';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

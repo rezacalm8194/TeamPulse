@@ -48,11 +48,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('client assets are consistently bumped to tp162', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp162'/);
-  assert.match(app, /team-pulse-static-v162/);
-  assert.match(html, /app\.js\?v=tp162/);
-  assert.match(sw, /team-pulse-static-v162/);
+test('client assets are consistently bumped to tp163', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp163'/);
+  assert.match(app, /team-pulse-static-v163/);
+  assert.match(html, /app\.js\?v=tp163/);
+  assert.match(sw, /team-pulse-static-v163/);
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
