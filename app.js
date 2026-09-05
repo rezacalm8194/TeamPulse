@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp160';
+const TP_ASSET_V = 'tp162';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4458,11 +4458,20 @@ function _businessPagesStaleForServerEtag(etag) {
   }
   return false;
 }
+function _todoPagesStaleForServerEtag(etag) {
+  if (!etag || typeof _todoPagingState !== 'function') return false;
+  for (const archived of [false, true]) {
+    const fetched = _todoPagingState(archived)?.fetchedEtag;
+    if (fetched && fetched !== etag) return true;
+  }
+  return false;
+}
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
   const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
   if (status.etag && status.etag !== knownEtag) return true;
   if (_businessPagesStaleForServerEtag(status.etag)) return true;
+  if (_todoPagesStaleForServerEtag(status.etag)) return true;
   return _localCollectionsLagServer(status);
 }
 function _markServerDocumentHydrated(etag) {
@@ -4556,6 +4565,8 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   const state = _todoPagingState(archived);
   if (state.loading) return state.loading;
+  const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
+  if (currentEtag && state.fetchedEtag && currentEtag !== state.fetchedEtag) reset = true;
   if (state.done && !reset) return true;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return false;
@@ -4572,10 +4583,12 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
       if (!todo || todo.id == null) return;
       existing.set(String(todo.id), todo);
     });
+    const authoritative = reset || _todoServerHydrateIsAuthoritative();
     incoming.forEach(todo => {
       const id = String(todo?.id);
+      if (!id) return;
       const local = existing.get(id);
-      existing.set(id, local ? _pickMergedTodo(local, todo) : todo);
+      existing.set(id, local ? _resolveIncomingTodo(local, todo, { authoritative }) : todo);
     });
     _db.todos = [...existing.values()];
     state.cursor = payload.next_cursor || null;
@@ -4588,6 +4601,7 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     if (window._tpAvailableParts) window._tpAvailableParts.add('todos');
     _applyTodoIdHighWater(payload.todo_id_high_water);
     if (payload.etag) window._serverDataEtag = payload.etag;
+    if (payload.etag) state.fetchedEtag = payload.etag;
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     return true;
@@ -16763,6 +16777,27 @@ function _pickMergedTodo(localItem, serverItem) {
   return _cloneData(localTime > serverTime ? localItem : serverItem);
 }
 
+function _todoPendingDeltaOp(todoId) {
+  const id = String(todoId ?? '');
+  if (!id || typeof _readDurableTodoDeltaQueue !== 'function') return '';
+  const hit = (_readDurableTodoDeltaQueue() || []).find(item => String(item?.todoId) === id);
+  return String(hit?.operation || '');
+}
+
+function _todoServerHydrateIsAuthoritative() {
+  return !!(window._tpHydratingFromServer || window._remoteServerDocumentChanged);
+}
+
+function _resolveIncomingTodo(local, remote, { authoritative = false } = {}) {
+  if (!remote) return local ? _cloneData(local) : remote;
+  if (!local) return _cloneData(remote);
+  const op = _todoPendingDeltaOp(remote.id != null ? remote.id : local.id);
+  if (op === 'complete' || op === 'reopen' || op === 'edit' || op === 'create') return _cloneData(local);
+  if (op === 'delete') return _cloneData(local);
+  if (authoritative) return _cloneData(remote);
+  return _pickMergedTodo(local, remote);
+}
+
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, options = {}) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
@@ -16875,7 +16910,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       const localTime = Date.parse(localItem.updated_at || localItem.created_at || '') || 0;
       const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
       if (key === 'todos') {
-        Object.assign(serverItem, _pickMergedTodo(localItem, serverItem));
+        Object.assign(serverItem, _resolveIncomingTodo(localItem, serverItem, {
+          authoritative: !!options.keepUnsyncedOnly,
+        }));
       } else if (keepUnsynced && (localTime > serverTime || (allowLocal && localTime === serverTime))) {
         Object.assign(serverItem, _cloneData(localItem));
         injectedLocal = true;
@@ -18118,7 +18155,9 @@ function _mergeServerTodosIntoLocal(serverData) {
       changed = true;
       return;
     }
-    const picked = _pickMergedTodo(local, remote);
+    const picked = _resolveIncomingTodo(local, remote, {
+      authoritative: _todoServerHydrateIsAuthoritative(),
+    });
     if (picked && JSON.stringify(picked) !== JSON.stringify(local)) {
       Object.assign(local, picked);
       changed = true;
@@ -18298,8 +18337,10 @@ async function _loadFromServer() {
     if (!data) return false;
     if (activeWorkspaceId !== 'default') data._workspaceId = activeWorkspaceId;
     _applyLocalTodoDeletionsToIncoming(data);
+    const hydratedTodos = Array.isArray(_db?.todos) ? _db.todos : null;
     if (localBeforeLoad && _incomingServerDocumentLooksTruncated(localBeforeLoad, data)) {
       _db = localBeforeLoad;
+      if (hydratedTodos) _db.todos = hydratedTodos;
       _migrate(_db);
       const persistKey = window._activeDBKey || DB_KEY;
       try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
@@ -18334,9 +18375,11 @@ async function _loadFromServer() {
         keepUnsyncedOnly: true,
         teamSafe: !!teamSession,
       });
+      if (hydratedTodos) _db.todos = hydratedTodos;
       _migrate(_db);
       if (_incomingServerDocumentLooksTruncated(localBeforeLoad, _db)) {
         _db = localBeforeLoad;
+        if (hydratedTodos) _db.todos = hydratedTodos;
         _migrate(_db);
         window._remoteServerDocumentChanged = false;
         _forceNextServerSync();
@@ -18581,7 +18624,8 @@ async function _pollServerStatus() {
     const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
     const etagChanged = !!(status.etag && knownEtag && status.etag !== knownEtag);
     if (!etagChanged) {
-      if (!_localCollectionsLagServer(status) && !_businessPagesStaleForServerEtag(status.etag)) {
+      if (!_localCollectionsLagServer(status) && !_businessPagesStaleForServerEtag(status.etag)
+          && !_todoPagesStaleForServerEtag(status.etag)) {
         _markServerDocumentHydrated(status.etag);
         return false;
       }
@@ -27589,7 +27633,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v160';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v162';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

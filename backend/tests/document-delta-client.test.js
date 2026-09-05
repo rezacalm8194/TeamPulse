@@ -140,7 +140,10 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(appSource, /window\._avoidFullDocumentSync = true/);
   assert.doesNotMatch(appSource, /kept larger local snapshot; server collections look truncated/);
   assert.match(appSource, /function _businessPagesStaleForServerEtag\(/);
-  assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag\)/);
+  assert.match(appSource, /function _todoPagesStaleForServerEtag\(/);
+  assert.match(appSource, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
+  assert.match(appSource, /function _resolveIncomingTodo\(/);
+  assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag\)\s*&& !_todoPagesStaleForServerEtag\(status\.etag\)/);
   assert.match(appSource, /if \(status\.etag && status\.etag !== knownEtag\) return true/);
   assert.match(appSource, /function _localCollectionsLagServer\(/);
   assert.match(appSource, /function _serverStatusRequiresHydration\(/);
