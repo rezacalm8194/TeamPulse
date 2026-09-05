@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp158';
+const TP_ASSET_V = 'tp159';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -16756,7 +16756,7 @@ function _pickMergedTodo(localItem, serverItem) {
     const doneItem = localItem.done ? localItem : serverItem;
     const openItem = localItem.done ? serverItem : localItem;
     const doneAt = Date.parse(doneItem.done_at || doneItem.completed_at || doneItem.completedAt || doneItem.updated_at || '') || 0;
-    if (_todoHasReopenAfter(openItem, doneAt)) return _cloneData(openItem);
+    if (_todoHasReopenAfter(openItem, doneAt) || _todoHasReopenAfter(doneItem, doneAt)) return _cloneData(openItem);
     return _cloneData(doneItem);
   }
   if (localTime === serverTime) return _cloneData(serverItem);
@@ -17151,9 +17151,15 @@ function _enqueueDurableTodoDelta(todo, operation, extraTodos = []) {
   if (!todo || todo.id == null) return;
   const todoId = String(todo.id);
   const op = String(operation || 'upsert');
-  const list = _readDurableTodoDeltaQueue().filter(item =>
-    !(String(item?.todoId) === todoId && String(item?.operation || '') === op)
-  );
+  window._todoDeltaEpoch = window._todoDeltaEpoch || {};
+  window._todoDeltaEpoch[todoId] = (window._todoDeltaEpoch[todoId] || 0) + 1;
+  const opposite = op === 'reopen' ? 'complete' : (op === 'complete' ? 'reopen' : null);
+  const list = _readDurableTodoDeltaQueue().filter(item => {
+    if (String(item?.todoId) !== todoId) return true;
+    if (String(item?.operation || '') === op) return false;
+    if (opposite && String(item?.operation || '') === opposite) return false;
+    return true;
+  });
   list.push({
     todoId,
     operation: op,
@@ -17162,6 +17168,7 @@ function _enqueueDurableTodoDelta(todo, operation, extraTodos = []) {
       .map(item => _cloneData(item))
       .filter(item => item && item.id != null),
     enqueuedAt: Date.now(),
+    epoch: window._todoDeltaEpoch[todoId],
   });
   _writeDurableTodoDeltaQueue(list);
 }
@@ -17456,6 +17463,9 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   if (todoSnapshot && todoSnapshot.id != null) {
     _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
   }
+  const deltaEpoch = todoSnapshot?.id != null
+    ? Number((window._todoDeltaEpoch || {})[String(todoSnapshot.id)] || 0)
+    : 0;
   const syncSavedAt = Number(_db?._lastSaved || Date.now()) || Date.now();
   const execute = async () => {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
@@ -17467,6 +17477,10 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
       let deltaStateConflictAttempt = 0;
       const resolvedCollisionIds = new Set();
       while (true) {
+        if (deltaEpoch && Number((window._todoDeltaEpoch || {})[String(todoSnapshot.id)] || 0) !== deltaEpoch) {
+          _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+          return null;
+        }
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
           method: 'POST',
           body: JSON.stringify({
@@ -17481,6 +17495,10 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
         let responseData = null;
         try { responseData = await res.clone().json(); } catch(e) {}
         if (res.ok) {
+          if (deltaEpoch && Number((window._todoDeltaEpoch || {})[String(todoSnapshot.id)] || 0) !== deltaEpoch) {
+            _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+            return res;
+          }
           _applyTodoIdHighWater(responseData?.todo_id_high_water);
           const localTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
           if (localTodo && responseData?.todo &&
@@ -27577,7 +27595,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v158';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v159';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

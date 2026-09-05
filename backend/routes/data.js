@@ -25,7 +25,7 @@ const {
   looksLikeDestructiveCollectionOverwrite,
   patchLooksDestructive,
 } = require('../utils/deletedItems');
-const { mergeOwnerTodosWithPrevious, pickMergedTodo } = require('../utils/todoMerge');
+const { mergeOwnerTodosWithPrevious, pickMergedTodo, applyTodoDeltaMerge } = require('../utils/todoMerge');
 const {
   staffEmail,
   ownStaffRowsForGrant,
@@ -809,7 +809,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       incomingTodos.forEach(todo => {
         const id = String(todo.id);
         const previous = candidateById.get(id);
-        candidateById.set(id, previous ? pickMergedTodo(todo, previous) : todo);
+        candidateById.set(id, previous ? applyTodoDeltaMerge(todo, previous, operation) : todo);
       });
     }
     const candidateTodos = [...candidateById.values()];

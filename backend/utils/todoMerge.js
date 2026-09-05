@@ -26,6 +26,45 @@ function todoHasReopenAfter(openItem, doneAtMs) {
   });
 }
 
+function mergeTodoHistory(a, b) {
+  const rows = [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])];
+  const seen = new Set();
+  const out = [];
+  rows.forEach(row => {
+    const key = [row?.action, row?.created_at, row?.user_id, row?.new_value].map(value => String(value ?? '')).join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  });
+  return out;
+}
+
+function applyTodoDeltaMerge(incoming, previous, operation) {
+  if (!incoming) return previous || incoming;
+  if (!previous) return incoming;
+  const op = String(operation || 'upsert');
+  if (op === 'reopen') {
+    return {
+      ...previous,
+      ...incoming,
+      done: false,
+      done_at: null,
+      completedAt: null,
+      completed_at: null,
+      archived: incoming.archived === true ? incoming.archived : false,
+      status: incoming.status || 'pending',
+      history: mergeTodoHistory(previous.history, incoming.history),
+    };
+  }
+  if (op === 'complete') {
+    const incomingTime = Date.parse(incoming.updated_at || incoming.done_at || '') || 0;
+    const previousTime = Date.parse(previous.updated_at || '') || 0;
+    if (!previous.done && previousTime > incomingTime) return previous;
+    if (todoHasReopenAfter(previous, incomingTime)) return previous;
+  }
+  return pickMergedTodo(incoming, previous);
+}
+
 function pickMergedTodo(incoming, previous) {
   if (!incoming) return previous || incoming;
   if (!previous) return incoming;
@@ -39,7 +78,7 @@ function pickMergedTodo(incoming, previous) {
     const openItem = incoming.done ? previous : incoming;
     const doneAt = Date.parse(doneItem.done_at || doneItem.completed_at || doneItem.completedAt || doneItem.updated_at || '') || 0;
     // A newer updated_at on an open copy is often local maintenance, not an uncheck.
-    if (todoHasReopenAfter(openItem, doneAt)) return openItem;
+    if (todoHasReopenAfter(openItem, doneAt) || todoHasReopenAfter(doneItem, doneAt)) return openItem;
     return doneItem;
   }
   return todoRecency(incoming) >= todoRecency(previous) ? incoming : previous;
@@ -103,6 +142,7 @@ function mergeOwnerTodosWithPrevious(previousData, nextData) {
 module.exports = {
   todoRecency,
   scheduledKey,
+  applyTodoDeltaMerge,
   pickMergedTodo,
   mergeOwnerTodosWithPrevious,
   isCompletionArtifact,

@@ -1,6 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { pickMergedTodo, mergeOwnerTodosWithPrevious } = require('../utils/todoMerge');
+const { pickMergedTodo, mergeOwnerTodosWithPrevious, applyTodoDeltaMerge } = require('../utils/todoMerge');
+
+test('explicit reopen delta wins over a stored completion', () => {
+  const incoming = { id: 1, done: false, updated_at: '2026-08-23T10:05:00.000Z', status: 'pending' };
+  const previous = { id: 1, done: true, done_at: '2026-08-23T10:00:00.000Z', updated_at: '2026-08-23T10:00:00.000Z' };
+  const merged = applyTodoDeltaMerge(incoming, previous, 'reopen');
+  assert.equal(merged.done, false);
+  assert.equal(merged.status, 'pending');
+});
+
+test('stale complete delta does not overwrite a newer reopen', () => {
+  const incoming = { id: 1, done: true, done_at: '2026-08-23T10:00:00.000Z', updated_at: '2026-08-23T10:00:00.000Z' };
+  const previous = {
+    id: 1,
+    done: false,
+    updated_at: '2026-08-23T10:05:00.000Z',
+    history: [{ action: 'unchecked', created_at: '2026-08-23T10:05:00.000Z' }],
+  };
+  const merged = applyTodoDeltaMerge(incoming, previous, 'complete');
+  assert.equal(merged.done, false);
+});
 
 test('keeps completed todo over a stale open copy', () => {
   const incoming = { id: 1, done: false, updated_at: '2026-08-23T08:00:00.000Z', date_jalali: '1405/06/01' };
@@ -16,15 +36,27 @@ test('keeps a laptop completion over a newer open copy without uncheck history',
   assert.equal(merged.done, true);
 });
 
-test('keeps an explicit uncheck that happened after the completion', () => {
+test('explicit reopen delta wins over a previous completion', () => {
+  const previous = { id: 1, done: true, done_at: '2026-08-23T10:00:00.000Z', updated_at: '2026-08-23T10:00:00.000Z' };
   const incoming = {
     id: 1,
     done: false,
     updated_at: '2026-08-23T10:05:00.000Z',
     history: [{ action: 'unchecked', created_at: '2026-08-23T10:05:00.000Z' }],
   };
-  const previous = { id: 1, done: true, done_at: '2026-08-23T10:00:00.000Z', updated_at: '2026-08-23T10:00:00.000Z' };
-  const merged = pickMergedTodo(incoming, previous);
+  const merged = applyTodoDeltaMerge(incoming, previous, 'reopen');
+  assert.equal(merged.done, false);
+});
+
+test('stale complete delta does not overwrite a newer reopen', () => {
+  const previous = {
+    id: 1,
+    done: false,
+    updated_at: '2026-08-23T10:05:00.000Z',
+    history: [{ action: 'unchecked', created_at: '2026-08-23T10:05:00.000Z' }],
+  };
+  const incoming = { id: 1, done: true, done_at: '2026-08-23T10:00:00.000Z', updated_at: '2026-08-23T10:00:00.000Z' };
+  const merged = applyTodoDeltaMerge(incoming, previous, 'complete');
   assert.equal(merged.done, false);
 });
 
