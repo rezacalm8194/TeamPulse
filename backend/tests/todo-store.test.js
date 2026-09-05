@@ -52,10 +52,10 @@ test('migration moves JSON todo parts into rows and is idempotent', () => {
 test('pagination cursor is stable and archived rows are separated', () => {
   const db = makeDb();
   replaceTodos(db, 'acc-page', [
-    { id: 3, date_jalali: '1405/01/03', archived: false },
-    { id: 1, date_jalali: '1405/01/01', archived: false },
-    { id: 2, date_jalali: '1405/01/02', archived: false },
-    { id: 4, date_jalali: '1405/01/04', archived: true },
+    { id: 3, date_jalali: '1405/01/03', archived: false, updated_at: '2026-09-01T00:00:00.000Z' },
+    { id: 1, date_jalali: '1405/01/01', archived: false, updated_at: '2026-09-03T00:00:00.000Z' },
+    { id: 2, date_jalali: '1405/01/02', archived: false, updated_at: '2026-09-02T00:00:00.000Z' },
+    { id: 4, date_jalali: '1405/01/04', archived: true, updated_at: '2026-09-04T00:00:00.000Z' },
   ]);
   const first = loadTodosPage(db, 'acc-page', { limit: 2, archived: 0 });
   assert.deepEqual(first.items.map(todo => todo.id), [1, 2]);
@@ -68,18 +68,33 @@ test('pagination cursor is stable and archived rows are separated', () => {
   assert.equal(countTodos(db, 'acc-page', true), 1);
 });
 
+test('recently updated todos are on the first page even with an older scheduled date', () => {
+  const db = makeDb();
+  replaceTodos(db, 'acc-recent', [
+    ...Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      date_jalali: '1405/01/20',
+      updated_at: '2026-09-01T00:00:00.000Z',
+    })),
+    { id: 99, date_jalali: '1404/01/01', updated_at: '2026-09-05T18:00:00.000Z' },
+  ]);
+  const first = loadTodosPage(db, 'acc-recent', { limit: 2, archived: 0 });
+  assert.equal(first.items[0].id, 99);
+});
+
 test('page filtering keeps scanning until it fills a team-visible page', () => {
   const db = makeDb();
   replaceTodos(db, 'acc-team', Array.from({ length: 12 }, (_, i) => ({
     id: i + 1,
     date_jalali: `1405/01/${String(i + 1).padStart(2, '0')}`,
     assignee: i % 3 === 0 ? 'member' : 'other',
+    updated_at: `2026-09-01T00:00:${String(i + 1).padStart(2, '0')}.000Z`,
   })));
   const page = loadTodosPage(db, 'acc-team', {
     limit: 2,
     filter: todo => todo.assignee === 'member',
   });
-  assert.deepEqual(page.items.map(todo => todo.id), [1, 4]);
+  assert.deepEqual(page.items.map(todo => todo.id), [10, 7]);
   assert.ok(page.next_cursor);
 });
 

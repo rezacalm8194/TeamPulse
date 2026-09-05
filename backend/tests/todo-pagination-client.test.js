@@ -11,6 +11,7 @@ const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 test('client loads todos from the paginated endpoint instead of document include', () => {
   assert.match(app, /TODO_SERVER_PAGE_SIZE\s*=\s*200/);
   assert.match(app, /'\/todos'\s*\+\s*query/);
+  assert.match(app, /&order=updated/);
   assert.match(app, /BUSINESS_PAGINATED_KEYS/);
   assert.match(app, /!BUSINESS_PAGINATED_KEYS\.includes\(key\)/);
   const core = app.match(/const _CORE_DOCUMENT_PARTS = \[([\s\S]*?)\];/)?.[1] || '';
@@ -48,11 +49,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('client assets are consistently bumped to tp163', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp163'/);
-  assert.match(app, /team-pulse-static-v163/);
-  assert.match(html, /app\.js\?v=tp163/);
-  assert.match(sw, /team-pulse-static-v163/);
+test('client assets are consistently bumped to tp164', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp164'/);
+  assert.match(app, /team-pulse-static-v164/);
+  assert.match(html, /app\.js\?v=tp164/);
+  assert.match(sw, /team-pulse-static-v164/);
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
