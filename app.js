@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp155';
+const TP_ASSET_V = 'tp156';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4654,6 +4654,8 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   const paging = _businessPagingState(collection);
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
+  const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
+  if (currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
@@ -4670,7 +4672,7 @@ async function _ensureCompleteBusinessParts(collections = []) {
     }
   }
 }
-async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS, { reset = false } = {}) {
+async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS, { reset = true } = {}) {
   window._tpHydratingFromServer = true;
   try {
     for (const collection of [...new Set(collections)]) {
@@ -4687,7 +4689,7 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
     window._tpHydratingFromServer = false;
   }
 }
-async function _reloadCompleteTodosFromServer({ reset = false } = {}) {
+async function _reloadCompleteTodosFromServer({ reset = true } = {}) {
   await _loadTodoPage(false, { reset });
   await _loadTodoPage(true, { reset });
   let pages = 0;
@@ -4745,7 +4747,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     state.done = !state.cursor;
     if (window._tpLoadedParts) window._tpLoadedParts.add(collection);
     if (window._tpAvailableParts) window._tpAvailableParts.add(collection);
-    if (payload.etag) window._serverDataEtag = payload.etag;
+    if (payload.etag) {
+      window._serverDataEtag = payload.etag;
+      state.fetchedEtag = payload.etag;
+    }
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     return true;
@@ -18142,8 +18147,8 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     if (remoteDocumentChanged) {
-      await _reloadCompleteTodosFromServer({ reset: false });
-      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: false });
+      await _reloadCompleteTodosFromServer({ reset: true });
+      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: true });
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
         await _loadTodoPage(false, { reset: false });
@@ -18514,8 +18519,8 @@ async function _pollServerStatus() {
       window._remoteServerDocumentChanged = false;
       window._tpHydratingFromServer = true;
       try {
-        await _reloadCompleteTodosFromServer({ reset: false });
-        await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: false });
+        await _reloadCompleteTodosFromServer({ reset: true });
+        await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: true });
         if (_incomingServerDocumentLooksTruncated(localBeforeHydrate, _db)) {
           _db = localBeforeHydrate;
           _migrate(_db);
@@ -18541,6 +18546,10 @@ async function _pollServerStatus() {
 
 function _refreshUiAfterServerLoad(updated, opts = {}) {
   const force = opts.force === true;
+  if (updated && ['payments', 'transactions', 'dashboard'].includes(currentPage)) {
+    if (!document.querySelector('.modal-overlay.open')) renderPage();
+    return;
+  }
   if (currentPage === 'todolist') {
     if (updated) window._todoListServerRefreshPending = true;
     const watchingStaff = _todoActiveTab === 'staff';
@@ -27465,7 +27474,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v155';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v156';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

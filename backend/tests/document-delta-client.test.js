@@ -112,6 +112,16 @@ test('knowledge items created on another device are merged even when local data 
   assert.match(appSource, /partsWereFullyLoaded/);
 });
 
+test('financial collections refetch from page one when another device changed the server document', () => {
+  assert.match(appSource, /async function _reloadCompleteBusinessPartsFromServer\(collections = BUSINESS_PAGINATED_KEYS, \{ reset = true \} = \{\}\)/);
+  assert.match(appSource, /async function _reloadCompleteTodosFromServer\(\{ reset = true \} = \{\}\)/);
+  assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(businessKeys\.length \? businessKeys : \[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
+  assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
+  assert.match(appSource, /if \(currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag\) reset = true/);
+  assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
+  assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
+});
+
 test('phones adopt a newer imported server document instead of keeping a partial cache', () => {
   assert.match(appSource, /function _reloadCompleteBusinessPartsFromServer\(/);
   assert.match(appSource, /function _reloadCompleteTodosFromServer\(/);
