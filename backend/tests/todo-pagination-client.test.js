@@ -29,7 +29,7 @@ test('financial surfaces fully hydrate paginated data before rendering totals an
   const extra = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
   assert.match(app, /async function _ensureCompleteBusinessParts\(/);
   assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'payments'\]\)/);
-  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'reminders'\]\)/);
+  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'reminders', 'payments', 'packages'\]\)/);
   assert.match(extra, /await _ensureCompleteBusinessParts\(\[\s*'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'/);
   const dashboardParts = app.match(/dashboard:\s*\[([^\]]+)\]/)?.[1] || '';
   assert.match(dashboardParts, /'reminders'/);
@@ -48,11 +48,11 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('client assets are consistently bumped to tp154', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp154'/);
-  assert.match(app, /team-pulse-static-v154/);
-  assert.match(html, /app\.js\?v=tp154/);
-  assert.match(sw, /team-pulse-static-v154/);
+test('client assets are consistently bumped to tp155', () => {
+  assert.match(app, /TP_ASSET_V\s*=\s*'tp155'/);
+  assert.match(app, /team-pulse-static-v155/);
+  assert.match(html, /app\.js\?v=tp155/);
+  assert.match(sw, /team-pulse-static-v155/);
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {

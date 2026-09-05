@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp154';
+const TP_ASSET_V = 'tp155';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2150,6 +2150,85 @@ function _nextFuturePaymentReminderDate(baseDate, repeatMonths) {
   return next;
 }
 
+function _reminderDueKey(reminder) {
+  return _jalaliKey(reminder?.due_date_jalali || '');
+}
+
+function _consumePaymentReminder(reminder) {
+  if (!reminder || reminder.done) return false;
+  const repeatMonths = Number(reminder.repeat_months || 0);
+  const next = repeatMonths > 0 ? _nextFuturePaymentReminderDate(reminder.due_date_jalali, repeatMonths) : '';
+  if (repeatMonths > 0 && !next) return false;
+  const pkg = reminder.package_id != null
+    ? (_db.packages || []).find(item => String(item.id) === String(reminder.package_id))
+    : null;
+  if (repeatMonths > 0) {
+    reminder.due_date_jalali = next;
+    reminder.done = false;
+    reminder.notified_levels = [];
+    if (pkg) pkg.payment_due_date = next;
+  } else {
+    reminder.done = true;
+    if (pkg) pkg.payment_due_date = reminder.due_date_jalali;
+  }
+  reminder.updated_at = new Date().toISOString();
+  if (typeof _enqueueDurableBusinessDelta === 'function') {
+    _enqueueDurableBusinessDelta('reminders', reminder, 'upsert');
+    if (pkg) _enqueueDurableBusinessDelta('packages', pkg, 'upsert');
+  }
+  return true;
+}
+
+function _reconcileStudentPaymentReminders(studentId, payment = null) {
+  const sid = String(studentId ?? '');
+  if (!sid) return false;
+  const student = (_db.students || []).find(item => String(item.id) === sid);
+  if (!student) return false;
+  const todayKey = _jalaliKey(_formatJalali(..._todayJalali()));
+  const overdue = (_db.reminders || [])
+    .filter(reminder => String(reminder.student_id) === sid && !reminder.done && _reminderDueKey(reminder) && _reminderDueKey(reminder) <= todayKey)
+    .sort((a, b) => _reminderDueKey(a) - _reminderDueKey(b));
+  if (!overdue.length) return false;
+  const balance = Number(_studentSummary(student).balance || 0);
+  let changed = false;
+  if (balance <= 0) {
+    overdue.forEach(reminder => {
+      if (_consumePaymentReminder(reminder)) changed = true;
+    });
+    return changed;
+  }
+  if (!payment || Number(payment.amount || 0) <= 0) return false;
+  const pkgId = payment.package_id != null && payment.package_id !== '' ? String(payment.package_id) : '';
+  let remaining = Number(payment.amount || 0);
+  const ranked = [
+    ...overdue.filter(reminder => pkgId && String(reminder.package_id || '') === pkgId),
+    ...overdue.filter(reminder => !pkgId || String(reminder.package_id || '') !== pkgId),
+  ];
+  const seen = new Set();
+  ranked.forEach(reminder => {
+    if (seen.has(reminder.id) || remaining <= 0) return;
+    seen.add(reminder.id);
+    const expected = Number(reminder.amount || 0);
+    const matchesPackage = pkgId && String(reminder.package_id || '') === pkgId;
+    if (expected > 0 && remaining + 0.0001 < expected && !matchesPackage) return;
+    if (_consumePaymentReminder(reminder)) {
+      remaining -= expected > 0 ? expected : remaining;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function _reconcileOverdueRemindersForSettledCustomers() {
+  const ids = [...new Set((_db.reminders || []).filter(reminder => !reminder.done).map(reminder => reminder.student_id))];
+  let changed = false;
+  ids.forEach(id => {
+    if (_reconcileStudentPaymentReminders(id)) changed = true;
+  });
+  if (changed) _save(true, { urgent: true });
+  return changed;
+}
+
 // ── Staff summary ───────────────────────────────────────────────────────────
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
@@ -2307,6 +2386,7 @@ window.api = {
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:id,amount:pkg.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت اولیه',created_at:new Date().toISOString()});}
         _createRepeatReminder(id,pkgId,pkg,p.date);
       });
+      _reconcileStudentPaymentReminders(id);
       _save(true,{urgent:true}); return _P({id});
     },
     update: (p)=>{
@@ -2339,6 +2419,7 @@ window.api = {
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:s.id,amount:pkg.current_payment,currency:'تومان',date_jalali:s.date_jalali||'',method:'کارت',note:'پرداخت ثبت‌شده هنگام ویرایش',created_at:new Date().toISOString()});}
         _syncPackageReminder(s.id,pkgId,target,target.start_date);
       });
+      _reconcileStudentPaymentReminders(s.id);
       _save(true,{urgent:true}); return _P({ok:true});
     },
     delete: (id)=>{
@@ -2370,6 +2451,7 @@ window.api = {
       _db.packages.push(newPackage);
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
+      if(p.current_payment>0)_reconcileStudentPaymentReminders(p.student_id);
       _save(); return _P({ok:true,id:pkgId});
     },
     update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
@@ -2384,13 +2466,13 @@ window.api = {
   },
 
   wallet: {
-    adjust: (p)=>{ const s=_db.students.find(x=>x.id===p.student_id); if(!s)return _P({ok:false}); s.wallet=(s.wallet||0)+p.delta; _db.wallet_tx.push({id:_nextId('wallet_tx'),student_id:p.student_id,delta:p.delta,date_jalali:p.date||'',note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true,wallet:s.wallet}); },
+    adjust: (p)=>{ const s=_db.students.find(x=>x.id===p.student_id); if(!s)return _P({ok:false}); s.wallet=(s.wallet||0)+p.delta; _db.wallet_tx.push({id:_nextId('wallet_tx'),student_id:p.student_id,delta:p.delta,date_jalali:p.date||'',note:p.note||'',created_at:new Date().toISOString()}); _reconcileStudentPaymentReminders(p.student_id); _save(); return _P({ok:true,wallet:s.wallet}); },
     history: (sid)=>_P([..._db.wallet_tx].filter(x=>x.student_id===sid).reverse()),
   },
 
   payments: {
-    add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_save(true,{urgent:true});} return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _reconcileStudentPaymentReminders(p.student_id, row); _save(true,{urgent:true}); return _P({ok:true}); },
+    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
     getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
     getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
@@ -2477,6 +2559,7 @@ window.api = {
 
   dashboard: {
     stats: ()=>{
+      _reconcileOverdueRemindersForSettledCustomers();
       const summaries=_db.students.filter(s=>!s.archived).map(_studentSummary);
       const totalAmount=summaries.reduce((a,s)=>a+s.totalAmount,0);
       const totalPaid=summaries.reduce((a,s)=>a+s.totalPaid,0);
@@ -8110,7 +8193,8 @@ async function renderPayments(search = '') {
   } else if (tab === 'purchases') {
     await _ensureCompleteBusinessParts(['students', 'packages']);
   } else if (tab === 'reminders') {
-    await _ensureCompleteBusinessParts(['students', 'reminders']);
+    await _ensureCompleteBusinessParts(['students', 'reminders', 'payments', 'packages']);
+    _reconcileOverdueRemindersForSettledCustomers();
   }
 
   allStudents = await window.api.students.getAll();
@@ -9501,8 +9585,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
       </div>
     `);
   }
-  await _ensureBusinessPartLoaded('students');
-  await _ensureBusinessPartLoaded('reminders');
+  await _ensureCompleteBusinessParts(['students', 'reminders', 'payments', 'packages']);
+  _reconcileOverdueRemindersForSettledCustomers();
   const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
   const reminders = await window.api.reminders.getAll();
@@ -9526,9 +9610,15 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     return;
   }
 
-  const filtered = search
+  const filtered = (search
     ? reminders.filter(r => (r.name + r.lname + r.title + (r.note || '')).toLowerCase().includes(search.toLowerCase()))
-    : reminders;
+    : reminders).filter(r => {
+      if (r.done) return true;
+      const student = allStudents.find(s => String(s.id) === String(r.student_id));
+      if (!student) return true;
+      const due = jalaliKey(r.due_date_jalali);
+      return !(Number(student.balance || 0) <= 0 && due && due <= today);
+    });
 
   let html = `${contentPrefix}<div class="detail-section" style="margin-bottom:12px;border-color:rgba(124,106,247,.28)">
     <h3 style="margin-bottom:6px">چرخه فروش، دریافت و یادآوری</h3>
@@ -27375,7 +27465,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v154';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v155';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
