@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp159';
+const TP_ASSET_V = 'tp160';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -18162,14 +18162,8 @@ function _mergeServerTodosIntoLocal(serverData) {
       changed = true;
       return;
     }
-    // داده‌های قدیمی ممکن است updated_at نداشته باشند؛ برای مشکل تیک‌ها، done_at سرور را جدی بگیر.
-    if (remote.done && remote.done_at && !local.done) {
-      local.done = true;
-      local.done_at = remote.done_at;
-      local.archived = !!remote.archived;
-      local.updated_at = remote.updated_at || remote.done_at;
-      changed = true;
-    }
+    // _pickMergedTodo already handles legacy completion timestamps. Do not
+    // override its explicit reopen decision with a stale completed copy.
   });
   if (changed) _persistMergedServerDocument(serverData);
   return changed;
@@ -27595,7 +27589,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v159';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v160';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
