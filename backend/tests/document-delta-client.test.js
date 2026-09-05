@@ -54,6 +54,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /_isFullDocumentPendingReason\(existing\.reason\)/);
   assert.match(appSource, /never acknowledged/);
   assert.match(appSource, /_save\(true,\{urgent:true\}\)/);
+  assert.match(appSource, /opposite && String\(item\?\.operation \|\| ''\) === opposite/);
+  assert.match(appSource, /_todoDeltaEpoch/);
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
