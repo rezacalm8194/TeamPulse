@@ -130,7 +130,13 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(appSource, /adopted newer server document on this device/);
   assert.match(appSource, /unsynced-local-after-remote-replace/);
   assert.match(appSource, /function _localBusinessCollectionsAheadOfServer\(/);
-  assert.match(appSource, /_localCollectionsExceedServer\(status\) \|\| _localBusinessCollectionsAheadOfServer\(status\)/);
+  assert.match(appSource, /function _capDocumentPatch\(/);
+  assert.match(appSource, /hydrating pages instead of full overwrite/);
+  assert.match(appSource, /window\._avoidFullDocumentSync = true/);
+  assert.doesNotMatch(appSource, /kept larger local snapshot; server collections look truncated/);
+  assert.match(appSource, /function _businessPagesStaleForServerEtag\(/);
+  assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag\)/);
+  assert.match(appSource, /if \(status\.etag && status\.etag !== knownEtag\) return true/);
   assert.match(appSource, /function _localCollectionsLagServer\(/);
   assert.match(appSource, /function _serverStatusRequiresHydration\(/);
   assert.match(appSource, /_markServerDocumentHydrated\(/);
