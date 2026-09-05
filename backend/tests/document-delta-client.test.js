@@ -48,6 +48,12 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /await _flushPendingLocalWritesOnResume\(\)/);
   assert.match(appSource, /todo-delta-save/);
   assert.match(appSource, /urgent\s*[:=]\s*true/);
+  assert.match(appSource, /function _updateServerSyncBaselineAfterTodoDelta\(/);
+  assert.match(appSource, /function _hasUnsyncedNonTodoChanges\(/);
+  assert.match(appSource, /function _persistTodoTickSnapshot\(/);
+  assert.match(appSource, /_isFullDocumentPendingReason\(existing\.reason\)/);
+  assert.match(appSource, /never acknowledged/);
+  assert.match(appSource, /_save\(true,\{urgent:true\}\)/);
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
@@ -104,6 +110,8 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(appSource, /keepUnsyncedOnly: true/);
   assert.match(appSource, /adopted newer server document on this device/);
   assert.match(appSource, /unsynced-local-after-remote-replace/);
+  assert.match(appSource, /function _localBusinessCollectionsAheadOfServer\(/);
+  assert.match(appSource, /_localCollectionsExceedServer\(status\) \|\| _localBusinessCollectionsAheadOfServer\(status\)/);
   assert.match(appSource, /function _localCollectionsLagServer\(/);
   assert.match(appSource, /function _serverStatusRequiresHydration\(/);
   assert.match(appSource, /_markServerDocumentHydrated\(/);

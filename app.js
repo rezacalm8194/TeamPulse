@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp152';
+const TP_ASSET_V = 'tp153';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1285,7 +1285,9 @@ async function _idbDeleteDatabaseSnapshot(key) {
 
 function _queueIndexedDBSnapshot(key, data, source = 'shadow-write') {
   const normalizedKey = String(key || DB_KEY);
-  _tpIdbPendingSnapshots.set(normalizedKey, { data: _cloneData(data), source });
+  // Clone later in IndexedDB write. Cloning the whole workspace here blocks
+  // Android taps (especially todo ticks) for hundreds of milliseconds.
+  _tpIdbPendingSnapshots.set(normalizedKey, { data, source });
   clearTimeout(_tpIdbWriteTimers.get(normalizedKey));
   _tpIdbWriteTimers.set(normalizedKey, setTimeout(async () => {
     _tpIdbWriteTimers.delete(normalizedKey);
@@ -1645,6 +1647,60 @@ function _syncCollectionHashes(data) {
   return { collections, scalars };
 }
 
+function _hasUnsyncedNonTodoChanges() {
+  const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
+  if (patch) {
+    if (Object.keys(patch.scalars || {}).length) return true;
+    return Object.keys(patch.collections || {}).some(key => key !== 'todos');
+  }
+  const pending = _readServerSyncPending();
+  return !!(pending && _isFullDocumentPendingReason(pending.reason));
+}
+
+function _updateServerSyncBaselineAfterTodoDelta(syncedTodos, etag, syncSavedAt) {
+  const prev = _readServerSyncBaseline() || {};
+  const prevHashes = _readServerSyncHashes();
+  const hashes = prevHashes
+    ? { collections: { ...(prevHashes.collections || {}) }, scalars: { ...(prevHashes.scalars || {}) } }
+    : { collections: {}, scalars: {} };
+  hashes.collections = hashes.collections || {};
+  hashes.collections.todos = { ...(hashes.collections.todos || {}) };
+  (Array.isArray(syncedTodos) ? syncedTodos : []).forEach(todo => {
+    if (!todo || todo.id == null) return;
+    const id = String(todo.id);
+    if (todo._deleted) {
+      delete hashes.collections.todos[id];
+      return;
+    }
+    hashes.collections.todos[id] = _isolationItemHash(todo);
+  });
+  const nextEtag = etag || window._serverDataEtag || prev.etag || null;
+  window._serverSyncHashCache = { etag: nextEtag, hashes };
+  const unsynced = _hasUnsyncedNonTodoChanges();
+  const safe = _serverSafeData(_db || {});
+  const fingerprint = unsynced
+    ? (prev.fingerprint || _dataFingerprint(_serverDataSignature(safe)))
+    : _dataFingerprint(_serverDataSignature(safe));
+  const record = {
+    fingerprint,
+    etag: nextEtag,
+    hydratedEtag: window._serverHydratedEtag || prev.hydratedEtag || null,
+    savedAt: unsynced
+      ? Number(prev.savedAt || 0) || 0
+      : Math.max(Number(prev.savedAt || 0), Number(syncSavedAt || 0) || 0),
+    updatedAt: Date.now(),
+    hashes,
+  };
+  window._lastServerSyncFingerprint = fingerprint;
+  try { localStorage.setItem(_serverSyncBaselineKey(), JSON.stringify(record)); } catch(e) {}
+}
+
+function _scheduleFollowupDocumentSyncAfterTodoDelta() {
+  if (_hasUnsyncedNonTodoChanges() || (_hasServerSyncPending() && !_isTodoDeltaPendingReason())) {
+    _scheduleServerSyncSoon(80);
+  }
+}
+
 function _writeServerSyncBaseline(data, etag = null) {
   const safe = _serverSafeData(data || {});
   const hashes = _syncCollectionHashes(safe);
@@ -1810,12 +1866,21 @@ function _readServerSyncPending() {
   }
 }
 
+function _isFullDocumentPendingReason(reason) {
+  return ['save', 'urgent-save', 'pagehide-flush', 'resume-flush', 'network-error', 'initial-server-load']
+    .includes(String(reason || ''));
+}
+
 function _markServerSyncPending(reason = 'save', details = {}) {
   try {
     const existing = _readServerSyncPending();
     if ((existing?.reason === 'conflict-merged' || existing?.reason === 'conflict-merged-stopped') &&
         reason !== 'save' && reason !== 'conflict-merged-stopped') {
       reason = 'conflict-merged-stopped';
+    }
+    if (existing && _isFullDocumentPendingReason(existing.reason) &&
+        (reason === 'todo-delta-save' || _isTodoDeltaPendingReason(reason))) {
+      reason = existing.reason;
     }
     const stoppedIds = existing?.reason === 'todo-id-collision-stopped' && Array.isArray(existing.todoIds)
       ? existing.todoIds.map(String)
@@ -2316,8 +2381,8 @@ window.api = {
   },
 
   payments: {
-    add: (p)=>{ _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id});_save();} return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); _db.payments.push({id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}); _save(true,{urgent:true}); return _P({ok:true}); },
+    update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ _db.payments=_db.payments.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
     getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
@@ -4252,6 +4317,18 @@ function _localCollectionsExceedServer(status) {
   const localTodos = _syncCollectionCount(_db, 'todos');
   return todoTotal > 0 && _collectionLooksTruncatedRelativeToLocal(localTodos, todoTotal);
 }
+function _localBusinessCollectionsAheadOfServer(status) {
+  const totals = status?.collections;
+  if (!totals || typeof totals !== 'object') return false;
+  const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
+  for (const key of keys) {
+    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) continue;
+    const serverTotal = Number(totals[key] || 0);
+    const localCount = _syncCollectionCount(_db, key);
+    if (localCount > serverTotal) return true;
+  }
+  return false;
+}
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
   const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
@@ -4448,11 +4525,9 @@ function _mergeBusinessRow(collection, local, remote) {
 function _keepLocalBusinessRow(row, collection) {
   if (!row) return false;
   const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
-  const pendingSavedAt = Number(pending?.savedAt || 0) || 0;
   const ts = _businessRowTimestamp(row);
   const lastSync = Math.max(
     Number(window._lastServerSyncSavedAt || 0),
-    pendingSavedAt,
     Number((typeof _readServerSyncBaseline === 'function' ? _readServerSyncBaseline() : null)?.savedAt || 0)
   );
   const rowId = row?.id != null ? String(row.id) : '';
@@ -4461,13 +4536,14 @@ function _keepLocalBusinessRow(row, collection) {
     const baselineHash = hashes?.collections?.[collection]?.[rowId];
     if (baselineHash) return baselineHash !== _isolationItemHash(row);
     if (hashes?.collections?.[collection]) {
-      if (ts > 0) return ts >= lastSync;
-      return !!pending;
+      // Id is missing from the last successful server baseline: created here,
+      // never acknowledged. Keep it even if a later pending stamp is newer.
+      return true;
     }
   }
-  if (ts > 0) return ts >= lastSync;
+  if (ts > 0) return lastSync <= 0 || ts >= lastSync;
   const localSaved = Number(_db?._lastSaved || 0) || 0;
-  return localSaved > 0 && localSaved >= lastSync;
+  return !!pending || (localSaved > 0 && localSaved >= lastSync);
 }
 function _mergeLocalBusinessCollections(localBeforeLoad, collections = []) {
   if (!localBeforeLoad || typeof localBeforeLoad !== 'object') return;
@@ -17132,6 +17208,11 @@ function _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoId) {
     pending.reason === 'todo-delta-collision-stopped' ||
     pending.reason === 'todo-delta-collision-remapped';
   if (!isCollisionPending) {
+    if (_hasUnsyncedNonTodoChanges() || _isFullDocumentPendingReason(pending.reason)) {
+      _markServerSyncPending(_isFullDocumentPendingReason(pending.reason) ? pending.reason : 'save');
+      _scheduleFollowupDocumentSyncAfterTodoDelta();
+      return;
+    }
     _clearServerSyncPending(syncSavedAt);
     return;
   }
@@ -17194,9 +17275,11 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
           window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
           window._lastServerSyncSavedAt = Math.max(window._lastServerSyncSavedAt || 0, syncSavedAt);
-          const syncPayload = _serverSafeData(_db);
-          window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
-          _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
+          const liveTodo = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+          const baselineTodos = operation === 'delete'
+            ? [{ id: todoSnapshot.id, _deleted: true }]
+            : [liveTodo || todoSnapshot, ...extraSnapshots];
+          _updateServerSyncBaselineAfterTodoDelta(baselineTodos, window._serverDataEtag, syncSavedAt);
           _dequeueDurableTodoDelta(todoSnapshot.id, operation);
           resolvedCollisionIds.forEach(id => _dequeueDurableTodoDelta(id));
           const remainingDeltaIds = _readDurableTodoDeltaQueue().map(item => String(item?.todoId)).filter(Boolean);
@@ -17206,6 +17289,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
             _clearServerSyncPendingAfterTodoDelta(syncSavedAt, todoSnapshot.id);
             resolvedCollisionIds.forEach(id => _clearServerSyncPendingAfterTodoDelta(syncSavedAt, id));
           }
+          _scheduleFollowupDocumentSyncAfterTodoDelta();
           window._pendingTodoDeltaRetry = null;
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
           if (operation === 'create' || operation === 'upsert') {
@@ -18228,7 +18312,7 @@ async function _pollServerStatus() {
     const status = await res.json();
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
-    if (_localCollectionsExceedServer(status)) {
+    if (_localCollectionsExceedServer(status) || _localBusinessCollectionsAheadOfServer(status)) {
       window._remoteServerDocumentChanged = false;
       _forceNextServerSync();
       _ensurePendingServerSync(0);
@@ -18518,6 +18602,7 @@ function _bindServerSyncLifecycleHandlers() {
   window.addEventListener('pagehide', () => {
     _flushInteractiveSessionNoteSave();
     clearTimeout(window._serverSyncTimer);
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     _flushPendingServerSyncKeepalive();
   });
   window.addEventListener('focus', () => {
@@ -22965,7 +23050,7 @@ function _completeTodoWithReport(t, report) {
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
 
   if (t.done) {
-    _playDoneSound();
+    requestAnimationFrame(() => _playDoneSound());
     if (t.repeat && t.repeat !== 'none') {
       const completedAt = t.done_at || new Date().toISOString();
       extraTodos.push(_createTodoOccurrenceRecord(t, t.status, completedAt));
@@ -22980,7 +23065,6 @@ function _completeTodoWithReport(t, report) {
   // بماند؛ در اندروید با رفتن برنامه به پس‌زمینه آن تایمر اجرا نمی‌شود و تیک برمی‌گردد.
   const stillOpenToday = !t.done && _todoRemainsOpenToday(t);
   if (intendedOp === 'complete' && !stillOpenToday && _paintTodoCheckedFast(t.id)) {
-    try { _save(true, { scheduleServerSync: false, quiet: true }); } catch(e) {}
     _queueTodoTickPersist(t, intendedOp, extraTodos);
     return;
   }
@@ -23018,7 +23102,6 @@ function _resolveOverdueTodo(id, action) {
       _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       if (!_todoRemainsOpenToday(t) && _paintTodoCheckedFast(t.id)) {
-        try { _save(true, { scheduleServerSync: false, quiet: true }); } catch(e) {}
         _queueTodoTickPersist(t, 'complete', [snapshot]);
         return;
       }
@@ -23285,6 +23368,8 @@ function _cssIdentEscape(value) {
 
 function _scheduleTodoListReconcile() {
   if (_todoListReconcileTimer) clearTimeout(_todoListReconcileTimer);
+  const coarse = typeof window !== 'undefined' &&
+    !!(window.matchMedia?.('(pointer: coarse)')?.matches || /android/i.test(navigator.userAgent || ''));
   _todoListReconcileTimer = setTimeout(() => {
     _todoListReconcileTimer = 0;
     if (currentPage !== 'todolist') return;
@@ -23292,7 +23377,14 @@ function _scheduleTodoListReconcile() {
     try { renderTodoList({ skipMaintenance: true }); } catch(e) {
       console.warn('[TeamPulse] todo list reconcile failed:', e?.message || e);
     }
-  }, 280);
+  }, coarse ? 900 : 280);
+}
+
+function _persistTodoTickSnapshot() {
+  _db._lastSaved = Date.now();
+  const key = window._activeDBKey || DB_KEY;
+  _queueIndexedDBSnapshot(key, _db, 'todo-tick');
+  _markServerSyncPending('todo-delta-save');
 }
 
 function _queueTodoTickPersist(todo, operation, extraTodos) {
@@ -23310,7 +23402,7 @@ function _queueTodoTickPersist(todo, operation, extraTodos) {
     _todoPersistQueued = false;
     const items = _todoPersistQueue.splice(0);
     try {
-      _save(true, { scheduleServerSync: false, quiet: true });
+      _persistTodoTickSnapshot();
       items.forEach(item => {
         void _syncTodoDelta(item.todo, item.operation, item.extraTodos);
       });
@@ -27196,7 +27288,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v152';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v153';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
