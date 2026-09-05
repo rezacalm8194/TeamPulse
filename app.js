@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp156';
+const TP_ASSET_V = 'tp157';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1847,6 +1847,33 @@ function _buildServerSyncPatch(data) {
   return { collections, scalars, changedItems, baselineItems };
 }
 
+function _capDocumentPatch(patch, maxChars = 350000) {
+  if (!patch || typeof patch !== 'object') return null;
+  const capped = { collections: {}, scalars: {}, changedItems: 0, baselineItems: Number(patch.baselineItems || 0) };
+  const scalarJson = JSON.stringify(patch.scalars || {});
+  if (scalarJson.length <= Math.floor(maxChars * 0.35)) capped.scalars = patch.scalars || {};
+  let size = JSON.stringify(capped.scalars).length;
+  const keys = Object.keys(patch.collections || {});
+  for (const key of keys) {
+    const change = patch.collections[key] || {};
+    const upserts = Array.isArray(change.upsert) ? change.upsert : [];
+    const deletes = Array.isArray(change.delete) ? change.delete.slice(0, 250) : [];
+    const out = { upsert: [], delete: deletes };
+    for (const row of upserts) {
+      const rowSize = JSON.stringify(row || {}).length + 8;
+      if (out.upsert.length && size + rowSize > maxChars) break;
+      out.upsert.push(row);
+      size += rowSize;
+    }
+    if (!out.upsert.length && !out.delete.length) continue;
+    capped.collections[key] = out;
+    capped.changedItems += out.upsert.length + out.delete.length;
+    if (size >= maxChars) break;
+  }
+  if (!Object.keys(capped.collections).length && !Object.keys(capped.scalars || {}).length) return null;
+  return capped;
+}
+
 function _preferDocumentDelta(patch, fullPayload) {
   if (!patch) return false;
   const patchSize = JSON.stringify({
@@ -1854,6 +1881,8 @@ function _preferDocumentDelta(patch, fullPayload) {
     scalars: patch.scalars,
   }).length;
   const fullSize = JSON.stringify(fullPayload).length;
+  if (fullSize > 400 * 1024) return true;
+  if (window._avoidFullDocumentSync) return true;
   if (patchSize >= fullSize * 0.7) return false;
   if (patch.baselineItems >= 20 && patch.changedItems > patch.baselineItems * 0.55) return false;
   return true;
@@ -4420,10 +4449,20 @@ function _localBusinessCollectionsAheadOfServer(status) {
   }
   return false;
 }
+function _businessPagesStaleForServerEtag(etag) {
+  if (!etag || typeof _businessPagingState !== 'function') return false;
+  const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
+  for (const key of keys) {
+    const fetched = _businessPagingState(key)?.fetchedEtag;
+    if (fetched && fetched !== etag) return true;
+  }
+  return false;
+}
 function _serverStatusRequiresHydration(status) {
   if (!status) return false;
   const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
-  if (status.etag && knownEtag && status.etag !== knownEtag) return true;
+  if (status.etag && status.etag !== knownEtag) return true;
+  if (_businessPagesStaleForServerEtag(status.etag)) return true;
   return _localCollectionsLagServer(status);
 }
 function _markServerDocumentHydrated(etag) {
@@ -17724,8 +17763,19 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       client_saved_at: syncSavedAt,
       base_etag: window._serverDataEtag || null,
     };
-    const documentPatch = forceSync ? null : _buildServerSyncPatch(syncPayload);
-    let useDocumentDelta = _preferDocumentDelta(documentPatch, fullRequestPayload);
+    const avoidFullDocument = !!window._avoidFullDocumentSync ||
+      String(_readServerSyncPending()?.reason || '') === 'payload-too-large';
+    if (avoidFullDocument) window._forceNextSync = false;
+    let documentPatch = (forceSync && !avoidFullDocument) ? null : _buildServerSyncPatch(syncPayload);
+    if (documentPatch && JSON.stringify({
+      collections: documentPatch.collections,
+      scalars: documentPatch.scalars,
+    }).length > 350000) {
+      const capped = _capDocumentPatch(documentPatch);
+      if (capped) documentPatch = capped;
+    }
+    let useDocumentDelta = _preferDocumentDelta(documentPatch, fullRequestPayload) ||
+      (avoidFullDocument && !!documentPatch);
     if (_documentHasUnloadedParts()) {
       if (documentPatch) useDocumentDelta = true;
       else {
@@ -17775,11 +17825,13 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       });
       let deltaBody = null;
       try { deltaBody = await res.clone().json(); } catch(e) {}
-      if (res.status === 404 || res.status === 405 ||
+      if (!avoidFullDocument && (res.status === 404 || res.status === 405 ||
           (res.status === 400 && deltaBody?.error === 'empty_patch') ||
-          (res.status === 409 && (deltaBody?.error === 'delta_requires_full_sync' || deltaBody?.error === 'empty_patch'))) {
+          (res.status === 409 && (deltaBody?.error === 'delta_requires_full_sync' || deltaBody?.error === 'empty_patch')))) {
         res = await sendFullDocument();
       }
+    } else if (avoidFullDocument) {
+      return null;
     } else {
       res = await sendFullDocument();
     }
@@ -17906,6 +17958,8 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
       window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
       _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
+      window._avoidFullDocumentSync = false;
+      window._serverPayloadTooLargeRetried = false;
       _clearDurableBusinessDeltaQueue();
       window._serverSyncRetryAttempt = 0;
       clearTimeout(window._serverSyncRetryTimer);
@@ -17934,10 +17988,16 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     if (res && res.status === 413) {
       clearTimeout(window._serverSyncRetryTimer);
       window._serverSyncRetryAttempt = 0;
+      window._forceNextSync = false;
+      window._avoidFullDocumentSync = true;
       _markServerSyncPending('payload-too-large');
+      if (!window._serverPayloadTooLargeRetried) {
+        window._serverPayloadTooLargeRetried = true;
+        return _syncToServerOnce(conflictAttempt, todoCollisionAttempt);
+      }
       if (!window._serverPayloadTooLargeWarned) {
         window._serverPayloadTooLargeWarned = true;
-        showToast('حجم داده از سقف سرور بیشتر است؛ تلاش تکراری متوقف شد تا نسخه به‌روز برنامه بارگذاری شود.', 'error');
+        showToast('حجم کل پرونده از سقف سرور بیشتر است؛ همگام‌سازی با تکه‌های کوچک ادامه پیدا می‌کند.', 'error');
       }
       return res;
     }
@@ -18495,11 +18555,9 @@ async function _pollServerStatus() {
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
     if (_localCollectionsExceedServer(status) || _localBusinessCollectionsAheadOfServer(status)) {
-      window._remoteServerDocumentChanged = false;
-      _forceNextServerSync();
-      _ensurePendingServerSync(0);
-      console.warn('[TeamPulse] kept larger local snapshot; server collections look truncated');
-      return false;
+      window._forceNextSync = false;
+      window._avoidFullDocumentSync = true;
+      console.warn('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
     }
     if (!_serverStatusRequiresHydration(status)) {
       if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
@@ -18511,7 +18569,7 @@ async function _pollServerStatus() {
     const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
     const etagChanged = !!(status.etag && knownEtag && status.etag !== knownEtag);
     if (!etagChanged) {
-      if (!_localCollectionsLagServer(status)) {
+      if (!_localCollectionsLagServer(status) && !_businessPagesStaleForServerEtag(status.etag)) {
         _markServerDocumentHydrated(status.etag);
         return false;
       }
@@ -18699,7 +18757,7 @@ function _flushPendingServerSyncKeepalive() {
   };
   const patch = window._forceNextSync ? null : _buildServerSyncPatch(syncPayload);
   let useDelta = typeof _preferDocumentDelta === 'function' && _preferDocumentDelta(patch, fullBody);
-  if (_documentHasUnloadedParts()) {
+  if (_documentHasUnloadedParts() || window._avoidFullDocumentSync) {
     if (patch) useDelta = true;
     else return;
   }
@@ -18715,6 +18773,7 @@ function _flushPendingServerSyncKeepalive() {
     : '/api/data/' + accId;
   const url = (window.location.origin || '') + path + _workspaceQuery('?');
   const data = JSON.stringify(payloadObj);
+  if (!useDelta && data.length > 80000) return;
   const authHeaders = {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + _sbSession.token,
@@ -27474,7 +27533,7 @@ async function _copyPWAInstallUrl(btn) {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v156';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v157';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
