@@ -61,6 +61,15 @@ test('complete todo deletion syncs through todo delta instead of a full document
   assert.match(appSource, /operation === 'complete' \|\| operation === 'reopen' \|\| operation === 'delete'/);
 });
 
+test('customer receipts keep a durable delta so todo ticks cannot swallow them', () => {
+  assert.match(appSource, /function _enqueueDurableBusinessDelta\(/);
+  assert.match(appSource, /function _mergeDurableBusinessDeltasIntoCollections\(/);
+  assert.match(appSource, /_enqueueDurableBusinessDelta\('payments', row, 'upsert'\)/);
+  assert.match(appSource, /window\._documentSyncQueuedAfterTodo = true/);
+  assert.match(appSource, /try \{ await _syncToServer\(\); \} catch \(e\) \{\}/);
+  assert.match(appSource, /_clearDurableBusinessDeltaQueue\(\)/);
+});
+
 test('invited teammates keep pending archive student changes until they persist', () => {
   assert.match(appSource, /function _teamCanWriteOwnerStudents\(/);
   assert.match(appSource, /_TEAM_STUDENT_PENDING_KEYS/);
