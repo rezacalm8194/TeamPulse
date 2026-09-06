@@ -4162,8 +4162,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-sheet .archive-number-col{width:35px;max-width:35px;text-align:center;color:var(--text3);font-variant-numeric:tabular-nums}
 .archive-sheet .archive-select-col{width:42px;max-width:42px;text-align:center;position:sticky;right:0;z-index:3;background:var(--bg2)}
 .archive-sheet thead .archive-select-col{z-index:5;background:var(--bg3)}
-.archive-sheet .archive-operation-col{width:205px;max-width:205px;text-align:center}
-.archive-sheet .archive-operation-title{display:inline-block;position:relative;left:62px}
+.archive-sheet .archive-operation-col{width:300px;min-width:280px;max-width:320px;text-align:center;white-space:normal}
+.archive-sheet .archive-operation-title{display:inline-block}
 .archive-status-badge{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:3px 7px;border:1px solid transparent;border-radius:999px;font-size:10.5px;font-weight:800;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 .archive-status-badge.is-uncontacted{color:#aeb4c3;background:rgba(148,163,184,.13);border-color:rgba(148,163,184,.24)}
 .archive-status-badge.is-contacted{color:#74b7ff;background:rgba(55,148,255,.15);border-color:rgba(55,148,255,.30)}
@@ -4173,7 +4173,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-status-badge.is-failed{color:#ff8f99;background:rgba(248,75,91,.13);border-color:rgba(248,75,91,.27)}
 .archive-status-badge.is-neutral{color:var(--text2);background:rgba(255,255,255,.07);border-color:var(--border)}
 .archive-sheet tbody tr:hover td{background:rgba(124,106,247,.08)}
-.archive-sheet .archive-actions{display:flex;justify-content:center;gap:5px;cursor:default}
+.archive-sheet .archive-actions{display:flex;justify-content:center;gap:5px;flex-wrap:wrap;cursor:default}
 .archive-sheet-count{font-size:12px;color:var(--text3)}
 .archive-bulkbar{display:flex;min-height:52px;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(124,106,247,.08);border-bottom:1px solid rgba(124,106,247,.2);visibility:hidden;pointer-events:none}
 .archive-bulkbar.active{visibility:visible;pointer-events:auto}
@@ -4472,3 +4472,16 @@ body { top: 0 !important; }
 .archive-next-activity{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin:6px 0}
 .archive-next-activity.overdue{color:var(--danger,#c24135);font-weight:600}
 @media(max-width:640px){.archive-pipeline-column{flex-basis:260px}.archive-pipeline{padding:10px;gap:10px}.archive-toolbar-filters{flex-wrap:wrap}.archive-view-mode{flex-wrap:wrap}}
+.mstu-contact-schedule { display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--text2); font-size:12px; line-height:1.8; margin-top:4px; }
+.session-column-header .mstu-contact-schedule { flex-basis:100%; }
+.student-pinned-note { position:sticky; top:0; z-index:2; background:var(--bg2); border:1px solid var(--amber); border-inline-start:4px solid var(--amber); padding:12px; border-radius:8px; }
+.student-pinned-note p { white-space:pre-wrap; overflow-wrap:anywhere; max-height:18vh; overflow:auto; margin:8px 0; }
+.student-pinned-note .btn { min-height:44px; }
+.modal-body:has(.student-pinned-note) { scroll-padding-top:calc(18vh + 110px); }
+.student-timeline { list-style:none; margin:12px 6px; padding:0 16px 0 0; border-inline-start:2px solid var(--border2); }
+.student-timeline li { position:relative; padding:0 0 18px; overflow-wrap:anywhere; }
+.student-timeline li::before { content:''; position:absolute; inset-inline-start:-22px; top:6px; width:10px; height:10px; border-radius:50%; background:var(--accent); }
+.student-timeline time { color:var(--text2); font-size:12px; }
+.student-timeline strong { font-size:13px; }
+.student-timeline p { margin:4px 0 0; color:var(--text2); font-size:12px; line-height:1.8; }
+.student-timeline button { min-height:44px; white-space:normal; text-align:start; }
