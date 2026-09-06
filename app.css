@@ -4140,17 +4140,21 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-control.archive-view-mode{min-width:180px;flex:0 0 180px}
 .archive-control.archive-control-search{flex:1 1 220px;min-width:180px}
 .archive-failed-summary{align-self:center;width:auto;padding:0;margin:0}
+.archive-control:has(.archive-category-filter){min-width:170px;flex:0 1 170px}
 .archive-category-filter{
-  width:200px;
-  flex:0 0 200px;
+  width:100%;
+  flex:none;
   min-width:0;
+  height:auto;
+  min-height:40px;
   padding-left:28px;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%239399ab' d='M1.2 1.2L6 6l4.8-4.8'/></svg>");
   background-repeat:no-repeat;
   background-position:left 10px center;
   cursor:pointer;
 }
-.archive-search{min-width:180px;max-width:none;flex:1}
+.archive-control .archive-search{flex:none;width:100%;min-width:0;max-width:none}
+.archive-search{min-width:180px;max-width:none}
 .archive-sheet{overflow:auto;max-height:calc(100vh - 285px)}
 .archive-sheet table{min-width:1007px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
