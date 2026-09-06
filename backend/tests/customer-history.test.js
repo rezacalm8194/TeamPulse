@@ -74,6 +74,34 @@ test('schedule chooses nearest session on or after today, latest session indepen
   db.sessions=[];db.students[0].last_activity_at='2026-09-06T10:00:00Z';
   assert.ok(c.studentContactSchedule(1).last_contact_date);assert.equal(c.studentContactSchedule(1).next_session_date,'');
 });
+test('schedule html merges duplicate last/next dates and hides empty next',()=>{
+  const source=fs.readFileSync(path.resolve(__dirname,'../../app.js'),'utf8');
+  const match=new RegExp('function studentContactScheduleHtml\\(').exec(source);
+  assert.ok(match);
+  let depth=0,start=source.indexOf('{',match.index),end=-1;
+  for(let i=start;i<source.length;i++){if(source[i]==='{')depth++;if(source[i]==='}'&&--depth===0){end=i;break;}}
+  const fn=source.slice(match.index,end+1);
+  const ctx=vm.createContext({
+    studentContactSchedule:(id,today)=>({
+      last_contact_date:id===1?'1405/05/15':'1405/05/10',
+      next_session_date:id===1?'1405/05/15':(id===2?'1405/06/01':''),
+      last_session_date:'',
+    }),
+    _jalaliKey:s=>Number(String(s||'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).split('/').map((x,i)=>i?String(x).padStart(2,'0'):x).join('')),
+    _formatJalali:(y,m,d)=>[y,String(m).padStart(2,'0'),String(d).padStart(2,'0')].join('/'),
+    _todayJalali:()=>[1405,5,15],
+    DateService:{disp:s=>s},
+    escapeHtml:s=>String(s),
+    fa:s=>String(s),
+  });
+  const html=vm.runInContext(fn+'\nstudentContactScheduleHtml',ctx);
+  assert.match(html(1),/امروز|برنامه|آخرین/);
+  assert.doesNotMatch(html(1),/جلسه بعد/);
+  assert.match(html(2),/آخرین/);
+  assert.match(html(2),/جلسه بعد/);
+  assert.doesNotMatch(html(3),/جلسه بعد/);
+  assert.match(html(3),/آخرین/);
+});
 test('new customer gets separate pin, conversion and note date defaults',async()=>{
   const {db,context:c}=setup();
   await c.api.add({name:'جدید',lname:'مشتری',pinned_note:'پین',packages:[]});

@@ -4472,8 +4472,16 @@ body { top: 0 !important; }
 .archive-next-activity{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin:6px 0}
 .archive-next-activity.overdue{color:var(--danger,#c24135);font-weight:600}
 @media(max-width:640px){.archive-pipeline-column{flex-basis:260px}.archive-pipeline{padding:10px;gap:10px}.archive-toolbar-filters{flex-wrap:wrap}.archive-view-mode{flex-wrap:wrap}}
-.mstu-contact-schedule { display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--text2); font-size:12px; line-height:1.8; margin-top:4px; }
+.mstu-contact-schedule { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; color:var(--text2); font-size:11px; line-height:1.5; margin-top:4px; }
+.mstu-contact-schedule.is-compact { flex-wrap:nowrap; }
+.mstu-schedule-sep { color:var(--text3); opacity:.7; }
+.mstu-schedule-merged { font-weight:600; color:var(--text2); }
 .session-column-header .mstu-contact-schedule { flex-basis:100%; }
+.scn-title-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.scn-pin { border:none; background:transparent; padding:0 2px; margin:0; cursor:pointer; font-size:13px; line-height:1; opacity:.35; }
+.scn-pin.has-pin { opacity:1; }
+.scn-pin:hover,.scn-pin:focus-visible { opacity:1; }
+.session-column-header .session-fu-badge { cursor:pointer; border-radius:20px; padding:1px 7px; font-size:11px; font-weight:700; }
 .student-pinned-note { position:sticky; top:0; z-index:2; background:var(--bg2); border:1px solid var(--amber); border-inline-start:4px solid var(--amber); padding:12px; border-radius:8px; }
 .student-pinned-note p { white-space:pre-wrap; overflow-wrap:anywhere; max-height:18vh; overflow:auto; margin:8px 0; }
 .student-pinned-note .btn { min-height:44px; }
@@ -4487,9 +4495,11 @@ body { top: 0 !important; }
 .student-timeline button { min-height:44px; white-space:normal; text-align:start; }
 
 
-.sessions-board-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;align-items:center}
-.sessions-board-filter-chip{border:1px solid var(--border2);background:var(--bg2);color:var(--text2);border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
-.sessions-board-filter-chip.active{border-color:var(--accent);color:var(--accent);background:rgba(124,106,247,.08)}
+.sessions-board-filters{display:inline-flex;flex-wrap:nowrap;gap:0;margin:0 0 10px;align-items:stretch;border:1px solid var(--border2);border-radius:10px;overflow:auto;max-width:100%;background:var(--bg2)}
+.sessions-board-filter-chip{border:0;border-left:1px solid var(--border2);background:transparent;color:var(--text3);border-radius:0;padding:5px 10px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1.2}
+.sessions-board-filter-chip:first-child{border-left:0}
+.sessions-board-filter-chip.active{color:var(--accent);background:rgba(124,106,247,.12)}
+.sessions-board-filter-chip:hover{color:var(--text)}
 .session-fu-due{font-size:11px;color:var(--text3)}
 .session-fu-due.overdue{color:var(--danger,#c24135);font-weight:600}
 .session-fu-badge{background:rgba(251,191,36,.15);color:var(--amber)}
