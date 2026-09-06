@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp174';
+const TP_ASSET_V = 'tp175';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -888,7 +888,7 @@ function _migrate(d) {
     });
   });
   d.students.forEach(s=>{
-    ['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at'].forEach(k=>{if(s[k]===undefined)s[k]='';});
+    ['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at','bale_chat_id'].forEach(k=>{if(s[k]===undefined)s[k]='';});
     if(s.family_id===undefined)s.family_id=null;
     if(s.wallet===undefined)s.wallet=0;
     if(s.archived===undefined)s.archived=false;
@@ -7417,6 +7417,7 @@ async function openStudentDetail(id) {
     </div>
   `, [
     { label: '📑 تراکنش‌ها', cls: 'btn-ghost', action: `closeModal();openStudentTransactions(${id})` },
+    ...(Number(s.balance) > 0 ? [{ label: 'بله‌پی', cls: 'btn-ghost', action: `closeModal();openBalePaymentRequest({student_id:${id},amount:${Math.round(Number(s.balance)||0)},title:'تسویه مانده'})` }] : []),
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openStudentModal(${id})` },
     { label: '💳 افزودن پرداخت', cls: 'btn-primary', action: `closeModal();openAddPayment(${id})` },
     { label: `📅 ثبت ${META.sessionSingular || 'جلسه'}`, cls: 'btn-ghost', action: `closeModal();openAddSessionGeneral(${id})` },
@@ -10090,6 +10091,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
           <button class="row-menu-btn" onclick="toggleRowMenu(event,'${reminderMenuId}')" aria-label="عملیات یادآوری">⋮</button>
           <div class="row-menu-panel" id="${reminderMenuId}">
             ${!r.done ? `<div class="row-menu-item" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</div>` : ''}
+            ${!r.done && r.amount ? `<div class="row-menu-item" onclick="openBalePaymentRequest({student_id:${r.student_id},reminder_id:${r.id},package_id:${r.package_id==null?'null':JSON.stringify(r.package_id)},amount:${Math.round(Number(r.amount)||0)},title:${JSON.stringify(String(r.title||'سررسید پرداخت').slice(0,32))}})">بله‌پی</div>` : ''}
             ${!r.done ? `<div class="row-menu-item" onclick="openPurchaseFromReminder(${r.id})">🛒 خرید جدید</div>` : ''}
             <div class="row-menu-item" onclick="openEditReminder(${r.id})">✏️ ویرایش</div>
             <div class="row-menu-divider"></div>
@@ -10444,6 +10446,7 @@ function _openPartyTransactions(payload) {
   window._partyTxPrintPayload = view;
   openModal('📑 تراکنش‌ها', _partyTxModalHtml(view), [
     { label: '🖨 چاپ فاکتور', cls: 'btn-primary', action: 'printPartyTransactions()' },
+    { label: '↗ اشتراک لینک', cls: 'btn-ghost', action: 'sharePartyTransactionsLink()' },
     { label: '⬇ دانلود', cls: 'btn-ghost', action: 'downloadPartyTransactions()' },
     { label: '📋 کپی', cls: 'btn-ghost', action: 'copyPartyTransactions()' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
@@ -11645,6 +11648,30 @@ async function renderSettings() {
       </div>
     </div>
 
+    <div class="detail-section" id="bale-pay-settings">
+      <h3>بله‌پی — لینک پرداخت</h3>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">
+        توکن بازو و توکن پرداخت کیف‌پولی را از <span dir="ltr">@BotFather</span> در بله بگیرید. این اسرار فقط روی سرور ذخیره می‌شوند و با موبایل همگام نمی‌شوند.
+        برای تست می‌توانید توکن پرداخت را خالی بگذارید تا از حالت آزمایشی استفاده شود.
+      </p>
+      <div id="bale-pay-status" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.8">در حال بررسی اتصال…</div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label" for="bale-bot-token">توکن بازو (Bot Token)</label>
+          <input class="form-input" id="bale-bot-token" type="password" autocomplete="off" dir="ltr" placeholder="از BotFather">
+        </div>
+        <div class="form-group full">
+          <label class="form-label" for="bale-provider-token">توکن پرداخت کیف‌پولی (Provider Token)</label>
+          <input class="form-input" id="bale-provider-token" type="password" autocomplete="off" dir="ltr" placeholder="خالی = حالت تست WALLET-TEST">
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveBalePayCredentials()">ذخیره اتصال بله‌پی</button>
+        <button class="btn btn-ghost" onclick="registerBalePayWebhook()">ثبت وب‌هوک</button>
+        <button class="btn btn-ghost" onclick="disconnectBalePay()">قطع اتصال</button>
+      </div>
+    </div>
+
     <div class="detail-section">
       <h3>🌍 منطقه زمانی و تقویم <span class="help-ic" title="نوع تقویم روی کل برنامه اثر می‌گذارد: اهداف، جلسات، لیست کارها، عادت‌ها، گزارش‌ها و فاکتورها">؟</span></h3>
       <div class="form-grid">
@@ -11893,6 +11920,7 @@ async function renderSettings() {
   initPkgTypesDragDrop();
   _syncThemeToggleUI();
   setTimeout(_checkPushStatusForSettings, 100);
+  setTimeout(loadBalePayStatus, 50);
 }
 
 function _syncThemeToggleUI() {
@@ -12051,6 +12079,181 @@ async function saveAutomationSettings() {
   META = await window.api.meta.update({ automation });
   _automationScanAt = 0;
   showToast('اتوماسیون ذخیره شد ✓', 'success');
+}
+
+let _balePayConnected = false;
+
+async function loadBalePayStatus() {
+  const el = document.getElementById('bale-pay-status');
+  if (!el) return;
+  if (!_sbSession?.token) {
+    _balePayConnected = false;
+    el.textContent = 'برای اتصال بله‌پی وارد حساب شوید.';
+    return;
+  }
+  try {
+    const res = await _apiFetch('/api/bale/credentials' + _workspaceQuery());
+    const data = await res.json().catch(() => ({}));
+    _balePayConnected = !!(res.ok && data.connected);
+    if (!_balePayConnected) {
+      el.textContent = 'هنوز متصل نیست. توکن‌ها را وارد و ذخیره کنید.';
+      return;
+    }
+    el.innerHTML = 'متصل'
+      + (data.bot_username ? ` · <span dir="ltr">@${escapeHtml(data.bot_username)}</span>` : '')
+      + (data.test_mode ? ' · حالت تست' : '')
+      + (data.webhook_registered ? ' · وب‌هوک فعال' : ' · وب‌هوک ثبت نشده');
+  } catch (e) {
+    _balePayConnected = false;
+    el.textContent = 'بررسی اتصال ناموفق بود.';
+  }
+}
+
+async function saveBalePayCredentials() {
+  if (!_sbSession?.token) { showToast('وارد حساب شوید', 'error'); return; }
+  const bot_token = document.getElementById('bale-bot-token')?.value.trim() || '';
+  const provider_token = document.getElementById('bale-provider-token')?.value.trim() || '';
+  if (!bot_token) { showToast('توکن بازو الزامی است', 'error'); return; }
+  const res = await _apiFetch('/api/bale/credentials' + _workspaceQuery(), {
+    method: 'PUT',
+    body: JSON.stringify({ bot_token, provider_token, workspace: _currentAccountId() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.message || data.error || 'ذخیره اتصال ناموفق بود', 'error');
+    return;
+  }
+  const botInput = document.getElementById('bale-bot-token');
+  const provInput = document.getElementById('bale-provider-token');
+  if (botInput) botInput.value = '';
+  if (provInput) provInput.value = '';
+  await loadBalePayStatus();
+  showToast('اتصال بله‌پی ذخیره شد ✓', 'success');
+}
+
+async function registerBalePayWebhook() {
+  if (!_sbSession?.token) { showToast('وارد حساب شوید', 'error'); return; }
+  const res = await _apiFetch('/api/bale/credentials/webhook' + _workspaceQuery(), {
+    method: 'POST',
+    body: JSON.stringify({ workspace: _currentAccountId() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.message || data.error || 'ثبت وب‌هوک ناموفق بود', 'error');
+    return;
+  }
+  await loadBalePayStatus();
+  showToast('وب‌هوک بله‌پی ثبت شد ✓', 'success');
+}
+
+async function disconnectBalePay() {
+  if (!_sbSession?.token) return;
+  if (!confirm('اتصال بله‌پی قطع شود؟')) return;
+  const res = await _apiFetch('/api/bale/credentials' + _workspaceQuery(), { method: 'DELETE' });
+  if (!res.ok) { showToast('قطع اتصال ناموفق بود', 'error'); return; }
+  _balePayConnected = false;
+  await loadBalePayStatus();
+  showToast('اتصال بله‌پی قطع شد', 'success');
+}
+
+function openBalePaymentRequest(opts = {}) {
+  const studentId = opts.student_id != null ? opts.student_id : null;
+  const reminderId = opts.reminder_id != null ? opts.reminder_id : null;
+  const packageId = opts.package_id != null ? opts.package_id : null;
+  const amount = Math.max(0, Math.round(Number(opts.amount) || 0));
+  const titleDefault = String(opts.title || 'درخواست پرداخت').slice(0, 32);
+  const student = studentId != null
+    ? (_db.students || []).find(s => Number(s.id) === Number(studentId)) || allStudents.find(s => Number(s.id) === Number(studentId))
+    : null;
+  const name = student ? [student.name, student.lname].filter(Boolean).join(' ') : '';
+  window._balePayCtx = { student_id: studentId, reminder_id: reminderId, package_id: packageId };
+  openModal('لینک پرداخت بله‌پی', `
+    <p style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:12px">
+      ${name ? `برای «${escapeHtml(name)}» ` : ''}مبلغ را به تومان وارد کنید. لینک از طریق بله‌پی ساخته می‌شود و پس از پرداخت، دریافت خودکار ثبت می‌شود.
+    </p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label" for="bale-pay-amount">مبلغ (تومان) *</label>
+        <input class="form-input" id="bale-pay-amount" type="number" min="1" step="1" value="${amount || ''}" dir="ltr">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="bale-pay-title">عنوان</label>
+        <input class="form-input" id="bale-pay-title" maxlength="32" value="${escapeHtml(titleDefault)}">
+      </div>
+      <div class="form-group full">
+        <label class="form-label" for="bale-pay-desc">توضیح</label>
+        <input class="form-input" id="bale-pay-desc" maxlength="255" value="${escapeHtml(opts.description || (name ? 'پرداخت ' + name : 'پرداخت از طریق بله‌پی'))}">
+      </div>
+    </div>
+  `, [
+    { label: 'ساخت لینک', cls: 'btn-primary', action: 'createBalePaymentRequest()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+async function createBalePaymentRequest(ctx = window._balePayCtx || {}) {
+  if (!_sbSession?.token) { showToast('وارد حساب شوید', 'error'); return; }
+  const amount = Math.round(Number(document.getElementById('bale-pay-amount')?.value));
+  const title = String(document.getElementById('bale-pay-title')?.value || 'درخواست پرداخت').trim().slice(0, 32);
+  const description = String(document.getElementById('bale-pay-desc')?.value || '').trim().slice(0, 255);
+  if (!Number.isInteger(amount) || amount < 1) { showToast('مبلغ معتبر وارد کنید', 'error'); return; }
+  const res = await _apiFetch('/api/bale/payment-requests' + _workspaceQuery(), {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace: _currentAccountId(),
+      amount_toman: amount,
+      title,
+      description,
+      student_id: ctx.student_id,
+      reminder_id: ctx.reminder_id,
+      package_id: ctx.package_id,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.message || data.error || 'ساخت لینک ناموفق بود', 'error');
+    return;
+  }
+  closeModal();
+  _showBalePayShareModal(data);
+}
+
+function _showBalePayShareModal(data) {
+  const url = data.shareUrl || '';
+  window._baleShareUrl = url;
+  window._baleShareMsg = `لطفاً مبلغ ${fmt(data.amount_toman)} تومان را از طریق بله‌پی پرداخت کنید:\n${url}`;
+  openModal('لینک بله‌پی آماده است', `
+    <div style="font-size:13px;line-height:1.8">
+      <div><strong>${escapeHtml(data.title || 'درخواست پرداخت')}</strong>${data.test_mode ? ' <span style="color:var(--amber)">(تست)</span>' : ''}</div>
+      <div style="margin:8px 0;font-size:18px;font-weight:700">${fmt(data.amount_toman)} تومان</div>
+      <input class="form-input" id="bale-share-url" dir="ltr" readonly value="${escapeHtml(url)}">
+    </div>
+  `, [
+    { label: 'کپی لینک', cls: 'btn-primary', action: '_copyBalePayLink("url")' },
+    { label: 'کپی پیام', cls: 'btn-ghost', action: '_copyBalePayLink("msg")' },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+async function _copyBalePayLink(kind) {
+  const text = kind === 'msg' ? (window._baleShareMsg || '') : (window._baleShareUrl || document.getElementById('bale-share-url')?.value || '');
+  try {
+    await navigator.clipboard.writeText(String(text || ''));
+    showToast('کپی شد ✓', 'success');
+  } catch (e) {
+    const input = document.getElementById('bale-share-url');
+    if (input) { input.select(); document.execCommand('copy'); showToast('کپی شد ✓', 'success'); }
+    else showToast('کپی ممکن نشد', 'error');
+  }
+}
+
+async function sharePartyTransactionsLink() {
+  const view = window._partyTxPrintPayload;
+  if (!view) { showToast('صورتحساب آماده نیست', 'error'); return; }
+  if (typeof _evalShare !== 'function') { showToast('اشتراک در دسترس نیست', 'error'); return; }
+  const html = _partyTxDocumentHtml(view, false);
+  const name = view.partyName || 'صورتحساب';
+  await _evalShare(_partyTxFilename(view) + '.html', html, 'صورتحساب', name);
 }
 
 async function addPkgType() {
@@ -28169,7 +28372,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v174';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v175';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
