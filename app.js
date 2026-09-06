@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp176';
+const TP_ASSET_V = 'tp177';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -41,9 +41,9 @@ function _tpLazy(name) {
 function _tpPrefetchExtra() {
   const run = () => { _tpEnsureExtra().catch(() => {}); };
   setTimeout(() => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 8000 });
     else run();
-  }, 4000);
+  }, 12000);
 }
 
 
@@ -2316,7 +2316,9 @@ let _studentSummaryCache = null;
 function _invalidateStudentRelIndex() {
   _studentRelIndex = null;
   _studentSummaryCache = null;
+  _studentListSummaryCache = null;
 }
+let _studentListSummaryCache = null;
 function _groupRowsByStudentId(rows) {
   const map = new Map();
   (Array.isArray(rows) ? rows : []).forEach(row => {
@@ -2384,8 +2386,50 @@ function _studentSummary(s) {
   return summary;
 }
 
+function _studentListSummary(s) {
+  if (!s) return s;
+  const cacheKey = String(s.id);
+  if (!_studentListSummaryCache) _studentListSummaryCache = new Map();
+  const hit = _studentListSummaryCache.get(cacheKey);
+  if (hit) return hit;
+  const packages = _rowsForStudent('packages', s.id).map(p => {
+    const pt = _resolvePackageType(p.type_id);
+    const grandTotal = (p.total_amount || 0) + (p.initial_cost || 0);
+    return {
+      id: p.id,
+      type_id: p.type_id,
+      type_label: pt ? pt.label : '—',
+      type_color: pt ? pt.color : '#888',
+      type_key: pt ? pt.key : '',
+      grand_total: grandTotal,
+      due_total: grandTotal,
+      is_chargeable: true,
+    };
+  });
+  const payments = _rowsForStudent('payments', s.id);
+  let totalPaid = 0;
+  for (let i = 0; i < payments.length; i++) {
+    const p = payments[i];
+    if ((p.currency || 'تومان') === 'تومان') totalPaid += (p.amount || 0);
+  }
+  const totalAmount = packages.reduce((a, p) => a + p.due_total, 0);
+  const wallet = s.wallet || 0;
+  const summary = {
+    ...s,
+    packages,
+    totalAmount,
+    totalPaid,
+    wallet,
+    balance: totalAmount - totalPaid - wallet,
+    sessionCount: _rowsForStudent('sessions', s.id).length,
+    otherPayments: null,
+  };
+  _studentListSummaryCache.set(cacheKey, summary);
+  return summary;
+}
+
 function _familySummary(f) {
-  const members=_db.students.filter(s=>s.family_id===f.id).map(_studentSummary);
+  const members=_db.students.filter(s=>s.family_id===f.id).map(_studentListSummary);
   const totalAmount=members.reduce((a,m)=>a+m.totalAmount,0);
   const totalPaid=members.reduce((a,m)=>a+m.totalPaid,0);
   const totalWallet=members.reduce((a,m)=>a+m.wallet,0);
@@ -2601,8 +2645,8 @@ window.api = {
   },
 
   students: {
-    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(_studentSummary).reverse()),
-    getArchived: ()=>_P(_db.students.filter(s=>s.archived).map(_studentSummary).reverse()),
+    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(_studentListSummary).reverse()),
+    getArchived: ()=>_P(_db.students.filter(s=>s.archived).map(_studentListSummary).reverse()),
     getArchiveColumns: ()=>_P([...(_db.archive_columns||[])]),
     setArchiveColumns: (columns)=>{_db.archive_columns=normalizeArchiveColumns(columns);_save(true,{urgent:true});return _P({ok:true});},
     getArchiveOptions: ()=>_P({categories:[...(_db.archive_categories||[])],statuses:[...(_db.archive_relationship_statuses||[])]}),
@@ -6853,9 +6897,15 @@ function toggleStuChipsExpanded() {
   refreshStudentAccountView();
 }
 const STUDENT_LIST_CHUNK = 40;
+const SESSION_BOARD_COLUMN_CHUNK = 12;
 let _studentListShown = STUDENT_LIST_CHUNK;
+let _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
 let _studentsSearchTimer = null;
 let _sessionsSearchTimer = null;
+function _sessionBoardShowMore() {
+  _sessionBoardShown += SESSION_BOARD_COLUMN_CHUNK;
+  renderSessions(currentStudentAccountSearch());
+}
 function _studentShowMoreList() {
   _studentListShown += STUDENT_LIST_CHUNK;
   refreshStudentAccountView();
@@ -6876,7 +6926,10 @@ function queueRenderStudents(search) {
 }
 function queueRenderSessions(search) {
   clearTimeout(_sessionsSearchTimer);
-  _sessionsSearchTimer = setTimeout(() => renderSessions(search), 300);
+  _sessionsSearchTimer = setTimeout(() => {
+    _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
+    renderSessions(search);
+  }, 300);
 }
 function filterAccountStudents(students, search) {
   let filtered = search
@@ -6930,7 +6983,7 @@ function studentAccountNameCellHtml(s, i) {
             <div>
               <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
               <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
-              ${studentContactScheduleHtml(s.id)}
+              ${(typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')) ? studentContactScheduleHtml(s.id) : ''}
             </div>
           </div>`;
 }
@@ -6984,7 +7037,7 @@ function studentAccountMobileHtml(filtered, menuPrefix) {
           </div>
         </div>
         ${mstuStatusLine(s.balance)}
-        ${studentContactScheduleHtml(s.id)}
+        ${(typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')) ? studentContactScheduleHtml(s.id) : ''}
         <div class="mstu-pkgs">
           ${visiblePkgs.map(pkgTag).join('')}
           ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
@@ -7054,6 +7107,8 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
 function goStudentSection(page) {
   if (page === 'sessions' || page === 'students') {
     _studentsTab = page;
+    if (page === 'sessions') _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
+    if (page === 'students') _studentListShown = STUDENT_LIST_CHUNK;
     currentPage = 'students';
     localStorage.setItem('tp_last_page', 'students');
     if (location.hash !== '#students') location.hash = 'students';
@@ -7281,9 +7336,7 @@ function deleteCaseForm(id) {
   _save(); showToast('فرم حذف شد','error'); renderStudents();
 }
 
-async function renderStudents(search = '') {
-  await _ensureCompleteBusinessParts(['packages', 'payments', 'families']);
-  await _ensureBusinessPartLoaded('students', { search });
+async function _paintStudentsUi(search = '') {
   const studentPaging = _businessPagingState('students');
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
@@ -7301,23 +7354,40 @@ async function renderStudents(search = '') {
   { const _sb = document.getElementById('student-badge'); _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; }
 
   const filtered = filterAccountStudents(allStudents, search);
+  const sessionsReady = typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions');
+  const financeReady = typeof _paginatedCollectionFullyLoaded === 'function'
+    && _paginatedCollectionFullyLoaded('packages')
+    && _paginatedCollectionFullyLoaded('payments');
   const html = `
   ${studentSectionNav('students')}
   ${renderCaseFormsSection(search)}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: (typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')), menuPrefix: 'stu' })}`;
+  ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}`;
   setContent(html + (studentPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
 
-  // Restore focus to search box (it's in topbar, so look there first)
   const si = document.querySelector('#topbar-actions .table-search input') ||
              document.querySelector('#content .table-search input');
   if (si && search) {
     si.focus();
-    si.setSelectionRange(search.length, search.length);
+    try { si.setSelectionRange(search.length, search.length); } catch (e) {}
   }
 }
+async function renderStudents(search = '') {
+  await _ensureBusinessPartLoaded('students', { search });
+  await _paintStudentsUi(search);
+  const financeKeys = ['packages', 'payments', 'families'];
+  const needsFinance = financeKeys.some(k => typeof _paginatedCollectionFullyLoaded === 'function' && !_paginatedCollectionFullyLoaded(k));
+  if (!needsFinance) return;
+  const token = (window._studentsPaintToken = (window._studentsPaintToken || 0) + 1);
+  _ensureCompleteBusinessParts(financeKeys).then(() => {
+    if (token !== window._studentsPaintToken) return;
+    if (currentPage !== 'students' || _studentsTab === 'sessions') return;
+    return _paintStudentsUi(currentStudentAccountSearch());
+  }).catch(() => {});
+}
 
-// ── Student Detail Modal ──────────────────────────────────────────────────────
+// ── Student Detail Modal// ── Student Detail Modal ──────────────────────────────────────────────────────
 function studentIsoJalali(value) {
   if(!value)return '';
   const date=new Date(value);
@@ -8834,6 +8904,10 @@ async function renderSessions(search = '') {
     setContent(html + `<div class="empty"><span>🔍</span>چیزی پیدا نشد</div>`);
     return;
   }
+  const _boardCap = Math.max(SESSION_BOARD_COLUMN_CHUNK, Number(_sessionBoardShown || SESSION_BOARD_COLUMN_CHUNK));
+  const _boardHidden = Math.max(0, groupsSorted.length - _boardCap);
+  groupsSorted = groupsSorted.slice(0, _boardCap);
+  window._sessionBoardHiddenCount = _boardHidden;
 
   // Compute open followup counts per student
   const followupCounts = {};
@@ -8901,7 +8975,10 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
-  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) +
+  const _colMore = window._sessionBoardHiddenCount > 0
+    ? `<button type="button" class="todo-show-more" onclick="_sessionBoardShowMore()">نمایش ستون‌های بیشتر · ${fa(window._sessionBoardHiddenCount)} مشتری</button>`
+    : '';
+  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) + _colMore +
     (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
 
@@ -28462,7 +28539,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v176';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v177';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -28723,8 +28800,7 @@ const _tableObserver = new MutationObserver(() => {
   window._tblLabelTimer = setTimeout(_applyResponsiveTableLabels, 60);
 });
 function _initResponsiveTableObserver() {
-  const contentEl = document.getElementById('content');
-  if (contentEl) _tableObserver.observe(contentEl, { childList: true, subtree: true });
+  // setContent already labels tables; subtree observer re-walks large lists.
   _applyResponsiveTableLabels();
 }
 if (document.readyState === 'loading') {
@@ -28751,6 +28827,7 @@ function _startApp() {
   let particleNodes = new WeakMap();
 
   function spawnParticles(card) {
+    return; // disabled: particles stall customer/finance pages
     if (isMobile()) return;
     if (particleNodes.has(card)) return; // already spawning
     const rect = card.getBoundingClientRect();
