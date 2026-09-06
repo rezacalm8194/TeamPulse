@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp165';
+const TP_ASSET_V = 'tp167';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -875,6 +875,7 @@ function _migrate(d) {
     if(s.flagged===undefined)s.flagged=s.importance==='key';
   });
   d.students.forEach(s=>{
+    ['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at'].forEach(k=>{if(s[k]===undefined)s[k]='';});
     if(s.family_id===undefined)s.family_id=null;
     if(s.wallet===undefined)s.wallet=0;
     if(s.archived===undefined)s.archived=false;
@@ -2374,7 +2375,7 @@ window.api = {
     bulkArchiveAction: (p)=>{
       const ids=new Set((p?.ids||[]).map(Number));
       const touchedAt=new Date().toISOString();
-      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.archived=false;s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
+      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){if(s.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=touchedAt;s.archived=false;s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
       if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.customer_category=String(p.value||'شخصی');s.updated_at=touchedAt;}});
       if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.relationship_status=String(p.value||'');s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
       if(p?.action==='delete'){
@@ -2391,7 +2392,7 @@ window.api = {
       }
       _save(true,{urgent:true});return _P({ok:true,count:ids.size});
     },
-    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){s.archived=!!p.archived;s.last_activity_at=new Date().toISOString();s.updated_at=s.last_activity_at;_save(true,{urgent:true});} return _P({ok:true}); },
+    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){if(s.archived&&!p.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=new Date().toISOString();s.archived=!!p.archived;s.last_activity_at=new Date().toISOString();s.updated_at=s.last_activity_at;_save(true,{urgent:true});} return _P({ok:true}); },
     addArchivedBulk: (payload)=>{
       const rows=Array.isArray(payload)?payload:(payload?.rows||[]);
       const columns=Array.isArray(payload?.columns)?payload.columns:[];
@@ -2414,7 +2415,7 @@ window.api = {
       const id=_nextId('students');
       const description=p.description||p.address||p.main_need||'';
       const createdAt=new Date().toISOString();
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',archive_data:{...(p.archive_data||{})},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -2427,6 +2428,14 @@ window.api = {
     },
     update: (p)=>{
       const s=_db.students.find(x=>x.id===p.id); if(!s)return _P({ok:false});
+      const noteAt=new Date().toISOString();
+      if(Object.prototype.hasOwnProperty.call(p,'pinned_note')){
+        const pin=String(p.pinned_note||'').trim().slice(0,500);
+        if(pin!==(s.pinned_note||'')){s.pinned_note=pin;s.pinned_note_updated_at=noteAt;s.updated_at=noteAt;}
+        // A pin-only patch must never enter the full form/package replacement path.
+        if(Object.keys(p).every(k=>['id','pinned_note'].includes(k))){_save(true,{urgent:true});return _P({ok:true});}
+      }
+      if(p.note!==undefined&&p.note!==(s.note||''))s.note_updated_at=noteAt;
       const description=p.description??p.address??p.main_need??s.description??s.address??s.main_need??'';
       if((p.relationship_status!==undefined&&p.relationship_status!==s.relationship_status)||['next_activity_type','next_activity_date','next_activity_note'].some(k=>p[k]!==undefined&&p[k]!==s[k]))s.last_activity_at=new Date().toISOString();
       ['next_activity_type','next_activity_date','next_activity_note'].forEach(k=>{if(p[k]!==undefined)s[k]=p[k];});
@@ -6646,6 +6655,7 @@ function studentAccountNameCellHtml(s, i) {
             <div>
               <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
               <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
+              ${studentContactScheduleHtml(s.id)}
             </div>
           </div>`;
 }
@@ -6699,6 +6709,7 @@ function studentAccountMobileHtml(filtered, menuPrefix) {
           </div>
         </div>
         ${mstuStatusLine(s.balance)}
+        ${studentContactScheduleHtml(s.id)}
         <div class="mstu-pkgs">
           ${visiblePkgs.map(pkgTag).join('')}
           ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
@@ -7030,8 +7041,64 @@ async function renderStudents(search = '') {
 }
 
 // ── Student Detail Modal ──────────────────────────────────────────────────────
+function studentIsoJalali(value) {
+  if(!value)return '';
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))return '';
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{timeZone:_db.meta?.timezone||'Asia/Tehran',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
+}
+function studentContactSchedule(studentId, today = _formatJalali(..._todayJalali())) {
+  const student=(_db.students||[]).find(s=>Number(s.id)===Number(studentId))||{};
+  const dates=(_db.sessions||[]).filter(s=>Number(s.student_id)===Number(studentId)&&_jalaliKey(s.date_jalali)>0).map(s=>s.date_jalali).sort((a,b)=>_jalaliKey(a)-_jalaliKey(b));
+  return {last_session_date:dates[dates.length-1]||'',last_contact_date:dates[dates.length-1]||studentIsoJalali(student.last_activity_at||student.updated_at||student.created_at),next_session_date:dates.find(d=>_jalaliKey(d)>=_jalaliKey(today))||''};
+}
+function studentContactScheduleHtml(studentId) {
+  const schedule=studentContactSchedule(studentId);
+  return `<div class="mstu-contact-schedule"><span>آخرین: ${escapeHtml(fa(schedule.last_contact_date||'—'))}</span><span>جلسه بعد: ${escapeHtml(fa(schedule.next_session_date||'—'))}</span></div>`;
+}
+function studentTimeline(studentId) {
+  const student=(_db.students||[]).find(s=>Number(s.id)===Number(studentId));
+  if(!student)return [];
+  const events=[];
+  const excerpt=text=>String(text||'').replace(/<[^>]*>/g,'').trim().slice(0,140);
+  const add=(type,row,date,title,summary)=>events.push({type,id:row.id,date_jalali:date||studentIsoJalali(row.created_at||row.updated_at),title,summary:excerpt(summary),timestamp:row.created_at||row.updated_at||''});
+  (_db.sessions||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('session',r,r.date_jalali,r.title||'جلسه',r.note));
+  (_db.payments||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('payment',r,r.date_jalali,'پرداخت: '+fmt(r.amount)+' '+(r.currency||'تومان'),r.note));
+  (_db.packages||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('purchase',r,r.start_date,'خرید: '+((_db.package_types||[]).find(t=>t.id===r.type_id)?.label||'خدمت')+' · '+fmt(r.total_amount)+' '+(r.currency||'تومان'),r.note));
+  ['note','pinned_note'].forEach(key=>{
+    const changedAt=student[key+'_updated_at'];
+    if(student[key]||changedAt)add('note',{id:student.id,updated_at:changedAt||student.updated_at||student.created_at},'',key==='note'?'یادداشت پرونده':'یادداشت پین‌شده',student[key]||(key==='note'?'یادداشت پاک شد':'پین برداشته شد'));
+  });
+  if(student.converted_from_archive_at)add('conversion',{id:student.id,created_at:student.converted_from_archive_at},'','تبدیل از بایگانی به مشتری','');
+  return events.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||String(b.timestamp).localeCompare(String(a.timestamp)));
+}
+function studentTimelineHtml(studentId, limit = 40) {
+  const events=studentTimeline(studentId);
+  return `<h3>تاریخچه پرونده</h3>${events.length ? '<ol class="student-timeline">'+events.slice(0,limit).map(e=>`<li><time>${escapeHtml(fa(e.date_jalali||'—'))}</time><div>${e.type==='session'?`<button class="btn btn-ghost btn-sm" onclick="openSessionDetail(${Number(e.id)})">${escapeHtml(e.title)}</button>`:`<strong>${escapeHtml(e.title)}</strong>`}${e.summary?`<p>${escapeHtml(e.summary)}</p>`:''}</div></li>`).join('')+'</ol>' : '<p class="name-cell-sub">هنوز رویدادی ثبت نشده است.</p>'}${events.length>limit?`<button class="btn btn-ghost" onclick="showMoreStudentTimeline(${Number(studentId)},${limit+40})">نمایش بیشتر</button>`:''}`;
+}
+function showMoreStudentTimeline(id, limit) {
+  const target=document.getElementById('student-timeline');
+  if(target)target.innerHTML=studentTimelineHtml(id,limit);
+}
+function studentPinnedNoteHtml(s) {
+  return `<section class="detail-section student-pinned-note" aria-label="یادداشت پین‌شده"><strong>یادداشت پین‌شده</strong><p>${escapeHtml(s.pinned_note||'یادداشت پین‌شده‌ای نیست')}</p><div><button class="btn btn-ghost btn-sm" onclick="openStudentPinnedNote(${Number(s.id)})">${s.pinned_note?'ویرایش':'افزودن'}</button>${s.pinned_note?`<button class="btn btn-ghost btn-sm" onclick="saveStudentPinnedNote(${Number(s.id)},true)">برداشتن پین</button>`:''}</div></section>`;
+}
+function openStudentPinnedNote(id) {
+  const s=_db.students.find(s=>s.id===id);
+  if(!s)return;
+  openModal('یادداشت پین‌شده',`<label class="form-label" for="student-pin-input">یادداشت پین‌شده (حداکثر ۵۰۰ نویسه)</label><textarea class="form-textarea" id="student-pin-input" maxlength="500" rows="5">${escapeHtml(s.pinned_note||'')}</textarea>`,[{label:'ذخیره',cls:'btn-primary',action:`saveStudentPinnedNote(${id})`},{label:'بازگشت',cls:'btn-ghost',action:`openStudentDetail(${id})`}]);
+}
+async function saveStudentPinnedNote(id, remove = false) {
+  const pinned_note=remove?'':String(document.getElementById('student-pin-input')?.value||'').trim();
+  const result=await window.api.students.update({id,pinned_note});
+  if(!result?.ok){showToast('ذخیره یادداشت انجام نشد','error');return;}
+  await refreshOpenStudentSurface();
+  allStudents=await window.api.students.getAll();
+  await openStudentDetail(id);
+}
+
 async function openStudentDetail(id) {
-  const s = allStudents.find(x => x.id === id);
+  const s = _db.students.find(x => x.id === id) ? _studentSummary(_db.students.find(x => x.id === id)) : allStudents.find(x => x.id === id);
   if (!s) return;
   const payments = await window.api.payments.getByStudent(id);
   const walletHistory = await window.api.wallet.history(id);
@@ -7101,6 +7168,7 @@ async function openStudentDetail(id) {
   }
 
   openModal(`جزئیات: ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
+    ${studentPinnedNoteHtml(s)}
     <div class="detail-section">
       <h3>اطلاعات ${META.entitySingular || 'شاگرد'}</h3>
       <div class="detail-row"><span class="detail-key">نام</span><span class="detail-val">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</span></div>
@@ -7111,6 +7179,7 @@ async function openStudentDetail(id) {
       <div class="detail-row"><span class="detail-key">آدرس</span><span class="detail-val">${escapeHtml(s.address || '—')}</span></div>
       <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${escapeHtml(s.note || '—')}</span></div>
     </div>
+    <section class="detail-section" id="student-timeline">${studentTimelineHtml(id)}</section>
     <div class="detail-section">
       <h3>پکیج‌ها و مبالغ</h3>
       ${pkgRows || '<div class="detail-row"><span style="color:var(--text3)">پکیجی ثبت نشده</span></div>'}
@@ -7554,6 +7623,8 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
     <div class="form-section">یادداشت</div>
     <div class="form-group full">
       <textarea class="form-textarea" id="f-note" rows="2" placeholder="هدف، وضعیت، نکات مهم...">${escapeHtml(s?.note || '')}</textarea>
+      <label class="form-label" for="f-pinned-note">یادداشت پین‌شده (اختیاری، حداکثر ۵۰۰ نویسه)</label>
+      <textarea class="form-textarea" id="f-pinned-note" rows="3" maxlength="500">${escapeHtml(s?.pinned_note || '')}</textarea>
     </div>
   `, [
     { label: 'ذخیره', cls: 'btn-primary', action: editing ? `saveStudentEdit(${id})` : 'saveStudentNew()' },
@@ -7665,6 +7736,7 @@ async function saveStudentNew() {
     relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
     archive_data: collectArchiveExtraData('student'),
     note: document.getElementById('f-note')?.value || '',
+    pinned_note: document.getElementById('f-pinned-note')?.value || '',
     family_id,
     is_supplier: isSupplier,
     wallet: +(document.getElementById('f-wallet')?.value || 0),
@@ -7696,6 +7768,7 @@ async function saveStudentEdit(id) {
     relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
     archive_data: collectArchiveExtraData('student',s?.archive_data||{}),
     note: document.getElementById('f-note')?.value || '',
+    pinned_note: document.getElementById('f-pinned-note')?.value || '',
     family_id,
     is_supplier: isSupplierEdit,
     packages: collectPackagesFromForm().map(p => {
@@ -8457,6 +8530,7 @@ async function renderSessions(search = '') {
       <div class="session-column-header">
         <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
         <span class="scn-count">(${fa(g.sessions.length)})</span>
+        ${studentContactScheduleHtml(g.student_id)}
         ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" style="cursor:pointer;background:rgba(251,191,36,.15);color:var(--amber);border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}</span>` : ''}
         <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
@@ -12443,9 +12517,9 @@ function isArchiveStale(s,now=Date.now(),days=Number(_db.meta.archive_stale_days
 }
 function archiveViewControlsHtml(){return `<label class="archive-view-mode">روش نمایش <select class="form-select" onchange="setArchiveViewMode(this.value)"><option value="table" ${archiveViewMode()==='table'?'selected':''}>جدول</option><option value="pipeline" ${archiveViewMode()==='pipeline'?'selected':''}>فرایند فروش</option></select></label><label class="archive-view-mode">راکد پس از (روز)<input class="form-input archive-stale-days" type="number" min="1" step="1" value="${Number(_db.meta.archive_stale_days)||14}" onchange="setArchiveStaleDays(this.value)"></label><select class="form-select" aria-label="فیلتر راکد" onchange="setArchiveStaleFilter(this.value)"><option value="">همه</option><option value="stale" ${archiveStaleFilter==='stale'?'selected':''}>فقط راکد</option><option value="fresh" ${archiveStaleFilter==='fresh'?'selected':''}>بدون راکد</option></select>`;}
 function archiveActivityHtml(s){return `${isArchiveStale(s)?'<span class="archive-stale-badge">راکد</span>':''}${s.next_activity_date?`<div class="archive-next-activity ${_daysUntil(s.next_activity_date)<0?'overdue':''}"><span>${s.next_activity_type==='meeting'?'جلسه':'تماس'} · ${escapeHtml(s.next_activity_date)}${_daysUntil(s.next_activity_date)<0?' · عقب‌افتاده':''}</span><button class="btn btn-ghost btn-sm" onclick="completeArchiveActivity(${s.id},event)">انجام شد</button></div>`:''}`;}
-function archiveActivityFields(s={}){return `<div class="form-group"><label class="form-label" for="ar-activity-type">فعالیت بعدی</label><select class="form-select" id="ar-activity-type"><option value="call">تماس</option><option value="meeting" ${s.next_activity_type==='meeting'?'selected':''}>جلسه</option></select></div><div class="form-group"><label class="form-label" for="ar-activity-date">تاریخ شمسی فعالیت بعدی</label><input class="form-input jdate" id="ar-activity-date" value="${escapeHtml(s.next_activity_date||'')}" placeholder="انتخاب تاریخ"></div><div class="form-group full"><label class="form-label" for="ar-activity-note">یادداشت فعالیت</label><input class="form-input" id="ar-activity-note" maxlength="500" value="${escapeHtml(s.next_activity_note||'')}"></div>`;}
+function archiveActivityFields(s={}){return `<div class="form-group"><label class="form-label" for="ar-activity-type">فعالیت بعدی</label><select class="form-select" id="ar-activity-type"><option value="call">تماس</option><option value="meeting" ${s.next_activity_type==='meeting'?'selected':''}>جلسه</option></select></div><div class="form-group">${calendarDateFieldHtml('ar-activity-date',s.next_activity_date||'','تاریخ فعالیت بعدی',false)}</div><div class="form-group full"><label class="form-label" for="ar-activity-note">یادداشت فعالیت</label><input class="form-input" id="ar-activity-note" maxlength="500" value="${escapeHtml(s.next_activity_note||'')}"></div>`;}
 function readArchiveActivity(required){
-  const value=document.getElementById('ar-activity-date').value.trim(),parts=_jalaliParse(value);
+  const value=readCalendarDateField('ar-activity-date').trim(),parts=_jalaliParse(value);
   if(!value&&!required)return {next_activity_type:'',next_activity_date:'',next_activity_note:''};
   if(!value||parts.length!==3||parts.some(x=>!Number.isInteger(x))||parts[0]<1200||parts[0]>1600||parts[1]<1||parts[1]>12||parts[2]<1||parts[2]>_jalaliDaysInMonth(parts[0],parts[1])){showToast('تاریخ شمسی معتبر فعالیت را وارد کنید','error');return null;}
   return {next_activity_type:document.getElementById('ar-activity-type').value==='meeting'?'meeting':'call',next_activity_date:parts.map((x,i)=>i?String(x).padStart(2,'0'):String(x)).join('/'),next_activity_note:document.getElementById('ar-activity-note').value.trim().slice(0,500)};
@@ -27720,7 +27794,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v165';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v167';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

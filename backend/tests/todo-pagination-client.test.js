@@ -49,11 +49,15 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
-test('client assets are consistently bumped to tp164', () => {
-  assert.match(app, /TP_ASSET_V\s*=\s*'tp164'/);
-  assert.match(app, /team-pulse-static-v164/);
-  assert.match(html, /app\.js\?v=tp164/);
-  assert.match(sw, /team-pulse-static-v164/);
+test('client assets stay version-synced across app.js, app.html, and sw.js', () => {
+  const version = app.match(/const TP_ASSET_V = 'tp(\d+)'/)?.[1];
+  assert.ok(version, 'TP_ASSET_V must be defined in app.js');
+  assert.match(app, new RegExp(`team-pulse-static-v${version}`));
+  assert.match(html, new RegExp(`app\\.js\\?v=tp${version}`));
+  assert.match(sw, new RegExp(`team-pulse-static-v${version}`));
+  for (const match of html.matchAll(/\?v=tp(\d+)/g)) {
+    assert.equal(match[1], version);
+  }
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
