@@ -4456,3 +4456,19 @@ body { top: 0 !important; }
 .todo-calendar-filter-panel>.todo-calendar-filter-chips{margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:10px;background:var(--bg2)}
 @media (min-width:1000px){.todo-calendar-week-layout{grid-template-columns:minmax(0,1fr) 280px}.todo-calendar-week-grid{min-width:0}.todo-calendar-side{min-width:0}}
 @media (max-width:720px){.todo-calendar-header{padding:9px!important}.todo-calendar-header-main{align-items:center!important}.todo-calendar-period-title{font-size:15px;line-height:36px}.todo-calendar-month-grid .todo-day-card{position:relative}.todo-calendar-month-grid .todo-day-card>div:last-child:empty{display:none}.todo-calendar-month-grid .todo-day-card .todo-more-badge{display:inline-flex!important;position:absolute;left:3px;bottom:3px;min-width:18px;height:18px;padding:0 4px;align-items:center;justify-content:center}.todo-calendar-filter-panel>.todo-calendar-filter-chips{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* Archive sales process: isolated from the sessions board. */
+.archive-view-mode{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:12px}
+.archive-stale-days{width:76px!important}
+.archive-pipeline{display:flex;gap:14px;overflow-x:auto;padding:16px;align-items:flex-start;max-width:100%;overscroll-behavior-x:contain}
+.archive-pipeline[hidden]{display:none}
+.archive-pipeline-column{flex:0 0 280px;background:var(--bg2,var(--bg));border:1px solid var(--border);border-radius:12px;padding:10px;min-height:140px}
+.archive-pipeline-column h3{display:flex;justify-content:space-between;font-size:14px;padding:4px;margin:0 0 12px}
+.archive-pipeline-card{background:var(--card,var(--bg));border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;overflow-wrap:anywhere}
+.archive-pipeline-card .archive-actions{display:flex;flex-wrap:wrap;gap:8px}
+.archive-pipeline-card .btn,.archive-pipeline-card select{min-height:44px}
+.archive-pipeline-empty{padding:16px;color:var(--text2);text-align:center}
+.archive-show-pipeline .archive-sheet,.archive-show-pipeline .archive-mobile-list,.archive-show-pipeline .archive-mobile-selectbar{display:none!important}
+.archive-stale-badge{display:inline-block;border:1px solid currentColor;border-radius:12px;padding:2px 8px;color:var(--text2);font-size:12px;width:fit-content}
+.archive-next-activity{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin:6px 0}
+.archive-next-activity.overdue{color:var(--danger,#c24135);font-weight:600}
+@media(max-width:640px){.archive-pipeline-column{flex-basis:260px}.archive-pipeline{padding:10px;gap:10px}.archive-toolbar-filters{flex-wrap:wrap}.archive-view-mode{flex-wrap:wrap}}
