@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp170';
+const TP_ASSET_V = 'tp171';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -8541,8 +8541,8 @@ async function renderPayments(search = '') {
 // ════════════════════════════════════════════════════════════════════════════
 // SESSIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-function sessionsBoardFilter(){try{return localStorage.getItem('tp_sessions_board_filter')||'all';}catch{return 'all';}}
-function setSessionsBoardFilter(value){try{localStorage.setItem('tp_sessions_board_filter',value||'all');}catch{}renderSessions();}
+function sessionsBoardFilter(){try{const v=localStorage.getItem('tp_sessions_board_filter')||'all';return ['all','open','overdue','no_month'].includes(v)?v:'all';}catch{return 'all';}}
+function setSessionsBoardFilter(value){const allowed=new Set(['all','open','overdue','no_month']);const next=allowed.has(value)?value:'all';try{localStorage.setItem('tp_sessions_board_filter',next);}catch{}renderSessions();}
 function sessionGroupMatchesBoardFilter(g,filter,todayParts){
   const [ty,tm]=todayParts||_todayJalali();
   const fus=(g.sessions||[]).flatMap(s=>s.followups||[]);
@@ -8558,7 +8558,6 @@ function sessionsBoardFilterHtml(active){
     ['open','اقدام‌باز','حداقل یک اقدام باز تا جلسه بعد'],
     ['overdue','موعدگذشته','اقدام باز با موعد قبل از امروز'],
     ['no_month','بی‌جلسهٔ‌ماه','در ماه جاری جلالی جلسه‌ای ثبت نشده'],
-    ['key','کلیدی','حداقل یک جلسه با اهمیت کلیدی'],
   ];
   return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,short,full])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" title="'+full+'" aria-label="'+full+'" aria-pressed="'+(active===id?'true':'false')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+short+'</button>').join('')+'</div>';
 }
@@ -27962,7 +27961,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v170';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v171';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
