@@ -32,6 +32,8 @@ if [ -f "$ENV_BACKUP" ]; then
   rm -f "$ENV_BACKUP"
 fi
 
+node "$SITE_DIR/scripts/precompress-assets.js"
+
 cd "$SITE_DIR/backend"
 npm install --omit=dev
 pm2 restart "$PM2_APP" --update-env

@@ -7,6 +7,12 @@ web_final/
 
 # نادیده گرفتن فایل‌های فشرده
 *.zip
+/*.js.br
+/*.js.gz
+/*.css.br
+/*.css.gz
+/sw.js.br
+/sw.js.gz
 
 # نادیده گرفتن فایل‌های سیستمی
 .DS_Store

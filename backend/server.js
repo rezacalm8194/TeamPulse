@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('./utils/jwt');
 const express = require('express');
@@ -85,7 +86,14 @@ const cspValue = [
 ].join('; ');
 app.use(helmet({ contentSecurityPolicy: false }));
 try {
-  app.use(require('compression')({ threshold: 1024 }));
+  app.use(require('compression')({
+    threshold: 1024,
+    level: 6,
+    filter: (req, res) => {
+      if (res.getHeader('Content-Encoding')) return false;
+      return require('compression').filter(req, res);
+    },
+  }));
 } catch (error) {
   logger.warn('compression_unavailable', { error });
 }
@@ -231,8 +239,43 @@ function setStaticCacheHeaders(res, filePath) {
     res.setHeader('Cache-Control', 'public, max-age=604800');
   }
 }
+const STATIC_ROOT = path.join(__dirname, '../');
+const PRECOMPRESS_TYPES = {
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+};
+function servePrecompressedStatic(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (req.headers.range) return next();
+  const rel = decodeURIComponent((req.path || '').split('?')[0] || '');
+  if (!rel || rel.includes('\0') || rel.includes('\\')) return next();
+  if (!/\.(?:js|mjs|css|html|svg|json)$/i.test(rel)) return next();
+  const abs = path.resolve(STATIC_ROOT, '.' + rel);
+  if (!abs.startsWith(STATIC_ROOT)) return next();
+  const accept = String(req.headers['accept-encoding'] || '');
+  const candidates = [];
+  if (/\bbr\b/.test(accept)) candidates.push({ file: abs + '.br', encoding: 'br' });
+  if (/\bgzip\b/.test(accept)) candidates.push({ file: abs + '.gz', encoding: 'gzip' });
+  const hit = candidates.find((item) => {
+    try { return fs.statSync(item.file).isFile(); } catch (_) { return false; }
+  });
+  if (!hit) return next();
+  const ext = path.extname(abs).toLowerCase();
+  if (PRECOMPRESS_TYPES[ext]) res.setHeader('Content-Type', PRECOMPRESS_TYPES[ext]);
+  res.setHeader('Content-Encoding', hit.encoding);
+  res.setHeader('Vary', 'Accept-Encoding');
+  setStaticCacheHeaders(res, abs);
+  return res.sendFile(hit.file, (err) => {
+    if (err) next(err);
+  });
+}
 app.use(blockSensitiveStatic);
-app.use(express.static(path.join(__dirname, '../'), {
+app.use(servePrecompressedStatic);
+app.use(express.static(STATIC_ROOT, {
   dotfiles: 'ignore',
   index: false,
   fallthrough: true,
@@ -244,6 +287,14 @@ const server = app.listen(PORT, HOST, () => {
   logger.info('application_started', { port: PORT, host: HOST });
   setImmediate(() => {
     try {
+      try {
+        const precompress = require(path.join(__dirname, '../scripts/precompress-assets.js'));
+        Promise.resolve(precompress.main()).catch((error) => {
+          logger.warn('precompress_assets_failed', { error });
+        });
+      } catch (error) {
+        logger.warn('precompress_assets_unavailable', { error });
+      }
       seedHistoricalRecurringSnapshots(db);
       migrateTodoAuditOccurrenceIdentityV2(db);
       backfillVersionSummaries(db);
