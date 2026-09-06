@@ -162,11 +162,24 @@ function collectionLength(data, key) {
   return Array.isArray(data?.[key]) ? data[key].length : 0;
 }
 
+const STUDENT_DELETE_COLLECTIONS = ['students', 'packages', 'payments', 'sessions', 'wallet_tx', 'reminders', 'topics', 'key_events'];
+
+function hasExplicitStudentDeletion(data, key, id) {
+  const map = data?._deletedItems?.[key];
+  return STUDENT_DELETE_COLLECTIONS.includes(key) && map && !Array.isArray(map)
+    && Object.prototype.hasOwnProperty.call(map, String(id));
+}
+
+function countWithoutExplicitStudentDeletes(previousData, nextData, key) {
+  return (Array.isArray(previousData?.[key]) ? previousData[key] : [])
+    .filter(row => !hasExplicitStudentDeletion(nextData, key, row?.id)).length;
+}
+
 function looksLikeDestructiveCollectionOverwrite(previousData, nextData) {
   if (!previousData || !nextData) return false;
   return DESTRUCTIVE_COUNT_KEYS.some(key => {
     if (!Object.prototype.hasOwnProperty.call(nextData, key) || !Array.isArray(nextData[key])) return false;
-    const prev = collectionLength(previousData, key);
+    const prev = countWithoutExplicitStudentDeletes(previousData, nextData, key);
     const next = collectionLength(nextData, key);
     if (prev >= 10 && next === 0) return true;
     return prev >= 20 && next < Math.ceil(prev * 0.5);
@@ -174,7 +187,7 @@ function looksLikeDestructiveCollectionOverwrite(previousData, nextData) {
 }
 
 function looksLikeDestructiveOverwrite(previousData, nextData) {
-  const previousCount = DESTRUCTIVE_COUNT_KEYS.reduce((sum, key) => sum + collectionLength(previousData, key), 0);
+  const previousCount = DESTRUCTIVE_COUNT_KEYS.reduce((sum, key) => sum + countWithoutExplicitStudentDeletes(previousData, nextData, key), 0);
   const nextCount = DESTRUCTIVE_COUNT_KEYS.reduce((sum, key) => sum + collectionLength(nextData, key), 0);
   if (previousCount < 3) return false;
   if (nextCount === 0) return true;
@@ -208,7 +221,8 @@ function patchLooksDestructive(previousData, patch) {
   const collections = patch?.collections && typeof patch.collections === 'object' ? patch.collections : {};
   return Object.keys(collections).some(key => {
     const change = collections[key];
-    const deletes = Array.isArray(change?.delete) ? change.delete.length : 0;
+    const deletes = Array.isArray(change?.delete)
+      ? change.delete.filter(id => !hasExplicitStudentDeletion(patch?.scalars, key, id)).length : 0;
     const prev = collectionLength(previousData, key);
     if (prev >= 10 && deletes >= prev && !(Array.isArray(change?.upsert) && change.upsert.length)) return true;
     return prev >= 20 && deletes > Math.ceil(prev * 0.5);

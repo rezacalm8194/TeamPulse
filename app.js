@@ -1107,6 +1107,11 @@ function _applyDeletedItemTombstones(d) {
       ? deleted[key]
       : {};
     if (!Array.isArray(d[key]) || !Object.keys(tombstones).length) return;
+    // Explicit archive deletions remain authoritative, including on partial pages.
+    if (key === 'students' || _STUDENT_TOMBSTONE_RELATIONS.includes(key)) {
+      d[key] = d[key].filter(item => !item || item.id == null || !Object.prototype.hasOwnProperty.call(tombstones, String(item.id)));
+      return;
+    }
     const serverTotal = _serverPageTotalForKey(key);
     if (serverTotal > 0 && _collectionLooksTruncatedRelativeToLocal(d[key].length, serverTotal)) {
       (d[key] || []).forEach(item => {
@@ -16869,7 +16874,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
     const localIds = new Set(localArr.filter(item => item && item.id != null).map(item => String(item.id)));
     if (resurrectLocal) {
       localIds.forEach(id => { delete tombstones[id]; });
-    } else if (_tombstoneStripWouldTruncate(localArr, tombstones)) {
+    } else if (key !== 'students' && !_STUDENT_TOMBSTONE_RELATIONS.includes(key) && _tombstoneStripWouldTruncate(localArr, tombstones)) {
       localIds.forEach(id => { delete tombstones[id]; });
     }
     const serverArr = (Array.isArray(merged[key]) ? merged[key] : [])
