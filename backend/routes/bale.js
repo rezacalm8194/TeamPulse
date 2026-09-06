@@ -82,6 +82,13 @@ router.post('/credentials/webhook', auth, async (req, res) => {
     if (!creds) return res.status(400).json({ error: 'credentials_missing' });
 
     const url = `${core.publicBaseUrl(req)}/api/bale/webhook/${encodeURIComponent(req.user.id)}/${encodeURIComponent(workspaceId)}`;
+    if (!/^https:\/\//i.test(url)) {
+      return res.status(400).json({
+        error: 'webhook_failed',
+        message: 'آدرس وب‌هوک باید https باشد. PUBLIC_BASE_URL را روی سرور تنظیم کنید.',
+        url,
+      });
+    }
     await core.baleApi(creds.bot_token, 'setWebhook', { url });
     core.activeDb().prepare(`
       UPDATE bale_workspace_credentials SET webhook_registered=1, updated_at=datetime('now')
@@ -90,7 +97,7 @@ router.post('/credentials/webhook', auth, async (req, res) => {
 
     res.json({ ok: true, url, ...core.credentialsPublicView(core.getCredentials(req.user.id, workspaceId)) });
   } catch (e) {
-    res.status(400).json({ error: 'webhook_failed', message: e.message });
+    res.status(400).json({ error: 'webhook_failed', message: e.message || String(e) });
   }
 });
 

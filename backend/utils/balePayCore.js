@@ -257,8 +257,26 @@ a.home{display:inline-block;margin-top:18px;color:#7c6af7;font-size:12px}
 }
 
 function publicBaseUrl(req) {
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-  const host = req.get('host') || 'localhost';
+  const envBase = String(process.env.PUBLIC_BASE_URL || process.env.APP_URL || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (envBase) {
+    // Bale setWebhook only accepts HTTPS URLs.
+    return envBase.replace(/^http:\/\//i, 'https://');
+  }
+
+  let proto = String(req?.headers?.['x-forwarded-proto'] || req?.protocol || 'https')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (proto !== 'http' && proto !== 'https') proto = 'https';
+
+  const host = String(req?.get?.('host') || req?.headers?.host || 'localhost')
+    .split(',')[0]
+    .trim();
+  const isLocal = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+  // Behind reverse proxies protocol is often reported as http; force https for public hosts.
+  if (!isLocal) proto = 'https';
   return `${proto}://${host}`;
 }
 

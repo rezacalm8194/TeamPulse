@@ -147,6 +147,23 @@ test('webhook handler answers pre_checkout and settles successful_payment', asyn
   assert.equal(loadAllRows(db, owner, 'payments').length, 1);
 });
 
+test('publicBaseUrl forces https for public hosts and respects PUBLIC_BASE_URL', () => {
+  const prev = process.env.PUBLIC_BASE_URL;
+  delete process.env.PUBLIC_BASE_URL;
+  assert.equal(
+    core.publicBaseUrl({
+      headers: { 'x-forwarded-proto': 'http', host: 'teampulse.ir' },
+      protocol: 'http',
+      get: () => 'teampulse.ir',
+    }),
+    'https://teampulse.ir'
+  );
+  process.env.PUBLIC_BASE_URL = 'http://teampulse.ir/';
+  assert.equal(core.publicBaseUrl({}), 'https://teampulse.ir');
+  if (prev == null) delete process.env.PUBLIC_BASE_URL;
+  else process.env.PUBLIC_BASE_URL = prev;
+});
+
 test('client hooks and asset version for Bale Pay exist', () => {
   const root = path.resolve(__dirname, '../..');
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
