@@ -183,6 +183,7 @@ app.use('/api/data', require('./routes/data'));
 app.use('/api/admin', adminLimiter, require('./routes/admin'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/share', require('./routes/share'));
+app.use('/api/bale', require('./routes/bale'));
 app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/speech', speechLimiter, require('./routes/speech'));
@@ -202,6 +203,7 @@ app.get('/api/health', (req, res) => res.json({
   capabilities: { workspaces: true },
 }));
 app.get('/share/:token', require('./routes/share').serveShare);
+app.get('/pay/bale/:id', require('./routes/bale').servePayPage);
 app.get('/app', applyCsp, (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
 app.use('/api', (req, res) => res.status(404).json({
   error: 'api_route_not_found',
