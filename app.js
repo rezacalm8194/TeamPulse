@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp173';
+const TP_ASSET_V = 'tp174';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -483,7 +483,8 @@ const DEFAULT_PKG_TYPES = [
   { id:5, key:'visitor',  label:'مراجعه‌کننده', color:'#f472b6' },
   { id:6, key:'other',    label:'متفرقه', color:'#9399ab' },
 ];
-const DEFAULT_META = { entitySingular:'شاگرد', entityPlural:'شاگردان', sessionSingular:'جلسه', sessionPlural:'جلسات', appTitle:'TeamPulse', appLanguage:'fa', archive_stale_days:14 };
+const DEFAULT_AUTOMATION = { stale_lead:true, session_followup:true, package_due:true, convert_onboarding:true, package_due_days:3, session_followup_days:3 };
+const DEFAULT_META = { entitySingular:'شاگرد', entityPlural:'شاگردان', sessionSingular:'جلسه', sessionPlural:'جلسات', appTitle:'TeamPulse', appLanguage:'fa', archive_stale_days:14, automation:{...DEFAULT_AUTOMATION} };
 
 function _appTimeZone() {
   try {
@@ -825,6 +826,9 @@ function _freshData() {
 function _migrate(d) {
   d.meta = {...DEFAULT_META,...(d.meta||{})};
   if(!Number.isFinite(Number(d.meta.archive_stale_days))||Number(d.meta.archive_stale_days)<1)d.meta.archive_stale_days=14;
+  d.meta.automation = {...DEFAULT_AUTOMATION,...(d.meta.automation&&typeof d.meta.automation==='object'?d.meta.automation:{})};
+  if(!Number.isFinite(Number(d.meta.automation.package_due_days))||Number(d.meta.automation.package_due_days)<1)d.meta.automation.package_due_days=3;
+  if(!Number.isFinite(Number(d.meta.automation.session_followup_days))||Number(d.meta.automation.session_followup_days)<1)d.meta.automation.session_followup_days=3;
   // تشخیص خودکار اگه منطقه زمانی ذخیره نشده
   if (!d.meta.timezone) {
     const loc = _detectUserLocale();
@@ -2170,6 +2174,140 @@ function sessionFollowupDueHtml(f){
   return '<span class="session-fu-due'+(overdue?' overdue':'')+'">موعد: '+escapeHtml(DateService.disp(f.due_date_jalali))+(overdue?' · عقب‌افتاده':'')+'</span>';
 }
 
+// ── Simple 4-rule automation ────────────────────────────────────────────────
+function _automationCfg(){
+  const a=(_db?.meta?.automation&&typeof _db.meta.automation==='object')?_db.meta.automation:{};
+  return {
+    stale_lead:a.stale_lead!==false,
+    session_followup:a.session_followup!==false,
+    package_due:a.package_due!==false,
+    convert_onboarding:a.convert_onboarding!==false,
+    package_due_days:Math.max(1,Number(a.package_due_days)||3),
+    session_followup_days:Math.max(1,Number(a.session_followup_days)||3),
+  };
+}
+function _studentDisplayName(s){
+  return [s?.name,s?.lname].filter(Boolean).join(' ').trim();
+}
+function _automationApplySessionFollowup(session){
+  if(!_automationCfg().session_followup||!session)return false;
+  const days=_automationCfg().session_followup_days;
+  const base=_jalaliParse(session.date_jalali)||_todayJalali();
+  if(!base||base.length!==3||base.some(x=>!Number.isInteger(x)))return false;
+  const due=_formatJalali(..._addDays(base[0],base[1],base[2],days));
+  if(!Array.isArray(session.followups))session.followups=[];
+  let changed=false;
+  if(!session.followups.length){
+    session.followups.push(_normalizeSessionFollowup({text:'پیگیری بعد از جلسه',due_date_jalali:due}));
+    changed=true;
+  }else{
+    session.followups.forEach(f=>{
+      if(f&&!f.done&&!String(f.due_date_jalali||'').trim()){
+        f.due_date_jalali=due;
+        changed=true;
+      }
+    });
+  }
+  return changed;
+}
+function _automationEnsureStaleLeadReminder(student){
+  if(!_automationCfg().stale_lead||!student||typeof isArchiveStale!=='function'||!isArchiveStale(student))return false;
+  const open=(_db.reminders||[]).some(r=>Number(r.student_id)===Number(student.id)&&r.source==='auto_stale_lead'&&!r.done);
+  if(open)return false;
+  const today=_formatJalali(..._todayJalali());
+  const name=_studentDisplayName(student);
+  _db.reminders.push({
+    id:_nextId('reminders'),student_id:student.id,package_id:null,source:'auto_stale_lead',
+    title:('پیگیری راکد'+(name?': '+name:'')).trim(),due_date_jalali:today,repeat_months:0,amount:0,
+    note:'اتوماسیون: سرنخ بدون پیگیری',done:false,notified_levels:[],created_at:new Date().toISOString(),
+  });
+  return true;
+}
+function _automationClearStaleLeadReminder(student){
+  if(!student||(typeof isArchiveStale==='function'&&isArchiveStale(student)))return false;
+  let changed=false;
+  const now=new Date().toISOString();
+  (_db.reminders||[]).forEach(r=>{
+    if(Number(r.student_id)===Number(student.id)&&r.source==='auto_stale_lead'&&!r.done){
+      r.done=true;r.updated_at=now;changed=true;
+    }
+  });
+  return changed;
+}
+function _runAutomationStaleLeads(){
+  let changed=false;
+  (_db.students||[]).forEach(s=>{
+    if(!s?.archived)return;
+    if(_automationEnsureStaleLeadReminder(s))changed=true;
+    else if(_automationClearStaleLeadReminder(s))changed=true;
+  });
+  return changed;
+}
+function _automationEnsurePackageDueTodo(reminder){
+  if(!_automationCfg().package_due||!reminder||reminder.done||reminder.package_id==null)return false;
+  const daysUntil=_daysUntil(reminder.due_date_jalali);
+  if(daysUntil> _automationCfg().package_due_days)return false;
+  if(typeof _todosInit==='function')_todosInit();
+  const key=String(reminder.id);
+  const existing=(_db.todos||[]).find(t=>t&&t.source==='auto_package_due'&&String(t.source_key)===key&&!t.done&&!t.archived);
+  if(existing)return false;
+  const student=(_db.students||[]).find(x=>Number(x.id)===Number(reminder.student_id));
+  const name=_studentDisplayName(student);
+  const due=String(reminder.due_date_jalali||'').trim()||_formatJalali(..._todayJalali());
+  const id=typeof _allocateTodoId==='function'?_allocateTodoId():_nextId('todos');
+  const todo={
+    id,title:(reminder.title||'سررسید پرداخت')+(name?' — '+name:''),note:'اتوماسیون: سررسید نزدیک پکیج',
+    date_jalali:due,scheduled_date:due,time:'',repeat:'none',weekdays:'',remind_min:0,
+    done:false,done_at:null,archived:false,status:'pending',
+    source:'auto_package_due',source_key:key,student_id:reminder.student_id||null,
+    created_at:new Date().toISOString(),updated_at:new Date().toISOString(),
+  };
+  if(!_db.todos)_db.todos=[];
+  _db.todos.push(todo);
+  if(typeof _syncTodoDelta==='function'){try{void _syncTodoDelta(todo,'create');}catch(e){}}
+  return true;
+}
+function _runAutomationPackageDue(){
+  let changed=false;
+  (_db.reminders||[]).forEach(r=>{
+    if(_automationEnsurePackageDueTodo(r))changed=true;
+  });
+  return changed;
+}
+function _automationOnConvertToCustomer(student){
+  if(!_automationCfg().convert_onboarding||!student)return false;
+  if((_db.topics||[]).some(t=>Number(t.student_id)===Number(student.id)&&t.source==='auto_onboarding'))return false;
+  const today=_formatJalali(..._todayJalali());
+  if(!_db.topics)_db.topics=[];
+  _db.topics.push({
+    id:_nextId('topics'),student_id:student.id,date_jalali:today,
+    title:'شروع همکاری — چک‌لیست',text:'اتوماسیون: کارهای اولیه پس از تبدیل به مشتری',
+    source:'auto_onboarding',
+    checklist:[
+      {id:1,text:'تماس خوش‌آمدگویی',done:false},
+      {id:2,text:'تکمیل اطلاعات پرونده',done:false},
+      {id:3,text:'ثبت جلسه اول',done:false},
+    ],
+    created_at:new Date().toISOString(),
+  });
+  if(!String(student.pinned_note||'').trim()){
+    student.pinned_note='مشتری جدید — چک‌لیست شروع همکاری را ببینید';
+    student.pinned_note_updated_at=new Date().toISOString();
+  }
+  return true;
+}
+let _automationScanAt=0;
+function _runAutomationScans(force=false){
+  const now=Date.now();
+  if(!force&&now-_automationScanAt<5*60*1000)return false;
+  _automationScanAt=now;
+  let changed=false;
+  if(_runAutomationStaleLeads())changed=true;
+  if(_runAutomationPackageDue())changed=true;
+  if(changed)_save(true,{urgent:false});
+  return changed;
+}
+
 // ── Student summary ─────────────────────────────────────────────────────────
 function _studentSummary(s) {
   const packages=_db.packages.filter(p=>p.student_id===s.id).map(p=>{
@@ -2421,7 +2559,7 @@ window.api = {
     bulkArchiveAction: (p)=>{
       const ids=new Set((p?.ids||[]).map(Number));
       const touchedAt=new Date().toISOString();
-      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){if(s.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=touchedAt;s.archived=false;s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
+      if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){const wasArchived=!!s.archived;if(s.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=touchedAt;s.archived=false;s.last_activity_at=touchedAt;s.updated_at=touchedAt;if(wasArchived)_automationOnConvertToCustomer(s);}});
       if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.customer_category=String(p.value||'شخصی');s.updated_at=touchedAt;}});
       if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id))){const next=String(p.value||'');s.relationship_status=next;if(next==='ناموفق'){if(p.loss_reason!==undefined)s.loss_reason=String(p.loss_reason||'').trim().slice(0,200);}else s.loss_reason='';s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
       if(p?.action==='delete'){
@@ -2438,7 +2576,7 @@ window.api = {
       }
       _save(true,{urgent:true});return _P({ok:true,count:ids.size});
     },
-    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){if(s.archived&&!p.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=new Date().toISOString();s.archived=!!p.archived;s.last_activity_at=new Date().toISOString();s.updated_at=s.last_activity_at;_save(true,{urgent:true});} return _P({ok:true}); },
+    setArchived: (p)=>{ const s=_db.students.find(x=>x.id===p.id); if(s){const wasArchived=!!s.archived;if(s.archived&&!p.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=new Date().toISOString();s.archived=!!p.archived;s.last_activity_at=new Date().toISOString();s.updated_at=s.last_activity_at;if(wasArchived&&!p.archived)_automationOnConvertToCustomer(s);_save(true,{urgent:true});} return _P({ok:true}); },
     addArchivedBulk: (payload)=>{
       const rows=Array.isArray(payload)?payload:(payload?.rows||[]);
       const columns=Array.isArray(payload?.columns)?payload.columns:[];
@@ -2576,7 +2714,7 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); _automationApplySessionFollowup(session); session.followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
     update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){if(p.followups!==undefined){s.followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i));s.followups.forEach(f=>_syncSessionFollowupReminder(s,f));}Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
     addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));const f=_normalizeSessionFollowup({id:maxId+1,text:p.text,done:false,due_date_jalali:p.due_date_jalali||p.due_date||'',reminder_id:null});s.followups.push(f);_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
@@ -9871,6 +10009,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   }
   await _ensureCompleteBusinessParts(['students', 'reminders', 'payments', 'packages']);
   _reconcileOverdueRemindersForSettledCustomers();
+  try{_runAutomationScans();}catch(e){}
   const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
   const reminders = await window.api.reminders.getAll();
@@ -11487,6 +11626,26 @@ async function renderSettings() {
     </div>
 
     <div class="detail-section">
+      <h3>اتوماسیون ساده</h3>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. همه به‌صورت پیش‌فرض روشن‌اند.</p>
+      ${(() => {
+        const a={...DEFAULT_AUTOMATION,...(META.automation||{})};
+        const chk=(id,on)=>`<input type="checkbox" id="${id}" ${on?'checked':''}>`;
+        return `<div class="form-grid" style="gap:12px 16px">
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-stale-lead',a.stale_lead!==false)}<span>سرنخ راکد → یادآوری پیگیری</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup!==false)}<span>جلسه ثبت شد → اقدام موعددار</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-package-due',a.package_due!==false)}<span>سررسید پکیج نزدیک → کار در لیست کارها</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-onboarding',a.convert_onboarding!==false)}<span>تبدیل به مشتری → چک‌لیست شروع همکاری</span></label>
+        <div class="form-group"><label class="form-label" for="auto-session-days">موعد اقدام جلسه (روز بعد از جلسه)</label><input class="form-input" id="auto-session-days" type="number" min="1" step="1" value="${Number(a.session_followup_days)||3}"></div>
+        <div class="form-group"><label class="form-label" for="auto-package-days">پنجره سررسید پکیج (روز مانده)</label><input class="form-input" id="auto-package-days" type="number" min="1" step="1" value="${Number(a.package_due_days)||3}"></div>
+      </div>`;
+      })()}
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">
+        <button class="btn btn-primary" onclick="saveAutomationSettings()">ذخیره اتوماسیون</button>
+      </div>
+    </div>
+
+    <div class="detail-section">
       <h3>🌍 منطقه زمانی و تقویم <span class="help-ic" title="نوع تقویم روی کل برنامه اثر می‌گذارد: اهداف، جلسات، لیست کارها، عادت‌ها، گزارش‌ها و فاکتورها">؟</span></h3>
       <div class="form-grid">
         <div class="form-group">
@@ -11872,6 +12031,26 @@ async function saveMeta() {
   META = await window.api.meta.update(payload);
   applyMetaToUI();
   showToast('تغییرات ذخیره شد ✓', 'success');
+}
+
+async function saveAutomationSettings() {
+  const sessionDays = Number(document.getElementById('auto-session-days')?.value);
+  const packageDays = Number(document.getElementById('auto-package-days')?.value);
+  if (!Number.isInteger(sessionDays) || sessionDays < 1 || !Number.isInteger(packageDays) || packageDays < 1) {
+    showToast('تعداد روز باید عدد صحیح مثبت باشد', 'error');
+    return;
+  }
+  const automation = {
+    stale_lead: !!document.getElementById('auto-stale-lead')?.checked,
+    session_followup: !!document.getElementById('auto-session-fu')?.checked,
+    package_due: !!document.getElementById('auto-package-due')?.checked,
+    convert_onboarding: !!document.getElementById('auto-onboarding')?.checked,
+    session_followup_days: sessionDays,
+    package_due_days: packageDays,
+  };
+  META = await window.api.meta.update({ automation });
+  _automationScanAt = 0;
+  showToast('اتوماسیون ذخیره شد ✓', 'success');
 }
 
 async function addPkgType() {
@@ -12591,6 +12770,7 @@ async function renderArchive() {
   updateTopbarActions('');
   const archiveData = await Promise.all([window.api.students.getArchived(),window.api.students.getArchiveColumns(),window.api.students.getArchiveOptions()]);
   archiveStudents=sortArchiveFieldReferralsFirst(archiveData[0]);archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
+  try{_runAutomationScans();}catch(e){}
   const html = `${studentSectionNav('archive')}<div class="table-card">
     <div class="archive-toolbar">
       <div class="archive-toolbar-head">
@@ -27989,7 +28169,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v173';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v174';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
