@@ -29,3 +29,5 @@ if [ -f "$ENV_BACKUP" ]; then
   cp -a "$ENV_BACKUP" "$ENV_FILE"
   rm -f "$ENV_BACKUP"
 fi
+
+node "$SITE_DIR/scripts/precompress-assets.js"

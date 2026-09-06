@@ -36,6 +36,9 @@ test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /require\('compression'\)/);
   assert.match(serverJs, /compression_unavailable/);
   assert.match(serverJs, /max-age=31536000, immutable/);
+  assert.match(serverJs, /function servePrecompressedStatic/);
+  assert.match(serverJs, /Content-Encoding/);
+  assert.equal(fs.existsSync(path.join(root, 'scripts', 'precompress-assets.js')), true);
 });
 
 test('student form interpolates stored fields through escapeHtml', () => {
