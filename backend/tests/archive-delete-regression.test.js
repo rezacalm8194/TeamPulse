@@ -11,6 +11,31 @@ const {
 const rows = Array.from({ length: 250 }, (_, i) => ({ id: i + 1, archived: true }));
 const tombstones = Object.fromEntries(rows.map(row => [row.id, '2026-09-06T12:00:00Z']));
 
+test('refresh pagination cannot restore archive rows deleted while the request was in flight', async () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../app.js'), 'utf8');
+  const start = source.indexOf('async function _loadBusinessPage(');
+  const end = source.indexOf('\nasync function _loadMoreBusiness(', start);
+  const state = { search: '', done: false };
+  let respond;
+  const pending = new Promise(resolve => { respond = resolve; });
+  const c = vm.createContext({
+    window: {}, _db: { students: rows.slice(), _deletedItems: {} },
+    _sbUser: { id: 'owner' }, _sbSession: { token: 'test' },
+    BUSINESS_PAGINATED_KEYS: ['students'], BUSINESS_SERVER_PAGE_SIZE: 200, DB_KEY: 'test',
+    _businessPagingState: () => state, _teamAccessSession: () => null,
+    _workspaceQuery: () => '?workspace=default', _apiFetch: () => pending,
+    _mergeBusinessRow: (key, local, remote) => remote,
+    _persistPartLoadState: () => {}, _persistDatabaseSnapshot: () => {},
+  });
+  vm.runInContext(source.slice(start, end), c);
+  const loading = c._loadBusinessPage('students', { reset: true });
+  c._db.students = [];
+  c._db._deletedItems.students = { ...tombstones };
+  respond({ ok: true, json: async () => ({ items: [...rows, { id: 251 }], total: 251 }) });
+  await loading;
+  assert.deepEqual(Array.from(c._db.students, row => row.id), [251]);
+});
+
 test('explicit archive wipe passes both server guards and stale rows stay deleted', () => {
   const previous = { students: rows };
   const patch = {
