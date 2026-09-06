@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp177';
+const TP_ASSET_V = 'tp178';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -6896,8 +6896,8 @@ function toggleStuChipsExpanded() {
   stuChipsExpanded = !stuChipsExpanded;
   refreshStudentAccountView();
 }
-const STUDENT_LIST_CHUNK = 40;
-const SESSION_BOARD_COLUMN_CHUNK = 12;
+const STUDENT_LIST_CHUNK = 20;
+const SESSION_BOARD_COLUMN_CHUNK = 8;
 let _studentListShown = STUDENT_LIST_CHUNK;
 let _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
 let _studentsSearchTimer = null;
@@ -6930,6 +6930,52 @@ function queueRenderSessions(search) {
     _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
     renderSessions(search);
   }, 300);
+}
+function _tpDisconnectLazyLoaders() {
+  try { window._tpLazyIO?.disconnect(); } catch (e) {}
+  try { window._tpBoardLazyIO?.disconnect(); } catch (e) {}
+  window._tpLazyIO = null;
+  window._tpBoardLazyIO = null;
+}
+function _tpBindLazyLoaders() {
+  _tpDisconnectLazyLoaders();
+  if (typeof IntersectionObserver !== 'function') return;
+  const contentRoot = document.getElementById('content') || document;
+  window._tpLazyIO = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const el = entry.target;
+      const kind = el.getAttribute('data-tp-lazy');
+      if (kind === 'case-forms') {
+        window._tpLazyIO.unobserve(el);
+        const search = currentStudentAccountSearch();
+        const wrap = document.createElement('div');
+        wrap.innerHTML = renderCaseFormsSection(search);
+        const node = wrap.firstElementChild || wrap;
+        el.replaceWith(node);
+        return;
+      }
+      if (kind === 'more-students') {
+        window._tpLazyIO.unobserve(el);
+        if (typeof _studentShowMoreList === 'function') _studentShowMoreList();
+        return;
+      }
+    });
+  }, { root: null, rootMargin: '240px 0px', threshold: 0.01 });
+  contentRoot.querySelectorAll('[data-tp-lazy]').forEach((el) => window._tpLazyIO.observe(el));
+
+  const board = document.getElementById('sessions-board');
+  const boardSentinel = document.getElementById('sessions-board-sentinel');
+  if (board && boardSentinel && window._sessionBoardHiddenCount > 0) {
+    window._tpBoardLazyIO = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        window._tpBoardLazyIO.unobserve(entry.target);
+        if (typeof _sessionBoardShowMore === 'function') _sessionBoardShowMore();
+      });
+    }, { root: board, rootMargin: '0px 280px 0px 0px', threshold: 0.01 });
+    window._tpBoardLazyIO.observe(boardSentinel);
+  }
 }
 function filterAccountStudents(students, search) {
   let filtered = search
@@ -7358,13 +7404,19 @@ async function _paintStudentsUi(search = '') {
   const financeReady = typeof _paginatedCollectionFullyLoaded === 'function'
     && _paginatedCollectionFullyLoaded('packages')
     && _paginatedCollectionFullyLoaded('payments');
+  const caseFormsPlaceholder = '<div class="table-card" data-tp-lazy="case-forms" style="margin-bottom:16px;padding:18px;color:var(--text3);font-size:12px;text-align:center">فرم‌های پرونده با اسکرول بارگذاری می‌شوند…</div>';
+  const listSentinel = _visibleStudentSlice(filtered).remaining > 0
+    ? '<div data-tp-lazy="more-students" class="todo-show-more" style="opacity:.7">با اسکرول، مشتریان بیشتر…</div>'
+    : '';
   const html = `
   ${studentSectionNav('students')}
-  ${renderCaseFormsSection(search)}
+  ${caseFormsPlaceholder}
   ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}`;
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}
+  ${listSentinel}`;
   setContent(html + (studentPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
+  _tpBindLazyLoaders();
 
   const si = document.querySelector('#topbar-actions .table-search input') ||
              document.querySelector('#content .table-search input');
@@ -7387,7 +7439,7 @@ async function renderStudents(search = '') {
   }).catch(() => {});
 }
 
-// ── Student Detail Modal// ── Student Detail Modal ──────────────────────────────────────────────────────
+// ── Student Detail Modal ──────────────────────────────────────────────────────
 function studentIsoJalali(value) {
   if(!value)return '';
   const date=new Date(value);
@@ -8941,7 +8993,7 @@ async function renderSessions(search = '') {
       <div class="session-column-body">
         ${g.sessions.length === 0
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
-          : (() => { const _vis = g.sessions.slice(0, 12); const _hid = g.sessions.length - _vis.length; return _vis.map(s => `
+          : (() => { const _vis = g.sessions.slice(0, 8); const _hid = g.sessions.length - _vis.length; return _vis.map(s => `
           <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
             <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${DateService.disp(s.date_jalali)} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
             <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
@@ -8950,6 +9002,9 @@ async function renderSessions(search = '') {
       </div>
     </div>`;
   });
+  if (window._sessionBoardHiddenCount > 0) {
+    html += '<div id="sessions-board-sentinel" data-tp-lazy="more-session-cols" class="session-column" style="min-width:140px;display:flex;align-items:center;justify-content:center;opacity:.75"><button type="button" class="btn btn-ghost btn-sm" onclick="_sessionBoardShowMore()">+' + fa(window._sessionBoardHiddenCount) + ' ستون</button></div>';
+  }
   html += `</div>`;
 
   // ── Key sessions summary — horizontal scroll AFTER board ──────────────
@@ -8981,6 +9036,7 @@ async function renderSessions(search = '') {
   setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) + _colMore +
     (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
+  _tpBindLazyLoaders();
 
   const board = document.getElementById('sessions-board');
   if (board) board.scrollLeft = prevScroll;
@@ -28539,7 +28595,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v177';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v178';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
