@@ -4485,3 +4485,17 @@ body { top: 0 !important; }
 .student-timeline strong { font-size:13px; }
 .student-timeline p { margin:4px 0 0; color:var(--text2); font-size:12px; line-height:1.8; }
 .student-timeline button { min-height:44px; white-space:normal; text-align:start; }
+
+
+.sessions-board-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;align-items:center}
+.sessions-board-filter-chip{border:1px solid var(--border2);background:var(--bg2);color:var(--text2);border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
+.sessions-board-filter-chip.active{border-color:var(--accent);color:var(--accent);background:rgba(124,106,247,.08)}
+.session-fu-due{font-size:11px;color:var(--text3)}
+.session-fu-due.overdue{color:var(--danger,#c24135);font-weight:600}
+.session-fu-badge{background:rgba(251,191,36,.15);color:var(--amber)}
+.session-fu-badge.is-overdue{background:rgba(194,65,53,.12);color:var(--danger,#c24135)}
+.session-fu-due-field{min-width:140px;flex:0 1 180px}
+.session-fu-due-field .form-label{font-size:11px;margin-bottom:2px}
+.archive-loss-reason{font-size:12px;color:var(--text2);margin:4px 0}
+.archive-failed-summary{width:100%;font-size:12px;color:var(--text2);padding:4px 0}
+.archive-loss-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
