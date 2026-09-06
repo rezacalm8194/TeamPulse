@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp172';
+const TP_ASSET_V = 'tp173';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -12567,6 +12567,11 @@ function filteredArchiveRows(){
     return archiveColumns.some(c=>archiveColumnValue(s,c).toLowerCase().includes(q));
   });
 }
+let _archiveSearchTimer=null;
+function queueArchiveSearch(){
+  clearTimeout(_archiveSearchTimer);
+  _archiveSearchTimer=setTimeout(()=>applyArchiveFilters(),140);
+}
 function applyArchiveFilters(){
   const searchEl=document.getElementById('archive-search');
   const catEl=document.getElementById('archive-category-filter');
@@ -12595,7 +12600,7 @@ async function renderArchive() {
       <div class="archive-toolbar-filters">
         ${archiveViewControlsHtml()}
         <label class="archive-control"><span class="archive-control-label">دسته‌بندی</span><select class="form-select archive-category-filter" id="archive-category-filter" aria-label="نمایش بر اساس دسته‌بندی" onchange="applyArchiveFilters()">${archiveCategoryFilterOptionsHtml()}</select></label>
-        <label class="archive-control archive-control-search"><span class="archive-control-label">جستجو</span><input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در تمام ستون‌های بایگانی..." value="${escapeHtml(archiveSearchQuery)}" oninput="applyArchiveFilters()"></label>
+        <label class="archive-control archive-control-search"><span class="archive-control-label">جستجو</span><input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در تمام ستون‌های بایگانی..." value="${escapeHtml(archiveSearchQuery)}" oninput="queueArchiveSearch()"></label>
       </div>
     </div>
     <div class="archive-bulkbar" id="archive-bulkbar"><span class="archive-selected-count" id="archive-selected-count"></span><button class="btn btn-ghost btn-sm" onclick="selectAllArchiveRows()">☑ انتخاب همه</button><button class="btn btn-primary btn-sm" onclick="bulkConvertArchive()">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveCategory()">🏷 دسته‌بندی</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveStatus()">📞 وضعیت ارتباط</button><button class="btn btn-danger btn-sm" onclick="bulkDeleteArchive()">🗑 حذف کامل</button><button class="btn btn-ghost btn-sm" onclick="clearArchiveSelection()">لغو انتخاب</button></div>
@@ -12616,6 +12621,14 @@ function paintArchiveRows(rows) {
   const body=document.getElementById('archive-tbody'),mobile=document.getElementById('archive-mobile-list'); if(!body)return;
   archiveVisibleRows=rows;
   document.getElementById('archive-count').textContent=`${fa(rows.length)} نفر${archiveCategoryFilter==='__empty__'?' · بدون دسته‌بندی':(archiveCategoryFilter?` · ${archiveCategoryFilter}`:'')}`;
+  const pipelineMode=archiveViewMode()==='pipeline';
+  if(pipelineMode){
+    body.innerHTML='';
+    if(mobile)mobile.innerHTML='';
+    paintArchivePipeline(rows);
+    updateArchiveBulkbar();
+    return;
+  }
   body.innerHTML=rows.length?rows.map((s,index)=>`<tr class="${archiveStatusClass(s.relationship_status)}" onclick="openArchivePersonDetail(${s.id})">
     <td class="archive-select-col" onclick="event.stopPropagation()">${archiveRowCheckboxHtml(s.id)}</td>
     <td class="archive-number-col">${fa(index+1)}</td>
@@ -12629,7 +12642,7 @@ function paintArchiveRows(rows) {
 
 let archiveStaleFilter='';
 function archiveViewMode(){try{return localStorage.getItem('tp_archive_view')==='pipeline'?'pipeline':'table';}catch{return 'table';}}
-function setArchiveViewMode(value){try{localStorage.setItem('tp_archive_view',value);}catch{}renderArchive();}
+function setArchiveViewMode(value){try{localStorage.setItem('tp_archive_view',value);}catch{}applyArchiveFilters();}
 function setArchiveStaleFilter(value){archiveStaleFilter=value;applyArchiveFilters();}
 function setArchiveStaleDays(value){const days=Number(value);if(!Number.isInteger(days)||days<1){showToast('تعداد روز باید عدد صحیح مثبت باشد','error');return;} _db.meta.archive_stale_days=days;_save();applyArchiveFilters();}
 function isArchiveStale(s,now=Date.now(),days=Number(_db.meta.archive_stale_days)||14){
@@ -27976,7 +27989,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v172';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v173';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
