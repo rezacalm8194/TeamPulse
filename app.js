@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp167';
+const TP_ASSET_V = 'tp168';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -873,6 +873,15 @@ function _migrate(d) {
     if(!s.extra_note)s.extra_note='';
     if(s.importance===undefined)s.importance=s.flagged?'key':'normal';
     if(s.flagged===undefined)s.flagged=s.importance==='key';
+    if(!Array.isArray(s.followups))s.followups=[];
+    s.followups.forEach((f,i)=>{
+      if(typeof f==='string'){s.followups[i]={id:i+1,text:f,done:false,due_date_jalali:'',reminder_id:null};return;}
+      if(f.due_date_jalali===undefined)f.due_date_jalali='';
+      if(f.reminder_id===undefined)f.reminder_id=null;
+      if(f.text===undefined)f.text='';
+      if(f.done===undefined)f.done=false;
+      if(f.id===undefined)f.id=i+1;
+    });
   });
   d.students.forEach(s=>{
     ['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at'].forEach(k=>{if(s[k]===undefined)s[k]='';});
@@ -881,7 +890,7 @@ function _migrate(d) {
     if(s.archived===undefined)s.archived=false;
     if(s.main_need===undefined)s.main_need='';
     if(s.relationship_status===undefined)s.relationship_status='';
-    ['next_activity_type','next_activity_date','next_activity_note','last_activity_at'].forEach(k=>{if(s[k]===undefined)s[k]='';});
+    ['next_activity_type','next_activity_date','next_activity_note','last_activity_at','loss_reason'].forEach(k=>{if(s[k]===undefined)s[k]='';});
     if(!s.archive_data||typeof s.archive_data!=='object')s.archive_data={};
     const importedDescriptions=[];
     Object.entries(s.archive_data).forEach(([label,value])=>{
@@ -2124,6 +2133,43 @@ function _resolvePackageType(typeId) {
   return null;
 }
 
+function _normalizeSessionFollowup(f,i=0){
+  if(typeof f==='string')return{id:i+1,text:f,done:false,due_date_jalali:'',reminder_id:null};
+  return{id:f?.id||i+1,text:String(f?.text||''),done:!!f?.done,due_date_jalali:String(f?.due_date_jalali||'').trim(),reminder_id:f?.reminder_id??null};
+}
+function _sessionFollowupOverdue(f){
+  return !!(f&&!f.done&&f.due_date_jalali&&_daysUntil(f.due_date_jalali)<0);
+}
+function _markSessionFollowupReminderDone(followup){
+  if(followup?.reminder_id==null)return;
+  const rem=_db.reminders.find(x=>Number(x.id)===Number(followup.reminder_id));
+  if(rem){rem.done=true;rem.updated_at=new Date().toISOString();}
+}
+function _syncSessionFollowupReminder(session,followup){
+  if(!session||!followup)return;
+  const student=_db.students.find(x=>Number(x.id)===Number(session.student_id));
+  const name=student?[student.name,student.lname].filter(Boolean).join(' '):'';
+  const now=new Date().toISOString();
+  const due=String(followup.due_date_jalali||'').trim();
+  let rem=followup.reminder_id!=null?_db.reminders.find(x=>Number(x.id)===Number(followup.reminder_id)):null;
+  if(!due||followup.done){
+    if(rem){rem.done=true;rem.updated_at=now;}
+    return;
+  }
+  const patch={source:'session_followup',student_id:session.student_id,title:('اقدام جلسه: '+followup.text+(name?' — '+name:'')).trim(),due_date_jalali:due,note:'',done:false,notified_levels:[],updated_at:now};
+  if(rem)Object.assign(rem,patch);
+  else{
+    const id=_nextId('reminders');
+    _db.reminders.push({id,package_id:null,repeat_months:0,amount:0,created_at:now,...patch});
+    followup.reminder_id=id;
+  }
+}
+function sessionFollowupDueHtml(f){
+  if(!f?.due_date_jalali)return '';
+  const overdue=_sessionFollowupOverdue(f);
+  return '<span class="session-fu-due'+(overdue?' overdue':'')+'">موعد: '+escapeHtml(DateService.disp(f.due_date_jalali))+(overdue?' · عقب‌افتاده':'')+'</span>';
+}
+
 // ── Student summary ─────────────────────────────────────────────────────────
 function _studentSummary(s) {
   const packages=_db.packages.filter(p=>p.student_id===s.id).map(p=>{
@@ -2377,7 +2423,7 @@ window.api = {
       const touchedAt=new Date().toISOString();
       if(p?.action==='convert')_db.students.forEach(s=>{if(ids.has(Number(s.id))){if(s.archived&&!s.converted_from_archive_at)s.converted_from_archive_at=touchedAt;s.archived=false;s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
       if(p?.action==='category')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.customer_category=String(p.value||'شخصی');s.updated_at=touchedAt;}});
-      if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id))){s.relationship_status=String(p.value||'');s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
+      if(p?.action==='status')_db.students.forEach(s=>{if(ids.has(Number(s.id))){const next=String(p.value||'');s.relationship_status=next;if(next==='ناموفق'){if(p.loss_reason!==undefined)s.loss_reason=String(p.loss_reason||'').trim().slice(0,200);}else s.loss_reason='';s.last_activity_at=touchedAt;s.updated_at=touchedAt;}});
       if(p?.action==='delete'){
         const deleteIds=[...ids];
         _recordStudentAndRelatedDeletions(deleteIds);
@@ -2403,7 +2449,7 @@ window.api = {
         const id=_nextId('students');
         const description=String(p.description||p.address||p.main_need||'');
         const createdAt=new Date().toISOString();
-        const item={id,name,lname,next_activity_type:p.next_activity_type||'',next_activity_date:p.next_activity_date||'',next_activity_note:p.next_activity_note||'',last_activity_at:p.last_activity_at||'',phone:String(p.phone||''),date_jalali:String(p.date||''),customer_category:String(p.customer_category||'شخصی'),referral_source:String(p.referral_source||'متفرقه'),organization_name:String(p.organization_name||''),description,address:description,main_need:'',relationship_status:String(p.relationship_status||''),archive_data:{...(p.archive_data||{})},note:String(p.note||''),family_id:null,is_supplier:false,wallet:0,archived:true,created_at:createdAt,updated_at:createdAt};
+        const item={id,name,lname,next_activity_type:p.next_activity_type||'',next_activity_date:p.next_activity_date||'',next_activity_note:p.next_activity_note||'',last_activity_at:p.last_activity_at||'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),phone:String(p.phone||''),date_jalali:String(p.date||''),customer_category:String(p.customer_category||'شخصی'),referral_source:String(p.referral_source||'متفرقه'),organization_name:String(p.organization_name||''),description,address:description,main_need:'',relationship_status:String(p.relationship_status||''),archive_data:{...(p.archive_data||{})},note:String(p.note||''),family_id:null,is_supplier:false,wallet:0,archived:true,created_at:createdAt,updated_at:createdAt};
         if(item.customer_category&&!_db.archive_categories.includes(item.customer_category))_db.archive_categories.push(item.customer_category);
         if(item.relationship_status&&!_db.archive_relationship_statuses.includes(item.relationship_status))_db.archive_relationship_statuses.push(item.relationship_status);
         _db.students.push(item); added.push(item);
@@ -2415,7 +2461,7 @@ window.api = {
       const id=_nextId('students');
       const description=p.description||p.address||p.main_need||'';
       const createdAt=new Date().toISOString();
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -2439,7 +2485,10 @@ window.api = {
       const description=p.description??p.address??p.main_need??s.description??s.address??s.main_need??'';
       if((p.relationship_status!==undefined&&p.relationship_status!==s.relationship_status)||['next_activity_type','next_activity_date','next_activity_note'].some(k=>p[k]!==undefined&&p[k]!==s[k]))s.last_activity_at=new Date().toISOString();
       ['next_activity_type','next_activity_date','next_activity_note'].forEach(k=>{if(p[k]!==undefined)s[k]=p[k];});
-      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status??s.relationship_status??'',archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,updated_at:new Date().toISOString()});
+      const nextStatus=p.relationship_status??s.relationship_status??'';
+      if(p.loss_reason!==undefined)s.loss_reason=String(p.loss_reason||'').trim().slice(0,200);
+      else if(p.relationship_status!==undefined&&nextStatus!=='ناموفق')s.loss_reason='';
+      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:nextStatus,archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,updated_at:new Date().toISOString()});
       const selectedPackages = p.packages || [];
       const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
       const removedPackageIds = _db.packages
@@ -2527,12 +2576,13 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ const createdAt=new Date().toISOString(); _db.sessions.push({id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups:(p.followups||[]).map((f,i)=>({id:i+1,text:f.text||f,done:false})),achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,followups:p.followups??s.followups??[],achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
-    toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
-    addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));s.followups.push({id:maxId+1,text:p.text,done:false});s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
-    deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){s.followups=s.followups.filter(f=>f.id!==p.item_id);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
-    getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali}));}); return _P(open); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
+    update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){if(p.followups!==undefined){s.followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i));s.followups.forEach(f=>_syncSessionFollowupReminder(s,f));}Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
+    toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
+    addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));const f=_normalizeSessionFollowup({id:maxId+1,text:p.text,done:false,due_date_jalali:p.due_date_jalali||p.due_date||'',reminder_id:null});s.followups.push(f);_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    updateFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){if(p.text!==undefined)f.text=p.text;if(p.due_date_jalali!==undefined||p.due_date!==undefined)f.due_date_jalali=String(p.due_date_jalali??p.due_date??'').trim();if(p.done!==undefined)f.done=!!p.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
+    deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){const f=s.followups.find(x=>x.id===p.item_id);if(f)_markSessionFollowupReminderDone(f);s.followups=s.followups.filter(x=>x.id!==p.item_id);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali,overdue:_sessionFollowupOverdue(f)}));}); return _P(open); },
     getRecentAchievements: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid&&x.achievements&&x.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
     delete: (id)=>{ _db.sessions=_db.sessions.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     keyOnes: ()=>{ const r=[]; _db.students.filter(s=>!s.archived).forEach(s=>{_db.sessions.filter(x=>x.student_id===s.id&&x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
@@ -8473,6 +8523,22 @@ async function renderPayments(search = '') {
 // ════════════════════════════════════════════════════════════════════════════
 // SESSIONS PAGE
 // ════════════════════════════════════════════════════════════════════════════
+function sessionsBoardFilter(){try{return localStorage.getItem('tp_sessions_board_filter')||'all';}catch{return 'all';}}
+function setSessionsBoardFilter(value){try{localStorage.setItem('tp_sessions_board_filter',value||'all');}catch{}renderSessions();}
+function sessionGroupMatchesBoardFilter(g,filter,todayParts){
+  const [ty,tm]=todayParts||_todayJalali();
+  const fus=(g.sessions||[]).flatMap(s=>s.followups||[]);
+  if(filter==='open')return fus.some(f=>!f.done);
+  if(filter==='overdue')return fus.some(f=>_sessionFollowupOverdue(f));
+  if(filter==='no_month')return !(g.sessions||[]).some(s=>{const[y,m]=_jalaliParse(s.date_jalali||'');return y===ty&&m===tm;});
+  if(filter==='key')return (g.sessions||[]).some(s=>s.importance==='key'||s.flagged);
+  return true;
+}
+function sessionsBoardFilterHtml(active){
+  const chips=[['all','همه'],['open','اقدام باز'],['overdue','عقب‌افتاده'],['no_month','بدون جلسه این ماه'],['key','جلسه کلیدی']];
+  return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,label])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+label+'</button>').join('')+'</div>';
+}
+
 async function renderSessions(search = '') {
   await _ensureBusinessPartLoaded('students');
   await _ensureBusinessPartLoaded('sessions');
@@ -8508,6 +8574,11 @@ async function renderSessions(search = '') {
   if (search) {
     groupsSorted = groupsSorted.filter(g => (g.name + g.lname).includes(search));
   }
+  const boardFilter = sessionsBoardFilter();
+  const todayParts = _todayJalali();
+  groupsSorted = groupsSorted.filter(g => sessionGroupMatchesBoardFilter(g, boardFilter, todayParts));
+
+  html += sessionsBoardFilterHtml(boardFilter);
 
   if (groupsSorted.length === 0) {
     setContent(html + `<div class="empty"><span>🔍</span>چیزی پیدا نشد</div>`);
@@ -8516,10 +8587,12 @@ async function renderSessions(search = '') {
 
   // Compute open followup counts per student
   const followupCounts = {};
+  const overdueCounts = {};
   groupsSorted.forEach(g => {
-    let openCount = 0;
-    g.sessions.forEach(s => { (s.followups||[]).forEach(f => { if (!f.done) openCount++; }); });
+    let openCount = 0, overdueCount = 0;
+    g.sessions.forEach(s => { (s.followups||[]).forEach(f => { if (!f.done) { openCount++; if (_sessionFollowupOverdue(f)) overdueCount++; } }); });
     followupCounts[g.student_id] = openCount;
+    overdueCounts[g.student_id] = overdueCount;
   });
 
   html += `<div class="sessions-board" id="sessions-board">`;
@@ -8531,7 +8604,7 @@ async function renderSessions(search = '') {
         <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
         <span class="scn-count">(${fa(g.sessions.length)})</span>
         ${studentContactScheduleHtml(g.student_id)}
-        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" style="cursor:pointer;background:rgba(251,191,36,.15);color:var(--amber);border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}</span>` : ''}
+        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}" style="cursor:pointer;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?' · عقب‌افتاده':''}</span>` : ''}
         <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
         <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
@@ -8826,9 +8899,10 @@ async function openSessionDetail(sessionId) {
       <h3>📌 اقدامات تا جلسه بعد</h3>
       <div>
         ${session.followups.map(f => `
-          <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border)">
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border);flex-wrap:wrap">
             <input type="checkbox" ${f.done?'checked':''} onchange="toggleFollowupFromDetail(${sessionId}, ${f.id}, this)" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer;flex-shrink:0">
             <span style="${f.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'};font-size:13px;flex:1">${escapeHtml(f.text)}</span>
+            ${sessionFollowupDueHtml(f)}
             ${f.done?'<span style="font-size:11px;color:var(--green)">✓ انجام شد</span>':''}
           </label>`).join('')}
       </div>
@@ -8871,11 +8945,12 @@ async function openStudentFollowups(studentId, displayName) {
   const itemsHtml = openFU.length === 0
     ? '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">همه اقدامات انجام شده‌اند 🎉</div>'
     : openFU.map(f => `
-      <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer">
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap">
         <input type="checkbox" onchange="toggleFollowupAndRefresh(${studentId}, ${escapeAttr(displayName)}, ${f.session_id}, ${f.id}, this)" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer;flex-shrink:0">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;color:var(--text)">${escapeHtml(f.text)}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px">از جلسه ${f.session_date}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">از جلسه ${DateService.disp(f.session_date)}</div>
+          ${sessionFollowupDueHtml(f)}
         </div>
       </label>`).join('');
 
@@ -9033,8 +9108,9 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
         <div id="ses-followup-list" style="margin-bottom:6px"></div>
-        <div style="display:flex;gap:6px">
-          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1" onkeydown="_tpOnEnter(event,'_addSesFollowupItem')">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1;min-width:160px" onkeydown="_tpOnEnter(event,'_addSesFollowupItem')">
+          <div class="session-fu-due-field">${calendarDateFieldHtml('f-ses-followup-due','','موعد (اختیاری)',false)}</div>
           <button type="button" class="btn btn-ghost" onclick="_addSesFollowupItem()">+ افزودن</button>
         </div>
       </div>
@@ -9256,8 +9332,10 @@ function _addSesFollowupItem() {
   const text = input?.value.trim();
   if (!text) return;
   window._pendingFollowups = window._pendingFollowups || [];
-  window._pendingFollowups.push({ text });
+  window._pendingFollowups.push({ text, due_date_jalali: (readCalendarDateField('f-ses-followup-due') || '').trim() });
   input.value = '';
+  const dueEl = document.getElementById('f-ses-followup-due');
+  if (dueEl) dueEl.value = '';
   _renderSesFollowupList();
 }
 
@@ -9272,9 +9350,10 @@ function _renderSesFollowupList() {
   if (!container) return;
   const items = window._pendingFollowups || [];
   container.innerHTML = items.map((f, i) => `
-    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
       <span style="color:var(--text3)">☐</span>
       <span style="flex:1">${escapeHtml(f.text)}</span>
+      ${sessionFollowupDueHtml(f)}
       <button class="x-close-sm" onclick="_removeSesFollowupItem(${i})">✕</button>
     </div>`).join('');
 }
@@ -9294,7 +9373,7 @@ async function saveSessionGeneral() {
     importance: document.getElementById('f-ses-importance')?.value || 'normal',
     note,
     extra_note: document.getElementById('f-ses-extra')?.value,
-    followups: (window._pendingFollowups || []).map(f => ({ text: f.text })),
+    followups: (window._pendingFollowups || []).map(f => ({ text: f.text, due_date_jalali: f.due_date_jalali || '' })),
     achievements: document.getElementById('f-ses-achievements')?.value || '',
     eval_form_id: autoFormId || null,
     eval_period_id: autoPid || null,
@@ -9386,14 +9465,18 @@ async function openEditSession(sessionId) {
         <label class="form-label">📌 اقدامات تا جلسه بعد</label>
         <div id="ses-edit-followup-list">
           ${(session.followups || []).map((f, i) => `
-            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+            <div class="session-fu-edit-row" style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
               <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
               <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
+              ${sessionFollowupDueHtml(f)}
+              <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-fu-due-'+f.id, f.due_date_jalali||'', 'موعد', false)}</div>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="saveEditFollowupDue(${sessionId}, ${f.id})">ذخیره موعد</button>
               <button class="x-close-sm" onclick="deleteEditFollowup(${sessionId}, ${f.id})">✕</button>
             </div>`).join('')}
         </div>
-        <div style="display:flex;gap:6px;margin-top:4px">
-          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1" onkeydown="_tpOnEnter1(event,'addEditFollowup',${sessionId})">
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:flex-end">
+          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1;min-width:160px" onkeydown="_tpOnEnter1(event,'addEditFollowup',${sessionId})">
+          <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-followup-due','','موعد (اختیاری)',false)}</div>
           <button type="button" class="btn btn-ghost" onclick="addEditFollowup(${sessionId})">+ افزودن</button>
         </div>
       </div>
@@ -9497,9 +9580,17 @@ async function addEditFollowup(sessionId) {
   const input = document.getElementById('f-edit-followup-input');
   const text = input?.value.trim();
   if (!text) return;
-  await window.api.sessions.addFollowup({ session_id: sessionId, text });
+  await window.api.sessions.addFollowup({ session_id: sessionId, text, due_date_jalali: (readCalendarDateField('f-edit-followup-due') || '').trim() });
   input.value = '';
+  const dueEl = document.getElementById('f-edit-followup-due');
+  if (dueEl) dueEl.value = '';
   showToast('اقدام اضافه شد ✓', 'success');
+  await _refreshEditFollowupList(sessionId);
+}
+async function saveEditFollowupDue(sessionId, itemId) {
+  const due = (readCalendarDateField('f-edit-fu-due-' + itemId) || '').trim();
+  await window.api.sessions.updateFollowup({ session_id: sessionId, item_id: itemId, due_date_jalali: due });
+  showToast('موعد ذخیره شد ✓', 'success');
   await _refreshEditFollowupList(sessionId);
 }
 
@@ -9518,11 +9609,15 @@ async function _refreshEditFollowupList(sessionId) {
   const container = document.getElementById('ses-edit-followup-list');
   if (!session || !container) return;
   container.innerHTML = (session.followups || []).map((f, i) => `
-    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px">
+    <div class="session-fu-edit-row" style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
       <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
       <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
+      ${sessionFollowupDueHtml(f)}
+      <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-fu-due-'+f.id, f.due_date_jalali||'', 'موعد', false)}</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="saveEditFollowupDue(${sessionId}, ${f.id})">ذخیره موعد</button>
       <button class="x-close-sm" onclick="deleteEditFollowup(${sessionId}, ${f.id})">✕</button>
     </div>`).join('');
+  initDatePickers();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -12515,8 +12610,26 @@ function isArchiveStale(s,now=Date.now(),days=Number(_db.meta.archive_stale_days
   const last=Date.parse(s.last_activity_at||s.updated_at||s.created_at||'');
   return Number.isFinite(last)&&now-last>=days*86400000;
 }
-function archiveViewControlsHtml(){return `<label class="archive-view-mode">روش نمایش <select class="form-select" onchange="setArchiveViewMode(this.value)"><option value="table" ${archiveViewMode()==='table'?'selected':''}>جدول</option><option value="pipeline" ${archiveViewMode()==='pipeline'?'selected':''}>فرایند فروش</option></select></label><label class="archive-view-mode">راکد پس از (روز)<input class="form-input archive-stale-days" type="number" min="1" step="1" value="${Number(_db.meta.archive_stale_days)||14}" onchange="setArchiveStaleDays(this.value)"></label><select class="form-select" aria-label="فیلتر راکد" onchange="setArchiveStaleFilter(this.value)"><option value="">همه</option><option value="stale" ${archiveStaleFilter==='stale'?'selected':''}>فقط راکد</option><option value="fresh" ${archiveStaleFilter==='fresh'?'selected':''}>بدون راکد</option></select>`;}
-function archiveActivityHtml(s){return `${isArchiveStale(s)?'<span class="archive-stale-badge">راکد</span>':''}${s.next_activity_date?`<div class="archive-next-activity ${_daysUntil(s.next_activity_date)<0?'overdue':''}"><span>${s.next_activity_type==='meeting'?'جلسه':'تماس'} · ${escapeHtml(s.next_activity_date)}${_daysUntil(s.next_activity_date)<0?' · عقب‌افتاده':''}</span><button class="btn btn-ghost btn-sm" onclick="completeArchiveActivity(${s.id},event)">انجام شد</button></div>`:''}`;}
+function archiveViewControlsHtml(){return `<label class="archive-view-mode">روش نمایش <select class="form-select" onchange="setArchiveViewMode(this.value)"><option value="table" ${archiveViewMode()==='table'?'selected':''}>جدول</option><option value="pipeline" ${archiveViewMode()==='pipeline'?'selected':''}>فرایند فروش</option></select></label><label class="archive-view-mode">راکد پس از (روز)<input class="form-input archive-stale-days" type="number" min="1" step="1" value="${Number(_db.meta.archive_stale_days)||14}" onchange="setArchiveStaleDays(this.value)"></label><select class="form-select" aria-label="فیلتر راکد" onchange="setArchiveStaleFilter(this.value)"><option value="">همه</option><option value="stale" ${archiveStaleFilter==='stale'?'selected':''}>فقط راکد</option><option value="fresh" ${archiveStaleFilter==='fresh'?'selected':''}>بدون راکد</option></select>${archiveFailedSummaryHtml()}`;}
+function archiveLossReasonHtml(s){const reason=String(s.loss_reason||'').trim();if(s.relationship_status!=='ناموفق'||!reason)return '';return '<div class="archive-loss-reason" title="'+escapeHtml(reason)+'">دلیل: '+escapeHtml(reason.length>60?reason.slice(0,60)+'…':reason)+'</div>';}
+function archiveFailedSummaryHtml(){
+  const failed=archiveStudents.filter(s=>s.relationship_status==='ناموفق');
+  if(!failed.length)return '';
+  const counts={};
+  failed.forEach(s=>{const r=String(s.loss_reason||'').trim()||'بدون دلیل';counts[r]=(counts[r]||0)+1;});
+  const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return '<div class="archive-failed-summary">ناموفق‌ها: '+fa(failed.length)+(top?' · پرتکرارترین دلیل: '+escapeHtml(top[0]):'')+'</div>';
+}
+const ARCHIVE_LOSS_REASON_CHIPS=['قیمت','زمان','رقبا','عدم پاسخ','سایر'];
+function archiveLossReasonFields(value=''){
+  return '<div class="form-group full" id="archive-loss-reason-wrap"><label class="form-label" for="ar-loss-reason">دلیل ناموفق</label><div class="archive-loss-chips">'+ARCHIVE_LOSS_REASON_CHIPS.map(c=>'<button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById(\'ar-loss-reason\').value=\''+c+'\'">'+c+'</button>').join('')+'</div><input class="form-input" id="ar-loss-reason" maxlength="200" value="'+escapeHtml(value||'')+'" placeholder="دلیل را بنویسید یا از گزینه‌های بالا انتخاب کنید"></div>';
+}
+function readArchiveLossReason(required){
+  const reason=String(document.getElementById('ar-loss-reason')?.value||'').trim().slice(0,200);
+  if(required&&!reason){showToast('برای وضعیت ناموفق، دلیل الزامی است','error');return null;}
+  return reason;
+}
+function archiveActivityHtml(s){return `${isArchiveStale(s)?'<span class="archive-stale-badge">راکد</span>':''}${archiveLossReasonHtml(s)}${s.next_activity_date?`<div class="archive-next-activity ${_daysUntil(s.next_activity_date)<0?'overdue':''}"><span>${s.next_activity_type==='meeting'?'جلسه':'تماس'} · ${escapeHtml(s.next_activity_date)}${_daysUntil(s.next_activity_date)<0?' · عقب‌افتاده':''}</span><button class="btn btn-ghost btn-sm" onclick="completeArchiveActivity(${s.id},event)">انجام شد</button></div>`:''}`;}
 function archiveActivityFields(s={}){return `<div class="form-group"><label class="form-label" for="ar-activity-type">فعالیت بعدی</label><select class="form-select" id="ar-activity-type"><option value="call">تماس</option><option value="meeting" ${s.next_activity_type==='meeting'?'selected':''}>جلسه</option></select></div><div class="form-group">${calendarDateFieldHtml('ar-activity-date',s.next_activity_date||'','تاریخ فعالیت بعدی',false)}</div><div class="form-group full"><label class="form-label" for="ar-activity-note">یادداشت فعالیت</label><input class="form-input" id="ar-activity-note" maxlength="500" value="${escapeHtml(s.next_activity_note||'')}"></div>`;}
 function readArchiveActivity(required){
   const value=readCalendarDateField('ar-activity-date').trim(),parts=_jalaliParse(value);
@@ -12542,7 +12655,32 @@ async function completeArchiveActivity(id,event){event?.stopPropagation();await 
 function archiveDragStart(event,id){event.dataTransfer.setData('text/plain',String(id));event.dataTransfer.effectAllowed='move';}
 function archiveDragOver(event){event.preventDefault();event.dataTransfer.dropEffect='move';}
 async function archiveDrop(event,column){event.preventDefault();const id=Number(event.dataTransfer.getData('text/plain'));await changeArchiveStage(id,column.dataset.status);}
-async function changeArchiveStage(id,value){if(!archiveStudents.some(s=>Number(s.id)===Number(id))||!['',...archiveStatusOptions].includes(value))return;await window.api.students.bulkArchiveAction({ids:[id],action:'status',value});await renderArchive();}
+async function changeArchiveStage(id,value){
+  if(!archiveStudents.some(s=>Number(s.id)===Number(id))||!['',...archiveStatusOptions].includes(value))return;
+  if(value==='ناموفق'){
+    const person=archiveStudents.find(s=>Number(s.id)===Number(id));
+    if(!String(person?.loss_reason||'').trim()){openArchiveLossReasonModal([id],value);return;}
+    await window.api.students.bulkArchiveAction({ids:[id],action:'status',value,loss_reason:person.loss_reason});
+  } else {
+    await window.api.students.bulkArchiveAction({ids:[id],action:'status',value});
+  }
+  await renderArchive();
+}
+function openArchiveLossReasonModal(ids,value){
+  window._pendingArchiveLoss={ids:(ids||[]).map(Number),value:String(value||'ناموفق')};
+  const person=archiveStudents.find(s=>Number(s.id)===Number(ids[0]));
+  openModal('دلیل ناموفق',archiveLossReasonFields(person?.loss_reason||''),[
+    {label:'ذخیره',cls:'btn-primary',action:'commitArchiveLossReason()'},
+    {label:'انصراف',cls:'btn-ghost',action:'window._pendingArchiveLoss=null;closeModal();renderArchive()'},
+  ]);
+}
+async function commitArchiveLossReason(){
+  const pending=window._pendingArchiveLoss;if(!pending?.ids?.length)return;
+  const reason=readArchiveLossReason(true);if(reason===null)return;
+  await window.api.students.bulkArchiveAction({ids:pending.ids,action:'status',value:pending.value,loss_reason:reason});
+  window._pendingArchiveLoss=null;archiveSelectedIds.clear();
+  closeModal();showToast('وضعیت ناموفق ذخیره شد ✓','success');await renderArchive();
+}
 function paintArchivePipeline(rows){
   const board=document.getElementById('archive-pipeline');if(!board)return;
   const enabled=archiveViewMode()==='pipeline';board.closest('.table-card').classList.toggle('archive-show-pipeline',enabled);board.hidden=!enabled;if(!enabled)return;
@@ -12615,16 +12753,20 @@ async function bulkConvertArchive(){const ids=selectedArchiveIds();if(!ids.lengt
 function bulkSetArchiveCategory(){if(!archiveSelectedIds.size)return;openModal('تغییر دسته‌بندی گروهی',`<div class="form-group"><label class="form-label">دسته‌بندی جدید</label><select class="form-select" id="archive-bulk-category">${archiveCategoryOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveCategory()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
 async function applyBulkArchiveCategory(){const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-category')?.value;if(!ids.length||!value)return;await window.api.students.bulkArchiveAction({ids,action:'category',value});closeModal();archiveSelectedIds.clear();showToast('دسته‌بندی گروهی اعمال شد ✓','success');await renderArchive();}
 function bulkSetArchiveStatus(){if(!archiveSelectedIds.size)return;openModal('تغییر گروهی وضعیت ارتباط',`<div class="form-group"><label class="form-label">وضعیت ارتباط جدید</label><select class="form-select" id="archive-bulk-status">${archiveStatusOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveStatus()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
-async function applyBulkArchiveStatus(){const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-status')?.value;if(!ids.length||!value)return;await window.api.students.bulkArchiveAction({ids,action:'status',value});closeModal();archiveSelectedIds.clear();showToast('وضعیت ارتباط گروهی اعمال شد ✓','success');await renderArchive();}
+async function applyBulkArchiveStatus(){
+  const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-status')?.value;if(!ids.length||!value)return;
+  if(value==='ناموفق'){closeModal();openArchiveLossReasonModal(ids,value);return;}
+  await window.api.students.bulkArchiveAction({ids,action:'status',value});closeModal();archiveSelectedIds.clear();showToast('وضعیت ارتباط گروهی اعمال شد ✓','success');await renderArchive();
+}
 async function bulkDeleteArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!confirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'delete'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد حذف شد`,'error');await renderArchive();}
 
 function archiveComboField(id,label,value,options,kind,placeholder=''){const selected=String(value||'');const choices=[...options];if(selected&&!choices.includes(selected))choices.unshift(selected);return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><select class="form-select" style="flex:1;min-width:0" id="${id}">${kind==='status'?`<option value="">${escapeHtml(placeholder||'— انتخاب کنید —')}</option>`:''}${choices.map(x=>`<option value="${escapeHtml(x)}" ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
-function archiveFormHtml(s={}){const description=s.description||[s.address,s.main_need].filter(Boolean).join('\n'),fullName=[s.name,s.lname].filter(Boolean).join(' ').trim(),cityKey=archiveHeaderKey('شهر'),city=String(s.archive_data?.[cityKey]??'');return `<div class="form-grid"><div class="form-group"><label class="form-label">نام و نام خانوادگی</label><input class="form-input" id="ar-full-name" value="${escapeHtml(fullName)}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="ar-referral-source" value="${escapeHtml(s.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group"><label class="form-label">شهر</label><input class="form-input" data-archive-extra data-archive-scope="archive" data-archive-key="${escapeHtml(cityKey)}" value="${escapeHtml(city)}"></div><div class="form-group full"><label class="form-label">توضیحات</label><textarea class="form-textarea" id="ar-description" rows="3">${escapeHtml(description)}</textarea></div>${archiveActivityFields(s)}${archiveExtraFieldsHtml(s,'archive',['نوع فعالیت','شهر'])}</div>`;}
+function archiveFormHtml(s={}){const description=s.description||[s.address,s.main_need].filter(Boolean).join('\n'),fullName=[s.name,s.lname].filter(Boolean).join(' ').trim(),cityKey=archiveHeaderKey('شهر'),city=String(s.archive_data?.[cityKey]??'');return `<div class="form-grid"><div class="form-group"><label class="form-label">نام و نام خانوادگی</label><input class="form-input" id="ar-full-name" value="${escapeHtml(fullName)}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="ar-referral-source" value="${escapeHtml(s.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group"><label class="form-label">شهر</label><input class="form-input" data-archive-extra data-archive-scope="archive" data-archive-key="${escapeHtml(cityKey)}" value="${escapeHtml(city)}"></div>${archiveLossReasonFields(s.loss_reason||'')}<div class="form-group full"><label class="form-label">توضیحات</label><textarea class="form-textarea" id="ar-description" rows="3">${escapeHtml(description)}</textarea></div>${archiveActivityFields(s)}${archiveExtraFieldsHtml(s,'archive',['نوع فعالیت','شهر'])}</div>`;}
 
 async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=prompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const input=document.getElementById(inputId);if(input&&!Array.from(input.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;option.textContent=value;input.appendChild(option);}if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
 
 function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id===id):{};openModal(id?'ویرایش فرد بایگانی‌شده':'افزودن فرد به بایگانی',archiveFormHtml(s),[{label:'ذخیره',cls:'btn-primary',action:`saveArchivePerson(${id||'null'})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);initDatePickers();}
-async function saveArchivePerson(id){const activity=readArchiveActivity(false);if(!activity)return;const old=id?archiveStudents.find(x=>x.id===id):null,fullName=document.getElementById('ar-full-name').value.trim().replace(/\s+/g,' '),oldFullName=[old?.name,old?.lname].filter(Boolean).join(' ').trim();let name='',lname='';if(old&&fullName===oldFullName){name=old.name||'';lname=old.lname||'';}else{const parts=fullName.split(' ').filter(Boolean);name=parts.shift()||'';lname=parts.join(' ');}const data={...activity,name,lname,phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',referral_source:document.getElementById('ar-referral-source').value.trim()||'متفرقه',description:document.getElementById('ar-description').value.trim(),relationship_status:document.getElementById('ar-relationship-status').value.trim(),date:old?.date_jalali||'',archive_data:collectArchiveExtraData('archive',old?.archive_data||{}),packages:[]};if(id){await window.api.students.update({...data,id,packages:old?.packages||[]});}else {const result=await window.api.students.addArchivedBulk([data]);id=result.ids[0];}if(activity.next_activity_date||old?.next_activity_date)await persistArchiveActivity(id,activity);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
+async function saveArchivePerson(id){const activity=readArchiveActivity(false);if(!activity)return;const relationship_status=document.getElementById('ar-relationship-status').value.trim();const loss_reason=readArchiveLossReason(relationship_status==='ناموفق');if(loss_reason===null)return;const old=id?archiveStudents.find(x=>x.id===id):null,fullName=document.getElementById('ar-full-name').value.trim().replace(/\s+/g,' '),oldFullName=[old?.name,old?.lname].filter(Boolean).join(' ').trim();let name='',lname='';if(old&&fullName===oldFullName){name=old.name||'';lname=old.lname||'';}else{const parts=fullName.split(' ').filter(Boolean);name=parts.shift()||'';lname=parts.join(' ');}const data={...activity,name,lname,phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',referral_source:document.getElementById('ar-referral-source').value.trim()||'متفرقه',description:document.getElementById('ar-description').value.trim(),relationship_status,loss_reason:relationship_status==='ناموفق'?loss_reason:'',date:old?.date_jalali||'',archive_data:collectArchiveExtraData('archive',old?.archive_data||{}),packages:[]};if(id){await window.api.students.update({...data,id,packages:old?.packages||[]});}else {const result=await window.api.students.addArchivedBulk([data]);id=result.ids[0];}if(activity.next_activity_date||old?.next_activity_date)await persistArchiveActivity(id,activity);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
 function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;openModal(`${escapeHtml(s.name)} ${escapeHtml(s.lname)}`,`<div class="detail-section">${archiveColumns.map(c=>`<div class="detail-row"><span class="detail-key">${escapeHtml(c)}</span><span class="detail-val">${escapeHtml(archiveColumnValue(s,c)||'—')}</span></div>`).join('')}</div>`,[{label:'✓ تبدیل به مشتری',cls:'btn-primary',action:`closeModal();convertArchiveToCustomer(${id})`},{label:'✏️ ویرایش',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف کامل',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`}]);}
 async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!confirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
 async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!confirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
@@ -27794,7 +27936,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v167';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v168';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
