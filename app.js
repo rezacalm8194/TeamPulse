@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp168';
+const TP_ASSET_V = 'tp169';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -7104,7 +7104,25 @@ function studentContactSchedule(studentId, today = _formatJalali(..._todayJalali
 }
 function studentContactScheduleHtml(studentId) {
   const schedule=studentContactSchedule(studentId);
-  return `<div class="mstu-contact-schedule"><span>آخرین: ${escapeHtml(fa(schedule.last_contact_date||'—'))}</span><span>جلسه بعد: ${escapeHtml(fa(schedule.next_session_date||'—'))}</span></div>`;
+  const last=String(schedule.last_contact_date||'').trim();
+  const next=String(schedule.next_session_date||'').trim();
+  if(!last&&!next)return '';
+  const lastKey=_jalaliKey(last),nextKey=_jalaliKey(next),todayKey=_jalaliKey(_formatJalali(..._todayJalali()));
+  const disp=d=>escapeHtml(fa(DateService.disp(d)||d));
+  if(last&&next&&lastKey===nextKey){
+    const tag=nextKey===todayKey?'امروز':(nextKey>todayKey?'برنامه':'آخرین');
+    return `<div class="mstu-contact-schedule is-compact"><span class="mstu-schedule-merged">${tag}: ${disp(last)}</span></div>`;
+  }
+  const parts=[];
+  if(last)parts.push(`<span>آخرین: ${disp(last)}</span>`);
+  if(next)parts.push(`<span>جلسه بعد: ${disp(next)}</span>`);
+  return `<div class="mstu-contact-schedule is-compact">${parts.join('<span class="mstu-schedule-sep" aria-hidden="true">·</span>')}</div>`;
+}
+function studentBoardPinHtml(studentId) {
+  const s=(_db.students||[]).find(x=>Number(x.id)===Number(studentId));
+  const note=String(s?.pinned_note||'').trim();
+  const has=!!note;
+  return `<button type="button" class="scn-pin${has?' has-pin':''}" title="${has?escapeAttr(note.slice(0,120)):'افزودن یادداشت پین'}" onclick="event.stopPropagation();openStudentPinnedNote(${Number(studentId)})" aria-label="${has?'یادداشت پین‌شده':'افزودن پین'}">📌</button>`;
 }
 function studentTimeline(studentId) {
   const student=(_db.students||[]).find(s=>Number(s.id)===Number(studentId));
@@ -8535,8 +8553,14 @@ function sessionGroupMatchesBoardFilter(g,filter,todayParts){
   return true;
 }
 function sessionsBoardFilterHtml(active){
-  const chips=[['all','همه'],['open','اقدام باز'],['overdue','عقب‌افتاده'],['no_month','بدون جلسه این ماه'],['key','جلسه کلیدی']];
-  return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,label])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+label+'</button>').join('')+'</div>';
+  const chips=[
+    ['all','همه','همه'],
+    ['open','باز','اقدام باز'],
+    ['overdue','دیرکرد','عقب‌افتاده'],
+    ['no_month','این‌ماه∅','بدون جلسه این ماه'],
+    ['key','کلیدی','جلسه کلیدی'],
+  ];
+  return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,short,full])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" title="'+full+'" aria-label="'+full+'" aria-pressed="'+(active===id?'true':'false')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+short+'</button>').join('')+'</div>';
 }
 
 async function renderSessions(search = '') {
@@ -8601,10 +8625,13 @@ async function renderSessions(search = '') {
     html += `
     <div class="session-column" draggable="true" data-student-id="${g.student_id}">
       <div class="session-column-header">
-        <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
-        <span class="scn-count">(${fa(g.sessions.length)})</span>
+        <div class="scn-title-row">
+          <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
+          ${studentBoardPinHtml(g.student_id)}
+          <span class="scn-count">(${fa(g.sessions.length)})</span>
+          ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}">${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?'!':''}</span>` : ''}
+        </div>
         ${studentContactScheduleHtml(g.student_id)}
-        ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}" style="cursor:pointer;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">📌 ${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?' · عقب‌افتاده':''}</span>` : ''}
         <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
         <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
@@ -27936,7 +27963,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v168';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v169';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
