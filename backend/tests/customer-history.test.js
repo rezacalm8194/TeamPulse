@@ -17,9 +17,11 @@ function fn(name) {
 function setup() {
   const db={meta:{timezone:'Asia/Tehran'},students:[{id:1,name:'مینا',note:'عمومی',archived:true}],sessions:[],payments:[],packages:[],package_types:[{id:1,label:'مشاوره'}]};
   const context=vm.createContext({_db:db,Intl,Date,_P:Promise.resolve.bind(Promise),_save:()=>{},_nextId:()=>2,_reconcileStudentPaymentReminders:()=>{},
+    _automationOnConvertToCustomer:()=>{},
     _formatJalali:(...p)=>p.join('/'),_todayJalali:()=>[1405,6,15],
     _jalaliKey:s=>Number(String(s||'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).split('/').map((x,i)=>i?x.padStart(2,'0'):x).join('')),
-    fmt:String,fa:String,escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('>','&gt;')});
+    fmt:String,fa:String,escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('>','&gt;'),
+    _rowsForStudent:(collection, studentId)=>(db[collection]||[]).filter(row=>Number(row.student_id)===Number(studentId))});
   for(const name of ['studentIsoJalali','studentContactSchedule','studentContactScheduleHtml','studentTimeline','studentTimelineHtml','studentPinnedNoteHtml'])vm.runInContext(fn(name),context);
   const start=source.indexOf('  students: {',source.indexOf('window.api = {'));
   const end=source.indexOf('\n  packages:',start);
@@ -110,7 +112,7 @@ test('new customer gets separate pin, conversion and note date defaults',async()
 });
 test('migration defaults preserve existing pin and conversion; asset and worker versions agree',()=>{
   const migration=fn('_migrate');
-  const defaults=migration.match(/\['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at'\]\.forEach\(k=>\{if\(s\[k\]===undefined\)s\[k\]='';\}\);/);
+  const defaults=migration.match(/\['pinned_note','converted_from_archive_at','note_updated_at','pinned_note_updated_at'(?:,'bale_chat_id')?\]\.forEach\(k=>\{if\(s\[k\]===undefined\)s\[k\]='';\}\);/);
   assert.ok(defaults);
   const legacy={note:'عمومی'};
   vm.runInNewContext(defaults[0],{s:legacy});

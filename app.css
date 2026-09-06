@@ -4045,6 +4045,10 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .chip-more{width:28px;padding:6px 0;text-align:center;font-weight:700}
 .mstu-list{display:none}
+.mstu-card,.session-card,.session-column{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 120px;
+}
 .mstu-card{
   background:var(--bg2);
   border:1px solid var(--border);
