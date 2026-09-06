@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp171';
+const TP_ASSET_V = 'tp172';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -12588,12 +12588,15 @@ async function renderArchive() {
   archiveStudents=sortArchiveFieldReferralsFirst(archiveData[0]);archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
   const html = `${studentSectionNav('archive')}<div class="table-card">
     <div class="archive-toolbar">
-      <div><div class="title">🗃 فهرست بایگانی</div><div class="archive-sheet-count" id="archive-count">${fa(archiveStudents.length)} نفر</div></div>
-      <div class="archive-toolbar-filters">${archiveViewControlsHtml()}
-        <select class="form-select archive-category-filter" id="archive-category-filter" aria-label="نمایش بر اساس دسته‌بندی" onchange="applyArchiveFilters()">${archiveCategoryFilterOptionsHtml()}</select>
-        <input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در تمام ستون‌های بایگانی..." value="${escapeHtml(archiveSearchQuery)}" oninput="applyArchiveFilters()">
+      <div class="archive-toolbar-head">
+        <div><div class="title">🗃 فهرست بایگانی</div><div class="archive-sheet-count" id="archive-count">${fa(archiveStudents.length)} نفر</div></div>
+        <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button><button class="btn btn-ghost btn-sm" onclick="exportArchiveExcel()">⬇ دانلود Excel</button></div>
       </div>
-      <div class="archive-toolbar-actions"><button class="btn btn-primary btn-sm" onclick="openArchiveImport()">📥 ورود از Excel</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal()">＋ افزودن دستی</button><button class="btn btn-ghost btn-sm" onclick="exportArchiveExcel()">⬇ دانلود Excel</button></div>
+      <div class="archive-toolbar-filters">
+        ${archiveViewControlsHtml()}
+        <label class="archive-control"><span class="archive-control-label">دسته‌بندی</span><select class="form-select archive-category-filter" id="archive-category-filter" aria-label="نمایش بر اساس دسته‌بندی" onchange="applyArchiveFilters()">${archiveCategoryFilterOptionsHtml()}</select></label>
+        <label class="archive-control archive-control-search"><span class="archive-control-label">جستجو</span><input class="form-input archive-search" id="archive-search" placeholder="جست‌وجو در تمام ستون‌های بایگانی..." value="${escapeHtml(archiveSearchQuery)}" oninput="applyArchiveFilters()"></label>
+      </div>
     </div>
     <div class="archive-bulkbar" id="archive-bulkbar"><span class="archive-selected-count" id="archive-selected-count"></span><button class="btn btn-ghost btn-sm" onclick="selectAllArchiveRows()">☑ انتخاب همه</button><button class="btn btn-primary btn-sm" onclick="bulkConvertArchive()">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveCategory()">🏷 دسته‌بندی</button><button class="btn btn-ghost btn-sm" onclick="bulkSetArchiveStatus()">📞 وضعیت ارتباط</button><button class="btn btn-danger btn-sm" onclick="bulkDeleteArchive()">🗑 حذف کامل</button><button class="btn btn-ghost btn-sm" onclick="clearArchiveSelection()">لغو انتخاب</button></div>
     <div class="archive-mobile-selectbar">
@@ -12635,7 +12638,7 @@ function isArchiveStale(s,now=Date.now(),days=Number(_db.meta.archive_stale_days
   const last=Date.parse(s.last_activity_at||s.updated_at||s.created_at||'');
   return Number.isFinite(last)&&now-last>=days*86400000;
 }
-function archiveViewControlsHtml(){return `<label class="archive-view-mode">روش نمایش <select class="form-select" onchange="setArchiveViewMode(this.value)"><option value="table" ${archiveViewMode()==='table'?'selected':''}>جدول</option><option value="pipeline" ${archiveViewMode()==='pipeline'?'selected':''}>فرایند فروش</option></select></label><label class="archive-view-mode">راکد پس از (روز)<input class="form-input archive-stale-days" type="number" min="1" step="1" value="${Number(_db.meta.archive_stale_days)||14}" onchange="setArchiveStaleDays(this.value)"></label><select class="form-select" aria-label="فیلتر راکد" onchange="setArchiveStaleFilter(this.value)"><option value="">همه</option><option value="stale" ${archiveStaleFilter==='stale'?'selected':''}>فقط راکد</option><option value="fresh" ${archiveStaleFilter==='fresh'?'selected':''}>بدون راکد</option></select>${archiveFailedSummaryHtml()}`;}
+function archiveViewControlsHtml(){return `<label class="archive-control archive-view-mode"><span class="archive-control-label">روش نمایش</span><select class="form-select" onchange="setArchiveViewMode(this.value)"><option value="table" ${archiveViewMode()==='table'?'selected':''}>جدول</option><option value="pipeline" ${archiveViewMode()==='pipeline'?'selected':''}>فرایند فروش</option></select></label><label class="archive-control"><span class="archive-control-label">راکد پس از (روز)</span><input class="form-input archive-stale-days" type="number" min="1" step="1" value="${Number(_db.meta.archive_stale_days)||14}" onchange="setArchiveStaleDays(this.value)"></label><label class="archive-control"><span class="archive-control-label">فیلتر راکد</span><select class="form-select" aria-label="فیلتر راکد" onchange="setArchiveStaleFilter(this.value)"><option value="">همه</option><option value="stale" ${archiveStaleFilter==='stale'?'selected':''}>فقط راکد</option><option value="fresh" ${archiveStaleFilter==='fresh'?'selected':''}>بدون راکد</option></select></label>${archiveFailedSummaryHtml()}`;}
 function archiveLossReasonHtml(s){const reason=String(s.loss_reason||'').trim();if(s.relationship_status!=='ناموفق'||!reason)return '';return '<div class="archive-loss-reason" title="'+escapeHtml(reason)+'">دلیل: '+escapeHtml(reason.length>60?reason.slice(0,60)+'…':reason)+'</div>';}
 function archiveFailedSummaryHtml(){
   const failed=archiveStudents.filter(s=>s.relationship_status==='ناموفق');
@@ -12706,10 +12709,22 @@ async function commitArchiveLossReason(){
   window._pendingArchiveLoss=null;archiveSelectedIds.clear();
   closeModal();showToast('وضعیت ناموفق ذخیره شد ✓','success');await renderArchive();
 }
+function archivePipelineStatuses(){
+  const active=['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری'];
+  const terminal=['مشتری شد','ناموفق'];
+  const canonical=new Set([...active,...terminal]);
+  const present=new Set([...archiveStatusOptions,...(archiveStudents||[]).map(s=>s.relationship_status).filter(Boolean),'']);
+  const ordered=[];
+  if(present.has(''))ordered.push('');
+  active.forEach(s=>{if(present.has(s))ordered.push(s);});
+  [...archiveStatusOptions,...present].forEach(s=>{if(s&&!canonical.has(s)&&present.has(s)&&!ordered.includes(s))ordered.push(s);});
+  terminal.forEach(s=>{if(present.has(s))ordered.push(s);});
+  return ordered;
+}
 function paintArchivePipeline(rows){
   const board=document.getElementById('archive-pipeline');if(!board)return;
   const enabled=archiveViewMode()==='pipeline';board.closest('.table-card').classList.toggle('archive-show-pipeline',enabled);board.hidden=!enabled;if(!enabled)return;
-  const statuses=[...new Set([...archiveStatusOptions,...archiveStudents.map(s=>s.relationship_status).filter(Boolean),''])];
+  const statuses=archivePipelineStatuses();
   board.innerHTML=statuses.map(status=>{const people=rows.filter(s=>(s.relationship_status||'')===status);return `<section class="archive-pipeline-column" data-status="${escapeHtml(status)}" ondragover="archiveDragOver(event)" ondrop="archiveDrop(event,this)"><h3>${escapeHtml(status||'بدون وضعیت')} <span>${fa(people.length)}</span></h3>${people.map(s=>`<article class="archive-pipeline-card" draggable="true" ondragstart="archiveDragStart(event,${s.id})"><div class="archive-mobile-head">${archiveRowCheckboxHtml(s.id)}<strong>${escapeHtml([s.name,s.lname].filter(Boolean).join(' ')||'بدون نام')}</strong></div><div dir="ltr">${escapeHtml(s.phone||'—')}</div><div>${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><small>${escapeHtml(s.referral_source||'متفرقه')}</small>${archiveActivityHtml(s)}<select class="form-select" aria-label="وضعیت ارتباط" onchange="changeArchiveStage(${s.id},this.value)">${statuses.map(v=>`<option value="${escapeHtml(v)}" ${v===status?'selected':''}>${escapeHtml(v||'بدون وضعیت')}</option>`).join('')}</select><div class="archive-actions"><button class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">ویرایش</button><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button></div></article>`).join('')||'<div class="archive-pipeline-empty">بدون مورد</div>'}</section>`;}).join('');
 }
 function toggleArchiveMobileCard(id,button){const card=document.querySelector(`[data-archive-mobile-id="${id}"]`);if(!card)return;const expanded=card.classList.toggle('expanded');button?.setAttribute('aria-expanded',String(expanded));}
@@ -27961,7 +27976,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v171';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v172';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

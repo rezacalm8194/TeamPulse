@@ -93,3 +93,24 @@ test('archive follow-up opens the activity form and persists one reusable source
   assert.equal(reminders[0].due_date_jalali, '1405/06/22');
   assert.match(reminders[0].title, /جلسه/);
 });
+
+test('pipeline columns follow inbox → active funnel → custom → win/loss order', () => {
+  const archivePipelineStatuses = loadFunction('archivePipelineStatuses', {
+    archiveStatusOptions: ['ناموفق', 'تماس گرفته شد', 'تماس نگرفته', 'وضعیت سفارشی', 'جلسه', 'مشتری شد', 'نیازمند پیگیری'],
+    archiveStudents: [
+      { relationship_status: 'وضعیت سفارشی' },
+      { relationship_status: '' },
+      { relationship_status: 'جلسه' },
+    ],
+  });
+  assert.equal(JSON.stringify(archivePipelineStatuses()), JSON.stringify([
+    '',
+    'تماس نگرفته',
+    'تماس گرفته شد',
+    'جلسه',
+    'نیازمند پیگیری',
+    'وضعیت سفارشی',
+    'مشتری شد',
+    'ناموفق',
+  ]));
+});
