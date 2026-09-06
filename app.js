@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp178';
+const TP_ASSET_V = 'tp179';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -6933,49 +6933,35 @@ function queueRenderSessions(search) {
 }
 function _tpDisconnectLazyLoaders() {
   try { window._tpLazyIO?.disconnect(); } catch (e) {}
-  try { window._tpBoardLazyIO?.disconnect(); } catch (e) {}
   window._tpLazyIO = null;
-  window._tpBoardLazyIO = null;
+}
+function _tpRevealCaseForms(search) {
+  window._tpCaseFormsRevealed = true;
+  return renderCaseFormsSection(search == null ? currentStudentAccountSearch() : search);
 }
 function _tpBindLazyLoaders() {
   _tpDisconnectLazyLoaders();
-  if (typeof IntersectionObserver !== 'function') return;
-  const contentRoot = document.getElementById('content') || document;
+  if (window._tpCaseFormsRevealed) return;
+  const pending = document.querySelector('[data-tp-lazy="case-forms"]');
+  if (!pending) return;
+  const reveal = () => {
+    _tpDisconnectLazyLoaders();
+    const wrap = document.createElement('div');
+    wrap.innerHTML = _tpRevealCaseForms();
+    pending.replaceWith(wrap.firstElementChild || wrap);
+  };
+  if (typeof IntersectionObserver !== 'function') {
+    reveal();
+    return;
+  }
   window._tpLazyIO = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
-      const el = entry.target;
-      const kind = el.getAttribute('data-tp-lazy');
-      if (kind === 'case-forms') {
-        window._tpLazyIO.unobserve(el);
-        const search = currentStudentAccountSearch();
-        const wrap = document.createElement('div');
-        wrap.innerHTML = renderCaseFormsSection(search);
-        const node = wrap.firstElementChild || wrap;
-        el.replaceWith(node);
-        return;
-      }
-      if (kind === 'more-students') {
-        window._tpLazyIO.unobserve(el);
-        if (typeof _studentShowMoreList === 'function') _studentShowMoreList();
-        return;
-      }
+      if (entry.target.getAttribute('data-tp-lazy') !== 'case-forms') return;
+      reveal();
     });
-  }, { root: null, rootMargin: '240px 0px', threshold: 0.01 });
-  contentRoot.querySelectorAll('[data-tp-lazy]').forEach((el) => window._tpLazyIO.observe(el));
-
-  const board = document.getElementById('sessions-board');
-  const boardSentinel = document.getElementById('sessions-board-sentinel');
-  if (board && boardSentinel && window._sessionBoardHiddenCount > 0) {
-    window._tpBoardLazyIO = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        window._tpBoardLazyIO.unobserve(entry.target);
-        if (typeof _sessionBoardShowMore === 'function') _sessionBoardShowMore();
-      });
-    }, { root: board, rootMargin: '0px 280px 0px 0px', threshold: 0.01 });
-    window._tpBoardLazyIO.observe(boardSentinel);
-  }
+  }, { root: null, rootMargin: '120px 0px', threshold: 0.01 });
+  window._tpLazyIO.observe(pending);
 }
 function filterAccountStudents(students, search) {
   let filtered = search
@@ -7404,16 +7390,14 @@ async function _paintStudentsUi(search = '') {
   const financeReady = typeof _paginatedCollectionFullyLoaded === 'function'
     && _paginatedCollectionFullyLoaded('packages')
     && _paginatedCollectionFullyLoaded('payments');
-  const caseFormsPlaceholder = '<div class="table-card" data-tp-lazy="case-forms" style="margin-bottom:16px;padding:18px;color:var(--text3);font-size:12px;text-align:center">فرم‌های پرونده با اسکرول بارگذاری می‌شوند…</div>';
-  const listSentinel = _visibleStudentSlice(filtered).remaining > 0
-    ? '<div data-tp-lazy="more-students" class="todo-show-more" style="opacity:.7">با اسکرول، مشتریان بیشتر…</div>'
-    : '';
+  const caseFormsHtml = window._tpCaseFormsRevealed
+    ? _tpRevealCaseForms(search)
+    : '<div class="table-card" data-tp-lazy="case-forms" style="margin-bottom:16px;padding:18px;color:var(--text3);font-size:12px;text-align:center">فرم‌های پرونده با اسکرول بارگذاری می‌شوند…</div>';
   const html = `
   ${studentSectionNav('students')}
-  ${caseFormsPlaceholder}
+  ${caseFormsHtml}
   ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}
-  ${listSentinel}`;
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}`;
   setContent(html + (studentPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
   _tpBindLazyLoaders();
@@ -9003,7 +8987,7 @@ async function renderSessions(search = '') {
     </div>`;
   });
   if (window._sessionBoardHiddenCount > 0) {
-    html += '<div id="sessions-board-sentinel" data-tp-lazy="more-session-cols" class="session-column" style="min-width:140px;display:flex;align-items:center;justify-content:center;opacity:.75"><button type="button" class="btn btn-ghost btn-sm" onclick="_sessionBoardShowMore()">+' + fa(window._sessionBoardHiddenCount) + ' ستون</button></div>';
+    html += '<div id="sessions-board-sentinel" class="session-column" style="min-width:140px;display:flex;align-items:center;justify-content:center;opacity:.75"><button type="button" class="btn btn-ghost btn-sm" onclick="_sessionBoardShowMore()">+' + fa(window._sessionBoardHiddenCount) + ' ستون</button></div>';
   }
   html += `</div>`;
 
@@ -28595,7 +28579,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v178';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v179';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
