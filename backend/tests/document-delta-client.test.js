@@ -103,7 +103,9 @@ test('nested knowledge hashes restore the same folder on phone and laptop', () =
   assert.match(appSource, /function _mergeBusinessRow\(/);
   assert.match(appSource, /function _keepLocalBusinessRow\(/);
   assert.match(appSource, /reset \|\| !_tpPartLoaded\(collection\)/);
-  assert.match(appSource, /case_forms', 'key_events', 'topics'/);
+  assert.match(appSource, /students: \['students', 'packages', 'payments', 'families', 'case_forms'\]/);
+  assert.match(appSource, /await _ensureDocumentParts\(\['topics'\]\)/);
+  assert.match(appSource, /await _ensureDocumentParts\(\['key_events'\]\)/);
 });
 
 test('knowledge items created on another device are merged even when local data looks newer', () => {

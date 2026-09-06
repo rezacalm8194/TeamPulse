@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp175';
+const TP_ASSET_V = 'tp176';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -1547,6 +1547,7 @@ function _trimStoredVersions() {
 }
 
 function _save(stamp=true, { scheduleServerSync = true, quiet = false, urgent = false } = {}) {
+  if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
   if (stamp) _db._lastSaved = Date.now();
   const key = window._activeDBKey || DB_KEY;
   let localSaved = false;
@@ -2308,29 +2309,79 @@ function _runAutomationScans(force=false){
   return changed;
 }
 
+// ── Student relation indexes + summary cache ────────────────────────────────
+// O(N+M) lookups instead of filter(student_id) on every row during list render.
+let _studentRelIndex = null;
+let _studentSummaryCache = null;
+function _invalidateStudentRelIndex() {
+  _studentRelIndex = null;
+  _studentSummaryCache = null;
+}
+function _groupRowsByStudentId(rows) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach(row => {
+    if (!row || row.student_id == null) return;
+    const key = String(row.student_id);
+    let list = map.get(key);
+    if (!list) { list = []; map.set(key, list); }
+    list.push(row);
+  });
+  return map;
+}
+function _studentRelMaps() {
+  if (_studentRelIndex) return _studentRelIndex;
+  const staffById = new Map();
+  (_db?.staff || []).forEach(s => {
+    if (s && s.id != null) staffById.set(String(s.id), s);
+  });
+  _studentRelIndex = {
+    packages: _groupRowsByStudentId(_db?.packages),
+    payments: _groupRowsByStudentId(_db?.payments),
+    sessions: _groupRowsByStudentId(_db?.sessions),
+    staffById,
+  };
+  return _studentRelIndex;
+}
+function _rowsForStudent(collection, studentId) {
+  return _studentRelMaps()[collection]?.get(String(studentId)) || [];
+}
+
 // ── Student summary ─────────────────────────────────────────────────────────
 function _studentSummary(s) {
-  const packages=_db.packages.filter(p=>p.student_id===s.id).map(p=>{
-    const pt=_resolvePackageType(p.type_id);
-    const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));
+  if (!s) return s;
+  const cacheKey = String(s.id);
+  if (!_studentSummaryCache) _studentSummaryCache = new Map();
+  const hit = _studentSummaryCache.get(cacheKey);
+  if (hit) return hit;
+  const rel = _studentRelMaps();
+  const packages = _rowsForStudent('packages', s.id).map(p => {
+    const pt = _resolvePackageType(p.type_id);
+    const staff = rel.staffById.get(String(p.staff_id || ''));
     const paymentDueDate = _packagePaymentDueDate(p);
     const chargeable = _isPackageChargeable(p);
-    const grandTotal = (p.total_amount||0)+(p.initial_cost||0);
-    return{...p,type_label:pt?pt.label:'—',type_color:pt?pt.color:'#888',type_key:pt?pt.key:'',
-           staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():'',
-           payment_due_date:paymentDueDate,
-           is_chargeable:chargeable,
-           grand_total:grandTotal,
-           due_total:chargeable?grandTotal:0};
+    const grandTotal = (p.total_amount || 0) + (p.initial_cost || 0);
+    return {
+      ...p,
+      type_label: pt ? pt.label : '—',
+      type_color: pt ? pt.color : '#888',
+      type_key: pt ? pt.key : '',
+      staff_name: staff ? `${staff.name || ''} ${staff.lname || ''}`.trim() : '',
+      payment_due_date: paymentDueDate,
+      is_chargeable: chargeable,
+      grand_total: grandTotal,
+      due_total: chargeable ? grandTotal : 0,
+    };
   });
-  const payments=_db.payments.filter(p=>p.student_id===s.id);
-  const totalAmount=packages.reduce((a,p)=>a+p.due_total,0);
-  const totalPaid=payments.filter(p=>(p.currency||'تومان')==='تومان').reduce((a,p)=>a+(p.amount||0),0);
-  const otherPayments=payments.filter(p=>(p.currency||'تومان')!=='تومان');
-  const wallet=s.wallet||0;
-  const balance=totalAmount-totalPaid-wallet;
-  const sessionCount=_db.sessions.filter(x=>x.student_id===s.id).length;
-  return{...s,packages,totalAmount,totalPaid,wallet,balance,sessionCount,otherPayments};
+  const payments = _rowsForStudent('payments', s.id);
+  const totalAmount = packages.reduce((a, p) => a + p.due_total, 0);
+  const totalPaid = payments.filter(p => (p.currency || 'تومان') === 'تومان').reduce((a, p) => a + (p.amount || 0), 0);
+  const otherPayments = payments.filter(p => (p.currency || 'تومان') !== 'تومان');
+  const wallet = s.wallet || 0;
+  const balance = totalAmount - totalPaid - wallet;
+  const sessionCount = _rowsForStudent('sessions', s.id).length;
+  const summary = { ...s, packages, totalAmount, totalPaid, wallet, balance, sessionCount, otherPayments };
+  _studentSummaryCache.set(cacheKey, summary);
+  return summary;
 }
 
 function _familySummary(f) {
@@ -2672,7 +2723,7 @@ window.api = {
 
   packages: {
     getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
-    getByStudent: (sid)=>_P(_db.packages.filter(p=>p.student_id===sid).reverse().map(p=>{const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
+    getByStudent: (sid)=>_P(_rowsForStudent('packages',sid).slice().reverse().map(p=>{const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
@@ -2708,22 +2759,22 @@ window.api = {
     add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _reconcileStudentPaymentReminders(p.student_id, row); _save(true,{urgent:true}); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_db.payments.filter(p=>p.student_id===sid).reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
+    getByStudent: (sid)=>_P(_rowsForStudent('payments',sid).slice().reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
     getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
   },
 
   sessions: {
-    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_db.sessions.filter(x=>x.student_id===s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
+    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_rowsForStudent('sessions',s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
     add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); _automationApplySessionFollowup(session); session.followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
     update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){if(p.followups!==undefined){s.followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i));s.followups.forEach(f=>_syncSessionFollowupReminder(s,f));}Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
     addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));const f=_normalizeSessionFollowup({id:maxId+1,text:p.text,done:false,due_date_jalali:p.due_date_jalali||p.due_date||'',reminder_id:null});s.followups.push(f);_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     updateFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){if(p.text!==undefined)f.text=p.text;if(p.due_date_jalali!==undefined||p.due_date!==undefined)f.due_date_jalali=String(p.due_date_jalali??p.due_date??'').trim();if(p.done!==undefined)f.done=!!p.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
     deleteFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s&&s.followups){const f=s.followups.find(x=>x.id===p.item_id);if(f)_markSessionFollowupReminderDone(f);s.followups=s.followups.filter(x=>x.id!==p.item_id);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
-    getOpenFollowups: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali,overdue:_sessionFollowupOverdue(f)}));}); return _P(open); },
-    getRecentAchievements: (sid)=>{ const sessions=_db.sessions.filter(x=>x.student_id===sid&&x.achievements&&x.achievements.trim()).sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
+    getOpenFollowups: (sid)=>{ const sessions=_rowsForStudent('sessions',sid).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); const open=[]; sessions.forEach(sess=>{(sess.followups||[]).filter(f=>!f.done).forEach(f=>open.push({...f,session_id:sess.id,session_date:sess.date_jalali,overdue:_sessionFollowupOverdue(f)}));}); return _P(open); },
+    getRecentAchievements: (sid)=>{ const sessions=_rowsForStudent('sessions',sid).filter(x=>x.achievements&&String(x.achievements).trim()).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)); return _P(sessions.slice(0,10).map(s=>({session_id:s.id,date:s.date_jalali,text:s.achievements}))); },
     delete: (id)=>{ _db.sessions=_db.sessions.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
-    keyOnes: ()=>{ const r=[]; _db.students.filter(s=>!s.archived).forEach(s=>{_db.sessions.filter(x=>x.student_id===s.id&&x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
+    keyOnes: ()=>{ const r=[]; _db.students.filter(s=>!s.archived).forEach(s=>{_rowsForStudent('sessions',s.id).filter(x=>x.importance==='key').forEach(sess=>r.push({...sess,name:s.name,lname:s.lname}));}); return _P(r.sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))); },
     getOrder: ()=>_P([..._db.session_order||[]]),
     setOrder: (o)=>{ _db.session_order=o; _save(); return _P({ok:true}); },
   },
@@ -4408,7 +4459,7 @@ const BUSINESS_PAGINATED_KEYS = Object.freeze([
 ]);
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
-  students: ['students', 'packages', 'payments', 'sessions', 'families', 'case_forms', 'key_events', 'topics'],
+  students: ['students', 'packages', 'payments', 'families', 'case_forms'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
   families: ['students', 'packages', 'payments', 'sessions', 'families'],
   reminders: ['reminders', 'students', 'packages'],
@@ -4702,15 +4753,10 @@ async function _ensureDocumentParts(keys) {
       if (!ok) break;
     }
   }
+  // Business collections: first page only. Full totals use _ensureCompleteBusinessParts.
   for (const key of BUSINESS_PAGINATED_KEYS) {
     if (!requested.includes(key)) continue;
     await _ensureBusinessPartLoaded(key);
-    let pages = 0;
-    while (!_paginatedCollectionFullyLoaded(key) && pages < 100) {
-      const ok = await _loadBusinessPage(key);
-      pages += 1;
-      if (!ok) break;
-    }
   }
   window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
   const needed = requested.filter(key => {
@@ -4937,19 +4983,27 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   }
 }
 async function _ensureCompleteBusinessParts(collections = []) {
-  for (const collection of [...new Set(collections)]) {
-    if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
-    await _ensureBusinessPartLoaded(collection);
-    let pages = 0;
-    while (!_paginatedCollectionFullyLoaded(collection) && pages < 100) {
-      const ok = await _loadBusinessPage(collection);
-      pages += 1;
-      if (!ok) break;
+  window._tpDeferDatabasePersist = true;
+  try {
+    for (const key of [...new Set(collections)]) {
+      if (!BUSINESS_PAGINATED_KEYS.includes(key)) continue;
+      await _ensureBusinessPartLoaded(key);
+      let pages = 0;
+      while (!_paginatedCollectionFullyLoaded(key) && pages < 100) {
+        const ok = await _loadBusinessPage(key);
+        pages += 1;
+        if (!ok) break;
+      }
     }
+  } finally {
+    window._tpDeferDatabasePersist = false;
+    if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch (e) {}
   }
 }
 async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS, { reset = true } = {}) {
   window._tpHydratingFromServer = true;
+  window._tpDeferDatabasePersist = true;
   try {
     for (const collection of [...new Set(collections)]) {
       if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
@@ -4963,6 +5017,9 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
     }
   } finally {
     window._tpHydratingFromServer = false;
+    window._tpDeferDatabasePersist = false;
+    if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch (e) {}
   }
 }
 async function _reloadCompleteTodosFromServer({ reset = true } = {}) {
@@ -5034,7 +5091,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       state.fetchedEtag = payload.etag;
     }
     _persistPartLoadState();
-    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+    if (!window._tpDeferDatabasePersist && !window._tpHydratingFromServer) {
+      try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    }
     return true;
   })().finally(() => { state.loading = null; });
   return state.loading;
@@ -6785,11 +6845,38 @@ async function refreshOpenStudentSurface() {
 }
 function setStuChip(val) {
   stuChip = val;
+  _studentListShown = STUDENT_LIST_CHUNK;
   refreshStudentAccountView();
 }
 function toggleStuChipsExpanded() {
   stuChipsExpanded = !stuChipsExpanded;
   refreshStudentAccountView();
+}
+const STUDENT_LIST_CHUNK = 40;
+let _studentListShown = STUDENT_LIST_CHUNK;
+let _studentsSearchTimer = null;
+let _sessionsSearchTimer = null;
+function _studentShowMoreList() {
+  _studentListShown += STUDENT_LIST_CHUNK;
+  refreshStudentAccountView();
+}
+function _visibleStudentSlice(filtered) {
+  const cap = Math.max(STUDENT_LIST_CHUNK, Number(_studentListShown || STUDENT_LIST_CHUNK));
+  return { rows: filtered.slice(0, cap), remaining: Math.max(0, filtered.length - cap), cap };
+}
+function _isCompactStudentViewport() {
+  try { return window.matchMedia('(max-width:768px)').matches; } catch (e) { return false; }
+}
+function queueRenderStudents(search) {
+  clearTimeout(_studentsSearchTimer);
+  _studentsSearchTimer = setTimeout(() => {
+    _studentListShown = STUDENT_LIST_CHUNK;
+    renderStudents(search);
+  }, 300);
+}
+function queueRenderSessions(search) {
+  clearTimeout(_sessionsSearchTimer);
+  _sessionsSearchTimer = setTimeout(() => renderSessions(search), 300);
 }
 function filterAccountStudents(students, search) {
   let filtered = search
@@ -6958,9 +7045,10 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
           <th>عملیات</th>
         </tr>
       </thead>
-      <tbody>${studentAccountTableRowsHtml(filtered, menuPrefix)}</tbody>
+      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(_visibleStudentSlice(filtered).rows, menuPrefix))}</tbody>
     </table></div>
-    ${studentAccountMobileHtml(filtered, menuPrefix)}
+    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(_visibleStudentSlice(filtered).rows, menuPrefix) : "")}
+    ${(_visibleStudentSlice(filtered).remaining > 0 ? `<button type="button" class="todo-show-more" onclick="_studentShowMoreList()">نمایش بیشتر · ${fa(_visibleStudentSlice(filtered).remaining)} مورد باقی‌مانده</button>` : "")}
   </div>`;
 }
 function goStudentSection(page) {
@@ -7194,12 +7282,13 @@ function deleteCaseForm(id) {
 }
 
 async function renderStudents(search = '') {
+  await _ensureCompleteBusinessParts(['packages', 'payments', 'families']);
   await _ensureBusinessPartLoaded('students', { search });
   const studentPaging = _businessPagingState('students');
   updateTopbarActions(`
     <div class="table-search stu-topbar-search">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی مشتری یا فرم..." aria-label="جستجوی مشتری یا فرم پرونده" oninput="renderStudents(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجوی مشتری یا فرم..." aria-label="جستجوی مشتری یا فرم پرونده" oninput="queueRenderStudents(this.value)" value="${escapeHtml(search)}">
     </div>
     <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
       <button class="btn btn-primary" onclick="openCaseFormBuilder()" style="border-radius:0;border:none;box-shadow:none"><span class="btn-icon">+</span><span> افزودن فرم</span></button>
@@ -7215,7 +7304,7 @@ async function renderStudents(search = '') {
   const html = `
   ${studentSectionNav('students')}
   ${renderCaseFormsSection(search)}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: true, menuPrefix: 'stu' })}`;
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: (typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')), menuPrefix: 'stu' })}`;
   setContent(html + (studentPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
 
@@ -7237,7 +7326,7 @@ function studentIsoJalali(value) {
 }
 function studentContactSchedule(studentId, today = _formatJalali(..._todayJalali())) {
   const student=(_db.students||[]).find(s=>Number(s.id)===Number(studentId))||{};
-  const dates=(_db.sessions||[]).filter(s=>Number(s.student_id)===Number(studentId)&&_jalaliKey(s.date_jalali)>0).map(s=>s.date_jalali).sort((a,b)=>_jalaliKey(a)-_jalaliKey(b));
+  const dates=_rowsForStudent('sessions', studentId).filter(sess=>_jalaliKey(sess.date_jalali)>0).map(sess=>sess.date_jalali).sort((a,b)=>_jalaliKey(a)-_jalaliKey(b));
   return {last_session_date:dates[dates.length-1]||'',last_contact_date:dates[dates.length-1]||studentIsoJalali(student.last_activity_at||student.updated_at||student.created_at),next_session_date:dates.find(d=>_jalaliKey(d)>=_jalaliKey(today))||''};
 }
 function studentContactScheduleHtml(studentId) {
@@ -7268,9 +7357,9 @@ function studentTimeline(studentId) {
   const events=[];
   const excerpt=text=>String(text||'').replace(/<[^>]*>/g,'').trim().slice(0,140);
   const add=(type,row,date,title,summary)=>events.push({type,id:row.id,date_jalali:date||studentIsoJalali(row.created_at||row.updated_at),title,summary:excerpt(summary),timestamp:row.created_at||row.updated_at||''});
-  (_db.sessions||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('session',r,r.date_jalali,r.title||'جلسه',r.note));
-  (_db.payments||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('payment',r,r.date_jalali,'پرداخت: '+fmt(r.amount)+' '+(r.currency||'تومان'),r.note));
-  (_db.packages||[]).filter(r=>Number(r.student_id)===Number(studentId)).forEach(r=>add('purchase',r,r.start_date,'خرید: '+((_db.package_types||[]).find(t=>t.id===r.type_id)?.label||'خدمت')+' · '+fmt(r.total_amount)+' '+(r.currency||'تومان'),r.note));
+  _rowsForStudent('sessions', studentId).forEach(r=>add('session',r,r.date_jalali,r.title||'جلسه',r.note));
+  _rowsForStudent('payments', studentId).forEach(r=>add('payment',r,r.date_jalali,'پرداخت: '+fmt(r.amount)+' '+(r.currency||'تومان'),r.note));
+  _rowsForStudent('packages', studentId).forEach(r=>add('purchase',r,r.start_date,'خرید: '+((_db.package_types||[]).find(t=>t.id===r.type_id)?.label||'خدمت')+' · '+fmt(r.total_amount)+' '+(r.currency||'تومان'),r.note));
   ['note','pinned_note'].forEach(key=>{
     const changedAt=student[key+'_updated_at'];
     if(student[key]||changedAt)add('note',{id:student.id,updated_at:changedAt||student.updated_at||student.created_at},'',key==='note'?'یادداشت پرونده':'یادداشت پین‌شده',student[key]||(key==='note'?'یادداشت پاک شد':'پین برداشته شد'));
@@ -8702,14 +8791,13 @@ function sessionsBoardFilterHtml(active){
 }
 
 async function renderSessions(search = '') {
-  await _ensureBusinessPartLoaded('students');
-  await _ensureBusinessPartLoaded('sessions');
+  await _ensureCompleteBusinessParts(['students', 'sessions']);
   const sessionPaging = _businessPagingState('sessions');
   const prevScroll = document.getElementById('sessions-board')?.scrollLeft || 0;
   updateTopbarActions(`
     <div class="table-search stu-topbar-search" style="margin-left:8px">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="renderSessions(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="queueRenderSessions(this.value)" value="${escapeHtml(search)}">
     </div>
     <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
       <button class="btn btn-primary" onclick="openAddSessionGeneral()" style="border-radius:0;border:none;box-shadow:none">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
@@ -8779,12 +8867,12 @@ async function renderSessions(search = '') {
       <div class="session-column-body">
         ${g.sessions.length === 0
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
-          : g.sessions.map(s => `
+          : (() => { const _vis = g.sessions.slice(0, 12); const _hid = g.sessions.length - _vis.length; return _vis.map(s => `
           <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
             <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${DateService.disp(s.date_jalali)} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
             <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
-            ${s.note ? `<div class="sc-excerpt">${renderRich(excerpt(s.note, 60))}</div>` : ''}
-          </div>`).join('')}
+            ${s.note ? `<div class="sc-excerpt">${escapeHtml(excerpt(s.note, 60))}</div>` : ''}
+          </div>`).join('') + (_hid > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="openSessionsSummary(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">+${fa(_hid)} جلسه دیگر</button>` : ''); })()}
       </div>
     </div>`;
   });
@@ -15673,6 +15761,7 @@ function buildEvalTrendChart(form, totals, highlightA, highlightB) {
 
 // ── Important Topics (per-student, title + full description) ─────────────────
 async function openTopics(studentId, displayName) {
+  try { await _ensureDocumentParts(['topics']); } catch (e) {}
   const topics = await window.api.topics.getByStudent(studentId);
 
   openModal(`📌 موضوعات مهم — ${escapeHtml(displayName)}`, `
@@ -16018,6 +16107,7 @@ function _readKeyEventRepeatDays(prefix) {
 }
 
 async function openKeyEvents(studentId, displayName) {
+  try { await _ensureDocumentParts(['key_events']); } catch (e) {}
   const events = await window.api.keyEvents.getByStudent(studentId);
   const today = formatJalali(...todayJalali());
 
@@ -28372,7 +28462,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v175';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v176';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
