@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp179';
+const TP_ASSET_V = 'tp180';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -6904,7 +6904,7 @@ let _studentsSearchTimer = null;
 let _sessionsSearchTimer = null;
 function _sessionBoardShowMore() {
   _sessionBoardShown += SESSION_BOARD_COLUMN_CHUNK;
-  renderSessions(currentStudentAccountSearch());
+  return renderSessions(currentStudentAccountSearch());
 }
 function _studentShowMoreList() {
   _studentListShown += STUDENT_LIST_CHUNK;
@@ -6933,19 +6933,22 @@ function queueRenderSessions(search) {
 }
 function _tpDisconnectLazyLoaders() {
   try { window._tpLazyIO?.disconnect(); } catch (e) {}
+  try { window._tpBoardLazyIO?.disconnect(); } catch (e) {}
   window._tpLazyIO = null;
+  window._tpBoardLazyIO = null;
 }
 function _tpRevealCaseForms(search) {
   window._tpCaseFormsRevealed = true;
   return renderCaseFormsSection(search == null ? currentStudentAccountSearch() : search);
 }
-function _tpBindLazyLoaders() {
-  _tpDisconnectLazyLoaders();
+function _tpBindCaseFormsLazy() {
   if (window._tpCaseFormsRevealed) return;
   const pending = document.querySelector('[data-tp-lazy="case-forms"]');
   if (!pending) return;
   const reveal = () => {
-    _tpDisconnectLazyLoaders();
+    try { window._tpLazyIO?.disconnect(); } catch (e) {}
+    window._tpLazyIO = null;
+    if (!pending.isConnected) return;
     const wrap = document.createElement('div');
     wrap.innerHTML = _tpRevealCaseForms();
     pending.replaceWith(wrap.firstElementChild || wrap);
@@ -6962,6 +6965,36 @@ function _tpBindLazyLoaders() {
     });
   }, { root: null, rootMargin: '120px 0px', threshold: 0.01 });
   window._tpLazyIO.observe(pending);
+}
+function _tpBindBoardLazy() {
+  try { window._tpBoardLazyIO?.disconnect(); } catch (e) {}
+  window._tpBoardLazyIO = null;
+  const board = document.getElementById('sessions-board');
+  const sentinel = document.getElementById('sessions-board-sentinel');
+  if (!board || !sentinel || !(window._sessionBoardHiddenCount > 0)) return;
+  const loadMore = () => {
+    if (window._sessionBoardLazyBusy) return;
+    if (!(window._sessionBoardHiddenCount > 0)) return;
+    window._sessionBoardLazyBusy = true;
+    try { window._tpBoardLazyIO?.disconnect(); } catch (e) {}
+    window._tpBoardLazyIO = null;
+    Promise.resolve(_sessionBoardShowMore()).finally(() => {
+      window._sessionBoardLazyBusy = false;
+    });
+  };
+  if (typeof IntersectionObserver !== 'function') return;
+  window._tpBoardLazyIO = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      loadMore();
+    });
+  }, { root: board, rootMargin: '0px 320px 0px 320px', threshold: 0 });
+  window._tpBoardLazyIO.observe(sentinel);
+}
+function _tpBindLazyLoaders() {
+  _tpDisconnectLazyLoaders();
+  _tpBindCaseFormsLazy();
+  _tpBindBoardLazy();
 }
 function filterAccountStudents(students, search) {
   let filtered = search
@@ -8987,7 +9020,7 @@ async function renderSessions(search = '') {
     </div>`;
   });
   if (window._sessionBoardHiddenCount > 0) {
-    html += '<div id="sessions-board-sentinel" class="session-column" style="min-width:140px;display:flex;align-items:center;justify-content:center;opacity:.75"><button type="button" class="btn btn-ghost btn-sm" onclick="_sessionBoardShowMore()">+' + fa(window._sessionBoardHiddenCount) + ' ستون</button></div>';
+    html += '<div id="sessions-board-sentinel" aria-hidden="true" style="flex:0 0 1px;width:1px;min-width:1px;align-self:stretch;opacity:0;pointer-events:none"></div>';
   }
   html += `</div>`;
 
@@ -9014,10 +9047,7 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
-  const _colMore = window._sessionBoardHiddenCount > 0
-    ? `<button type="button" class="todo-show-more" onclick="_sessionBoardShowMore()">نمایش ستون‌های بیشتر · ${fa(window._sessionBoardHiddenCount)} مشتری</button>`
-    : '';
-  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) + _colMore +
+  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) +
     (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
   _tpBindLazyLoaders();
@@ -9081,7 +9111,7 @@ function initSessionsDragDrop() {
 async function saveSessionsOrder() {
   const board = document.getElementById('sessions-board');
   if (!board) return;
-  const order = [...board.querySelectorAll('.session-column')].map(el => +el.dataset.studentId);
+  const order = [...board.querySelectorAll('.session-column[data-student-id]')].map(el => +el.dataset.studentId).filter(id => Number.isFinite(id));
   await window.api.sessions.setOrder(order);
 }
 
@@ -28579,7 +28609,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v179';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v180';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
