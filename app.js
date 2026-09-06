@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp164';
+const TP_ASSET_V = 'tp165';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -4812,7 +4812,12 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       const id = String(row?.id);
       existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
     });
-    _db[collection] = [...existing.values()];
+    // A refresh response may predate an archive deletion made on this device.
+    // Read current tombstones after the request, before persisting stale rows.
+    const deleted = _db?._deletedItems?.[collection];
+    _db[collection] = [...existing.values()].filter(row =>
+      !deleted || !Object.prototype.hasOwnProperty.call(deleted, String(row.id))
+    );
     if (reset) state.seenIds = new Set();
     state.seenIds = state.seenIds || new Set();
     incoming.forEach(row => {
@@ -27662,7 +27667,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v164';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v165';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
