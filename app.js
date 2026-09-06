@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp169';
+const TP_ASSET_V = 'tp170';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -8554,11 +8554,11 @@ function sessionGroupMatchesBoardFilter(g,filter,todayParts){
 }
 function sessionsBoardFilterHtml(active){
   const chips=[
-    ['all','همه','همه'],
-    ['open','باز','اقدام باز'],
-    ['overdue','دیرکرد','عقب‌افتاده'],
-    ['no_month','این‌ماه∅','بدون جلسه این ماه'],
-    ['key','کلیدی','جلسه کلیدی'],
+    ['all','همه','همه ستون‌ها'],
+    ['open','اقدام‌باز','حداقل یک اقدام باز تا جلسه بعد'],
+    ['overdue','موعدگذشته','اقدام باز با موعد قبل از امروز'],
+    ['no_month','بی‌جلسهٔ‌ماه','در ماه جاری جلالی جلسه‌ای ثبت نشده'],
+    ['key','کلیدی','حداقل یک جلسه با اهمیت کلیدی'],
   ];
   return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,short,full])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" title="'+full+'" aria-label="'+full+'" aria-pressed="'+(active===id?'true':'false')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+short+'</button>').join('')+'</div>';
 }
@@ -8631,7 +8631,6 @@ async function renderSessions(search = '') {
           <span class="scn-count">(${fa(g.sessions.length)})</span>
           ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}">${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?'!':''}</span>` : ''}
         </div>
-        ${studentContactScheduleHtml(g.student_id)}
         <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
         <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
@@ -27963,7 +27962,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v169';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v170';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
