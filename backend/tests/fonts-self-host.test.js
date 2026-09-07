@@ -8,7 +8,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const fonts = ['Vazirmatn-Regular.woff2', 'Vazirmatn-SemiBold.woff2'];
 
 test('all shells, blog pages, and HTML generators use local fonts only', () => {
-  const files = ['app.html', 'index.html', 'app.js', 'scripts/generate-blog-articles.js',
+  const files = ['app.html', 'index.html', 'privacy.html', 'app.js', 'scripts/generate-blog-articles.js',
     ...fs.readdirSync(path.join(root, 'blog')).filter(f => f.endsWith('.html')).map(f => `blog/${f}`)];
   for (const file of files) {
     const source = read(file);
