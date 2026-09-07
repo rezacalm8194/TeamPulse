@@ -683,7 +683,7 @@ async function renderStaff() {
   if (reminders.length === 0) {
     html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت پرداخت برای یک نفر، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
   } else {
-    html += `<table><thead><tr><th>پرسنل/عضو</th><th>سررسید آینده</th><th>مبلغ (زنده)</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>پرسنل/عضو</th><th>سررسید آینده</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
     reminders.forEach(r => {
       const du = r.days_until;
       let statusBadge;
@@ -704,7 +704,7 @@ async function renderStaff() {
       html += `<tr>
         <td style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
         <td style="font-size:12px">${DateService.disp(r.due_date_jalali)}</td>
-        <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
+        <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
         <td>${statusBadge}</td>
         <td>
@@ -2429,7 +2429,7 @@ async function saveNewStaffReminders() {
 
 async function openEditStaffReminder(id) {
   const reminders = await window.api.staffReminders.getAll();
-  const r = reminders.find(x => x.id === id);
+  const r = reminders.find(x => String(x.id) === String(id));
   if (!r) return;
   openModal(`✏️ ویرایش یادآوری — ${escapeHtml(r.name)} ${escapeHtml(r.lname)}`, `
     <div class="form-grid">
@@ -2438,8 +2438,7 @@ async function openEditStaffReminder(id) {
         <input class="form-input" id="esr-title" value="${escapeHtml(r.title)}">
       </div>
       <div class="form-group">
-        <label class="form-label">تاریخ سررسید (شمسی)</label>
-        <input class="form-input jdate" id="esr-date" value="${r.due_date_jalali}">
+        ${calendarDateFieldHtml('esr-date', r.due_date_jalali || '', 'تاریخ سررسید')}
       </div>
       <div class="form-group">
         <label class="form-label">مبلغ (تومان)</label>
@@ -2455,19 +2454,25 @@ async function openEditStaffReminder(id) {
       </div>
     </div>
   `, [
-    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffReminder(${id})` },
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveEditStaffReminder(${JSON.stringify(id)})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
 }
 async function saveEditStaffReminder(id) {
-  await window.api.staffReminders.update({ id, patch: {
-    title: document.getElementById('esr-title')?.value,
-    due_date_jalali: document.getElementById('esr-date')?.value,
+  const due = readCalendarDateField('esr-date') || document.getElementById('esr-date')?.value;
+  if (!due) { showToast('تاریخ سررسید را وارد کنید', 'error'); return; }
+  const result = await window.api.staffReminders.update({ id, patch: {
+    title: document.getElementById('esr-title')?.value || 'پرداخت حقوق',
+    due_date_jalali: due,
     amount: +(document.getElementById('esr-amount')?.value||0),
     repeat_months: _readStaffReminderRepeat('esr'),
     notified_levels: [],
   }});
+  if (!result || result.ok === false) {
+    showToast(result?.error || 'ذخیره یادآوری انجام نشد', 'error');
+    return;
+  }
   closeModal();
   showToast('ذخیره شد ✓', 'success');
   await renderStaff();

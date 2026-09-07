@@ -73,6 +73,23 @@ test('customer receipts keep a durable delta so todo ticks cannot swallow them',
   assert.match(appSource, /_clearDurableBusinessDeltaQueue\(\)/);
 });
 
+test('staff reminder edits stay on a durable delta so polls cannot roll them back', () => {
+  assert.match(appSource, /function _persistStaffReminderRow\(/);
+  assert.match(appSource, /function _applyDurableBusinessDeltasToLocal\(/);
+  assert.match(appSource, /function _overlayInFlightLocalCollections\(/);
+  assert.match(appSource, /function _localPendingWithInFlightEdits\(/);
+  assert.match(appSource, /_enqueueDurableBusinessDelta\('staff_reminders'/);
+  assert.match(appSource, /_db\.staff_reminders\.find\(x=>String\(x\.id\)===String\(p\.id\)\)/);
+  assert.match(appSource, /_save\(true,\{urgent:true\}\)/);
+  assert.match(appSource, /_overlayInFlightLocalCollections\(overlayBase, businessKeys\)/);
+  assert.match(appSource, /_mergeLocalPendingChangesIntoOwnerData\(_localPendingWithInFlightEdits\(localBeforeLoad\)/);
+  assert.match(appSource, /if \(typeof _applyDurableBusinessDeltasToLocal === 'function'\) _applyDurableBusinessDeltasToLocal\(merged\)/);
+  const extraSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app-extra.js'), 'utf8');
+  assert.match(extraSource, /readCalendarDateField\('esr-date'\)/);
+  assert.match(extraSource, /fmt\(r\.amount\)/);
+  assert.match(extraSource, /calendarDateFieldHtml\('esr-date'/);
+});
+
 test('invited teammates keep pending archive student changes until they persist', () => {
   assert.match(appSource, /function _teamCanWriteOwnerStudents\(/);
   assert.match(appSource, /_TEAM_STUDENT_PENDING_KEYS/);
