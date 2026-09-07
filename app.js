@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp184';
+const TP_ASSET_V = 'tp185';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2056,6 +2056,15 @@ function _jalaliKey(str) {
   if(p.length!==3||p.some(isNaN))return 0;
   return p[0]*10000+p[1]*100+p[2];
 }
+function _sortPaymentsNewestFirst(rows) {
+  return (rows || []).slice().sort((a, b) => {
+    const dateDiff = _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali);
+    if (dateDiff) return dateDiff;
+    const createdDiff = (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0);
+    if (createdDiff) return createdDiff;
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
 function _daysUntil(str) {
   const [jy,jm,jd]=_jalaliParse(str);
   if(!jy)return 9999;
@@ -2799,8 +2808,8 @@ window.api = {
     add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _reconcileStudentPaymentReminders(p.student_id, row); _save(true,{urgent:true}); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_rowsForStudent('payments',sid).slice().reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
-    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
+    getByStudent: (sid)=>_P(_sortPaymentsNewestFirst(_rowsForStudent('payments',sid)).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
+    getAll: ()=>_P(_sortPaymentsNewestFirst(_db.payments).slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
   },
 
   sessions: {
@@ -8916,6 +8925,7 @@ async function renderPayments(search = '') {
     const allPayments = await window.api.payments.getAll();
     let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
+    payments = _sortPaymentsNewestFirst(payments);
 
     let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
@@ -28682,7 +28692,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v184';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v185';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
