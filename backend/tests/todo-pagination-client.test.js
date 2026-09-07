@@ -60,6 +60,30 @@ test('client assets stay version-synced across app.js, app.html, and sw.js', () 
   }
 });
 
+test('income tabs render 12 rows then a client-side load-more button', () => {
+  assert.match(app, /PAYMENTS_LIST_CHUNK\s*=\s*12/);
+  assert.match(app, /function _paymentsShowMore\(/);
+  assert.match(app, /function _visiblePaymentsSlice\(/);
+  assert.match(app, /function _clampIncomeLists\(/);
+  assert.match(app, /income-show-more/);
+  assert.match(app, /_visiblePaymentsSlice\('purchases'/);
+  assert.match(app, /_visiblePaymentsSlice\('payments'/);
+  assert.match(app, /_visiblePaymentsSlice\('reminders'/);
+  assert.match(app, /_visiblePaymentsSlice\('families'/);
+  const src = app.match(/function _visiblePaymentsSlice\(tab, items\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(src, 'slice helper must exist');
+  const PAYMENTS_LIST_CHUNK = 12;
+  const shown = { purchases: 12, payments: 24 };
+  const fn = new Function('PAYMENTS_LIST_CHUNK', '_paymentsListShown', `${src}; return _visiblePaymentsSlice;`);
+  const slice = fn(PAYMENTS_LIST_CHUNK, shown);
+  const first = slice('purchases', Array.from({ length: 51 }, (_, i) => i));
+  assert.equal(first.rows.length, 12);
+  assert.equal(first.remaining, 39);
+  const expanded = slice('payments', Array.from({ length: 51 }, (_, i) => i));
+  assert.equal(expanded.rows.length, 24);
+  assert.equal(expanded.remaining, 27);
+});
+
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
   assert.match(app, /function _todoIsOverdue\(/);
   assert.match(app, /const isOverdue = _todoIsOverdue\(t\)/);
