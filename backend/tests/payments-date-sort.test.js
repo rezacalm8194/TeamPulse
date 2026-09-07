@@ -34,7 +34,8 @@ test('receipts APIs sort by jalali date newest first instead of insertion order'
   assert.match(appSource, /getAll: \(\)=>_P\(_sortPaymentsNewestFirst\(_db\.payments\)\.slice\(0,300\)/);
   assert.match(appSource, /getByStudent: \(sid\)=>_P\(_sortPaymentsNewestFirst\(_rowsForStudent\('payments',sid\)\)/);
   assert.doesNotMatch(appSource, /getAll: \(\)=>_P\(\[\.\.\._db\.payments\]\.reverse\(\)\.slice\(0,300\)/);
-  assert.match(appSource, /payments = _sortPaymentsNewestFirst\(payments\);/);
+  const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
+  assert.match(financeSource, /payments = _sortPaymentsNewestFirst\(payments\);/);
 });
 
 test('_sortPaymentsNewestFirst puts later jalali dates first even if inserted earlier', () => {

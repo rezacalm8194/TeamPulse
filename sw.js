@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v185';
+const CACHE = 'team-pulse-static-v186';
 // Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
@@ -106,7 +106,7 @@ async function staleWhileRevalidate(request) {
 }
 
 function isVersionedAppBundle(url) {
-  return url.pathname === '/app.js' || url.pathname === '/app-extra.js' || url.pathname === '/app.css' || url.pathname === '/tp-inline-bind.js';
+  return url.pathname === '/app.js' || url.pathname === '/app-extra.js' || url.pathname === '/app-sessions.js' || url.pathname === '/app-finance.js' || url.pathname === '/app-todos.js' || url.pathname === '/app.css' || url.pathname === '/tp-inline-bind.js';
 }
 
 self.addEventListener('fetch', event => {
