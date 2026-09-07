@@ -32,6 +32,27 @@ echo Refreshing remote branches...
 git fetch origin
 if errorlevel 1 goto git_error
 
+rem Stash local dirt before leaving a non-develop branch so checkout can proceed.
+set "DID_STASH=0"
+set "NEED_STASH=0"
+for /f "delims=" %%B in ('git branch --show-current') do set CURRENT_BRANCH=%%B
+if /i not "!CURRENT_BRANCH!"=="develop" (
+  for /f "delims=" %%S in ('git status --porcelain') do set NEED_STASH=1
+)
+
+if "!NEED_STASH!"=="1" (
+  echo.
+  echo Local changes detected on !CURRENT_BRANCH!. Stashing before switch to develop...
+  git stash push -u -m "deploy-all auto-stash before develop"
+  if errorlevel 1 (
+    echo.
+    echo Could not stash local changes. Commit or discard them, then retry.
+    pause
+    exit /b 1
+  )
+  set "DID_STASH=1"
+)
+
 echo Ensuring branch develop...
 git show-ref --verify --quiet refs/heads/develop
 if errorlevel 1 (
@@ -41,10 +62,24 @@ if errorlevel 1 (
 )
 if errorlevel 1 (
   echo.
-  echo Could not switch to develop. Commit or stash local changes first.
+  echo Could not switch to develop.
+  if "!DID_STASH!"=="1" git stash pop
   echo.
   pause
   exit /b 1
+)
+
+if "!DID_STASH!"=="1" (
+  echo.
+  echo Restoring stashed local changes onto develop...
+  git stash pop
+  if errorlevel 1 (
+    echo.
+    echo Stash pop had conflicts. Resolve them, then run deploy-all again.
+    echo Your changes are still in: git stash list
+    pause
+    exit /b 1
+  )
 )
 
 echo.
