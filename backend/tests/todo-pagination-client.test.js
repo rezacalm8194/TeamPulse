@@ -64,7 +64,8 @@ test('income tabs render 12 rows then a client-side load-more button', () => {
   assert.match(app, /PAYMENTS_LIST_CHUNK\s*=\s*12/);
   assert.match(app, /function _paymentsShowMore\(/);
   assert.match(app, /function _visiblePaymentsSlice\(/);
-  assert.match(app, /موارد بیشتر \+/);
+  assert.match(app, /function _clampIncomeLists\(/);
+  assert.match(app, /income-show-more/);
   assert.match(app, /_visiblePaymentsSlice\('purchases'/);
   assert.match(app, /_visiblePaymentsSlice\('payments'/);
   assert.match(app, /_visiblePaymentsSlice\('reminders'/);

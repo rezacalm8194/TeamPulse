@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp181';
+const TP_ASSET_V = 'tp182';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -8759,7 +8759,38 @@ function _visiblePaymentsSlice(tab, items) {
 }
 function _paymentsMoreButtonHtml(tab, remaining) {
   if (!(remaining > 0)) return '';
-  return `<button type="button" class="todo-show-more" onclick="_paymentsShowMore('${tab}')">موارد بیشتر +</button>`;
+  return `<button type="button" class="todo-show-more income-show-more" onclick="_paymentsShowMore('${tab}')">موارد بیشتر +</button>`;
+}
+function _incomeListRowSelector(tab) {
+  if (tab === 'payments') return '#content .customer-payments-table tbody tr';
+  if (tab === 'reminders') return '#content .customer-reminders-table tbody tr';
+  if (tab === 'families') return '#content .stu-table-wrap tbody tr, #content .mstu-list .mstu-card';
+  return '#content .customer-sales-table tbody tr';
+}
+function _clampIncomeLists() {
+  if (currentPage !== 'payments') return;
+  const tab = String(_paymentsTab || 'purchases');
+  const cap = Math.max(PAYMENTS_LIST_CHUNK, Number(_paymentsListShown[tab] || PAYMENTS_LIST_CHUNK));
+  const rows = [...document.querySelectorAll(_incomeListRowSelector(tab))]
+    .filter(row => !(row.querySelector && row.querySelector('td[colspan]')));
+  if (!rows.length) return;
+  let hidden = 0;
+  rows.forEach((row, i) => {
+    const hide = i >= cap;
+    row.classList.toggle('income-list-row-hidden', hide);
+    if (hide) hidden += 1;
+  });
+  const card = rows[0].closest('.table-card') || document.getElementById('content');
+  if (!card) return;
+  let btn = card.querySelector('.income-show-more');
+  if (hidden > 0 && !btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'todo-show-more income-show-more';
+    btn.textContent = 'موارد بیشتر +';
+    btn.addEventListener('click', () => _paymentsShowMore(tab));
+    card.appendChild(btn);
+  }
 }
 function _paymentsShowMore(tab) {
   const key = String(tab || _paymentsTab || 'purchases');
@@ -16632,6 +16663,9 @@ function setContent(html) {
   contentEl.innerHTML = _isFinancePage() ? _financeNavHtml()+html : html;
   if (typeof _applyResponsiveTableLabels === 'function') {
     try { _applyResponsiveTableLabels(); } catch(e) {}
+  }
+  if (typeof _clampIncomeLists === 'function') {
+    try { _clampIncomeLists(); } catch(e) {}
   }
   window._lastRenderedContentPage = currentPage;
   if (preserveScroll) {
@@ -28652,7 +28686,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v181';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v182';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -28910,7 +28944,10 @@ function _applyResponsiveTableLabels() {
 // اجرا بعد از هر بار رندر شدن محتوای صفحه
 const _tableObserver = new MutationObserver(() => {
   clearTimeout(window._tblLabelTimer);
-  window._tblLabelTimer = setTimeout(_applyResponsiveTableLabels, 60);
+  window._tblLabelTimer = setTimeout(() => {
+    _applyResponsiveTableLabels();
+    if (typeof _clampIncomeLists === 'function') _clampIncomeLists();
+  }, 60);
 });
 function _initResponsiveTableObserver() {
   // setContent already labels tables; subtree observer re-walks large lists.
