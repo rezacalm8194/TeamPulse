@@ -256,12 +256,18 @@ function servePrecompressedStatic(req, res, next) {
   if (!/\.(?:js|mjs|css|html|svg|json)$/i.test(rel)) return next();
   const abs = path.resolve(STATIC_ROOT, '.' + rel);
   if (!abs.startsWith(STATIC_ROOT)) return next();
+  let srcStat;
+  try { srcStat = fs.statSync(abs); } catch (_) { return next(); }
+  if (!srcStat.isFile()) return next();
   const accept = String(req.headers['accept-encoding'] || '');
   const candidates = [];
   if (/\bbr\b/.test(accept)) candidates.push({ file: abs + '.br', encoding: 'br' });
   if (/\bgzip\b/.test(accept)) candidates.push({ file: abs + '.gz', encoding: 'gzip' });
   const hit = candidates.find((item) => {
-    try { return fs.statSync(item.file).isFile(); } catch (_) { return false; }
+    try {
+      const st = fs.statSync(item.file);
+      return st.isFile() && st.mtimeMs >= srcStat.mtimeMs;
+    } catch (_) { return false; }
   });
   if (!hit) return next();
   const ext = path.extname(abs).toLowerCase();
