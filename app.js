@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp182';
+const TP_ASSET_V = 'tp183';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -8862,7 +8862,7 @@ async function renderPayments(search = '') {
   allStudents = await window.api.students.getAll();
   try {
     const remindersForBadge = await window.api.reminders.getAll();
-    updateReminderBadges(remindersForBadge.filter(r => !r.done).length);
+    updateReminderBadges(remindersForBadge.filter(r => !r.done && _isIncomePaymentReminder(r)).length);
   } catch(e) {}
   const q = search.trim().toLowerCase();
 
@@ -10299,6 +10299,12 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // ════════════════════════════════════════════════════════════════════════════
 // REMINDERS PAGE
 // ════════════════════════════════════════════════════════════════════════════
+function _isIncomePaymentReminder(r) {
+  if (!r) return false;
+  if (String(r.source || '') === 'session_followup') return false;
+  if (/^اقدام جلسه\s*:/.test(String(r.title || '').trim())) return false;
+  return true;
+}
 async function renderReminders(search = '', embedded = false, contentPrefix = '') {
   _syncPaymentsListShown('reminders', search);
   if (!embedded) {
@@ -10321,7 +10327,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   try{_runAutomationScans();}catch(e){}
   const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
-  const reminders = await window.api.reminders.getAll();
+  const reminders = (await window.api.reminders.getAll()).filter(_isIncomePaymentReminder);
   const today = jalaliKey(formatJalali(...todayJalali()));
 
   const pending = reminders.filter(r => !r.done);
@@ -12351,7 +12357,7 @@ async function reloadAllData() {
   applyMetaToUI();
   try {
     const reminders = await window.api.reminders.getAll();
-    const pending = reminders.filter(r => !r.done).length;
+    const pending = reminders.filter(r => !r.done && _isIncomePaymentReminder(r)).length;
     updateReminderBadges(pending);
   } catch(e) {}
   await renderPage();
@@ -16736,7 +16742,7 @@ async function init() {
     applyMetaToUI();
     try {
       const reminders = await window.api.reminders.getAll();
-      const pending = reminders.filter(r => !r.done).length;
+      const pending = reminders.filter(r => !r.done && _isIncomePaymentReminder(r)).length;
       updateReminderBadges(pending);
     } catch(e) { console.warn('[TeamPulse] reminders error:', e); }
     console.log('[TeamPulse] renderPage...');
@@ -28686,7 +28692,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v182';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v183';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

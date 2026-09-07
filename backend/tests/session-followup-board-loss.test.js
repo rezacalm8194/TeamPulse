@@ -29,6 +29,18 @@ function loadMany(names, context) {
   return sandbox;
 }
 
+test('income reminder list hides session follow-up actions', () => {
+  assert.match(source, /function _isIncomePaymentReminder\(/);
+  assert.match(source, /source === 'session_followup'|source \|\| ''\) === 'session_followup'/);
+  assert.match(source, /اقدام جلسه/);
+  assert.match(source, /\.filter\(_isIncomePaymentReminder\)/);
+  const fn = new Function(`${functionSource('_isIncomePaymentReminder')}; return _isIncomePaymentReminder;`)();
+  assert.equal(fn({ source: 'session_followup', title: 'اقدام جلسه: پیگیری' }), false);
+  assert.equal(fn({ source: '', title: 'اقدام جلسه: پیگیری بعد از جلسه — فاطمه' }), false);
+  assert.equal(fn({ source: 'package', title: 'سررسید پرداخت کوچینگ' }), true);
+  assert.equal(fn({ source: '', title: 'یادآوری دستی' }), true);
+});
+
 test('session followup due date creates one session_followup reminder and marks it done', () => {
   let nextId = 1;
   const db = {
