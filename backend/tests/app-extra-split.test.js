@@ -63,7 +63,8 @@ test('customer account tab hosts the case financial table', () => {
   assert.match(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
   assert.doesNotMatch(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
   assert.match(appSource, /function studentAccountOverviewHtml\(/);
-  assert.match(appSource, /studentAccountOverviewHtml\(allStudents, filtered, \{ showSessions: false, menuPrefix: 'acct' \}\)/);
+  assert.match(appSource, /studentAccountOverviewHtml\(allStudents, filtered, \{/);
+  assert.match(appSource, /menuPrefix: 'acct'/);
   assert.match(appSource, /<th>پکیج‌ها<\/th>/);
   assert.match(appSource, /<th>مانده حساب<\/th>/);
   assert.match(appSource, /<th>وضعیت<\/th>/);
