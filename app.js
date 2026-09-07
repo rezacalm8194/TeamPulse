@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp186';
+const TP_ASSET_V = 'tp187';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -13673,7 +13673,7 @@ function _evalBuildSharePage(title, senderName, bodyHtml, studentName) {
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="ارزیابی عملکرد توسط ${senderName} از ${appTitle}">
 <meta property="og:url" content="${inviteUrl}">
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/fonts/vazirmatn.css">
 <title>${title}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -14181,7 +14181,7 @@ function _evalPrintShell(title, bodyHtml) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/fonts/vazirmatn.css">
 <title>${title}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -22903,7 +22903,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v186';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v187';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
