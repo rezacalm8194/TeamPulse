@@ -3,11 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.js'), 'utf8');
+const root = path.resolve(__dirname, '..', '..');
+const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const todosSource = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
 
 test('all todo generators use the single numeric allocator', () => {
-  assert.equal((appSource.match(/_nextId\.todos\+\+/g) || []).length, 0);
-  assert.equal((appSource.match(/_allocateTodoId\(\)/g) || []).length, 12); // declaration + eleven call sites
+  const client = appSource + todosSource;
+  assert.equal((client.match(/_nextId\.todos\+\+/g) || []).length, 0);
+  assert.equal((client.match(/_allocateTodoId\(\)/g) || []).length, 14);
+  assert.match(appSource, /function _allocateTodoId\(/);
   assert.match(appSource, /Date\.now\(\) \* 1000/);
   assert.match(appSource, /Number\.isSafeInteger/);
 });
@@ -15,5 +19,5 @@ test('all todo generators use the single numeric allocator', () => {
 test('numeric ids and recurring parent relations remain unchanged', () => {
   assert.match(appSource, /const id = Math\.max\(_db\._todoIdHighWater \+ 1, timeCandidate\)/);
   assert.match(appSource, /recurrence_parent_id: _todoRootId\(t\)/);
-  assert.match(appSource, /recurrence_parent_id: rootId/);
+  assert.match(todosSource, /recurrence_parent_id: rootId/);
 });

@@ -10,7 +10,14 @@ const serverJs = fs.readFileSync(path.join(root, 'backend', 'server.js'), 'utf8'
 
 test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-extra/);
-  assert.match(appHtml, /family=Vazirmatn:wght@400;600/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-sessions/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-finance/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-todos/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-sessions\.js/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-finance\.js/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-todos\.js/);
+  assert.doesNotMatch(appHtml, /fonts\.(googleapis|gstatic)\.com/);
+  assert.match(appHtml, /href="\/fonts\/vazirmatn\.css"/);
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
