@@ -2,7 +2,24 @@
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 
-cd /d "%~dp0"
+rem Always run from a TEMP copy. git checkout/pull can replace this file on
+rem disk mid-flight; CMD would then continue reading a different bat and crash
+rem with nonsense like: 'evelop" (' is not recognized...
+if /i not "%~1"=="__FROM_TEMP__" (
+  set "TP_DEPLOY_TMP=%TEMP%\teampulse-deploy-all.bat"
+  copy /y "%~f0" "!TP_DEPLOY_TMP!" >nul
+  if errorlevel 1 (
+    echo Could not copy deploy script to TEMP.
+    pause
+    exit /b 1
+  )
+  call "!TP_DEPLOY_TMP!" __FROM_TEMP__ "%~dp0"
+  set "TP_ERR=!ERRORLEVEL!"
+  del "!TP_DEPLOY_TMP!" >nul 2>nul
+  exit /b !TP_ERR!
+)
+
+cd /d "%~2"
 
 rem One-click production: promote develop -> main on GitHub, then sync the
 rem live server over SSH (same host pattern as deploy-staging.bat).

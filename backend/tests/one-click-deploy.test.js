@@ -31,6 +31,8 @@ describe('one-click deploy scripts', () => {
 
   it('deploy-all.bat auto-switches to develop and SSHs production sync', () => {
     const bat = read('deploy-all.bat');
+    assert.match(bat, /__FROM_TEMP__/);
+    assert.match(bat, /teampulse-deploy-all\.bat/);
     assert.match(bat, /git checkout develop/);
     assert.match(bat, /stash push -u -m "deploy-all auto-stash before develop"/);
     assert.match(bat, /PROD_SSH=pachim@37\.32\.12\.186/);
