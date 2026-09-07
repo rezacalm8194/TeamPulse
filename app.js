@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp181';
+const TP_ASSET_V = 'tp183';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -483,7 +483,7 @@ const DEFAULT_PKG_TYPES = [
   { id:5, key:'visitor',  label:'مراجعه‌کننده', color:'#f472b6' },
   { id:6, key:'other',    label:'متفرقه', color:'#9399ab' },
 ];
-const DEFAULT_AUTOMATION = { stale_lead:true, session_followup:true, package_due:true, convert_onboarding:true, package_due_days:3, session_followup_days:3 };
+const DEFAULT_AUTOMATION = { stale_lead:true, session_followup:false, package_due:true, convert_onboarding:true, package_due_days:3, session_followup_days:3 };
 const DEFAULT_META = { entitySingular:'شاگرد', entityPlural:'شاگردان', sessionSingular:'جلسه', sessionPlural:'جلسات', appTitle:'TeamPulse', appLanguage:'fa', archive_stale_days:14, automation:{...DEFAULT_AUTOMATION} };
 
 function _appTimeZone() {
@@ -2180,7 +2180,7 @@ function _automationCfg(){
   const a=(_db?.meta?.automation&&typeof _db.meta.automation==='object')?_db.meta.automation:{};
   return {
     stale_lead:a.stale_lead!==false,
-    session_followup:a.session_followup!==false,
+    session_followup:a.session_followup===true,
     package_due:a.package_due!==false,
     convert_onboarding:a.convert_onboarding!==false,
     package_due_days:Math.max(1,Number(a.package_due_days)||3),
@@ -2805,7 +2805,7 @@ window.api = {
 
   sessions: {
     getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(s=>{const sessions=_rowsForStudent('sessions',s.id).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali)||b.id-a.id);return{student_id:s.id,name:s.name,lname:s.lname,sessions};})),
-    add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); _automationApplySessionFollowup(session); session.followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
+    add: (p)=>{ const createdAt=new Date().toISOString(); const followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i)); const session={id:_nextId('sessions'),student_id:p.student_id,date_jalali:p.date,title:p.title||'',importance:p.importance||'normal',flagged:p.importance==='key',type:p.type||'آنلاین',duration_min:p.duration||60,note:p.note||'',extra_note:p.extra_note||'',followups,achievements:p.achievements||'',eval_form_id:p.eval_form_id||null,eval_period_id:p.eval_period_id||null,achievement_tags:p.achievement_tags||[],case_form_id:p.case_form_id||null,case_form_title:p.case_form_title||'',case_form_responses:p.case_form_responses||[],created_at:createdAt,updated_at:createdAt}; _db.sessions.push(session); session.followups.forEach(f=>_syncSessionFollowupReminder(session,f)); _save(); return _P({ok:true}); },
     update: (p)=>{ const s=_db.sessions.find(x=>x.id===p.id); if(s){if(p.followups!==undefined){s.followups=(p.followups||[]).map((f,i)=>_normalizeSessionFollowup(f,i));s.followups.forEach(f=>_syncSessionFollowupReminder(s,f));}Object.assign(s,{date_jalali:p.date??s.date_jalali,title:p.title??s.title,importance:p.importance??s.importance,flagged:(p.importance??s.importance)==='key',type:p.type??s.type,duration_min:p.duration??s.duration_min,note:p.note??s.note,extra_note:p.extra_note??s.extra_note,achievements:p.achievements??s.achievements??'',eval_form_id:p.eval_form_id!==undefined?p.eval_form_id:s.eval_form_id,eval_period_id:p.eval_period_id!==undefined?p.eval_period_id:s.eval_period_id,achievement_tags:p.achievement_tags!==undefined?p.achievement_tags:(s.achievement_tags||[]),case_form_id:p.case_form_id!==undefined?p.case_form_id:s.case_form_id,case_form_title:p.case_form_title!==undefined?p.case_form_title:(s.case_form_title||''),case_form_responses:p.case_form_responses!==undefined?p.case_form_responses:(s.case_form_responses||[]),updated_at:new Date().toISOString()});_save();} return _P({ok:true}); },
     toggleFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const f=s.followups.find(x=>x.id===p.item_id);if(f){f.done=!f.done;_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
     addFollowup: (p)=>{ const s=_db.sessions.find(x=>x.id===p.session_id); if(s){if(!s.followups)s.followups=[];const maxId=Math.max(0,...s.followups.map(f=>f.id||0));const f=_normalizeSessionFollowup({id:maxId+1,text:p.text,done:false,due_date_jalali:p.due_date_jalali||p.due_date||'',reminder_id:null});s.followups.push(f);_syncSessionFollowupReminder(s,f);s.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
@@ -11861,13 +11861,13 @@ async function renderSettings() {
 
     <div class="detail-section">
       <h3>اتوماسیون ساده</h3>
-      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. همه به‌صورت پیش‌فرض روشن‌اند. قانون جلسه فقط موعد اقدام‌های دستی بدون موعد را پر می‌کند و اقدام جدید نمی‌سازد.</p>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. پر کردن موعد اقدام جلسه به‌صورت پیش‌فرض خاموش است و هیچ اقدام خودکاری ساخته نمی‌شود.</p>
       ${(() => {
         const a={...DEFAULT_AUTOMATION,...(META.automation||{})};
         const chk=(id,on)=>`<input type="checkbox" id="${id}" ${on?'checked':''}>`;
         return `<div class="form-grid" style="gap:12px 16px">
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-stale-lead',a.stale_lead!==false)}<span>سرنخ راکد → یادآوری پیگیری</span></label>
-        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup!==false)}<span>اقدام جلسه بدون موعد → پر کردن موعد</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup===true)}<span>اقدام جلسه بدون موعد → پر کردن موعد</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-package-due',a.package_due!==false)}<span>سررسید پکیج نزدیک → کار در لیست کارها</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-onboarding',a.convert_onboarding!==false)}<span>تبدیل به مشتری → چک‌لیست شروع همکاری</span></label>
         <div class="form-group"><label class="form-label" for="auto-session-days">موعد اقدام جلسه (روز بعد از جلسه)</label><input class="form-input" id="auto-session-days" type="number" min="1" step="1" value="${Number(a.session_followup_days)||3}"></div>
@@ -28605,7 +28605,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v181';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v183';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
