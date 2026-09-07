@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp187';
+const TP_ASSET_V = 'tp188';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2566,18 +2566,106 @@ function _reconcileOverdueRemindersForSettledCustomers() {
 }
 
 // ── Staff summary ───────────────────────────────────────────────────────────
+function _staffExpectedMonthly(s) {
+  return (s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
+}
+function _toEnDigits(str) {
+  return String(str||'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+}
+function _staffSalaryNote(jy, jm) {
+  const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
+  return `حقوق ${JMONTHS[jm-1]} ${faNum(jy)}`;
+}
+// پرداخت آزاد یا پیش‌ازسررسید باید به ماه حقوق هدف بخورد، نه فقط به «جمع کل».
+function _staffPaymentSalaryMonth(p) {
+  const jy=Number(p.for_jy), jm=Number(p.for_jm);
+  if(jy>0 && jm>=1 && jm<=12) return [jy, jm];
+  if(p.monthly_id!=null){
+    const m=(_db.staff_monthly||[]).find(x=>String(x.id)===String(p.monthly_id));
+    if(m) return [Number(m.jy), Number(m.jm)];
+  }
+  const note=_toEnDigits(String(p.note||'').trim());
+  const match=note.match(/^حقوق\s+(\S+)\s+(\d{4})/);
+  if(match){
+    const mi=JMONTHS.indexOf(match[1]);
+    const year=+match[2];
+    if(mi>=0 && year) return [year, mi+1];
+  }
+  const parsed=_jalaliParse(p.date_jalali||p.date||'');
+  return [parsed[0], parsed[1]];
+}
+function _staffMonthAdjTotal(staffId, jy, jm) {
+  return (_db.staff_adjustments||[]).reduce((sum,a)=>{
+    if(String(a.staff_id)!==String(staffId)) return sum;
+    const[ay,am]=_jalaliParse(a.date_jalali);
+    if(Number(ay)!==Number(jy)||Number(am)!==Number(jm)) return sum;
+    return sum+(a.type==='penalty'?-(a.amount||0):(a.amount||0));
+  },0);
+}
+function _staffPaidTowardMonth(staffId, jy, jm) {
+  return (_db.staff_payments||[]).reduce((sum,p)=>{
+    if(String(p.staff_id)!==String(staffId)) return sum;
+    const[py,pm]=_staffPaymentSalaryMonth(p);
+    if(Number(py)!==Number(jy)||Number(pm)!==Number(jm)) return sum;
+    return sum+Number(p.amount||0);
+  },0);
+}
+function _staffRemainingForMonth(s, jy, jm) {
+  return Math.max(0, _staffExpectedMonthly(s)+_staffMonthAdjTotal(s.id, jy, jm)-_staffPaidTowardMonth(s.id, jy, jm));
+}
+function _advanceStaffReminderIfMonthSettled(staffId, jy, jm) {
+  const rem=(_db.staff_reminders||[])
+    .filter(r=>String(r.staff_id)===String(staffId)&&!r.done)
+    .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+  if(!rem) return;
+  const[djy,djm]=_jalaliParse(rem.due_date_jalali);
+  if(Number(djy)!==Number(jy)||Number(djm)!==Number(jm)) return;
+  if((rem.repeat_months||0)>0){
+    const[ry,rmo,rd]=_jalaliParse(rem.due_date_jalali);
+    rem.due_date_jalali=_formatJalali(..._addMonths(ry,rmo,rd,rem.repeat_months));
+    rem.done=false;
+  } else rem.done=true;
+  rem.notified_levels=[];
+}
+function _reconcileStaffSalaryMonth(staffId, jy, jm) {
+  const s=(_db.staff||[]).find(x=>String(x.id)===String(staffId));
+  if(!s || !jy || !jm) return;
+  const expected=_staffExpectedMonthly(s);
+  const obligation=expected+_staffMonthAdjTotal(staffId, jy, jm);
+  const remaining=_staffRemainingForMonth(s, jy, jm);
+  let m=(_db.staff_monthly||[]).find(x=>String(x.staff_id)===String(staffId)&&Number(x.jy)===Number(jy)&&Number(x.jm)===Number(jm));
+  if(remaining<=0 && obligation>0){
+    if(!m){
+      const roles=(s.roles||[]).map(r=>{const rr=(_db.staff_roles||[]).find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:(r.amount||0)*(r.count??1)};});
+      m={id:_nextId('staff_monthly'),staff_id:s.id,jy,jm,fixed_salary:s.salary||0,roles,total:expected,paid:true,paid_date:_formatJalali(..._todayJalali()),note:'',created_at:new Date().toISOString()};
+      _db.staff_monthly.push(m);
+    } else {
+      m.paid=true;
+      if(!m.paid_date) m.paid_date=_formatJalali(..._todayJalali());
+    }
+    _advanceStaffReminderIfMonthSettled(staffId, jy, jm);
+  } else if(m && remaining>0){
+    m.paid=false;
+    m.paid_date=null;
+  }
+}
+
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
   const paymentsTotal=_db.staff_payments.filter(p=>p.staff_id===s.id).reduce((a,p)=>a+(p.amount||0),0);
   const adjTotal=_db.staff_adjustments.filter(a=>a.staff_id===s.id).reduce((a,adj)=>a+(adj.type==='penalty'?-(adj.amount||0):(adj.amount||0)),0);
-  const expectedMonthly=(s.salary||0)+roles.reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
+  const expectedMonthly=_staffExpectedMonthly(s);
   const [tjy,tjm]=_todayJalali();
-  const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===s.id&&m.jy===tjy&&m.jm===tjm&&m.paid);
+  const paidTowardThisMonth=_staffPaidTowardMonth(s.id, tjy, tjm);
+  const adjThisMonth=_staffMonthAdjTotal(s.id, tjy, tjm);
+  const remainingThisMonth=_staffRemainingForMonth(s, tjy, tjm);
+  const obligationThisMonth=expectedMonthly+adjThisMonth;
+  const paidThisMonth=obligationThisMonth>0 && remainingThisMonth<=0;
   const rem=_db.staff_reminders
     .filter(r=>r.staff_id===s.id&&!r.done)
     .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
   const daysUntil=rem?_daysUntil(rem.due_date_jalali):null;
-  return{...s,roles,expectedMonthly,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
+  return{...s,roles,expectedMonthly,paid_toward_this_month:paidTowardThisMonth,remaining_this_month:remainingThisMonth,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
 }
 
 function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
@@ -2973,8 +3061,9 @@ window.api = {
         .map(r=>{
           const staff=_db.staff.find(s=>String(s.id)===String(r.staff_id));
           const [jy,jm]=_jalaliParse(r.due_date_jalali||'');
-          const paidForDueMonth=(_db.staff_monthly||[]).some(m=>String(m.staff_id)===String(r.staff_id)&&Number(m.jy)===Number(jy)&&Number(m.jm)===Number(jm)&&m.paid);
-          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),paidForDueMonth,staffExists:!!staff};
+          const remaining=staff?_staffRemainingForMonth(staff, jy, jm):Number(r.amount||0);
+          const obligation=staff?(_staffExpectedMonthly(staff)+_staffMonthAdjTotal(staff.id, jy, jm)):Number(r.amount||0);
+          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:remaining,date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),paidForDueMonth:obligation>0&&remaining<=0,staffExists:!!staff};
         })
         .filter(item=>item.staffExists&&!item.paidForDueMonth&&item.dueIn!=null&&item.dueIn<=7)
         .sort((a,b)=>a.dueIn-b.dueIn);
@@ -3262,30 +3351,18 @@ window.api = {
       // اگه ماه/سال هدف مشخص شده (یعنی این پرداخت برای کدوم ماه حقوق است) از همون استفاده کن
       const tjy = p.for_jy || ty;
       const tjm = p.for_jm || tm;
-      const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-      const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
-      const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:(r.amount||0)*(r.count??1)};});
-      const total=(s.salary||0)+roles.reduce((a,r)=>a+r.amount,0);
-      let m=_db.staff_monthly.find(x=>x.staff_id===s.id&&x.jy===tjy&&x.jm===tjm);
-      if(!m){m={id:_nextId('staff_monthly'),staff_id:s.id,jy:tjy,jm:tjm,fixed_salary:s.salary||0,roles,total,paid:false,paid_date:null,note:'',created_at:new Date().toISOString()};_db.staff_monthly.push(m);}
-      else{m.fixed_salary=s.salary||0;m.roles=roles;m.total=total;}
-      m.paid=true;m.paid_date=p.date;
-      const payment={id:_nextId('staff_payments'),staff_id:s.id,monthly_id:m.id,amount:total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
-      _db.staff_payments.push(payment);
-      _syncStaffPaymentExpense(payment);
-      const rem=_db.staff_reminders
-        .filter(x=>x.staff_id===s.id&&!x.done)
-        .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
-      if(rem){
-        if((rem.repeat_months||0)>0){
-          const[jy,jm,jd]=_jalaliParse(rem.due_date_jalali);
-          const next=_addMonths(jy,jm,jd,rem.repeat_months);
-          rem.due_date_jalali=_formatJalali(...next);
-          rem.done=false;
-        } else {
-          rem.done=true;
-        }
-        rem.notified_levels=[];
+      const remaining=_staffRemainingForMonth(s, tjy, tjm);
+      if(remaining>0){
+        const payment={id:_nextId('staff_payments'),staff_id:s.id,amount:remaining,date_jalali:p.date,account_id:p.account_id||null,note:_staffSalaryNote(tjy,tjm),for_jy:tjy,for_jm:tjm,created_at:new Date().toISOString()};
+        _db.staff_payments.push(payment);
+        _syncStaffPaymentExpense(payment);
+      }
+      _reconcileStaffSalaryMonth(s.id, tjy, tjm);
+      const m=_db.staff_monthly.find(x=>x.staff_id===s.id&&x.jy===tjy&&x.jm===tjm);
+      if(m){
+        const lastPay=[..._db.staff_payments].reverse().find(x=>x.staff_id===s.id&&Number(x.for_jy)===Number(tjy)&&Number(x.for_jm)===Number(tjm));
+        if(lastPay && lastPay.monthly_id==null) lastPay.monthly_id=m.id;
+        m.paid_date=p.date||m.paid_date;
       }
       (s.roles||[]).forEach(r=>{r.count=0;});
       _save(); return _P({ok:true});
@@ -3294,19 +3371,41 @@ window.api = {
 
   staffPayments: {
     getByStaff: (id)=>_P(_db.staff_payments.filter(p=>p.staff_id===id).reverse()),
-    add: (p)=>{ const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save(); return _P({ok:true}); },
-    update: (p)=>{ const pay=_db.staff_payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});if(Object.prototype.hasOwnProperty.call(p,'account_id'))pay.account_id=p.account_id||null;_syncStaffPaymentExpense(pay);_save();} return _P({ok:true}); },
+    add: (p)=>{
+      const[ty,tm]=_todayJalali();
+      const[djy,djm]=_jalaliParse(p.date||'');
+      const for_jy=Number(p.for_jy)||djy||ty;
+      const for_jm=Number(p.for_jm)||djm||tm;
+      const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',for_jy,for_jm,created_at:new Date().toISOString()};
+      _db.staff_payments.push(payment);
+      _syncStaffPaymentExpense(payment);
+      _reconcileStaffSalaryMonth(p.staff_id, for_jy, for_jm);
+      _save(); return _P({ok:true});
+    },
+    update: (p)=>{
+      const pay=_db.staff_payments.find(x=>x.id===p.id);
+      if(pay){
+        const prev=_staffPaymentSalaryMonth(pay);
+        Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});
+        if(Object.prototype.hasOwnProperty.call(p,'account_id'))pay.account_id=p.account_id||null;
+        if(Object.prototype.hasOwnProperty.call(p,'for_jy')) pay.for_jy=Number(p.for_jy)||pay.for_jy;
+        if(Object.prototype.hasOwnProperty.call(p,'for_jm')) pay.for_jm=Number(p.for_jm)||pay.for_jm;
+        _syncStaffPaymentExpense(pay);
+        const next=_staffPaymentSalaryMonth(pay);
+        _reconcileStaffSalaryMonth(pay.staff_id, prev[0], prev[1]);
+        if(prev[0]!==next[0]||prev[1]!==next[1]) _reconcileStaffSalaryMonth(pay.staff_id, next[0], next[1]);
+        _save();
+      }
+      return _P({ok:true});
+    },
     delete: (id)=>{
       const pay=_db.staff_payments.find(x=>x.id===id);
       if(!pay)return _P({ok:true});
-      // حذف یک پرداخت حقوق باید رکورد ماهانهٔ مرتبط را نیز از حالت «پرداخت‌شده»
-      // خارج کند؛ در غیر این صورت نمودار همچنان مبلغ حذف‌شده را نمایش می‌دهد.
-      let monthly=pay.monthly_id!=null?_db.staff_monthly.find(m=>String(m.id)===String(pay.monthly_id)):null;
-      if(!monthly&&String(pay.note||'').startsWith('حقوق ')) monthly=_db.staff_monthly.find(m=>m.staff_id===pay.staff_id&&m.paid&&m.paid_date===pay.date_jalali);
-      if(monthly){monthly.paid=false;monthly.paid_date=null;}
+      const[jy,jm]=_staffPaymentSalaryMonth(pay);
       _recordDeletedItems('staff_payments', id);
       _removeStaffPaymentExpense(pay);
       _db.staff_payments=_db.staff_payments.filter(x=>x.id!==id);
+      _reconcileStaffSalaryMonth(pay.staff_id, jy, jm);
       _forceNextServerSync();
       _save(true,{urgent:true}); return _P({ok:true});
     },
@@ -3314,12 +3413,13 @@ window.api = {
 
   staffReminders: {
     getAll: ()=>{
-      const[tjy,tjm]=_todayJalali();
       return _P(_db.staff_reminders.map(r=>{
         const s=_db.staff.find(x=>x.id===r.staff_id);
-        const sum=s?_staffSummary(s):null;
-        const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===r.staff_id&&m.jy===tjy&&m.jm===tjm&&m.paid);
-        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:sum?sum.expectedMonthly:r.amount,paid_this_month:paidThisMonth};
+        const[djy,djm]=_jalaliParse(r.due_date_jalali);
+        const liveRemaining=s?_staffRemainingForMonth(s, djy, djm):r.amount;
+        const dueObligation=s?(_staffExpectedMonthly(s)+_staffMonthAdjTotal(s.id, djy, djm)):Number(r.amount||0);
+        const paidThisMonth=dueObligation>0 && liveRemaining<=0;
+        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:liveRemaining,paid_this_month:paidThisMonth};
       }).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali)));
     },
     add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
@@ -3330,9 +3430,38 @@ window.api = {
 
   staffAdjustments: {
     getByStaff: (id)=>_P(_db.staff_adjustments.filter(a=>a.staff_id===id).reverse()),
-    add: (p)=>{ _db.staff_adjustments.push({id:_nextId('staff_adjustments'),staff_id:p.staff_id,type:p.type,title:p.title||'',amount:p.amount||0,date_jalali:p.date,note:p.note||'',created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const a=_db.staff_adjustments.find(x=>x.id===p.id); if(a){Object.assign(a,{type:p.type??a.type,title:p.title??a.title,amount:p.amount??a.amount,date_jalali:p.date??a.date_jalali,note:p.note??a.note});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _recordDeletedItems('staff_adjustments', id); _db.staff_adjustments=_db.staff_adjustments.filter(x=>x.id!==id); _forceNextServerSync(); _save(true,{urgent:true}); return _P({ok:true}); },
+    add: (p)=>{
+      _db.staff_adjustments.push({id:_nextId('staff_adjustments'),staff_id:p.staff_id,type:p.type,title:p.title||'',amount:p.amount||0,date_jalali:p.date,note:p.note||'',created_at:new Date().toISOString()});
+      const[jy,jm]=_jalaliParse(p.date);
+      _reconcileStaffSalaryMonth(p.staff_id, jy, jm);
+      _save(); return _P({ok:true});
+    },
+    update: (p)=>{
+      const a=_db.staff_adjustments.find(x=>x.id===p.id);
+      if(a){
+        const prev=_jalaliParse(a.date_jalali);
+        Object.assign(a,{type:p.type??a.type,title:p.title??a.title,amount:p.amount??a.amount,date_jalali:p.date??a.date_jalali,note:p.note??a.note});
+        const next=_jalaliParse(a.date_jalali);
+        _reconcileStaffSalaryMonth(a.staff_id, prev[0], prev[1]);
+        if(prev[0]!==next[0]||prev[1]!==next[1]) _reconcileStaffSalaryMonth(a.staff_id, next[0], next[1]);
+        _save();
+      }
+      return _P({ok:true});
+    },
+    delete: (id)=>{
+      const a=_db.staff_adjustments.find(x=>x.id===id);
+      if(a){
+        const[jy,jm]=_jalaliParse(a.date_jalali);
+        _recordDeletedItems('staff_adjustments', id);
+        _db.staff_adjustments=_db.staff_adjustments.filter(x=>x.id!==id);
+        _reconcileStaffSalaryMonth(a.staff_id, jy, jm);
+      } else {
+        _recordDeletedItems('staff_adjustments', id);
+        _db.staff_adjustments=_db.staff_adjustments.filter(x=>x.id!==id);
+      }
+      _forceNextServerSync();
+      _save(true,{urgent:true}); return _P({ok:true});
+    },
   },
 
   staffMonthly: {
@@ -3369,15 +3498,37 @@ window.api = {
       }).filter(t=>t.months.length>=2));
     },
     add: (p)=>{
-      const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-      const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
       const roles=(p.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.rate||0,count:r.count||1,amount:(r.rate||0)*(r.count||1)};});
       const total=(p.fixed_salary||0)+roles.reduce((a,r)=>a+r.amount,0);
       const item={id:_nextId('staff_monthly'),staff_id:p.staff_id,jy:p.jy,jm:p.jm,fixed_salary:p.fixed_salary||0,roles,total,paid:false,paid_date:null,note:p.note||'',created_at:new Date().toISOString()};
-      if(p.mark_paid){item.paid=true;item.paid_date=p.paid_date||null;const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,monthly_id:item.id,amount:total,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),account_id:p.account_id||null,note:`حقوق ${JMONTHS[p.jm-1]} ${faNum(p.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);}
+      if(p.mark_paid){
+        const staff=_db.staff.find(x=>x.id===p.staff_id);
+        const remaining=staff?_staffRemainingForMonth(staff, p.jy, p.jm):total;
+        item.paid=remaining<=0;item.paid_date=p.paid_date||null;
+        if(remaining>0){
+          const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,monthly_id:item.id,amount:remaining,date_jalali:p.paid_date||_formatJalali(p.jy,p.jm,1),account_id:p.account_id||null,note:_staffSalaryNote(p.jy,p.jm),for_jy:p.jy,for_jm:p.jm,created_at:new Date().toISOString()};
+          _db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);
+          item.paid=true;
+        }
+      }
       _db.staff_monthly.push(item); _save(); return _P({ok:true,id:item.id});
     },
-    markPaid: (p)=>{ const m=_db.staff_monthly.find(x=>x.id===p.id); if(m){const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);m.paid=true;m.paid_date=p.date;const payment={id:_nextId('staff_payments'),staff_id:m.staff_id,monthly_id:m.id,amount:m.total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[m.jm-1]} ${faNum(m.jy)}`,created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save();} return _P({ok:true}); },
+    markPaid: (p)=>{
+      const m=_db.staff_monthly.find(x=>x.id===p.id);
+      if(m){
+        const staff=_db.staff.find(x=>x.id===m.staff_id);
+        const remaining=staff?_staffRemainingForMonth(staff, m.jy, m.jm):Number(m.total||0);
+        if(remaining>0){
+          const payment={id:_nextId('staff_payments'),staff_id:m.staff_id,monthly_id:m.id,amount:remaining,date_jalali:p.date,account_id:p.account_id||null,note:_staffSalaryNote(m.jy,m.jm),for_jy:m.jy,for_jm:m.jm,created_at:new Date().toISOString()};
+          _db.staff_payments.push(payment);
+          _syncStaffPaymentExpense(payment);
+        }
+        _reconcileStaffSalaryMonth(m.staff_id, m.jy, m.jm);
+        if(m.paid) m.paid_date=p.date||m.paid_date;
+        _save();
+      }
+      return _P({ok:true});
+    },
     delete: (id)=>{
       const m=_db.staff_monthly.find(x=>x.id===id);
       if(!m)return _P({ok:true});
@@ -22903,7 +23054,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v187';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v188';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
