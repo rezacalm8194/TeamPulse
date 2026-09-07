@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp180';
+const TP_ASSET_V = 'tp181';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2191,24 +2191,20 @@ function _studentDisplayName(s){
   return [s?.name,s?.lname].filter(Boolean).join(' ').trim();
 }
 function _automationApplySessionFollowup(session){
+  // فقط موعد خالیِ اقدام‌های دستی را پر می‌کند — اقدام جدید خودکار ساخته نمی‌شود
   if(!_automationCfg().session_followup||!session)return false;
   const days=_automationCfg().session_followup_days;
   const base=_jalaliParse(session.date_jalali)||_todayJalali();
   if(!base||base.length!==3||base.some(x=>!Number.isInteger(x)))return false;
   const due=_formatJalali(..._addDays(base[0],base[1],base[2],days));
-  if(!Array.isArray(session.followups))session.followups=[];
+  if(!Array.isArray(session.followups)||!session.followups.length)return false;
   let changed=false;
-  if(!session.followups.length){
-    session.followups.push(_normalizeSessionFollowup({text:'پیگیری بعد از جلسه',due_date_jalali:due}));
-    changed=true;
-  }else{
-    session.followups.forEach(f=>{
-      if(f&&!f.done&&!String(f.due_date_jalali||'').trim()){
-        f.due_date_jalali=due;
-        changed=true;
-      }
-    });
-  }
+  session.followups.forEach(f=>{
+    if(f&&!f.done&&!String(f.due_date_jalali||'').trim()){
+      f.due_date_jalali=due;
+      changed=true;
+    }
+  });
   return changed;
 }
 function _automationEnsureStaleLeadReminder(student){
@@ -11865,13 +11861,13 @@ async function renderSettings() {
 
     <div class="detail-section">
       <h3>اتوماسیون ساده</h3>
-      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. همه به‌صورت پیش‌فرض روشن‌اند.</p>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. همه به‌صورت پیش‌فرض روشن‌اند. قانون جلسه فقط موعد اقدام‌های دستی بدون موعد را پر می‌کند و اقدام جدید نمی‌سازد.</p>
       ${(() => {
         const a={...DEFAULT_AUTOMATION,...(META.automation||{})};
         const chk=(id,on)=>`<input type="checkbox" id="${id}" ${on?'checked':''}>`;
         return `<div class="form-grid" style="gap:12px 16px">
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-stale-lead',a.stale_lead!==false)}<span>سرنخ راکد → یادآوری پیگیری</span></label>
-        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup!==false)}<span>جلسه ثبت شد → اقدام موعددار</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup!==false)}<span>اقدام جلسه بدون موعد → پر کردن موعد</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-package-due',a.package_due!==false)}<span>سررسید پکیج نزدیک → کار در لیست کارها</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-onboarding',a.convert_onboarding!==false)}<span>تبدیل به مشتری → چک‌لیست شروع همکاری</span></label>
         <div class="form-group"><label class="form-label" for="auto-session-days">موعد اقدام جلسه (روز بعد از جلسه)</label><input class="form-input" id="auto-session-days" type="number" min="1" step="1" value="${Number(a.session_followup_days)||3}"></div>
@@ -28609,7 +28605,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v180';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v181';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

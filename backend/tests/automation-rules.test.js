@@ -24,7 +24,7 @@ function loadMany(names, context) {
   return sandbox;
 }
 
-test('session automation adds default due followup when none exist', () => {
+test('session automation does not invent a followup when none exist', () => {
   const db = { meta: { automation: { session_followup: true, session_followup_days: 3 } }, reminders: [] };
   const ctx = loadMany(
     ['_normalizeSessionFollowup', '_automationCfg', '_automationApplySessionFollowup'],
@@ -37,10 +37,8 @@ test('session automation adds default due followup when none exist', () => {
     }
   );
   const session = { id: 1, student_id: 9, date_jalali: '1405/06/10', followups: [] };
-  assert.equal(ctx._automationApplySessionFollowup(session), true);
-  assert.equal(session.followups.length, 1);
-  assert.equal(session.followups[0].text, 'پیگیری بعد از جلسه');
-  assert.equal(session.followups[0].due_date_jalali, '1405/06/13');
+  assert.equal(ctx._automationApplySessionFollowup(session), false);
+  assert.equal(session.followups.length, 0);
 });
 
 test('session automation fills missing due dates only', () => {
