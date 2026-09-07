@@ -639,8 +639,12 @@ async function renderStaff() {
       // جمع پرداختی واقعی = پرداخت‌ها + پاداش - جریمه
       const totalPaidDisplay = s.totalPaid;
 
-      // Status: is this staff member already paid for the current cycle?
+      const remaining = s.remaining_this_month ?? s.expectedMonthly;
+      const isPartial = remaining > 0 && remaining < (s.expectedMonthly || 0);
       const isPaid = !!s.paid_this_month;
+      const salaryCell = remaining <= 0 && (s.expectedMonthly || 0) > 0
+        ? `<span class="amount amount-paid">${fmt(0)} ت</span><div class="name-cell-sub">تسویه شده از ${fmt(s.expectedMonthly)}</div>`
+        : `<span class="amount ${isPartial ? 'amount-paid' : 'amount-neutral'}" style="${isPartial ? 'color:var(--amber);font-weight:700' : ''}">${fmt(remaining)} ت</span>${isPartial ? `<div class="name-cell-sub">از ${fmt(s.expectedMonthly)} · پرداخت‌شده ${fmt(s.paid_toward_this_month || 0)}</div>` : ''}`;
 
       const cardMasked = s.card_number
         ? `<span class="card-masked">${maskCardNumber(s.card_number)}<button class="card-copy-btn" title="کپی شماره کارت کامل" onclick="copyToClipboard('${(s.card_number||'').replace(/\D/g,'')}', 'شماره کارت کپی شد ✓')">📋</button></span>`
@@ -657,7 +661,7 @@ async function renderStaff() {
         <td data-label="نوع"><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
         <td data-label="نقش‌ها" class="staff-role-cell"><div class="staff-role-cell-inner">${staffIsPersonnel(s) ? roleTags : '<span style="color:var(--text3)">عضو پرداختی</span>'}</div></td>
         <td data-label="شماره کارت">${cardMasked}</td>
-        <td data-label="حقوق این ماه"><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
+        <td data-label="حقوق این ماه">${salaryCell}</td>
         <td data-label="جمع پرداختی"><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
         <td data-label="سررسید این ماه" style="font-size:12px;color:var(--text2)">${dueDateCell}</td>
         <td data-label="عملیات" class="staff-actions-cell">
@@ -1583,6 +1587,8 @@ async function openStaffDetail(id) {
       <div class="detail-row"><span class="detail-key">شماره کارت</span><span class="detail-val" style="direction:ltr">${s.card_number||'—'}</span></div>
       <div class="detail-row"><span class="detail-key">حقوق ثابت ماهانه</span><span class="detail-val">${fmt(s.salary)} تومان</span></div>
       <div class="detail-row"><span class="detail-key">حقوق کل تخمینی این ماه</span><span class="detail-val" style="font-weight:700">${fmt(s.expectedMonthly)} تومان</span></div>
+      <div class="detail-row"><span class="detail-key">پرداخت‌شده برای این ماه</span><span class="detail-val amount-paid">${fmt(s.paid_toward_this_month || 0)} تومان</span></div>
+      <div class="detail-row"><span class="detail-key">حقوق باقی‌مانده این ماه</span><span class="detail-val" style="font-weight:800;color:${(s.remaining_this_month || 0) <= 0 ? 'var(--green)' : 'var(--amber)'}">${fmt(s.remaining_this_month ?? s.expectedMonthly)} تومان</span></div>
       <div class="detail-row"><span class="detail-key">یادداشت</span><span class="detail-val">${escapeHtml(s.note||'')||'—'}</span></div>
     </div>
 
@@ -1646,6 +1652,11 @@ async function openEditStaffPayment(id, staffId, name) {
   const payments = await window.api.staffPayments.getByStaff(staffId);
   const p = payments.find(x => x.id === id);
   if (!p) return;
+  const dateParts = (p.date_jalali || '').split('/').map(n => +String(n).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  const curJy = p.for_jy || dateParts[0] || todayJalali()[0];
+  const curJm = p.for_jm || dateParts[1] || todayJalali()[1];
+  const monthOptions = JMONTHS.map((mn, i) =>
+    `<option value="${i+1}" ${i+1===curJm?'selected':''}>${mn}</option>`).join('');
   openModal(`✏️ ویرایش پرداخت — ${name}`, `
     <div class="form-grid">
       <div class="form-group">
@@ -1655,6 +1666,13 @@ async function openEditStaffPayment(id, staffId, name) {
       <div class="form-group">
         <label class="form-label">تاریخ (شمسی)</label>
         <input class="form-input jdate" id="esp-date" value="${p.date_jalali}">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">این پرداخت برای حقوق کدوم ماه است؟</label>
+        <div style="display:flex;gap:8px">
+          <select class="form-input" id="esp-month" style="flex:1.4">${monthOptions}</select>
+          <input class="form-input" id="esp-year" type="number" value="${curJy}" style="flex:1" placeholder="سال">
+        </div>
       </div>
       <div class="form-group full">
         <label class="form-label">یادداشت</label>
@@ -1672,6 +1690,8 @@ async function saveEditStaffPayment(id, staffId, name) {
     id, amount: +(document.getElementById('esp-amount')?.value||0),
     date: document.getElementById('esp-date')?.value,
     note: document.getElementById('esp-note')?.value,
+    for_jy: +(document.getElementById('esp-year')?.value || 0),
+    for_jm: +(document.getElementById('esp-month')?.value || 0),
   });
   closeModal();
   showToast('ذخیره شد ✓', 'success');
@@ -1741,16 +1761,31 @@ async function deleteStaffAdjustment(id, staffId, name) {
 }
 
 // ── Staff: register payment ────────────────────────────────────────────────
-function openStaffPayment(staffId, name) {
+async function openStaffPayment(staffId, name) {
+  const list = await window.api.staff.getAll();
+  const s = list.find(x => x.id === staffId);
+  const [curJy, curJm] = todayJalali();
+  const remaining = s?.remaining_this_month ?? s?.expectedMonthly ?? 0;
+  const monthOptions = JMONTHS.map((mn, i) =>
+    `<option value="${i+1}" ${i+1===curJm?'selected':''}>${mn}</option>`).join('');
   openModal(`💳 ثبت پرداخت حقوق — ${name}`, `
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">حقوق باقی‌مانده این ماه: <b>${fmt(remaining)} تومان</b> از ${fmt(s?.expectedMonthly || 0)}</p>
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">مبلغ (تومان) *</label>
-        <input class="form-input amount-input" id="sp-amount" type="number">
+        <input class="form-input amount-input" id="sp-amount" type="number" value="${remaining || ''}">
       </div>
       <div class="form-group">
         <label class="form-label">تاریخ (شمسی)</label>
         <input class="form-input jdate" id="sp-date" value="${formatJalali(...todayJalali())}">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">این پرداخت برای حقوق کدوم ماه است؟</label>
+        <div style="display:flex;gap:8px">
+          <select class="form-input" id="sp-month" style="flex:1.4">${monthOptions}</select>
+          <input class="form-input" id="sp-year" type="number" value="${curJy}" style="flex:1" placeholder="سال">
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">پیش‌پرداخت قبل از سررسید از باقی‌مانده همان ماه کم می‌شود.</div>
       </div>
       <div class="form-group full">
         <label class="form-label">پرداخت از حساب</label>
@@ -1758,7 +1793,7 @@ function openStaffPayment(staffId, name) {
       </div>
       <div class="form-group full">
         <label class="form-label">یادداشت</label>
-        <input class="form-input" id="sp-note" placeholder="مثلاً: حقوق خرداد">
+        <input class="form-input" id="sp-note" placeholder="مثلاً: پیش‌پرداخت حقوق">
       </div>
     </div>
   `, [
@@ -1770,7 +1805,15 @@ function openStaffPayment(staffId, name) {
 async function saveStaffPayment(staffId) {
   const amount = +(document.getElementById('sp-amount')?.value||0);
   if (!amount) { showToast('مبلغ را وارد کنید', 'error'); return; }
-  await window.api.staffPayments.add({ staff_id: staffId, amount, date: document.getElementById('sp-date')?.value, account_id: document.getElementById('sp-account')?.value||null, note: document.getElementById('sp-note')?.value });
+  await window.api.staffPayments.add({
+    staff_id: staffId,
+    amount,
+    date: document.getElementById('sp-date')?.value,
+    account_id: document.getElementById('sp-account')?.value||null,
+    note: document.getElementById('sp-note')?.value,
+    for_jy: +(document.getElementById('sp-year')?.value || 0),
+    for_jm: +(document.getElementById('sp-month')?.value || 0),
+  });
   closeModal();
   showToast('ثبت شد ✓', 'success');
   await openStaffDetail(staffId);
@@ -1963,7 +2006,9 @@ async function openSalaryTransfer(staffId) {
   }).reduce((sum, a) => sum + (a.type === 'penalty' ? -(a.amount||0) : (a.amount||0)), 0);
 
   const baseSalary = s.expectedMonthly;
-  const totalToman = baseSalary + monthAdj;
+  const paidToward = s.paid_toward_this_month || 0;
+  const remaining = s.remaining_this_month ?? Math.max(0, baseSalary + monthAdj - paidToward);
+  const totalToman = remaining;
   const totalRial = totalToman * 10;
 
   const cardFormatted = (s.card_number || '').replace(/\D/g, '').replace(/(.{4})/g, '$1-').replace(/-$/, '');
@@ -1998,8 +2043,13 @@ async function openSalaryTransfer(staffId) {
         <span style="color:var(--text3)">پاداش/جریمه این ماه</span>
         <span style="color:${monthAdj>0?'var(--green)':'var(--red)'}">${monthAdj>0?'+':''}${fmt(monthAdj)} تومان</span>
       </div>` : ''}
+      ${paidToward !== 0 ? `
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="color:var(--text3)">پرداخت‌شده برای این ماه</span>
+        <span class="amount-paid">−${fmt(paidToward)} تومان</span>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border2);padding-top:6px;margin-top:6px;font-weight:700">
-        <span>جمع قابل پرداخت</span>
+        <span>باقی‌مانده قابل پرداخت</span>
         <span style="color:var(--green)">${fmt(totalToman)} تومان = ${fmt(totalRial)} ریال</span>
       </div>
     </div>
@@ -2195,7 +2245,7 @@ async function payStaffSalary(staffId, name) {
     `<option value="${i+1}" ${i+1===defJm?'selected':''}>${mn}</option>`).join('');
 
   openModal(`✓ تأیید پرداخت حقوق — ${name}`, `
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + نقش‌ها × تعداد)</p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> · پرداخت‌شده: <b>${fmt(s.paid_toward_this_month || 0)}</b> · باقی‌مانده: <b>${fmt(s.remaining_this_month ?? s.expectedMonthly)} تومان</b></p>
 
     <div class="form-group full">
       <label class="form-label">تاریخ واقعی پرداخت (شمسی)</label>
