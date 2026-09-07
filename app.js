@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp184';
+const TP_ASSET_V = 'tp185';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -2056,6 +2056,15 @@ function _jalaliKey(str) {
   if(p.length!==3||p.some(isNaN))return 0;
   return p[0]*10000+p[1]*100+p[2];
 }
+function _sortPaymentsNewestFirst(rows) {
+  return (rows || []).slice().sort((a, b) => {
+    const dateDiff = _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali);
+    if (dateDiff) return dateDiff;
+    const createdDiff = (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0);
+    if (createdDiff) return createdDiff;
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
 function _daysUntil(str) {
   const [jy,jm,jd]=_jalaliParse(str);
   if(!jy)return 9999;
@@ -2799,8 +2808,8 @@ window.api = {
     add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _reconcileStudentPaymentReminders(p.student_id, row); _save(true,{urgent:true}); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_rowsForStudent('payments',sid).slice().reverse().map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
-    getAll: ()=>_P([..._db.payments].reverse().slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
+    getByStudent: (sid)=>_P(_sortPaymentsNewestFirst(_rowsForStudent('payments',sid)).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
+    getAll: ()=>_P(_sortPaymentsNewestFirst(_db.payments).slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
   },
 
   sessions: {
@@ -8916,6 +8925,7 @@ async function renderPayments(search = '') {
     const allPayments = await window.api.payments.getAll();
     let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
+    payments = _sortPaymentsNewestFirst(payments);
 
     let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
@@ -9562,7 +9572,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -9755,28 +9765,31 @@ function _appendSessionTimerToNote(note) {
   return withoutPreviousDuration ? `${withoutPreviousDuration}\n\n${durationLine}` : durationLine;
 }
 
+function _stripSessionNoteAutoGrow(ta) {
+  if (!ta) return;
+  delete ta.dataset.autogrowReady;
+  ta.dataset.noAutogrow = '1';
+  ta.style.height = '';
+  ta.style.overflowY = '';
+  ta.style.resize = '';
+}
 function _bindSessionTextareaVisibilityGuard() {
   const ta = document.getElementById('f-ses-note');
   if (!ta || ta.dataset.visibilityGuard === '1') return;
   ta.dataset.visibilityGuard = '1';
+  _stripSessionNoteAutoGrow(ta);
+  let caretRaf = 0;
   const keepCaretVisible = () => {
     if (!document.body.classList.contains('modal-keyboard-open')) return;
-    requestAnimationFrame(() => {
+    if (caretRaf) return;
+    caretRaf = requestAnimationFrame(() => {
+      caretRaf = 0;
       const nearEnd = ta.selectionStart >= Math.max(0, ta.value.length - 2);
       if (nearEnd) ta.scrollTop = ta.scrollHeight;
-      const body = ta.closest('.modal-body');
-      const wrap = ta.closest('.session-note-wrap');
-      if (body && wrap) {
-        const bodyRect = body.getBoundingClientRect();
-        const wrapRect = wrap.getBoundingClientRect();
-        const overflow = wrapRect.bottom - bodyRect.bottom + 10;
-        if (overflow > 0) body.scrollTop += overflow;
-      }
     });
   };
   ta.addEventListener('input', keepCaretVisible);
   ta.addEventListener('focus', keepCaretVisible);
-  ta.addEventListener('keyup', keepCaretVisible);
 }
 
 function _toggleAdvSes() {
@@ -9918,7 +9931,7 @@ async function openEditSession(sessionId) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -28682,7 +28695,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v184';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v185';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -30043,6 +30056,7 @@ function _voiceScanAndAttach(root) {
 // Modal هم دور آن اسکرول کند، ارتفاع Textarea با محتوا رشد می‌کند و فقط یک
 // اسکرول (همان محفظهٔ بیرونی) باقی می‌ماند.
 function _autoGrowTextarea(el) {
+  if (!el || el.dataset.noAutogrow === '1' || el.id === 'f-ses-note') return;
   el.style.overflowY = 'hidden';
   el.style.resize = 'none';
   const resize = () => {
@@ -30059,9 +30073,10 @@ function _autoGrowScanAndAttach(root) {
   const scope = root || document;
   // توجه: textarea.note-content-textarea در موبایل از Auto-Grow کنار گذاشته شده
   // (باعث jump کیبورد iOS می‌شد). در دسکتاپ (min-width:769px) auto-grow فعال است.
+  // توضیحات جلسه هم نباید auto-grow بگیرد: با هر حرف کل فرم جلسه reflow می‌شود.
   const isDesktop = window.matchMedia && window.matchMedia('(min-width:769px)').matches;
   const noteContentSel = isDesktop ? '' : ':not(.note-content-textarea)';
-  const sel = `textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview)${noteContentSel}`;
+  const sel = `textarea:not([data-autogrow-ready]):not([data-no-autogrow]):not(#fm-textarea):not(#share-msg-preview):not(#f-ses-note)${noteContentSel}`;
   const nodes = scope.querySelectorAll ? scope.querySelectorAll(sel) : [];
   nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
   if (scope.matches && scope.matches(sel)) {
