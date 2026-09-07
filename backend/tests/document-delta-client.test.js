@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.js'), 'utf8');
+const todosSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app-todos.js'), 'utf8');
 const dataSource = fs.readFileSync(path.resolve(__dirname, '..', 'routes', 'data.js'), 'utf8');
 
 test('ordinary workspace syncs send collection deltas instead of the full account document', () => {
@@ -35,9 +36,9 @@ test('todo completion merge prefers done state and later recurring dates', () =>
 });
 
 test('todo tick keeps complete operation after advancing a recurring task', () => {
-  assert.match(appSource, /const intendedOp = oldDone \? 'reopen' : 'complete'/);
-  assert.match(appSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
-  assert.match(appSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
+  assert.match(todosSource, /const intendedOp = oldDone \? 'reopen' : 'complete'/);
+  assert.match(todosSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
+  assert.match(todosSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
   assert.match(appSource, /تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند/);
   assert.match(appSource, /window\._todoDeltaChain \|\| _isTodoDeltaPendingReason\(\)/);
   assert.match(appSource, /function _scheduleTodoDeltaRetry\(/);
@@ -59,7 +60,7 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
-  assert.match(appSource, /_syncTodoDelta\(t, 'delete', removedTodos\)/);
+  assert.match(todosSource, /_syncTodoDelta\(t, 'delete', removedTodos\)/);
   assert.match(appSource, /operation === 'complete' \|\| operation === 'reopen' \|\| operation === 'delete'/);
 });
 

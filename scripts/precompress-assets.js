@@ -13,6 +13,9 @@ const ROOT = path.resolve(__dirname, '..');
 const TARGETS = [
   'app.js',
   'app-extra.js',
+  'app-sessions.js',
+  'app-finance.js',
+  'app-todos.js',
   'app.css',
   'tp-inline-bind.js',
   'sw.js',

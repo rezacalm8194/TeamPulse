@@ -25,6 +25,9 @@ function extractFunction(source, name) {
 
 const sandbox = {
   _db: {},
+  _studentSummaryCache: null,
+  _studentRelIndex: null,
+  _studentListSummaryCache: null,
   _enqueueDurableBusinessDelta() {},
   _save() {},
 };
@@ -42,6 +45,9 @@ for (const name of [
   '_packagePaymentDueDate',
   '_isPackageChargeable',
   '_resolvePackageType',
+  '_groupRowsByStudentId',
+  '_studentRelMaps',
+  '_rowsForStudent',
   '_studentSummary',
   '_reconcileStudentPaymentReminders',
   '_reconcileOverdueRemindersForSettledCustomers',
@@ -89,10 +95,11 @@ function shabnamWorkspace() {
 }
 
 test('receipt save and reminder list keep settled customers off overdue reminders', () => {
+  const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
   assert.match(appSource, /_enqueueDurableBusinessDelta\('payments', row, 'upsert'\); _reconcileStudentPaymentReminders\(p\.student_id, row\)/);
   assert.match(appSource, /_reconcileStudentPaymentReminders\(pay\.student_id, pay\)/);
   assert.match(appSource, /_reconcileOverdueRemindersForSettledCustomers\(\);/);
-  assert.match(appSource, /Number\(student\.balance \|\| 0\) <= 0 && due && due <= today/);
+  assert.match(financeSource, /Number\(student\.balance \|\| 0\) <= 0 && due && due <= today/);
 });
 
 test('settled previous-balance receipt consumes overdue package-renewal reminder', () => {

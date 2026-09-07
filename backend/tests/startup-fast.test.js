@@ -10,7 +10,14 @@ const serverJs = fs.readFileSync(path.join(root, 'backend', 'server.js'), 'utf8'
 
 test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-extra/);
-  assert.match(appHtml, /family=Vazirmatn:wght@400;600/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-sessions/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-finance/);
+  assert.doesNotMatch(appHtml, /rel="prefetch"[^>]*app-todos/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-sessions\.js/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-finance\.js/);
+  assert.doesNotMatch(appHtml, /<script src="\/app-todos\.js/);
+  assert.doesNotMatch(appHtml, /fonts\.(googleapis|gstatic)\.com/);
+  assert.match(appHtml, /href="\/fonts\/vazirmatn\.css"/);
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
@@ -35,11 +42,19 @@ test('health advertises the running client asset so stale phones can reload', ()
 test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /require\('compression'\)/);
   assert.match(serverJs, /compression_unavailable/);
-  assert.match(serverJs, /max-age=31536000, immutable/);
-  assert.match(serverJs, /function servePrecompressedStatic/);
-  assert.match(serverJs, /Content-Encoding/);
-  assert.match(serverJs, /st\.mtimeMs >= srcStat\.mtimeMs/);
+  assert.match(serverJs, /utils\/staticServing/);
+  assert.match(serverJs, /createServePrecompressedStatic/);
+  assert.match(serverJs, /setStaticCacheHeaders\(res, appHtmlPath/);
   assert.equal(fs.existsSync(path.join(root, 'scripts', 'precompress-assets.js')), true);
+  assert.equal(fs.existsSync(path.join(root, 'backend', 'utils', 'staticServing.js')), true);
+  const staticServing = fs.readFileSync(
+    path.join(root, 'backend', 'utils', 'staticServing.js'),
+    'utf8'
+  );
+  assert.match(staticServing, /max-age=31536000, immutable/);
+  assert.match(staticServing, /encodingQuality/);
+  assert.match(staticServing, /q\s*>\s*0/);
+  assert.match(staticServing, /UNVERSIONED_JS_CSS_CACHE/);
 });
 
 test('student form interpolates stored fields through escapeHtml', () => {

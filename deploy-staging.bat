@@ -86,13 +86,17 @@ git log --oneline --decorate -1
 echo.
 
 echo Running remote deploy via SSH...
-ssh -o BatchMode=yes -o ConnectTimeout=20 %STAGING_SSH% "cd %STAGING_DIR% && bash scripts/pachim-deploy-staging.sh"
+rem Refresh the deploy script from GitHub first so a dirty/old server tree
+rem can still run the hardened reset path.
+ssh -o BatchMode=yes -o ConnectTimeout=20 %STAGING_SSH% "cd %STAGING_DIR% && git fetch origin develop && git checkout origin/develop -- scripts/pachim-deploy-staging.sh && bash scripts/pachim-deploy-staging.sh"
 if errorlevel 1 (
   echo.
   echo Remote deploy failed.
   echo Push to GitHub may still have succeeded.
   echo You can finish in Pachim with:
   echo   cd /home/pachim/staging.teampulse.ir
+  echo   git fetch origin develop
+  echo   git checkout origin/develop -- scripts/pachim-deploy-staging.sh
   echo   bash scripts/pachim-deploy-staging.sh
   echo.
   pause

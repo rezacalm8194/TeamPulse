@@ -28,25 +28,28 @@ test('client loads business collections from paginated endpoints', () => {
 
 test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {
   const extra = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
+  const finance = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
   assert.match(app, /async function _ensureCompleteBusinessParts\(/);
-  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'payments'\]\)/);
-  assert.match(app, /_ensureCompleteBusinessParts\(\['students', 'reminders', 'payments', 'packages'\]\)/);
+  assert.match(finance, /_ensureCompleteBusinessParts\(\['students', 'payments'\]\)/);
+  assert.match(finance, /_ensureCompleteBusinessParts\(\['students', 'reminders', 'payments', 'packages'\]\)/);
   assert.match(extra, /await _ensureCompleteBusinessParts\(\[\s*'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'/);
   const dashboardParts = app.match(/dashboard:\s*\[([^\]]+)\]/)?.[1] || '';
   assert.match(dashboardParts, /'reminders'/);
 });
 
 test('todo archive and show-more can fetch additional server pages', () => {
+  const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
   assert.match(app, /function _loadMoreTodos\(/);
-  assert.match(app, /function _loadMoreTodoArchive\(/);
+  assert.match(todos, /function _loadMoreTodoArchive\(/);
   assert.match(app, /\/todos\/stats/);
   assert.doesNotMatch(app, /if \(!!todo\?\.archived === !!archived && !pending\) existing\.delete\(id\)/);
 });
 
 test('todo list virtualization passes the row renderer explicitly', () => {
+  const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
   assert.match(app, /function _todoRenderedListHtml\(items, key, renderFn\)/);
   assert.doesNotMatch(app, /renderFn\s*=\s*renderTodo/);
-  assert.match(app, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
+  assert.match(todos, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
 test('client assets stay version-synced across app.js, app.html, and sw.js', () => {
@@ -66,10 +69,11 @@ test('income tabs render 12 rows then a client-side load-more button', () => {
   assert.match(app, /function _visiblePaymentsSlice\(/);
   assert.match(app, /function _clampIncomeLists\(/);
   assert.match(app, /income-show-more/);
-  assert.match(app, /_visiblePaymentsSlice\('purchases'/);
-  assert.match(app, /_visiblePaymentsSlice\('payments'/);
-  assert.match(app, /_visiblePaymentsSlice\('reminders'/);
-  assert.match(app, /_visiblePaymentsSlice\('families'/);
+  const finance = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
+  assert.match(finance, /_visiblePaymentsSlice\('purchases'/);
+  assert.match(finance, /_visiblePaymentsSlice\('payments'/);
+  assert.match(finance, /_visiblePaymentsSlice\('reminders'/);
+  assert.match(finance, /_visiblePaymentsSlice\('families'/);
   const src = app.match(/function _visiblePaymentsSlice\(tab, items\) \{[\s\S]*?\n\}/)?.[0];
   assert.ok(src, 'slice helper must exist');
   const PAYMENTS_LIST_CHUNK = 12;
@@ -85,8 +89,9 @@ test('income tabs render 12 rows then a client-side load-more button', () => {
 });
 
 test('todo list loads every active page and classifies overdue from scheduled date', () => {
+  const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
   assert.match(app, /function _todoIsOverdue\(/);
-  assert.match(app, /const isOverdue = _todoIsOverdue\(t\)/);
+  assert.match(todos, /const isOverdue = _todoIsOverdue\(t\)/);
   assert.doesNotMatch(app, /_isTodoOverdue/);
   assert.match(app, /while \(!_todoPagingState\(false\)\.done && pages < 100\)/);
 });

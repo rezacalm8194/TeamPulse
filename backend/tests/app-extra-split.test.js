@@ -6,6 +6,24 @@ const path = require('path');
 const root = path.resolve(__dirname, '..', '..');
 const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const extraSource = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
+const sessionsSource = fs.readFileSync(path.join(root, 'app-sessions.js'), 'utf8');
+const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
+const todosSource = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
+
+test('startup bundle defers sessions/finance/todos page parse', () => {
+  assert.match(appSource, /function _tpEnsureChunk\(/);
+  assert.match(appSource, /_tpLazyFor\('app-sessions\.js'/);
+  assert.match(appSource, /_tpLazyFor\('app-finance\.js'/);
+  assert.match(appSource, /_tpLazyFor\('app-todos\.js'/);
+  assert.doesNotMatch(appSource, /async function renderSessions\(/);
+  assert.doesNotMatch(appSource, /async function renderPayments\(/);
+  assert.doesNotMatch(appSource, /function renderTodoList\(/);
+  assert.doesNotMatch(appSource, /async function renderCalendar\(/);
+  assert.match(sessionsSource, /async function renderSessions\(/);
+  assert.match(financeSource, /async function renderPayments\(/);
+  assert.match(todosSource, /function renderTodoList\(/);
+  assert.match(todosSource, /async function renderCalendar\(/);
+});
 
 test('startup bundle defers dashboard/staff/knowledge/tutorial parse', () => {
   assert.match(appSource, /function _tpEnsureExtra\(/);
@@ -60,11 +78,11 @@ test('staff role occurrence count is editable, persisted, and included in totals
 });
 
 test('customer account tab hosts the case financial table', () => {
-  assert.match(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
-  assert.doesNotMatch(appSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
+  assert.match(financeSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
+  assert.doesNotMatch(financeSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
   assert.match(appSource, /function studentAccountOverviewHtml\(/);
-  assert.match(appSource, /studentAccountOverviewHtml\(allStudents, filtered, \{/);
-  assert.match(appSource, /menuPrefix: 'acct'/);
+  assert.match(financeSource, /studentAccountOverviewHtml\(allStudents, filtered, \{/);
+  assert.match(financeSource, /menuPrefix: 'acct'/);
   assert.match(appSource, /<th>پکیج‌ها<\/th>/);
   assert.match(appSource, /<th>مانده حساب<\/th>/);
   assert.match(appSource, /<th>وضعیت<\/th>/);
