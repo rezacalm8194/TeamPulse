@@ -5,22 +5,23 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.resolve(__dirname, '../../app.js'), 'utf8');
+const sessionsSource = fs.readFileSync(path.resolve(__dirname, '../../app-sessions.js'), 'utf8');
 
-function functionSource(name) {
-  const match = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+function functionSource(name, from = source) {
+  const match = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(from);
   assert.ok(match, `${name} must exist`);
-  const open = source.indexOf('{', match.index);
+  const open = from.indexOf('{', match.index);
   let depth = 0;
-  for (let i = open; i < source.length; i += 1) {
-    if (source[i] === '{') depth += 1;
-    if (source[i] === '}' && --depth === 0) return source.slice(match.index, i + 1);
+  for (let i = open; i < from.length; i += 1) {
+    if (from[i] === '{') depth += 1;
+    if (from[i] === '}' && --depth === 0) return from.slice(match.index, i + 1);
   }
   throw new Error(name);
 }
 
-function load(name, context) {
+function load(name, context, from = source) {
   const sandbox = vm.createContext(context);
-  return vm.runInContext(`${functionSource(name)}\n${name}`, sandbox);
+  return vm.runInContext(`${functionSource(name, from)}\n${name}`, sandbox);
 }
 
 function loadMany(names, context) {
@@ -68,7 +69,7 @@ test('sessions board filter matches open, overdue, no month and key columns', ()
     _todayJalali: () => [1405, 6, 15],
     _jalaliParse: str => String(str || '').split('/').map(Number),
     _sessionFollowupOverdue: f => !f.done && f.due_date_jalali === 'past',
-  });
+  }, sessionsSource);
 
   const open = { sessions: [{ followups: [{ done: false, due_date_jalali: '' }], date_jalali: '1405/05/01', importance: 'normal' }] };
   const overdue = { sessions: [{ followups: [{ done: false, due_date_jalali: 'past' }], date_jalali: '1405/05/01', importance: 'normal' }] };
@@ -127,5 +128,5 @@ test('asset versions stay aligned after session/archive follow-up features', () 
   for (const match of html.matchAll(/\?v=tp(\d+)/g)) assert.equal(match[1], version);
   assert.match(source, /loss_reason/);
   assert.match(source, /session_followup/);
-  assert.match(source, /tp_sessions_board_filter/);
+  assert.match(sessionsSource, /tp_sessions_board_filter/);
 });
