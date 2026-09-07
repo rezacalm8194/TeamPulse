@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp187';
+const TP_ASSET_V = 'tp188';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2574,7 +2574,7 @@ function _staffSummary(s) {
   const [tjy,tjm]=_todayJalali();
   const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===s.id&&m.jy===tjy&&m.jm===tjm&&m.paid);
   const rem=_db.staff_reminders
-    .filter(r=>r.staff_id===s.id&&!r.done)
+    .filter(r=>String(r.staff_id)===String(s.id)&&!r.done)
     .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
   const daysUntil=rem?_daysUntil(rem.due_date_jalali):null;
   return{...s,roles,expectedMonthly,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
@@ -3229,21 +3229,39 @@ window.api = {
       _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||'',card_number:p.card_number||'',person_type:p.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',payment_timing:paymentTiming,note:p.note||'',created_at:new Date().toISOString()});
       const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const repeatMonths = p.repeat_months ?? 1;
-      if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const firstDue=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...firstDue),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
+      if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const firstDue=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,repeatMonths);const created={id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...firstDue),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()};_db.staff_reminders.push(created);_persistStaffReminderRow(created);}
       _save(); return _P({id});
     },
     update: (p)=>{
-      const s=_db.staff.find(x=>x.id===p.id); if(!s)return _P({ok:false});
+      const s=_db.staff.find(x=>String(x.id)===String(p.id)); if(!s)return _P({ok:false});
       const oldStart=s.start_date||'';
       const oldTiming=s.payment_timing==='start'?'start':'end';
+      const oldSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
       const paymentTiming=p.payment_timing==='start'?'start':'end';
       Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||s.email||'',card_number:p.card_number||'',person_type:p.person_type||s.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,payment_timing:paymentTiming,note:p.note||''});
       if(p.start_date)s.start_date=p.start_date;
       const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
-      const er=_db.staff_reminders.find(r=>r.staff_id===s.id);
+      const er=_db.staff_reminders.find(r=>String(r.staff_id)===String(s.id));
       const rm=p.repeat_months!==undefined?p.repeat_months:(er?.repeat_months??1);
-      if(rm>0){if(er){er.repeat_months=rm;er.amount=totalSalary;if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
-      else if(rm===0&&er)_db.staff_reminders=_db.staff_reminders.filter(r=>r.staff_id!==s.id);
+      if(rm>0){
+        if(er){
+          er.repeat_months=rm;
+          if(er.amount==null || Number(er.amount)===Number(oldSalary)) er.amount=totalSalary;
+          if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}
+          else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}
+          _persistStaffReminderRow(er);
+        }else if(s.start_date){
+          const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);
+          const created={id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()};
+          _db.staff_reminders.push(created);
+          _persistStaffReminderRow(created);
+        }
+      }
+      else if(rm===0&&er){
+        _recordDeletedItems('staff_reminders', er.id);
+        _db.staff_reminders=_db.staff_reminders.filter(r=>String(r.staff_id)!==String(s.id));
+        _persistStaffReminderRow(er, 'delete');
+      }
       _save(); return _P({ok:true});
     },
     delete: (id)=>{
@@ -3274,7 +3292,7 @@ window.api = {
       _db.staff_payments.push(payment);
       _syncStaffPaymentExpense(payment);
       const rem=_db.staff_reminders
-        .filter(x=>x.staff_id===s.id&&!x.done)
+        .filter(x=>String(x.staff_id)===String(s.id)&&!x.done)
         .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
       if(rem){
         if((rem.repeat_months||0)>0){
@@ -3286,6 +3304,7 @@ window.api = {
           rem.done=true;
         }
         rem.notified_levels=[];
+        _persistStaffReminderRow(rem);
       }
       (s.roles||[]).forEach(r=>{r.count=0;});
       _save(); return _P({ok:true});
@@ -3316,16 +3335,47 @@ window.api = {
     getAll: ()=>{
       const[tjy,tjm]=_todayJalali();
       return _P(_db.staff_reminders.map(r=>{
-        const s=_db.staff.find(x=>x.id===r.staff_id);
+        const s=_db.staff.find(x=>String(x.id)===String(r.staff_id));
         const sum=s?_staffSummary(s):null;
-        const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===r.staff_id&&m.jy===tjy&&m.jm===tjm&&m.paid);
+        const paidThisMonth=_db.staff_monthly.some(m=>String(m.staff_id)===String(r.staff_id)&&m.jy===tjy&&m.jm===tjm&&m.paid);
         return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:sum?sum.expectedMonthly:r.amount,paid_this_month:paidThisMonth};
       }).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali)));
     },
-    add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _recordDeletedItems('staff_reminders', id); _db.staff_reminders=_db.staff_reminders.filter(x=>x.id!==id); _forceNextServerSync(); _save(true,{urgent:true}); return _P({ok:true}); },
-    markPaid: (p)=>{ const r=_db.staff_reminders.find(x=>x.id===p.id); if(r){if(r.repeat_months>0){const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);const next=_addMonths(jy,jm,jd,r.repeat_months);r.due_date_jalali=_formatJalali(...next);r.done=false;r.notified_levels=[];}else r.done=true;_save();} return _P({ok:true}); },
+    add: (p)=>{
+      const createdAt=new Date().toISOString();
+      const row={id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:createdAt,updated_at:createdAt};
+      _db.staff_reminders.push(row);
+      _persistStaffReminderRow(row);
+      _save(true,{urgent:true});
+      return _P({ok:true});
+    },
+    update: (p)=>{
+      const r=_db.staff_reminders.find(x=>String(x.id)===String(p.id));
+      if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
+      Object.assign(r,p.patch||{});
+      _persistStaffReminderRow(r);
+      _save(true,{urgent:true});
+      return _P({ok:true});
+    },
+    delete: (id)=>{
+      const row=(_db.staff_reminders||[]).find(x=>String(x.id)===String(id));
+      _recordDeletedItems('staff_reminders', id);
+      _db.staff_reminders=_db.staff_reminders.filter(x=>String(x.id)!==String(id));
+      if(row) _persistStaffReminderRow(row, 'delete');
+      _forceNextServerSync();
+      _save(true,{urgent:true});
+      return _P({ok:true});
+    },
+    markPaid: (p)=>{
+      const r=_db.staff_reminders.find(x=>String(x.id)===String(p.id));
+      if(r){
+        if(r.repeat_months>0){const[jy,jm,jd]=_jalaliParse(r.due_date_jalali);const next=_addMonths(jy,jm,jd,r.repeat_months);r.due_date_jalali=_formatJalali(...next);r.done=false;r.notified_levels=[];}
+        else r.done=true;
+        _persistStaffReminderRow(r);
+        _save(true,{urgent:true});
+      }
+      return _P({ok:true});
+    },
   },
 
   staffAdjustments: {
@@ -4521,6 +4571,22 @@ const _KNOWLEDGE_SESSION_REFRESH_KEYS = new Set(['instructions', 'guide_categori
 const BUSINESS_PAGINATED_KEYS = Object.freeze([
   'students', 'sessions', 'payments', 'packages', 'families', 'reminders', 'expenses', 'wallet_tx',
 ]);
+const _LIVE_DOCUMENT_OVERLAY_KEYS = Object.freeze([
+  'staff', 'staff_payments', 'staff_reminders', 'staff_adjustments', 'staff_monthly',
+  'staff_roles', 'staff_role_entries',
+]);
+function _overlayInFlightLocalCollections(target, extraKeys = []) {
+  if (!target || !_db) return target;
+  [...new Set([...(Array.isArray(extraKeys) ? extraKeys : []), ..._LIVE_DOCUMENT_OVERLAY_KEYS])].forEach(key => {
+    if (Array.isArray(_db[key])) target[key] = _cloneData(_db[key]);
+  });
+  return target;
+}
+function _localPendingWithInFlightEdits(localBeforeLoad, extraKeys = []) {
+  const snapshot = localBeforeLoad ? _cloneData(localBeforeLoad) : (_db ? _cloneData(_db) : null);
+  if (!snapshot) return snapshot;
+  return _overlayInFlightLocalCollections(snapshot, extraKeys);
+}
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
   students: ['students', 'packages', 'payments', 'families', 'case_forms'],
@@ -16393,6 +16459,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
   } else {
     merged._lastSaved = Math.max(Date.now(), localBeforeLoad._lastSaved || 0, merged._lastSaved || 0);
   }
+  if (typeof _applyDurableBusinessDeltasToLocal === 'function') _applyDurableBusinessDeltasToLocal(merged);
   return merged;
 }
 
@@ -16597,6 +16664,14 @@ function _writeDurableBusinessDeltaQueue(list) {
   }
 }
 
+function _persistStaffReminderRow(row, operation = 'upsert') {
+  if (!row || row.id == null) return;
+  if (operation !== 'delete') row.updated_at = new Date().toISOString();
+  if (typeof _enqueueDurableBusinessDelta === 'function') {
+    _enqueueDurableBusinessDelta('staff_reminders', row, operation);
+  }
+}
+
 function _enqueueDurableBusinessDelta(collection, item, operation = 'upsert') {
   if (!collection || !item || item.id == null) return;
   const id = String(item.id);
@@ -16612,6 +16687,42 @@ function _enqueueDurableBusinessDelta(collection, item, operation = 'upsert') {
     enqueuedAt: Date.now(),
   });
   _writeDurableBusinessDeltaQueue(list);
+}
+
+function _applyDurableBusinessDeltasToLocal(data = _db) {
+  const queue = typeof _readDurableBusinessDeltaQueue === 'function' ? _readDurableBusinessDeltaQueue() : [];
+  if (!queue.length || !data || typeof data !== 'object') return false;
+  let changed = false;
+  queue.forEach(entry => {
+    const key = entry?.collection;
+    if (!key) return;
+    if (!Array.isArray(data[key])) data[key] = [];
+    if (entry.operation === 'delete') {
+      const before = data[key].length;
+      data[key] = data[key].filter(row => String(row?.id) !== String(entry.id));
+      if (data[key].length !== before) changed = true;
+      return;
+    }
+    const item = entry.item;
+    if (!item || item.id == null) return;
+    const idx = data[key].findIndex(row => String(row?.id) === String(item.id));
+    if (idx >= 0) {
+      const live = data[key][idx];
+      const liveTs = typeof _businessRowTimestamp === 'function' ? _businessRowTimestamp(live) : 0;
+      const itemTs = typeof _businessRowTimestamp === 'function' ? _businessRowTimestamp(item) : 0;
+      const same = typeof _isolationItemHash === 'function'
+        ? _isolationItemHash(live) === _isolationItemHash(item)
+        : JSON.stringify(live) === JSON.stringify(item);
+      if (!same && itemTs >= liveTs) {
+        data[key][idx] = _cloneData(item);
+        changed = true;
+      }
+    } else {
+      data[key].push(_cloneData(item));
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 function _clearDurableBusinessDeltaQueue() {
@@ -16634,7 +16745,10 @@ function _mergeDurableBusinessDeltasIntoCollections(collections) {
       return;
     }
     const live = (_db?.[key] || []).find(row => String(row?.id) === String(entry.id));
-    const row = live || entry.item;
+    const queued = entry.item;
+    const row = !live ? queued
+      : ((typeof _businessRowTimestamp === 'function' && queued &&
+          _businessRowTimestamp(queued) >= _businessRowTimestamp(live)) ? queued : live);
     if (!row || row.id == null) return;
     const idx = change.upsert.findIndex(item => String(item?.id) === String(row.id));
     if (idx >= 0) change.upsert[idx] = row;
@@ -17579,6 +17693,7 @@ function _mergeServerLoadedCollectionsIntoLocal(serverData) {
       }
     }
   });
+  if (typeof _applyDurableBusinessDeltasToLocal === 'function' && _applyDurableBusinessDeltasToLocal(_db)) changed = true;
   return changed;
 }
 
@@ -17735,9 +17850,7 @@ async function _loadFromServer() {
       _invalidateUnfetchedDocumentParts(payload);
       if (payload.data) {
         const overlayBase = localBeforeLoad ? _cloneData(localBeforeLoad) : _cloneData(_db);
-        businessKeys.forEach(key => {
-          if (Array.isArray(_db?.[key])) overlayBase[key] = _cloneData(_db[key]);
-        });
+        _overlayInFlightLocalCollections(overlayBase, businessKeys);
         if (remoteDocumentChanged && Array.isArray(_db?.todos)) overlayBase.todos = _cloneData(_db.todos);
         payload.data = _overlayPartialServerData(overlayBase, payload);
       }
@@ -17832,7 +17945,7 @@ async function _loadFromServer() {
       return false;
     }
     if (remoteDocumentChanged) {
-      _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data), {
+      _db = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), _cloneData(data), {
         keepUnsyncedOnly: true,
         teamSafe: !!teamSession,
       });
@@ -17908,7 +18021,7 @@ async function _loadFromServer() {
       const teamLocalDiverged = _localDataDivergedFromServerBaseline(localBeforeLoad);
       if (teamLocalHasData && _serverDataChanged(data, localBeforeLoad) && teamLocalDiverged !== false) {
         const serverSnapshot = _cloneData(data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data), { teamSafe: true });
+        _db = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), _cloneData(data), { teamSafe: true });
         _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
         const key = window._activeDBKey || _teamActiveDBKey();
@@ -17971,7 +18084,7 @@ async function _loadFromServer() {
           return mergedTodos;
         }
         const serverSnapshot = _cloneData(data);
-        const merged = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, data);
+        const merged = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), data);
         _db = merged;
         _mergeServerTodosIntoLocal(serverSnapshot);
         _migrate(_db);
@@ -17997,7 +18110,7 @@ async function _loadFromServer() {
       if (localHasMeaningfulData && _serverDataChanged(data, localBeforeLoad) && localDiverged !== false) {
         const beforeMergeFingerprint = _dataFingerprint(_serverDataSignature(localBeforeLoad));
         const serverSnapshot = _cloneData(data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
+        _db = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), _cloneData(data));
         _migrate(_db);
         const serverTodoStateChanged = _mergeServerTodosIntoLocal(serverSnapshot);
         const mergedChanged = beforeMergeFingerprint !== _dataFingerprint(_serverDataSignature(_db));
@@ -18015,7 +18128,7 @@ async function _loadFromServer() {
       if ((localEmpty && _serverDataChanged(data, localBeforeLoad)) || (serverTime > localTime)) {
         if (!localEmpty && memoryDiverged) {
           const serverSnapshot = _cloneData(data);
-          _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
+          _db = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), _cloneData(data));
           _mergeServerTodosIntoLocal(serverSnapshot);
           _migrate(_db);
           const key = window._activeDBKey || DB_KEY;
@@ -18026,7 +18139,7 @@ async function _loadFromServer() {
           console.warn('[TeamPulse] merged in-memory local todos with newer server data');
           return true;
         }
-        _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
+        _db = _mergeLocalPendingChangesIntoOwnerData(_localPendingWithInFlightEdits(localBeforeLoad), _cloneData(data));
         _migrate(_db);
         const key = window._activeDBKey || 'coaching_reza_v3';
         _persistDatabaseSnapshot(key, _db);
@@ -22903,7 +23016,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v187';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v188';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
