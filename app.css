@@ -1327,6 +1327,10 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .form-textarea::placeholder { color: var(--text3); opacity: .8; }
 
+/* Isolate session-note layout so typing does not reflow the rest of the editor. */
+.session-editor-modal .session-note-wrap { contain: layout style; }
+.session-editor-modal #f-ses-note { overflow-y: auto; }
+
 /* ── Voice Input (تبدیل گفتار به متن) ───────────────────── */
 .voice-mic-btn {
   position: absolute;
@@ -3992,6 +3996,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
     min-height: 0 !important;
     display: flex !important;
     flex-direction: column !important;
+    contain: layout style;
   }
   body.modal-keyboard-open .session-editor-modal .session-note-wrap .rich-toolbar {
     flex: 0 0 auto !important;

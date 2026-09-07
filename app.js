@@ -9572,7 +9572,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -9765,28 +9765,31 @@ function _appendSessionTimerToNote(note) {
   return withoutPreviousDuration ? `${withoutPreviousDuration}\n\n${durationLine}` : durationLine;
 }
 
+function _stripSessionNoteAutoGrow(ta) {
+  if (!ta) return;
+  delete ta.dataset.autogrowReady;
+  ta.dataset.noAutogrow = '1';
+  ta.style.height = '';
+  ta.style.overflowY = '';
+  ta.style.resize = '';
+}
 function _bindSessionTextareaVisibilityGuard() {
   const ta = document.getElementById('f-ses-note');
   if (!ta || ta.dataset.visibilityGuard === '1') return;
   ta.dataset.visibilityGuard = '1';
+  _stripSessionNoteAutoGrow(ta);
+  let caretRaf = 0;
   const keepCaretVisible = () => {
     if (!document.body.classList.contains('modal-keyboard-open')) return;
-    requestAnimationFrame(() => {
+    if (caretRaf) return;
+    caretRaf = requestAnimationFrame(() => {
+      caretRaf = 0;
       const nearEnd = ta.selectionStart >= Math.max(0, ta.value.length - 2);
       if (nearEnd) ta.scrollTop = ta.scrollHeight;
-      const body = ta.closest('.modal-body');
-      const wrap = ta.closest('.session-note-wrap');
-      if (body && wrap) {
-        const bodyRect = body.getBoundingClientRect();
-        const wrapRect = wrap.getBoundingClientRect();
-        const overflow = wrapRect.bottom - bodyRect.bottom + 10;
-        if (overflow > 0) body.scrollTop += overflow;
-      }
     });
   };
   ta.addEventListener('input', keepCaretVisible);
   ta.addEventListener('focus', keepCaretVisible);
-  ta.addEventListener('keyup', keepCaretVisible);
 }
 
 function _toggleAdvSes() {
@@ -9928,7 +9931,7 @@ async function openEditSession(sessionId) {
       <div class="form-group full session-note-wrap">
         <label class="form-label">توضیحات جلسه</label>
         ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
+        <textarea class="form-textarea" id="f-ses-note" rows="4" data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
       </div>
 
       <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
@@ -30053,6 +30056,7 @@ function _voiceScanAndAttach(root) {
 // Modal هم دور آن اسکرول کند، ارتفاع Textarea با محتوا رشد می‌کند و فقط یک
 // اسکرول (همان محفظهٔ بیرونی) باقی می‌ماند.
 function _autoGrowTextarea(el) {
+  if (!el || el.dataset.noAutogrow === '1' || el.id === 'f-ses-note') return;
   el.style.overflowY = 'hidden';
   el.style.resize = 'none';
   const resize = () => {
@@ -30069,9 +30073,10 @@ function _autoGrowScanAndAttach(root) {
   const scope = root || document;
   // توجه: textarea.note-content-textarea در موبایل از Auto-Grow کنار گذاشته شده
   // (باعث jump کیبورد iOS می‌شد). در دسکتاپ (min-width:769px) auto-grow فعال است.
+  // توضیحات جلسه هم نباید auto-grow بگیرد: با هر حرف کل فرم جلسه reflow می‌شود.
   const isDesktop = window.matchMedia && window.matchMedia('(min-width:769px)').matches;
   const noteContentSel = isDesktop ? '' : ':not(.note-content-textarea)';
-  const sel = `textarea:not([data-autogrow-ready]):not(#fm-textarea):not(#share-msg-preview)${noteContentSel}`;
+  const sel = `textarea:not([data-autogrow-ready]):not([data-no-autogrow]):not(#fm-textarea):not(#share-msg-preview):not(#f-ses-note)${noteContentSel}`;
   const nodes = scope.querySelectorAll ? scope.querySelectorAll(sel) : [];
   nodes.forEach((el) => { el.dataset.autogrowReady = '1'; _autoGrowTextarea(el); });
   if (scope.matches && scope.matches(sel)) {
