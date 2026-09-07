@@ -212,7 +212,15 @@ app.get('/api/health', (req, res) => res.json({
 }));
 app.get('/share/:token', require('./routes/share').serveShare);
 app.get('/pay/bale/:id', require('./routes/bale').servePayPage);
-app.get('/app', applyCsp, (req,res) => res.sendFile(path.join(__dirname, '../app.html')));
+const {
+  setStaticCacheHeaders,
+  createServePrecompressedStatic,
+} = require('./utils/staticServing');
+app.get('/app', applyCsp, (req, res) => {
+  const appHtmlPath = path.join(__dirname, '../app.html');
+  setStaticCacheHeaders(res, appHtmlPath, req, cspValue);
+  res.sendFile(appHtmlPath);
+});
 app.use('/api', (req, res) => res.status(404).json({
   error: 'api_route_not_found',
   path: req.originalUrl,
@@ -228,66 +236,24 @@ function blockSensitiveStatic(req, res, next) {
   }
   next();
 }
-function setStaticCacheHeaders(res, filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.html') {
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Content-Security-Policy', cspValue);
-  } else if (/\.(?:css|js)$/i.test(ext)) {
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  } else if (/\.(?:png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
-    res.setHeader('Cache-Control', 'public, max-age=604800');
-  }
-}
 const STATIC_ROOT = path.join(__dirname, '../');
-const PRECOMPRESS_TYPES = {
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.json': 'application/json; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
-};
-function servePrecompressedStatic(req, res, next) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-  if (req.headers.range) return next();
-  const rel = decodeURIComponent((req.path || '').split('?')[0] || '');
-  if (!rel || rel.includes('\0') || rel.includes('\\')) return next();
-  if (!/\.(?:js|mjs|css|html|svg|json)$/i.test(rel)) return next();
-  const abs = path.resolve(STATIC_ROOT, '.' + rel);
-  if (!abs.startsWith(STATIC_ROOT)) return next();
-  let srcStat;
-  try { srcStat = fs.statSync(abs); } catch (_) { return next(); }
-  if (!srcStat.isFile()) return next();
-  const accept = String(req.headers['accept-encoding'] || '');
-  const candidates = [];
-  if (/\bbr\b/.test(accept)) candidates.push({ file: abs + '.br', encoding: 'br' });
-  if (/\bgzip\b/.test(accept)) candidates.push({ file: abs + '.gz', encoding: 'gzip' });
-  const hit = candidates.find((item) => {
-    try {
-      const st = fs.statSync(item.file);
-      return st.isFile() && st.mtimeMs >= srcStat.mtimeMs;
-    } catch (_) { return false; }
-  });
-  if (!hit) return next();
-  const ext = path.extname(abs).toLowerCase();
-  if (PRECOMPRESS_TYPES[ext]) res.setHeader('Content-Type', PRECOMPRESS_TYPES[ext]);
-  res.setHeader('Content-Encoding', hit.encoding);
-  res.setHeader('Vary', 'Accept-Encoding');
-  setStaticCacheHeaders(res, abs);
-  return res.sendFile(hit.file, (err) => {
-    if (err) next(err);
-  });
-}
+const servePrecompressedStatic = createServePrecompressedStatic({
+  root: STATIC_ROOT,
+  cspValue,
+});
 app.use(blockSensitiveStatic);
 app.use(servePrecompressedStatic);
 app.use(express.static(STATIC_ROOT, {
   dotfiles: 'ignore',
   index: false,
   fallthrough: true,
-  setHeaders: setStaticCacheHeaders,
+  setHeaders: (res, filePath) => setStaticCacheHeaders(res, filePath, res.req, cspValue),
 }));
-app.use(applyCsp, (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
+app.use(applyCsp, (req, res) => {
+  const indexPath = path.join(__dirname, '../index.html');
+  setStaticCacheHeaders(res, indexPath, req, cspValue);
+  res.sendFile(indexPath);
+});
 const HOST = process.env.HOST || '127.0.0.1';
 const server = app.listen(PORT, HOST, () => {
   logger.info('application_started', { port: PORT, host: HOST });
