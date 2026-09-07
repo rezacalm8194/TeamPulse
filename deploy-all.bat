@@ -54,6 +54,15 @@ if /i not "%CURRENT_BRANCH%"=="develop" (
   exit /b 1
 )
 
+echo Integrating the latest remote develop...
+git merge --no-edit origin/develop
+if errorlevel 1 (
+  echo.
+  echo Merge of origin/develop failed. Resolve the conflict before deploying.
+  pause
+  exit /b 1
+)
+
 echo Integrating the latest production commit...
 git merge --no-edit origin/main
 if errorlevel 1 (
