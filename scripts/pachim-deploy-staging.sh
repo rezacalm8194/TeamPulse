@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Paste this as the Pachim staging site deploy script (or run it on the server).
-# Pulls develop, keeps staging backend/.env, installs deps, restarts PM2.
+# Staging deploy for Pachim / SSH.
+# Syncs to origin/develop even with dirty tracked files. Keeps staging
+# backend/.env, installs deps, restarts PM2, and health-checks.
 
 set -euo pipefail
 
@@ -17,17 +18,15 @@ if [ -f "$ENV_FILE" ]; then
   cp -a "$ENV_FILE" "$ENV_BACKUP"
 fi
 
-# Drop tracked .env edits that block merge, then pull.
-if git ls-files --error-unmatch backend/.env >/dev/null 2>&1; then
-  git checkout HEAD -- backend/.env || true
-fi
-if git ls-files --error-unmatch backend/.env.save >/dev/null 2>&1; then
-  git checkout HEAD -- backend/.env.save || true
-fi
+git merge --abort >/dev/null 2>&1 || true
+git rebase --abort >/dev/null 2>&1 || true
 
-git pull origin "$BRANCH"
+git fetch origin "$BRANCH"
+git checkout -B "$BRANCH" "origin/$BRANCH"
+git reset --hard "origin/$BRANCH"
 
 if [ -f "$ENV_BACKUP" ]; then
+  mkdir -p "$(dirname "$ENV_FILE")"
   cp -a "$ENV_BACKUP" "$ENV_FILE"
   rm -f "$ENV_BACKUP"
 fi
