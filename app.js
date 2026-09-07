@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp180';
+const TP_ASSET_V = 'tp181';
 window._tpExtraReady = false;
 window._tpExtraPromise = null;
 function _tpExtraSrc() { return '/app-extra.js?v=' + TP_ASSET_V; }
@@ -6890,6 +6890,7 @@ async function refreshOpenStudentSurface() {
 function setStuChip(val) {
   stuChip = val;
   _studentListShown = STUDENT_LIST_CHUNK;
+  _paymentsListShown.families = PAYMENTS_LIST_CHUNK;
   refreshStudentAccountView();
 }
 function toggleStuChipsExpanded() {
@@ -6898,8 +6899,11 @@ function toggleStuChipsExpanded() {
 }
 const STUDENT_LIST_CHUNK = 20;
 const SESSION_BOARD_COLUMN_CHUNK = 8;
+const PAYMENTS_LIST_CHUNK = 12;
 let _studentListShown = STUDENT_LIST_CHUNK;
 let _sessionBoardShown = SESSION_BOARD_COLUMN_CHUNK;
+const _paymentsListShown = { purchases: PAYMENTS_LIST_CHUNK, payments: PAYMENTS_LIST_CHUNK, reminders: PAYMENTS_LIST_CHUNK, families: PAYMENTS_LIST_CHUNK };
+let _paymentsListRenderKey = '';
 let _studentsSearchTimer = null;
 let _sessionsSearchTimer = null;
 function _sessionBoardShowMore() {
@@ -7111,7 +7115,7 @@ function studentAccountMobileHtml(filtered, menuPrefix) {
       </div>`;
   }).join('')}</div>`;
 }
-function studentAccountOverviewHtml(students, filtered, { showSessions = true, menuPrefix = 'stu' } = {}) {
+function studentAccountOverviewHtml(students, filtered, { showSessions = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null } = {}) {
   const totalDebt = students.reduce((a, s) => a + Math.max(0, s.balance), 0);
   const totalPaid = students.reduce((a, s) => a + s.totalPaid, 0);
   const debtorCount = students.filter(s => s.balance > 0).length;
@@ -7127,6 +7131,10 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
       <div class="stat-value">${fa(debtorCount)} / ${fa(settledCount)}</div>
       <div class="stat-sub">نفر</div>
     </div>`;
+  const view = slice || _visibleStudentSlice(filtered);
+  const moreHtml = moreButtonHtml != null
+    ? moreButtonHtml
+    : (view.remaining > 0 ? `<button type="button" class="todo-show-more" onclick="_studentShowMoreList()">نمایش بیشتر · ${fa(view.remaining)} مورد باقی‌مانده</button>` : '');
   return `
   <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
@@ -7163,10 +7171,10 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
           <th>عملیات</th>
         </tr>
       </thead>
-      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(_visibleStudentSlice(filtered).rows, menuPrefix))}</tbody>
+      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(view.rows, menuPrefix))}</tbody>
     </table></div>
-    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(_visibleStudentSlice(filtered).rows, menuPrefix) : "")}
-    ${(_visibleStudentSlice(filtered).remaining > 0 ? `<button type="button" class="todo-show-more" onclick="_studentShowMoreList()">نمایش بیشتر · ${fa(_visibleStudentSlice(filtered).remaining)} مورد باقی‌مانده</button>` : "")}
+    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(view.rows, menuPrefix) : "")}
+    ${moreHtml}
   </div>`;
 }
 function goStudentSection(page) {
@@ -8738,6 +8746,30 @@ async function saveGeneralPayment() {
 // ════════════════════════════════════════════════════════════════════════════
 // PAYMENTS PAGE
 // ════════════════════════════════════════════════════════════════════════════
+function _syncPaymentsListShown(tab, search) {
+  const key = String(tab || '') + '\0' + String(search || '');
+  if (_paymentsListRenderKey === key) return;
+  _paymentsListRenderKey = key;
+  _paymentsListShown[tab] = PAYMENTS_LIST_CHUNK;
+}
+function _visiblePaymentsSlice(tab, items) {
+  const list = Array.isArray(items) ? items : [];
+  const cap = Math.max(PAYMENTS_LIST_CHUNK, Number(_paymentsListShown[tab] || PAYMENTS_LIST_CHUNK));
+  return { rows: list.slice(0, cap), remaining: Math.max(0, list.length - cap), cap };
+}
+function _paymentsMoreButtonHtml(tab, remaining) {
+  if (!(remaining > 0)) return '';
+  return `<button type="button" class="todo-show-more" onclick="_paymentsShowMore('${tab}')">موارد بیشتر +</button>`;
+}
+function _paymentsShowMore(tab) {
+  const key = String(tab || _paymentsTab || 'purchases');
+  _paymentsListShown[key] = (_paymentsListShown[key] || PAYMENTS_LIST_CHUNK) + PAYMENTS_LIST_CHUNK;
+  const search = currentStudentAccountSearch();
+  if (currentPage === 'payments') return renderPayments(search);
+  if (key === 'reminders') return renderReminders(search);
+  if (key === 'families') return renderFamilies(false, search);
+  return renderPayments(search);
+}
 function accountCustomerTabsHtml(tab, search = '') {
   return `
     <div class="payments-toolbar account-tabs-toolbar">
@@ -8783,6 +8815,7 @@ async function refreshReminderSurface(search = '') {
 
 async function renderPayments(search = '') {
   const tab = _paymentsTab;
+  _syncPaymentsListShown(tab, search);
 
   updateTopbarActions(accountCustomerTopbarHtml(tab, search));
 
@@ -8816,10 +8849,11 @@ async function renderPayments(search = '') {
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
+    const purchaseSlice = _visiblePaymentsSlice('purchases', packages);
     if (packages.length === 0) {
       html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
     } else {
-      packages.forEach(p => {
+      purchaseSlice.rows.forEach(p => {
         const saleMenuId = `sale-menu-${p.id}`;
         html += `<tr>
           <td data-label="مشتری" style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
@@ -8845,9 +8879,9 @@ async function renderPayments(search = '') {
         </tr>`;
       });
     }
-    html += `</tbody></table></div>`;
+    html += `</tbody></table>${_paymentsMoreButtonHtml('purchases', purchaseSlice.remaining)}</div>`;
     const packagePaging = _businessPagingState('packages');
-    const morePackages = packagePaging.done ? '' :
+    const morePackages = (purchaseSlice.remaining > 0 || packagePaging.done) ? '' :
       '<button class="todo-show-more" onclick="_loadMoreBusiness(\'packages\')">دریافت فروش‌های بیشتر</button>';
     setContent(html + morePackages);
 
@@ -8861,10 +8895,11 @@ async function renderPayments(search = '') {
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
         <tbody>`;
+    const paymentSlice = _visiblePaymentsSlice('payments', payments);
     if (payments.length === 0) {
       html += `<tr><td colspan="8"><div class="empty"><span>💳</span>پرداختی ثبت نشده</div></td></tr>`;
     } else {
-      payments.forEach(p => {
+      paymentSlice.rows.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
           <td data-label="مشتری" style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</button></td>
@@ -8887,9 +8922,9 @@ async function renderPayments(search = '') {
         </tr>`;
       });
     }
-    html += `</tbody></table></div>`;
+    html += `</tbody></table>${_paymentsMoreButtonHtml('payments', paymentSlice.remaining)}</div>`;
     const paymentPaging = _businessPagingState('payments');
-    const morePayments = paymentPaging.done ? '' :
+    const morePayments = (paymentSlice.remaining > 0 || paymentPaging.done) ? '' :
       '<button class="todo-show-more" onclick="_loadMoreBusiness(\'payments\')">دریافت دریافت‌های بیشتر</button>';
     setContent(html + morePayments);
   } else {
@@ -10144,8 +10179,14 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
   { const _sb = document.getElementById('student-badge'); if (_sb) { _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; } }
   const prefix = embedded ? accountCustomerTabsHtml('families') : '';
   const filtered = filterAccountStudents(allStudents, search);
+  if (embedded) _syncPaymentsListShown('families', search);
+  const familySlice = embedded ? _visiblePaymentsSlice('families', filtered) : null;
   const html = `${prefix}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: false, menuPrefix: 'acct' })}
+  ${studentAccountOverviewHtml(allStudents, filtered, {
+    showSessions: false,
+    menuPrefix: 'acct',
+    ...(familySlice ? { slice: familySlice, moreButtonHtml: _paymentsMoreButtonHtml('families', familySlice.remaining) } : {}),
+  })}
   ${familyGroupsSectionHtml(FAMILIES, search)}`;
   setContent(html + (familyPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'families\')">دریافت گروه‌های بیشتر</button>'));
@@ -10228,6 +10269,7 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // REMINDERS PAGE
 // ════════════════════════════════════════════════════════════════════════════
 async function renderReminders(search = '', embedded = false, contentPrefix = '') {
+  _syncPaymentsListShown('reminders', search);
   if (!embedded) {
     updateTopbarActions(`
       <div class="payments-toolbar">
@@ -10294,7 +10336,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     html += `<tr><td colspan="7"><div class="empty"><span>🔍</span>چیزی پیدا نشد</div></td></tr>`;
   }
 
-  filtered.forEach(r => {
+  const reminderSlice = _visiblePaymentsSlice('reminders', filtered);
+  reminderSlice.rows.forEach(r => {
     const due = jalaliKey(r.due_date_jalali);
     const reminderMenuId = `reminder-menu-${r.id}`;
     let statusBadge;
@@ -10337,8 +10380,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     </tr>`;
   });
 
-  html += `</tbody></table></div>`;
-  setContent(html + (reminderPaging.done ? '' :
+  html += `</tbody></table>${_paymentsMoreButtonHtml('reminders', reminderSlice.remaining)}</div>`;
+  setContent(html + ((reminderSlice.remaining > 0 || reminderPaging.done) ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'reminders\')">دریافت یادآوری‌های بیشتر</button>'));
 }
 
@@ -28609,7 +28652,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v180';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v181';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
