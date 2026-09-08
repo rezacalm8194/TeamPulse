@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp195';
+const TP_ASSET_V = 'tp196';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16608,6 +16608,38 @@ function _armTodoDeltaConflictBackoff(ms = 8000) {
   }, Math.max(1000, ms) + 50);
 }
 
+function _todoDeltaTerminalPendingReason(reason = _readServerSyncPending()?.reason) {
+  return [
+    'todo-delta-collision-stopped',
+    'todo-delta-conflict-stopped',
+    'todo-id-collision-stopped',
+  ].includes(String(reason || ''));
+}
+
+function _todoDeltaDrainBlocked() {
+  if (_todoDeltaConflictBackoffActive()) return true;
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return true;
+  if (_todoDeltaTerminalPendingReason()) return true;
+  return false;
+}
+
+function _stopDurableTodoDeltaAfterConflict(todoId, operation, details = {}) {
+  _dequeueDurableTodoDelta(todoId, operation);
+  if (Array.isArray(details.alsoDequeueIds)) {
+    details.alsoDequeueIds.forEach(id => _dequeueDurableTodoDelta(id));
+  }
+  window._pendingTodoDeltaRetry = null;
+  clearTimeout(window._todoDeltaRetryTimer);
+  window._todoDeltaRetryTimer = 0;
+  _clearTodoDeltaConflictAttempt(todoId, operation);
+  _armTodoDeltaConflictBackoff(Number(details.backoffMs) || 60000);
+  _markServerSyncPending(details.reason || 'todo-delta-conflict-stopped', {
+    todoIds: Array.isArray(details.todoIds) ? details.todoIds.map(String) : [String(todoId)],
+    error: details.error || 'todo_delta_conflict',
+    stoppedFingerprint: _dataFingerprint(_serverDataSignature(_db || {})),
+  });
+}
+
 function _todoDeltaConflictAttemptKey(todoId, operation) {
   return String(todoId) + ':' + String(operation || 'upsert');
 }
@@ -16784,8 +16816,7 @@ function _rebuildDurableTodoDeltasFromPendingMarker() {
 }
 
 async function _drainDurableTodoDeltaQueue() {
-  if (_todoDeltaConflictBackoffActive()) return false;
-  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return false;
+  if (_todoDeltaDrainBlocked()) return false;
   _rebuildDurableTodoDeltasFromPendingMarker();
   const queue = _readDurableTodoDeltaQueue();
   if (!queue.length) return false;
@@ -16793,7 +16824,7 @@ async function _drainDurableTodoDeltaQueue() {
   const run = (async () => {
     // Snapshot ids first; successful syncs dequeue themselves.
     for (const item of queue) {
-      if (_todoDeltaConflictBackoffActive()) break;
+      if (_todoDeltaDrainBlocked()) break;
       if (!item?.todo || item.todo.id == null) {
         _dequeueDurableTodoDelta(item?.todoId, item?.operation);
         continue;
@@ -16822,6 +16853,7 @@ async function _drainDurableTodoDeltaQueue() {
 }
 
 function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots, delayMs = 1800) {
+  if (_todoDeltaTerminalPendingReason()) return;
   if (todoSnapshot && todoSnapshot.id != null) {
     _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
   }
@@ -16830,14 +16862,17 @@ function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots, delayM
     operation,
     extraTodos: extraSnapshots,
   };
-  _armTodoDeltaConflictBackoff(delayMs);
-  if (window._todoDeltaRetryTimer) return;
+  const waitMs = Math.max(500, delayMs);
+  // Keep poll/resume from re-draining until this retry is due.
+  _armTodoDeltaConflictBackoff(waitMs);
+  clearTimeout(window._todoDeltaRetryTimer);
   window._todoDeltaRetryTimer = setTimeout(() => {
     window._todoDeltaRetryTimer = 0;
+    if (_todoDeltaDrainBlocked()) return;
     void _drainDurableTodoDeltaQueue().then(drained => {
-      if (!drained && _hasServerSyncPending() && !_todoDeltaConflictBackoffActive()) void _syncToServer();
+      if (!drained && _hasServerSyncPending() && !_todoDeltaDrainBlocked()) void _syncToServer();
     });
-  }, Math.max(500, delayMs));
+  }, waitMs);
 }
 
 async function _flushPendingLocalWritesOnResume() {
@@ -17157,9 +17192,15 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
               continue;
             }
           }
-          _markServerSyncPending('todo-delta-collision-stopped', {
+          // Collision that cannot be remapped used to leave the durable queue
+          // item forever; poll/resume then POST-stormed /todos/delta with 409.
+          _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
+            reason: 'todo-delta-collision-stopped',
+            error: 'todo_id_collision',
             todoIds: Array.isArray(responseData.todo_ids) ? responseData.todo_ids.map(String) : [String(todoSnapshot.id)],
+            alsoDequeueIds: [...resolvedCollisionIds],
           });
+          console.warn('[TeamPulse] todo delta stopped after id collision:', responseData?.todo_ids || todoSnapshot.id);
           return res;
         }
         if (res.status === 409 && responseData?.error === 'todo_delta_conflict' &&
@@ -17196,19 +17237,17 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
         }
         if (res.status === 409) {
-          // Keep durable queue items, but stop the poller from hammering
-          // /todos/delta every few seconds with the same failing payload.
+          // Keep durable queue items briefly, but stop poll/resume from
+          // hammering /todos/delta every few seconds with the same payload.
           if (responseData?.etag) window._serverDataEtag = responseData.etag;
           else await _refreshEtagAfterTodoDeltaConflict();
           const attempts = _bumpTodoDeltaConflictAttempt(todoSnapshot.id, operation);
           if (attempts >= 3) {
-            _dequeueDurableTodoDelta(todoSnapshot.id, operation);
-            _markServerSyncPending('todo-delta-conflict-stopped', {
-              todoIds: [String(todoSnapshot.id)],
+            _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
+              reason: 'todo-delta-conflict-stopped',
               error: responseData?.error || 'todo_delta_conflict',
+              todoIds: [String(todoSnapshot.id)],
             });
-            _armTodoDeltaConflictBackoff(60000);
-            window._pendingTodoDeltaRetry = null;
             console.warn('[TeamPulse] todo delta stopped after repeated 409:', responseData?.error || res.status);
             return res;
           }
@@ -17257,7 +17296,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     return null;
   }
   if (window._tpHydratingFromServer || window._remoteServerDocumentChanged) {
-    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length && !_todoDeltaConflictBackoffActive()) {
+    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length && !_todoDeltaDrainBlocked()) {
       void _drainDurableTodoDeltaQueue();
     }
     _markServerSyncPending('hydrate-from-server');
@@ -17272,7 +17311,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     // mobile background kills leave a marker with an empty in-memory retry).
     if (_readDurableTodoDeltaQueue().length || window._pendingTodoDeltaRetry?.todo) {
       window._documentSyncQueuedAfterTodo = true;
-      if (!_todoDeltaConflictBackoffActive()) void _drainDurableTodoDeltaQueue();
+      if (!_todoDeltaDrainBlocked()) void _drainDurableTodoDeltaQueue();
       return null;
     }
     _markServerSyncPending('resume-flush');
@@ -18342,7 +18381,7 @@ function _startServerPollLoop(firstDelay) {
     try {
       window._lastServerPollAt = Date.now();
       if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil)) {
-        if (_readDurableTodoDeltaQueue().length && !_todoDeltaConflictBackoffActive()) {
+        if (_readDurableTodoDeltaQueue().length && !_todoDeltaDrainBlocked()) {
           await _drainDurableTodoDeltaQueue();
         }
         if (_appLooksInUse()) {
@@ -23091,7 +23130,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v195';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v196';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
