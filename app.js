@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp199';
+const TP_ASSET_V = 'tp200';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16565,30 +16565,36 @@ function _stopStaleFullSyncConflictPending() {
   return true;
 }
 
-function _notifyRecentCreatedTodos(accountId) {
-  if (!accountId || !_sbSession?.token) return;
+function _notifyTodoCreated(accountId, todoId) {
+  if (!accountId || todoId == null || !_sbSession?.token) return;
+  if (window._todoCreatedNotifyUnsupported) return;
   window._todoCreatedNotifyRequests = window._todoCreatedNotifyRequests || new Set();
-  const cutoff = Date.now() - 15 * 60 * 1000;
-  (_db?.todos || [])
-    .filter(todo => {
-      const createdAt = Date.parse(todo?.created_at || '') || 0;
-      return todo && todo.id != null && !todo.archived && createdAt >= cutoff;
-    })
-    .slice(-20)
-    .forEach(todo => {
-      const requestKey = `${accountId}:${todo.id}:${todo.created_at || ''}`;
-      if (window._todoCreatedNotifyRequests.has(requestKey)) return;
-      window._todoCreatedNotifyRequests.add(requestKey);
-      _apiFetch('/api/reminders/notify-todo-created', {
-        method: 'POST',
-        body: JSON.stringify({ ownerAccountId: accountId, workspaceId: _currentAccountId(), todoId: todo.id }),
-      }).then(res => {
-        if (res.status >= 500) window._todoCreatedNotifyRequests.delete(requestKey);
-      }).catch(e => {
-        window._todoCreatedNotifyRequests.delete(requestKey);
-        console.warn('[Push] todo-created request failed:', e.message);
-      });
-    });
+  const todo = (_db?.todos || []).find(item => String(item?.id) === String(todoId));
+  const requestKey = `${accountId}:${todoId}:${todo?.created_at || ''}`;
+  if (window._todoCreatedNotifyRequests.has(requestKey)) return;
+  window._todoCreatedNotifyRequests.add(requestKey);
+  // Fire-and-forget: never block first paint / sync. If this server build does
+  // not expose the route yet, stop probing for the rest of the session.
+  void _apiFetch('/api/reminders/notify-todo-created', {
+    method: 'POST',
+    body: JSON.stringify({
+      ownerAccountId: accountId,
+      workspaceId: _currentAccountId(),
+      todoId,
+    }),
+  }).then(async res => {
+    if (res.ok) return;
+    let body = null;
+    try { body = await res.clone().json(); } catch (e) {}
+    if (res.status === 404 || body?.error === 'api_route_not_found') {
+      window._todoCreatedNotifyUnsupported = true;
+      return;
+    }
+    if (res.status >= 500) window._todoCreatedNotifyRequests.delete(requestKey);
+  }).catch(e => {
+    window._todoCreatedNotifyRequests.delete(requestKey);
+    console.warn('[Push] todo-created request failed:', e.message);
+  });
 }
 
 // Serialize whole-document saves. Several UI actions, the poller and retry timer
@@ -17164,8 +17170,8 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           _scheduleFollowupDocumentSyncAfterTodoDelta();
           window._pendingTodoDeltaRetry = null;
           if (teamSession) window._teamLastOwnerDataSavedAt = Math.max(window._teamLastOwnerDataSavedAt || 0, syncSavedAt);
-          if (operation === 'create' || operation === 'upsert') {
-            setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
+          if (operation === 'create') {
+            setTimeout(() => _notifyTodoCreated(accId, todoSnapshot.id), 0);
           }
           return res;
         }
@@ -17679,7 +17685,6 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
       }
       if (teamSession) window._teamLastOwnerDataSavedAt = _db._lastSaved || Date.now();
-      setTimeout(() => _notifyRecentCreatedTodos(accId), 0);
     }
     if (res && res.status === 403 && teamSession && !window._teamSyncForbiddenWarned) {
       window._teamSyncForbiddenWarned = true;
@@ -23139,7 +23144,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v199';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v200';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
