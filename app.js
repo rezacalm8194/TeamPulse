@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp194';
+const TP_ASSET_V = 'tp195';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16593,6 +16593,50 @@ function _isTodoDeltaPendingReason(reason = _readServerSyncPending()?.reason) {
     .includes(String(reason || ''));
 }
 
+function _todoDeltaConflictBackoffActive() {
+  return Number(window._todoDeltaConflictBackoffUntil || 0) > Date.now();
+}
+
+function _armTodoDeltaConflictBackoff(ms = 8000) {
+  window._todoDeltaConflictBackoffUntil = Date.now() + Math.max(1000, ms);
+  clearTimeout(window._todoDeltaConflictBackoffTimer);
+  window._todoDeltaConflictBackoffTimer = setTimeout(() => {
+    window._todoDeltaConflictBackoffTimer = null;
+    if (Number(window._todoDeltaConflictBackoffUntil || 0) <= Date.now()) {
+      window._todoDeltaConflictBackoffUntil = 0;
+    }
+  }, Math.max(1000, ms) + 50);
+}
+
+function _todoDeltaConflictAttemptKey(todoId, operation) {
+  return String(todoId) + ':' + String(operation || 'upsert');
+}
+
+function _bumpTodoDeltaConflictAttempt(todoId, operation) {
+  window._todoDeltaConflictAttempts = window._todoDeltaConflictAttempts || {};
+  const key = _todoDeltaConflictAttemptKey(todoId, operation);
+  const next = Number(window._todoDeltaConflictAttempts[key] || 0) + 1;
+  window._todoDeltaConflictAttempts[key] = next;
+  return next;
+}
+
+function _clearTodoDeltaConflictAttempt(todoId, operation) {
+  if (!window._todoDeltaConflictAttempts) return;
+  delete window._todoDeltaConflictAttempts[_todoDeltaConflictAttemptKey(todoId, operation)];
+}
+
+async function _refreshEtagAfterTodoDeltaConflict() {
+  try {
+    const teamSession = _teamAccessSession();
+    const accId = teamSession?.ownerUserId || _sbUser?.id;
+    if (!accId || !_sbSession?.token) return;
+    const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+    if (!statusRes.ok) return;
+    const status = await statusRes.json();
+    if (status?.etag) window._serverDataEtag = status.etag;
+  } catch (e) {}
+}
+
 function _todoDeltaQueueKey() {
   return 'teampulse_todo_delta_q_' + (window._activeDBKey || DB_KEY || 'local');
 }
@@ -16740,6 +16784,8 @@ function _rebuildDurableTodoDeltasFromPendingMarker() {
 }
 
 async function _drainDurableTodoDeltaQueue() {
+  if (_todoDeltaConflictBackoffActive()) return false;
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return false;
   _rebuildDurableTodoDeltasFromPendingMarker();
   const queue = _readDurableTodoDeltaQueue();
   if (!queue.length) return false;
@@ -16747,6 +16793,7 @@ async function _drainDurableTodoDeltaQueue() {
   const run = (async () => {
     // Snapshot ids first; successful syncs dequeue themselves.
     for (const item of queue) {
+      if (_todoDeltaConflictBackoffActive()) break;
       if (!item?.todo || item.todo.id == null) {
         _dequeueDurableTodoDelta(item?.todoId, item?.operation);
         continue;
@@ -16774,7 +16821,7 @@ async function _drainDurableTodoDeltaQueue() {
   }
 }
 
-function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots) {
+function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots, delayMs = 1800) {
   if (todoSnapshot && todoSnapshot.id != null) {
     _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
   }
@@ -16783,13 +16830,14 @@ function _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots) {
     operation,
     extraTodos: extraSnapshots,
   };
+  _armTodoDeltaConflictBackoff(delayMs);
   if (window._todoDeltaRetryTimer) return;
   window._todoDeltaRetryTimer = setTimeout(() => {
     window._todoDeltaRetryTimer = 0;
     void _drainDurableTodoDeltaQueue().then(drained => {
-      if (!drained && _hasServerSyncPending()) void _syncToServer();
+      if (!drained && _hasServerSyncPending() && !_todoDeltaConflictBackoffActive()) void _syncToServer();
     });
-  }, 1800);
+  }, Math.max(500, delayMs));
 }
 
 async function _flushPendingLocalWritesOnResume() {
@@ -17061,6 +17109,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           _updateServerSyncBaselineAfterTodoDelta(baselineTodos, window._serverDataEtag, syncSavedAt);
           _dequeueDurableTodoDelta(todoSnapshot.id, operation);
           resolvedCollisionIds.forEach(id => _dequeueDurableTodoDelta(id));
+          _clearTodoDeltaConflictAttempt(todoSnapshot.id, operation);
           const remainingDeltaIds = _readDurableTodoDeltaQueue().map(item => String(item?.todoId)).filter(Boolean);
           if (remainingDeltaIds.length) {
             _markServerSyncPending('todo-delta-save', { todoIds: remainingDeltaIds });
@@ -17147,18 +17196,25 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           }
         }
         if (res.status === 409) {
-          window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
-          if (operation === 'complete' || operation === 'reopen' || operation === 'delete') {
-            _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
-            _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots);
+          // Keep durable queue items, but stop the poller from hammering
+          // /todos/delta every few seconds with the same failing payload.
+          if (responseData?.etag) window._serverDataEtag = responseData.etag;
+          else await _refreshEtagAfterTodoDeltaConflict();
+          const attempts = _bumpTodoDeltaConflictAttempt(todoSnapshot.id, operation);
+          if (attempts >= 3) {
+            _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+            _markServerSyncPending('todo-delta-conflict-stopped', {
+              todoIds: [String(todoSnapshot.id)],
+              error: responseData?.error || 'todo_delta_conflict',
+            });
+            _armTodoDeltaConflictBackoff(60000);
+            window._pendingTodoDeltaRetry = null;
+            console.warn('[TeamPulse] todo delta stopped after repeated 409:', responseData?.error || res.status);
             return res;
           }
-          try {
-            const updated = await _loadFromServer();
-            _refreshUiAfterServerLoad(updated);
-          } catch(e) {
-            console.warn('[TeamPulse] Delta conflict reload failed:', e.message);
-          }
+          const retryDelay = Math.min(30000, 2000 * Math.pow(2, attempts - 1));
+          _markServerSyncPending('todo-delta-http', { todoIds: [String(todoSnapshot.id)] });
+          _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots, retryDelay);
           return res;
         }
         if (operation === 'complete' || operation === 'reopen' || operation === 'delete') {
@@ -17201,7 +17257,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     return null;
   }
   if (window._tpHydratingFromServer || window._remoteServerDocumentChanged) {
-    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length) {
+    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length && !_todoDeltaConflictBackoffActive()) {
       void _drainDurableTodoDeltaQueue();
     }
     _markServerSyncPending('hydrate-from-server');
@@ -17216,7 +17272,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     // mobile background kills leave a marker with an empty in-memory retry).
     if (_readDurableTodoDeltaQueue().length || window._pendingTodoDeltaRetry?.todo) {
       window._documentSyncQueuedAfterTodo = true;
-      void _drainDurableTodoDeltaQueue();
+      if (!_todoDeltaConflictBackoffActive()) void _drainDurableTodoDeltaQueue();
       return null;
     }
     _markServerSyncPending('resume-flush');
@@ -18286,7 +18342,9 @@ function _startServerPollLoop(firstDelay) {
     try {
       window._lastServerPollAt = Date.now();
       if (!(window._rateLimitedUntil && Date.now() < window._rateLimitedUntil)) {
-        if (_readDurableTodoDeltaQueue().length) await _drainDurableTodoDeltaQueue();
+        if (_readDurableTodoDeltaQueue().length && !_todoDeltaConflictBackoffActive()) {
+          await _drainDurableTodoDeltaQueue();
+        }
         if (_appLooksInUse()) {
           const updated = await _pollServerStatus();
           _refreshUiAfterServerLoad(updated);
@@ -23033,7 +23091,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v194';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v195';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

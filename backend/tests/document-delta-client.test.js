@@ -55,6 +55,10 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /function _flushPendingLocalWritesOnResume\(/);
   assert.match(appSource, /await _flushPendingLocalWritesOnResume\(\)/);
   assert.match(appSource, /todo-delta-save/);
+  assert.match(appSource, /function _todoDeltaConflictBackoffActive\(/);
+  assert.match(appSource, /function _armTodoDeltaConflictBackoff\(/);
+  assert.match(appSource, /todo-delta-conflict-stopped/);
+  assert.match(appSource, /_todoDeltaConflictBackoffActive\(\)/);
   assert.match(appSource, /urgent\s*[:=]\s*true/);
   assert.match(appSource, /function _updateServerSyncBaselineAfterTodoDelta\(/);
   assert.match(appSource, /function _hasUnsyncedNonTodoChanges\(/);
