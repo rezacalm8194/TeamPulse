@@ -74,6 +74,15 @@ function setStaticCacheHeaders(res, filePath, req, cspValue) {
     }
     return;
   }
+  if (/\.json$/i.test(ext)) {
+    // Versioned manifests (manifest.json?v=…) can be cached hard; bare JSON stays short.
+    if (isVersionedAssetRequest(req || res.req)) {
+      res.setHeader('Cache-Control', VERSIONED_JS_CSS_CACHE);
+    } else {
+      res.setHeader('Cache-Control', UNVERSIONED_JS_CSS_CACHE);
+    }
+    return;
+  }
   if (/\.(?:png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
     res.setHeader('Cache-Control', FONT_IMAGE_CACHE);
   }

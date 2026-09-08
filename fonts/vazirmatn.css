@@ -5,7 +5,7 @@
   font-display: swap;
   /* Arabic/Persian + Latin UI subset — same look for app text, smaller files */
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+0750-077F, U+08A0-08FF, U+2000-206F, U+20A0-20CF, U+FB50-FDFF, U+FE70-FEFF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp200') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp201') format('woff2');
 }
 
 @font-face {
@@ -14,5 +14,5 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+0750-077F, U+08A0-08FF, U+2000-206F, U+20A0-20CF, U+FB50-FDFF, U+FE70-FEFF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp200') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp201') format('woff2');
 }

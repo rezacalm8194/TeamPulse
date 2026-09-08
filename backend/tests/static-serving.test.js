@@ -76,6 +76,14 @@ test('versioned JS/CSS get immutable cache; bare JS/CSS stay short-lived', () =>
   setStaticCacheHeaders(bare, '/x/app.js', { url: '/app.js' });
   assert.equal(bare.headers['cache-control'], UNVERSIONED_JS_CSS_CACHE);
 
+  const bareJson = mockRes();
+  setStaticCacheHeaders(bareJson, '/x/manifest.json', { url: '/manifest.json' });
+  assert.equal(bareJson.headers['cache-control'], UNVERSIONED_JS_CSS_CACHE);
+
+  const versionedJson = mockRes();
+  setStaticCacheHeaders(versionedJson, '/x/manifest.json', { query: { v: '5' } });
+  assert.equal(versionedJson.headers['cache-control'], VERSIONED_JS_CSS_CACHE);
+
   const html = mockRes();
   setStaticCacheHeaders(html, path.join('/x', 'app.html'), { url: '/app' }, "default-src 'self'");
   assert.equal(html.headers['cache-control'], HTML_CACHE);
