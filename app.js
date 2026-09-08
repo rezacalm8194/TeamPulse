@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp197';
+const TP_ASSET_V = 'tp198';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -17305,7 +17305,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     return null;
   }
   if (window._tpHydratingFromServer || window._remoteServerDocumentChanged) {
-    if (!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length && !_todoDeltaDrainBlocked()) {
+    if (!window._todoDeltaDrainInFlight && _readDurableTodoDeltaQueue().length && !_todoDeltaDrainBlocked()) {
       void _drainDurableTodoDeltaQueue();
     }
     _markServerSyncPending('hydrate-from-server');
@@ -23139,7 +23139,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v197';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v198';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
