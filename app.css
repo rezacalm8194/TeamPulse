@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp210') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp211') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp210') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp211') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -4029,7 +4029,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .mstu-status-line{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin:9px 0 8px}
 .mstu-status-line .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .mstu-status-line .amt{margin-right:auto;font-weight:700;font-variant-numeric:tabular-nums}
-.mstu-pkgs{display:flex;flex-wrap:nowrap;align-items:center;gap:4px;margin-bottom:11px;min-height:20px;overflow:hidden}
+.mstu-pkgs{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin:0;min-height:0;overflow:hidden}
 .mstu-pkgs .tag{filter:saturate(.5)}
 .pkg-tags{
   display:flex;
@@ -4038,6 +4038,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   gap:4px;
   min-width:0;
   max-width:240px;
+  overflow:hidden;
 }
 .pkg-tags .tag{
   margin:0;
@@ -4050,14 +4051,40 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   font-size:10px;
   padding:1px 7px;
 }
+.pkg-tags-line{
+  max-width:100%;
+  width:100%;
+  gap:6px;
+}
+.pkg-tags-primary{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:11px;
+  font-weight:600;
+  color:var(--text2);
+}
 .pkg-tags-more{
+  display:inline-flex;
+  align-items:center;
   background:var(--bg4) !important;
   color:var(--text3) !important;
   flex:0 0 auto !important;
   max-width:none !important;
   font-variant-numeric:tabular-nums;
+  font-size:10px;
+  font-weight:700;
+  padding:1px 7px;
+  border-radius:20px;
 }
-.stu-pkgs-cell{max-width:240px;width:22%}
+.stu-pkgs-cell{max-width:240px;width:22%;overflow:hidden}
+.stu-pkgs-cell .pkg-tags{max-width:100%}
+.mstu-card .pkg-tags{max-width:100%}
+@media (max-width:1180px){
+  .stu-pkgs-cell{max-width:150px;width:16%}
+  .pkg-tags{max-width:100%}
+}
 .mstu-actions{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
 .mstu-actions .btn{flex:1;justify-content:center}
 .mstu-actions .btn-details{flex:0 0 auto;padding-inline:14px}
@@ -4262,6 +4289,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   .stu-stats-row .stat-card{padding:8px 10px}
   .stu-stats-row .stat-value{font-size:14px!important}
   .stu-tools-row{padding:8px 10px 0}
+  .table-card.tbl-responsive td[data-label="پکیج‌ها"]{overflow:hidden}
+  .table-card.tbl-responsive td[data-label="پکیج‌ها"] .pkg-tags{max-width:70%;justify-content:flex-end}
   .mstu-actions{display:none}
   .archive-search{min-width:100%;max-width:none}
   .archive-toolbar{padding:12px 10px;gap:9px}
