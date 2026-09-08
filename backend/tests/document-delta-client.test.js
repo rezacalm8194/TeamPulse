@@ -63,6 +63,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /todo-delta-collision-stopped/);
   assert.match(appSource, /_stopDurableTodoDeltaAfterConflict\(todoSnapshot\.id, operation/);
   assert.match(appSource, /_todoDeltaDrainBlocked\(\)/);
+  assert.match(appSource, /if \(!window\._todoDeltaDrainInFlight && _readDurableTodoDeltaQueue\(\)\.length/);
+  assert.doesNotMatch(appSource, /if \(!_todoDeltaDrainInFlight && _readDurableTodoDeltaQueue\(\)\.length/);
   assert.match(appSource, /urgent\s*[:=]\s*true/);
   assert.match(appSource, /function _updateServerSyncBaselineAfterTodoDelta\(/);
   assert.match(appSource, /function _hasUnsyncedNonTodoChanges\(/);
