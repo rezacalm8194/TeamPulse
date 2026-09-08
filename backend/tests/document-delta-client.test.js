@@ -21,7 +21,7 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /function _pickMergedTodo\(/);
   assert.match(appSource, /function _todoRemoteDateRegressesLocal\(/);
   assert.match(appSource, /if \(conflictAttempt < 1\) \{/);
-  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1000/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1200/);
   assert.match(appSource, /_syncToServer\(1\)/);
   assert.match(appSource, /if \(!conflictAttempt && _stopStaleFullSyncConflictPending\(\)\) return;/);
   assert.match(appSource, /window\._serverSyncQueued = false;[\s\S]{0,200}break;/);
@@ -111,21 +111,17 @@ test('pending server sync does not refetch the full document on every poll or re
 
 test('sync conflicts use one delayed rebase and do not return a workspace document', () => {
   assert.match(appSource, /if \(conflictAttempt < 1\) \{/);
-  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1000/);
-  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 30000/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1200/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 60000/);
   assert.match(appSource, /window\._serverSyncQueued = false;/);
-  assert.match(appSource, /window\._remoteServerDocumentChanged = true;/);
-  assert.match(appSource, /rebaseBusinessKeys: _dirtyBusinessCollectionsForRebase\(\)/);
-  assert.match(appSource, /function _dirtyBusinessCollectionsForRebase\(/);
-  assert.match(appSource, /rebaseBaseline = _cloneData\(_db\);/);
-  assert.match(appSource, /_mergeLocalPendingChangesIntoOwnerData\(localPending, _db, \{ teamSafe: !!teamSession \}\)/);
-  assert.match(appSource, /skipLocalSnapshot: true/);
-  assert.match(appSource, /if \(!window\._serverDataEtag && conflictEtag\) window\._serverDataEtag = conflictEtag;/);
+  assert.match(appSource, /Etag-only rebase/);
+  assert.match(appSource, /\/status' \+ _workspaceQuery\(\)/);
+  assert.match(appSource, /_syncToServer\(1\);/);
+  assert.doesNotMatch(appSource, /sync_conflict[\s\S]{0,1200}_loadFromServer\(\{[\s\S]{0,120}lightweightRebase:\s*true/);
   assert.doesNotMatch(appSource, /function _stopStaleFullSyncConflictPending\(\)[\s\S]{0,500}clearTimeout\(window\._serverSyncRetryTimer\)/);
   assert.doesNotMatch(appSource, /sync_conflict[\s\S]{0,180}_reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\]/);
-  assert.match(appSource, /if \(rebaseBaseline\) _writeServerSyncBaseline\(rebaseBaseline/);
-  assert.match(appSource, /30000\);\s*window\._serverSyncRetryAttempt = 0;/);
-  assert.match(appSource, /_serverSyncConflictBackoffUntil = 0;\s*_syncToServer\(1\);/);
+  // Second conflict only clears backoff — it must not auto-POST again.
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 60000;\s*window\._serverSyncRetryTimer = setTimeout\(\(\) => \{\s*window\._serverSyncRetryTimer = null;\s*window\._serverSyncConflictBackoffUntil = 0;\s*\}, 60000\);/);
   assert.doesNotMatch(dataSource, /sync_conflict[\s\S]{0,250}data:\s*sanitizeUserDataForStorage/);
 });
 
@@ -155,8 +151,9 @@ test('hydration scopes visible collections and batches any required full backfil
   assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(businessKeys\.length \? businessKeys : \[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
   assert.match(appSource, /async function _reloadBusinessFirstPagesFromServer/);
   assert.match(appSource, /Promise\.all\(keys\.slice\(start, start \+ 3\)/);
-  assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status\)/);
-  assert.match(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
+  assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status/);
+  assert.match(appSource, /laggingOnPage = _businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
+  assert.doesNotMatch(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
   assert.match(appSource, /if \(currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag\) reset = true/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
   assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
@@ -199,7 +196,7 @@ test('phones adopt a newer imported server document instead of keeping a partial
 
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
   assert.match(appSource, /const localBeforeLoad = !skipLocalSnapshot && _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
-  assert.match(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
+  assert.match(appSource, /laggingOnPage = _businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
   assert.match(appSource, /function _collectionSyncDeleteBlocked\(/);
   assert.match(appSource, /function _paginatedCollectionFullyLoaded\(/);
   assert.match(appSource, /reset: false/);
