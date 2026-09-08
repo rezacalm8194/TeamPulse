@@ -21,6 +21,15 @@ test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
+test('customer list first paint does not hydrate sessions or finance', () => {
+  assert.match(appJs, /students: \['students'\]/);
+  assert.match(appJs, /sessions: \['students', 'sessions'\]/);
+  assert.match(appJs, /let _studentsTab = currentPage === 'sessions' \? 'sessions' : 'students';/);
+  assert.match(appJs, /await _ensureBusinessPartLoaded\('students', \{ search \}\);/);
+  assert.match(appJs, /_ensureCompleteBusinessParts\(financeKeys\)\.then/);
+  assert.doesNotMatch(appJs, /students: \['students', 'packages', 'payments', 'families'/);
+});
+
 test('CSP blocks inline scripts, not the UI styles the app still renders', () => {
   assert.doesNotMatch(appHtml, /script-src [^;]*'unsafe-inline'/);
   assert.match(appHtml, /style-src 'self' 'unsafe-inline' https:/);

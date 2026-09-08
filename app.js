@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp196';
+const TP_ASSET_V = 'tp197';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -4523,7 +4523,10 @@ const BUSINESS_PAGINATED_KEYS = Object.freeze([
 ]);
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
-  students: ['students', 'packages', 'payments', 'families', 'case_forms'],
+  // The customer list first paint is intentionally limited to its own rows.
+  // Finance and case forms are hydrated on demand after the list is visible.
+  students: ['students'],
+  sessions: ['students', 'sessions'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
   families: ['students', 'packages', 'payments', 'sessions', 'families'],
   reminders: ['reminders', 'students', 'packages'],
@@ -5671,7 +5674,7 @@ function _getInitialPage() {
   return 'students';
 }
 let currentPage = _getInitialPage();
-let _studentsTab = currentPage === 'students' ? 'sessions' : (currentPage === 'sessions' ? 'sessions' : 'students');
+let _studentsTab = currentPage === 'sessions' ? 'sessions' : 'students';
 let _paymentsTab = 'purchases';
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
@@ -6671,7 +6674,7 @@ function bindNavItems() {
       document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
+      if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
       if (currentPage === 'todolist') _todoActiveTab = 'mine';
       updatePageTitle();
       renderPage();
@@ -6684,8 +6687,8 @@ bindNavItems();
 window.addEventListener('hashchange', () => {
   const parsed = _parseAppHash();
   const page = parsed.page;
-  if (page && _SAFE_RESTORE_PAGES.includes(page) && (page !== currentPage || page === 'instructions')) {
-    if (page === 'students' || page === 'sessions') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
+  if (page && _SAFE_RESTORE_PAGES.includes(page) && (page !== currentPage || page === 'instructions' || page === 'sessions' || (page === 'students' && _studentsTab !== 'students'))) {
+    if (page === 'students' || page === 'sessions') { _studentsTab = page === 'sessions' ? 'sessions' : 'students'; _keySessionsExpanded = false; }
     currentPage = page;
     if (currentPage === 'todolist') _todoActiveTab = 'mine';
     updatePageTitle();
@@ -6843,14 +6846,17 @@ function _selectGoogleTranslateLanguage(lang) {
 async function renderPage() {
   document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
   document.body.classList.toggle('primary-mobile-page', ['goals','habits','todolist'].includes(currentPage));
-  if (_sbSession?.token) {
-    try { await _ensureDocumentParts(_partsForPage(currentPage)); } catch (e) {}
-  }
+  // Keep #sessions as a deep link without making the normal students route
+  // request sessions before its first paint.
+  const requestedPage = currentPage;
   if (currentPage === 'sessions') {
     currentPage = 'students';
     _studentsTab = 'sessions';
     _keySessionsExpanded = false;
     updatePageTitle();
+  }
+  if (_sbSession?.token) {
+    try { await _ensureDocumentParts(_partsForPage(requestedPage)); } catch (e) {}
   }
   if (currentPage === 'reminders') {
     currentPage = 'payments';
@@ -7118,7 +7124,7 @@ function studentAccountNameCellHtml(s, i) {
             </div>
           </div>`;
 }
-function studentAccountTableRowsHtml(filtered, menuPrefix) {
+function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) {
   if (filtered.length === 0) {
     return `<tr><td colspan="8"><div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div></td></tr>`;
   }
@@ -7126,17 +7132,17 @@ function studentAccountTableRowsHtml(filtered, menuPrefix) {
     const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
     return `<tr>
         <td>${studentAccountNameCellHtml(s, i)}</td>
-        <td>${pkgTagsHtml(s.packages)}</td>
-        <td><span class="amount amount-neutral">${fmt(s.totalAmount)}</span></td>
-        <td><span class="amount amount-paid">${fmt(s.totalPaid)}</span></td>
-        <td>${s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
-        <td>${balanceHtml(s.balance)}</td>
-        <td>${statusHtml(s.balance)}</td>
+        <td>${financeReady ? pkgTagsHtml(s.packages) : '—'}</td>
+        <td>${financeReady ? `<span class="amount amount-neutral">${fmt(s.totalAmount)}</span>` : '—'}</td>
+        <td>${financeReady ? `<span class="amount amount-paid">${fmt(s.totalPaid)}</span>` : '—'}</td>
+        <td>${financeReady ? (s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>') : '—'}</td>
+        <td>${financeReady ? balanceHtml(s.balance) : '—'}</td>
+        <td>${financeReady ? statusHtml(s.balance) : '—'}</td>
         <td>${studentAccountRowMenuHtml(s, tableMenuId)}</td>
       </tr>`;
   }).join('');
 }
-function studentAccountMobileHtml(filtered, menuPrefix) {
+function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
   if (filtered.length === 0) {
     return `<div class="mstu-list"><div class="empty"><span>👤</span>${META.entitySingular || 'شاگردی'} یافت نشد</div></div>`;
   }
@@ -7167,17 +7173,17 @@ function studentAccountMobileHtml(filtered, menuPrefix) {
             </div>
           </div>
         </div>
-        ${mstuStatusLine(s.balance)}
+        ${financeReady ? mstuStatusLine(s.balance) : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
         ${(typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')) ? studentContactScheduleHtml(s.id) : ''}
         <div class="mstu-pkgs">
-          ${visiblePkgs.map(pkgTag).join('')}
-          ${extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
-          ${pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
+          ${financeReady ? visiblePkgs.map(pkgTag).join('') : '<span style="color:var(--text3);font-size:11px">—</span>'}
+          ${financeReady && extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
+          ${financeReady && pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
         </div>
       </div>`;
   }).join('')}</div>`;
 }
-function studentAccountOverviewHtml(students, filtered, { showSessions = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null } = {}) {
+function studentAccountOverviewHtml(students, filtered, { showSessions = true, financeReady = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null } = {}) {
   const totalDebt = students.reduce((a, s) => a + Math.max(0, s.balance), 0);
   const totalPaid = students.reduce((a, s) => a + s.totalPaid, 0);
   const debtorCount = students.filter(s => s.balance > 0).length;
@@ -7190,7 +7196,7 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
     </div>` : `
     <div class="stat-card">
       <div class="stat-label">بدهکار / تسویه</div>
-      <div class="stat-value">${fa(debtorCount)} / ${fa(settledCount)}</div>
+      <div class="stat-value">${financeReady ? `${fa(debtorCount)} / ${fa(settledCount)}` : '—'}</div>
       <div class="stat-sub">نفر</div>
     </div>`;
   const view = slice || _visibleStudentSlice(filtered);
@@ -7206,12 +7212,12 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
     </div>
     <div class="stat-card s-green">
       <div class="stat-label">کل دریافتی</div>
-      <div class="stat-value">${fmt(totalPaid)}</div>
+      <div class="stat-value">${financeReady ? fmt(totalPaid) : '—'}</div>
       <div class="stat-sub">تومان</div>
     </div>
     <div class="stat-card s-red">
       <div class="stat-label">کل مانده بدهی</div>
-      <div class="stat-value">${fmt(totalDebt)}</div>
+      <div class="stat-value">${financeReady ? fmt(totalDebt) : '—'}</div>
       <div class="stat-sub">تومان</div>
     </div>
     ${fourthStat}
@@ -7233,9 +7239,9 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, m
           <th>عملیات</th>
         </tr>
       </thead>
-      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(view.rows, menuPrefix))}</tbody>
+      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(view.rows, menuPrefix, financeReady))}</tbody>
     </table></div>
-    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(view.rows, menuPrefix) : "")}
+    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(view.rows, menuPrefix, financeReady) : "")}
     ${moreHtml}
   </div>`;
 }
@@ -7500,7 +7506,7 @@ async function _paintStudentsUi(search = '') {
   ${studentSectionNav('students')}
   ${caseFormsHtml}
   ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, menuPrefix: 'stu' })}`;
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, financeReady, menuPrefix: 'stu' })}`;
   setContent(html + (studentPaging.done ? '' :
     '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
   _tpBindLazyLoaders();
@@ -7602,6 +7608,9 @@ async function saveStudentPinnedNote(id, remove = false) {
 }
 
 async function openStudentDetail(id) {
+  // Detail content is finance-dependent. Hydrate it on demand instead of
+  // delaying the customer-list first paint.
+  await _ensureCompleteBusinessParts(['packages', 'payments', 'families']);
   const s = _db.students.find(x => x.id === id) ? _studentSummary(_db.students.find(x => x.id === id)) : allStudents.find(x => x.id === id);
   if (!s) return;
   const payments = await window.api.payments.getByStudent(id);
@@ -15370,7 +15379,7 @@ function applyNavOrder() {
       sidebar.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
+      if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
       updatePageTitle();
       renderPage();
       closeSidebar();
@@ -22719,7 +22728,7 @@ function bnNav(el){
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-  currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
+  currentPage=page;if(currentPage==='students'){_studentsTab='students';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
@@ -22743,7 +22752,7 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   navEl.classList.add('active');
   currentPage = page;
-  if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
+  if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
   updatePageTitle();
   renderPage();
 }, true); // capture phase
@@ -23130,7 +23139,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v196';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v197';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
