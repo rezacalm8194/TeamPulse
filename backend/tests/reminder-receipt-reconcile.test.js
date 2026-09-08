@@ -49,6 +49,8 @@ for (const name of [
   '_studentRelMaps',
   '_rowsForStudent',
   '_studentSummary',
+  '_isPaymentReminder',
+  '_pendingPaymentReminderCount',
   '_reconcileStudentPaymentReminders',
   '_reconcileOverdueRemindersForSettledCustomers',
 ]) {
@@ -118,4 +120,35 @@ test('opening reminders still repairs leftover overdue rows for settled customer
   const changed = sandbox._reconcileOverdueRemindersForSettledCustomers();
   assert.equal(changed, true);
   assert.ok(sandbox._jalaliKey(reminder.due_date_jalali) > sandbox._jalaliKey('۱۴۰۵/۰۶/۱۵'));
+});
+
+test('session followup reminders are not consumed as payment reminders', () => {
+  sandbox._studentSummaryCache = null;
+  sandbox._studentRelIndex = null;
+  sandbox._studentListSummaryCache = null;
+  sandbox._db = {
+    package_types: [],
+    staff: [],
+    sessions: [],
+    students: [{ id: 7, name: 'مریم', lname: 'اصغریانیان', wallet: 0 }],
+    packages: [],
+    payments: [{ id: 1, student_id: 7, amount: 1000000, currency: 'تومان', date_jalali: '۱۴۰۵/۰۶/۰۱' }],
+    reminders: [{
+      id: 9,
+      student_id: 7,
+      package_id: null,
+      source: 'session_followup',
+      title: 'اقدام جلسه: پیگیری بعد از جلسه — مریم اصغریانیان',
+      due_date_jalali: '۱۴۰۲/۰۶/۰۸',
+      repeat_months: 0,
+      amount: 0,
+      done: false,
+    }],
+  };
+  const reminder = sandbox._db.reminders[0];
+  assert.equal(sandbox._isPaymentReminder(reminder), false);
+  assert.equal(sandbox._isPaymentReminder({ title: 'تجدید پکیج کوچینگ', amount: 19300000 }), true);
+  const changed = sandbox._reconcileStudentPaymentReminders(7, sandbox._db.payments[0]);
+  assert.equal(changed, false);
+  assert.equal(reminder.done, false);
 });

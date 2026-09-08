@@ -416,7 +416,7 @@ async function renderPayments(search = '') {
   allStudents = await window.api.students.getAll();
   try {
     const remindersForBadge = await window.api.reminders.getAll();
-    updateReminderBadges(remindersForBadge.filter(r => !r.done).length);
+    updateReminderBadges(_pendingPaymentReminderCount(remindersForBadge));
   } catch(e) {}
   const q = search.trim().toLowerCase();
 
@@ -773,11 +773,10 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   try{_runAutomationScans();}catch(e){}
   const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
-  const reminders = await window.api.reminders.getAll();
+  const reminders = (await window.api.reminders.getAll()).filter(_isPaymentReminder);
   const today = jalaliKey(formatJalali(...todayJalali()));
 
-  const pending = reminders.filter(r => !r.done);
-  updateReminderBadges(pending.length);
+  updateReminderBadges(_pendingPaymentReminderCount(reminders));
 
   if (reminders.length === 0) {
     setContent(`${contentPrefix}<div class="detail-section" style="margin-bottom:12px;border-color:rgba(124,106,247,.28)">

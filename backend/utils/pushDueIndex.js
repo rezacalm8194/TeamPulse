@@ -1,6 +1,8 @@
 // Lightweight due-index for the push reminder cron.
 // The cron must not load every active account's JSON every minute.
 
+const { isPaymentReminder } = require('./reminderKind');
+
 const IRAN_OFFSET_MS = (3 * 60 + 30) * 60 * 1000;
 const PUSH_CATCH_UP_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_UNINDEXED = 40;
@@ -201,7 +203,7 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
   }
 
   for (const r of (userData?.reminders || [])) {
-    if (r.done) continue;
+    if (r.done || !isPaymentReminder(r)) continue;
     const key = `financial:${accountId}:${r.id}:${r.due_date_jalali}`;
     if (delivered.has(key)) continue;
     nextDailyMs = takeMin(nextDailyMs, dailyFireMs(r.due_date_jalali, today));

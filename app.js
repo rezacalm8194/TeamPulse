@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp202';
+const TP_ASSET_V = 'tp203';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2486,12 +2486,24 @@ function _nextFuturePaymentReminderDate(baseDate, repeatMonths) {
   return next;
 }
 
+function _isPaymentReminder(r) {
+  if (!r) return false;
+  const source = String(r.source || '');
+  if (source === 'session_followup' || source === 'auto_stale_lead' || source === 'archive_followup') return false;
+  const title = String(r.title || '').trim();
+  return !(title.startsWith('اقدام جلسه') || title.startsWith('پیگیری بایگانی:') || title.startsWith('پیگیری راکد'));
+}
+
+function _pendingPaymentReminderCount(reminders) {
+  return (reminders || []).filter(r => !r.done && _isPaymentReminder(r)).length;
+}
+
 function _reminderDueKey(reminder) {
   return _jalaliKey(reminder?.due_date_jalali || '');
 }
 
 function _consumePaymentReminder(reminder) {
-  if (!reminder || reminder.done) return false;
+  if (!reminder || reminder.done || !_isPaymentReminder(reminder)) return false;
   const repeatMonths = Number(reminder.repeat_months || 0);
   const next = repeatMonths > 0 ? _nextFuturePaymentReminderDate(reminder.due_date_jalali, repeatMonths) : '';
   if (repeatMonths > 0 && !next) return false;
@@ -2522,7 +2534,7 @@ function _reconcileStudentPaymentReminders(studentId, payment = null) {
   if (!student) return false;
   const todayKey = _jalaliKey(_formatJalali(..._todayJalali()));
   const overdue = (_db.reminders || [])
-    .filter(reminder => String(reminder.student_id) === sid && !reminder.done && _reminderDueKey(reminder) && _reminderDueKey(reminder) <= todayKey)
+    .filter(reminder => String(reminder.student_id) === sid && !reminder.done && _isPaymentReminder(reminder) && _reminderDueKey(reminder) && _reminderDueKey(reminder) <= todayKey)
     .sort((a, b) => _reminderDueKey(a) - _reminderDueKey(b));
   if (!overdue.length) return false;
   const balance = Number(_studentSummary(student).balance || 0);
@@ -2556,7 +2568,7 @@ function _reconcileStudentPaymentReminders(studentId, payment = null) {
 }
 
 function _reconcileOverdueRemindersForSettledCustomers() {
-  const ids = [...new Set((_db.reminders || []).filter(reminder => !reminder.done).map(reminder => reminder.student_id))];
+  const ids = [...new Set((_db.reminders || []).filter(reminder => !reminder.done && _isPaymentReminder(reminder)).map(reminder => reminder.student_id))];
   let changed = false;
   ids.forEach(id => {
     if (_reconcileStudentPaymentReminders(id)) changed = true;
@@ -2934,7 +2946,7 @@ window.api = {
       const maxDelay=Math.max(1,...earnerCandidates.map(e=>e.delay).filter(d=>d!=null));
       const topEarners=earnerCandidates.map(e=>{const an=e.paid/maxPaid;const sn=e.paid<=0?0:(e.delay==null?0.5:1-(e.delay/maxDelay));return{...e,score:0.7*an+0.3*sn};}).sort((a,b)=>b.score-a.score);
       const pkgDistribution=_db.package_types.map(pt=>({label:pt.label,color:pt.color,count:_db.packages.filter(p=>p.type_id===pt.id).length}));
-      const upcomingReminders=_db.reminders.filter(r=>!r.done).length;
+      const upcomingReminders=_pendingPaymentReminderCount(_db.reminders);
       const monthMap={};
       _db.payments.filter(p=>(p.currency||'تومان')==='تومان').forEach(p=>{const[jy,jm]=_jalaliParse(p.date_jalali);if(!jy)return;const k=jy*100+jm;monthMap[k]=(monthMap[k]||0)+(p.amount||0);});
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
@@ -2980,7 +2992,7 @@ window.api = {
         .sort((a,b)=>a.dueIn-b.dueIn);
       const summaryByStudentId=new Map(summaries.map(s=>[String(s.id),s]));
       const customerDueAlerts=(_db.reminders||[])
-        .filter(r=>!r.done&&r.student_id&&_jalaliKey(r.due_date_jalali||'')>0)
+        .filter(r=>!r.done&&r.student_id&&_isPaymentReminder(r)&&_jalaliKey(r.due_date_jalali||'')>0)
         .map(r=>{
           const student=summaryByStudentId.get(String(r.student_id));
           const balance=Math.max(0,Number(student?.balance||0));
@@ -10813,8 +10825,7 @@ async function reloadAllData() {
   applyMetaToUI();
   try {
     const reminders = await window.api.reminders.getAll();
-    const pending = reminders.filter(r => !r.done).length;
-    updateReminderBadges(pending);
+    updateReminderBadges(_pendingPaymentReminderCount(reminders));
   } catch(e) {}
   await renderPage();
 }
@@ -15198,8 +15209,7 @@ async function init() {
     applyMetaToUI();
     try {
       const reminders = await window.api.reminders.getAll();
-      const pending = reminders.filter(r => !r.done).length;
-      updateReminderBadges(pending);
+      updateReminderBadges(_pendingPaymentReminderCount(reminders));
     } catch(e) { console.warn('[TeamPulse] reminders error:', e); }
     console.log('[TeamPulse] renderPage...');
     await renderPage();
@@ -23144,7 +23154,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v202';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v203';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
