@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp207';
+const TP_ASSET_V = 'tp209';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -23175,7 +23175,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v207';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v209';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -23455,121 +23455,6 @@ function _startApp() {
     }
   });
 }
-
-// ── MagicBento effect for .stat-card (global, event-delegated) ──────────────
-(function() {
-  const isMobile = () => window.innerWidth <= 768;
-  const PROXIMITY = 90;   // radius*0.5
-  const FADE = 135;       // radius*0.75
-  const RADIUS = 180;
-  let particleTimers = new WeakMap();
-  let particleNodes = new WeakMap();
-
-  function spawnParticles(card) {
-    return; // disabled: particles stall customer/finance pages
-    if (isMobile()) return;
-    if (particleNodes.has(card)) return; // already spawning
-    const rect = card.getBoundingClientRect();
-    const nodes = [];
-    const count = 6;
-    for (let i = 0; i < count; i++) {
-      const timer = setTimeout(() => {
-        if (!card.matches(':hover')) return;
-        const p = document.createElement('div');
-        p.className = 'sc-particle';
-        const x = Math.random() * rect.width;
-        const y = Math.random() * rect.height;
-        p.style.left = x + 'px';
-        p.style.top = y + 'px';
-        p.style.opacity = '0';
-        card.appendChild(p);
-        nodes.push(p);
-        requestAnimationFrame(() => {
-          p.style.transition = 'opacity .3s ease, transform 2.5s ease-in-out';
-          p.style.opacity = '1';
-          const dx = (Math.random() - 0.5) * 60;
-          const dy = (Math.random() - 0.5) * 60;
-          p.style.transform = `translate(${dx}px,${dy}px)`;
-        });
-      }, i * 120);
-    }
-    particleNodes.set(card, nodes);
-  }
-
-  function clearParticles(card) {
-    const nodes = particleNodes.get(card);
-    if (nodes) {
-      nodes.forEach(p => {
-        p.style.transition = 'opacity .3s ease, transform .3s ease';
-        p.style.opacity = '0';
-        setTimeout(() => p.remove(), 300);
-      });
-      particleNodes.delete(card);
-    }
-  }
-
-  document.addEventListener('mouseenter', e => {
-    const card = e.target.closest && e.target.closest('.stat-card');
-    if (!card || isMobile()) return;
-    spawnParticles(card);
-  }, true);
-
-  document.addEventListener('mouseleave', e => {
-    const card = e.target.closest && e.target.closest('.stat-card');
-    if (!card) return;
-    card.style.setProperty('--glow-intensity', '0');
-    card.style.transform = '';
-    clearParticles(card);
-  }, true);
-
-  document.addEventListener('mousemove', e => {
-    if (isMobile()) return;
-    const card = e.target.closest && e.target.closest('.stat-card');
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const relX = ((e.clientX - rect.left) / rect.width) * 100;
-    const relY = ((e.clientY - rect.top) / rect.height) * 100;
-    card.style.setProperty('--glow-x', relX + '%');
-    card.style.setProperty('--glow-y', relY + '%');
-
-    const centerX = rect.width / 2, centerY = rect.height / 2;
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const dist = Math.max(0, Math.hypot(x - centerX, y - centerY) - Math.max(rect.width, rect.height) / 2);
-    let glow = 0;
-    if (dist <= PROXIMITY) glow = 1;
-    else if (dist <= FADE) glow = (FADE - dist) / (FADE - PROXIMITY);
-    card.style.setProperty('--glow-intensity', glow.toString());
-
-    // tilt (light) + magnetism
-    const rotateX = ((y - centerY) / centerY) * -2;
-    const rotateY = ((x - centerX) / centerX) * 2;
-    const magnetX = (x - centerX) * 0.02;
-    const magnetY = (y - centerY) * 0.02;
-    card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translate(${magnetX}px, ${magnetY}px)`;
-  });
-
-  document.addEventListener('click', e => {
-    if (isMobile()) return;
-    const card = e.target.closest && e.target.closest('.stat-card');
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const maxDist = Math.max(
-      Math.hypot(x, y), Math.hypot(x - rect.width, y),
-      Math.hypot(x, y - rect.height), Math.hypot(x - rect.width, y - rect.height)
-    );
-    const ripple = document.createElement('div');
-    ripple.style.cssText = `
-      position:absolute;width:${maxDist*2}px;height:${maxDist*2}px;border-radius:50%;
-      background:radial-gradient(circle, rgba(124,106,247,.35) 0%, rgba(124,106,247,.15) 30%, transparent 70%);
-      left:${x-maxDist}px;top:${y-maxDist}px;pointer-events:none;z-index:5;
-      transform:scale(0);opacity:1;transition:transform .7s ease,opacity .7s ease;
-    `;
-    card.appendChild(ripple);
-    requestAnimationFrame(() => { ripple.style.transform = 'scale(1)'; ripple.style.opacity = '0'; });
-    setTimeout(() => ripple.remove(), 700);
-  });
-})();
 
 // ── Bottom Sheet ──────────────────────────────────────────────
 function openNewItemSheet() {

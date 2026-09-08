@@ -886,16 +886,13 @@ function _todoStickyAddBoxHtml(stats = {}) {
   const totalToday = stats.totalToday ?? todayCount;
   const progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
   return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:transparent;border:none;border-radius:0;padding:0;margin-bottom:14px;box-shadow:none">
-    <button onclick="openAddTodo()"
+    <button class="tp-cta" onclick="openAddTodo()"
       style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
         font-family:var(--font);font-size:15px;font-weight:700;
         background:linear-gradient(135deg,#7c6af7,#5b4de0);
         color:white;letter-spacing:.01em;
         box-shadow:0 4px 20px rgba(124,106,247,.4);
-        display:flex;align-items:center;justify-content:center;gap:10px;
-        transition:all .2s"
-      onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(124,106,247,.5)')"
-      onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(124,106,247,.4)')">
+        display:flex;align-items:center;justify-content:center;gap:10px">
       <span>کار جدید اضافه کن</span>
       <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
         display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
