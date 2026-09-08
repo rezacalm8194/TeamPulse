@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp203';
+const TP_ASSET_V = 'tp204';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18184,7 +18184,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
           const mergedTodos = _mergeServerTodosIntoLocal(_cloneData(data));
           if (incomingEtag) window._serverDataEtag = incomingEtag;
           _ensurePendingServerSync(50);
-          console.warn('[TeamPulse] kept newer local data while server sync is pending');
+          if (!window._tpPendingNewerLocalWarnShown) {
+            window._tpPendingNewerLocalWarnShown = true;
+            console.warn('[TeamPulse] kept newer local data while server sync is pending');
+          }
           return mergedTodos;
         }
         const serverSnapshot = _cloneData(data);
@@ -18290,7 +18293,10 @@ async function _pollServerStatus() {
     if (_localCollectionsExceedServer(status) || _localBusinessCollectionsAheadOfServer(status)) {
       window._forceNextSync = false;
       window._avoidFullDocumentSync = true;
-      console.warn('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
+      if (!window._tpLocalCacheLargerWarnShown) {
+        window._tpLocalCacheLargerWarnShown = true;
+        console.warn('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
+      }
     }
     if (!_serverStatusRequiresHydration(status)) {
       if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() && Number(window._serverSyncConflictBackoffUntil || 0) <= Date.now() &&
@@ -23154,7 +23160,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v203';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v204';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
