@@ -39,7 +39,7 @@ const sandbox = {};
 vm.createContext(sandbox);
 sandbox.fa = n => String(n);
 sandbox.escapeHtml = s => String(s == null ? '' : s);
-for (const name of ['_serviceLabelKey', '_serviceMergeKey', '_isPlaceholderPackageLabel', 'uniqueDisplayPackages', 'pkgTag', '_pkgTitleLabel', 'pkgTagsHtml']) {
+for (const name of ['_serviceLabelKey', '_serviceMergeKey', '_isPlaceholderPackageLabel', 'uniqueDisplayPackages', 'pkgTag', '_pkgTitleLabel', '_pkgDisplayCompact', 'pkgTagsHtml']) {
   vm.runInContext(extractFunction(appSource, name), sandbox);
 }
 
@@ -68,6 +68,20 @@ test('pkgTagsHtml keeps two chips plus overflow so table rows stay one line', ()
   assert.match(html, /title="[^"]*ادیتور/);
 });
 
+test('pkgTagsHtml line variant shows one name plus overflow for compact viewports', () => {
+  const html = sandbox.pkgTagsHtml([
+    { type_label: 'کوچینگ', type_color: '#7c6af7' },
+    { type_label: 'سایت', type_color: '#60a5fa' },
+    { type_label: 'ادیتور', type_color: '#4aa' },
+    { type_label: 'ادمین', type_color: '#f47' },
+  ], { variant: 'line' });
+  assert.match(html, /pkg-tags-line/);
+  assert.match(html, /pkg-tags-primary/);
+  assert.match(html, /کوچینگ/);
+  assert.match(html, /\+3/);
+  assert.doesNotMatch(html.replace(/title="[^"]*"/, ''), /سایت/);
+});
+
 test('student account name cell keeps family and drops join/session dates', () => {
   const nameCell = extractFunction(appSource, 'studentAccountNameCellHtml');
   const mobile = extractFunction(appSource, 'studentAccountMobileHtml');
@@ -75,6 +89,7 @@ test('student account name cell keeps family and drops join/session dates', () =
   assert.doesNotMatch(nameCell, /studentContactScheduleHtml/);
   assert.match(nameCell, /family-badge/);
   assert.doesNotMatch(mobile, /studentContactScheduleHtml/);
+  assert.match(mobile, /variant:\s*'line'/);
   assert.match(mobile, /pkgTagsHtml\(s\.packages/);
 });
 

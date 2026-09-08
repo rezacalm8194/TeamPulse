@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp210';
+const TP_ASSET_V = 'tp211';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6268,13 +6268,28 @@ function _pkgTitleLabel(pkg) {
   return `${pkg.type_label}${count}`;
 }
 
-function pkgTagsHtml(packages, { emptyHtml = '<span style="color:var(--text3)">—</span>', max = 2 } = {}) {
+function _pkgDisplayCompact() {
+  try { return window.matchMedia('(max-width:1180px)').matches; } catch (e) { return false; }
+}
+
+function pkgTagsHtml(packages, opts = {}) {
+  const emptyHtml = opts.emptyHtml ?? '<span style="color:var(--text3)">—</span>';
+  const compact = _pkgDisplayCompact();
+  const variant = opts.variant || (compact ? 'line' : 'chips');
+  const max = opts.max != null ? opts.max : (variant === 'line' ? 1 : 2);
   const all = uniqueDisplayPackages(packages);
+  if (!all.length) return emptyHtml;
+  const title = escapeHtml(all.map(_pkgTitleLabel).join('، '));
+  if (variant === 'line') {
+    const extra = all.length > max ? all.length - max : 0;
+    const first = escapeHtml(_pkgTitleLabel(all[0]));
+    const more = extra > 0 ? `<span class="pkg-tags-more">+${fa(extra)}</span>` : '';
+    return `<div class="pkg-tags pkg-tags-line" title="${title}"><span class="pkg-tags-primary">${first}</span>${more}</div>`;
+  }
   const extra = max && all.length > max ? all.length - max : 0;
   const items = max ? all.slice(0, max) : all;
   const html = items.map(pkgTag).join('');
   if (!html) return emptyHtml;
-  const title = escapeHtml(all.map(_pkgTitleLabel).join('، '));
   const more = extra > 0 ? `<span class="tag pkg-tags-more">+${fa(extra)}</span>` : '';
   return `<div class="pkg-tags" title="${title}">${html}${more}</div>`;
 }
@@ -7190,7 +7205,7 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
         </div>
         ${financeReady ? mstuStatusLine(s.balance) : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
         <div class="mstu-pkgs">
-          ${financeReady ? pkgTagsHtml(s.packages, { emptyHtml: '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' }) : '<span style="color:var(--text3);font-size:11px">—</span>'}
+          ${financeReady ? pkgTagsHtml(s.packages, { variant: 'line', emptyHtml: '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' }) : '<span style="color:var(--text3);font-size:11px">—</span>'}
         </div>
       </div>`;
   }).join('')}</div>`;
@@ -23175,7 +23190,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v210';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v211';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
