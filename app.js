@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp190';
+const TP_ASSET_V = 'tp192';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -4713,7 +4713,9 @@ function _mergeLoadedPartHashes(keys) {
 function _shouldLoadFullDocument() {
   if (window._forceNextSync) return true;
   if (window._remoteServerDocumentChanged) return true;
-  if (_hasServerSyncPending()) return true;
+  // A durable pending marker only says that this device has local work to
+  // upload.  It is not evidence that all remote collections must be fetched.
+  // Loading the current page keeps startup and conflict rebases bounded.
   if (typeof _isTerminalTodoCollisionPending === 'function' && _isTerminalTodoCollisionPending()) return true;
   return false;
 }
@@ -5049,8 +5051,9 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
 async function _ensureCompleteBusinessParts(collections = []) {
   window._tpDeferDatabasePersist = true;
   try {
-    for (const key of [...new Set(collections)]) {
-      if (!BUSINESS_PAGINATED_KEYS.includes(key)) continue;
+    const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
+    for (let start = 0; start < keys.length; start += 3) {
+      await Promise.all(keys.slice(start, start + 3).map(async key => {
       await _ensureBusinessPartLoaded(key);
       let pages = 0;
       while (!_paginatedCollectionFullyLoaded(key) && pages < 100) {
@@ -5058,6 +5061,7 @@ async function _ensureCompleteBusinessParts(collections = []) {
         pages += 1;
         if (!ok) break;
       }
+      }));
     }
   } finally {
     window._tpDeferDatabasePersist = false;
@@ -5066,11 +5070,15 @@ async function _ensureCompleteBusinessParts(collections = []) {
   }
 }
 async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAGINATED_KEYS, { reset = true } = {}) {
+  const wasHydrating = !!window._tpHydratingFromServer;
   window._tpHydratingFromServer = true;
   window._tpDeferDatabasePersist = true;
   try {
-    for (const collection of [...new Set(collections)]) {
-      if (!BUSINESS_PAGINATED_KEYS.includes(collection)) continue;
+    const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
+    // Independent collections should not make a 200ms page turn into an
+    // eight-collection waterfall.  Keep the cap small for mobile/network APIs.
+    for (let start = 0; start < keys.length; start += 3) {
+      await Promise.all(keys.slice(start, start + 3).map(async collection => {
       await _loadBusinessPage(collection, { reset });
       let pages = 0;
       while (!_businessPagingState(collection).done && pages < 100) {
@@ -5078,9 +5086,43 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
         pages += 1;
         if (!ok) break;
       }
+      }));
     }
   } finally {
-    window._tpHydratingFromServer = false;
+    window._tpHydratingFromServer = wasHydrating;
+    window._tpDeferDatabasePersist = false;
+    if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch (e) {}
+  }
+}
+function _businessCollectionsNeedingServerHydration(status, candidates = BUSINESS_PAGINATED_KEYS) {
+  const totals = status?.collections || {};
+  const etag = status?.etag || '';
+  return [...new Set(candidates)].filter(key => {
+    if (!BUSINESS_PAGINATED_KEYS.includes(key)) return false;
+    const paging = _businessPagingState(key);
+    const localCount = _syncCollectionCount(_db, key);
+    return Number(totals[key] || 0) !== localCount || !!(etag && paging?.fetchedEtag && paging.fetchedEtag !== etag);
+  });
+}
+function _dirtyBusinessCollectionsForRebase() {
+  try {
+    const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
+    return Object.keys(patch?.collections || {}).filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
+  } catch (e) { return []; }
+}
+async function _reloadBusinessFirstPagesFromServer(collections = [], { reset = true } = {}) {
+  const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
+  if (!keys.length) return;
+  const wasHydrating = !!window._tpHydratingFromServer;
+  window._tpHydratingFromServer = true;
+  window._tpDeferDatabasePersist = true;
+  try {
+    for (let start = 0; start < keys.length; start += 3) {
+      await Promise.all(keys.slice(start, start + 3).map(key => _loadBusinessPage(key, { reset })));
+    }
+  } finally {
+    window._tpHydratingFromServer = wasHydrating;
     window._tpDeferDatabasePersist = false;
     if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch (e) {}
@@ -17466,12 +17508,21 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         } else {
           // 409 no longer returns the workspace document. Force a real hydrate:
           // adopting conflictEtag before load would make remoteDocumentChanged
-          // false and leave the client on a stale baseline.
+          // false and leave the client on a stale baseline.  This is deliberately
+          // page-scoped: a rebase needs a fresh visible/dirty baseline, not every
+          // historical finance page before the delayed delta retry can run.
           window._remoteServerDocumentChanged = true;
-          try { await _loadFromServer(); } catch (e) {}
+          try {
+            await _loadFromServer({
+              lightweightRebase: true,
+              skipLocalSnapshot: true,
+              rebaseBusinessKeys: _dirtyBusinessCollectionsForRebase(),
+            });
+          } catch (e) {}
           if (conflictEtag) window._serverDataEtag = conflictEtag;
+          // The merge mutates its owner argument; retain a server-only baseline.
           rebaseBaseline = _cloneData(_db);
-          _db = _mergeLocalPendingChangesIntoOwnerData(localPending, rebaseBaseline, { teamSafe: !!teamSession });
+          _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: !!teamSession });
         }
         _migrate(_db);
         if (serverBaseline && _incomingServerDocumentLooksTruncated(localPending, _db)) {
@@ -17717,10 +17768,12 @@ function _mergeServerTodosIntoLocal(serverData) {
 }
 
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
-async function _loadFromServer() {
+async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = false, rebaseBusinessKeys = [] } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
-  const localBeforeLoad = _db && typeof _db === 'object' ? _cloneData(_db) : null;
+  // Only the conflict handler has an outer localPending snapshot. Poll/resume
+  // lightweight loads retain this copy to preserve unsynced local rows.
+  const localBeforeLoad = !skipLocalSnapshot && _db && typeof _db === 'object' ? _cloneData(_db) : null;
   if (_isManualRestoreProtected() || !!localBeforeLoad?._restored_at) {
     _forceNextServerSync();
     clearTimeout(window._serverSyncTimer);
@@ -17741,7 +17794,11 @@ async function _loadFromServer() {
     if (!accId) return false;
     void _loadTodoStats();
     const previousEtag = window._serverDataEtag || null;
-    const includeKeys = _shouldLoadFullDocument() ? null : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students');
+    const pageParts = [...new Set([
+      ..._partsForPage(typeof currentPage === 'string' ? currentPage : 'students'),
+      ...(lightweightRebase ? rebaseBusinessKeys : []),
+    ])];
+    const includeKeys = lightweightRebase ? pageParts : (_shouldLoadFullDocument() ? null : pageParts);
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(includeKeys));
     if (res.status === 429) {
       window._rateLimitedUntil = Date.now() + 2 * 60 * 1000;
@@ -17758,7 +17815,7 @@ async function _loadFromServer() {
     const payload = await res.json();
     const remoteDocumentChanged = !!window._remoteServerDocumentChanged ||
       !!(payload.etag && previousEtag && payload.etag !== previousEtag);
-    if (remoteDocumentChanged && includeKeys) {
+    if (remoteDocumentChanged && includeKeys && !lightweightRebase) {
       window._remoteServerDocumentChanged = true;
       return _loadFromServer();
     }
@@ -17766,8 +17823,13 @@ async function _loadFromServer() {
       ? [...BUSINESS_PAGINATED_KEYS]
       : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
     if (remoteDocumentChanged) {
-      if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
-      await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: true });
+      if (lightweightRebase) {
+        if (includeKeys.includes('todos') && !await _loadTodoPage(false, { reset: true })) return false;
+        await _reloadBusinessFirstPagesFromServer(businessKeys, { reset: true });
+      } else {
+        if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
+        await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: true });
+      }
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
         await _loadTodoPage(false, { reset: false });
@@ -18138,11 +18200,15 @@ async function _pollServerStatus() {
         return false;
       }
       const localBeforeHydrate = _cloneData(_db);
+      const laggingBusinessKeys = _businessCollectionsNeedingServerHydration(status);
       window._remoteServerDocumentChanged = false;
       window._tpHydratingFromServer = true;
       try {
-        if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
-        await _reloadCompleteBusinessPartsFromServer([...BUSINESS_PAGINATED_KEYS], { reset: true });
+        if ((_todoPagesStaleForServerEtag(status.etag) || Number(status?.collections?.todos || 0) !== _syncCollectionCount(_db, 'todos')) &&
+            !await _reloadCompleteTodosFromServer({ reset: true })) return false;
+        // A status response identifies the lagging collections; do not turn a
+        // one-key repair into a complete warehouse sweep.
+        await _reloadBusinessFirstPagesFromServer(laggingBusinessKeys, { reset: true });
         if (_incomingServerDocumentLooksTruncated(localBeforeHydrate, _db)) {
           _db = localBeforeHydrate;
           _migrate(_db);
@@ -18160,7 +18226,9 @@ async function _pollServerStatus() {
       return true;
     }
     window._remoteServerDocumentChanged = true;
-    return _loadFromServer();
+    // Etag changes are common while another device saves.  Refresh current
+    // page parts now; off-screen pagination continues only when its UI needs it.
+    return _loadFromServer({ lightweightRebase: true });
   } catch(e) {
     console.warn('[TeamPulse] status poll skipped:', e.message);
     return false;
@@ -22950,7 +23018,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v190';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v192';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

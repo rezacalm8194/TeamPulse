@@ -112,7 +112,12 @@ test('sync conflicts use one delayed rebase and do not return a workspace docume
   assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 30000/);
   assert.match(appSource, /window\._serverSyncQueued = false;/);
   assert.match(appSource, /window\._remoteServerDocumentChanged = true;/);
-  assert.match(appSource, /rebaseBaseline = _cloneData\(_db\)/);
+  assert.match(appSource, /rebaseBusinessKeys: _dirtyBusinessCollectionsForRebase\(\)/);
+  assert.match(appSource, /function _dirtyBusinessCollectionsForRebase\(/);
+  assert.match(appSource, /rebaseBaseline = _cloneData\(_db\);/);
+  assert.match(appSource, /_mergeLocalPendingChangesIntoOwnerData\(localPending, _db, \{ teamSafe: !!teamSession \}\)/);
+  assert.match(appSource, /skipLocalSnapshot: true/);
+  assert.doesNotMatch(appSource, /sync_conflict[\s\S]{0,180}_reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\]/);
   assert.match(appSource, /if \(rebaseBaseline\) _writeServerSyncBaseline\(rebaseBaseline/);
   assert.match(appSource, /30000\);\s*window\._serverSyncRetryAttempt = 0;/);
   assert.match(appSource, /_serverSyncConflictBackoffUntil = 0;\s*_syncToServer\(1\);/);
@@ -139,11 +144,14 @@ test('knowledge items created on another device are merged even when local data 
   assert.match(appSource, /partsWereFullyLoaded/);
 });
 
-test('financial collections refetch from page one when another device changed the server document', () => {
+test('hydration scopes visible collections and batches any required full backfill', () => {
   assert.match(appSource, /async function _reloadCompleteBusinessPartsFromServer\(collections = BUSINESS_PAGINATED_KEYS, \{ reset = true \} = \{\}\)/);
   assert.match(appSource, /async function _reloadCompleteTodosFromServer\(\{ reset = true \} = \{\}\)/);
   assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(businessKeys\.length \? businessKeys : \[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
-  assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
+  assert.match(appSource, /async function _reloadBusinessFirstPagesFromServer/);
+  assert.match(appSource, /Promise\.all\(keys\.slice\(start, start \+ 3\)/);
+  assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status\)/);
+  assert.match(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
   assert.match(appSource, /if \(currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag\) reset = true/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
   assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
@@ -185,7 +193,8 @@ test('phones adopt a newer imported server document instead of keeping a partial
 });
 
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
-  assert.match(appSource, /const localBeforeLoad = _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
+  assert.match(appSource, /const localBeforeLoad = !skipLocalSnapshot && _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
+  assert.match(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
   assert.match(appSource, /function _collectionSyncDeleteBlocked\(/);
   assert.match(appSource, /function _paginatedCollectionFullyLoaded\(/);
   assert.match(appSource, /reset: false/);
