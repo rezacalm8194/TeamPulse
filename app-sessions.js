@@ -2,7 +2,7 @@
 // Loaded when the sessions page opens.
 function sessionsBoardFilter(){try{const v=localStorage.getItem('tp_sessions_board_filter')||'all';return ['all','open','overdue','no_month'].includes(v)?v:'all';}catch{return 'all';}}
 
-function setSessionsBoardFilter(value){const allowed=new Set(['all','open','overdue','no_month']);const next=allowed.has(value)?value:'all';try{localStorage.setItem('tp_sessions_board_filter',next);}catch{}renderSessions();}
+function setSessionsBoardFilter(value){const allowed=new Set(['all','open','overdue','no_month']);const next=allowed.has(value)?value:'all';try{localStorage.setItem('tp_sessions_board_filter',next);}catch{}_sessionBoardShown=SESSION_BOARD_COLUMN_CHUNK;renderSessions(currentStudentAccountSearch());}
 
 function sessionGroupMatchesBoardFilter(g,filter,todayParts){
   const [ty,tm]=todayParts||_todayJalali();
@@ -15,30 +15,38 @@ function sessionGroupMatchesBoardFilter(g,filter,todayParts){
 }
 
 function sessionsBoardFilterHtml(active){
-  const chips=[
+  const filters=[
     ['all','همه','همه ستون‌ها'],
     ['open','اقدام‌باز','حداقل یک اقدام باز تا جلسه بعد'],
     ['overdue','موعدگذشته','اقدام باز با موعد قبل از امروز'],
     ['no_month','بی‌جلسهٔ‌ماه','در ماه جاری جلالی جلسه‌ای ثبت نشده'],
   ];
-  return '<div class="sessions-board-filters" role="toolbar" aria-label="فیلتر بورد جلسات">'+chips.map(([id,short,full])=>'<button type="button" class="sessions-board-filter-chip'+(active===id?' active':'')+'" title="'+full+'" aria-label="'+full+'" aria-pressed="'+(active===id?'true':'false')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+short+'</button>').join('')+'</div>';
+  const [,label,tooltip]=filters.find(([id])=>id===active)||filters[0];
+  return '<details class="sessions-board-filter-menu"><summary class="btn btn-ghost" title="'+tooltip+'" aria-label="فیلتر بورد جلسات: '+label+'"><svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M4 6h16M7 12h10m-7 6h4"/></svg><span>'+label+'</span></summary><div class="sessions-board-filter-options" role="menu" aria-label="فیلتر بورد جلسات">'+filters.map(([id,short,full])=>'<button type="button" role="menuitemradio" class="'+(active===id?'active':'')+'" title="'+full+'" aria-label="'+full+'" aria-checked="'+(active===id?'true':'false')+'" onclick="setSessionsBoardFilter(\''+id+'\')">'+short+'</button>').join('')+'</div></details>';
 }
 
 
 async function renderSessions(search = '') {
-  await _ensureCompleteBusinessParts(['students', 'sessions']);
-  const sessionPaging = _businessPagingState('sessions');
+  const boardFilter = sessionsBoardFilter();
   const prevScroll = document.getElementById('sessions-board')?.scrollLeft || 0;
   updateTopbarActions(`
     <div class="table-search stu-topbar-search" style="margin-left:8px">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
       <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="queueRenderSessions(this.value)" value="${escapeHtml(search)}">
     </div>
+    ${sessionsBoardFilterHtml(boardFilter)}
     <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
       <button class="btn btn-primary" onclick="openAddSessionGeneral()" style="border-radius:0;border:none;box-shadow:none">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
       <button class="btn btn-ghost" onclick="openStudentModal()" style="border-radius:0;border:0;border-right:1px solid var(--border2)">+ افزودن ${META.entitySingular || 'شاگرد'}</button>
     </div>
   `);
+  if (boardFilter === 'all') {
+    await Promise.all(['students', 'sessions'].map(key => _ensureBusinessPartLoaded(key)));
+  } else {
+    setContent('<div class="loading sessions-board-filter-loading">در حال تکمیل فیلتر بورد جلسات…</div>');
+    await _ensureCompleteBusinessParts(['students', 'sessions']);
+  }
+  const sessionPaging = _businessPagingState('sessions');
   allStudents = await window.api.students.getAll();
   const groups = await window.api.sessions.getAll();
   const keyOnes = await window.api.sessions.keyOnes();
@@ -59,11 +67,8 @@ async function renderSessions(search = '') {
   if (search) {
     groupsSorted = groupsSorted.filter(g => (g.name + g.lname).includes(search));
   }
-  const boardFilter = sessionsBoardFilter();
   const todayParts = _todayJalali();
   groupsSorted = groupsSorted.filter(g => sessionGroupMatchesBoardFilter(g, boardFilter, todayParts));
-
-  html += sessionsBoardFilterHtml(boardFilter);
 
   if (groupsSorted.length === 0) {
     setContent(html + `<div class="empty"><span>🔍</span>چیزی پیدا نشد</div>`);

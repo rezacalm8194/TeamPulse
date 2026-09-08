@@ -4517,11 +4517,15 @@ body { top: 0 !important; }
 .student-timeline button { min-height:44px; white-space:normal; text-align:start; }
 
 
-.sessions-board-filters{display:inline-flex;flex-wrap:nowrap;gap:0;margin:0 0 10px;align-items:stretch;border:1px solid var(--border2);border-radius:10px;overflow:auto;max-width:100%;background:var(--bg2)}
-.sessions-board-filter-chip{border:0;border-left:1px solid var(--border2);background:transparent;color:var(--text3);border-radius:0;padding:5px 10px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1.2}
-.sessions-board-filter-chip:first-child{border-left:0}
-.sessions-board-filter-chip.active{color:var(--accent);background:rgba(124,106,247,.12)}
-.sessions-board-filter-chip:hover{color:var(--text)}
+.topbar-actions:has(.sessions-board-filter-menu){overflow:visible}
+.sessions-board-filter-menu{position:relative;flex:0 0 auto}
+.sessions-board-filter-menu summary{min-height:36px;padding:5px 10px;cursor:pointer;list-style:none;white-space:nowrap}
+.sessions-board-filter-menu summary::-webkit-details-marker{display:none}
+.sessions-board-filter-menu summary svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.sessions-board-filter-options{position:absolute;z-index:80;top:calc(100% + 6px);right:0;min-width:148px;padding:4px;border:1px solid var(--border2);border-radius:10px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.28)}
+.sessions-board-filter-options button{display:block;width:100%;min-height:36px;padding:7px 10px;border:0;border-radius:7px;background:transparent;color:var(--text2);font:inherit;font-size:12px;text-align:right;cursor:pointer;white-space:nowrap}
+.sessions-board-filter-options button:hover,.sessions-board-filter-options button:focus-visible{color:var(--text);background:var(--bg3);outline:none}
+.sessions-board-filter-options button.active{color:var(--accent2);background:rgba(124,106,247,.14);font-weight:600}
 .session-fu-due{font-size:11px;color:var(--text3)}
 .session-fu-due.overdue{color:var(--danger,#c24135);font-weight:600}
 .session-fu-badge{background:rgba(251,191,36,.15);color:var(--amber)}
