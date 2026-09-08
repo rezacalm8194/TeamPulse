@@ -20,7 +20,11 @@ test('ordinary workspace syncs send collection deltas instead of the full accoun
 test('todo completion merge prefers done state and later recurring dates', () => {
   assert.match(appSource, /function _pickMergedTodo\(/);
   assert.match(appSource, /function _todoRemoteDateRegressesLocal\(/);
-  assert.match(appSource, /if \(conflictAttempt < 4\) \{/);
+  assert.match(appSource, /if \(conflictAttempt < 1\) \{/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1000/);
+  assert.match(appSource, /_syncToServer\(1\)/);
+  assert.match(appSource, /if \(!conflictAttempt && _stopStaleFullSyncConflictPending\(\)\) return;/);
+  assert.match(appSource, /window\._serverSyncQueued = false;[\s\S]{0,200}break;/);
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);
@@ -95,6 +99,24 @@ test('pending server sync does not refetch the full document on every poll or re
   assert.match(appSource, /res\.status === 400 && deltaBody\?\.error === 'empty_patch'/);
   assert.doesNotMatch(appSource, /_hasServerSyncPending\(\) && !_isTerminalTodoCollisionPending\(\) &&[\s\S]{0,120}return _loadFromServer\(\)/);
   assert.doesNotMatch(appSource, /setTimeout\(\(\) => \{ window\._serverSyncFailureWarned = false; \}, 30000\)/);
+  assert.match(appSource, /function _scheduleServerSyncSoon[\s\S]{0,250}_serverSyncConflictBackoffUntil/);
+  assert.match(appSource, /function _ensurePendingServerSync[\s\S]{0,160}_serverSyncConflictBackoffUntil/);
+  assert.match(appSource, /_hasServerSyncPending\(\)[\s\S]{0,180}_serverSyncConflictBackoffUntil/);
+  assert.match(appSource, /\(res\.status === 409 && responseData\?\.error === 'sync_conflict'\)/);
+  assert.match(appSource, /if \(window\._serverSyncInFlight\) await window\._serverSyncInFlight\.catch/);
+});
+
+test('sync conflicts use one delayed rebase and do not return a workspace document', () => {
+  assert.match(appSource, /if \(conflictAttempt < 1\) \{/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1000/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 30000/);
+  assert.match(appSource, /window\._serverSyncQueued = false;/);
+  assert.match(appSource, /window\._remoteServerDocumentChanged = true;/);
+  assert.match(appSource, /rebaseBaseline = _cloneData\(_db\)/);
+  assert.match(appSource, /if \(rebaseBaseline\) _writeServerSyncBaseline\(rebaseBaseline/);
+  assert.match(appSource, /30000\);\s*window\._serverSyncRetryAttempt = 0;/);
+  assert.match(appSource, /_serverSyncConflictBackoffUntil = 0;\s*_syncToServer\(1\);/);
+  assert.doesNotMatch(dataSource, /sync_conflict[\s\S]{0,250}data:\s*sanitizeUserDataForStorage/);
 });
 
 test('nested knowledge hashes restore the same folder on phone and laptop', () => {

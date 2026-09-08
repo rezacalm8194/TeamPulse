@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp188';
+const TP_ASSET_V = 'tp190';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16459,6 +16459,7 @@ function _serverTimes(data, localData = _db) {
 
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
 function _scheduleServerSyncRetry() {
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   clearTimeout(window._serverSyncRetryTimer);
   const attempt = Math.min(6, Number(window._serverSyncRetryAttempt || 0) + 1);
   window._serverSyncRetryAttempt = attempt;
@@ -16474,9 +16475,9 @@ function _serverSyncPushAlreadyActive() {
 }
 
 function _scheduleServerSyncSoon(delay = 0) {
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   clearTimeout(window._serverSyncTimer);
-  clearTimeout(window._serverSyncRetryTimer);
-  window._serverSyncRetryTimer = null;
+  if (window._serverSyncRetryTimer) return;
   window._serverSyncTimer = setTimeout(() => {
     window._serverSyncTimer = null;
     _syncToServer();
@@ -16484,6 +16485,7 @@ function _scheduleServerSyncSoon(delay = 0) {
 }
 
 function _ensurePendingServerSync(delay = 50) {
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   if (_serverSyncPushAlreadyActive()) return;
   clearTimeout(window._serverSyncTimer);
   window._serverSyncTimer = setTimeout(() => {
@@ -16876,6 +16878,7 @@ async function _reconcileTerminalTodoCollisions(pending) {
 }
 
 async function _syncToServer(conflictAttempt = 0) {
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return null;
   if (_isTerminalTodoCollisionPending()) {
     _stopTerminalTodoCollisionSync();
     return null;
@@ -16884,7 +16887,9 @@ async function _syncToServer(conflictAttempt = 0) {
     window._serverSyncQueued = true;
     return window._serverSyncInFlight;
   }
-  if (_stopStaleFullSyncConflictPending()) return;
+  // The delayed, single rebase is the only time a conflict-merged marker is
+  // allowed to send again. All ordinary callers still stop on that marker.
+  if (!conflictAttempt && _stopStaleFullSyncConflictPending()) return;
   const run = (async () => {
     let result = null;
     let successfulResult = null;
@@ -16892,6 +16897,10 @@ async function _syncToServer(conflictAttempt = 0) {
       window._serverSyncQueued = false;
       result = await _syncToServerOnce(conflictAttempt);
       if (result?.ok) successfulResult = result;
+      if (result?.status === 409 || _fullSyncConflictPendingMatchesCurrentData()) {
+        window._serverSyncQueued = false;
+        break;
+      }
       conflictAttempt = 0;
     } while (window._serverSyncQueued && !_isTerminalTodoCollisionPending());
     if (_isTerminalTodoCollisionPending()) _stopTerminalTodoCollisionSync();
@@ -16968,6 +16977,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     const accId = teamSession?.ownerUserId || _sbUser?.id;
     if (!accId || !_sbSession?.token) return null;
     try {
+      if (window._serverSyncInFlight) await window._serverSyncInFlight.catch(() => null);
       let deltaCollisionAttempt = 0;
       let deltaStateConflictAttempt = 0;
       const resolvedCollisionIds = new Set();
@@ -17426,41 +17436,78 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       return res;
     }
 
-    if (res.status === 409 && responseData?.error === 'sync_conflict' && responseData.data) {
-      if (conflictAttempt < 4) {
+    if (res.status === 409 && responseData?.error === 'sync_conflict') {
+      const conflictEtag = responseData.etag || null;
+      if (responseData.data && _dataFingerprint(_serverDataSignature(_db || {})) === _dataFingerprint(_serverDataSignature(responseData.data))) {
+        window._serverDataEtag = conflictEtag || window._serverDataEtag || null;
+        _writeServerSyncBaseline(_cloneData(responseData.data), window._serverDataEtag);
+        _clearServerSyncPending(Infinity);
+        window._serverSyncQueued = false;
+        return res;
+      }
+      if (conflictAttempt < 1) {
         const localPending = _cloneData(_db);
-        if (_incomingServerDocumentLooksTruncated(localPending, responseData.data)) {
-          window._serverDataEtag = responseData.etag || window._serverDataEtag || null;
+        if (responseData.data && _incomingServerDocumentLooksTruncated(localPending, responseData.data)) {
+          window._serverDataEtag = conflictEtag || window._serverDataEtag || null;
+          window._avoidFullDocumentSync = true;
           _markServerSyncPending('conflict-truncated-ignored');
-          _forceNextServerSync();
+          window._serverSyncQueued = false;
           console.warn('[TeamPulse] ignored truncated sync_conflict payload');
           return res;
         }
-        const serverBaseline = _cloneData(responseData.data);
-        _db = _mergeLocalPendingChangesIntoOwnerData(localPending, responseData.data, { teamSafe: !!teamSession });
-        _mergeServerTodosIntoLocal(serverBaseline);
+        // Block poller/interval from stealing the rebase timer while we hydrate.
+        window._serverSyncConflictBackoffUntil = Date.now() + 1000;
+        const serverBaseline = responseData.data ? _cloneData(responseData.data) : null;
+        let rebaseBaseline = serverBaseline;
+        if (serverBaseline) {
+          window._serverDataEtag = conflictEtag || window._serverDataEtag || null;
+          _db = _mergeLocalPendingChangesIntoOwnerData(localPending, serverBaseline, { teamSafe: !!teamSession });
+          _mergeServerTodosIntoLocal(serverBaseline);
+        } else {
+          // 409 no longer returns the workspace document. Force a real hydrate:
+          // adopting conflictEtag before load would make remoteDocumentChanged
+          // false and leave the client on a stale baseline.
+          window._remoteServerDocumentChanged = true;
+          try { await _loadFromServer(); } catch (e) {}
+          if (conflictEtag) window._serverDataEtag = conflictEtag;
+          rebaseBaseline = _cloneData(_db);
+          _db = _mergeLocalPendingChangesIntoOwnerData(localPending, rebaseBaseline, { teamSafe: !!teamSession });
+        }
         _migrate(_db);
-        if (_incomingServerDocumentLooksTruncated(localPending, _db)) {
+        if (serverBaseline && _incomingServerDocumentLooksTruncated(localPending, _db)) {
           _db = localPending;
           _migrate(_db);
-          window._serverDataEtag = responseData.etag || window._serverDataEtag || null;
           try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+          window._avoidFullDocumentSync = true;
           _markServerSyncPending('conflict-truncated-ignored');
-          _forceNextServerSync();
+          window._serverSyncQueued = false;
           console.warn('[TeamPulse] reverted truncated sync_conflict merge');
           return res;
         }
-        window._serverDataEtag = responseData.etag || null;
-        _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
+        if (rebaseBaseline) _writeServerSyncBaseline(rebaseBaseline, window._serverDataEtag);
         try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
         _markServerSyncPending('conflict-merged');
-        try { _refreshUiAfterServerLoad(true); } catch(e) {}
-        return _syncToServerOnce(conflictAttempt + 1, todoCollisionAttempt);
+        window._serverSyncQueued = false;
+        clearTimeout(window._serverSyncRetryTimer);
+        window._serverSyncRetryTimer = setTimeout(() => {
+          window._serverSyncRetryTimer = null;
+          window._serverSyncConflictBackoffUntil = 0;
+          _syncToServer(1);
+        }, 1000);
+        return res;
       }
       const stoppedFingerprint = _dataFingerprint(_serverDataSignature(_db || {}));
+      if (conflictEtag) window._serverDataEtag = conflictEtag;
       _markServerSyncPending('conflict-merged-stopped');
       clearTimeout(window._serverSyncRetryTimer);
+      window._serverSyncConflictBackoffUntil = Date.now() + 30000;
+      window._serverSyncRetryTimer = setTimeout(() => {
+        window._serverSyncRetryTimer = null;
+        window._serverSyncConflictBackoffUntil = 0;
+        _syncToServer(1);
+      }, 30000);
       window._serverSyncRetryAttempt = 0;
+      window._serverSyncQueued = false;
       if (window._fullSyncConflictStoppedWarnedFingerprint !== stoppedFingerprint) {
         window._fullSyncConflictStoppedWarnedFingerprint = stoppedFingerprint;
         showToast('همگام‌سازی کامل پس از تعارض متوقف شد؛ تغییرات روی دستگاه محفوظ است', 'error');
@@ -17517,7 +17564,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
       return res;
     }
-    if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429) {
+    if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429 && !(res.status === 409 && responseData?.error === 'sync_conflict')) {
       _markServerSyncPending('http-' + res.status);
       _scheduleServerSyncRetry();
       const quietStatus = res.status === 401 || res.status === 403 || res.status === 409;
@@ -18076,7 +18123,7 @@ async function _pollServerStatus() {
       console.warn('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
     }
     if (!_serverStatusRequiresHydration(status)) {
-      if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
+      if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() && Number(window._serverSyncConflictBackoffUntil || 0) <= Date.now() &&
           !_fullSyncConflictPendingMatchesCurrentData()) {
         _ensurePendingServerSync(0);
       }
@@ -22903,7 +22950,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v188';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v190';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
