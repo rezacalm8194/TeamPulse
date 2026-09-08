@@ -23,6 +23,11 @@ test('app shell does not prefetch extra JS on first paint', () => {
   const appCss = fs.readFileSync(path.join(root, 'app.css'), 'utf8');
   assert.match(appCss, /@font-face[\s\S]*Vazirmatn-Regular\.woff2/);
   assert.match(appCss, /@font-face[\s\S]*Vazirmatn-SemiBold\.woff2/);
+  const assetV = appJs.match(/TP_ASSET_V = '(tp\d+)'/)?.[1];
+  assert.ok(assetV, 'TP_ASSET_V must be defined');
+  assert.match(appHtml, new RegExp(`Vazirmatn-Regular\\.woff2\\?v=${assetV}`));
+  assert.match(appCss, new RegExp(`Vazirmatn-Regular\\.woff2\\?v=${assetV}`));
+  assert.match(appCss, new RegExp(`Vazirmatn-SemiBold\\.woff2\\?v=${assetV}`));
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 

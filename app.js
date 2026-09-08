@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp204';
+const TP_ASSET_V = 'tp206';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18117,7 +18117,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
           _clearServerSyncPending(serverTime);
         } else {
           _ensurePendingServerSync(50);
-          console.warn('[TeamPulse] kept team local data while server sync is pending');
+          if (!window._tpTeamPendingLocalWarnShown) {
+            window._tpTeamPendingLocalWarnShown = true;
+            console.debug('[TeamPulse] kept team local data while server sync is pending');
+          }
           return false;
         }
       }
@@ -18134,7 +18137,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
         _markServerSyncPending(teamLocalDiverged ? 'team-local-diverged' : 'team-legacy-safe-merge');
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
-        console.warn('[TeamPulse] prevented team data rollback and merged local changes');
+        if (!window._tpTeamRollbackWarnShown) {
+          window._tpTeamRollbackWarnShown = true;
+          console.debug('[TeamPulse] prevented team data rollback and merged local changes');
+        }
         return true;
       }
       if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) return false;
@@ -18186,7 +18192,7 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
           _ensurePendingServerSync(50);
           if (!window._tpPendingNewerLocalWarnShown) {
             window._tpPendingNewerLocalWarnShown = true;
-            console.warn('[TeamPulse] kept newer local data while server sync is pending');
+            console.debug('[TeamPulse] kept newer local data while server sync is pending');
           }
           return mergedTodos;
         }
@@ -18201,7 +18207,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
         _forceNextServerSync();
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
-        console.warn('[TeamPulse] merged pending local changes with newer server data');
+        if (!window._tpMergedPendingWarnShown) {
+          window._tpMergedPendingWarnShown = true;
+          console.debug('[TeamPulse] merged pending local changes with newer server data');
+        }
         return true;
       }
       // زمان دستگاه‌ها قابل اعتماد نیست. اگر داده محلی از آخرین نسخه‌ای که واقعاً
@@ -18226,7 +18235,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
         _markServerSyncPending(localDiverged ? 'local-diverged-from-baseline' : 'legacy-safe-merge');
         clearTimeout(window._serverSyncTimer);
         window._serverSyncTimer = setTimeout(_syncToServer, 50);
-        console.warn('[TeamPulse] prevented automatic rollback and merged local data with server');
+        if (!window._tpRollbackMergeWarnShown) {
+          window._tpRollbackMergeWarnShown = true;
+          console.debug('[TeamPulse] prevented automatic rollback and merged local data with server');
+        }
         return mergedChanged || serverTodoStateChanged;
       }
       const localEmpty = !localBeforeLoad?.students?.length && !localBeforeLoad?.todos?.length && !localBeforeLoad?.instructions?.length;
@@ -18243,7 +18255,10 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
           _markServerSyncPending('unstamped-local-merged-with-newer-server');
           clearTimeout(window._serverSyncTimer);
           window._serverSyncTimer = setTimeout(_syncToServer, 50);
-          console.warn('[TeamPulse] merged in-memory local todos with newer server data');
+          if (!window._tpMemoryMergeWarnShown) {
+            window._tpMemoryMergeWarnShown = true;
+            console.debug('[TeamPulse] merged in-memory local todos with newer server data');
+          }
           return true;
         }
         _db = _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, _cloneData(data));
@@ -18295,7 +18310,7 @@ async function _pollServerStatus() {
       window._avoidFullDocumentSync = true;
       if (!window._tpLocalCacheLargerWarnShown) {
         window._tpLocalCacheLargerWarnShown = true;
-        console.warn('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
+        console.debug('[TeamPulse] local business cache is larger than status totals; hydrating pages instead of full overwrite');
       }
     }
     if (!_serverStatusRequiresHydration(status)) {
@@ -23160,7 +23175,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v204';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v206';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
