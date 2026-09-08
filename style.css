@@ -606,9 +606,9 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .key-session-card {
   background: var(--bg3); border: 1px solid rgba(251,191,36,.25);
   border-radius: 10px; padding: 10px 12px; cursor: pointer;
-  transition: transform .12s, border-color .12s;
+  transition: border-color .08s ease;
 }
-.key-session-card:hover { transform: translateY(-2px); border-color: var(--amber); }
+.key-session-card:hover { border-color: var(--amber); }
 .ks-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .ks-name { font-size: 12px; font-weight: 600; color: var(--accent2); }
 .ks-date { font-size: 11px; color: var(--text3); }
@@ -653,7 +653,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   width: 100%; margin-top: 8px; padding: 6px 10px;
   font-size: 11px; border-radius: 6px;
   border: 1px dashed var(--border2); background: none; color: var(--text2);
-  cursor: pointer; transition: all .15s;
+  cursor: pointer; transition: background .08s ease, color .08s ease, border-color .08s ease;
 }
 .session-column-add:hover { background: var(--bg4); color: var(--text); border-color: var(--accent); }
 .session-column-body {
@@ -663,9 +663,9 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .session-card {
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; cursor: pointer;
-  transition: transform .1s, border-color .1s;
+  transition: border-color .08s ease;
 }
-.session-card:hover { transform: translateY(-1px); border-color: var(--accent2); }
+.session-card:hover { border-color: var(--accent2); }
 .session-card.key { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.06); }
 .session-card .sc-date { font-size: 10px; color: var(--accent2); font-weight: 600; margin-bottom: 3px; }
 .session-card .sc-title { font-size: 12px; font-weight: 600; color: var(--text); }
@@ -700,14 +700,14 @@ body.light mark { background: rgba(251,191,36,.5); }
   width: 100%; margin-top: 6px; padding: 6px 10px;
   font-size: 11px; font-weight: 600; border-radius: 6px;
   border: 1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.08);
-  color: var(--amber); cursor: pointer; transition: all .15s;
+  color: var(--amber); cursor: pointer; transition: background .08s ease, color .08s ease, border-color .08s ease;
 }
 .key-events-btn:hover { background: rgba(251,191,36,.18); }
 .topics-btn {
   width: 100%; margin-top: 6px; padding: 6px 10px;
   font-size: 11px; font-weight: 600; border-radius: 6px;
   border: 1px solid rgba(124,106,247,.35); background: rgba(124,106,247,.08);
-  color: var(--accent2); cursor: pointer; transition: all .15s;
+  color: var(--accent2); cursor: pointer; transition: background .08s ease, color .08s ease, border-color .08s ease;
 }
 .topics-btn:hover { background: rgba(124,106,247,.18); }
 .topic-item {
@@ -745,7 +745,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   width: 100%; margin-top: 6px; padding: 6px 10px;
   font-size: 11px; font-weight: 600; border-radius: 6px;
   border: 1px solid rgba(96,165,250,.35); background: rgba(96,165,250,.08);
-  color: var(--blue); cursor: pointer; transition: all .15s;
+  color: var(--blue); cursor: pointer; transition: background .08s ease, color .08s ease, border-color .08s ease;
 }
 .summary-btn:hover { background: rgba(96,165,250,.18); }
 .summary-entry { padding: 10px 0; }
@@ -778,7 +778,7 @@ body.light mark { background: rgba(251,191,36,.5); }
   width: 100%; margin-top: 6px; padding: 6px 10px;
   font-size: 11px; font-weight: 600; border-radius: 6px;
   border: 1px solid var(--border2); background: var(--bg3);
-  color: var(--text2); cursor: pointer; transition: all .15s;
+  color: var(--text2); cursor: pointer; transition: background .08s ease, color .08s ease, border-color .08s ease;
 }
 .archive-btn:hover { background: rgba(248,113,113,.12); color: var(--red); border-color: var(--red); }
 
