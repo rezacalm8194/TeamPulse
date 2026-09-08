@@ -462,13 +462,9 @@ async function persistWorkspaceDocumentLocked(req, res, {
     // یک تب تازه‌فعال‌شده یا دستگاه آفلاین می‌تواند کل داده جدید را عقب ببرد.
     // force فقط جایگزینی عمدیِ تقریباً خالی را اجازه می‌دهد، نه دور زدن etag.
     if (!grant && (!baseEtag || baseEtag !== currentEtag)) {
-      const conflictDoc = previousLayout === 'parts'
-        ? (await loadWorkspaceDocumentAsync(db, storageKey))?.data
-        : previousData;
       return res.status(409).json({
         error: 'sync_conflict',
         message: 'Server data changed since this client loaded it.',
-        data: sanitizeUserDataForStorage(conflictDoc),
         etag: currentEtag,
       });
     }
