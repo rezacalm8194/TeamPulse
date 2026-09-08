@@ -1,11 +1,10 @@
 # Vazirmatn
 
-Static WOFF2 files based on the official [v33.003 release](https://github.com/rastikerdar/vazirmatn/releases/tag/v33.003), subset to Arabic/Persian + Latin UI glyphs used by TeamPulse (same appearance for app text, smaller download).
+Static WOFF2 files based on the official [v33.003 release](https://github.com/rastikerdar/vazirmatn/releases/tag/v33.003), subset for TeamPulse Persian/Latin UI.
 
-- `Vazirmatn-Regular.woff2` (400)
-- `Vazirmatn-SemiBold.woff2` (600)
+`@font-face` rules live in `app.css` on the critical path. This CSS file is a mirror for reference.
 
-Source: https://github.com/rastikerdar/vazirmatn/tree/v33.003/fonts/webfonts
+- Preload only Regular (400) on first paint so SemiBold does not compete on the critical path
+- SemiBold (600) still loads via CSS with `font-display: swap` (same final look)
 
 Copyright and SIL Open Font License are preserved in `OFL.txt`.
-Only these two weights are hosted; heavier CSS weights use browser synthesis.
