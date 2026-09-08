@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp206';
+const TP_ASSET_V = 'tp207';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6263,13 +6263,20 @@ function pkgTag(pkg) {
   return `<span class="tag" style="background:${color}22;color:${color}">${escapeHtml(pkg.type_label)}${count}</span>`;
 }
 
-function pkgTagsHtml(packages, { emptyHtml = '<span style="color:var(--text3)">—</span>', max } = {}) {
-  let items = uniqueDisplayPackages(packages);
-  const extra = max && items.length > max ? items.length - max : 0;
-  if (max) items = items.slice(0, max);
+function _pkgTitleLabel(pkg) {
+  const count = pkg._count > 1 ? ` ×${fa(pkg._count)}` : '';
+  return `${pkg.type_label}${count}`;
+}
+
+function pkgTagsHtml(packages, { emptyHtml = '<span style="color:var(--text3)">—</span>', max = 2 } = {}) {
+  const all = uniqueDisplayPackages(packages);
+  const extra = max && all.length > max ? all.length - max : 0;
+  const items = max ? all.slice(0, max) : all;
   const html = items.map(pkgTag).join('');
   if (!html) return emptyHtml;
-  return html + (extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : '');
+  const title = escapeHtml(all.map(_pkgTitleLabel).join('، '));
+  const more = extra > 0 ? `<span class="tag pkg-tags-more">+${fa(extra)}</span>` : '';
+  return `<div class="pkg-tags" title="${title}">${html}${more}</div>`;
 }
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
@@ -7130,9 +7137,8 @@ function studentAccountNameCellHtml(s, i) {
   return `<div class="name-cell">
             ${avatar(s.name, i)}
             <div>
-              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)} ${fam ? `<span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span>` : ''}</div>
-              <div class="name-cell-sub">${DateService.disp(s.date_jalali) || '—'}</div>
-              ${(typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')) ? studentContactScheduleHtml(s.id) : ''}
+              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
+              ${fam ? `<div class="name-cell-sub"><span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span></div>` : ''}
             </div>
           </div>`;
 }
@@ -7144,7 +7150,7 @@ function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) 
     const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
     return `<tr>
         <td>${studentAccountNameCellHtml(s, i)}</td>
-        <td>${financeReady ? pkgTagsHtml(s.packages) : '—'}</td>
+        <td class="stu-pkgs-cell">${financeReady ? pkgTagsHtml(s.packages) : '—'}</td>
         <td>${financeReady ? `<span class="amount amount-neutral">${fmt(s.totalAmount)}</span>` : '—'}</td>
         <td>${financeReady ? `<span class="amount amount-paid">${fmt(s.totalPaid)}</span>` : '—'}</td>
         <td>${financeReady ? (s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>') : '—'}</td>
@@ -7160,9 +7166,6 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
   }
   return `<div class="mstu-list">${filtered.map((s, i) => {
     const fam = FAMILIES.find(f => f.id === s.family_id);
-    const pkgs = uniqueDisplayPackages(s.packages || []);
-    const visiblePkgs = pkgs.slice(0, 2);
-    const extra = pkgs.length - visiblePkgs.length;
     const menuId = `${menuPrefix}-menu-${s.id}`;
     return `
       <div class="mstu-card student-record-row" onclick="openStudentDetail(${s.id})">
@@ -7186,11 +7189,8 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
           </div>
         </div>
         ${financeReady ? mstuStatusLine(s.balance) : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
-        ${(typeof _paginatedCollectionFullyLoaded === 'function' && _paginatedCollectionFullyLoaded('sessions')) ? studentContactScheduleHtml(s.id) : ''}
         <div class="mstu-pkgs">
-          ${financeReady ? visiblePkgs.map(pkgTag).join('') : '<span style="color:var(--text3);font-size:11px">—</span>'}
-          ${financeReady && extra > 0 ? `<span class="tag" style="background:var(--bg4);color:var(--text3)">+${fa(extra)}</span>` : ''}
-          ${financeReady && pkgs.length === 0 ? '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' : ''}
+          ${financeReady ? pkgTagsHtml(s.packages, { emptyHtml: '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' }) : '<span style="color:var(--text3);font-size:11px">—</span>'}
         </div>
       </div>`;
   }).join('')}</div>`;
@@ -23175,7 +23175,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v206';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v207';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
