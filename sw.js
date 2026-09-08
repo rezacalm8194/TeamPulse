@@ -1,8 +1,7 @@
-const CACHE = 'team-pulse-static-v200';
+const CACHE = 'team-pulse-static-v201';
 // Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
-  '/manifest.json',
   '/favicon.png',
   '/app-icon-192-v3.png',
   '/notification-badge.png',
