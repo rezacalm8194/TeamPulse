@@ -2922,10 +2922,8 @@ async function renderInstructions(instrSearch) {
 
         html += `
           <div class="_ifcard _ifcard-gallery" data-id="${item.id}" data-type="folder"
-            style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative;display:flex;flex-direction:column"
-            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
-            onmouseover="_instrHoverCard(this,'${color}')"
-            onmouseout="_instrUnhoverCard(this)">
+            style="--if-accent:${color};background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;position:relative;display:flex;flex-direction:column"
+            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})">
             <div style="height:3px;background:${color}"></div>
             <div class="_ifcard-body" style="padding:13px 14px 11px">
               ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
@@ -2965,10 +2963,8 @@ async function renderInstructions(instrSearch) {
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
           <div class="_ifcard _ifcard-list-row" data-id="${item.id}" data-type="folder"
-            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:background .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
-            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
-            onmouseover="this.style.background='var(--bg3)'"
-            onmouseout="this.style.background=''">
+            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})">
             <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${escapeHtml(item.icon||'📁')}</span>
             <div style="flex:1;min-width:0">
               <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
@@ -3004,10 +3000,8 @@ async function renderInstructions(instrSearch) {
         const titleSafe = item.title.replace(/'/g,"\\'");
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="folder"
-            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
-            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})"
-            onmouseover="this.style.background='var(--bg3)'"
-            onmouseout="this.style.background=''">
+            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})">
             <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${escapeHtml(item.icon||'📁')}</span>
             <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
@@ -3044,10 +3038,8 @@ async function renderInstructions(instrSearch) {
         const lastEdit = item.updated_at ? _relTime(item.updated_at) : '';
         html += `
           <div class="_ifcard _ifcard-gallery" data-id="${item.id}" data-type="note"
-            style="background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;transition:all .2s;position:relative;min-height:112px;display:flex;flex-direction:column"
-            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
-            onmouseover="_instrHoverCard(this,'${color}')"
-            onmouseout="_instrUnhoverCard(this)">
+            style="--if-accent:${color};background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;position:relative;min-height:112px;display:flex;flex-direction:column"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
             <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${escapeHtml(item.icon||'📝')}</div>
             <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
@@ -3081,10 +3073,8 @@ async function renderInstructions(instrSearch) {
         const isLast = idx === arr.length - 1;
         html += `
           <div class="_ifcard _ifcard-list-row" data-id="${item.id}" data-type="note"
-            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;transition:all .15s;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
-            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
-            onmouseover="this.style.background='var(--bg3)'"
-            onmouseout="this.style.background=''">
+            style="display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;cursor:pointer;position:relative;border-right:3px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})">
             <span style="font-size:20px;flex-shrink:0;width:28px;text-align:center">${escapeHtml(item.icon||'📝')}</span>
             <div style="flex:1;min-width:0">
               <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:8px">
@@ -3118,10 +3108,8 @@ async function renderInstructions(instrSearch) {
         const isLast = idx === arr.length - 1;
         html += `
           <div class="_ifcard" data-id="${item.id}" data-type="note"
-            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;transition:background .12s;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
-            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})"
-            onmouseover="this.style.background='var(--bg3)'"
-            onmouseout="this.style.background=''">
+            style="display:flex;align-items:center;gap:9px;min-height:36px;padding:6px 12px;cursor:pointer;position:relative;border-right:2px solid ${color};${!isLast?'border-bottom:1px solid var(--border)':''}"
+            onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})">
             <span style="font-size:15px;width:20px;text-align:center;flex-shrink:0">${escapeHtml(item.icon||'📝')}</span>
             <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
@@ -3296,16 +3284,8 @@ function _relTime(iso) {
   } catch(e){ return ''; }
 }
 
-function _instrHoverCard(el, color) {
-  el.style.borderColor = color;
-  el.style.transform   = 'translateY(-2px)';
-  el.style.boxShadow   = `0 4px 20px ${color}22`;
-}
-function _instrUnhoverCard(el) {
-  el.style.borderColor = '';
-  el.style.transform   = '';
-  el.style.boxShadow   = '';
-}
+function _instrHoverCard() {}
+function _instrUnhoverCard() {}
 
 /* ── انتخاب چندتایی: نگه‌داشتن انگشت روی کارت حالت انتخاب را فعال می‌کنه، بعد
    لمس ساده روی هر کارت فقط انتخاب/عدم‌انتخاب را toggle می‌کنه تا کاربر بتواند
@@ -4974,16 +4954,13 @@ function renderGoals() {
   setContent(`
     <div style="max-width:920px;margin:0 auto">
       <div style="margin-bottom:16px">
-        <button onclick="openAddGoal()"
+        <button class="tp-cta" onclick="openAddGoal()"
           style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
             font-family:var(--font);font-size:15px;font-weight:700;
             background:linear-gradient(135deg,#7c6af7,#5b4de0);
             color:white;letter-spacing:.01em;
             box-shadow:0 4px 20px rgba(124,106,247,.4);
-            display:flex;align-items:center;justify-content:center;gap:10px;
-            transition:all .2s"
-          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(124,106,247,.5)')"
-          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(124,106,247,.4)')">
+            display:flex;align-items:center;justify-content:center;gap:10px">
           <span>🎯 هدف جدید اضافه کن</span>
           <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
             display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
@@ -6475,16 +6452,13 @@ function renderHabits() {
   setContent(`
     <div style="max-width:920px;margin:0 auto">
       <div style="margin-bottom:16px">
-        <button onclick="openAddHabit()"
+        <button class="tp-cta" onclick="openAddHabit()"
           style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
             font-family:var(--font);font-size:15px;font-weight:700;
             background:linear-gradient(135deg,#fbbf24,#f59e0b);
             color:white;letter-spacing:.01em;
             box-shadow:0 4px 20px rgba(251,191,36,.35);
-            display:flex;align-items:center;justify-content:center;gap:10px;
-            transition:all .2s"
-          onmouseover="_tpStyle2(this,'transform','translateY(-2px)','boxShadow','0 8px 28px rgba(251,191,36,.45)')"
-          onmouseout="_tpStyle2(this,'transform','none','boxShadow','0 4px 20px rgba(251,191,36,.35)')">
+            display:flex;align-items:center;justify-content:center;gap:10px">
           <span>🔥 عادت جدید اضافه کن</span>
           <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
             display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
