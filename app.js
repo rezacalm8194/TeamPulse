@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp193';
+const TP_ASSET_V = 'tp194';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -17488,76 +17488,64 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         return res;
       }
       if (conflictAttempt < 1) {
-        const localPending = _cloneData(_db);
-        if (responseData.data && _incomingServerDocumentLooksTruncated(localPending, responseData.data)) {
-          window._serverDataEtag = conflictEtag || window._serverDataEtag || null;
+        if (responseData.data && _incomingServerDocumentLooksTruncated(_db, responseData.data)) {
+          if (conflictEtag) window._serverDataEtag = conflictEtag;
           window._avoidFullDocumentSync = true;
           _markServerSyncPending('conflict-truncated-ignored');
           window._serverSyncQueued = false;
           console.warn('[TeamPulse] ignored truncated sync_conflict payload');
           return res;
         }
-        // Block poller/interval from stealing the rebase timer while we hydrate.
-        window._serverSyncConflictBackoffUntil = Date.now() + 1000;
-        const serverBaseline = responseData.data ? _cloneData(responseData.data) : null;
-        let rebaseBaseline = serverBaseline;
-        if (serverBaseline) {
-          window._serverDataEtag = conflictEtag || window._serverDataEtag || null;
+        // Etag-only rebase: do NOT hydrate every page collection here. That
+        // waterfall (students/payments/packages/…) is what looked like a storm
+        // after each 409. Keep local pending + baseline hashes; only adopt the
+        // newer server etag and retry the same delta once.
+        if (conflictEtag) window._serverDataEtag = conflictEtag;
+        try {
+          const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+          if (statusRes.ok) {
+            const status = await statusRes.json();
+            if (status?.etag) window._serverDataEtag = status.etag;
+          }
+        } catch (e) {}
+        if (responseData.data) {
+          const localPending = _cloneData(_db);
+          const serverBaseline = _cloneData(responseData.data);
           _db = _mergeLocalPendingChangesIntoOwnerData(localPending, serverBaseline, { teamSafe: !!teamSession });
           _mergeServerTodosIntoLocal(serverBaseline);
-        } else {
-          // 409 no longer returns the workspace document. Force a real hydrate:
-          // adopting conflictEtag before load would make remoteDocumentChanged
-          // false and leave the client on a stale baseline.  This is deliberately
-          // page-scoped: a rebase needs a fresh visible/dirty baseline, not every
-          // historical finance page before the delayed delta retry can run.
-          window._remoteServerDocumentChanged = true;
-          try {
-            await _loadFromServer({
-              lightweightRebase: true,
-              skipLocalSnapshot: true,
-              rebaseBusinessKeys: _dirtyBusinessCollectionsForRebase(),
-            });
-          } catch (e) {}
-          // A page hydrate can advance beyond the ETag on the failed POST.
-          if (!window._serverDataEtag && conflictEtag) window._serverDataEtag = conflictEtag;
-          // The merge mutates its owner argument; retain a server-only baseline.
-          rebaseBaseline = _cloneData(_db);
-          _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: !!teamSession });
-        }
-        _migrate(_db);
-        if (serverBaseline && _incomingServerDocumentLooksTruncated(localPending, _db)) {
-          _db = localPending;
           _migrate(_db);
+          _writeServerSyncBaseline(serverBaseline, window._serverDataEtag);
           try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
-          window._avoidFullDocumentSync = true;
-          _markServerSyncPending('conflict-truncated-ignored');
+        }
+        const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
+        const hasPatch = !!(patch && (Object.keys(patch.collections || {}).length || Object.keys(patch.scalars || {}).length));
+        if (!hasPatch && !_readDurableBusinessDeltaQueue().length) {
+          _clearServerSyncPending(Infinity);
           window._serverSyncQueued = false;
-          console.warn('[TeamPulse] reverted truncated sync_conflict merge');
           return res;
         }
-        if (rebaseBaseline) _writeServerSyncBaseline(rebaseBaseline, window._serverDataEtag);
-        try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
         _markServerSyncPending('conflict-merged');
         window._serverSyncQueued = false;
+        window._serverSyncConflictBackoffUntil = Date.now() + 1200;
         clearTimeout(window._serverSyncRetryTimer);
         window._serverSyncRetryTimer = setTimeout(() => {
           window._serverSyncRetryTimer = null;
           window._serverSyncConflictBackoffUntil = 0;
           _syncToServer(1);
-        }, 1000);
+        }, 1200);
         return res;
       }
+      // Second conflict: stop until the user edits again. Do not auto-POST
+      // every 30s — that was the 3rd/4th 409 in Network while Finish stayed open.
       const stoppedFingerprint = _dataFingerprint(_serverDataSignature(_db || {}));
-      if (!window._serverDataEtag && conflictEtag) window._serverDataEtag = conflictEtag;
+      if (conflictEtag && !window._serverDataEtag) window._serverDataEtag = conflictEtag;
       _markServerSyncPending('conflict-merged-stopped');
       clearTimeout(window._serverSyncRetryTimer);
-      window._serverSyncConflictBackoffUntil = Date.now() + 30000;
+      window._serverSyncConflictBackoffUntil = Date.now() + 60000;
       window._serverSyncRetryTimer = setTimeout(() => {
         window._serverSyncRetryTimer = null;
         window._serverSyncConflictBackoffUntil = 0;
-        _syncToServer(1);
-      }, 30000);
+      }, 60000);
       window._serverSyncRetryAttempt = 0;
       window._serverSyncQueued = false;
       if (window._fullSyncConflictStoppedWarnedFingerprint !== stoppedFingerprint) {
@@ -18226,10 +18214,29 @@ async function _pollServerStatus() {
       }
       return true;
     }
-    window._remoteServerDocumentChanged = true;
-    // Etag changes are common while another device saves.  Refresh current
-    // page parts now; off-screen pagination continues only when its UI needs it.
-    return _loadFromServer({ lightweightRebase: true });
+    // Etag changed: adopt it and refresh only lagging page collections (page-1).
+    // Avoid _loadFromServer(lightweightRebase) — that re-fetches every part of
+    // the current page and looks like a request storm next to conflict retries.
+    if (status.etag) window._serverDataEtag = status.etag;
+    const pageBusinessKeys = BUSINESS_PAGINATED_KEYS.filter(key =>
+      (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes(key)
+    );
+    const laggingOnPage = _businessCollectionsNeedingServerHydration(status, pageBusinessKeys);
+    if (laggingOnPage.length) {
+      window._tpHydratingFromServer = true;
+      try {
+        await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
+      } finally {
+        window._tpHydratingFromServer = false;
+      }
+    }
+    _markServerDocumentHydrated(status.etag);
+    if (_hasServerSyncPending() && !_isTerminalTodoCollisionPending() &&
+        !_fullSyncConflictPendingMatchesCurrentData() &&
+        Number(window._serverSyncConflictBackoffUntil || 0) <= Date.now()) {
+      _ensurePendingServerSync(50);
+    }
+    return !!laggingOnPage.length;
   } catch(e) {
     console.warn('[TeamPulse] status poll skipped:', e.message);
     return false;
@@ -18861,7 +18868,10 @@ async function _authOnSuccess() {
   })().finally(() => {
     window._initialServerLoadPending = false;
     // A local edit made while the authoritative document was loading is now
-    // safe to send (or will use the normal offline retry path).
+    // safe to send (or will use the normal offline retry path). Skip a dead
+    // conflict-stopped marker left from a previous tab — re-POSTing it only
+    // produces another 409 burst on boot.
+    if (_fullSyncConflictPendingMatchesCurrentData()) return;
     if (_hasServerSyncPending() || _localDataDivergedFromServerBaseline()) _ensurePendingServerSync(0);
   });
 
@@ -23023,7 +23033,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v193';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v194';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
