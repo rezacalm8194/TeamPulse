@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp192';
+const TP_ASSET_V = 'tp193';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16549,10 +16549,10 @@ function _stopStaleFullSyncConflictPending() {
     return true;
   }
   if (pending.reason === 'conflict-merged') {
-    _markServerSyncPending('conflict-merged-stopped');
+    // The intentional one-second rebase owns this marker and retry timer.
+    // Ordinary callers must not cancel it or convert it to a stopped state.
+    return true;
   }
-  clearTimeout(window._serverSyncRetryTimer);
-  window._serverSyncRetryAttempt = 0;
   return true;
 }
 
@@ -17519,7 +17519,8 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
               rebaseBusinessKeys: _dirtyBusinessCollectionsForRebase(),
             });
           } catch (e) {}
-          if (conflictEtag) window._serverDataEtag = conflictEtag;
+          // A page hydrate can advance beyond the ETag on the failed POST.
+          if (!window._serverDataEtag && conflictEtag) window._serverDataEtag = conflictEtag;
           // The merge mutates its owner argument; retain a server-only baseline.
           rebaseBaseline = _cloneData(_db);
           _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: !!teamSession });
@@ -17548,7 +17549,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
         return res;
       }
       const stoppedFingerprint = _dataFingerprint(_serverDataSignature(_db || {}));
-      if (conflictEtag) window._serverDataEtag = conflictEtag;
+      if (!window._serverDataEtag && conflictEtag) window._serverDataEtag = conflictEtag;
       _markServerSyncPending('conflict-merged-stopped');
       clearTimeout(window._serverSyncRetryTimer);
       window._serverSyncConflictBackoffUntil = Date.now() + 30000;
@@ -18370,6 +18371,10 @@ function _startKeyEventReminderLoop() {
 }
 
 function _flushPendingServerSyncKeepalive() {
+  if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
+  if (window._serverSyncInFlight) return;
+  const pendingRecord = _readServerSyncPending();
+  if (pendingRecord?.reason === 'conflict-merged' || pendingRecord?.reason === 'conflict-merged-stopped') return;
   if (!_sbUser?.id || !_sbSession?.token) return;
   const teamSession = _teamAccessSession();
   if (teamSession && !teamSession.ownerUserId) return;
@@ -23018,7 +23023,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v192';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v193';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

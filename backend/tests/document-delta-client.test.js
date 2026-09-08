@@ -26,6 +26,9 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /if \(!conflictAttempt && _stopStaleFullSyncConflictPending\(\)\) return;/);
   assert.match(appSource, /window\._serverSyncQueued = false;[\s\S]{0,200}break;/);
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
+  assert.match(appSource, /function _flushPendingServerSyncKeepalive\(\) \{\s*if \(Number\(window\._serverSyncConflictBackoffUntil \|\| 0\) > Date\.now\(\)\) return;/);
+  assert.match(appSource, /if \(window\._serverSyncInFlight\) return;/);
+  assert.match(appSource, /pendingRecord\?\.reason === 'conflict-merged' \|\| pendingRecord\?\.reason === 'conflict-merged-stopped'/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);
   assert.match(appSource, /forceStaffLive/);
@@ -117,6 +120,8 @@ test('sync conflicts use one delayed rebase and do not return a workspace docume
   assert.match(appSource, /rebaseBaseline = _cloneData\(_db\);/);
   assert.match(appSource, /_mergeLocalPendingChangesIntoOwnerData\(localPending, _db, \{ teamSafe: !!teamSession \}\)/);
   assert.match(appSource, /skipLocalSnapshot: true/);
+  assert.match(appSource, /if \(!window\._serverDataEtag && conflictEtag\) window\._serverDataEtag = conflictEtag;/);
+  assert.doesNotMatch(appSource, /function _stopStaleFullSyncConflictPending\(\)[\s\S]{0,500}clearTimeout\(window\._serverSyncRetryTimer\)/);
   assert.doesNotMatch(appSource, /sync_conflict[\s\S]{0,180}_reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\]/);
   assert.match(appSource, /if \(rebaseBaseline\) _writeServerSyncBaseline\(rebaseBaseline/);
   assert.match(appSource, /30000\);\s*window\._serverSyncRetryAttempt = 0;/);
