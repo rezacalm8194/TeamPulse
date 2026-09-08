@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp211') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp212') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp211') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp212') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -2523,7 +2523,9 @@ body.light mark { background: rgba(251,191,36,.5); }
   .table-card.tbl-responsive thead { display: none; }
   .table-card.tbl-responsive tbody, .table-card.tbl-responsive tr { display: block; width: 100%; }
   .table-card.tbl-responsive tr {
+    position: relative;
     padding: 12px 14px;
+    padding-left: 48px;
     border-bottom: 8px solid var(--bg);
   }
   .table-card.tbl-responsive tr:last-child { border-bottom: none; }
@@ -2574,6 +2576,28 @@ body.light mark { background: rgba(251,191,36,.5); }
     justify-content: center;
     font-size: 11px;
     padding: 7px 6px;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"]:has(.row-menu) {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    width: auto;
+    margin: 0;
+    padding: 0 !important;
+    border: 0 !important;
+    display: block !important;
+    grid-template-columns: none;
+    gap: 0;
+    z-index: 2;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"]:has(.row-menu)::before {
+    display: none !important;
+  }
+  .table-card.tbl-responsive td[data-label="عملیات"]:has(.row-menu) .row-menu-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    font-size: 16px;
   }
   .table-card.tbl-responsive td:empty,
   .table-card.tbl-responsive td[data-label=""] { display: none; }
