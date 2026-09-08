@@ -23,6 +23,7 @@ const {
   computePushDueIndex,
   listPushScanAccountIds,
 } = require('../utils/pushDueIndex');
+const { isPaymentReminder } = require('../utils/reminderKind');
 
 ensureTeamAccessSchema(db);
 
@@ -440,7 +441,7 @@ cron.schedule('* * * * *', async () => {
 
         for (const r of (userData.reminders || [])) {
           const dueDayKey = jalaliDayKey(r.due_date_jalali);
-          if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
+          if (r.done || !isPaymentReminder(r) || !dueDayKey || dueDayKey > todayDayKey) continue;
           const key = `financial:${accountId}:${r.id}:${r.due_date_jalali}`;
           const name = studentNames.get(String(r.student_id)) || '';
           await deliverOnce(key, accountId, 'financial-reminder', () =>
