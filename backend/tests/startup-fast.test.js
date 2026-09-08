@@ -17,7 +17,12 @@ test('app shell does not prefetch extra JS on first paint', () => {
   assert.doesNotMatch(appHtml, /<script src="\/app-finance\.js/);
   assert.doesNotMatch(appHtml, /<script src="\/app-todos\.js/);
   assert.doesNotMatch(appHtml, /fonts\.(googleapis|gstatic)\.com/);
-  assert.match(appHtml, /href="\/fonts\/vazirmatn\.css(\?[^"]*)?"/);
+  assert.doesNotMatch(appHtml, /href="\/fonts\/vazirmatn\.css/);
+  assert.match(appHtml, /rel="preload"[^>]*Vazirmatn-Regular\.woff2/);
+  assert.doesNotMatch(appHtml, /rel="preload"[^>]*Vazirmatn-SemiBold\.woff2/);
+  const appCss = fs.readFileSync(path.join(root, 'app.css'), 'utf8');
+  assert.match(appCss, /@font-face[\s\S]*Vazirmatn-Regular\.woff2/);
+  assert.match(appCss, /@font-face[\s\S]*Vazirmatn-SemiBold\.woff2/);
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 
