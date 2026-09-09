@@ -572,14 +572,8 @@ function _renderTodoStaffFilteredList() {
     return !scheduled || key === todayKey;
   }).sort(_sortByTime);
   const todayOpenItems = todayItems.filter(t => !t.done);
-  const doneTodayAllItems = _uniqueTodoStaffDoneItems(list.filter(t => _todoStaffDoneToday(t, todayKey)))
+  const doneTodayItems = _uniqueTodoStaffDoneItems(list.filter(t => _todoStaffDoneToday(t, todayKey)))
     .sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
-  const lateDoneTodayItems = doneTodayAllItems.filter(t => {
-    const scheduled = _todoScheduledDate(t);
-    return scheduled && _jalaliKey(scheduled) < todayKey;
-  });
-  const lateDoneTodayKeys = new Set(lateDoneTodayItems.map(_todoStaffDoneUniqueKey));
-  const doneTodayItems = doneTodayAllItems.filter(t => !lateDoneTodayKeys.has(_todoStaffDoneUniqueKey(t)));
   const tomorrowItems = list.filter(t => !t.done && t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey).sort(_sortByTime);
   const futureItems = list.filter(t => !t.done && t.date_jalali && _jalaliKey(t.date_jalali) > (tomorrowKey || todayKey)).sort(sortByDateTime);
   const noDateItems = list.filter(t => !t.done && !_todoScheduledDate(t)).sort(_sortByTime);
@@ -604,7 +598,7 @@ function _renderTodoStaffFilteredList() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px">
       ${statChip('امروز', totalToday, '#60a5fa')}
       ${statChip('مانده امروز', todayOpenItems.length, 'var(--amber)')}
-      ${statChip('انجام امروز', doneTodayAllItems.length, 'var(--green)')}
+      ${statChip('انجام امروز', doneTodayItems.length, 'var(--green)')}
       ${statChip('عقب‌افتاده', overdueItems.length, 'var(--red)')}
       ${statChip('همه باز', openItems.length, 'var(--text)')}
     </div>
@@ -618,7 +612,7 @@ function _renderTodoStaffFilteredList() {
   const rangeTitle = ({today:'امروز', week:'این هفته', month:'این ماه', year:'امسال', custom:'بازه دلخواه'})[_todoStaffFilter.range] || 'این بازه';
   const rangeList = `<div style="margin-bottom:8px;font-size:12px;color:var(--text3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span>چک‌لیست ${escapeHtml(staffName)}</span>
-      <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayAllItems.length)} انجام‌شده امروز</span>
+      <span>${fa(openItems.length)} انجام‌نشده · ${fa(doneTodayItems.length)} انجام‌شده امروز</span>
     </div>
     ${section('📌', 'کارهای انجام‌نشده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true)}
     ${section('✅', 'انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
@@ -627,7 +621,6 @@ function _renderTodoStaffFilteredList() {
     ${overdueItems.length ? section('🚨', 'عقب‌افتاده', overdueItems.length, overdueItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--red)', true, 'کارهای قبل از امروز') : ''}
     ${section('☀️', 'امروز', todayOpenItems.length, todayOpenItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text)', true, `${DateService.disp(today)} · ${fa(todayOpenItems.length)} باقی‌مانده`)}
     ${section('✅', 'انجام‌شده‌های امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--green)', doneTodayItems.length > 0)}
-    ${lateDoneTodayItems.length ? section('↩', 'عقب‌افتاده‌های تکمیل‌شده امروز', lateDoneTodayItems.length, lateDoneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--amber)', false) : ''}
     ${tomorrowItems.length ? section('🌙', 'فردا', tomorrowItems.length, tomorrowItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false, DateService.disp(tomorrowStr)) : ''}
     ${futureItems.length ? section('📆', 'روزهای بعد', futureItems.length, futureItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}
     ${noDateItems.length ? section('🗂', 'بدون تاریخ', noDateItems.length, noDateItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'var(--text2)', false) : ''}`;
@@ -2516,10 +2509,6 @@ function renderTodoList(options = {}) {
     const scheduled = _todoScheduledDate(t);
     return scheduled && tomorrowKey && _jalaliKey(scheduled) === tomorrowKey;
   });
-  const lateDoneTodayTodos = todos.filter(t => {
-    const scheduled = _todoScheduledDate(t);
-    return _doneToday(t) && scheduled && _jalaliKey(scheduled) < todayKey;
-  }).sort((a,b) => _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) || _sortByTime(a,b));
   const _afterKey = tomorrowKey || todayKey;
   const futureTodos    = todos.filter(t => {
     const scheduled = _todoScheduledDate(t);
@@ -2549,7 +2538,6 @@ function renderTodoList(options = {}) {
   const pending = todayTodos.filter(t=>!t.done).length;
   const doneCnt = todayTodos.filter(t=>t.done).length;
   const completedTodayTotal = todos.filter(t => _doneToday(t)).length;
-  const lateCompletedTodayCount = lateDoneTodayTodos.length;
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
   const activeCount = todos.filter(t => !t.done).length;
   const mainTodayTodos = todayTodos
@@ -2660,8 +2648,7 @@ function renderTodoList(options = {}) {
     doneCnt,
     totalToday: todayTodos.length,
     progress,
-    completedTodayTotal,
-    lateCompletedTodayCount
+    completedTodayTotal
   });
   html += _todoStaffOverdueNoticeHtml(todayKey);
 
@@ -2703,20 +2690,6 @@ function renderTodoList(options = {}) {
       html += _todoRenderedListHtml(todayTodos.filter(t=>t.done), 'doneToday', renderTodo);
       html += `</div></details>`;
     }
-  }
-
-  if (lateDoneTodayTodos.length > 0) {
-    html += `<details class="todo-late-done-details" ${ _todoListShown.lateDone ? 'open' : ''} style="margin-top:12px">
-      <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:8px">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:10px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22)">
-          <span style="font-size:13px;font-weight:800;color:var(--amber);display:flex;align-items:center;gap:6px">✅ عقب‌افتاده‌های تکمیل‌شده امروز</span>
-          <span style="font-size:11px;color:var(--text3)">${fa(lateDoneTodayTodos.length)} نوبت · باز کردن</span>
-        </div>
-      </summary>
-      <div style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.16);border-radius:10px;padding:8px;margin-bottom:8px;opacity:.86">
-        ${_todoRenderedListHtml(lateDoneTodayTodos, 'lateDone', renderTodo)}
-      </div>
-    </details>`;
   }
 
   // ── فردا (کشویی - بسته) ──
