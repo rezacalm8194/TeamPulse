@@ -2183,6 +2183,7 @@ async function payStaffSalary(staffId, name) {
   const s = list.find(x => x.id === staffId);
   const reminders = await window.api.staffReminders.getAll();
   const rem = reminders.find(r => r.staff_id === staffId);
+  const remainingAmount = rem ? rem.live_amount : s.expectedMonthly;
 
   // پیش‌فرض سال: سال فعلی. ماه: ماه سررسید یادآوری (نه لزوماً ماه امروز)
   const [curJy, curJm] = todayJalali();
@@ -2197,7 +2198,8 @@ async function payStaffSalary(staffId, name) {
     `<option value="${i+1}" ${i+1===defJm?'selected':''}>${mn}</option>`).join('');
 
   openModal(`✓ تأیید پرداخت حقوق — ${name}`, `
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + نقش‌ها × تعداد)</p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:4px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + نقش‌ها × تعداد)</p>
+    <p style="font-size:13px;color:var(--amber);margin-bottom:8px">مانده قابل پرداخت: <b>${fmt(remainingAmount)} تومان</b></p>
 
     <div class="form-group full">
       <label class="form-label">تاریخ واقعی پرداخت (شمسی)</label>
@@ -2232,7 +2234,7 @@ async function payStaffSalary(staffId, name) {
 async function confirmPayStaffSalary(staffId) {
   const forMonth = parseInt(document.getElementById('psp-month')?.value);
   const forYear = parseInt(document.getElementById('psp-year')?.value);
-  await window.api.staff.paySalary({
+  const result = await window.api.staff.paySalary({
     staff_id: staffId,
     date: document.getElementById('psp-date')?.value,
     account_id: document.getElementById('psp-account')?.value||null,
@@ -2240,7 +2242,7 @@ async function confirmPayStaffSalary(staffId) {
     for_jm: forMonth,
   });
   closeModal();
-  showToast('پرداخت ثبت شد ✓', 'success');
+  showToast(`پرداخت ${fmt(result.amount)} تومان ثبت شد ✓`, 'success');
   await renderStaff();
 }
 
