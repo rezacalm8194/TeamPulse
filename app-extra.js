@@ -683,11 +683,13 @@ async function renderStaff() {
   if (reminders.length === 0) {
     html += `<div class="empty"><span>⏰</span>یادآوری‌ای ثبت نشده — با ثبت پرداخت برای یک نفر، یادآوری به‌صورت خودکار اینجا اضافه می‌شود</div>`;
   } else {
-    html += `<table><thead><tr><th>پرسنل/عضو</th><th>سررسید آینده</th><th>مبلغ (زنده)</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>پرسنل/عضو</th><th>سررسید آینده</th><th>مانده قابل پرداخت</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>`;
     reminders.forEach(r => {
       const du = r.days_until;
       let statusBadge;
-      if (r.paid_this_month) {
+      if (r.settled_by_payments) {
+        statusBadge = `<span class="status status-ok">تسویه کامل شد ✓</span>`;
+      } else if (r.paid_this_month) {
         const months = Math.floor(Math.abs(du)/30), remDays = Math.abs(du)%30;
         const remainText = months>0 ? `${fa(months)} ماه و ${fa(remDays)} روز` : `${fa(remDays)} روز`;
         statusBadge = `<span class="status status-ok">پرداخت شد ✓ — ${fa(Math.abs(du))} روز تا سررسید آینده</span>`;
@@ -704,7 +706,7 @@ async function renderStaff() {
       html += `<tr>
         <td style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
         <td style="font-size:12px">${DateService.disp(r.due_date_jalali)}</td>
-        <td><span class="amount" style="${du<0&&!r.paid_this_month?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
+        <td><span class="amount" style="${du<0&&!r.paid_this_month&&!r.settled_by_payments?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
         <td>${statusBadge}</td>
         <td>

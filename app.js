@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp220';
+const TP_ASSET_V = 'tp221';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2602,6 +2602,27 @@ function _reconcileOverdueRemindersForSettledCustomers() {
 }
 
 // ── Staff summary ───────────────────────────────────────────────────────────
+function _staffReminderPaidAmount(reminder) {
+  const reminderDueDate=String(reminder.due_date_jalali||'');
+  const reminderDueKey=_jalaliKey(reminderDueDate);
+  const todayKey=_jalaliKey(_formatJalali(..._todayJalali()));
+  let previousDueKey=0;
+  if((reminder.repeat_months||0)>0&&reminderDueKey){
+    const[jy,jm,jd]=_jalaliParse(reminder.due_date_jalali);
+    previousDueKey=_jalaliKey(_formatJalali(..._addMonths(jy,jm,jd,-reminder.repeat_months)));
+  }
+  return (_db.staff_payments||[]).filter(payment=>{
+    if(String(payment.staff_id)!==String(reminder.staff_id)||payment.monthly_id!=null)return false;
+    // New payments are tied to the due-date they settle, so advancing a
+    // recurring reminder never carries a previous month's payment forward.
+    if(payment.reminder_due_date)return String(payment.reminder_due_date)===reminderDueDate;
+    // Payments recorded before this field existed are assigned to the current
+    // reminder only when they fall in its current payment cycle.
+    const paymentDateKey=_jalaliKey(payment.date_jalali);
+    return paymentDateKey>previousDueKey&&paymentDateKey<=todayKey;
+  }).reduce((total,payment)=>total+Number(payment.amount||0),0);
+}
+
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
   const paymentsTotal=_db.staff_payments.filter(p=>p.staff_id===s.id).reduce((a,p)=>a+(p.amount||0),0);
@@ -3330,7 +3351,11 @@ window.api = {
 
   staffPayments: {
     getByStaff: (id)=>_P(_db.staff_payments.filter(p=>p.staff_id===id).reverse()),
-    add: (p)=>{ const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',created_at:new Date().toISOString()};_db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save(); return _P({ok:true}); },
+    add: (p)=>{
+      const reminder=_db.staff_reminders.filter(r=>String(r.staff_id)===String(p.staff_id)&&!r.done).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+      const payment={id:_nextId('staff_payments'),staff_id:p.staff_id,amount:p.amount,date_jalali:p.date,account_id:p.account_id||null,note:p.note||'',reminder_due_date:reminder?.due_date_jalali||null,created_at:new Date().toISOString()};
+      _db.staff_payments.push(payment);_syncStaffPaymentExpense(payment);_save(); return _P({ok:true});
+    },
     update: (p)=>{ const pay=_db.staff_payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,date_jalali:p.date??pay.date_jalali,note:p.note??pay.note});if(Object.prototype.hasOwnProperty.call(p,'account_id'))pay.account_id=p.account_id||null;_syncStaffPaymentExpense(pay);_save();} return _P({ok:true}); },
     delete: (id)=>{
       const pay=_db.staff_payments.find(x=>x.id===id);
@@ -3354,8 +3379,11 @@ window.api = {
       return _P(_db.staff_reminders.map(r=>{
         const s=_db.staff.find(x=>x.id===r.staff_id);
         const sum=s?_staffSummary(s):null;
+        const expectedAmount=Number(sum?sum.expectedMonthly:r.amount||0);
+        const paidAmount=_staffReminderPaidAmount(r);
+        const settledByPayments=expectedAmount>0&&paidAmount>=expectedAmount;
         const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===r.staff_id&&m.jy===tjy&&m.jm===tjm&&m.paid);
-        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:sum?sum.expectedMonthly:r.amount,paid_this_month:paidThisMonth};
+        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:Math.max(0,expectedAmount-paidAmount),paid_amount:paidAmount,settled_by_payments:settledByPayments,paid_this_month:paidThisMonth};
       }).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali)));
     },
     add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
@@ -23275,7 +23303,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v220';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v221';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
