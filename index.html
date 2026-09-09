@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; media-src 'self' data:; frame-src 'none'; child-src 'none'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://translate.google.com https://translate.googleapis.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; media-src 'self' data:; frame-src 'none'; child-src 'none'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TeamPulse (تیم پالس) | نرم افزار مدیریت کوچینگ و شاگردان</title>
 <meta name="description" content="TeamPulse (تیم پالس) نرم افزار فارسی مدیریت کوچینگ، شاگردان، اهداف، چک لیست‌ها، عادت سازی، جلسات، پرداخت‌ها و پیگیری رشد برای کوچ‌ها، مشاوران و مربیان است.">
@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="پنل فارسی برای کوچ‌ها و مشاوران: مدیریت شاگردان، جلسات، اهداف، عادت‌ها، چک لیست‌ها و پرداخت‌ها.">
 <meta name="twitter:image" content="https://teampulse.ir/logo.png">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
-<link rel="icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1">
 <link rel="preload" href="/fonts/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/Vazirmatn-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/fonts/vazirmatn.css">
@@ -550,6 +550,7 @@ footer a{color:var(--glow);text-decoration:none;}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
+<script src="/landing.js" defer></script>
 </head>
 <body>
 
@@ -771,36 +772,6 @@ footer a{color:var(--glow);text-decoration:none;}
   <p>© ۱۴۰۵ TeamPulse — ساخته شده با ❤️ برای کوچ‌های ایرانی &nbsp;|&nbsp; <a href="/app">ورود به اپ</a></p>
 </footer>
 
-<script>
-// لاگین‌بودن کاربر رو نشون میده ولی ریدایرکت نمیکنه
-(function(){
-  try{
-    const s=localStorage.getItem('tp_session');
-    if(s){
-      const p=JSON.parse(s);
-      if(p&&p.token){
-        document.querySelectorAll('.btn-nav-login').forEach(btn=>{
-          btn.textContent='← ورود به حساب';
-          btn.style.background='var(--accent)';
-          btn.style.color='white';
-          btn.style.borderColor='var(--accent)';
-        });
-      }
-    }
-  }catch(e){}
-})();
-
-const obs=new IntersectionObserver(entries=>{
-  entries.forEach(e=>{
-    if(e.isIntersecting){e.target.style.opacity='1';e.target.style.transform='translateY(0)';}
-  });
-},{threshold:.1});
-document.querySelectorAll('.feature-card,.job-chip').forEach(el=>{
-  el.style.opacity='0';el.style.transform='translateY(20px)';
-  el.style.transition='opacity .5s ease,transform .5s ease';
-  obs.observe(el);
-});
-</script>
 </body>
 </html>
 

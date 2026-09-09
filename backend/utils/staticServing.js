@@ -83,7 +83,17 @@ function setStaticCacheHeaders(res, filePath, req, cspValue) {
     }
     return;
   }
-  if (/\.(?:png|jpe?g|webp|gif|svg|ico|woff2?|ttf)$/i.test(ext)) {
+  if (/\.(?:png|jpe?g|webp|gif|svg|woff2?|ttf)$/i.test(ext)) {
+    // A versioned icon/image URL is content-addressed by its version token.
+    // Keep the unversioned root favicon out of this branch: browsers routinely
+    // revalidate it, so it must remain a real, small static file.
+    res.setHeader(
+      'Cache-Control',
+      isVersionedAssetRequest(req || res.req) ? VERSIONED_JS_CSS_CACHE : FONT_IMAGE_CACHE
+    );
+    return;
+  }
+  if (ext === '.ico') {
     res.setHeader('Cache-Control', FONT_IMAGE_CACHE);
   }
 }
