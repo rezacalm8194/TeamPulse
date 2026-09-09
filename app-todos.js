@@ -500,13 +500,13 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const dateLabel = scheduled ? DateService.disp(scheduled) : 'بدون تاریخ';
   const timeLabel = _todoTimeRangeLabel(t);
   return `<div data-todo-id="${t.id}" class="todo-row" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid ${borderColor};border-radius:10px;background:${bg};margin-bottom:7px;opacity:${t.done ? .78 : 1}">
-    <button data-todo-complete onclick="_completeTodoFromList(${t.id})" title="${t.done?'برداشتن تیک':'تیک انجام'}"
+    <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" title="${t.done?'برداشتن تیک':'تیک انجام'}"
       style="width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;cursor:pointer;border:2px solid ${t.done?'var(--green)':isOverdue?'var(--red)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:12px;font-weight:900;line-height:1">
       ${t.done?'✓':''}
     </button>
     <div style="flex:1;min-width:0;cursor:pointer" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">
       <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-        <span style="font-size:13px;font-weight:${t.done?'600':'900'};color:${t.done?'var(--text2)':'var(--text)'};text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        <span data-todo-title style="font-size:13px;font-weight:${t.done?'600':'900'};color:${t.done?'var(--text2)':'var(--text)'};text-decoration:${t.done?'line-through':'none'}">${escapeHtml(t.title || 'بدون عنوان')}</span>
         ${isOverdue ? '<span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(239,68,68,.14);color:var(--red);font-weight:800">عقب‌افتاده</span>' : ''}
         ${doneToday ? '<span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(62,207,142,.12);color:var(--green);font-weight:800">انجام‌شده امروز</span>' : ''}
         <span style="font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(96,165,250,.09);color:${priorityColor};font-weight:800">${priorityText}</span>
@@ -2598,7 +2598,7 @@ function renderTodoList(options = {}) {
         border-radius:10px;margin-bottom:6px;opacity:${t.done?.5:1};
         cursor:default;user-select:none">
       <span class="todo-drag-handle" style="color:var(--text3);font-size:14px;cursor:grab;padding:2px 2px 0;flex-shrink:0;opacity:.35;line-height:1">⠿</span>
-      <button data-todo-complete onclick="_completeTodoFromList(${t.id})"
+      <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}"
         style="width:22px;height:22px;border-radius:50%;flex-shrink:0;margin-top:2px;cursor:pointer;
           border:2px solid ${t.done?'var(--green)':isOverdue||priority==='urgent'?'var(--red)':priority==='high'?'var(--amber)':'var(--border2)'};
           background:${t.done?'var(--green)':'transparent'};
@@ -2607,7 +2607,7 @@ function renderTodoList(options = {}) {
       </button>
       <div style="flex:1;min-width:0;cursor:pointer" onclick="${_todoCanEdit(t)?`openEditTodo(${t.id})`:`_openTodoReadonly(${t.id})`}">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">
-          <span style="font-size:13px;font-weight:${t.done?'400':'600'};text-decoration:${t.done?'line-through':'none'};color:${titleColor}">
+          <span data-todo-title style="font-size:13px;font-weight:${t.done?'400':'600'};text-decoration:${t.done?'line-through':'none'};color:${titleColor}">
             ${escapeHtml(t.title)}
             ${repeatIcon?`<span style="font-size:10px;opacity:.6"> ${repeatIcon}</span>`:''}
           </span>
@@ -2883,15 +2883,56 @@ function _quickAddTodo(title) {
 
 // ── Toggle done ───────────────────────────────────────────────────────────────
 
+function _todoCompletionRequiresForm(t) {
+  return !t.done && (
+    t.requires_report === 'required' || t.requires_report === 'optional' ||
+    t.requires_attachment === 'required' || t.requires_attachment === 'optional'
+  );
+}
+
+function _todoCompletePointerDown(event, id) {
+  if (event?.button != null && event.button !== 0) return;
+  const t = _db?.todos?.find(x => x.id == id);
+  // A report/attachment opens the existing form; never make it look completed.
+  if (!t || _todoCompletionRequiresForm(t)) return;
+  event.currentTarget?.classList.add('todo-tick-press');
+  try { event.currentTarget?.setPointerCapture?.(event.pointerId); } catch (e) {}
+}
+
+function _todoCompletePointerCancel(event) {
+  event.currentTarget?.classList.remove('todo-tick-press');
+}
+
+function _todoCompletePointerUp(event, id) {
+  if (event?.button != null && event.button !== 0) return;
+  const button = event.currentTarget;
+  button?.classList.remove('todo-tick-press');
+  try { button?.releasePointerCapture?.(event.pointerId); } catch (e) {}
+  if (!button) return;
+  // Keep the synthesized click from running the same toggle a second time.
+  button.dataset.todoPointerHandledAt = String(Date.now());
+  event.preventDefault();
+  _completeTodoFromList(id);
+}
+
+function _todoCompleteClick(event, id) {
+  const handledAt = Number(event?.currentTarget?.dataset?.todoPointerHandledAt || 0);
+  if (handledAt && Date.now() - handledAt < 750) {
+    event.preventDefault();
+    event.stopPropagation();
+    return false;
+  }
+  // Retain keyboard activation while touch/pointer completion happens on pointerup.
+  _completeTodoFromList(id);
+  return false;
+}
+
 function _completeTodoFromList(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   const scheduled = _todoScheduledDate(t);
-  const needsCompletionForm = !t.done && (
-    t.requires_report === 'required' || t.requires_report === 'optional' ||
-    t.requires_attachment === 'required' || t.requires_attachment === 'optional'
-  );
+  const needsCompletionForm = _todoCompletionRequiresForm(t);
   if (!needsCompletionForm && !t.done && scheduled && _jalaliKey(scheduled) < _jalaliToday()) {
     _resolveOverdueTodo(id, 'done');
     return;
@@ -2905,7 +2946,7 @@ function _toggleTodo(id) {
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این کار دسترسی نداری', 'error'); return; }
-  if (!t.done && (t.requires_report === 'required' || t.requires_report === 'optional' || t.requires_attachment === 'required' || t.requires_attachment === 'optional')) {
+  if (_todoCompletionRequiresForm(t)) {
     _openTodoCompletionReport(id);
     return;
   }
@@ -2986,7 +3027,6 @@ function _completeTodoWithReport(t, report) {
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
 
   if (t.done) {
-    requestAnimationFrame(() => _playDoneSound());
     if (t.repeat && t.repeat !== 'none') {
       const completedAt = t.done_at || new Date().toISOString();
       extraTodos.push(_createTodoOccurrenceRecord(t, t.status, completedAt));
@@ -3036,7 +3076,6 @@ function _resolveOverdueTodo(id, action) {
       _advanceRecurringTodoOccurrence(t, scheduledDate);
       _todoAddHistory(t, 'completed', false, true);
       t.updated_at = completedAt;
-      _playDoneSound();
       showToast(`نوبت ${DateService.disp(scheduledDate)} تکمیل شد.`, 'success');
       if (!_todoRemainsOpenToday(t) && _paintTodoCheckedFast(t.id)) {
         _queueTodoTickPersist(t, 'complete', [snapshot]);
@@ -3053,7 +3092,6 @@ function _resolveOverdueTodo(id, action) {
     t.status = 'late_completed';
     t.updated_at = t.done_at;
     _todoAddHistory(t, 'completed', false, true);
-    _playDoneSound();
     if (!_paintTodoCheckedFast(t.id)) renderTodoList();
     _queueTodoTickPersist(t, 'complete');
     return;
@@ -3268,27 +3306,6 @@ function _resolveAllOverdueTodos(action) {
   });
   _save(); closeModal(); renderTodoList();
   showToast('تعیین تکلیف گروهی انجام شد.', 'success');
-}
-
-
-function _playDoneSound() {
-  try {
-    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    if (now - _todoDoneSoundLastAt < 55) return;
-    _todoDoneSoundLastAt = now;
-    if (!_todoDoneSoundCtx) _todoDoneSoundCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = _todoDoneSoundCtx;
-    if (ctx.state === 'suspended') ctx.resume();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    osc.type = 'sine';
-    gain.gain.setValueAtTime(0.14, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.08);
-  } catch(e) {}
 }
 
 
@@ -4128,6 +4145,13 @@ async function deleteTodo(id) {
     return;
   }
   if (!confirm('این کار حذف شود؟')) return;
+  if (typeof _automationDismissPackageDueTodo === 'function' && _automationDismissPackageDueTodo(t)) {
+    _save(true, { scheduleServerSync: false });
+    void _syncTodoDelta(t, 'edit');
+    showToast('اعلان این سررسید بسته شد', 'success');
+    renderTodoList();
+    return;
+  }
   if (t && t.gcal_event_id) {
     _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
   }
@@ -4161,6 +4185,13 @@ async function _deleteTodoCompletely(id, options = {}) {
     ? 'این کار تکرارشونده است. حذف کامل شود؟'
     : 'این کار حذف شود؟';
   if (!confirm(msg)) return;
+  if (typeof _automationDismissPackageDueTodo === 'function' && _automationDismissPackageDueTodo(t)) {
+    _save(true, { scheduleServerSync: false });
+    void _syncTodoDelta(t, 'edit');
+    _refreshTodoAfterDelete(options.refresh);
+    showToast('اعلان این سررسید بسته شد', 'success');
+    return;
+  }
   const removedTodos = (_db.todos || []).filter(x => String(x.id) === String(t.id) || String(_todoRootId(x)) === rootId);
   removedTodos.forEach(x => { if (x.gcal_event_id) _gcal.deleteEvent(x.gcal_event_id, x.gcal_calendar_id); });
   _rememberDeletedTodos([t.id, rootId, ...removedTodos.map(x => x.id)]);

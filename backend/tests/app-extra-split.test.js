@@ -51,6 +51,9 @@ test('first-session helpers stay in the core parse path', () => {
   assert.match(appSource, /function _habitsInit\(/);
   assert.match(appSource, /function _ensureDocumentParts\(/);
   assert.match(appSource, /function _todoRenderedListHtml\(/);
+  assert.match(appSource, /const deferAfterFirstPaint = \(task\) =>/);
+  assert.match(appSource, /const deferAfterFirstPaint = \(task\) => new Promise/);
+  assert.match(appSource, /requestIdleCallback\(run, \{ timeout: 4000 \}\)/);
 });
 
 test('staff delete records tombstones so sync cannot resurrect people', () => {

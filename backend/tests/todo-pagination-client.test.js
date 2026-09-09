@@ -88,10 +88,15 @@ test('income tabs render 12 rows then a client-side load-more button', () => {
   assert.equal(expanded.remaining, 27);
 });
 
-test('todo list loads every active page and classifies overdue from scheduled date', () => {
+test('boot only loads the first active todo page and classifies overdue from scheduled date', () => {
   const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
   assert.match(app, /function _todoIsOverdue\(/);
   assert.match(todos, /const isOverdue = _todoIsOverdue\(t\)/);
   assert.doesNotMatch(app, /_isTodoOverdue/);
-  assert.match(app, /while \(!_todoPagingState\(false\)\.done && pages < 100\)/);
+  const ensure = app.match(/async function _ensureDocumentParts\(keys\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.doesNotMatch(ensure, /while\s*\(/);
+  assert.match(ensure, /void _loadTodoStats\(\)/);
+  assert.match(ensure, /_todoActiveTab === 'completed'/);
+  assert.doesNotMatch(ensure, /while\s*\(!_todoPagingState\(false\)\.done/);
+  assert.match(app, /for \(const archived of \(includeArchived \? \[false, true\] : \[false\]\)\)/);
 });
