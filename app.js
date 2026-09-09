@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp221';
+const TP_ASSET_V = 'tp223';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -886,6 +886,28 @@ function _migrate(d) {
   d.topics.forEach(t=>{if(!t.checklist)t.checklist=[];});
   d.staff.forEach(s=>{if(!s.card_number)s.card_number='';if(!s.roles)s.roles=[];if(!s.person_type)s.person_type='personnel';});
   d.staff_reminders.forEach(r=>{if(!r.notified_levels)r.notified_levels=[];});
+  // نسخه‌های قدیمی در «ثبت دستی پرداخت» کل حقوق را، حتی بعد از یک
+  // پرداخت جزئی، دوباره ثبت می‌کردند. فقط همان رکورد تولیدشده برای ماه
+  // مربوط را به ماندهٔ واقعی اصلاح کن و هزینهٔ متناظر را هم یکسان نگه دار.
+  if(!d.meta.staff_partial_salary_settlement_v1){
+    let repaired=false;
+    (d.staff_monthly||[]).filter(month=>month.paid).forEach(month=>{
+      const fullPayment=(d.staff_payments||[]).find(payment=>String(payment.monthly_id)===String(month.id)&&Number(payment.amount||0)===Number(month.total||0));
+      if(!fullPayment)return;
+      const partialPaid=(d.staff_payments||[]).filter(payment=>{
+        if(String(payment.staff_id)!==String(month.staff_id)||payment.monthly_id!=null)return false;
+        const [jy,jm]=_jalaliParse(payment.date_jalali);
+        return jy===Number(month.jy)&&jm===Number(month.jm)&&_jalaliKey(payment.date_jalali)<=_jalaliKey(fullPayment.date_jalali);
+      }).reduce((total,payment)=>total+Number(payment.amount||0),0);
+      if(partialPaid<=0)return;
+      fullPayment.amount=Math.max(0,Number(month.total||0)-partialPaid);
+      const expense=(d.expenses||[]).find(item=>String(item.id)===String(fullPayment.expense_id));
+      if(expense)expense.amount=fullPayment.amount;
+      repaired=true;
+    });
+    d.meta.staff_partial_salary_settlement_v1=true;
+    if(repaired)d._staffPartialSalarySettlementNeedsSave=true;
+  }
   d.reminders.forEach(r=>{if(r.source===undefined)r.source='';if(!r.notified_levels)r.notified_levels=[];});
   d.sessions.forEach(s=>{
     if(!s.title)s.title='';
@@ -1171,6 +1193,10 @@ function _load() {
   try { const s = localStorage.getItem(key); _db = s ? JSON.parse(s) : null; } catch(e) { _db = null; }
   if (!_db) _db = _freshData();
   _migrate(_db);
+  if(_db._staffPartialSalarySettlementNeedsSave){
+    delete _db._staffPartialSalarySettlementNeedsSave;
+    _save(true,{urgent:true});
+  }
   _restorePartLoadState(_db);
   // در اولین بارگذاری نسخه جدید نیز فوراً کپی‌های قدیمی و حجیم را آزاد کن؛
   // لازم نیست کاربر تا تغییر بعدی و بروز خطای Quota صبر کند.
@@ -3323,16 +3349,19 @@ window.api = {
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
       const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:(r.amount||0)*(r.count??1)};});
       const total=(s.salary||0)+roles.reduce((a,r)=>a+r.amount,0);
+      const rem=_db.staff_reminders
+        .filter(x=>x.staff_id===s.id&&!x.done)
+        .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+      const amount=Math.max(0,total-(rem?_staffReminderPaidAmount(rem):0));
       let m=_db.staff_monthly.find(x=>x.staff_id===s.id&&x.jy===tjy&&x.jm===tjm);
       if(!m){m={id:_nextId('staff_monthly'),staff_id:s.id,jy:tjy,jm:tjm,fixed_salary:s.salary||0,roles,total,paid:false,paid_date:null,note:'',created_at:new Date().toISOString()};_db.staff_monthly.push(m);}
       else{m.fixed_salary=s.salary||0;m.roles=roles;m.total=total;}
       m.paid=true;m.paid_date=p.date;
-      const payment={id:_nextId('staff_payments'),staff_id:s.id,monthly_id:m.id,amount:total,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
-      _db.staff_payments.push(payment);
-      _syncStaffPaymentExpense(payment);
-      const rem=_db.staff_reminders
-        .filter(x=>x.staff_id===s.id&&!x.done)
-        .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+      if(amount>0){
+        const payment={id:_nextId('staff_payments'),staff_id:s.id,monthly_id:m.id,amount,date_jalali:p.date,account_id:p.account_id||null,note:`حقوق ${JMONTHS[tjm-1]} ${faNum(tjy)}`,created_at:new Date().toISOString()};
+        _db.staff_payments.push(payment);
+        _syncStaffPaymentExpense(payment);
+      }
       if(rem){
         if((rem.repeat_months||0)>0){
           const[jy,jm,jd]=_jalaliParse(rem.due_date_jalali);
@@ -3345,7 +3374,7 @@ window.api = {
         rem.notified_levels=[];
       }
       (s.roles||[]).forEach(r=>{r.count=0;});
-      _save(); return _P({ok:true});
+      _save(); return _P({ok:true,amount});
     },
   },
 
@@ -23303,7 +23332,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v221';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v223';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
