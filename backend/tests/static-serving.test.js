@@ -89,3 +89,13 @@ test('versioned JS/CSS get immutable cache; bare JS/CSS stay short-lived', () =>
   assert.equal(html.headers['cache-control'], HTML_CACHE);
   assert.equal(html.headers['content-security-policy'], "default-src 'self'");
 });
+
+test('versioned icon images are immutable while the root ICO remains revalidatable', () => {
+  const versionedIcon = mockRes();
+  setStaticCacheHeaders(versionedIcon, '/x/favicon-32.png', { query: { v: '1' } });
+  assert.equal(versionedIcon.headers['cache-control'], VERSIONED_JS_CSS_CACHE);
+
+  const legacyFavicon = mockRes();
+  setStaticCacheHeaders(legacyFavicon, '/x/favicon.ico', { url: '/favicon.ico' });
+  assert.equal(legacyFavicon.headers['cache-control'], 'public, max-age=604800');
+});
