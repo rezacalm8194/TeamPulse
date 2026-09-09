@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp219';
+const TP_ASSET_V = 'tp220';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -17987,12 +17987,12 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
     }
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
-    if (pageParts.includes('todos')) void _loadTodoStats();
-    const previousEtag = window._serverDataEtag || null;
     const pageParts = [...new Set([
       ...(window._initialServerLoadPending ? _bootPartsForPage(typeof currentPage === 'string' ? currentPage : 'students') : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students')),
       ...(lightweightRebase ? rebaseBusinessKeys : []),
     ])];
+    if (pageParts.includes('todos')) void _loadTodoStats();
+    const previousEtag = window._serverDataEtag || null;
     const includeKeys = lightweightRebase ? pageParts : (_shouldLoadFullDocument() ? null : pageParts);
     const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(includeKeys));
     if (res.status === 429) {
@@ -23275,7 +23275,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v219';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v220';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
