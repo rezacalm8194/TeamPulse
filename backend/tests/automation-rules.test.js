@@ -104,7 +104,7 @@ test('package due automation creates one todo per reminder inside window', () =>
     todos: [],
   };
   const ctx = loadMany(
-    ['_studentDisplayName', '_automationCfg', '_automationEnsurePackageDueTodo'],
+    ['_studentDisplayName', '_automationCfg', '_automationPackageDueDate', '_automationSetPackageDueTodoClosed', '_automationEnsurePackageDueTodo'],
     {
       _db: db,
       _daysUntil: () => 2,
@@ -121,6 +121,39 @@ test('package due automation creates one todo per reminder inside window', () =>
   assert.equal(db.todos[0].source, 'auto_package_due');
   assert.equal(db.todos[0].source_key, '7');
   assert.match(db.todos[0].title, /علی/);
+});
+
+test('package due acknowledgement is not recreated until the reminder occurrence changes', () => {
+  let nextId = 50;
+  const reminder = { id: 7, student_id: 3, package_id: 11, due_date_jalali: '1405/06/12', done: false };
+  const db = {
+    meta: { automation: { package_due: true, package_due_days: 3 } },
+    students: [{ id: 3, name: 'علی', lname: 'نوری' }],
+    todos: [{ id: 9, source: 'auto_package_due', source_key: '7', source_due_date: '1405/06/12', archived: true, status: 'deleted' }],
+  };
+  const ctx = loadMany(
+    ['_studentDisplayName', '_automationCfg', '_automationPackageDueDate', '_automationSetPackageDueTodoClosed', '_automationEnsurePackageDueTodo'],
+    { _db: db, _daysUntil: () => 2, _todosInit: () => {}, _allocateTodoId: () => nextId++, Date }
+  );
+  assert.equal(ctx._automationEnsurePackageDueTodo(reminder), false);
+  reminder.due_date_jalali = '1405/06/20';
+  assert.equal(ctx._automationEnsurePackageDueTodo(reminder), true);
+  assert.equal(db.todos.length, 2);
+  assert.equal(db.todos[1].source_due_date, '1405/06/20');
+});
+
+test('settled package reminder closes its open todo without creating another', () => {
+  const reminder = { id: 7, package_id: 11, due_date_jalali: '1405/06/12', done: true };
+  const todo = { id: 9, source: 'auto_package_due', source_key: '7', source_due_date: '1405/06/12', done: false, archived: false, status: 'pending' };
+  const db = { meta: { automation: { package_due: true } }, todos: [todo] };
+  const ctx = loadMany(
+    ['_automationCfg', '_automationPackageDueDate', '_automationSetPackageDueTodoClosed', '_automationEnsurePackageDueTodo'],
+    { _db: db, _todosInit: () => {}, Date }
+  );
+  assert.equal(ctx._automationEnsurePackageDueTodo(reminder), true);
+  assert.equal(todo.done, true);
+  assert.equal(todo.archived, true);
+  assert.equal(ctx._automationEnsurePackageDueTodo(reminder), false);
 });
 
 test('convert automation creates onboarding checklist topic once', () => {

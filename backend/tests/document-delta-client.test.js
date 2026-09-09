@@ -160,16 +160,16 @@ test('knowledge items created on another device are merged even when local data 
   assert.match(appSource, /partsWereFullyLoaded/);
 });
 
-test('hydration scopes visible collections and batches any required full backfill', () => {
+test('hydration scopes visible collections and keeps full backfill explicit', () => {
   assert.match(appSource, /async function _reloadCompleteBusinessPartsFromServer\(collections = BUSINESS_PAGINATED_KEYS, \{ reset = true \} = \{\}\)/);
   assert.match(appSource, /async function _reloadCompleteTodosFromServer\(\{ reset = true \} = \{\}\)/);
-  assert.match(appSource, /await _reloadCompleteBusinessPartsFromServer\(businessKeys\.length \? businessKeys : \[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
+  assert.doesNotMatch(appSource, /await _reloadCompleteBusinessPartsFromServer\(businessKeys\.length \? businessKeys : \[\.\.\.BUSINESS_PAGINATED_KEYS\], \{ reset: true \}\)/);
   assert.match(appSource, /async function _reloadBusinessFirstPagesFromServer/);
   assert.match(appSource, /Promise\.all\(keys\.slice\(start, start \+ 3\)/);
   assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status/);
   assert.match(appSource, /laggingOnPage = _businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
   assert.doesNotMatch(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
-  assert.match(appSource, /if \(currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag\) reset = true/);
+  assert.match(appSource, /!window\._tpHydratingFromServer && !paging\.loading && currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
   assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
   assert.match(appSource, /async function _tpEnsureFreshClient\(/);
@@ -191,6 +191,9 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.doesNotMatch(appSource, /kept larger local snapshot; server collections look truncated/);
   assert.match(appSource, /function _businessPagesStaleForServerEtag\(/);
   assert.match(appSource, /function _todoPagesStaleForServerEtag\(/);
+  assert.match(appSource, /function _businessPagesStaleForServerEtag[\s\S]{0,350}_partsForPage/);
+  assert.match(appSource, /const includeArchived = _todoActiveTab === 'completed' \|\| _todoActiveTab === 'archive'/);
+  assert.doesNotMatch(appSource, /remoteDocumentChanged && includeKeys && !lightweightRebase[\s\S]{0,160}return _loadFromServerImpl\(\)/);
   assert.match(appSource, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
   assert.match(appSource, /function _resolveIncomingTodo\(/);
   assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag\)\s*&& !_todoPagesStaleForServerEtag\(status\.etag\)/);
@@ -232,7 +235,22 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
 test('sign-in waits for the authoritative etag before sending a document delta', () => {
   assert.match(appSource, /window\._initialServerLoadPending = true/);
   assert.match(appSource, /if \(window\._initialServerLoadPending\) \{[\s\S]{0,100}_markServerSyncPending\('initial-server-load'\)/);
-  assert.match(appSource, /\}\)\(\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;[\s\S]{0,500}_ensurePendingServerSync\(0\)/);
+  assert.match(appSource, /const deferAfterFirstPaint = \(task\) => new Promise/);
+  assert.match(appSource, /const initialHydrate = deferAfterFirstPaint\(async \(\) => \{/);
+  assert.match(appSource, /initialHydrate\.catch\(error => \{[\s\S]{0,300}\}\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;\s*_startServerSyncLoops\(\)/);
+});
+
+test('poll never starts a collection reload during active hydration and GETs coalesce', () => {
+  const poll = appSource.match(/async function _pollServerStatus\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(poll, /window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight \|\| window\._resumeServerSyncInFlight/);
+  assert.doesNotMatch(poll, /_reloadCompleteTodosFromServer/);
+  assert.match(appSource, /window\._tpInFlightGets = window\._tpInFlightGets \|\| new Map\(\)/);
+  assert.match(appSource, /return shared\.clone\(\)/);
+  assert.match(appSource, /const visible = new Set\(_partsForPage/);
+  assert.match(appSource, /!window\._tpSessionFetchedParts\?\.has\(key\)/);
+  assert.doesNotMatch(appSource, /if \(includeKeys\.includes\('todos'\)/);
+  assert.match(appSource, /const refreshTodoFirstPage = pageParts\.includes\('todos'\)/);
+  assert.match(appSource, /_reloadBusinessFirstPagesFromServer\(businessKeys, \{ reset: true \}\)/);
 });
 
 test('manual backup restore compresses before chunking and retries server confirmation', () => {

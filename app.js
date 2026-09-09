@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp212';
+const TP_ASSET_V = 'tp216';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2264,23 +2264,46 @@ function _runAutomationStaleLeads(){
   });
   return changed;
 }
+function _automationPackageDueDate(todo){
+  return String(todo?.source_due_date||todo?.scheduled_date||todo?.date_jalali||'').trim();
+}
+function _automationSetPackageDueTodoClosed(todo){
+  if(!todo||todo.done||todo.archived||todo.status==='deleted')return false;
+  const now=new Date().toISOString();
+  Object.assign(todo,{done:true,done_at:now,completed_at:now,completedAt:now,archived:true,status:'completed',updated_at:now});
+  if(typeof _syncTodoDelta==='function'){try{void _syncTodoDelta(todo,'edit');}catch(e){}}
+  return true;
+}
+function _automationDismissPackageDueTodo(todo){
+  if(!todo||todo.source!=='auto_package_due'||todo.status==='deleted')return false;
+  Object.assign(todo,{archived:true,status:'deleted',deleted_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+  return true;
+}
 function _automationEnsurePackageDueTodo(reminder){
-  if(!_automationCfg().package_due||!reminder||reminder.done||reminder.package_id==null)return false;
-  const daysUntil=_daysUntil(reminder.due_date_jalali);
-  if(daysUntil> _automationCfg().package_due_days)return false;
+  if(!_automationCfg().package_due||!reminder||reminder.package_id==null)return false;
   if(typeof _todosInit==='function')_todosInit();
   const key=String(reminder.id);
-  const existing=(_db.todos||[]).find(t=>t&&t.source==='auto_package_due'&&String(t.source_key)===key&&!t.done&&!t.archived);
-  if(existing)return false;
+  const due=String(reminder.due_date_jalali||'').trim()||_formatJalali(..._todayJalali());
+  const related=(_db.todos||[]).filter(t=>t&&t.source==='auto_package_due'&&String(t.source_key)===key);
+  let changed=false;
+  related.forEach(t=>{
+    if(reminder.done||_automationPackageDueDate(t)!==due){
+      if(_automationSetPackageDueTodoClosed(t))changed=true;
+    }
+  });
+  if(reminder.done)return changed;
+  const daysUntil=_daysUntil(due);
+  if(daysUntil>_automationCfg().package_due_days)return changed;
+  // Every row state is an acknowledgement of this exact reminder occurrence.
+  if(related.some(t=>_automationPackageDueDate(t)===due))return changed;
   const student=(_db.students||[]).find(x=>Number(x.id)===Number(reminder.student_id));
   const name=_studentDisplayName(student);
-  const due=String(reminder.due_date_jalali||'').trim()||_formatJalali(..._todayJalali());
   const id=typeof _allocateTodoId==='function'?_allocateTodoId():_nextId('todos');
   const todo={
     id,title:(reminder.title||'سررسید پرداخت')+(name?' — '+name:''),note:'اتوماسیون: سررسید نزدیک پکیج',
     date_jalali:due,scheduled_date:due,time:'',repeat:'none',weekdays:'',remind_min:0,
     done:false,done_at:null,archived:false,status:'pending',
-    source:'auto_package_due',source_key:key,student_id:reminder.student_id||null,
+    source:'auto_package_due',source_key:key,source_due_date:due,student_id:reminder.student_id||null,
     created_at:new Date().toISOString(),updated_at:new Date().toISOString(),
   };
   if(!_db.todos)_db.todos=[];
@@ -2322,10 +2345,11 @@ function _runAutomationScans(force=false){
   const now=Date.now();
   if(!force&&now-_automationScanAt<5*60*1000)return false;
   _automationScanAt=now;
-  let changed=false;
-  if(_runAutomationStaleLeads())changed=true;
-  if(_runAutomationPackageDue())changed=true;
-  if(changed)_save(true,{urgent:false});
+  const staleChanged=_runAutomationStaleLeads();
+  const packageChanged=_runAutomationPackageDue();
+  const changed=staleChanged||packageChanged;
+  if(staleChanged)_save(true,{urgent:false});
+  else if(packageChanged)_save(true,{scheduleServerSync:false,urgent:false});
   return changed;
 }
 
@@ -4737,19 +4761,23 @@ function _shouldLoadFullDocument() {
 function _localCollectionsLagServer(status) {
   const totals = status?.collections;
   if (!totals || typeof totals !== 'object') return false;
-  const serverAny = Object.keys(totals).some(key => Number(totals[key] || 0) > 0);
-  if (!serverAny) return false;
+  const visible = new Set(_partsForPage(typeof currentPage === 'string' ? currentPage : 'students'));
   const studentSearch = typeof _businessPagingState === 'function' ? _businessPagingState('students')?.search : '';
   const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
   for (const key of keys) {
+    if (!visible.has(key) || !window._tpSessionFetchedParts?.has(key)) continue;
     if (key === 'students' && studentSearch) continue;
+    const paging = _businessPagingState(key);
+    // A cursor means this session intentionally holds page one only. It is
+    // not a missing-cache signal and must not make the poll restart it.
+    if (!paging.done || paging.loading) continue;
     const serverTotal = Number(totals[key] || 0);
     const localCount = Array.isArray(_db?.[key]) ? _db[key].length : 0;
     if (serverTotal > localCount) return true;
   }
-  const todoTotal = Number(totals.todos || 0);
-  const localTodos = Array.isArray(_db?.todos) ? _db.todos.length : 0;
-  return todoTotal > localTodos;
+  // Status totals include archived todos, while boot intentionally loads
+  // active page one only. Todo freshness is tracked by its page etag.
+  return false;
 }
 function _syncCollectionCount(data, key) {
   return Array.isArray(data?.[key]) ? data[key].length : 0;
@@ -4788,18 +4816,24 @@ function _localBusinessCollectionsAheadOfServer(status) {
   return false;
 }
 function _businessPagesStaleForServerEtag(etag) {
-  if (!etag || typeof _businessPagingState !== 'function') return false;
+  if (!etag || window._tpHydratingFromServer || typeof _businessPagingState !== 'function') return false;
+  const visible = new Set(_partsForPage(typeof currentPage === 'string' ? currentPage : 'students'));
   const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
   for (const key of keys) {
-    const fetched = _businessPagingState(key)?.fetchedEtag;
+    if (!visible.has(key)) continue;
+    const state = _businessPagingState(key);
+    if (!window._tpSessionFetchedParts?.has(key) || state.loading) continue;
+    const fetched = state.fetchedEtag;
     if (fetched && fetched !== etag) return true;
   }
   return false;
 }
 function _todoPagesStaleForServerEtag(etag) {
-  if (!etag || typeof _todoPagingState !== 'function') return false;
-  for (const archived of [false, true]) {
+  if (!etag || window._tpHydratingFromServer || !window._tpSessionFetchedParts?.has('todos') || typeof _todoPagingState !== 'function') return false;
+  const includeArchived = _todoActiveTab === 'completed' || _todoActiveTab === 'archive';
+  for (const archived of (includeArchived ? [false, true] : [false])) {
     const state = _todoPagingState(archived);
+    if (state.loading) continue;
     if (state.failed) return true;
     const fetched = state.fetchedEtag;
     if (fetched && fetched !== etag) return true;
@@ -4824,15 +4858,9 @@ async function _ensureDocumentParts(keys) {
   if (requested.includes('todos') &&
       (!_tpPartLoaded('todos') || (!todoPaging.cursor && !todoPaging.done))) {
     await _loadTodoPage(false, { reset: false });
-    await _loadTodoPage(true, { reset: false });
-  }
-  if (requested.includes('todos')) {
-    let pages = 0;
-    while (!_todoPagingState(false).done && pages < 100) {
-      const ok = await _loadTodoPage(false);
-      pages += 1;
-      if (!ok) break;
-    }
+    void _loadTodoStats();
+    // Archive rows are demand-loaded only when their tab is actually visible.
+    if (_todoActiveTab === 'completed' || _todoActiveTab === 'archive') await _loadTodoPage(true, { reset: false });
   }
   // Business collections: first page only. Full totals use _ensureCompleteBusinessParts.
   for (const key of BUSINESS_PAGINATED_KEYS) {
@@ -4948,6 +4976,8 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     if (window._tpAvailableParts) window._tpAvailableParts.add('todos');
     _applyTodoIdHighWater(payload.todo_id_high_water);
     if (payload.etag) state.fetchedEtag = payload.etag;
+    window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+    window._tpSessionFetchedParts.add('todos');
     _persistPartLoadState();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
     return true;
@@ -5058,7 +5088,7 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
-  if (currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
+  if (!window._tpHydratingFromServer && !paging.loading && currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
@@ -5113,11 +5143,15 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
 function _businessCollectionsNeedingServerHydration(status, candidates = BUSINESS_PAGINATED_KEYS) {
   const totals = status?.collections || {};
   const etag = status?.etag || '';
+  const visible = new Set(_partsForPage(typeof currentPage === 'string' ? currentPage : 'students'));
   return [...new Set(candidates)].filter(key => {
-    if (!BUSINESS_PAGINATED_KEYS.includes(key)) return false;
+    if (!BUSINESS_PAGINATED_KEYS.includes(key) || !visible.has(key) || !window._tpSessionFetchedParts?.has(key)) return false;
     const paging = _businessPagingState(key);
     const localCount = _syncCollectionCount(_db, key);
-    return Number(totals[key] || 0) !== localCount || !!(etag && paging?.fetchedEtag && paging.fetchedEtag !== etag);
+    if (paging.loading) return false;
+    if (etag && paging.fetchedEtag && paging.fetchedEtag !== etag) return true;
+    // A first page with a cursor is intentionally partial, not behind.
+    return !!paging.done && Number(totals[key] || 0) !== localCount;
   });
 }
 function _dirtyBusinessCollectionsForRebase() {
@@ -5211,6 +5245,8 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       window._serverDataEtag = payload.etag;
       state.fetchedEtag = payload.etag;
     }
+    window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+    window._tpSessionFetchedParts.add(collection);
     _persistPartLoadState();
     if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
     if (!window._tpDeferDatabasePersist && !window._tpHydratingFromServer) {
@@ -15920,6 +15956,15 @@ async function _apiFetch(path, opts = {}) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
   const method = String(opts.method || 'GET').toUpperCase();
+  // Browser fetch responses have a one-shot body. Share the network operation,
+  // but give every coalesced GET caller its own readable clone.
+  const requestKey = method === 'GET' ? method + ' ' + url : '';
+  window._tpInFlightGets = window._tpInFlightGets || new Map();
+  if (requestKey && window._tpInFlightGets.has(requestKey)) {
+    const shared = await window._tpInFlightGets.get(requestKey);
+    return shared.clone();
+  }
+  const run = async () => {
   const attempts = method === 'GET' ? 2 : 1;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -15942,6 +15987,12 @@ async function _apiFetch(path, opts = {}) {
       });
     }
   }
+  };
+  if (!requestKey) return run();
+  const shared = run();
+  window._tpInFlightGets.set(requestKey, shared);
+  try { return (await shared).clone(); }
+  finally { window._tpInFlightGets.delete(requestKey); }
 }
 
 async function _compressedJsonRequestBody(value) {
@@ -16551,6 +16602,7 @@ function _serverSyncPushAlreadyActive() {
 }
 
 function _scheduleServerSyncSoon(delay = 0) {
+  if (window._initialServerLoadPending || window._tpHydratingFromServer || window._tpLoadFromServerInFlight) return;
   if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   clearTimeout(window._serverSyncTimer);
   if (window._serverSyncRetryTimer) return;
@@ -17891,7 +17943,7 @@ function _mergeServerTodosIntoLocal(serverData) {
 }
 
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
-async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = false, rebaseBusinessKeys = [] } = {}) {
+async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapshot = false, rebaseBusinessKeys = [] } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   // Only the conflict handler has an outer localPending snapshot. Poll/resume
@@ -17938,20 +17990,19 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
     const payload = await res.json();
     const remoteDocumentChanged = !!window._remoteServerDocumentChanged ||
       !!(payload.etag && previousEtag && payload.etag !== previousEtag);
-    if (remoteDocumentChanged && includeKeys && !lightweightRebase) {
-      window._remoteServerDocumentChanged = true;
-      return _loadFromServer();
-    }
-    const businessKeys = !Array.isArray(includeKeys)
-      ? [...BUSINESS_PAGINATED_KEYS]
-      : BUSINESS_PAGINATED_KEYS.filter(key => includeKeys.includes(key));
+    // A changed document never restarts as an unscoped full-page repair.
+    // Even a forced document response repairs paginated rows for this page only.
+    const businessKeys = BUSINESS_PAGINATED_KEYS.filter(key => pageParts.includes(key));
+    // A forced full-document response must still repair only paginated page
+    // one; null includeKeys is never permission for a complete crawl.
+    const refreshTodoFirstPage = pageParts.includes('todos');
     if (remoteDocumentChanged) {
       if (lightweightRebase) {
-        if (includeKeys.includes('todos') && !await _loadTodoPage(false, { reset: true })) return false;
+        if (refreshTodoFirstPage && !await _loadTodoPage(false, { reset: true })) return false;
         await _reloadBusinessFirstPagesFromServer(businessKeys, { reset: true });
       } else {
-        if (!await _reloadCompleteTodosFromServer({ reset: true })) return false;
-        await _reloadCompleteBusinessPartsFromServer(businessKeys.length ? businessKeys : [...BUSINESS_PAGINATED_KEYS], { reset: true });
+        if (refreshTodoFirstPage && !await _loadTodoPage(false, { reset: true })) return false;
+        await _reloadBusinessFirstPagesFromServer(businessKeys, { reset: true });
       }
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
@@ -18307,7 +18358,21 @@ async function _loadFromServer({ lightweightRebase = false, skipLocalSnapshot = 
   }
 }
 
+async function _loadFromServer(options = {}) {
+  if (window._tpLoadFromServerInFlight) return window._tpLoadFromServerInFlight;
+  const wasHydrating = !!window._tpHydratingFromServer;
+  const run = (async () => {
+    window._tpHydratingFromServer = true;
+    try { return await _loadFromServerImpl(options); }
+    finally { window._tpHydratingFromServer = wasHydrating; }
+  })();
+  window._tpLoadFromServerInFlight = run;
+  try { return await run; }
+  finally { if (window._tpLoadFromServerInFlight === run) window._tpLoadFromServerInFlight = null; }
+}
+
 async function _pollServerStatus() {
+  if (window._tpHydratingFromServer || window._tpLoadFromServerInFlight || window._resumeServerSyncInFlight) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   const teamSession = _teamAccessSession();
   const accId = teamSession?.ownerUserId || _sbUser.id;
@@ -18345,11 +18410,16 @@ async function _pollServerStatus() {
       }
       const localBeforeHydrate = _cloneData(_db);
       const laggingBusinessKeys = _businessCollectionsNeedingServerHydration(status);
+      const todoStale = _todoPagesStaleForServerEtag(status.etag);
+      if (!todoStale && !laggingBusinessKeys.length) {
+        _markServerDocumentHydrated(status.etag);
+        return false;
+      }
       window._remoteServerDocumentChanged = false;
       window._tpHydratingFromServer = true;
       try {
-        if ((_todoPagesStaleForServerEtag(status.etag) || Number(status?.collections?.todos || 0) !== _syncCollectionCount(_db, 'todos')) &&
-            !await _reloadCompleteTodosFromServer({ reset: true })) return false;
+        if (todoStale &&
+            !await _loadTodoPage(false, { reset: true })) return false;
         // A status response identifies the lagging collections; do not turn a
         // one-key repair into a complete warehouse sweep.
         await _reloadBusinessFirstPagesFromServer(laggingBusinessKeys, { reset: true });
@@ -18367,7 +18437,7 @@ async function _pollServerStatus() {
       } finally {
         window._tpHydratingFromServer = false;
       }
-      return true;
+      return !!(todoStale || laggingBusinessKeys.length);
     }
     // Etag changed: adopt it and refresh only lagging page collections (page-1).
     // Avoid _loadFromServer(lightweightRebase) — that re-fetches every part of
@@ -18377,9 +18447,11 @@ async function _pollServerStatus() {
       (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes(key)
     );
     const laggingOnPage = _businessCollectionsNeedingServerHydration(status, pageBusinessKeys);
-    if (laggingOnPage.length) {
+    const todoOnPage = (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes('todos');
+    if (laggingOnPage.length || todoOnPage) {
       window._tpHydratingFromServer = true;
       try {
+        if (todoOnPage) await _loadTodoPage(false, { reset: true });
         await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
       } finally {
         window._tpHydratingFromServer = false;
@@ -18391,7 +18463,7 @@ async function _pollServerStatus() {
         Number(window._serverSyncConflictBackoffUntil || 0) <= Date.now()) {
       _ensurePendingServerSync(50);
     }
-    return !!laggingOnPage.length;
+    return !!(laggingOnPage.length || todoOnPage);
   } catch(e) {
     console.warn('[TeamPulse] status poll skipped:', e.message);
     return false;
@@ -18992,7 +19064,12 @@ async function _authOnSuccess() {
 
   // داده محلی را فوری نشان می‌دهیم؛ رجیستری میزکار و sync سرور بعد از اولین
   // paint انجام می‌شود تا رفرش صفحه روی درخواست شبکه مکث نکند.
-  (async () => {
+  const deferAfterFirstPaint = (task) => new Promise((resolve, reject) => {
+    const run = () => Promise.resolve().then(task).then(resolve, reject);
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 });
+    else setTimeout(run, 2200);
+  });
+  const initialHydrate = deferAfterFirstPaint(async () => {
     if (!_teamAccessSession()) {
       try { await _refreshWorkspacesFromServer(); } catch (e) {}
     }
@@ -19022,8 +19099,12 @@ async function _authOnSuccess() {
     } else if (isNewUser) {
       setTimeout(() => _showWelcomeTour(), 800);
     }
-  })().finally(() => {
+  });
+  void initialHydrate.catch(error => {
+    console.warn('[TeamPulse] initial hydration failed:', error?.message || error);
+  }).finally(() => {
     window._initialServerLoadPending = false;
+    _startServerSyncLoops();
     // A local edit made while the authoritative document was loading is now
     // safe to send (or will use the normal offline retry path). Skip a dead
     // conflict-stopped marker left from a previous tab — re-POSTing it only
@@ -19032,7 +19113,7 @@ async function _authOnSuccess() {
     if (_hasServerSyncPending() || _localDataDivergedFromServerBaseline()) _ensurePendingServerSync(0);
   });
 
-  void (async () => {
+  void deferAfterFirstPaint(async () => {
     try {
       const wRes = await _apiFetch('/api/wallet');
       if (wRes.ok) {
@@ -19049,9 +19130,8 @@ async function _authOnSuccess() {
         _save(false);
       } else { _initUserWallet(); }
     } catch(e) { _initUserWallet(); }
-  })();
+  });
 
-  _startServerSyncLoops();
   _startKeyEventReminderLoop();
   _bindServerSyncLifecycleHandlers();
 
@@ -20267,8 +20347,6 @@ function _todoRenderedListHtml(items, key, renderFn) {
   return html;
 }
 
-let _todoDoneSoundCtx = null;
-let _todoDoneSoundLastAt = 0;
 let _todoListReconcileTimer = 0;
 let _todoPersistQueued = false;
 let _todoPersistQueue = [];
@@ -20325,31 +20403,21 @@ function _queueTodoTickPersist(todo, operation, extraTodos) {
   });
 }
 
-function _todoNextFocusIdAfter(completedId) {
-  const sid = String(completedId);
-  const rows = [...document.querySelectorAll('.todo-row[data-todo-id]')];
-  const idx = rows.findIndex(el => String(el.dataset.todoId) === sid);
-  if (idx < 0) return null;
-  const next = rows[idx + 1] || rows[idx - 1];
-  return next ? next.dataset.todoId : null;
-}
-
 function _paintTodoCheckedFast(id) {
   if (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report') return false;
   const sid = String(id);
   const rows = document.querySelectorAll(`[data-todo-id="${_cssIdentEscape(sid)}"]`);
   if (!rows.length) return false;
-  const nextId = _todoNextFocusIdAfter(sid);
-  rows.forEach(el => el.remove());
-  const empty = document.getElementById('todo-empty-hint');
-  if (empty && !document.querySelector('.todo-row[data-todo-id]')) empty.style.display = '';
-  requestAnimationFrame(() => {
-    try {
-      const nextBtn = nextId && document.querySelector(`[data-todo-id="${_cssIdentEscape(String(nextId))}"] [data-todo-complete]`);
-      if (nextBtn && typeof nextBtn.focus === 'function') nextBtn.focus({ preventScroll: true });
-    } catch(e) {}
+  rows.forEach(el => {
+    el.classList.add('todo-row-tick-complete');
+    const button = el.querySelector('[data-todo-complete]');
+    if (!button) return;
+    button.classList.remove('todo-tick-press');
+    button.classList.add('todo-tick-done');
+    button.textContent = '✓';
+    button.setAttribute('aria-pressed', 'true');
+    button.title = 'برداشتن تیک';
   });
-  _scheduleTodoListReconcile();
   return true;
 }
 
@@ -23190,7 +23258,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v212';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v216';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

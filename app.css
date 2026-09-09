@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp212') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp214') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp212') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp214') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -3473,6 +3473,23 @@ body.instr-select-mode ._ifcard.instr-selected {
 .todo-row {
   contain: layout style;
 }
+.todo-row [data-todo-complete] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 100ms ease-out, background-color 100ms ease-out, border-color 100ms ease-out;
+}
+.todo-row [data-todo-complete].todo-tick-press { transform:scale(.94); }
+.todo-row.todo-row-tick-complete [data-todo-complete] {
+  background:var(--green)!important;
+  border-color:var(--green)!important;
+}
+.todo-row.todo-row-tick-complete [data-todo-title] {
+  color:var(--green)!important;
+  text-decoration:line-through!important;
+}
+.todo-row.todo-row-tick-complete { opacity:.78!important; }
+.todo-row [data-todo-complete].todo-tick-done { animation:todo-tick-confirm 100ms ease-out; }
+@keyframes todo-tick-confirm { from{transform:scale(.94)} to{transform:scale(1)} }
 @media(prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
 }
