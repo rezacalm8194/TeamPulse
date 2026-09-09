@@ -2675,21 +2675,11 @@ function renderTodoList(options = {}) {
       🎉 امروز کاری نداری!
     </div>`;
   } else {
-    // ناتمام اول — مرتب‌شده بر اساس ساعت (زودتر = بالاتر)، بدون ساعت = آخر
-    const regularTodayOpen = todayTodos.filter(t=>!t.done && !mainTodayIds.has(t.id)).sort(_sortByTime);
-    html += regularTodayOpen.length ? _todoRenderedListHtml(regularTodayOpen, 'today', renderTodo) : (doneCnt === 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
-    if (doneCnt > 0) {
-      html += `<details class="todo-done-details" ${ _todoListShown.doneToday ? 'open' : ''} style="margin-top:10px">
-        <summary style="font-size:12px;color:var(--green);cursor:pointer;margin-bottom:8px;
-          padding:8px 12px;background:rgba(62,207,142,.06);border:1px solid rgba(62,207,142,.2);
-          border-radius:8px;display:flex;align-items:center;gap:6px;list-style:none;user-select:none">
-          ✅ <span style="font-weight:600">${fa(doneCnt)} کار انجام‌شده امروز</span>
-          <span style="opacity:.5;font-size:10px;margin-right:auto">▾ کلیک برای مشاهده</span>
-        </summary>
-        <div style="margin-top:6px;opacity:.7">`;
-      html += _todoRenderedListHtml(todayTodos.filter(t=>t.done), 'doneToday', renderTodo);
-      html += `</div></details>`;
-    }
+    // تیک‌خورده‌های امروز همان‌جا در لیست می‌مانند (خط‌خورده) تا نوبت بعدی برسد.
+    const regularToday = todayTodos.filter(t => !mainTodayIds.has(t.id)).sort(_sortByTime);
+    html += regularToday.length
+      ? _todoRenderedListHtml(regularToday, 'today', renderTodo)
+      : (pending > 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
   }
 
   // ── فردا (کشویی - بسته) ──
@@ -3018,10 +3008,6 @@ function _completeTodoWithReport(t, report) {
     return;
   }
   renderTodoList();
-  if (t.done) {
-    const details = document.querySelector('.todo-done-details');
-    if (details) details.open = true;
-  }
   try {
     _save(true, { scheduleServerSync: false, quiet: true });
     void _syncTodoDelta(t, intendedOp, extraTodos);
