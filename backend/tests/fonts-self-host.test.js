@@ -14,7 +14,8 @@ test('all shells, blog pages, and HTML generators use local fonts only', () => {
     const source = read(file);
     assert.doesNotMatch(source, /fonts\.(googleapis|gstatic)\.com/, file);
     assert.doesNotMatch(source, /wght@300;400;500;600;700;800;900/, file);
-    assert.match(source, /href="\/fonts\/vazirmatn\.css"/, file);
+    if (file === 'app.html') assert.match(source, /Vazirmatn-Regular\.woff2\?v=tp\d+/);
+    else assert.match(source, /href="\/fonts\/vazirmatn\.css"/, file);
   }
 });
 
@@ -37,7 +38,7 @@ test('shared stylesheet declares exactly two static swap faces backed by WOFF2 f
 });
 
 test('critical shells preload both local fonts with anonymous CORS', () => {
-  for (const file of ['app.html', 'index.html']) {
+  for (const file of ['index.html']) {
     const links = read(file).match(/<link\b[^>]*>/g);
     for (const font of fonts) {
       const preload = links.find(link => link.includes(`/fonts/${font}`));

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp218';
+const TP_ASSET_V = 'tp219';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -4584,6 +4584,12 @@ function _partsForPage(page = currentPage) {
   const extra = _PAGE_DOCUMENT_PARTS[page] || _PAGE_DOCUMENT_PARTS.students;
   return [...new Set([..._CORE_DOCUMENT_PARTS, ...extra])];
 }
+function _bootPartsForPage(page = currentPage) {
+  const parts = _partsForPage(page);
+  if (page === 'dashboard') return parts.filter(key => !BUSINESS_PAGINATED_KEYS.includes(key));
+  if (page === 'payments') return parts.filter(key => !BUSINESS_PAGINATED_KEYS.includes(key) || ['students', 'packages', 'payments'].includes(key));
+  return parts;
+}
 function _documentIncludeQuery(keys) {
   const documentKeys = (keys || []).filter(key =>
     key !== 'todos' && !BUSINESS_PAGINATED_KEYS.includes(key));
@@ -4853,6 +4859,7 @@ function _markServerDocumentHydrated(etag) {
   window._serverHydratedEtag = window._serverDataEtag || etag || null;
 }
 async function _ensureDocumentParts(keys) {
+  if (window._initialServerLoadPending) return true;
   const requested = [...new Set(keys || [])];
   const todoPaging = _todoPagingState(false);
   if (requested.includes('todos') &&
@@ -4993,6 +5000,7 @@ async function _loadMoreTodos(archived = false) {
   if (loaded) renderTodoList({ skipMaintenance: true });
 }
 async function _loadTodoStats() {
+  if (window._tpTodoStatsFetchedThisSession) return window._tpTodoPaging?.stats || null;
   if (!_sbUser || !_sbSession?.token) return null;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return null;
@@ -5000,6 +5008,7 @@ async function _loadTodoStats() {
     const res = await _apiFetch('/api/data/' + accId + '/todos/stats' + _workspaceQuery());
     if (!res.ok) return null;
     const stats = await res.json();
+    window._tpTodoStatsFetchedThisSession = true;
     window._tpTodoPaging.stats = { ...(window._tpTodoPaging.stats || {}), ...stats };
     updateSidebarGreeting();
     return stats;
@@ -15959,6 +15968,10 @@ async function _apiFetch(path, opts = {}) {
   // Browser fetch responses have a one-shot body. Share the network operation,
   // but give every coalesced GET caller its own readable clone.
   const requestKey = method === 'GET' ? method + ' ' + url : '';
+  const cacheTtl = /\/status(?:\?|$)|\/todos\/stats(?:\?|$)/.test(path) ? 9000 : 0;
+  window._tpRecentGets = window._tpRecentGets || new Map();
+  const recent = cacheTtl ? window._tpRecentGets.get(requestKey) : null;
+  if (recent && recent.expiresAt > Date.now()) return recent.response.clone();
   window._tpInFlightGets = window._tpInFlightGets || new Map();
   if (requestKey && window._tpInFlightGets.has(requestKey)) {
     const shared = await window._tpInFlightGets.get(requestKey);
@@ -15991,7 +16004,14 @@ async function _apiFetch(path, opts = {}) {
   if (!requestKey) return run();
   const shared = run();
   window._tpInFlightGets.set(requestKey, shared);
-  try { return (await shared).clone(); }
+  try {
+    const response = await shared;
+    if (cacheTtl && response.ok) window._tpRecentGets.set(requestKey, {
+      expiresAt: Date.now() + cacheTtl,
+      response: response.clone(),
+    });
+    return response.clone();
+  }
   finally { window._tpInFlightGets.delete(requestKey); }
 }
 
@@ -17967,10 +17987,10 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
     }
     if (teamSession && !teamSession.ownerUserId) return false;
     if (!accId) return false;
-    void _loadTodoStats();
+    if (pageParts.includes('todos')) void _loadTodoStats();
     const previousEtag = window._serverDataEtag || null;
     const pageParts = [...new Set([
-      ..._partsForPage(typeof currentPage === 'string' ? currentPage : 'students'),
+      ...(window._initialServerLoadPending ? _bootPartsForPage(typeof currentPage === 'string' ? currentPage : 'students') : _partsForPage(typeof currentPage === 'string' ? currentPage : 'students')),
       ...(lightweightRebase ? rebaseBusinessKeys : []),
     ])];
     const includeKeys = lightweightRebase ? pageParts : (_shouldLoadFullDocument() ? null : pageParts);
@@ -18591,6 +18611,7 @@ async function _syncFromServerOnResume() {
 }
 
 function _scheduleServerResumeSync(delay = 0) {
+  if (window._initialServerLoadPending) return;
   if (!_appLooksInUse() && (document.hidden || document.visibilityState === 'hidden')) return;
   window._lastAppActivityAt = Date.now();
   clearTimeout(window._resumeServerSyncTimer);
@@ -18741,8 +18762,10 @@ function _bindServerSyncLifecycleHandlers() {
     void _flushPendingLocalWritesOnResume();
     _scheduleServerResumeSync();
   });
-  void _flushPendingLocalWritesOnResume();
-  _scheduleServerResumeSync(0);
+  if (!window._initialServerLoadPending) {
+    void _flushPendingLocalWritesOnResume();
+    _scheduleServerResumeSync(0);
+  }
   window.addEventListener('beforeunload', () => {
     _flushInteractiveSessionNoteSave();
     clearTimeout(window._serverSyncTimer);
@@ -19070,14 +19093,7 @@ async function _authOnSuccess() {
     else setTimeout(run, 2200);
   });
   const initialHydrate = deferAfterFirstPaint(async () => {
-    if (!_teamAccessSession()) {
-      try { await _refreshWorkspacesFromServer(); } catch (e) {}
-    }
-    for (let attempt = 0; attempt < 3; attempt++) {
-      loadedFromServer = await _loadFromServer();
-      if (loadedFromServer) break;
-      if (attempt < 2) await new Promise(r => setTimeout(r, 800));
-    }
+    loadedFromServer = await _loadFromServer();
     try {
       const hydrated = await _pollServerStatus();
       if (hydrated) loadedFromServer = true;
@@ -19104,7 +19120,8 @@ async function _authOnSuccess() {
     console.warn('[TeamPulse] initial hydration failed:', error?.message || error);
   }).finally(() => {
     window._initialServerLoadPending = false;
-    _startServerSyncLoops();
+    setTimeout(_startServerSyncLoops, 8000);
+    if (!_teamAccessSession()) setTimeout(() => { void _refreshWorkspacesFromServer(); }, 2200);
     // A local edit made while the authoritative document was loading is now
     // safe to send (or will use the normal offline retry path). Skip a dead
     // conflict-stopped marker left from a previous tab — re-POSTing it only
@@ -19113,7 +19130,7 @@ async function _authOnSuccess() {
     if (_hasServerSyncPending() || _localDataDivergedFromServerBaseline()) _ensurePendingServerSync(0);
   });
 
-  void deferAfterFirstPaint(async () => {
+  void initialHydrate.finally(() => deferAfterFirstPaint(async () => {
     try {
       const wRes = await _apiFetch('/api/wallet');
       if (wRes.ok) {
@@ -19130,7 +19147,7 @@ async function _authOnSuccess() {
         _save(false);
       } else { _initUserWallet(); }
     } catch(e) { _initUserWallet(); }
-  });
+  }));
 
   _startKeyEventReminderLoop();
   _bindServerSyncLifecycleHandlers();
@@ -23258,7 +23275,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v218';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v219';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

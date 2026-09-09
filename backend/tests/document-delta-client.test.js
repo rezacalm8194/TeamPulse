@@ -237,7 +237,7 @@ test('sign-in waits for the authoritative etag before sending a document delta',
   assert.match(appSource, /if \(window\._initialServerLoadPending\) \{[\s\S]{0,100}_markServerSyncPending\('initial-server-load'\)/);
   assert.match(appSource, /const deferAfterFirstPaint = \(task\) => new Promise/);
   assert.match(appSource, /const initialHydrate = deferAfterFirstPaint\(async \(\) => \{/);
-  assert.match(appSource, /initialHydrate\.catch\(error => \{[\s\S]{0,300}\}\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;\s*_startServerSyncLoops\(\)/);
+  assert.match(appSource, /initialHydrate\.catch\(error => \{[\s\S]{0,300}\}\)\.finally\(\(\) => \{\s*window\._initialServerLoadPending = false;\s*setTimeout\(_startServerSyncLoops, 8000\)/);
 });
 
 test('poll never starts a collection reload during active hydration and GETs coalesce', () => {
@@ -251,6 +251,11 @@ test('poll never starts a collection reload during active hydration and GETs coa
   assert.doesNotMatch(appSource, /if \(includeKeys\.includes\('todos'\)/);
   assert.match(appSource, /const refreshTodoFirstPage = pageParts\.includes\('todos'\)/);
   assert.match(appSource, /_reloadBusinessFirstPagesFromServer\(businessKeys, \{ reset: true \}\)/);
+  assert.match(appSource, /if \(window\._initialServerLoadPending\) return true;/);
+  assert.match(appSource, /if \(window\._initialServerLoadPending\) return;/);
+  const auth = appSource.slice(appSource.indexOf('async function _authOnSuccess()'), appSource.indexOf('// شغل‌ها'));
+  assert.doesNotMatch(auth, /for \(let attempt = 0; attempt < 3; attempt\+\+\)/);
+  assert.match(appSource, /const cacheTtl = .*todos\\\/stats/);
 });
 
 test('manual backup restore compresses before chunking and retries server confirmation', () => {
