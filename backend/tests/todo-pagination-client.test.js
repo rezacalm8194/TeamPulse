@@ -52,6 +52,13 @@ test('todo list virtualization passes the row renderer explicitly', () => {
   assert.match(todos, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
 });
 
+test('completed today todos stay inline in the today list', () => {
+  const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
+  assert.doesNotMatch(todos, /todo-done-details/);
+  assert.doesNotMatch(todos, /کار انجام‌شده امروز/);
+  assert.match(todos, /todayTodos\.filter\(t => !mainTodayIds\.has\(t\.id\)\)\.sort\(_sortByTime\)/);
+});
+
 test('client assets stay version-synced across app.js, app.html, and sw.js', () => {
   const version = app.match(/const TP_ASSET_V = 'tp(\d+)'/)?.[1];
   assert.ok(version, 'TP_ASSET_V must be defined in app.js');
