@@ -3918,10 +3918,13 @@ function openNoteDetail(id) {
 
   openModal(`${escapeHtml(node.icon||'📝')} ${escapeHtml(node.title)}`, `
     <div id="note-sticker-display-${id}" style="font-size:20px;letter-spacing:3px;margin-bottom:${stickers.length?'8':'0'}px">${stickers.join(' ')}</div>
-    <div class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
+    <details class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">ℹ️ اطلاعات یادداشت</summary>
+      <div style="margin-top:10px">
       ${dateStr}${impStr}${statusStr}${authorStr}
       ${tagsStr ? `<div style="margin-top:10px">${tagsStr}</div>` : ''}
-    </div>
+      </div>
+    </details>
     <div class="detail-section">
       <h3>📄 محتوا</h3>
       <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.content, {interactive:true,noteId:numId,field:'content'}) || '<span style="color:var(--text3)">محتوایی ثبت نشده</span>'}</div>
@@ -3940,10 +3943,10 @@ function openNoteDetail(id) {
         ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
         : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
     </div>
-    <div class="detail-section">
-      <h3 style="margin-bottom:10px">🏷 استیکر</h3>
-      <div style="display:flex;flex-wrap:wrap;gap:4px">${stickerBtns}</div>
-    </div>
+    <details class="detail-section">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🏷 استیکر${stickers.length ? ` (${fa(stickers.length)})` : ''}</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${stickerBtns}</div>
+    </details>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px;box-shadow:none' },
     { label: '📋 کپی', cls: 'btn-ghost', action: `copyInstructionText(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px' },
