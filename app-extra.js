@@ -3918,13 +3918,10 @@ function openNoteDetail(id) {
 
   openModal(`${escapeHtml(node.icon||'📝')} ${escapeHtml(node.title)}`, `
     <div id="note-sticker-display-${id}" style="font-size:20px;letter-spacing:3px;margin-bottom:${stickers.length?'8':'0'}px">${stickers.join(' ')}</div>
-    <details class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">ℹ️ اطلاعات یادداشت</summary>
-      <div style="margin-top:10px">
+    <div class="detail-section" style="${isKey?'border-color:var(--amber);background:rgba(251,191,36,.04)':''}">
       ${dateStr}${impStr}${statusStr}${authorStr}
       ${tagsStr ? `<div style="margin-top:10px">${tagsStr}</div>` : ''}
-      </div>
-    </details>
+    </div>
     <div class="detail-section">
       <h3>📄 محتوا</h3>
       <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.content, {interactive:true,noteId:numId,field:'content'}) || '<span style="color:var(--text3)">محتوایی ثبت نشده</span>'}</div>
@@ -3943,10 +3940,10 @@ function openNoteDetail(id) {
         ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
         : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
     </div>
-    <details class="detail-section">
-      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🏷 استیکر${stickers.length ? ` (${fa(stickers.length)})` : ''}</summary>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">${stickerBtns}</div>
-    </details>
+    <div class="detail-section">
+      <h3 style="margin-bottom:10px">🏷 استیکر</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${stickerBtns}</div>
+    </div>
   `, [
     { label: '✏️ ویرایش', cls: 'btn-primary', action: `closeModal();openEditInstruction(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px;box-shadow:none' },
     { label: '📋 کپی', cls: 'btn-ghost', action: `copyInstructionText(${id})`, style: 'min-width:0;padding:8px 16px;font-size:12.5px' },
@@ -4071,7 +4068,7 @@ function openAddInstruction(parentId, type) {
       </div>
       ${iconColorBlock}`;
   } else {
-    /* ── Notes: title + content up front; everything else behind a toggle ── */
+    /* ── Notes: title + content up front; secondary fields are collapsible. ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان *</label>
@@ -4235,7 +4232,7 @@ function openEditInstruction(id) {
       </div>
       ${iconColorBlock}`;
   } else {
-    /* ── Notes: title + content up front; everything else behind a toggle ── */
+    /* ── Notes: title + content up front; secondary fields are collapsible. ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان</label>
@@ -4255,15 +4252,9 @@ function openEditInstruction(id) {
           ? '<p style="font-size:12px;color:var(--text3);margin:0">هنوز پیوستی اضافه نشده</p>'
           : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
       </div>
-      <div class="form-group full">
-        <button type="button" id="ei-adv-toggle" onclick="_toggleAdvanced('ei-advanced','ei-adv-toggle')"
-          style="width:100%;text-align:center;padding:9px;border-radius:8px;border:1px dashed var(--border2);background:none;color:var(--text2);font-size:12px;font-family:var(--font);cursor:pointer">
-          تنظیمات بیشتر (آیکون، رنگ، اهمیت، تاریخ، یادداشت تکمیلی) ▾
-        </button>
-      </div>
-      <div id="ei-advanced" style="display:none" class="form-group full">
-        <div class="form-grid">
-          ${iconColorBlock}
+      <details class="detail-section" style="margin:0 0 12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">ℹ️ اطلاعات تکمیلی (تاریخ، اهمیت و وضعیت)</summary>
+        <div class="form-grid" style="margin-top:12px">
           <div class="form-group">
             <label class="form-label">اهمیت</label>
             ${_impChipsHtml('ei-importance', node.importance==='key' ? 'key' : 'normal')}
@@ -4290,7 +4281,14 @@ function openEditInstruction(id) {
             <textarea class="form-textarea" id="ei-extra" rows="3">${escapeHtml(_cleanupColorMarkers(node.extra_note||''))}</textarea>
           </div>
         </div>
-      </div>`;
+      </details>
+      <details class="detail-section" style="margin:0">
+        <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🏷 استیکر و رنگ</summary>
+        <div class="form-grid" style="margin-top:12px">
+          ${iconColorBlock}
+        </div>
+      </details>
+      `;
   }
 
   openModal(`✏️ ویرایش — ${escapeHtml(node.title)}`, `<div class="form-grid">${bodyHtml}</div>`, [
