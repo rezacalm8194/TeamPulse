@@ -176,3 +176,38 @@ test('per-collection overwrite guard catches a truncated packages payload', () =
     collections: { packages: { upsert: [], delete: Array.from({ length: 30 }, (_, i) => i + 11) } },
   }), true);
 });
+
+test('a stale empty knowledge cache does not wipe a small instruction set', () => {
+  const previous = {
+    instructions: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }],
+  };
+  // No explicit tombstones: this is a stale cache, not a real delete-all.
+  const wiped = { instructions: [], _deletedItems: {} };
+  assert.equal(looksLikeDestructiveCollectionOverwrite(previous, wiped), true);
+  assert.equal(patchLooksDestructive(previous, {
+    collections: { instructions: { upsert: [], delete: [1, 2, 3, 4] } },
+    scalars: {},
+  }), true);
+});
+
+test('an explicit knowledge delete-all is allowed through the guard', () => {
+  const previous = {
+    instructions: [{ id: 1 }, { id: 2 }, { id: 3 }],
+  };
+  const stamp = '2026-09-11T00:00:00.000Z';
+  const explicit = {
+    instructions: [],
+    _deletedItems: { instructions: { 1: stamp, 2: stamp, 3: stamp } },
+  };
+  assert.equal(looksLikeDestructiveCollectionOverwrite(previous, explicit), false);
+  assert.equal(patchLooksDestructive(previous, {
+    collections: { instructions: { upsert: [], delete: [1, 2, 3] } },
+    scalars: { _deletedItems: { instructions: { 1: stamp, 2: stamp, 3: stamp } } },
+  }), false);
+  const next = mergeAndApplyDeletedItems(previous, {
+    instructions: [{ id: 2 }, { id: 3 }],
+    _deletedItems: {},
+  });
+  assert.equal(next.instructions.length, 2);
+  assert.ok(next._deletedItems.instructions['1']);
+});

@@ -3771,6 +3771,14 @@ async function _confirmBulkDelete() {
       const ds = new Set();
       (function dc(x) { ds.add(x); (_db.instructions || []).filter(n => n.parent_id == x).forEach(n => dc(n.id)); })(id);
       _db.instructions = (_db.instructions || []).filter(n => !ds.has(n.id));
+      try {
+        if (!_db._deletedItems || typeof _db._deletedItems !== 'object' || Array.isArray(_db._deletedItems)) _db._deletedItems = {};
+        const tomb = _db._deletedItems.instructions && typeof _db._deletedItems.instructions === 'object' && !Array.isArray(_db._deletedItems.instructions)
+          ? _db._deletedItems.instructions
+          : (_db._deletedItems.instructions = {});
+        const stamp = new Date().toISOString();
+        ds.forEach(delId => { if (delId != null && delId !== '') tomb[String(delId)] = tomb[String(delId)] || stamp; });
+      } catch (e) {}
     }
   }
   _forceNextServerSync();
@@ -4375,7 +4383,16 @@ async function _confirmDeleteInstruction(id) {
     if (res && res.ok === false) { showToast(res.error || 'حذف نشد', 'error'); return; }
   } else {
     const ds=new Set(); function dc(x){ds.add(x);(_db.instructions||[]).filter(n=>n.parent_id==x).forEach(n=>dc(n.id));} dc(id);
-    _db.instructions=(_db.instructions||[]).filter(n=>!ds.has(n.id)); _forceNextServerSync(); _save();
+    _db.instructions=(_db.instructions||[]).filter(n=>!ds.has(n.id));
+    try {
+      if (!_db._deletedItems || typeof _db._deletedItems !== 'object' || Array.isArray(_db._deletedItems)) _db._deletedItems = {};
+      const tomb2 = _db._deletedItems.instructions && typeof _db._deletedItems.instructions === 'object' && !Array.isArray(_db._deletedItems.instructions)
+        ? _db._deletedItems.instructions
+        : (_db._deletedItems.instructions = {});
+      const stamp2 = new Date().toISOString();
+      ds.forEach(delId => { if (delId != null && delId !== '') tomb2[String(delId)] = tomb2[String(delId)] || stamp2; });
+    } catch (e) {}
+    _forceNextServerSync(); _save();
   }
   clearTimeout(window._serverSyncTimer);
   _syncToServer();

@@ -13,6 +13,21 @@ const TOMBSTONE_COLLECTIONS = [
   'staff_adjustments',
   'staff_monthly',
   'staff_role_entries',
+  // Knowledge-center parts are synced as whole arrays (not 200-row pages).
+  // Track explicit deletes so a stale empty cache cannot wipe them silently.
+  'instructions',
+  'guide_categories',
+  'guide_items',
+  'case_forms',
+];
+
+// Knowledge collections are small (often <10 rows), so the generic
+// >=10-row destructive heuristics never catch a stale wipe of them.
+const KNOWLEDGE_DELETE_COLLECTIONS = [
+  'instructions',
+  'guide_categories',
+  'guide_items',
+  'case_forms',
 ];
 
 // These collections are served in pages of 200. A client that only loaded the
@@ -170,9 +185,15 @@ function hasExplicitStudentDeletion(data, key, id) {
     && Object.prototype.hasOwnProperty.call(map, String(id));
 }
 
+function hasExplicitKnowledgeDeletion(data, key, id) {
+  const map = data?._deletedItems?.[key];
+  return KNOWLEDGE_DELETE_COLLECTIONS.includes(key) && map && !Array.isArray(map)
+    && Object.prototype.hasOwnProperty.call(map, String(id));
+}
+
 function countWithoutExplicitStudentDeletes(previousData, nextData, key) {
   return (Array.isArray(previousData?.[key]) ? previousData[key] : [])
-    .filter(row => !hasExplicitStudentDeletion(nextData, key, row?.id)).length;
+    .filter(row => !hasExplicitStudentDeletion(nextData, key, row?.id) && !hasExplicitKnowledgeDeletion(nextData, key, row?.id)).length;
 }
 
 function looksLikeDestructiveCollectionOverwrite(previousData, nextData) {
@@ -181,6 +202,12 @@ function looksLikeDestructiveCollectionOverwrite(previousData, nextData) {
     if (!Object.prototype.hasOwnProperty.call(nextData, key) || !Array.isArray(nextData[key])) return false;
     const prev = countWithoutExplicitStudentDeletes(previousData, nextData, key);
     const next = collectionLength(nextData, key);
+    // Knowledge parts are tiny (often 1-9 rows): any unexplained wipe to
+    // empty is a stale cache, not a user action. Explicit deletes (which the
+    // client stamps into _deletedItems) are already subtracted above.
+    if (KNOWLEDGE_DELETE_COLLECTIONS.includes(key) && key in nextData && Array.isArray(nextData[key])) {
+      if (prev >= 3 && next === 0) return true;
+    }
     if (prev >= 10 && next === 0) return true;
     return prev >= 20 && next < Math.ceil(prev * 0.5);
   });
@@ -222,8 +249,11 @@ function patchLooksDestructive(previousData, patch) {
   return Object.keys(collections).some(key => {
     const change = collections[key];
     const deletes = Array.isArray(change?.delete)
-      ? change.delete.filter(id => !hasExplicitStudentDeletion(patch?.scalars, key, id)).length : 0;
+      ? change.delete.filter(id => !hasExplicitStudentDeletion(patch?.scalars, key, id) && !hasExplicitKnowledgeDeletion(patch?.scalars, key, id)).length : 0;
     const prev = collectionLength(previousData, key);
+    if (KNOWLEDGE_DELETE_COLLECTIONS.includes(key)) {
+      if (prev >= 3 && deletes >= prev && !(Array.isArray(change?.upsert) && change.upsert.length)) return true;
+    }
     if (prev >= 10 && deletes >= prev && !(Array.isArray(change?.upsert) && change.upsert.length)) return true;
     return prev >= 20 && deletes > Math.ceil(prev * 0.5);
   });
@@ -231,6 +261,7 @@ function patchLooksDestructive(previousData, patch) {
 
 module.exports = {
   TOMBSTONE_COLLECTIONS,
+  KNOWLEDGE_DELETE_COLLECTIONS,
   PAGINATED_COLLECTIONS,
   MAX_TOMBSTONES_PER_COLLECTION,
   mergeAndApplyDeletedItems,
