@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp220') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp227') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp220') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp227') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -4605,3 +4605,20 @@ body { top: 0 !important; }
 .archive-loss-reason{font-size:12px;color:var(--text2);margin:4px 0}
 .archive-failed-summary{width:100%;font-size:12px;color:var(--text2);padding:4px 0}
 .archive-loss-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+
+/* صفحه‌ی خانه: سطح‌های موجودِ تم را به کار می‌گیرد و در عرض کم تک‌ستونه می‌شود. */
+.home-dashboard{max-width:1180px;margin:0 auto;padding:4px 0 24px}
+.home-hero{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;margin-bottom:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg2)}
+.home-hero h2{margin:0 0 5px;font-size:20px;color:var(--text)}
+.home-hero p{margin:0;font-size:12px;color:var(--text3)}
+.home-stats{display:grid;grid-template-columns:repeat(3,minmax(92px,1fr));gap:8px}
+.home-stats>div{padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--bg3);text-align:center}
+.home-stats strong{display:block;color:var(--accent2);font-size:18px;line-height:1.2}.home-stats span{display:block;margin-top:3px;color:var(--text3);font-size:10px;white-space:nowrap}
+.home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.home-card{min-width:0;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--bg2)}
+.home-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.home-card h3{margin:0;color:var(--text);font-size:14px}.home-link{border:0;background:transparent;color:var(--accent2);font:inherit;font-size:11px;cursor:pointer;padding:7px;border-radius:7px}.home-link:hover,.home-link:focus-visible{background:var(--bg3);outline:none}
+.home-row{display:flex;align-items:center;gap:9px;min-height:42px;padding:6px 0;border-top:1px solid var(--border)}.home-row:first-of-type{border-top:0}.home-row.is-done .home-row-title{text-decoration:line-through;color:var(--text3)}
+.home-row-title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:12px}.home-row-meta{color:var(--text3);font-size:11px;direction:ltr}.home-session-time{min-width:38px;color:var(--accent2);font-size:12px;direction:ltr;text-align:center}
+.home-check{width:28px;height:28px;flex:0 0 28px;border:2px solid var(--border2);border-radius:50%;background:var(--bg3);color:white;font:700 15px/1 var(--font);cursor:pointer}.home-row.is-done .home-check{border-color:var(--green);background:var(--green)}.home-check:hover,.home-check:focus-visible{border-color:var(--accent2);outline:none}
+.home-empty{padding:16px 0;color:var(--text3);font-size:12px;text-align:center}.home-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.home-quick-actions button{min-height:42px;padding:8px;border:1px solid var(--border);border-radius:9px;background:var(--bg3);color:var(--text2);font:inherit;font-size:12px;cursor:pointer;text-align:right}.home-quick-actions button:hover,.home-quick-actions button:focus-visible{border-color:var(--accent2);color:var(--text);outline:none}
+@media (max-width:680px){.home-hero{align-items:stretch;flex-direction:column;padding:15px}.home-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.home-stats>div{padding:8px 4px}.home-stats strong{font-size:16px}.home-stats span{font-size:9px;white-space:normal}.home-grid{grid-template-columns:1fr;gap:10px}.home-card{padding:14px}.home-dashboard{padding-bottom:18px}}

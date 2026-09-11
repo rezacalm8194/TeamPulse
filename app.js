@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp225';
+const TP_ASSET_V = 'tp227';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -39,7 +39,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openStaffPayment', 'openStaffAdjustment', 'openStaffMonthly', 'openAddPersonnelFromTodo',
   'renderInstructions', 'openNoteDetail', 'openAddInstruction', 'openEditInstruction',
   'renderTutorial',
-  'renderGoals', 'renderHabits', 'openHabitDetail'
+  'renderGoals', 'renderHabits', 'openHabitDetail', 'toggleHabitToday'
 ].forEach(_tpLazy);
 [
   'renderSessions'
@@ -4627,6 +4627,8 @@ const BUSINESS_PAGINATED_KEYS = Object.freeze([
 ]);
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
+  // Home is cache-only: its first paint intentionally reads the in-memory snapshot.
+  home: [],
   // The customer list first paint is intentionally limited to its own rows.
   // Finance and case forms are hydrated on demand after the list is visible.
   students: ['students'],
@@ -4653,6 +4655,7 @@ function _partsForPage(page = currentPage) {
   return [...new Set([..._CORE_DOCUMENT_PARTS, ...extra])];
 }
 function _bootPartsForPage(page = currentPage) {
+  if (page === 'home') return [];
   const parts = _partsForPage(page);
   if (page === 'dashboard') return parts.filter(key => !BUSINESS_PAGINATED_KEYS.includes(key));
   if (page === 'payments') return parts.filter(key => !BUSINESS_PAGINATED_KEYS.includes(key) || ['students', 'packages', 'payments'].includes(key));
@@ -5778,7 +5781,7 @@ let FAMILIES = [];
 let CURRENCIES = ['تومان'];
 let allStudents = [];
 // safe pages list (don't restore admin panel from refresh unless admin)
-const _SAFE_RESTORE_PAGES = ['students','payments','sessions','families','reminders',
+const _SAFE_RESTORE_PAGES = ['home','students','payments','sessions','families','reminders',
   'customerlist','archive','staff','instructions','todolist','calendar','tutorial','settings','dashboard','transactions','admin_panel','goals','habits'];
 function _parseAppHash() {
   const raw = (location.hash || '').replace(/^#/, '').trim();
@@ -5796,7 +5799,7 @@ function _getInitialPage() {
   const fromStorage = localStorage.getItem('tp_last_page');
   if (fromStorage === 'sessions') return 'students';
   if (fromStorage && _SAFE_RESTORE_PAGES.includes(fromStorage)) return fromStorage;
-  return 'students';
+  return 'home';
 }
 let currentPage = _getInitialPage();
 let _studentsTab = currentPage === 'sessions' ? 'sessions' : 'students';
@@ -6855,6 +6858,7 @@ function updatePageTitle() {
   document.body.classList.toggle('knowledge-page', currentPage === 'instructions');
   document.body.classList.toggle('primary-mobile-page', ['goals','habits','todolist'].includes(currentPage));
   const titles = {
+    home: 'داشبورد',
     students: 'امور مشتریان',
     payments: 'حساب مشتریان',
     purchases: 'تاریخچه کل فروش ها',
@@ -6876,6 +6880,114 @@ function updatePageTitle() {
     habits: '🔥 عادت‌ها',
   };
   document.getElementById('page-title').textContent = titles[currentPage];
+}
+
+// صفحه‌ی خانه عمداً فقط از داده‌ی حاضر در حافظه می‌خواند: بارگذاری صفحه‌ی اول
+// نباید به درخواست جدید یا انتظار برای کالکشن‌های بزرگ وابسته باشد.
+function _homeFa(value) {
+  return String(value).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+}
+function _homeStudentName(id) {
+  const student = (allStudents || _db.students || []).find(s => String(s.id) === String(id));
+  return student ? [student.name, student.lname].filter(Boolean).join(' ') : 'مشتری ثبت‌نشده';
+}
+function _homeNavigate(page, tab) {
+  currentPage = page;
+  if (page === 'students' && tab === 'sessions') _studentsTab = 'sessions';
+  if (page === 'payments' && tab) _paymentsTab = tab;
+  updatePageTitle();
+  renderPage();
+}
+function _homeToggleHabit(id) {
+  Promise.resolve(toggleHabitToday(id)).finally(() => {
+    if (currentPage === 'home') renderHome();
+  });
+}
+function _homeToggleTodo(id) {
+  Promise.resolve(_toggleTodo(id)).finally(() => {
+    if (currentPage === 'home') renderHome();
+  });
+}
+function _homePickCustomer(title, action) {
+  if (!allStudents.length) { showToast('ابتدا مشتری اضافه کنید', 'error'); return; }
+  if (allStudents.length === 1) { window[action](allStudents[0].id); return; }
+  const opts = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
+  openModal(title, `<div class="form-grid"><div class="form-group full"><label class="form-label">مشتری *</label><select class="form-select" id="home-customer-pick">${opts}</select></div></div>`, [
+    { label: 'ادامه', cls: 'btn-primary', action: `closeModal();${action}(Number(document.getElementById('home-customer-pick').value))` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' }
+  ]);
+}
+function _homeQuickPurchase() { _homePickCustomer('🛍 فروش جدید — انتخاب مشتری', 'openNewPurchase'); }
+function _homeQuickPayment() { _homePickCustomer('💳 دریافت جدید — انتخاب مشتری', 'openAddPayment'); }
+function _homeQuickSalary() {
+  const staff = (_db.staff || []).filter(s => !s.archived);
+  if (!staff.length) { showToast('ابتدا پرسنل اضافه کنید', 'error'); return; }
+  if (staff.length === 1) { openStaffPayment(staff[0].id, (staff[0].name || '') + ' ' + (staff[0].lname || '')); return; }
+  const opts = staff.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
+  openModal('💰 ثبت حقوق — انتخاب پرسنل', `<div class="form-grid"><div class="form-group full"><label class="form-label">پرسنل *</label><select class="form-select" id="home-staff-pick">${opts}</select></div></div>`, [
+    { label: 'ادامه', cls: 'btn-primary', action: `closeModal();openStaffPayment(Number(document.getElementById('home-staff-pick').value), document.getElementById('home-staff-pick').selectedOptions[0].text)` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' }
+  ]);
+}
+async function renderHome() {
+  updateTopbarActions('');
+  _todosInit();
+  _habitsInit();
+  const today = _todayJalaliStr();
+  const todayKey = _jalaliKey(today);
+  const sessions = (_db.sessions || []).filter(s => String(s.date_jalali || '') === today)
+    .sort((a, b) => String(a.time || a.start_time || '').localeCompare(String(b.time || b.start_time || '')));
+  const todos = (_db.todos || []).filter(t => !t.archived && !t.done && _jalaliKey(_todoScheduledDate(t)) === todayKey);
+  const habits = (_db.habits || []).filter(h => !h.archived);
+  const doneHabitIds = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => String(l.habit_id)));
+  // The habits page likewise treats every active habit as today's item; time is a hint, not a second schedule.
+  const dueHabits = habits;
+  const overdueReminders = [
+    ...(_db.reminders || []), ...(_db.expense_reminders || []), ...(_db.staff_reminders || [])
+  ].filter(r => !r.done && _jalaliKey(r.due_date_jalali || '') > 0 && _jalaliKey(r.due_date_jalali) <= todayKey);
+  const displayDate = typeof DateService !== 'undefined' && DateService.disp ? DateService.disp(today) : today;
+  const greeting = (_sbUser?.name || '').trim() ? `سلام ${escapeHtml(_sbUser.name)}` : 'سلام';
+  const empty = text => `<div class="home-empty">${text}</div>`;
+  const habitRows = dueHabits.slice(0, 6).map(h => {
+    const done = doneHabitIds.has(String(h.id));
+    return `<div class="home-row ${done ? 'is-done' : ''}">
+      <button type="button" class="home-check" aria-label="${done ? 'لغو انجام عادت' : 'ثبت انجام عادت'} ${escapeHtml(h.title)}" aria-pressed="${done}" onclick="_homeToggleHabit(${Number(h.id)})">${done ? '✓' : ''}</button>
+      <span class="home-row-title">${escapeHtml(h.title || 'عادت بدون عنوان')}</span>
+      ${h.time ? `<span class="home-row-meta">${escapeHtml(h.time)}</span>` : ''}
+    </div>`;
+  }).join('');
+  const todoRows = todos.slice(0, 6).map(t => `<div class="home-row">
+    <button type="button" class="home-check" aria-label="تکمیل کار ${escapeHtml(t.title)}" aria-pressed="false" onclick="_homeToggleTodo(${Number(t.id)})"></button>
+    <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}</span>
+    ${t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : ''}
+  </div>`).join('');
+  const sessionRows = sessions.slice(0, 6).map(s => `<div class="home-row">
+    <span class="home-session-time">${escapeHtml(s.time || s.start_time || '—')}</span>
+    <span class="home-row-title">${escapeHtml(_homeStudentName(s.student_id))}</span>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="_homeNavigate('students','sessions')">امور مشتریان</button>
+  </div>`).join('');
+  setContent(`<main class="home-dashboard">
+    <header class="home-hero">
+      <div><h2>${greeting}</h2><p>امروز، ${escapeHtml(displayDate)}</p></div>
+      <div class="home-stats" aria-label="خلاصه امروز">
+        <div><strong>${_homeFa(sessions.length)}</strong><span>جلسات امروز</span></div>
+        <div><strong>${_homeFa(todos.length)}</strong><span>کارهای باز امروز</span></div>
+        <div><strong>${_homeFa(overdueReminders.length)}</strong><span>یادآوری سررسیده</span></div>
+      </div>
+    </header>
+    <div class="home-grid">
+      <section class="home-card"><div class="home-card-head"><h3>جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="openAddSessionGeneral()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty('عادت سررسیدشده‌ای برای امروز نیست.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>کارهای امروز</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
+      <section class="home-card home-finance"><div class="home-card-head"><h3>گزارش مالی و دسترسی سریع</h3><button class="home-link" onclick="_homeNavigate('dashboard')">مدیریت مالی کامل</button></div>
+        <div class="home-quick-actions">
+          <button onclick="_homeQuickPurchase()">فروش جدید</button><button onclick="_homeQuickPayment()">دریافت جدید</button>
+          <button onclick="openAddReminder()">یادآوری‌ها</button><button onclick="openFinancialAccounts()">خلاصه حساب‌ها</button>
+          <button onclick="openExpenseManager()">ثبت هزینه جدید</button><button onclick="_homeQuickSalary()">ثبت حقوق جدید</button>
+        </div>
+      </section>
+    </div>
+  </main>`);
 }
 
 // Keeps sidebar / bottom-nav highlight in sync with currentPage, no matter
@@ -7010,7 +7122,7 @@ async function renderPage() {
     _keySessionsExpanded = false;
     updatePageTitle();
   }
-  if (_sbSession?.token) {
+  if (_sbSession?.token && requestedPage !== 'home') {
     try { await _ensureDocumentParts(_partsForPage(requestedPage)); } catch (e) {}
   }
   if (currentPage === 'reminders') {
@@ -7054,7 +7166,8 @@ async function renderPage() {
     history.replaceState(null, '', '#' + currentPage);
   }
   try {
-    if (currentPage === 'students')  {
+    if (currentPage === 'home')      await renderHome();
+    else if (currentPage === 'students')  {
       if (_studentsTab === 'sessions') await renderSessions();
       else await renderStudents();
     }
@@ -23351,7 +23464,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v225';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v227';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
