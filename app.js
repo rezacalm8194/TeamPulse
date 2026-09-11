@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp233';
+const TP_ASSET_V = 'tp235';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -4628,7 +4628,9 @@ const BUSINESS_PAGINATED_KEYS = Object.freeze([
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
   // Home is cache-only: its first paint intentionally reads the in-memory snapshot.
-  home: [],
+  // 'todos' is included (not fetched at boot) so the status poll keeps the
+  // todo cache fresh and repaints the dashboard while sitting on home.
+  home: ['todos'],
   // The customer list first paint is intentionally limited to its own rows.
   // Finance and case forms are hydrated on demand after the list is visible.
   students: ['students'],
@@ -6931,9 +6933,9 @@ function _homeConfirmCustomerPick(action) {
 function _homeQuickPurchase() { _homePickCustomer('🛍 فروش جدید — انتخاب مشتری', 'openNewPurchase'); }
 function _homeQuickPayment() { _homePickCustomer('💳 دریافت جدید — انتخاب مشتری', 'openAddPayment'); }
 function _homeQuickSession() {
-  // The native session form already has its own customer dropdown (same as
-  // the students page), so open it directly instead of a redundant picker.
-  openAddSessionGeneral();
+  // Ask which customer first (picker), then open the native form with that
+  // customer preselected — same form as the students page.
+  _homePickCustomer('📅 ثبت جلسه جدید — انتخاب مشتری', 'openAddSessionGeneral');
 }
 function _homeQuickSalary() {
   const staff = (_db.staff || []).filter(s => !s.archived);
@@ -6969,10 +6971,20 @@ async function renderHome() {
   const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done && (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true));
   const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
-  // Same order as the todo list page: earliest date first, then earliest time.
-  const todosSorted = [...overdueTodos, ...todayTodos].sort((a, b) =>
-    _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) ||
-    String(a.time || '').localeCompare(String(b.time || '')));
+  // Same order as the todo list page: overdue by (date, time), then pinned
+  // today items by rank, then the rest of today by time (_sortByTime keeps
+  // timeless tasks last, like the list page does).
+  const byDateTime = (a, b) =>
+    _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) || _sortByTime(a, b);
+  const pinnedToday = todayTodos
+    .filter(t => +t.main_today_rank > 0)
+    .sort((a, b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a, b));
+  const pinnedIds = new Set(pinnedToday.map(t => t.id));
+  const todosSorted = [
+    ...[...overdueTodos].sort(byDateTime),
+    ...pinnedToday,
+    ...todayTodos.filter(t => !pinnedIds.has(t.id)).sort(_sortByTime),
+  ];
   const habits = (_db.habits || []).filter(h => !h.archived);
   const doneHabitIds = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => String(l.habit_id)));
   // The habits page likewise treats every active habit as today's item; time is a hint, not a second schedule.
@@ -18740,7 +18752,7 @@ async function _pollServerStatus() {
 
 function _refreshUiAfterServerLoad(updated, opts = {}) {
   const force = opts.force === true;
-  if (updated && ['payments', 'transactions', 'dashboard'].includes(currentPage)) {
+  if (updated && ['payments', 'transactions', 'dashboard', 'home'].includes(currentPage)) {
     if (!document.querySelector('.modal-overlay.open')) renderPage();
     return;
   }
@@ -23523,7 +23535,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v233';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v235';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
