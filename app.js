@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp230';
+const TP_ASSET_V = 'tp231';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6929,7 +6929,11 @@ function _homeConfirmCustomerPick(action) {
 }
 function _homeQuickPurchase() { _homePickCustomer('🛍 فروش جدید — انتخاب مشتری', 'openNewPurchase'); }
 function _homeQuickPayment() { _homePickCustomer('💳 دریافت جدید — انتخاب مشتری', 'openAddPayment'); }
-function _homeQuickSession() { _homePickCustomer('📅 ثبت جلسه جدید — انتخاب مشتری', 'openAddSessionGeneral'); }
+function _homeQuickSession() {
+  // The native session form already has its own customer dropdown (same as
+  // the students page), so open it directly instead of a redundant picker.
+  openAddSessionGeneral();
+}
 function _homeQuickSalary() {
   const staff = (_db.staff || []).filter(s => !s.archived);
   if (!staff.length) { showToast('ابتدا پرسنل اضافه کنید', 'error'); return; }
@@ -9519,6 +9523,9 @@ async function saveSessionGeneral() {
   closeModal();
   showToast(`${META.sessionSingular||'جلسه'} ثبت شد ✓`, 'success');
   openSessionGroups.add(studentId);
+  // From the dashboard stay on the dashboard (re-render it so the new
+  // session shows up); everywhere else keep the old sessions-page behavior.
+  if (currentPage === 'home') { await renderHome(); return; }
   await renderSessions();
 }
 
@@ -23509,7 +23516,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v230';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v231';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
