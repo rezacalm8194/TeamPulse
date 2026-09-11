@@ -201,6 +201,95 @@ function _expenseAmountValue(value) {
   return Math.max(0, Number(enDigits(String(value||'').replace(/[,٬،\s]/g,''))) || 0);
 }
 
+// ── ثبت سریع چند هزینه از روی یک متن ─────────────────────────────
+// هر خط = حداقل یک هزینه؛ اگر در یک خط دو عدد (مبلغ) بیاید، دو هزینه جدا می‌سازد.
+// مثال: "500 هزار تومان گوشت" / "300 هزارتومان اسنپ" / "گوشت 500 هزار، اسنپ 300 هزار"
+function _quickExpenseAmountFromMatch(numRaw, unitWord, tomanWord) {
+  const base = Number(String(numRaw||'').replace(/[^0-9]/g, '')) || 0;
+  if (!base) return 0;
+  const u = String(unitWord||'');
+  let mult = 1;
+  if (/میلیارد/.test(u)) mult = 1e9;
+  else if (/میلیون|ملیون/.test(u)) mult = 1e6;
+  else if (/هزار/.test(u)) mult = 1e3;
+  else if (tomanWord && base < 1000) mult = 1; // مثل «۵۰۰ تومان»
+  else if (!tomanWord && base < 1000) return 0; // عدد کوچک بدون واحد = مبلغ نیست
+  return base * mult;
+}
+function _cleanQuickExpenseDesc(s) {
+  return String(s||'')
+    .replace(/^[،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g,'')
+    .replace(/^[وHo]\s+/,'')
+    .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g,'')
+    .replace(/\s{2,}/g,' ')
+    .trim();
+}
+function _guessExpenseCategory(desc) {
+  const t = String(desc||'');
+  if (/اجاره/.test(t)) return 'اجاره';
+  if (/حقوق|دستمزد|کارگر|کارمند/.test(t)) return 'حقوق و دستمزد';
+  if (/تبلیغ|اینستا|بنر|تراکت|سئو/.test(t)) return 'تبلیغات';
+  if (/ابزار|تجهیز|موبایل|لپ‌تاپ|گوشی|سخت‌افزار/.test(t)) return 'تجهیزات';
+  if (/اشتراک|اینترنت|نرم‌افزار|هاست|دامنه|فیلترشکن|شارژ/.test(t)) return 'نرم‌افزار و اشتراک';
+  if (/اسنپ|تپسی|تاکسی|حمل|بنزین|مترو|اتوبوس|پارکینگ|پیک|پست|کرایه راه/.test(t)) return 'حمل‌ونقل';
+  if (/گوشت|مرغ|نان|میوه|غذا|رستوران|کافه|پذیرایی|چای|قهوه|خوراک|سبزی|برنج|روغن/.test(t)) return 'پذیرایی';
+  if (/مالیات|بیمه|عوارض/.test(t)) return 'مالیات و بیمه';
+  if (/آموزش|کتاب|کلاس|دوره|دانشگاه/.test(t)) return 'آموزش';
+  return null;
+}
+function _parseQuickExpenses(text) {
+  const out = [];
+  const lines = String(text||'').split(/\n+/);
+  const amtRe = /(\d[\d,\.٬،\s]*\d|\d)\s*(میلیارد|میلیون|ملیون|هزار)?\s*(تومانی|تومان|تومن|ت)?/g;
+  for (const rawLine of lines) {
+    const line = String(rawLine||'').trim();
+    if (!line) continue;
+    // ابتدا خط را با جداکننده‌های رایج هم بشکن تا «نقطه/ویرگول/؛» هم جدا شود، ولی مبلغ‌ها حفظ شوند
+    const norm = enDigits(line);
+    const matches = [...norm.matchAll(amtRe)]
+      .map(m => ({ raw: m[0], num: m[1], unit: m[2]||'', toman: m[3]||'', idx: m.index||0, len: m[0].length }))
+      .filter(m => _quickExpenseAmountFromMatch(m.num, m.unit, m.toman) > 0);
+    if (!matches.length) continue;
+    // تکه‌های متنی بین مبلغ‌ها: pre | mid0 | mid1 ... | post
+    const pre = _cleanQuickExpenseDesc(line.slice(0, matches[0].idx));
+    const mids = matches.map((m, i) => i + 1 < matches.length
+      ? _cleanQuickExpenseDesc(line.slice(m.idx + m.len, matches[i+1].idx))
+      : '');
+    const post = _cleanQuickExpenseDesc(line.slice(matches[matches.length-1].idx + matches[matches.length-1].len));
+    const descs = matches.map((m, i) => {
+      let d = '';
+      if (matches.length === 1) d = _cleanQuickExpenseDesc(pre + ' ' + post);
+      else if (pre) d = i === 0 ? pre : (i < matches.length - 1 ? (mids[i-1] || post) : _cleanQuickExpenseDesc(mids[i-1] + ' ' + post));
+      else d = i < matches.length - 1 ? mids[i] : (post || mids[i-1] || '');
+      if (!d) {
+        let tmp = line;
+        matches.forEach(x => { tmp = tmp.replace(x.raw, ' '); });
+        d = _cleanQuickExpenseDesc(tmp) || 'هزینه';
+      }
+      return d;
+    });
+    matches.forEach((m, i) => {
+      out.push({ amount: _quickExpenseAmountFromMatch(m.num, m.unit, m.toman), description: descs[i], category: _guessExpenseCategory(descs[i]) });
+    });
+  }
+  return out;
+}
+function _updateQuickExpensePreview() {
+  const el = document.getElementById('expense-quick-preview');
+  const ta = document.getElementById('expense-quick');
+  if (!el || !ta) return;
+  const items = _parseQuickExpenses(ta.value);
+  if (!items.length) {
+    el.innerHTML = ta.value.trim()
+      ? '<div style="font-size:11px;color:var(--amber)">مبلغی تشخیص داده نشد — مثلاً بنویس: ۵۰۰ هزار تومان گوشت</div>'
+      : '<div style="font-size:11px;color:var(--text3)">هر خط یک هزینه. اگر در یک خط دو مبلغ بنویسی، دو هزینه جدا ثبت می‌شود.</div>';
+    return;
+  }
+  const total = items.reduce((s,x)=>s+Number(x.amount||0),0);
+  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(items.length)} هزینه تشخیص داده شد · جمع: <b style="color:var(--red)">${fmt(total)} تومان</b></div>` +
+    items.map(x=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 10px;border:1px solid var(--border2);border-radius:9px;background:var(--bg2);margin-bottom:5px"><span style="font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(x.description)}${x.category?` <small style="color:var(--text3)">· ${escapeHtml(x.category)}</small>`:''}</span><b style="font-size:12px;color:var(--red);white-space:nowrap">${fmt(x.amount)}</b></div>`).join('');
+}
+
 const FINANCIAL_ACCOUNT_TYPES = { cash:'نقد', bank:'حساب بانکی', pos:'کارت‌خوان', wallet:'کیف پول', other:'سایر' };
 function financialAccountOptionsHtml(selectedId=null, emptyLabel='بدون اتصال به حساب') {
   const accounts=_db.financial_accounts||[];
@@ -263,9 +352,11 @@ function toggleExpenseRepeatOptions() {
   const options=document.getElementById('expense-repeat-options');
   if(options)options.style.display=enabled?'grid':'none';
 }
-function _expenseFormHtml(expense={}) {
+function _expenseFormHtml(expense={}, isNew=false) {
   const today = _formatJalali(..._todayJalali());
+  const quickBox = isNew ? `<div class="form-group full" style="border:1px dashed var(--accent);border-radius:12px;padding:12px;background:rgba(124,106,247,.06)"><label class="form-label">⚡ ثبت سریع چند هزینه (اختیاری)</label><textarea class="form-textarea" id="expense-quick" rows="3" oninput="_updateQuickExpensePreview()" placeholder="هر خط یک هزینه — مثلاً:&#10;500 هزار تومان گوشت&#10;300 هزار تومان اسنپ"></textarea><div id="expense-quick-preview" style="margin-top:8px"><div style="font-size:11px;color:var(--text3)">هر خط یک هزینه. اگر در یک خط دو مبلغ بنویسی، دو هزینه جدا ثبت می‌شود.</div></div></div>` : '';
   return `<div class="form-grid">
+    ${quickBox}
     <div class="form-group"><label class="form-label">مبلغ (تومان) *</label><input class="form-input amount-input" id="expense-amount" inputmode="numeric" value="${expense.amount?fmt(expense.amount):''}" placeholder="مثلاً ۷۲,۰۰۰,۰۰۰"></div>
     <div class="form-group"><label class="form-label">تاریخ *</label><input class="form-input jdate" id="expense-date" value="${escapeHtml(expense.date_jalali||today)}" placeholder="۱۴۰۵/۰۵/۲۲"></div>
     <div class="form-group"><label class="form-label">دسته‌بندی *</label><select class="form-select" id="expense-category">${EXPENSE_CATEGORIES.map(c=>`<option ${expense.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -281,7 +372,7 @@ function openExpenseForm(id=null) {
   const expense = id==null ? {} : (_db.expenses||[]).find(e=>String(e.id)===String(id)) || {};
   window._editingExpenseId = id;
   window._pendingExpenseReceipts = _cloneData(expense.receipts||[]);
-  openModal(id==null?'➕ ثبت هزینه جدید':'✏️ ویرایش هزینه',_expenseFormHtml(expense),[
+  openModal(id==null?'➕ ثبت هزینه جدید':'✏️ ویرایش هزینه',_expenseFormHtml(expense, id==null),[
     {label:'ذخیره هزینه',cls:'btn-primary',action:'saveExpense()'},
     {label:'انصراف',cls:'btn-ghost',action:'openExpenseManager()'}
   ]);
@@ -302,15 +393,39 @@ async function removePendingExpenseReceipt(id) {
 }
 
 function saveExpense() {
-  const amount=_expenseAmountValue(document.getElementById('expense-amount')?.value);
   const date=(document.getElementById('expense-date')?.value||'').trim();
-  if(!amount){showToast('مبلغ هزینه را وارد کنید','error');return;}
   if(!_jalaliKey(date)){showToast('تاریخ هزینه معتبر نیست','error');return;}
   const id=window._editingExpenseId;
-  const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
-  if(!expense){showToast('هزینه پیدا نشد','error');return;}
   const repeatMonths=document.getElementById('expense-recurring')?.checked?Number(document.getElementById('expense-repeat-months')?.value||1):0;
   const reminderDays=repeatMonths?Number(document.getElementById('expense-reminder-days')?.value||0):0;
+  const baseCategory=document.getElementById('expense-category')?.value||'سایر';
+  const baseMethod=document.getElementById('expense-method')?.value||'سایر';
+  const baseAccount=document.getElementById('expense-account')?.value||null;
+  const baseDesc=(document.getElementById('expense-description')?.value||'').trim();
+  const baseReceipts=_cloneData(window._pendingExpenseReceipts||[]);
+  // ── حالت ثبت سریع: فقط در «هزینه جدید» و وقتی باکس سریع مبلغی دارد ──
+  if (id == null) {
+    const quickItems = _parseQuickExpenses(document.getElementById('expense-quick')?.value||'');
+    if (quickItems.length) {
+      if (repeatMonths > 0) { showToast('ثبت گروهی با تکرارشونده پشتیبانی نمی‌شود؛ تکرار را خاموش کن یا تکی ثبت کن','error'); return; }
+      const now = new Date().toISOString();
+      quickItems.forEach((q, i) => {
+        const desc = baseDesc ? `${q.description} — ${baseDesc}` : q.description;
+        _db.expenses.push({ id:_db._nextId.expenses++, created_at:now, amount:q.amount, date_jalali:date,
+          category: q.category || baseCategory, payment_method: baseMethod, account_id: baseAccount,
+          description: desc, repeat_months:0, reminder_days:0,
+          receipts: i===0 ? baseReceipts : [], updated_at: now });
+      });
+      _save();
+      showToast(`${fa(quickItems.length)} هزینه ثبت شد ✓`,'success');
+      openExpenseManager();
+      return;
+    }
+  }
+  const amount=_expenseAmountValue(document.getElementById('expense-amount')?.value);
+  if(!amount){showToast('مبلغ هزینه را وارد کنید','error');return;}
+  const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
+  if(!expense){showToast('هزینه پیدا نشد','error');return;}
   Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',account_id:document.getElementById('expense-account')?.value||null,description:(document.getElementById('expense-description')?.value||'').trim(),repeat_months:repeatMonths,reminder_days:reminderDays,receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
   if(id==null)_db.expenses.push(expense);
   _db.expense_reminders=_db.expense_reminders||[];
