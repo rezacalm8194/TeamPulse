@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp227';
+const TP_ASSET_V = 'tp228';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6919,6 +6919,7 @@ function _homePickCustomer(title, action) {
 }
 function _homeQuickPurchase() { _homePickCustomer('🛍 فروش جدید — انتخاب مشتری', 'openNewPurchase'); }
 function _homeQuickPayment() { _homePickCustomer('💳 دریافت جدید — انتخاب مشتری', 'openAddPayment'); }
+function _homeQuickSession() { _homePickCustomer('📅 ثبت جلسه جدید — انتخاب مشتری', 'openAddSessionGeneral'); }
 function _homeQuickSalary() {
   const staff = (_db.staff || []).filter(s => !s.archived);
   if (!staff.length) { showToast('ابتدا پرسنل اضافه کنید', 'error'); return; }
@@ -6933,18 +6934,38 @@ async function renderHome() {
   updateTopbarActions('');
   _todosInit();
   _habitsInit();
+  if (typeof _goalsInit === 'function') _goalsInit();
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
   const sessions = (_db.sessions || []).filter(s => String(s.date_jalali || '') === today)
     .sort((a, b) => String(a.time || a.start_time || '').localeCompare(String(b.time || b.start_time || '')));
-  const todos = (_db.todos || []).filter(t => !t.archived && !t.done && _jalaliKey(_todoScheduledDate(t)) === todayKey);
+  const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done);
+  const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
+  const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
+  const todosSorted = [...overdueTodos, ...todayTodos];
   const habits = (_db.habits || []).filter(h => !h.archived);
   const doneHabitIds = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => String(l.habit_id)));
   // The habits page likewise treats every active habit as today's item; time is a hint, not a second schedule.
   const dueHabits = habits;
+  const habitsLeft = dueHabits.filter(h => !doneHabitIds.has(String(h.id))).length;
   const overdueReminders = [
     ...(_db.reminders || []), ...(_db.expense_reminders || []), ...(_db.staff_reminders || [])
   ].filter(r => !r.done && _jalaliKey(r.due_date_jalali || '') > 0 && _jalaliKey(r.due_date_jalali) <= todayKey);
+  // Top goals: active + unfinished, lowest progress first (memory only, max 3).
+  const topGoals = ((_db.goals || []).filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
+    .sort((a, b) => (a.progress || 0) - (b.progress || 0))).slice(0, 3);
+  // Finance mini-summary: memory only, no server fetch.
+  let todayIncome = 0, monthIncome = 0;
+  try {
+    const [tjy, tjm] = _jalaliParse(today);
+    ((_db.payments || [])).forEach(p => {
+      if ((p.currency || 'تومان') !== 'تومان') return;
+      const amt = Number(p.amount || 0);
+      if (String(p.date_jalali || '') === today) todayIncome += amt;
+      const [jy, jm] = _jalaliParse(p.date_jalali);
+      if (jy === tjy && jm === tjm) monthIncome += amt;
+    });
+  } catch (e) {}
   const displayDate = typeof DateService !== 'undefined' && DateService.disp ? DateService.disp(today) : today;
   const greeting = (_sbUser?.name || '').trim() ? `سلام ${escapeHtml(_sbUser.name)}` : 'سلام';
   const empty = text => `<div class="home-empty">${text}</div>`;
@@ -6956,30 +6977,46 @@ async function renderHome() {
       ${h.time ? `<span class="home-row-meta">${escapeHtml(h.time)}</span>` : ''}
     </div>`;
   }).join('');
-  const todoRows = todos.slice(0, 6).map(t => `<div class="home-row">
+  const todoRows = todosSorted.slice(0, 6).map(t => {
+    const k = _jalaliKey(_todoScheduledDate(t));
+    const overdue = k > 0 && k < todayKey;
+    return `<div class="home-row ${overdue ? 'is-overdue' : ''}">
     <button type="button" class="home-check" aria-label="تکمیل کار ${escapeHtml(t.title)}" aria-pressed="false" onclick="_homeToggleTodo(${Number(t.id)})"></button>
     <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}</span>
-    ${t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : ''}
-  </div>`).join('');
+    ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
+  </div>`; }).join('');
   const sessionRows = sessions.slice(0, 6).map(s => `<div class="home-row">
     <span class="home-session-time">${escapeHtml(s.time || s.start_time || '—')}</span>
     <span class="home-row-title">${escapeHtml(_homeStudentName(s.student_id))}</span>
     <button type="button" class="btn btn-ghost btn-sm" onclick="_homeNavigate('students','sessions')">امور مشتریان</button>
   </div>`).join('');
+  const goalRows = topGoals.map(g => `<div class="home-row" style="cursor:pointer" onclick="_homeNavigate('goals')">
+    <span style="font-size:15px">${escapeHtml(g.icon || '🎯')}</span>
+    <span class="home-row-title">${escapeHtml(g.title || 'هدف بدون عنوان')}</span>
+    <span class="home-row-meta">${_homeFa(g.progress || 0)}٪</span>
+  </div>
+  <div style="height:5px;border-radius:99px;background:var(--bg3);margin:-4px 0 6px;overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.max(0, Number(g.progress || 0)))}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>`).join('');
   setContent(`<main class="home-dashboard">
     <header class="home-hero">
       <div><h2>${greeting}</h2><p>امروز، ${escapeHtml(displayDate)}</p></div>
       <div class="home-stats" aria-label="خلاصه امروز">
         <div><strong>${_homeFa(sessions.length)}</strong><span>جلسات امروز</span></div>
-        <div><strong>${_homeFa(todos.length)}</strong><span>کارهای باز امروز</span></div>
+        <div><strong>${_homeFa(todosSorted.length)}</strong><span>کار امروز + معوق</span></div>
+        <div><strong>${_homeFa(habitsLeft)}</strong><span>عادت مانده</span></div>
         <div><strong>${_homeFa(overdueReminders.length)}</strong><span>یادآوری سررسیده</span></div>
       </div>
     </header>
     <div class="home-grid">
-      <section class="home-card"><div class="home-card-head"><h3>جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="openAddSessionGeneral()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="_homeQuickSession()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty('عادت سررسیدشده‌ای برای امروز نیست.')}</section>
-      <section class="home-card"><div class="home-card-head"><h3>کارهای امروز</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>اهداف مهم</h3><button class="home-link" onclick="_homeNavigate('goals')">همه اهداف</button></div>${goalRows || empty('هدف فعالی برای نمایش نیست.')}</section>
       <section class="home-card home-finance"><div class="home-card-head"><h3>گزارش مالی و دسترسی سریع</h3><button class="home-link" onclick="_homeNavigate('dashboard')">مدیریت مالی کامل</button></div>
+        <div class="home-stats" aria-label="خلاصه مالی" style="margin-bottom:10px">
+          <div><strong>${fmt(todayIncome)}</strong><span>دریافتی امروز (تومان)</span></div>
+          <div><strong>${fmt(monthIncome)}</strong><span>درآمد این ماه (تومان)</span></div>
+          <div><strong>${_homeFa(overdueReminders.length)}</strong><span>یادآوری سررسیده</span></div>
+        </div>
         <div class="home-quick-actions">
           <button onclick="_homeQuickPurchase()">فروش جدید</button><button onclick="_homeQuickPayment()">دریافت جدید</button>
           <button onclick="openAddReminder()">یادآوری‌ها</button><button onclick="openFinancialAccounts()">خلاصه حساب‌ها</button>
@@ -23464,7 +23501,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v227';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v228';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
