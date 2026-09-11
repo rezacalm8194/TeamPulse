@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp232';
+const TP_ASSET_V = 'tp233';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6969,7 +6969,10 @@ async function renderHome() {
   const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done && (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true));
   const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
-  const todosSorted = [...overdueTodos, ...todayTodos];
+  // Same order as the todo list page: earliest date first, then earliest time.
+  const todosSorted = [...overdueTodos, ...todayTodos].sort((a, b) =>
+    _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b)) ||
+    String(a.time || '').localeCompare(String(b.time || '')));
   const habits = (_db.habits || []).filter(h => !h.archived);
   const doneHabitIds = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => String(l.habit_id)));
   // The habits page likewise treats every active habit as today's item; time is a hint, not a second schedule.
@@ -7056,7 +7059,7 @@ async function renderHome() {
         </div>
         <div class="home-quick-actions">
           <button onclick="_homeQuickPurchase()">فروش جدید</button><button onclick="_homeQuickPayment()">دریافت جدید</button>
-          <button onclick="openAddReminder()">یادآوری‌ها</button><button onclick="openFinancialAccounts()">خلاصه حساب‌ها</button>
+          <button onclick="openAddReminder()">یادآوری جدید</button><button onclick="openFinancialAccounts()">خلاصه حساب‌ها</button>
           <button onclick="openExpenseManager()">ثبت هزینه جدید</button><button onclick="_homeQuickSalary()">ثبت حقوق جدید</button>
         </div>
       </section>
@@ -23520,7 +23523,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v232';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v233';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
