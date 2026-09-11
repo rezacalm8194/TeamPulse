@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp231';
+const TP_ASSET_V = 'tp232';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6911,7 +6911,8 @@ function _homeToggleTodo(id) {
 async function _homePickCustomer(title, action) {
   // Home boots without business parts; load students first page on demand
   // (user-initiated, same as visiting the students page) so the picker is never empty.
-  try { await _ensureBusinessPartLoaded('students'); } catch (e) {}
+  // NOTE: ensure only fills _db — allStudents must be re-read via the api, like renderStudents does.
+  try { await _ensureBusinessPartLoaded('students'); allStudents = await window.api.students.getAll(); } catch (e) {}
   if (!allStudents.length) { showToast('ابتدا مشتری اضافه کنید', 'error'); return; }
   if (allStudents.length === 1) { window[action](allStudents[0].id); return; }
   const opts = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
@@ -6958,7 +6959,8 @@ async function renderHome() {
   _habitsInit();
   if (typeof _goalsInit === 'function') _goalsInit();
   // Session/customer names need the students first page (same light fetch the students page does).
-  if (!allStudents.length) { try { await _ensureBusinessPartLoaded('students'); } catch (e) {} }
+  // NOTE: _ensureBusinessPartLoaded only fills _db — allStudents must be re-read via the api, like renderStudents does.
+  if (!allStudents.length) { try { await _ensureBusinessPartLoaded('students'); allStudents = await window.api.students.getAll(); } catch (e) {} }
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
   const sessions = (_db.sessions || []).filter(s => String(s.date_jalali || '') === today)
@@ -9165,6 +9167,8 @@ function _togglePreSummaryBox() {
 }
 
 async function openAddSessionGeneral(presetStudentId = null) {
+  // Same lazy fill as the students page: ensure only fills _db, so re-read allStudents via the api.
+  if (!allStudents.length) { try { await _ensureBusinessPartLoaded('students'); allStudents = await window.api.students.getAll(); } catch (e) {} }
   if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
   _resetSessionTimer();
   const initStudentId = presetStudentId || allStudents[0]?.id || null;
@@ -23516,7 +23520,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v231';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v232';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
