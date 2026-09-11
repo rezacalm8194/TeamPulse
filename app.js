@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp228';
+const TP_ASSET_V = 'tp230';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6908,14 +6908,24 @@ function _homeToggleTodo(id) {
     if (currentPage === 'home') renderHome();
   });
 }
-function _homePickCustomer(title, action) {
+async function _homePickCustomer(title, action) {
+  // Home boots without business parts; load students first page on demand
+  // (user-initiated, same as visiting the students page) so the picker is never empty.
+  try { await _ensureBusinessPartLoaded('students'); } catch (e) {}
   if (!allStudents.length) { showToast('ابتدا مشتری اضافه کنید', 'error'); return; }
   if (allStudents.length === 1) { window[action](allStudents[0].id); return; }
   const opts = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   openModal(title, `<div class="form-grid"><div class="form-group full"><label class="form-label">مشتری *</label><select class="form-select" id="home-customer-pick">${opts}</select></div></div>`, [
-    { label: 'ادامه', cls: 'btn-primary', action: `closeModal();${action}(Number(document.getElementById('home-customer-pick').value))` },
+    { label: 'ادامه', cls: 'btn-primary', action: `_homeConfirmCustomerPick('${action}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' }
   ]);
+}
+function _homeConfirmCustomerPick(action) {
+  const sel = document.getElementById('home-customer-pick');
+  const id = Number(sel && sel.value);
+  closeModal();
+  if (!id || typeof window[action] !== 'function') return;
+  window[action](id);
 }
 function _homeQuickPurchase() { _homePickCustomer('🛍 فروش جدید — انتخاب مشتری', 'openNewPurchase'); }
 function _homeQuickPayment() { _homePickCustomer('💳 دریافت جدید — انتخاب مشتری', 'openAddPayment'); }
@@ -6926,20 +6936,31 @@ function _homeQuickSalary() {
   if (staff.length === 1) { openStaffPayment(staff[0].id, (staff[0].name || '') + ' ' + (staff[0].lname || '')); return; }
   const opts = staff.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   openModal('💰 ثبت حقوق — انتخاب پرسنل', `<div class="form-grid"><div class="form-group full"><label class="form-label">پرسنل *</label><select class="form-select" id="home-staff-pick">${opts}</select></div></div>`, [
-    { label: 'ادامه', cls: 'btn-primary', action: `closeModal();openStaffPayment(Number(document.getElementById('home-staff-pick').value), document.getElementById('home-staff-pick').selectedOptions[0].text)` },
+    { label: 'ادامه', cls: 'btn-primary', action: `_homeConfirmStaffPick()` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' }
   ]);
+}
+function _homeConfirmStaffPick() {
+  const sel = document.getElementById('home-staff-pick');
+  const id = Number(sel && sel.value);
+  const name = sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].text : '';
+  closeModal();
+  if (!id) return;
+  openStaffPayment(id, name);
 }
 async function renderHome() {
   updateTopbarActions('');
   _todosInit();
   _habitsInit();
   if (typeof _goalsInit === 'function') _goalsInit();
+  // Session/customer names need the students first page (same light fetch the students page does).
+  if (!allStudents.length) { try { await _ensureBusinessPartLoaded('students'); } catch (e) {} }
   const today = _todayJalaliStr();
   const todayKey = _jalaliKey(today);
   const sessions = (_db.sessions || []).filter(s => String(s.date_jalali || '') === today)
     .sort((a, b) => String(a.time || a.start_time || '').localeCompare(String(b.time || b.start_time || '')));
-  const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done);
+  // «کارهای من» — دقیقاً همان اسکوپ تب mine در لیست کارها (نه کارهای پرسنل).
+  const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done && (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true));
   const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
   const todosSorted = [...overdueTodos, ...todayTodos];
@@ -6948,9 +6969,10 @@ async function renderHome() {
   // The habits page likewise treats every active habit as today's item; time is a hint, not a second schedule.
   const dueHabits = habits;
   const habitsLeft = dueHabits.filter(h => !doneHabitIds.has(String(h.id))).length;
-  const overdueReminders = [
-    ...(_db.reminders || []), ...(_db.expense_reminders || []), ...(_db.staff_reminders || [])
-  ].filter(r => !r.done && _jalaliKey(r.due_date_jalali || '') > 0 && _jalaliKey(r.due_date_jalali) <= todayKey);
+  // یادآوری پرداخت — دقیقاً همان منطق بج برنامه (نه همه یادآوری‌ها):
+  // روی _db.reminders با _isPaymentReminder، بدون فیلتر تاریخ اضافه.
+  const pendingPayReminders = ((_db.reminders || []).filter(r => !r.done && (typeof _isPaymentReminder === 'function' ? _isPaymentReminder(r) : true))
+    .sort((a, b) => _jalaliKey(a.due_date_jalali || '') - _jalaliKey(b.due_date_jalali || '')));
   // Top goals: active + unfinished, lowest progress first (memory only, max 3).
   const topGoals = ((_db.goals || []).filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
     .sort((a, b) => (a.progress || 0) - (b.progress || 0))).slice(0, 3);
@@ -6996,14 +7018,22 @@ async function renderHome() {
     <span class="home-row-meta">${_homeFa(g.progress || 0)}٪</span>
   </div>
   <div style="height:5px;border-radius:99px;background:var(--bg3);margin:-4px 0 6px;overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.max(0, Number(g.progress || 0)))}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>`).join('');
+  const reminderRows = pendingPayReminders.slice(0, 5).map(r => {
+    const st = (allStudents || _db.students || []).find(s => String(s.id) === String(r.student_id));
+    const who = st ? [st.name, st.lname].filter(Boolean).join(' ') : (r.title || 'یادآوری');
+    return `<div class="home-row" style="cursor:pointer" onclick="_homeNavigate('payments','reminders')">
+    <span class="home-row-title">${escapeHtml(who)} <span style="color:var(--text3)">· ${escapeHtml(r.title || '')}</span></span>
+    ${r.amount ? `<span class="home-row-meta">${fmt(r.amount)}</span>` : ''}
+    ${r.due_date_jalali ? `<span class="home-row-meta">${escapeHtml(r.due_date_jalali)}</span>` : ''}
+  </div>`; }).join('');
   setContent(`<main class="home-dashboard">
     <header class="home-hero">
       <div><h2>${greeting}</h2><p>امروز، ${escapeHtml(displayDate)}</p></div>
-      <div class="home-stats" aria-label="خلاصه امروز">
+      <div class="home-stats home-stats-4" aria-label="خلاصه امروز">
         <div><strong>${_homeFa(sessions.length)}</strong><span>جلسات امروز</span></div>
         <div><strong>${_homeFa(todosSorted.length)}</strong><span>کار امروز + معوق</span></div>
         <div><strong>${_homeFa(habitsLeft)}</strong><span>عادت مانده</span></div>
-        <div><strong>${_homeFa(overdueReminders.length)}</strong><span>یادآوری سررسیده</span></div>
+        <div><strong>${_homeFa(pendingPayReminders.length)}</strong><span>یادآوری پرداخت</span></div>
       </div>
     </header>
     <div class="home-grid">
@@ -7011,11 +7041,12 @@ async function renderHome() {
       <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty('عادت سررسیدشده‌ای برای امروز نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>اهداف مهم</h3><button class="home-link" onclick="_homeNavigate('goals')">همه اهداف</button></div>${goalRows || empty('هدف فعالی برای نمایش نیست.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>یادآوری پرداخت (${_homeFa(pendingPayReminders.length)})</h3><button class="home-link" onclick="_homeNavigate('payments','reminders')">همه یادآوری‌ها</button></div>${reminderRows || empty('یادآوری پرداختی نیست.')}</section>
       <section class="home-card home-finance"><div class="home-card-head"><h3>گزارش مالی و دسترسی سریع</h3><button class="home-link" onclick="_homeNavigate('dashboard')">مدیریت مالی کامل</button></div>
         <div class="home-stats" aria-label="خلاصه مالی" style="margin-bottom:10px">
           <div><strong>${fmt(todayIncome)}</strong><span>دریافتی امروز (تومان)</span></div>
           <div><strong>${fmt(monthIncome)}</strong><span>درآمد این ماه (تومان)</span></div>
-          <div><strong>${_homeFa(overdueReminders.length)}</strong><span>یادآوری سررسیده</span></div>
+          <div><strong>${_homeFa(pendingPayReminders.length)}</strong><span>یادآوری پرداخت</span></div>
         </div>
         <div class="home-quick-actions">
           <button onclick="_homeQuickPurchase()">فروش جدید</button><button onclick="_homeQuickPayment()">دریافت جدید</button>
@@ -7040,31 +7071,8 @@ function setActiveMenu(page) {
 }
 
 function updateSidebarGreeting() {
-  try {
-    const helloEl = document.getElementById('sg-hello');
-    const statsEl = document.getElementById('sg-stats');
-    if (!helloEl || !statsEl) return;
-    if (typeof _todosInit === 'function') _todosInit();
-    if (typeof _habitsInit === 'function') _habitsInit();
-
-    const today = (typeof _todayJalaliStr === 'function') ? _todayJalaliStr() : '';
-    const sessionsToday = (_db.sessions || []).filter(s => s.date_jalali === today).length;
-    const tasksPending = Number(window._tpTodoPaging?.stats?.pending ??
-      (_db.todos || []).filter(t => !t.done && !t.archived).length);
-    const activeHabits = (_db.habits || []).filter(h => !h.archived);
-    const doneTodaySet = new Set((_db.habit_logs || []).filter(l => l.date === today && l.done).map(l => l.habit_id));
-    const habitsOverdue = activeHabits.filter(h => !doneTodaySet.has(h.id)).length;
-
-    const firstName = (_sbUser?.name || (_sbUser?.email ? _sbUser.email.split('@')[0] : '') || '').trim();
-    helloEl.textContent = firstName ? `سلام ${firstName} 👋` : 'سلام 👋';
-
-    const chip = (n, label) => `<span class="sg-chip"><b>${fa(n)}</b> ${label}</span>`;
-    statsEl.innerHTML = [
-      chip(sessionsToday, 'جلسه امروز'),
-      chip(tasksPending, 'کار'),
-      habitsOverdue > 0 ? chip(habitsOverdue, 'عادت عقب‌افتاده') : '',
-    ].join('');
-  } catch (e) { /* داشبورد کوچک سایدبار حیاتی نیست؛ خطا نباید ناوبری را بشکند */ }
+  // Greeting box removed from sidebar (dashboard covers it) — kept as no-op so callers don't break.
+  return;
 }
 
 function applyMetaToUI() {
@@ -23501,7 +23509,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v228';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v230';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
