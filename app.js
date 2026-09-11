@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp224';
+const TP_ASSET_V = 'tp225';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -3563,6 +3563,17 @@ window.api = {
       };
       collect(numId);
       _db.instructions = (_db.instructions||[]).filter(n => !toDelete.has(n.id));
+      // Stamp explicit tombstones so the server can tell a real delete-all
+      // from a stale empty cache overwriting knowledge (see deletedItems.js).
+      // Without these, a wipe of <10 rows slips past the destructive guard.
+      try {
+        if (!_db._deletedItems || typeof _db._deletedItems !== 'object' || Array.isArray(_db._deletedItems)) _db._deletedItems = {};
+        const col = _db._deletedItems.instructions && typeof _db._deletedItems.instructions === 'object' && !Array.isArray(_db._deletedItems.instructions)
+          ? _db._deletedItems.instructions
+          : (_db._deletedItems.instructions = {});
+        const now = new Date().toISOString();
+        toDelete.forEach(id => { if (id != null && id !== '') col[String(id)] = col[String(id)] || now; });
+      } catch (e) {}
       _forceNextServerSync();
       _save(); return _P({ok:true});
     },
@@ -6793,6 +6804,14 @@ window.addEventListener('unhandledrejection', (e) => {
       function col(x) { del.add(x); (_db.instructions||[]).filter(function(n){return n.parent_id==x;}).forEach(function(n){col(n.id);}); }
       col(id);
       _db.instructions = _db.instructions.filter(function(n){return !del.has(n.id);});
+      try {
+        if (!_db._deletedItems || typeof _db._deletedItems !== 'object' || Array.isArray(_db._deletedItems)) _db._deletedItems = {};
+        var colMap = _db._deletedItems.instructions && typeof _db._deletedItems.instructions === 'object' && !Array.isArray(_db._deletedItems.instructions)
+          ? _db._deletedItems.instructions
+          : (_db._deletedItems.instructions = {});
+        var nowStamp = new Date().toISOString();
+        del.forEach(function(delId) { if (delId != null && delId !== '') colMap[String(delId)] = colMap[String(delId)] || nowStamp; });
+      } catch (e) {}
       _save();
       return Promise.resolve({ok:true});
     },
@@ -23332,7 +23351,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v224';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v225';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
