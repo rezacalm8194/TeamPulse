@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp236';
+const TP_ASSET_V = 'tp237';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5793,10 +5793,26 @@ function _parseAppHash() {
   return { page, ids, raw };
 }
 function _getInitialPage() {
-  // URL hash takes priority (works with back/forward + shareable links),
-  // falls back to last page saved in localStorage, then default.
+  // Deep links (shareable / nested like #instructions/5) always win — even on a fresh launch.
+  const parsed = _parseAppHash();
+  const fromHash = parsed.page;
+  if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash) && parsed.ids && parsed.ids.length) return fromHash;
+  // Fresh app open (new tab / restart / PWA relaunch) must always land on the
+  // dashboard. sessionStorage dies with the session, so its absence means
+  // "just opened" — ignore last-page + hash and force home.
+  let freshOpen = false;
+  try {
+    freshOpen = !sessionStorage.getItem('tp_session_alive');
+    sessionStorage.setItem('tp_session_alive', '1');
+  } catch (e) { freshOpen = false; }
+  if (freshOpen) {
+    try { localStorage.setItem('tp_last_page', 'home'); } catch (e) {}
+    try { history.replaceState(null, '', '#home'); } catch (e) {}
+    return 'home';
+  }
+  // Same-session reload / in-app back-forward: keep old behavior.
+  // URL hash takes priority, falls back to last page saved in localStorage, then default.
   // Nested knowledge links look like #instructions/5 — only the page segment is restored here.
-  const fromHash = _parseAppHash().page;
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
   const fromStorage = localStorage.getItem('tp_last_page');
   if (fromStorage === 'sessions') return 'students';
@@ -6910,6 +6926,16 @@ function _homeToggleTodo(id) {
     if (currentPage === 'home') renderHome();
   });
 }
+function _homeGotoSessions() { _homeNavigate('students', 'sessions'); }
+function _homeOpenSession(id) {
+  if (typeof openSessionDetail === 'function') openSessionDetail(Number(id));
+  else _homeGotoSessions();
+}
+function _homeEditSession(ev, id) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  if (typeof openEditSession === 'function') openEditSession(Number(id));
+  else _homeOpenSession(id);
+}
 async function _homePickCustomer(title, action) {
   // Home boots without business parts; load students first page on demand
   // (user-initiated, same as visiting the students page) so the picker is never empty.
@@ -7012,14 +7038,28 @@ async function renderHome() {
   const displayDate = typeof DateService !== 'undefined' && DateService.disp ? DateService.disp(today) : today;
   const greeting = (_sbUser?.name || '').trim() ? `سلام ${escapeHtml(_sbUser.name)}` : 'سلام';
   const empty = text => `<div class="home-empty">${text}</div>`;
-  const habitRows = dueHabits.slice(0, 6).map(h => {
-    const done = doneHabitIds.has(String(h.id));
-    return `<div class="home-row ${done ? 'is-done' : ''}">
-      <button type="button" class="home-check" aria-label="${done ? 'لغو انجام عادت' : 'ثبت انجام عادت'} ${escapeHtml(h.title)}" aria-pressed="${done}" onclick="_homeToggleHabit(${Number(h.id)})">${done ? '✓' : ''}</button>
+  // عادت‌ها: انجام‌شده‌ها محو می‌شوند و جای‌شان را انجام‌نشده‌های بعدی می‌گیرند.
+  // مرتب‌سازی: بدون زمان‌ اول؟ نه — همان ترتیب قبلی، فقط انجام‌نشده‌ها اول.
+  const undoneHabits = dueHabits.filter(h => !doneHabitIds.has(String(h.id)));
+  const doneHabitsCount = dueHabits.length - undoneHabits.length;
+  const habitRows = undoneHabits.slice(0, 6).map(h => {
+    return `<div class="home-row">
+      <button type="button" class="home-check" aria-label="ثبت انجام عادت ${escapeHtml(h.title)}" aria-pressed="false" onclick="_homeToggleHabit(${Number(h.id)})"></button>
       <span class="home-row-title">${escapeHtml(h.title || 'عادت بدون عنوان')}</span>
       ${h.time ? `<span class="home-row-meta">${escapeHtml(h.time)}</span>` : ''}
     </div>`;
   }).join('');
+  const habitEmpty = !dueHabits.length ? 'عادت فعالی ثبت نشده است.'
+    : (!undoneHabits.length ? 'همه عادت‌های امروز انجام شد 🎉' : '');
+  // کارهای انجام‌شده امروز (اسکوپ «کارهای من») — برای آمار زنده بالای صفحه.
+  // توجه: تکمیل، کار را archived هم می‌کند، پس archived را فیلتر نمی‌کنیم.
+  let doneTodayTodos = 0;
+  try {
+    const mine = t => (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true);
+    const doneKey = t => (typeof _todoDoneDayKey === 'function' ? _todoDoneDayKey(t) : 0);
+    doneTodayTodos = ((_db.todos || [])).filter(t => { try { return mine(t) && t.done && doneKey(t) === todayKey; } catch (e) { return false; } }).length;
+  } catch (e) { doneTodayTodos = 0; }
+  const totalTodayTodos = todosSorted.length + doneTodayTodos;
   const todoRows = todosSorted.slice(0, 6).map(t => {
     const k = _jalaliKey(_todoScheduledDate(t));
     const overdue = k > 0 && k < todayKey;
@@ -7028,11 +7068,15 @@ async function renderHome() {
     <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}</span>
     ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
   </div>`; }).join('');
-  const sessionRows = sessions.slice(0, 6).map(s => `<div class="home-row">
-    <span class="home-session-time">${escapeHtml(s.time || s.start_time || '—')}</span>
-    <span class="home-row-title">${escapeHtml(_homeStudentName(s.student_id))}</span>
-    <button type="button" class="btn btn-ghost btn-sm" onclick="_homeNavigate('students','sessions')">امور مشتریان</button>
-  </div>`).join('');
+  const sessionRows = sessions.slice(0, 6).map(s => {
+    const who = escapeHtml(_homeStudentName(s.student_id));
+    const title = s.title ? ` <span style="color:var(--text3)">· ${escapeHtml(s.title)}</span>` : '';
+    const time = escapeHtml(s.time || s.start_time || '—');
+    return `<div class="home-row home-session-row" style="cursor:pointer" onclick="_homeOpenSession(${Number(s.id)})" title="باز کردن جلسه ${who}">
+    <span class="home-session-time">${time}</span>
+    <span class="home-row-title">${who}${title}</span>
+    <button type="button" class="home-icon-btn" title="ویرایش جلسه" aria-label="ویرایش جلسه ${who}" onclick="_homeEditSession(event,${Number(s.id)})">✏️</button>
+  </div>`; }).join('');
   const goalRows = topGoals.map(g => `<div class="home-row" style="cursor:pointer" onclick="_homeNavigate('goals')">
     <span style="font-size:15px">${escapeHtml(g.icon || '🎯')}</span>
     <span class="home-row-title">${escapeHtml(g.title || 'هدف بدون عنوان')}</span>
@@ -7051,15 +7095,15 @@ async function renderHome() {
     <header class="home-hero">
       <div><h2>${greeting}</h2><p>امروز، ${escapeHtml(displayDate)}</p></div>
       <div class="home-stats home-stats-4" aria-label="خلاصه امروز">
-        <div><strong>${_homeFa(sessions.length)}</strong><span>جلسات امروز</span></div>
-        <div><strong>${_homeFa(todosSorted.length)}</strong><span>کار امروز + معوق</span></div>
-        <div><strong>${_homeFa(habitsLeft)}</strong><span>عادت مانده</span></div>
-        <div><strong>${_homeFa(pendingPayReminders.length)}</strong><span>یادآوری پرداخت</span></div>
+        <div style="cursor:pointer" onclick="_homeGotoSessions()" title="رفتن به جلسات امروز"><strong>${_homeFa(sessions.length)}</strong><span>جلسات برگزارشده امروز</span></div>
+        <div style="cursor:pointer" onclick="_homeNavigate('todolist')" title="رفتن به لیست کارها"><strong>${_homeFa(doneTodayTodos)} از ${_homeFa(totalTodayTodos)}</strong><span>کار انجام‌شده امروز</span></div>
+        <div style="cursor:pointer" onclick="_homeNavigate('habits')" title="رفتن به عادت‌ها"><strong>${_homeFa(doneHabitsCount)} از ${_homeFa(dueHabits.length)}</strong><span>عادت انجام‌شده امروز</span></div>
+        <div style="cursor:pointer" onclick="_homeNavigate('payments','reminders')" title="رفتن به یادآوری‌ها"><strong>${_homeFa(pendingPayReminders.length)}</strong><span>یادآوری پرداخت</span></div>
       </div>
     </header>
     <div class="home-grid">
-      <section class="home-card"><div class="home-card-head"><h3>جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="_homeQuickSession()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
-      <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty('عادت سررسیدشده‌ای برای امروز نیست.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3 style="cursor:pointer" onclick="_homeGotoSessions()" title="رفتن به امور مشتریان / جلسات">جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="_homeQuickSession()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
+      <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز${dueHabits.length ? ` (${_homeFa(doneHabitsCount)} از ${_homeFa(dueHabits.length)})` : ''}</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty(habitEmpty || 'عادت سررسیدشده‌ای برای امروز نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>اهداف مهم</h3><button class="home-link" onclick="_homeNavigate('goals')">همه اهداف</button></div>${goalRows || empty('هدف فعالی برای نمایش نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>یادآوری پرداخت (${_homeFa(pendingPayReminders.length)})</h3><button class="home-link" onclick="_homeNavigate('payments','reminders')">همه یادآوری‌ها</button></div>${reminderRows || empty('یادآوری پرداختی نیست.')}</section>
@@ -23535,7 +23579,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v236';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v237';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
