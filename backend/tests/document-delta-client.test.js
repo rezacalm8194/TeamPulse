@@ -126,7 +126,7 @@ test('pending server sync does not refetch the full document on every poll or re
 test('sync conflicts use one delayed rebase and do not return a workspace document', () => {
   assert.match(appSource, /if \(conflictAttempt < 1\) \{/);
   assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 1200/);
-  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 60000/);
+  assert.match(appSource, /const conflictBackoffMs = onlyTodoChanges \? 20000 : 60000;/);
   assert.match(appSource, /window\._serverSyncQueued = false;/);
   assert.match(appSource, /Etag-only rebase/);
   assert.match(appSource, /\/status' \+ _workspaceQuery\(\)/);
@@ -135,8 +135,24 @@ test('sync conflicts use one delayed rebase and do not return a workspace docume
   assert.doesNotMatch(appSource, /function _stopStaleFullSyncConflictPending\(\)[\s\S]{0,500}clearTimeout\(window\._serverSyncRetryTimer\)/);
   assert.doesNotMatch(appSource, /sync_conflict[\s\S]{0,180}_reloadCompleteBusinessPartsFromServer\(\[\.\.\.BUSINESS_PAGINATED_KEYS\]/);
   // Second conflict only clears backoff — it must not auto-POST again.
-  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ 60000;\s*window\._serverSyncRetryTimer = setTimeout\(\(\) => \{\s*window\._serverSyncRetryTimer = null;\s*window\._serverSyncConflictBackoffUntil = 0;\s*\}, 60000\);/);
+  assert.match(appSource, /window\._serverSyncConflictBackoffUntil = Date\.now\(\) \+ conflictBackoffMs;\s*window\._serverSyncRetryTimer = setTimeout\(\(\) => \{\s*window\._serverSyncRetryTimer = null;\s*window\._serverSyncConflictBackoffUntil = 0;\s*\}, conflictBackoffMs\);/);
   assert.doesNotMatch(dataSource, /sync_conflict[\s\S]{0,250}data:\s*sanitizeUserDataForStorage/);
+});
+
+test('phone changes reach desktop fast: fresh status, bounded fetch, pending UI refresh', () => {
+  // /status must never be served from the 9s memory cache — stale etags hide
+  // phone writes from desktop polls for up to ~13s.
+  assert.doesNotMatch(appSource, /status\(\?:/);
+  assert.match(appSource, /never serve it stale/);
+  // Every request is bounded so one hung POST on mobile data cannot stall the
+  // serialized todo chain behind it forever.
+  assert.match(appSource, /new AbortController\(\)/);
+  assert.match(appSource, /setTimeout\(\(\) => ctrl\.abort\(\), timeoutMs\)/);
+  assert.match(appSource, /method === 'GET' \? 15000 : 30000/);
+  // Fresh data with a closed UI gate (modal/focus/scroll) renders on a later
+  // poll instead of staying stale until the next change.
+  assert.match(appSource, /window\._pendingServerUiRefresh = true/);
+  assert.match(appSource, /window\._pendingServerUiRefresh && _canAutoRefresh\(\)/);
 });
 
 test('nested knowledge hashes restore the same folder on phone and laptop', () => {
