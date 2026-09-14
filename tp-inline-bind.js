@@ -468,6 +468,11 @@ function _tpTodoStaffField(field, el) {
 }
 function _tpTodoReportRange(el, mode) {
   _todoReportFilter.range = el.value;
+  if (mode === 'modal' && _todoStaffReportId) {
+    var body = document.querySelector('.modal-overlay.open .modal-body');
+    if (body) body.innerHTML = _todoReportForStaffHtml(_todoStaffReportId);
+    return;
+  }
   if (mode === 'list') renderTodoList();
   else _renderTodoStaffFilteredList();
 }

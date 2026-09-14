@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp238';
+const TP_ASSET_V = 'tp239';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -53,7 +53,8 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
 ].forEach(name => _tpLazyFor('app-finance.js', name));
 [
   'renderTodoList', 'renderCalendar', 'openAddTodo',
-  '_renderTodoStaffFilteredList', '_setTodoViewMode',
+  '_renderTodoStaffFilteredList', '_setTodoViewMode', '_patchTodoStaffLive',
+  '_selectTodoStaffChip', '_openTodoStaffPersonMenu',
   '_toggleTodo', '_todoShowMore', '_completeTodoWithReport'
 ].forEach(name => _tpLazyFor('app-todos.js', name));
 function _tpPrefetchExtra() {
@@ -18816,14 +18817,17 @@ function _refreshUiAfterServerLoad(updated, opts = {}) {
     if (!_canAutoRefresh({
       allowTodoList: true,
       forceStaffLive: watchingStaff,
-      ignoreScroll: force || !!updated,
+      ignoreScroll: force,
     })) return;
     const content = document.getElementById('content');
     const scrollTop = content?.scrollTop || 0;
-    renderTodoList();
+    const winScroll = window.scrollY || document.documentElement.scrollTop || 0;
+    if (watchingStaff && typeof _patchTodoStaffLive === 'function') _patchTodoStaffLive();
+    else renderTodoList();
     window._todoListServerRefreshPending = false;
     requestAnimationFrame(() => {
       if (content) content.scrollTop = scrollTop;
+      window.scrollTo(0, winScroll);
     });
     return;
   }
@@ -20607,8 +20611,12 @@ function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false, ignore
   if (document.activeElement?.contentEditable === 'true') return false;
   // کیبورد مجازی موبایل باز هست
   if (window._mobileKeyboardOpen) return false;
-  // تب کارهای پرسنل باید تیک لحظه‌ای هم‌تیمی را نشان بدهد.
-  if (forceStaffLive) return true;
+  // تب پرسنل روی موبایل وسط اسکرول رندر کامل نشود؛ تیک زنده با پچ لیست می‌آید.
+  if (forceStaffLive) {
+    const coarse = !!(window.matchMedia?.('(pointer: coarse)')?.matches || /android/i.test(navigator.userAgent || ''));
+    if (coarse && !ignoreScroll && Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
+    return true;
+  }
   // کاربر همین الان در حال اسکرول/خواندن صفحه است؛ رندر خودکار نباید جای صفحه را بپراند.
   if (!ignoreScroll && Date.now() - (window._lastUserContentScrollAt || 0) < 12000) return false;
   return true;
@@ -23588,7 +23596,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v238';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v239';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
