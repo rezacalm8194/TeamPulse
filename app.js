@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp244';
+const TP_ASSET_V = 'tp245';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -7131,6 +7131,7 @@ function setActiveMenu(page) {
   document.querySelectorAll('.bn-item[data-page]').forEach(x => {
     x.classList.toggle('active', x.dataset.page === menuPage);
   });
+  if (typeof _syncPlanGroupActive === 'function') _syncPlanGroupActive();
 }
 
 function updateSidebarGreeting() {
@@ -7304,6 +7305,9 @@ async function renderPage() {
       <div style="font-size:12px;color:var(--text3);margin-bottom:16px">${escapeHtml(e.message)}</div>
       <button class="btn btn-primary" onclick="renderPage()">تلاش مجدد</button>
     </div>`);
+  }
+  if (typeof _refreshPlanBadgesFromDb === 'function') {
+    try { _refreshPlanBadgesFromDb(); } catch(_) {}
   }
 }
 
@@ -15754,6 +15758,38 @@ function applyNavOrder() {
     if (!order.includes(page)) sidebar.appendChild(el);
   });
 
+  // ── حفظ گروه برنامه‌ریزی: ۴ آیتم را دوباره داخل ریل جمع کن ──
+  // و کل گروه را در جایگاه اولین صفحه‌ی plan در ترتیب جدید بنشان
+  (function _regroupPlan(){
+    const group = document.getElementById('nav-group-plan');
+    const list = document.getElementById('nav-plan-list');
+    if (!group || !list) return;
+    const planOrder = ['goals', 'habits', 'todolist', 'calendar'];
+    const items = {};
+    planOrder.forEach(p => { if (navItems[p]) items[p] = navItems[p]; });
+    sidebar.querySelectorAll('a.nav-item[data-plan]').forEach(a => { items[a.dataset.page] = items[a.dataset.page] || a; });
+    // جایگاه گروه = جای اولین آیتم plan در ترتیب جدید (به‌صورت ایندکس، چون آیتم‌ها جابه‌جا می‌شوند)
+    let anchorIndex = -1;
+    for (const p of order) {
+      if (items[p] && items[p].parentNode === sidebar) {
+        anchorIndex = Array.prototype.indexOf.call(sidebar.children, items[p]);
+        break;
+      }
+    }
+    planOrder.forEach(p => { if (items[p]) list.appendChild(items[p]); });
+    if (anchorIndex >= 0 && anchorIndex <= sidebar.children.length) sidebar.insertBefore(group, sidebar.children[anchorIndex] || null);
+    else sidebar.insertBefore(group, sidebar.firstChild ? sidebar.firstChild.nextSibling : null);
+    if (!group.dataset.planReady) {
+      group.dataset.planReady = '1';
+      let collapsed = false;
+      try { collapsed = localStorage.getItem('tp_plan_collapsed') === '1'; } catch(_){}
+      group.classList.toggle('plan-open', !collapsed);
+      new MutationObserver(() => { if (typeof _syncPlanGroupActive === 'function') _syncPlanGroupActive(); })
+        .observe(group, { attributes: true, subtree: true, attributeFilter: ['class'] });
+    }
+    if (typeof _syncPlanGroupActive === 'function') _syncPlanGroupActive();
+  })();
+
   // rebind nav click listeners after DOM rebuild
   sidebar.querySelectorAll('a.nav-item[data-page]').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -23267,7 +23303,113 @@ function openSidebar(){
   });
 }
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');document.body.style.overflow='';}
+/* بج‌های گروه برنامه‌ریزی — فقط از حافظه‌ی محلی (_db)، بدون هیچ fetch اضافه.
+   از قانون device-sync پیروی می‌کند: هیچ PUT/GET کاملی برای شمارش انجام نمی‌شود. */
+function _refreshPlanBadgesFromDb(){
+  try {
+    if (typeof _db === 'undefined' || !_db || typeof _setPlanBadge !== 'function') return;
+    const goals = Array.isArray(_db.goals) ? _db.goals : [];
+    if (goals.length) {
+      const active = goals.filter(g => (g.status || 'active') === 'active').length;
+      _setPlanBadge('goals', active);
+    } else _setPlanBadge('goals', 0);
+    const habits = Array.isArray(_db.habits) ? _db.habits : [];
+    if (habits.length) {
+      let undone = 0;
+      try {
+        const logs = Array.isArray(_db.habit_logs) ? _db.habit_logs : [];
+        const today = (typeof _todayJalaliStr === 'function') ? _todayJalaliStr() : '';
+        const activeH = habits.filter(h => !h.archived);
+        undone = today
+          ? activeH.filter(h => !logs.some(l => l.habit_id === h.id && l.date === today && l.done)).length
+          : activeH.length;
+      } catch(_) { undone = habits.filter(h => !h.archived).length; }
+      _setPlanBadge('habits', undone);
+    } else _setPlanBadge('habits', 0);
+    const todos = Array.isArray(_db.todos) ? _db.todos : [];
+    if (todos.length) {
+      let open = 0;
+      try {
+        open = todos.filter(t => {
+          if (t.archived || t.done) return false;
+          if (typeof _todoCanView === 'function' && !_todoCanView(t)) return false;
+          return true;
+        }).length;
+      } catch(_) { open = todos.filter(t => !t.archived && !t.done).length; }
+      _setPlanBadge('todos', open);
+    } else _setPlanBadge('todos', 0);
+  } catch(_) {}
+}
 function toggleSidebar(){const sb=document.getElementById('sidebar');if(sb&&sb.classList.contains('open')){closeSidebar();}else{openSidebar();}}
+
+/* ── گروه برنامه‌ریزی: هدر جمع‌شونده + ریل + بج ── */
+const _PLAN_PAGES = ['goals', 'habits', 'todolist', 'calendar'];
+function _togglePlanGroup(e){
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const g = document.getElementById('nav-group-plan');
+  if (!g) return;
+  const open = !g.classList.contains('plan-open');
+  g.classList.toggle('plan-open', open);
+  try { localStorage.setItem('tp_plan_collapsed', open ? '0' : '1'); } catch(_){}
+  requestAnimationFrame(_updateSidebarScrollState);
+}
+function _refreshPlanHeadCount(){
+  const head = document.getElementById('nav-plan-count');
+  if (!head) return;
+  let total = 0, any = false;
+  ['nav-count-goals', 'nav-count-habits', 'nav-count-todos'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b && b.style.display !== 'none') {
+      const n = parseInt((b.dataset.raw || b.textContent || '0').replace(/[^\d]/g, ''), 10);
+      if (!isNaN(n) && n > 0) { total += n; any = true; }
+    }
+  });
+  if (any && total > 0) {
+    head.style.display = '';
+    head.dataset.raw = String(total);
+    head.textContent = (typeof fa === 'function') ? fa(total) : String(total);
+  } else { head.style.display = 'none'; head.dataset.raw = '0'; }
+}
+/* صفحات اهداف/عادت‌ها/کارها می‌توانند با این تابع بج سایدبار را ست کنند */
+function _setPlanBadge(which, count){
+  const map = { goals: 'nav-count-goals', habits: 'nav-count-habits', todos: 'nav-count-todos', todolist: 'nav-count-todos' };
+  const el = document.getElementById(map[which] || which);
+  if (!el) return;
+  const n = Math.max(0, parseInt(count, 10) || 0);
+  el.dataset.raw = String(n);
+  if (n > 0) { el.style.display = ''; el.textContent = (typeof fa === 'function') ? fa(n) : String(n); }
+  else { el.style.display = 'none'; }
+  _refreshPlanHeadCount();
+}
+function _syncPlanGroupActive(){
+  const g = document.getElementById('nav-group-plan');
+  if (!g) return;
+  const active = document.querySelector('.nav-item.nav-sub.active');
+  const page = active ? active.dataset.page : ((typeof currentPage !== 'undefined') ? currentPage : '');
+  const isPlan = _PLAN_PAGES.includes(page);
+  g.classList.toggle('plan-child-active', isPlan);
+  if (isPlan && !g.classList.contains('plan-open')) {
+    g.classList.add('plan-open');
+    try { localStorage.setItem('tp_plan_collapsed', '0'); } catch(_){}
+  }
+}
+(function _initPlanGroup(){
+  const apply = () => {
+    const g = document.getElementById('nav-group-plan');
+    if (!g || g.dataset.planReady) return;
+    g.dataset.planReady = '1';
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('tp_plan_collapsed') === '1'; } catch(_){}
+    const page = (typeof currentPage !== 'undefined') ? currentPage : '';
+    if (_PLAN_PAGES.includes(page)) collapsed = false;
+    g.classList.toggle('plan-open', !collapsed);
+    _syncPlanGroupActive();
+    _refreshPlanHeadCount();
+    new MutationObserver(_syncPlanGroupActive).observe(g, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
 
 /* ── Swipe-to-close: کشیدن انگشت روی سایدبار (در موبایل) برای بستن آن ── */
 (function(){
@@ -23708,7 +23850,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v244';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v245';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
