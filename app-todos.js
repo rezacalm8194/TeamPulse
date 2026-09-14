@@ -460,9 +460,29 @@ function _openQuickStaffChecklistFromFilter() {
       </select>
     </div>
   `, [
-    { label:'ادامه', cls:'btn-primary', action:`const v=document.getElementById('quick-staff-pick')?.value;closeModal();_openQuickStaffChecklist(v)` },
+    { label:'ادامه', cls:'btn-primary', action:`_confirmQuickStaffPick()` },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
+}
+
+
+function _confirmQuickStaffPick() {
+  try {
+    const pick = document.getElementById('quick-staff-pick');
+    const v = pick ? pick.value : '';
+    if (!v) { showToast('یک پرسنل انتخاب کن', 'error'); return; }
+    closeModal();
+    const r = _openQuickStaffChecklist(v);
+    if (r && typeof r.catch === 'function') {
+      r.catch(err => {
+        console.error('[quick-staff-pick]', err);
+        showToast('خطا در باز کردن چک‌لیست؛ دوباره تلاش کن', 'error');
+      });
+    }
+  } catch (err) {
+    console.error('[quick-staff-pick]', err);
+    showToast('خطا در باز کردن چک‌لیست؛ دوباره تلاش کن', 'error');
+  }
 }
 
 
