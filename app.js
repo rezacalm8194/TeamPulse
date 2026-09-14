@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp242';
+const TP_ASSET_V = 'tp243';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16280,7 +16280,10 @@ async function _apiFetch(path, opts = {}) {
   // Browser fetch responses have a one-shot body. Share the network operation,
   // but give every coalesced GET caller its own readable clone.
   const requestKey = method === 'GET' ? method + ' ' + url : '';
-  const cacheTtl = /\/status(?:\?|$)|\/todos\/stats(?:\?|$)/.test(path) ? 9000 : 0;
+  // /status drives cross-device sync polling: never serve it stale. In-flight
+  // coalescing below already dedupes concurrent callers; a 9s cache here used
+  // to hide phone changes from desktop for up to ~13s (4s poll + 9s stale).
+  const cacheTtl = /\/todos\/stats(?:\?|$)/.test(path) ? 9000 : 0;
   window._tpRecentGets = window._tpRecentGets || new Map();
   const recent = cacheTtl ? window._tpRecentGets.get(requestKey) : null;
   if (recent && recent.expiresAt > Date.now()) return recent.response.clone();
@@ -16291,17 +16294,33 @@ async function _apiFetch(path, opts = {}) {
   }
   const run = async () => {
   const attempts = method === 'GET' ? 2 : 1;
+  // Bound every request: without a timeout, one hung POST on flaky mobile
+  // data stalls the serialized todo chain behind it indefinitely, so later
+  // ticks never reach the other device. Abort feeds the normal retry paths.
+  const timeoutMs = opts.keepalive ? 0 : (Number(opts.timeoutMs || 0) || (method === 'GET' ? 15000 : 30000));
+  const { timeoutMs: _ignoredTimeout, signal: externalSignal, ...fetchOpts } = opts;
   for (let attempt = 0; attempt < attempts; attempt++) {
+    const ctrl = timeoutMs > 0 ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : 0;
+    let onExternalAbort = null;
     try {
-      return await fetch(url, { ...opts, headers });
+      if (ctrl && externalSignal) {
+        if (externalSignal.aborted) ctrl.abort();
+        else {
+          onExternalAbort = () => ctrl.abort();
+          externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+      }
+      return await fetch(url, { ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
     } catch (error) {
       if (attempt + 1 < attempts) {
         await new Promise(resolve => setTimeout(resolve, 450));
         continue;
       }
-      // fetch rejects on DNS/proxy/server disconnects. Returning an HTTP-like
-      // response keeps fire-and-forget callers from producing unhandled promise
-      // rejections and lets every existing caller use its normal !res.ok path.
+      // fetch rejects on DNS/proxy/server disconnects (and now on our own
+      // timeout abort). Returning an HTTP-like response keeps fire-and-forget
+      // callers from producing unhandled promise rejections and lets every
+      // existing caller use its normal !res.ok path.
       console.warn('[TeamPulse API] request unavailable:', method, path, error?.message || error);
       return new Response(JSON.stringify({
         error: 'network_unavailable',
@@ -16310,6 +16329,9 @@ async function _apiFetch(path, opts = {}) {
         status: 503,
         headers: { 'Content-Type': 'application/json' }
       });
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (onExternalAbort && externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
     }
   }
   };
@@ -18078,14 +18100,18 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       // is expected noise — keep the 60s guard but stay silent (no toast).
       let onlyTodoChanges = false;
       try { onlyTodoChanges = (typeof _hasUnsyncedNonTodoChanges === 'function') && !_hasUnsyncedNonTodoChanges(); } catch (e) { onlyTodoChanges = false; }
+      // Todo-only divergence is carried by /todos/delta, and the
+      // conflict-merged-stopped marker below already prevents full-PUT storms
+      // until data actually changes — so a shorter cooling period is enough.
+      const conflictBackoffMs = onlyTodoChanges ? 20000 : 60000;
       if (conflictEtag && !window._serverDataEtag) window._serverDataEtag = conflictEtag;
       _markServerSyncPending('conflict-merged-stopped');
       clearTimeout(window._serverSyncRetryTimer);
-      window._serverSyncConflictBackoffUntil = Date.now() + 60000;
+      window._serverSyncConflictBackoffUntil = Date.now() + conflictBackoffMs;
       window._serverSyncRetryTimer = setTimeout(() => {
         window._serverSyncRetryTimer = null;
         window._serverSyncConflictBackoffUntil = 0;
-      }, 60000);
+      }, conflictBackoffMs);
       window._serverSyncRetryAttempt = 0;
       window._serverSyncQueued = false;
       if (onlyTodoChanges) {
@@ -18830,8 +18856,15 @@ async function _pollServerStatus() {
 
 function _refreshUiAfterServerLoad(updated, opts = {}) {
   const force = opts.force === true;
+  // Fresh data arrived but the UI gate (modal/focus/scroll) is closed: remember
+  // it and render on a later poll once the gate opens. Without this flag the
+  // desktop could hold fresh _db with a stale screen until the next change.
+  if (updated) window._pendingServerUiRefresh = true;
   if (updated && ['payments', 'transactions', 'dashboard', 'home'].includes(currentPage)) {
-    if (!document.querySelector('.modal-overlay.open')) renderPage();
+    if (!document.querySelector('.modal-overlay.open')) {
+      window._pendingServerUiRefresh = false;
+      renderPage();
+    }
     return;
   }
   if (currentPage === 'todolist') {
@@ -18855,7 +18888,10 @@ function _refreshUiAfterServerLoad(updated, opts = {}) {
     });
     return;
   }
-  if (updated && _canAutoRefresh()) renderPage();
+  if (window._pendingServerUiRefresh && _canAutoRefresh()) {
+    window._pendingServerUiRefresh = false;
+    renderPage();
+  }
 }
 
 function _appLooksInUse() {
@@ -23620,7 +23656,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v242';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v243';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
