@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp243';
+const TP_ASSET_V = 'tp244';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18755,6 +18755,52 @@ async function _loadFromServer(options = {}) {
   finally { if (window._tpLoadFromServerInFlight === run) window._tpLoadFromServerInFlight = null; }
 }
 
+// Small non-paginated collections the current page renders live (today's
+// habits on home). Unlike todos/business pages, nothing re-fetches them after
+// boot, so a check-in from the phone never arrived while the app stayed open.
+const _LIVE_SMALL_PART_KEYS = ['habits', 'habit_logs'];
+async function _refreshLiveSmallPartsFromServer(keys) {
+  const wanted = [...new Set(keys || [])].filter(key => _LIVE_SMALL_PART_KEYS.includes(key));
+  if (!wanted.length) return false;
+  if (!_sbUser || !_sbSession?.token) return false;
+  if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
+  try {
+    // Never overwrite collections we have unsynced local edits in — our own
+    // toggle flushes via normal sync; clobbering it would lose the check-in.
+    // The patch check is per-collection, so an unrelated local payment does
+    // not block habit refresh.
+    let dirty = new Set();
+    try {
+      const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
+      dirty = new Set(Object.keys(patch?.collections || {}));
+    } catch (e) {}
+    const safe = wanted.filter(key => !dirty.has(key));
+    if (!safe.length) return false;
+    const teamSession = _teamAccessSession();
+    const accId = teamSession?.ownerUserId || _sbUser.id;
+    if (!accId) return false;
+    const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(safe));
+    if (!res.ok) return false;
+    const payload = await res.json();
+    if (!payload?.data) return false;
+    let changed = false;
+    safe.forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(payload.data, key)) return;
+      const before = JSON.stringify(_db?.[key] ?? null);
+      _db[key] = payload.data[key];
+      if (JSON.stringify(_db?.[key] ?? null) !== before) changed = true;
+    });
+    if (!changed) return false;
+    _applyDeletedItemTombstones(_db);
+    _migrate(_db);
+    _mergeLoadedPartHashes(safe);
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    return true;
+  } catch (e) {
+    console.warn('[TeamPulse] live part refresh skipped:', e.message);
+    return false;
+  }
+}
 async function _pollServerStatus() {
   if (window._tpHydratingFromServer || window._tpLoadFromServerInFlight || window._resumeServerSyncInFlight) return false;
   if (!_sbUser || !_sbSession?.token) return false;
@@ -18832,11 +18878,17 @@ async function _pollServerStatus() {
     );
     const laggingOnPage = _businessCollectionsNeedingServerHydration(status, pageBusinessKeys);
     const todoOnPage = (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes('todos');
-    if (laggingOnPage.length || todoOnPage) {
+    // Small live parts (today's habits on home) are never re-fetched after
+    // boot — refresh them here so phone check-ins arrive while we sit on home.
+    const liveSmallKeys = (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || [])
+      .filter(key => _LIVE_SMALL_PART_KEYS.includes(key));
+    let liveSmallChanged = false;
+    if (laggingOnPage.length || todoOnPage || liveSmallKeys.length) {
       window._tpHydratingFromServer = true;
       try {
         if (todoOnPage) await _loadTodoPage(false, { reset: true });
         await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
+        if (await _refreshLiveSmallPartsFromServer(liveSmallKeys)) liveSmallChanged = true;
       } finally {
         window._tpHydratingFromServer = false;
       }
@@ -18847,7 +18899,7 @@ async function _pollServerStatus() {
         Number(window._serverSyncConflictBackoffUntil || 0) <= Date.now()) {
       _ensurePendingServerSync(50);
     }
-    return !!(laggingOnPage.length || todoOnPage);
+    return !!(laggingOnPage.length || todoOnPage || liveSmallChanged);
   } catch(e) {
     console.warn('[TeamPulse] status poll skipped:', e.message);
     return false;
@@ -23656,7 +23708,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v243';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v244';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

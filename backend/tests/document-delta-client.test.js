@@ -155,6 +155,14 @@ test('phone changes reach desktop fast: fresh status, bounded fetch, pending UI 
   assert.match(appSource, /window\._pendingServerUiRefresh && _canAutoRefresh\(\)/);
 });
 
+test("today's habits refresh on etag change without clobbering local check-ins", () => {
+  assert.match(appSource, /const _LIVE_SMALL_PART_KEYS = \['habits', 'habit_logs'\]/);
+  assert.match(appSource, /function _refreshLiveSmallPartsFromServer\(keys\)/);
+  assert.match(appSource, /_refreshLiveSmallPartsFromServer\(liveSmallKeys\)/);
+  assert.match(appSource, /liveSmallChanged/);
+  assert.match(appSource, /_mergeLoadedPartHashes\(safe\)/);
+});
+
 test('nested knowledge hashes restore the same folder on phone and laptop', () => {
   assert.match(appSource, /function _parseAppHash\(/);
   assert.match(appSource, /_parseAppHash\(\)\.page/);
