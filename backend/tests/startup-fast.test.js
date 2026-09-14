@@ -110,3 +110,11 @@ test('desktop push uses PNG assets and in-app fallback', () => {
   assert.match(remindersJs, /urgency: 'high'/);
   assert.equal(fs.existsSync(path.join(root, 'notification-badge.png')), true);
 });
+
+test('reopening the app lands on home, not the leftover last page', () => {
+  assert.match(appJs, /const leftoverRestore = !fromHash \|\| fromHash === fromStorage;/);
+  assert.match(appJs, /history\.replaceState\(null, '', '#home'\)/);
+  assert.match(appJs, /if \(!_teamCan\(currentPage\)\) \{/);
+  assert.match(appJs, /currentPage = _teamDefaultPage\(\);/);
+  assert.doesNotMatch(appJs, /tp_session_alive/);
+});
