@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp241';
+const TP_ASSET_V = 'tp242';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18057,6 +18057,27 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       // Second conflict: stop until the user edits again. Do not auto-POST
       // every 30s — that was the 3rd/4th 409 in Network while Finish stayed open.
       const stoppedFingerprint = _dataFingerprint(_serverDataSignature(_db || {}));
+      // Benign case: the tick already arrived via /todos/delta + hydration, so
+      // local and server documents are identical. Adopt the etag silently —
+      // an error toast here only scares users on their phones.
+      try {
+        if (responseData && responseData.data) {
+          const localFp = _dataFingerprint(_serverDataSignature(_db || {}));
+          const serverFp = _dataFingerprint(_serverDataSignature(responseData.data));
+          if (localFp === serverFp) {
+            if (conflictEtag) window._serverDataEtag = conflictEtag;
+            _writeServerSyncBaseline(_cloneData(responseData.data), window._serverDataEtag);
+            _clearServerSyncPending(Infinity);
+            window._serverSyncQueued = false;
+            window._serverSyncConflictBackoffUntil = 0;
+            return res;
+          }
+        }
+      } catch (e) {}
+      // Only todo ticks remain: /todos/delta carries them, so a full PUT 409
+      // is expected noise — keep the 60s guard but stay silent (no toast).
+      let onlyTodoChanges = false;
+      try { onlyTodoChanges = (typeof _hasUnsyncedNonTodoChanges === 'function') && !_hasUnsyncedNonTodoChanges(); } catch (e) { onlyTodoChanges = false; }
       if (conflictEtag && !window._serverDataEtag) window._serverDataEtag = conflictEtag;
       _markServerSyncPending('conflict-merged-stopped');
       clearTimeout(window._serverSyncRetryTimer);
@@ -18067,6 +18088,11 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }, 60000);
       window._serverSyncRetryAttempt = 0;
       window._serverSyncQueued = false;
+      if (onlyTodoChanges) {
+        try { if (typeof _drainDurableTodoDeltaQueue === 'function') void _drainDurableTodoDeltaQueue(); } catch (e) {}
+        console.warn('[TeamPulse] full sync paused after todo-only conflict; todo delta keeps syncing');
+        return res;
+      }
       if (window._fullSyncConflictStoppedWarnedFingerprint !== stoppedFingerprint) {
         window._fullSyncConflictStoppedWarnedFingerprint = stoppedFingerprint;
         showToast('همگام‌سازی کامل پس از تعارض متوقف شد؛ تغییرات روی دستگاه محفوظ است', 'error');
@@ -23594,7 +23620,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v241';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v242';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -3985,11 +3985,17 @@ function _instrPushHistory() {
 function _instrSetHeaderNav(inFolder, title) {
   const hb = document.getElementById('hamburger-btn');
   if (hb) {
-    hb.dataset.role = 'menu';
-    hb.textContent = '☰';
-    hb.classList.remove('open');
-    hb.onclick = toggleSidebar;
-    hb.title = '';
+    // tp-inline-bind.js already attached a click listener from the inline
+    // onclick="toggleSidebar()". Assigning .onclick on top would fire twice
+    // per tap (open+instant close) so the TOP hamburger looks dead on mobile.
+    // Clone once to drop duplicate listeners, then keep exactly one binding.
+    const fresh = hb.cloneNode(true);
+    hb.replaceWith(fresh);
+    fresh.dataset.role = 'menu';
+    fresh.textContent = '☰';
+    fresh.classList.remove('open');
+    fresh.onclick = toggleSidebar;
+    fresh.title = '';
   }
   const pt = document.getElementById('page-title');
   if (pt && currentPage === 'instructions') pt.textContent = 'مرکز دانش';
