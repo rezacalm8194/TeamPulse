@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp245';
+const TP_ASSET_V = 'tp246';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6924,6 +6924,12 @@ function _homeToggleTodo(id) {
     if (currentPage === 'home') renderHome();
   });
 }
+// اسکوپ نمایشی کارت «کارها» در داشبورد: mine = کارهای من، staff = کارهای پرسنل.
+if (typeof window._homeTodoScope === 'undefined') window._homeTodoScope = 'mine';
+function _homeSetTodoScope(scope) {
+  window._homeTodoScope = scope === 'staff' ? 'staff' : 'mine';
+  if (currentPage === 'home') renderHome();
+}
 function _homeGotoSessions() { _homeNavigate('students', 'sessions'); }
 function _homeOpenSession(id) {
   if (typeof openSessionDetail === 'function') openSessionDetail(Number(id));
@@ -6995,6 +7001,28 @@ async function renderHome() {
   const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done && (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true));
   const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
+  // «کارهای پرسنل» — کارهای بازِ منتسب به پرسنل (همان اسکوپ تب staff در لیست کارها).
+  // برای مهمان هم‌تیمی فقط مواردی که اجازه دیدن دارد (todo_view_team / manage).
+  const _homeCanSeeStaffTodos = (() => {
+    try {
+      if (typeof _isTeamGuest === 'function' && _isTeamGuest()) {
+        return (typeof _teamPerm === 'function') && (_teamPerm('todo_view_team') || _teamPerm('todo_manage_staff'));
+      }
+      return true;
+    } catch (e) { return true; }
+  })();
+  const openStaffTodos = (_db.todos || []).filter(t => {
+    if (t.archived || t.done) return false;
+    try {
+      if (typeof _todoBelongsToActiveAccount === 'function' && !_todoBelongsToActiveAccount(t)) return false;
+      if (typeof _todoCanView === 'function' && !_todoCanView(t)) return false;
+      return (typeof _todoIsStaffAssignedTask === 'function') ? _todoIsStaffAssignedTask(t) : false;
+    } catch (e) { return false; }
+  });
+  const overdueStaffTodos = openStaffTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
+  const todayStaffTodos = openStaffTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
+  const homeTodoScope = window._homeTodoScope === 'staff' && _homeCanSeeStaffTodos ? 'staff' : 'mine';
+  window._homeTodoScope = homeTodoScope;
   // Same order as the todo list page: overdue by (date, time), then pinned
   // today items by rank, then the rest of today by time (_sortByTime keeps
   // timeless tasks last, like the list page does).
@@ -7058,6 +7086,16 @@ async function renderHome() {
     doneTodayTodos = ((_db.todos || [])).filter(t => { try { return mine(t) && t.done && doneKey(t) === todayKey; } catch (e) { return false; } }).length;
   } catch (e) { doneTodayTodos = 0; }
   const totalTodayTodos = todosSorted.length + doneTodayTodos;
+  // همان ترتیب تب mine برای «کارهای من»؛ همین ترتیب برای «کارهای پرسنل» هم اعمال می‌شود.
+  const pinnedStaffToday = todayStaffTodos
+    .filter(t => +t.main_today_rank > 0)
+    .sort((a, b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a, b));
+  const pinnedStaffIds = new Set(pinnedStaffToday.map(t => t.id));
+  const staffTodosSorted = [
+    ...[...overdueStaffTodos].sort(byDateTime),
+    ...pinnedStaffToday,
+    ...todayStaffTodos.filter(t => !pinnedStaffIds.has(t.id)).sort(_sortByTime),
+  ];
   const todoRows = todosSorted.slice(0, 6).map(t => {
     const k = _jalaliKey(_todoScheduledDate(t));
     const overdue = k > 0 && k < todayKey;
@@ -7066,6 +7104,22 @@ async function renderHome() {
     <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}</span>
     ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
   </div>`; }).join('');
+  const staffTodoRows = staffTodosSorted.slice(0, 6).map(t => {
+    const k = _jalaliKey(_todoScheduledDate(t));
+    const overdue = k > 0 && k < todayKey;
+    let who = '';
+    try { who = (typeof _todoAssigneeLabel === 'function' ? _todoAssigneeLabel(t) : '') || ''; } catch (e) { who = ''; }
+    return `<div class="home-row ${overdue ? 'is-overdue' : ''}">
+    <button type="button" class="home-check" aria-label="تکمیل کار ${escapeHtml(t.title)}" aria-pressed="false" onclick="_homeToggleTodo(${Number(t.id)})"></button>
+    <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}${who ? ` <span style="color:var(--text3)">· ${escapeHtml(who)}</span>` : ''}</span>
+    ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
+  </div>`; }).join('');
+  // سربرگ کارت کارها: دکمه جابه‌جایی «کارهای من / کارهای پرسنل» + لینک رفتن به لیست.
+  const homeTodoHead = _homeCanSeeStaffTodos ? `<div class="home-card-head"><h3>${homeTodoScope === 'staff' ? `کارهای پرسنل ${overdueStaffTodos.length ? `(${_homeFa(overdueStaffTodos.length)} معوق)` : ''}` : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها"><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(openStaffTodos.length)})</button></div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`
+    : `<div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>`;
+  const homeTodoBody = homeTodoScope === 'staff'
+    ? (staffTodoRows || empty(openStaffTodos.length ? 'کار بازی برای امروز نیست.' : 'کاری برای پرسنل ثبت نشده است.'))
+    : (todoRows || empty('کار بازی برای امروز نیست.'));
   const sessionRows = sessions.slice(0, 6).map(s => {
     const who = escapeHtml(_homeStudentName(s.student_id));
     const title = s.title ? ` <span style="color:var(--text3)">· ${escapeHtml(s.title)}</span>` : '';
@@ -7102,7 +7156,7 @@ async function renderHome() {
     <div class="home-grid">
       <section class="home-card"><div class="home-card-head"><h3 style="cursor:pointer" onclick="_homeGotoSessions()" title="رفتن به امور مشتریان / جلسات">جلسات امروز</h3><button class="btn btn-primary btn-sm" onclick="_homeQuickSession()">+ ثبت جلسه جدید</button></div>${sessionRows || empty('برای امروز جلسه‌ای ثبت نشده است.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>عادت‌های امروز${dueHabits.length ? ` (${_homeFa(doneHabitsCount)} از ${_homeFa(dueHabits.length)})` : ''}</h3><button class="home-link" onclick="_homeNavigate('habits')">همه عادت‌ها</button></div>${habitRows || empty(habitEmpty || 'عادت سررسیدشده‌ای برای امروز نیست.')}</section>
-      <section class="home-card"><div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>${todoRows || empty('کار بازی برای امروز نیست.')}</section>
+      <section class="home-card">${homeTodoHead}${homeTodoBody}</section>
       <section class="home-card"><div class="home-card-head"><h3>اهداف مهم</h3><button class="home-link" onclick="_homeNavigate('goals')">همه اهداف</button></div>${goalRows || empty('هدف فعالی برای نمایش نیست.')}</section>
       <section class="home-card"><div class="home-card-head"><h3>یادآوری پرداخت (${_homeFa(pendingPayReminders.length)})</h3><button class="home-link" onclick="_homeNavigate('payments','reminders')">همه یادآوری‌ها</button></div>${reminderRows || empty('یادآوری پرداختی نیست.')}</section>
       <section class="home-card home-finance"><div class="home-card-head"><h3>گزارش مالی و دسترسی سریع</h3><button class="home-link" onclick="_homeNavigate('dashboard')">مدیریت مالی کامل</button></div>
@@ -23850,7 +23904,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v245';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v246';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
