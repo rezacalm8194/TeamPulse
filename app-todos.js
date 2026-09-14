@@ -53,14 +53,220 @@ function _quickStaffDateShortcut(kind) {
   if (kind === 'today') return today;
   const [jy,jm,jd] = _jalaliParse(today);
   if (kind === 'tomorrow') return _formatJalali(..._addDays(jy,jm,jd,1));
-  if (kind === 'week') return _formatJalali(..._addDays(jy,jm,jd,7));
+  if (kind === 'week' || kind === 'nextweek') return _formatJalali(..._addDays(jy,jm,jd,7));
+  if (kind === 'thisweek') {
+    const [gy,gm,gd] = jalaliToGregorian(jy,jm,jd);
+    const dow = new Date(gy, gm - 1, gd).getDay();
+    const daysFromSaturday = (dow + 1) % 7;
+    return _formatJalali(..._addDays(jy, jm, jd, 6 - daysFromSaturday));
+  }
   return today;
 }
 
 
 function _setQuickStaffChecklistDate(kind) {
   const input = document.getElementById('quick-staff-date');
-  if (input) input.value = _quickStaffDateShortcut(kind);
+  if (!input) return;
+  input.value = _quickStaffDateShortcut(kind);
+  input.dataset.kind = kind;
+  _refreshQuickStaffStepUi();
+}
+
+
+function _quickStaffTimeValue() {
+  return (document.getElementById('quick-staff-time')?.value || '').trim();
+}
+
+
+function _quickStaffDateChipText() {
+  const input = document.getElementById('quick-staff-date');
+  const date = (input?.value || '').trim() || _todayJalaliStr();
+  const kind = input?.dataset.kind || '';
+  const today = _todayJalaliStr();
+  const tomorrow = _quickStaffDateShortcut('tomorrow');
+  let label = date;
+  if (date === today) label = 'امروز';
+  else if (date === tomorrow) label = 'فردا';
+  else if (kind === 'thisweek') label = 'این هفته';
+  else if (kind === 'week' || kind === 'nextweek') label = 'هفته بعد';
+  const time = _quickStaffTimeValue();
+  if (time) label += '، ' + fa(time);
+  return 'تاریخ: ' + label;
+}
+
+
+function _quickStaffRemindLabel(val) {
+  const map = {
+    '0': 'خاموش',
+    '5': '۵ دقیقه قبل',
+    '10': '۱۰ دقیقه قبل',
+    '15': '۱۵ دقیقه قبل',
+    '30': '۳۰ دقیقه قبل',
+    '60': '۱ ساعت قبل',
+    '120': '۲ ساعت قبل',
+    '1440': '۱ روز قبل',
+  };
+  return map[String(val || '0')] || 'خاموش';
+}
+
+
+function _quickStaffRepeatLabel(val) {
+  const map = {
+    none: 'بدون تکرار',
+    daily: 'روزانه',
+    weekly: 'هفتگی',
+    monthly: 'ماهانه',
+    every2days: 'سفارشی',
+  };
+  return map[val || 'none'] || 'بدون تکرار';
+}
+
+
+function _refreshQuickStaffStepUi() {
+  const form = document.getElementById('quick-staff-quick-form');
+  const dateBtn = document.getElementById('qss-date-btn');
+  const timeBtn = document.getElementById('qss-time-btn');
+  const repeatBtn = document.getElementById('qss-repeat-btn');
+  const remindBtn = document.getElementById('qss-remind-btn');
+  const time = _quickStaffTimeValue();
+  if (form) form.classList.toggle('has-time', !!time);
+  if (dateBtn) dateBtn.textContent = _quickStaffDateChipText();
+  if (timeBtn) timeBtn.textContent = time ? ('ساعت: ' + fa(time)) : 'ساعت: ندارد';
+  const repeat = document.getElementById('quick-staff-repeat')?.value || 'none';
+  if (repeatBtn) repeatBtn.innerHTML = `<span>تکرار: ${_quickStaffRepeatLabel(repeat)}</span><span class="qss-caret">›</span>`;
+  if (remindBtn) {
+    remindBtn.hidden = !time;
+    const remind = document.getElementById('quick-staff-remind')?.value || '0';
+    remindBtn.innerHTML = `<span>یادآوری: ${_quickStaffRemindLabel(remind)}</span><span class="qss-caret">›</span>`;
+  }
+}
+
+
+function _closeQuickPickSheet() {
+  document.getElementById('qss-pick-sheet')?.remove();
+}
+
+
+function _openQuickPickSheet(title, options, selected, onSelect) {
+  _closeQuickPickSheet();
+  const overlay = document.createElement('div');
+  overlay.id = 'qss-pick-sheet';
+  overlay.className = 'bottom-sheet-overlay open qss-sheet-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) _closeQuickPickSheet(); };
+  overlay.innerHTML = `<div class="bottom-sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bs-title">${escapeHtml(title)}</div>
+    ${options.map(o => `<button type="button" class="bs-option${String(o.value) === String(selected) ? ' is-selected' : ''}" data-qss-val="${escapeHtml(String(o.value))}">
+      <div><div class="bs-option-label">${escapeHtml(o.label)}</div>${o.desc ? `<div class="bs-option-desc">${escapeHtml(o.desc)}</div>` : ''}</div>
+    </button>`).join('')}
+  </div>`;
+  overlay.querySelectorAll('[data-qss-val]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const val = btn.getAttribute('data-qss-val');
+      _closeQuickPickSheet();
+      onSelect(val);
+    };
+  });
+  document.body.appendChild(overlay);
+}
+
+
+function _openQuickStaffDateSheet() {
+  const current = document.getElementById('quick-staff-date')?.dataset.kind || 'today';
+  _openQuickPickSheet('تاریخ کار', [
+    { value: 'today', label: 'امروز' },
+    { value: 'tomorrow', label: 'فردا' },
+    { value: 'thisweek', label: 'این هفته' },
+    { value: 'nextweek', label: 'هفته بعد' },
+    { value: 'calendar', label: 'انتخاب از تقویم', desc: 'تاریخ دلخواه از تقویم' },
+  ], current, (val) => {
+    if (val === 'calendar') _openQuickStaffCalendar();
+    else _setQuickStaffChecklistDate(val);
+  });
+}
+
+
+function _openQuickStaffCalendar() {
+  const input = document.getElementById('quick-staff-date');
+  if (!input || typeof openDatePicker !== 'function') return;
+  input.addEventListener('change', () => {
+    input.dataset.kind = 'custom';
+    _refreshQuickStaffStepUi();
+  }, { once: true });
+  openDatePicker(input);
+}
+
+
+function _openQuickStaffTimeSheet() {
+  _closeQuickPickSheet();
+  const current = _quickStaffTimeValue() || '09:00';
+  const overlay = document.createElement('div');
+  overlay.id = 'qss-pick-sheet';
+  overlay.className = 'bottom-sheet-overlay open qss-sheet-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) _closeQuickPickSheet(); };
+  overlay.innerHTML = `<div class="bottom-sheet" role="dialog" aria-modal="true" aria-label="ساعت انجام">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bs-title">ساعت انجام</div>
+    <input class="form-input qss-time-input" id="qss-time-picker" type="time" value="${current}" style="direction:ltr">
+    <button type="button" class="btn btn-primary" id="qss-time-apply" style="width:100%;margin-top:12px">ثبت ساعت</button>
+    <button type="button" class="btn btn-ghost" id="qss-time-clear" style="width:100%;margin-top:8px">بدون ساعت</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#qss-time-apply')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const val = overlay.querySelector('#qss-time-picker')?.value || '';
+    const timeInput = document.getElementById('quick-staff-time');
+    if (timeInput) timeInput.value = val;
+    _closeQuickPickSheet();
+    _refreshQuickStaffStepUi();
+  });
+  overlay.querySelector('#qss-time-clear')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const timeInput = document.getElementById('quick-staff-time');
+    if (timeInput) timeInput.value = '';
+    const remind = document.getElementById('quick-staff-remind');
+    if (remind) remind.value = '0';
+    _closeQuickPickSheet();
+    _refreshQuickStaffStepUi();
+  });
+  setTimeout(() => overlay.querySelector('#qss-time-picker')?.focus(), 50);
+}
+
+
+function _openQuickStaffRepeatSheet() {
+  const current = document.getElementById('quick-staff-repeat')?.value || 'none';
+  _openQuickPickSheet('تکرار', [
+    { value: 'none', label: 'بدون تکرار' },
+    { value: 'daily', label: 'روزانه' },
+    { value: 'weekly', label: 'هفتگی' },
+    { value: 'monthly', label: 'ماهانه' },
+    { value: 'every2days', label: 'سفارشی', desc: 'یک‌روزدرمیان' },
+  ], current, (val) => {
+    const sel = document.getElementById('quick-staff-repeat');
+    if (sel) sel.value = val;
+    _refreshQuickStaffStepUi();
+  });
+}
+
+
+function _openQuickStaffRemindSheet() {
+  if (!_quickStaffTimeValue()) return;
+  const current = document.getElementById('quick-staff-remind')?.value || '0';
+  _openQuickPickSheet('یادآوری', [
+    { value: '0', label: 'بدون یادآوری' },
+    { value: '5', label: '۵ دقیقه قبل' },
+    { value: '10', label: '۱۰ دقیقه قبل' },
+    { value: '15', label: '۱۵ دقیقه قبل' },
+    { value: '30', label: '۳۰ دقیقه قبل' },
+    { value: '60', label: '۱ ساعت قبل' },
+    { value: '120', label: '۲ ساعت قبل' },
+    { value: '1440', label: '۱ روز قبل' },
+  ], current, (val) => {
+    const sel = document.getElementById('quick-staff-remind');
+    if (sel) sel.value = val;
+    _refreshQuickStaffStepUi();
+  });
 }
 
 
@@ -70,23 +276,29 @@ function _openQuickStaffChecklist(staffId) {
   if (!staff) { showToast('پرسنل پیدا نشد', 'error'); return; }
   const today = _todayJalaliStr();
   openModal('چک‌لیست سریع', `
+    <div id="quick-staff-quick-form">
     <div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:900;color:var(--text);margin-bottom:4px">${escapeHtml(_todoStaffName(staff))}</div>
       <div style="font-size:11px;color:var(--text3);line-height:1.8">هر خط یک کار جدا می‌شود. دسترسی پیش‌فرض: فقط مسئول انجام.</div>
     </div>
     <div class="form-group full">
-      <label class="form-label">عنوان کارها *</label>
-      <textarea class="form-input" id="quick-staff-titles" rows="6" autofocus onkeydown="_tpOnCtrlEnter1(event,'_saveQuickStaffChecklist','${staff.id}')" placeholder="مثلاً:
-پیگیری پرداخت مشتری
-آماده‌سازی ویدیو
-ارسال گزارش روزانه"></textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:5px">برای ذخیره سریع می‌توانی Ctrl+Enter بزنی.</div>
+      <label class="form-label">عنوان کار</label>
+      <textarea class="form-input" id="quick-staff-titles" rows="6" autofocus onkeydown="_tpOnCtrlEnter1(event,'_saveQuickStaffChecklist','${staff.id}')" placeholder="نوشتن عنوان... هر خط یک کار جدا"></textarea>
+      <div class="quick-staff-title-hint" style="font-size:10px;color:var(--text3);margin-top:5px">برای ذخیره سریع می‌توانی Ctrl+Enter بزنی.</div>
+    </div>
+    <div class="quick-staff-step">
+      <div class="qss-label">تاریخ و زمان</div>
+      <button type="button" class="qss-chip" id="qss-date-btn" onclick="_openQuickStaffDateSheet()">تاریخ: امروز</button>
+      <button type="button" class="qss-chip" id="qss-time-btn" onclick="_openQuickStaffTimeSheet()">ساعت: ندارد</button>
+      <div class="qss-label">گزینه‌های بیشتر</div>
+      <button type="button" class="qss-row" id="qss-repeat-btn" onclick="_openQuickStaffRepeatSheet()"><span>تکرار: بدون تکرار</span><span class="qss-caret">›</span></button>
+      <button type="button" class="qss-row" id="qss-remind-btn" hidden onclick="_openQuickStaffRemindSheet()"><span>یادآوری: خاموش</span><span class="qss-caret">›</span></button>
     </div>
     <div class="quick-staff-schedule-grid">
       <div class="form-group">
         <label class="form-label">تاریخ</label>
         <div class="quick-staff-date-row">
-          <input class="form-input jdate" id="quick-staff-date" value="${today}">
+          <input class="form-input jdate" id="quick-staff-date" value="${today}" data-kind="today">
           <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('today')">امروز</button>
           <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('tomorrow')">فردا</button>
           <button type="button" class="btn btn-ghost btn-sm" onclick="_setQuickStaffChecklistDate('week')">هفته دیگر</button>
@@ -124,19 +336,20 @@ function _openQuickStaffChecklist(staffId) {
       <input type="checkbox" id="quick-staff-report" style="width:16px;height:16px;accent-color:var(--accent)">
       برای تکمیل، گزارش بخواهد
     </label>
-    <div id="quick-staff-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:8px;
+    <div id="quick-staff-notif-status" class="quick-staff-notif" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:8px;
       background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
       color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
       ${('Notification' in window && Notification.permission==='granted')
         ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
         : '⚠️ برای یادآوری باید اجازه نوتیفیکیشن بدهی'}
     </div>
+    </div>
   `, [
     { label:'ذخیره سریع', cls:'btn-primary', action:`_saveQuickStaffChecklist('${staff.id}')` },
     { label:'فرم کامل', cls:'btn-ghost', action:`closeModal();_openAddTodoForStaff('${staff.id}')` },
     { label:'انصراف', cls:'btn-ghost', action:'closeModal()' },
   ]);
-  setTimeout(() => { initDatePickers(); document.getElementById('quick-staff-titles')?.focus(); }, 50);
+  setTimeout(() => { initDatePickers(); document.getElementById('quick-staff-titles')?.focus(); _refreshQuickStaffStepUi(); }, 50);
 }
 
 

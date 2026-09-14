@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp239';
+const TP_ASSET_V = 'tp240';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -55,7 +55,11 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'renderTodoList', 'renderCalendar', 'openAddTodo',
   '_renderTodoStaffFilteredList', '_setTodoViewMode', '_patchTodoStaffLive',
   '_selectTodoStaffChip', '_openTodoStaffPersonMenu',
-  '_toggleTodo', '_todoShowMore', '_completeTodoWithReport'
+  '_toggleTodo', '_todoShowMore', '_completeTodoWithReport',
+  '_openQuickStaffChecklist', '_openQuickStaffChecklistFromFilter',
+  '_openQuickStaffDateSheet', '_openQuickStaffTimeSheet',
+  '_openQuickStaffRepeatSheet', '_openQuickStaffRemindSheet',
+  '_setQuickStaffChecklistDate'
 ].forEach(name => _tpLazyFor('app-todos.js', name));
 function _tpPrefetchExtra() {
   const run = () => { _tpEnsureExtra().catch(() => {}); };
@@ -5798,26 +5802,19 @@ function _getInitialPage() {
   const parsed = _parseAppHash();
   const fromHash = parsed.page;
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash) && parsed.ids && parsed.ids.length) return fromHash;
-  // Fresh app open (new tab / restart / PWA relaunch) must always land on the
-  // dashboard. sessionStorage dies with the session, so its absence means
-  // "just opened" — ignore last-page + hash and force home.
-  let freshOpen = false;
-  try {
-    freshOpen = !sessionStorage.getItem('tp_session_alive');
-    sessionStorage.setItem('tp_session_alive', '1');
-  } catch (e) { freshOpen = false; }
-  if (freshOpen) {
+  let fromStorage = '';
+  try { fromStorage = localStorage.getItem('tp_last_page') || ''; } catch (e) { fromStorage = ''; }
+  // Closing a PWA/Android WebView keeps the last hash AND sessionStorage, so
+  // "fresh session" is not a reliable signal. If the hash is empty or matches
+  // the last visited page, this is a reopen — land on the dashboard (home).
+  // A different hash (notification / pasted link) is still honored.
+  const leftoverRestore = !fromHash || fromHash === fromStorage;
+  if (leftoverRestore) {
     try { localStorage.setItem('tp_last_page', 'home'); } catch (e) {}
     try { history.replaceState(null, '', '#home'); } catch (e) {}
     return 'home';
   }
-  // Same-session reload / in-app back-forward: keep old behavior.
-  // URL hash takes priority, falls back to last page saved in localStorage, then default.
-  // Nested knowledge links look like #instructions/5 — only the page segment is restored here.
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) return fromHash;
-  const fromStorage = localStorage.getItem('tp_last_page');
-  if (fromStorage === 'sessions') return 'students';
-  if (fromStorage && _SAFE_RESTORE_PAGES.includes(fromStorage)) return fromStorage;
   return 'home';
 }
 let currentPage = _getInitialPage();
@@ -15437,6 +15434,7 @@ function _unsavedDialogContinue() {
 function closeModal() {
   _resetSessionTimer();
   closeDatePicker();
+  document.getElementById('qss-pick-sheet')?.remove();
   document.getElementById('modals').innerHTML = '';
   _unlockModalPageScroll(true);
 }
@@ -23596,7 +23594,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v239';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v240';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
