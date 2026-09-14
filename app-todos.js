@@ -2385,6 +2385,10 @@ function _todoShowMore(key) {
 
 function renderTodoList(options = {}) {
   _todosInit();
+  if (_isTeamGuest() && !window._teamTodoPushAsked) {
+    window._teamTodoPushAsked = true;
+    _requestNotificationPermission();
+  }
   const skipMaintenance = options.skipMaintenance === true;
   if (!skipMaintenance) _todoListShown = {};
   if (_todoViewMode !== 'list') {

@@ -24,6 +24,10 @@ const {
   listPushScanAccountIds,
 } = require('../utils/pushDueIndex');
 const { isPaymentReminder } = require('../utils/reminderKind');
+const {
+  todoShouldNotifyOwner,
+  todoShouldNotifyTeamMember,
+} = require('../utils/todoPushRecipients');
 
 ensureTeamAccessSchema(db);
 
@@ -113,47 +117,41 @@ async function loadAccountCollections(accountId, keys) {
   try { return JSON.parse(meta.serialized || 'null'); } catch { return null; }
 }
 
-function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
-  if (!ownerAccountId || !memberEmail) return null;
-  const grant = db.prepare(`
-    SELECT permissions
-    FROM team_access_grants
-    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
-  `).get(ownerAccountId, workspaceId, memberEmail);
-  if (!grant) return null;
+function loadWorkspaceTeamMembers(ownerAccountId, workspaceId) {
   const storageKey = workspaceStorageKey(ownerAccountId, workspaceId);
   const meta = loadWorkspaceMeta(db, storageKey);
-  if (!meta) return { permissions: parseJsonArray(grant.permissions) };
+  if (!meta) return [];
   try {
-    const members = meta.layout === 'parts'
-      ? (loadDocumentParts(db, storageKey, ['team_members']).collections.team_members || [])
-      : (JSON.parse(meta.serialized || 'null')?.team_members || []);
-    const member = members.find(item =>
-      String(item.email || '').trim().toLowerCase() === memberEmail &&
-      item.status !== 'حذف‌شده'
-    );
-    return member ? { permissions: Array.isArray(member.permissions) ? member.permissions : [] } : null;
+    if (meta.layout === 'parts') {
+      return loadDocumentParts(db, storageKey, ['team_members']).collections.team_members || [];
+    }
+    const parsed = JSON.parse(meta.serialized || 'null');
+    return Array.isArray(parsed?.team_members) ? parsed.team_members : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-function staffEmail(staff) {
-  return String(staff?.email || staff?.work_email || staff?.username || '').trim().toLowerCase();
-}
-
-function ownStaffIdsForEmail(data, memberEmail) {
-  const rows = Array.isArray(data?.staff) ? data.staff : [];
-  return new Set(rows
-    .filter(staff => staffEmail(staff) === memberEmail)
-    .map(staff => String(staff.id || ''))
-    .filter(Boolean));
-}
-
-function todoSharedWith(todo) {
-  if (Array.isArray(todo?.shared_with)) return todo.shared_with.map(String);
-  if (Array.isArray(todo?.sharedWith)) return todo.sharedWith.map(String);
-  return [];
+function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
+  if (!ownerAccountId || !memberEmail) return null;
+  const grant = db.prepare(`
+    SELECT permissions, invite_id, staff_id
+    FROM team_access_grants
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+  `).get(ownerAccountId, workspaceId, memberEmail);
+  const member = loadWorkspaceTeamMembers(ownerAccountId, workspaceId).find(item =>
+    String(item.email || '').trim().toLowerCase() === memberEmail &&
+    item.status !== 'حذف‌شده'
+  );
+  const storedPermissions = grant ? parseJsonArray(grant.permissions) : [];
+  const memberPermissions = Array.isArray(member?.permissions) ? member.permissions : [];
+  const permissions = memberPermissions.length ? memberPermissions : storedPermissions;
+  if (!permissions.length) return null;
+  return {
+    email: memberEmail,
+    permissions,
+    staffId: String(member?.staff_id || member?.staffId || grant?.staff_id || '').trim(),
+  };
 }
 
 // یک تسک ممکنه به‌خاطر یک باگ قدیمی (کش/impersonate آلوده) داخل داده‌ی
@@ -166,28 +164,6 @@ function todoBelongsToAccount(todo, accountId) {
   if (!taskOwnerId) return true;
   if (taskOwnerId === 'local-owner') return true;
   return taskOwnerId === String(accountId);
-}
-
-function todoAssignedToMember(todo, memberEmail, ownStaffIds) {
-  const emails = [todo?.assignee_email, todo?.assigneeEmail]
-    .filter(Boolean)
-    .map(value => String(value).trim().toLowerCase());
-  if (emails.includes(memberEmail)) return true;
-  const ids = [todo?.assignee_id, todo?.assigneeId, todo?.staff_id, todo?.staffId]
-    .filter(value => value != null)
-    .map(value => String(value));
-  return ids.some(id => ownStaffIds.has(id));
-}
-
-function todoShouldNotifyTeamMember(todo, data, memberEmail, permissions) {
-  if (!permissions.includes('todolist')) return false;
-  const ownStaffIds = ownStaffIdsForEmail(data, memberEmail);
-  if (todoAssignedToMember(todo, memberEmail, ownStaffIds)) return true;
-  if (permissions.includes('todo_view_clients') && String(todo?.category || '') === 'clients') return true;
-  const sharedEmails = todoSharedWith(todo).map(email => email.trim().toLowerCase());
-  if (permissions.includes('todo_view_shared') && sharedEmails.includes(memberEmail)) return true;
-  if (todo?.visibility === 'team' && permissions.includes('todo_view_shared')) return true;
-  return false;
 }
 
 function accountEmail(accountId) {
@@ -296,14 +272,14 @@ async function pushTodoToRecipients(accountId, workspaceId, userData, todo, titl
   const allowed = [];
   for (const sub of subs) {
     if (isOwnerSubscription(sub, accountId, ownerEmail)) {
-      allowed.push(sub);
+      if (todoShouldNotifyOwner(todo)) allowed.push(sub);
       continue;
     }
 
     const memberEmail = String(sub.member_email || sub.subscriber_email || '').trim().toLowerCase();
     const grant = getActiveTeamGrant(accountId, workspaceId, memberEmail);
     if (!grant) continue;
-    if (todoShouldNotifyTeamMember(todo, userData, memberEmail, grant.permissions)) {
+    if (todoShouldNotifyTeamMember(todo, userData, grant)) {
       allowed.push(sub);
     }
   }

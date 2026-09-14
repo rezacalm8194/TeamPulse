@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp237';
+const TP_ASSET_V = 'tp238';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -10442,6 +10442,36 @@ async function _saveTeamMemberEdit(id) {
   showToast(grantRes?.ok ? 'دسترسی ذخیره شد ✓' : 'دسترسی محلی ذخیره شد؛ ارتباط سرور را بررسی کنید', grantRes?.ok ? 'success' : 'warning');
 }
 
+function _pushSettingsSectionHtml(options = {}) {
+  const intro = options.intro || 'فعال بودن نوتیفیکیشن روی موبایل برای لپ‌تاپ کافی نیست؛ همین دستگاه را جداگانه فعال کن. اگر تب برنامه باز باشد، یادآور داخل خود صفحه هم نمایش داده می‌شود. برای اعلان سیستم وقتی پنجره بسته است، Chrome باید در پس‌زمینه در حال اجرا بماند.';
+  return `
+    <div class="detail-section">
+      <h3>🔔 نوتیفیکیشن‌های یادآور</h3>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
+        <span class="help-ic" title="هر دستگاهی که وارد حساب بشه باید جداگانه فعال بشه">؟</span>
+        ${escapeHtml(intro)}
+      </p>
+      <div id="push-status-box" style="padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;
+        background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);color:var(--amber)">
+        در حال بررسی...
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="push-enable-btn" onclick="_enablePushFromSettings()" style="display:none">
+          🔔 فعال‌سازی نوتیفیکیشن روی این دستگاه
+        </button>
+        <button class="btn btn-ghost" id="push-reregister-btn" onclick="_enablePushFromSettings()" style="display:none">
+          🔄 ثبت مجدد این دستگاه
+        </button>
+        <button class="btn btn-ghost" id="push-test-btn" onclick="_testPushFromSettings()" style="display:none">
+          🧪 ارسال اعلان آزمایشی
+        </button>
+        <button class="btn btn-ghost" id="push-disable-btn" onclick="_disablePushFromSettings()" style="display:none;color:var(--red);border-color:var(--red)">
+          🔕 غیرفعال کردن نوتیفیکیشن
+        </button>
+      </div>
+    </div>`;
+}
+
 function _teamSettingsHtml() {
   const session = _teamAccessSession();
   if (session) {
@@ -10460,7 +10490,10 @@ function _teamSettingsHtml() {
         <div class="detail-row"><span class="detail-key">بخش‌های مجاز</span><span class="detail-val">${escapeHtml(perms)}</span></div>
         <div class="detail-row"><span class="detail-key">محدوده مرکز دانش</span><span class="detail-val">${escapeHtml(folderLabel)}</span></div>
         <button class="btn btn-danger" style="margin-top:12px" onclick="_leaveTeamAccess()">خروج از دسترسی هم‌تیمی</button>
-      </div>`;
+      </div>
+      ${_pushSettingsSectionHtml({
+        intro: 'یادآور کارهای واگذارشده به خودت فقط روی دستگاهی می‌آید که نوتیفیکیشن را اینجا فعال کرده باشی. مدیر نوتیف کارهای تو را دریافت نمی‌کند.',
+      })}`;
   }
 
   const members = _db.team_members || [];
@@ -10619,6 +10652,7 @@ async function renderSettings() {
         </div>
       </div>
     `);
+    setTimeout(_checkPushStatusForSettings, 100);
     return;
   }
 
@@ -11018,32 +11052,7 @@ async function renderSettings() {
       </div>
     </div>
 
-    <div class="detail-section">
-      <h3>🔔 نوتیفیکیشن‌های یادآور</h3>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
-        <span class="help-ic" title="هر دستگاهی که وارد حساب بشه باید جداگانه فعال بشه">؟</span>
-        فعال بودن نوتیفیکیشن روی موبایل برای لپ‌تاپ کافی نیست؛ همین دستگاه را جداگانه فعال کن.
-        اگر تب برنامه باز باشد، یادآور داخل خود صفحه هم نمایش داده می‌شود. برای اعلان سیستم وقتی پنجره بسته است، Chrome باید در پس‌زمینه در حال اجرا بماند.
-      </p>
-      <div id="push-status-box" style="padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;
-        background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);color:var(--amber)">
-        در حال بررسی...
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="push-enable-btn" onclick="_enablePushFromSettings()" style="display:none">
-          🔔 فعال‌سازی نوتیفیکیشن روی این دستگاه
-        </button>
-        <button class="btn btn-ghost" id="push-reregister-btn" onclick="_enablePushFromSettings()" style="display:none">
-          🔄 ثبت مجدد این دستگاه
-        </button>
-        <button class="btn btn-ghost" id="push-test-btn" onclick="_testPushFromSettings()" style="display:none">
-          🧪 ارسال اعلان آزمایشی
-        </button>
-        <button class="btn btn-ghost" id="push-disable-btn" onclick="_disablePushFromSettings()" style="display:none;color:var(--red);border-color:var(--red)">
-          🔕 غیرفعال کردن نوتیفیکیشن
-        </button>
-      </div>
-    </div>
+    ${_pushSettingsSectionHtml()}
 
   </div>
 
@@ -23579,7 +23588,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v237';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v238';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
