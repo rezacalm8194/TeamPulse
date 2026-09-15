@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp247';
+const TP_ASSET_V = 'tp248';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -22091,7 +22091,9 @@ async function _walletBaleTopup() {
     if (linkInput) linkInput.value = window._walletBaleShareUrl;
     if (wrap) wrap.style.display = '';
     if (st) st.innerHTML = `لینک پرداخت ساخته شد${data.test_mode ? ' <span style="color:var(--amber)">(تست)</span>' : ''} — پرداخت را در بله کامل کنید؛ کیف پول خودکار شارژ می‌شود.`;
-    try { window.open(window._walletBaleShareUrl, '_blank'); } catch (e) {}
+    if (/^https?:\/\//i.test(window._walletBaleShareUrl) && !window._walletBaleShareUrl.includes(location.host)) {
+      try { window.open(window._walletBaleShareUrl, '_blank'); } catch (e) {}
+    }
     _walletBalePoll(data.id);
   } catch (e) {
     if (st) st.textContent = 'خطای شبکه — دوباره تلاش کنید.';
@@ -24061,7 +24063,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v247';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v248';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

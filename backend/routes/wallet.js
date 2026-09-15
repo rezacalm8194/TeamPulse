@@ -238,9 +238,18 @@ router.post('/bale-topup', auth, async (req, res) => {
         provider_token: creds.provider_token,
         prices,
       });
-      baleRef = typeof result === 'string' ? result : String(result?.url || result?.link || result || '');
+      if (typeof result === 'string') baleRef = result;
+      else if (result && typeof result === 'object') {
+        baleRef = String(result.url || result.link || result.invoice_link || result.invoiceLink || '');
+      } else baleRef = String(result || '');
     } catch (e) {
       return res.status(400).json({ error: 'create_invoice_failed', message: e.message });
+    }
+    if (!/^https?:\/\//i.test(baleRef)) {
+      return res.status(400).json({
+        error: 'create_invoice_failed',
+        message: 'لینک پرداخت از بله دریافت نشد. توکن بازو و توکن پرداخت را بررسی کنید.',
+      });
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -250,9 +259,7 @@ router.post('/bale-topup', auth, async (req, res) => {
       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
     `).run(id, req.user.id, amountToman, amountRial, baleRef, now, now);
 
-    const shareUrl = baleRef && /^https?:\/\//i.test(baleRef)
-      ? baleRef
-      : `${baleCore.publicBaseUrl(req)}/app#wallet-topup-${encodeURIComponent(id)}`;
+    const shareUrl = baleRef;
 
     res.json({
       id,
