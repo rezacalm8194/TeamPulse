@@ -230,6 +230,7 @@ router.post('/bale-topup', auth, async (req, res) => {
     const prices = JSON.stringify([{ label: title.slice(0, 32), amount: amountRial }]);
 
     let baleRef = '';
+    let invoiceRaw = null;
     try {
       const result = await baleCore.baleApi(creds.bot_token, 'createInvoiceLink', {
         title,
@@ -238,6 +239,7 @@ router.post('/bale-topup', auth, async (req, res) => {
         provider_token: creds.provider_token,
         prices,
       });
+      invoiceRaw = result;
       if (typeof result === 'string') baleRef = result;
       else if (result && typeof result === 'object') {
         baleRef = String(result.url || result.link || result.invoice_link || result.invoiceLink || '');
@@ -245,6 +247,12 @@ router.post('/bale-topup', auth, async (req, res) => {
     } catch (e) {
       return res.status(400).json({ error: 'create_invoice_failed', message: e.message });
     }
+    try {
+      const rawPreview = typeof invoiceRaw === 'string'
+        ? invoiceRaw.slice(0, 80)
+        : String(JSON.stringify(invoiceRaw)).slice(0, 300);
+      console.warn(`[wallet-bale] invoice kind=${typeof invoiceRaw} ref=${String(baleRef || '').slice(0, 80)} raw=${rawPreview} test=${creds.test_mode}`);
+    } catch (e) {}
     if (!/^https?:\/\//i.test(baleRef)) {
       return res.status(400).json({
         error: 'create_invoice_failed',
