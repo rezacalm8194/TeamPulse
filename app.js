@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp246';
+const TP_ASSET_V = 'tp247';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -21996,6 +21996,28 @@ function openWalletPanel() {
       <div style="font-size:12px;color:var(--text2);margin-top:4px;font-style:italic">${_numToWordsFa(Math.abs(w.balance||0))} تومان</div>
       <div style="font-size:11px;color:var(--text3);margin-top:4px">موجودی فعلی</div>
     </div>
+    <div style="background:linear-gradient(135deg,rgba(124,106,247,.12),rgba(96,165,250,.07));border:1px solid rgba(124,106,247,.32);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;margin-bottom:6px">⚡ شارژ آنی با بله‌پی</div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.8;margin-bottom:10px">بدون ارسال فیش — با یک کلیک پرداخت کن و کیف پولت فوری شارژ می‌شود.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm" onclick="_walletBaleSetAmount(50000)">۵۰ هزار</button>
+        <button class="btn btn-ghost btn-sm" onclick="_walletBaleSetAmount(100000)">۱۰۰ هزار</button>
+        <button class="btn btn-ghost btn-sm" onclick="_walletBaleSetAmount(200000)">۲۰۰ هزار</button>
+        <button class="btn btn-ghost btn-sm" onclick="_walletBaleSetAmount(500000)">۵۰۰ هزار</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="wallet-bale-amount" type="number" min="10000" max="10000000" step="1000" placeholder="مبلغ (تومان) — حداقل ۱۰٬۰۰۰" style="flex:1" dir="ltr">
+        <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="_walletBaleTopup()">💳 پرداخت با بله‌پی</button>
+      </div>
+      <div id="wallet-bale-status" style="font-size:11.5px;color:var(--text2);line-height:1.8;margin-top:8px"></div>
+      <div id="wallet-bale-link-wrap" style="display:none;margin-top:8px">
+        <input class="form-input" id="wallet-bale-link" dir="ltr" readonly style="font-size:11px">
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-primary btn-sm" style="flex:1" onclick="_walletBaleOpenLink()">باز کردن بله‌پی</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1" onclick="_walletBaleCopyLink()">📋 کپی لینک</button>
+        </div>
+      </div>
+    </div>
     <div style="background:rgba(62,207,142,.08);border:1px solid rgba(62,207,142,.2);border-radius:12px;padding:14px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 شارژ حساب (کارت به کارت)</div>
       <div style="font-size:12px;color:var(--text2);line-height:1.8">
@@ -22014,6 +22036,114 @@ function openWalletPanel() {
       ${txHTML || '<p style="font-size:12px;color:var(--text3)">تراکنشی موجود نیست</p>'}
     </div>
   `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
+  _walletBaleRefreshStatus();
+}
+
+
+// ── شارژ کیف پول با بله‌پی ──────────────────────────────────────────────────
+function _walletBaleSetAmount(v) {
+  const el = document.getElementById('wallet-bale-amount');
+  if (el) { el.value = v; el.focus(); }
+}
+
+async function _walletBaleRefreshStatus() {
+  const el = document.getElementById('wallet-bale-status');
+  if (!el) return;
+  try {
+    const res = await _apiFetch('/api/wallet');
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    if (data?.bale_pay?.enabled === false) {
+      el.innerHTML = 'درگاه بله‌پی هنوز فعال نشده — از کارت‌به‌کارت زیر استفاده کنید.';
+    }
+  } catch (e) {}
+}
+
+async function _walletBaleTopup() {
+  const amount = Math.round(Number(document.getElementById('wallet-bale-amount')?.value || 0));
+  const st = document.getElementById('wallet-bale-status');
+  if (!Number.isInteger(amount) || amount < 10000) {
+    if (st) st.innerHTML = '<span style="color:var(--red)">حداقل مبلغ شارژ ۱۰٬۰۰۰ تومان است.</span>';
+    showToast('حداقل مبلغ ۱۰٬۰۰۰ تومان است', 'error');
+    return;
+  }
+  if (amount > 10000000) {
+    if (st) st.innerHTML = '<span style="color:var(--red)">حداکثر مبلغ ۱۰٬۰۰۰٬۰۰۰ تومان است.</span>';
+    showToast('حداکثر مبلغ ۱۰٬۰۰۰٬۰۰۰ تومان است', 'error');
+    return;
+  }
+  if (st) st.textContent = 'در حال ساخت لینک بله‌پی…';
+  try {
+    const res = await _apiFetch('/api/wallet/bale-topup', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (st) st.innerHTML = `<span style="color:var(--red)">${escapeHtml(data.message || data.error || 'ساخت لینک ناموفق بود')}</span>`;
+      showToast(data.message || data.error || 'ساخت لینک ناموفق بود', 'error');
+      return;
+    }
+    window._walletBaleTopupId = data.id;
+    window._walletBaleShareUrl = data.shareUrl || data.baleRef || '';
+    const linkInput = document.getElementById('wallet-bale-link');
+    const wrap = document.getElementById('wallet-bale-link-wrap');
+    if (linkInput) linkInput.value = window._walletBaleShareUrl;
+    if (wrap) wrap.style.display = '';
+    if (st) st.innerHTML = `لینک پرداخت ساخته شد${data.test_mode ? ' <span style="color:var(--amber)">(تست)</span>' : ''} — پرداخت را در بله کامل کنید؛ کیف پول خودکار شارژ می‌شود.`;
+    try { window.open(window._walletBaleShareUrl, '_blank'); } catch (e) {}
+    _walletBalePoll(data.id);
+  } catch (e) {
+    if (st) st.textContent = 'خطای شبکه — دوباره تلاش کنید.';
+  }
+}
+
+function _walletBalePoll(id) {
+  if (window._walletBaleTimer) clearInterval(window._walletBaleTimer);
+  window._walletBaleTimer = setInterval(async () => {
+    try {
+      const res = await _apiFetch('/api/wallet/bale-topup/' + encodeURIComponent(id));
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (data.status === 'paid') {
+        clearInterval(window._walletBaleTimer);
+        window._walletBaleTimer = null;
+        try {
+          const wRes = await _apiFetch('/api/wallet');
+          if (wRes.ok) {
+            const wData = await wRes.json();
+            if (!_db._user_wallet) _db._user_wallet = { balance: 0, daily_cost: 1000, transactions: [] };
+            _db._user_wallet.balance = wData.balance;
+            _db._user_wallet.daily_cost = wData.daily_cost;
+            _db._user_wallet.transactions = (wData.transactions || []).map(t => ({
+              id: t.id, type: t.type, amount: t.amount, desc: t.description,
+              date: new Date((t.created_at || 0) * 1000).toISOString(),
+            }));
+            _save(false);
+          }
+        } catch (e) {}
+        showToast('کیف پول شارژ شد ✓', 'success');
+        openWalletPanel();
+      }
+    } catch (e) {}
+  }, 3000);
+}
+
+function _walletBaleOpenLink() {
+  const url = window._walletBaleShareUrl || document.getElementById('wallet-bale-link')?.value || '';
+  if (url) window.open(url, '_blank');
+}
+
+async function _walletBaleCopyLink() {
+  const text = window._walletBaleShareUrl || document.getElementById('wallet-bale-link')?.value || '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(String(text));
+    showToast('کپی شد ✓', 'success');
+  } catch (e) {
+    const input = document.getElementById('wallet-bale-link');
+    if (input) { input.select(); document.execCommand('copy'); showToast('کپی شد ✓', 'success'); }
+  }
 }
 
 
@@ -22401,6 +22531,17 @@ function _adminOpenFinance(){
         <div class="form-group"><label class="form-label">شماره کارت</label>
           <input class="form-input" id="admin-card" value="${escapeHtml(settings.card_number||'')}" placeholder="6037-xxxx-xxxx-xxxx" style="direction:ltr">
         </div>
+        <div class="form-group"><label class="form-label">توکن بازوی بله (شارژ کیف پول)</label>
+          <input class="form-input" id="admin-bale-bot" type="password" autocomplete="off" dir="ltr" value="${escapeHtml(settings.bale_bot_token||'')}" placeholder="123456:ABC...">
+        </div>
+        <div class="form-group"><label class="form-label">توکن پرداخت بله (خالی = تست)</label>
+          <input class="form-input" id="admin-bale-provider" type="password" autocomplete="off" dir="ltr" value="${escapeHtml(settings.bale_provider_token||'')}" placeholder="WALLET-TEST-...">
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 0">همین بازو برای شارژ آنی کیف پول همه کاربران با بله‌پی استفاده می‌شود. وب‌هوک آن: <span dir="ltr">/api/wallet/bale-webhook</span></p>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="_registerWalletBaleWebhook()">🔗 ثبت وب‌هوک کیف پول</button>
+      </div>
       </div>
       <button class="btn btn-primary" style="margin-top:10px" onclick="_saveAdminSettings()">💾 ذخیره تنظیمات مالی</button>
     </div>
@@ -23143,6 +23284,8 @@ async function _saveAdminSettings() {
     daily_cost: parseInt(document.getElementById('admin-daily-cost')?.value || '1000'),
     card_number: document.getElementById('admin-card')?.value.trim() || '',
     tutorial_video_url: document.getElementById('admin-video-url')?.value.trim() || currentSettings.tutorial_video_url || '',
+    bale_bot_token: document.getElementById('admin-bale-bot')?.value.trim() || currentSettings.bale_bot_token || '',
+    bale_provider_token: document.getElementById('admin-bale-provider')?.value.trim() || currentSettings.bale_provider_token || '',
   };
   // ۱. ذخیره در localStorage
   localStorage.setItem('tp_admin_settings', JSON.stringify(settings));
@@ -23157,6 +23300,20 @@ async function _saveAdminSettings() {
   } catch(e) {}
   window._adminSettings={...currentSettings,...settings};
   showToast('تنظیمات ذخیره شد ✓', 'success');
+}
+
+async function _registerWalletBaleWebhook() {
+  try {
+    const res = await _apiFetch('/api/wallet/bale-webhook/register', { method: 'POST', body: '{}' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.message || data.error || 'ثبت وب‌هوک ناموفق بود', 'error');
+      return;
+    }
+    showToast('وب‌هوک کیف پول ثبت شد ✓', 'success');
+  } catch (e) {
+    showToast('خطای شبکه', 'error');
+  }
 }
 
 
@@ -23904,7 +24061,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v246';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v247';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

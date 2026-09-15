@@ -377,6 +377,8 @@ router.put('/settings', auth, adminOnly, (req, res) => {
       card_number: req.body.card_number ?? current.card_number,
       daily_cost: req.body.daily_cost ?? current.daily_cost,
       tutorial_video_url: req.body.tutorial_video_url ?? current.tutorial_video_url,
+      bale_bot_token: req.body.bale_bot_token ?? current.bale_bot_token,
+      bale_provider_token: req.body.bale_provider_token ?? current.bale_provider_token,
     };
     saveAdminSettings(updated);
     res.json({ success: true });
