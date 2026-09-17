@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp263';
+const TP_ASSET_V = 'tp264';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -12313,6 +12313,84 @@ function archiveColumnValue(s,label){const field=archiveFieldForHeader(label);if
 function archiveColumnClass(label){const field=archiveFieldForHeader(label);if(archiveHeaderKey(label)==='شهر')return 'archive-col-city';return ({full_name:'archive-col-name',name:'archive-col-name',lname:'archive-col-name',phone:'archive-col-phone',organization_name:'archive-col-org',customer_category:'archive-col-category',referral_source:'archive-col-referral',description:'archive-col-need',relationship_status:'archive-col-status',date_jalali:'archive-col-date'})[field]||'';}
 function archiveStatusClass(value){const k=archiveHeaderKey(value);return ({'نیازمندپیگیری':'archive-status-followup','ناموفق':'archive-status-failed','تماسگرفتهشد':'archive-status-contacted','جلسه':'archive-status-meeting'})[k]||'';}
 function archiveStatusBadge(value){const label=String(value||'').trim();if(!label)return '<span class="archive-status-badge is-neutral">—</span>';const k=archiveHeaderKey(label),cls=({'تماسنگرفته':'is-uncontacted','تماسگرفتهشد':'is-contacted','جلسه':'is-meeting','نیازمندپیگیری':'is-followup','مشتریشد':'is-customer','ناموفق':'is-failed'})[k]||'is-neutral';return `<span class="archive-status-badge ${cls}">${escapeHtml(label)}</span>`;}
+function archiveInlineSelectHtml(id,field,value,options){
+  const current=String(value||'');
+  const choices=[...options];
+  if(current&&!choices.includes(current))choices.unshift(current);
+  const isStatus=field==='relationship_status';
+  const cls=isStatus?`archive-inline-select archive-inline-status ${archiveStatusClass(current)}`:'archive-inline-select archive-inline-category';
+  return `<select class="${cls}" aria-label="${isStatus?'وضعیت ارتباط':'دسته‌بندی'}" onclick="event.stopPropagation()" onchange="saveArchiveInlineField(${id},'${field}',this.value)">${isStatus?'<option value="">—</option>':''}${choices.map(x=>`<option value="${escapeHtml(x)}" ${x===current?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select>`;
+}
+function archiveTableCellHtml(s,c){
+  const field=archiveFieldForHeader(c);
+  if(field==='relationship_status')return archiveInlineSelectHtml(s.id,'relationship_status',s.relationship_status,archiveStatusOptions);
+  if(field==='customer_category')return archiveInlineSelectHtml(s.id,'customer_category',s.customer_category||'شخصی',archiveCategoryOptions);
+  const v=archiveColumnValue(s,c);
+  return `<button type="button" class="archive-inline-text" data-archive-id="${s.id}" data-archive-col="${escapeHtml(c)}" title="${escapeHtml(v)}" onclick="beginArchiveCellEdit(event)">${escapeHtml(v||'—')}</button>`;
+}
+function beginArchiveCellEdit(event){
+  event.stopPropagation();
+  const el=event.currentTarget;
+  if(!el||el.dataset.editing)return;
+  const id=Number(el.dataset.archiveId);
+  const col=el.dataset.archiveCol;
+  const field=archiveFieldForHeader(col);
+  if(field==='relationship_status'||field==='customer_category')return;
+  el.dataset.editing='1';
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='form-input archive-inline-input';
+  input.value=el.textContent==='—'?'':String(el.textContent||'').trim();
+  let done=false;
+  const finish=async save=>{
+    if(done)return;
+    done=true;
+    if(save)await saveArchiveInlineField(id,field||col,input.value);
+    else await renderArchive();
+  };
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();finish(true);}
+    if(e.key==='Escape'){e.preventDefault();finish(false);}
+  });
+  input.addEventListener('blur',()=>finish(true));
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+}
+async function saveArchiveInlineField(id,field,value){
+  const rec=_db.students.find(x=>Number(x.id)===Number(id));
+  if(!rec)return;
+  const next=String(value??'').trim();
+  if(field==='relationship_status'){
+    if(next===String(rec.relationship_status||''))return;
+    await changeArchiveStage(id,next);
+    return;
+  }
+  if(field==='customer_category'){
+    if(next===String(rec.customer_category||''))return;
+    await window.api.students.bulkArchiveAction({ids:[id],action:'category',value:next||'شخصی'});
+    await renderArchive();
+    return;
+  }
+  const now=new Date().toISOString();
+  if(field==='full_name'){
+    const parts=next.replace(/\s+/g,' ').split(' ').filter(Boolean);
+    rec.name=parts.shift()||'';
+    rec.lname=parts.join(' ');
+  }else if(field==='name'){rec.name=next;}
+  else if(field==='lname'){rec.lname=next;}
+  else if(field==='phone'){rec.phone=enDigits(next).replace(/\.0$/,'');}
+  else if(field==='organization_name'){rec.organization_name=next;}
+  else if(field==='referral_source'){rec.referral_source=next||'متفرقه';}
+  else if(field==='description'){rec.description=next;rec.address=next;}
+  else if(field==='date_jalali'){rec.date_jalali=next;}
+  else {
+    rec.archive_data={...(rec.archive_data||{}),[archiveHeaderKey(field)]:next};
+  }
+  rec.updated_at=now;
+  _save(true,{urgent:true});
+  await renderArchive();
+}
 function sortArchiveFieldReferralsFirst(rows){return [...(rows||[])].sort((a,b)=>Number(archiveHeaderKey(b.referral_source)==='میدانی')-Number(archiveHeaderKey(a.referral_source)==='میدانی'));}
 function archiveExtraFieldsHtml(s={},scope='archive',excluded=[]){const excludedKeys=excluded.map(archiveHeaderKey);return archiveColumns.filter(c=>!archiveFieldForHeader(c)&&!excludedKeys.includes(archiveHeaderKey(c))).map(c=>{const key=archiveHeaderKey(c),value=String(s.archive_data?.[key]??'');return `<div class="form-group"><label class="form-label">${escapeHtml(c)}</label><input class="form-input" data-archive-extra data-archive-scope="${scope}" data-archive-key="${escapeHtml(key)}" value="${escapeHtml(value)}"></div>`;}).join('');}
 function collectArchiveExtraData(scope,base={}){const data={...(base||{})};document.querySelectorAll(`[data-archive-extra][data-archive-scope="${scope}"]`).forEach(input=>{data[input.dataset.archiveKey]=input.value.trim();});return data;}
@@ -12435,13 +12513,13 @@ function paintArchiveRows(rows) {
     updateArchiveBulkbar();
     return;
   }
-  body.innerHTML=rows.length?rows.map((s,index)=>`<tr class="${archiveStatusClass(s.relationship_status)}" onclick="openArchivePersonDetail(${s.id})">
-    <td class="archive-select-col" onclick="event.stopPropagation()">${archiveRowCheckboxHtml(s.id)}</td>
+  body.innerHTML=rows.length?rows.map((s,index)=>`<tr class="${archiveStatusClass(s.relationship_status)}">
+    <td class="archive-select-col">${archiveRowCheckboxHtml(s.id)}</td>
     <td class="archive-number-col">${fa(index+1)}</td>
-    ${archiveColumns.map(c=>{const v=archiveColumnValue(s,c),isStatus=archiveFieldForHeader(c)==='relationship_status';return `<td class="${archiveColumnClass(c)}" title="${escapeHtml(v)}">${isStatus?archiveStatusBadge(v):escapeHtml(v||'—')}</td>`;}).join('')}
+    ${archiveColumns.map(c=>`<td class="${archiveColumnClass(c)}">${archiveTableCellHtml(s,c)}</td>`).join('')}
     <td class="archive-operation-col" onclick="event.stopPropagation()">${archiveActivityHtml(s)}<div class="archive-actions"><button class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button class="btn btn-primary btn-sm" onclick="convertArchiveToCustomer(${s.id})">✓ تبدیل به مشتری</button><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteArchivePerson(${s.id})">🗑</button></div></td></tr>`).join('')
     :`<tr><td colspan="${archiveColumns.length+3}"><div class="empty"><span>📦</span>${archiveEmptyMessage()}</div></td></tr>`;
-  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const fullName=`${escapeHtml(s.name||'')} ${escapeHtml(s.lname||'')}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—',category=s.customer_category||'—',referral=s.referral_source||'متفرقه',startDate=DateService.disp(s.date_jalali)||'—',phone=String(s.phone||'').trim(),tel=phone.replace(/[^\d+]/g,'');return `<article class="archive-mobile-card${archiveSelectedIds.has(Number(s.id))?' selected':''}" data-archive-mobile-id="${s.id}"><div class="archive-mobile-head">${archiveRowCheckboxHtml(s.id)}<div class="archive-mobile-title">${escapeHtml(fullName)}</div>${archiveStatusBadge(s.relationship_status)}</div>${archiveActivityHtml(s)}<div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><div class="archive-mobile-phone">☎ ${escapeHtml(phone||'—')}</div><div class="archive-mobile-meta">${escapeHtml(category)} · ${escapeHtml(city)} · ${escapeHtml(referral)}</div><button type="button" class="archive-details-toggle" aria-expanded="false" onclick="toggleArchiveMobileCard(${s.id},this)">جزئیات <span class="archive-details-chevron">⌄</span></button><div class="archive-mobile-quick-actions">${tel?`<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(tel)}">☎ تماس</a>`:'<button class="btn btn-ghost btn-sm" disabled>☎ تماس</button>'}<button type="button" class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button type="button" class="btn btn-ghost btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button><button type="button" class="btn btn-ghost btn-sm archive-more-btn" aria-label="عملیات بیشتر" onclick="openArchiveMobileMore(${s.id})">⋮</button></div><div class="archive-mobile-expand"><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(referral)}</span></div><div class="archive-mobile-field"><small>تاریخ شروع همکاری</small><span>${escapeHtml(startDate)}</span></div><div class="archive-mobile-field full"><small>توضیحات</small><span title="${escapeHtml(s.description||'')}">${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions"><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️ ویرایش اطلاعات</button></div></div></article>`;}).join(''):`<div class="empty"><span>📦</span>${archiveEmptyMessage()}</div>`;
+  if(mobile)mobile.innerHTML=rows.length?rows.map(s=>{const fullName=`${escapeHtml(s.name||'')} ${escapeHtml(s.lname||'')}`.trim()||'بدون نام',city=archiveColumnValue(s,'شهر')||'—',category=s.customer_category||'—',referral=s.referral_source||'متفرقه',startDate=DateService.disp(s.date_jalali)||'—',phone=String(s.phone||'').trim(),tel=phone.replace(/[^\d+]/g,'');return `<article class="archive-mobile-card${archiveSelectedIds.has(Number(s.id))?' selected':''}" data-archive-mobile-id="${s.id}"><div class="archive-mobile-head">${archiveRowCheckboxHtml(s.id)}<div class="archive-mobile-title">${escapeHtml(fullName)}</div>${archiveInlineSelectHtml(s.id,'relationship_status',s.relationship_status,archiveStatusOptions)}</div>${archiveActivityHtml(s)}<div class="archive-mobile-sub">${escapeHtml(s.organization_name||'بدون نام مجموعه')}</div><div class="archive-mobile-phone">☎ ${escapeHtml(phone||'—')}</div><div class="archive-mobile-meta">${escapeHtml(category)} · ${escapeHtml(city)} · ${escapeHtml(referral)}</div><button type="button" class="archive-details-toggle" aria-expanded="false" onclick="toggleArchiveMobileCard(${s.id},this)">جزئیات <span class="archive-details-chevron">⌄</span></button><div class="archive-mobile-quick-actions">${tel?`<a class="btn btn-ghost btn-sm" href="tel:${escapeHtml(tel)}">☎ تماس</a>`:'<button class="btn btn-ghost btn-sm" disabled>☎ تماس</button>'}<button type="button" class="btn btn-ghost btn-sm" onclick="markArchiveFollowup(${s.id})">پیگیری</button><button type="button" class="btn btn-ghost btn-sm" onclick="convertArchiveToCustomer(${s.id})">تبدیل به مشتری</button><button type="button" class="btn btn-ghost btn-sm archive-more-btn" aria-label="عملیات بیشتر" onclick="openArchiveMobileMore(${s.id})">⋮</button></div><div class="archive-mobile-expand"><div class="archive-mobile-grid"><div class="archive-mobile-field"><small>نحوه آشنایی</small><span>${escapeHtml(referral)}</span></div><div class="archive-mobile-field"><small>تاریخ شروع همکاری</small><span>${escapeHtml(startDate)}</span></div><div class="archive-mobile-field full"><small>توضیحات</small><span title="${escapeHtml(s.description||'')}">${escapeHtml(s.description||'—')}</span></div></div><div class="archive-mobile-actions"><button class="btn btn-ghost btn-sm" onclick="openArchivePersonModal(${s.id})">✏️ ویرایش اطلاعات</button></div></div></article>`;}).join(''):`<div class="empty"><span>📦</span>${archiveEmptyMessage()}</div>`;
   paintArchivePipeline(rows);
   updateArchiveBulkbar();
 }
@@ -24390,7 +24468,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v263';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v264';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
