@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp257';
+const TP_ASSET_V = 'tp258';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -1926,7 +1926,10 @@ function _buildServerSyncPatch(data) {
         if (!item || item.id == null) return;
         const id = String(item.id);
         seen.add(id);
-        if (prevHashes[id] !== _isolationItemHash(item)) upsert.push(item);
+        if (prevHashes[id] === _isolationItemHash(item)) return;
+        const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(key);
+        if (finance && prevHashes[id] && !_pendingBusinessDeltaIds(key).has(id)) return;
+        upsert.push(item);
       });
       let del = Object.keys(prevHashes).filter(id => !seen.has(id));
       if (_collectionSyncDeleteBlocked(key, value, prevHashes)) {
@@ -5271,8 +5274,11 @@ function _mergeBusinessRow(collection, local, remote) {
   const remoteTs = _businessRowTimestamp(remote);
   const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
   if (finance) {
+    if (localTs > remoteTs) return local;
+    if (localTs < remoteTs) return remote;
     const id = local?.id != null ? local.id : remote?.id;
-    if (!_pendingBusinessDeltaIds(collection).has(String(id))) return remote;
+    if (_pendingBusinessDeltaIds(collection).has(String(id))) return local;
+    return remote;
   }
   const newer = localTs >= remoteTs ? local : remote;
   if (collection === 'sessions') {
@@ -17141,7 +17147,10 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         }));
       } else if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(key)
           && !_pendingBusinessDeltaIds(key).has(idKey)) {
-        // Desktop/server is source of truth for finance rows.
+        if (localTime > serverTime) {
+          Object.assign(serverItem, _cloneData(localItem));
+          injectedLocal = true;
+        }
       } else if (keepUnsynced && (localTime > serverTime || (allowLocal && localTime === serverTime))) {
         Object.assign(serverItem, _cloneData(localItem));
         injectedLocal = true;
@@ -24269,7 +24278,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v257';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v258';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

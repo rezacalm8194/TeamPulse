@@ -22,6 +22,32 @@ test('document patch upserts and deletes only changed collection rows', () => {
   assert.equal(next._workspaceId, 'default');
 });
 
+test('older package upserts do not replace a newer stored sale', () => {
+  const previous = {
+    packages: [{
+      id: 99,
+      total_amount: 11000000,
+      updated_at: '2026-09-17T08:00:00.000Z',
+      note: 'desktop',
+    }],
+  };
+  const next = applyDocumentPatch(previous, {
+    collections: {
+      packages: {
+        upsert: [{
+          id: 99,
+          total_amount: 6000000,
+          updated_at: '2026-09-16T08:00:00.000Z',
+          note: 'android',
+        }],
+        delete: [],
+      },
+    },
+  });
+  assert.equal(next.packages[0].total_amount, 11000000);
+  assert.equal(next.packages[0].note, 'desktop');
+});
+
 test('todo candidate list from a delta keeps untouched rows', () => {
   const previous = { todos: [{ id: 1, title: 'keep' }, { id: 2, title: 'edit' }] };
   const todos = candidateTodosFromPatch(previous, {

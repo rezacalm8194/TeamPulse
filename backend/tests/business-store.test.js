@@ -10,6 +10,8 @@ const {
   hasMigratedCollection,
   loadRowsPage,
   replaceRows,
+  upsertRows,
+  loadAllRows,
 } = require('../utils/businessStore');
 const { ensureDocumentStoreSchema, writeWorkspaceDocument } = require('../utils/documentStore');
 
@@ -114,6 +116,21 @@ test('payments can page newest first so phones see current income', () => {
   });
   assert.deepEqual(second.items.map(row => row.id), [1]);
   assert.equal(second.next_cursor, null);
+});
+
+test('upsertRows keeps the newer package when an older phone copy arrives', () => {
+  const db = makeDb();
+  replaceRows(db, 'acc-lww', 'packages', [{
+    id: 7,
+    total_amount: 11000000,
+    updated_at: '2026-09-17T08:00:00.000Z',
+  }]);
+  assert.equal(upsertRows(db, 'acc-lww', 'packages', [{
+    id: 7,
+    total_amount: 6000000,
+    updated_at: '2026-09-16T08:00:00.000Z',
+  }]), 0);
+  assert.equal(loadAllRows(db, 'acc-lww', 'packages')[0].total_amount, 11000000);
 });
 
 test('business collections include phase 6 keys', () => {
