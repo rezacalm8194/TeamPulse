@@ -78,7 +78,6 @@ async function openEditPackage(id) {
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || '', 'سررسید اولین پرداخت', false)}
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('ep-payment-due','ep-start','ep-repeat')">محاسبه هزینه آخر ماه</button>
         <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری این خرید حذف می‌شود.</p>
       </div>
       <div class="form-group">
@@ -90,6 +89,9 @@ async function openEditPackage(id) {
           <option value="6" ${p.repeat_months===6?'selected':''}>هر ۶ ماه</option>
           <option value="12" ${p.repeat_months===12?'selected':''}>هر ۱۲ ماه</option>
         </select>
+      </div>
+      <div class="form-group full">
+        ${purchaseDeferUntilDueCheckboxHtml('ep-start','ep-payment-due','ep-repeat', !!p.defer_until_due)}
       </div>
       <div class="form-group full">
         <label class="form-label">توضیحات خرید</label>
@@ -106,8 +108,14 @@ async function openEditPackage(id) {
 
 async function saveEditPackage(id, studentId) {
   const startDate = readCalendarDateField('ep-start');
+  const deferUntilDue = readPurchaseDeferUntilDue('ep-payment-due');
+  if (deferUntilDue) onPurchaseDeferUntilDueChange('ep-start','ep-payment-due','ep-repeat');
   const paymentDueDate = readCalendarDateField('ep-payment-due');
   const repeat_months = +(document.getElementById('ep-repeat')?.value||0);
+  if (deferUntilDue && !paymentDueDate) {
+    showToast('برای لحاظ از سررسید، تاریخ سررسید را وارد کنید', 'error');
+    return;
+  }
   if (repeat_months > 0 && !paymentDueDate) {
     showToast('برای تکرار، سررسید پرداخت را وارد کنید یا تکرار را روی «بدون تکرار» بگذارید', 'error');
     return;
@@ -119,6 +127,7 @@ async function saveEditPackage(id, studentId) {
     initial_cost: +(document.getElementById('ep-initial')?.value||0),
     start_date: startDate,
     payment_due_date: paymentDueDate,
+    defer_until_due: deferUntilDue,
     repeat_months,
     note: document.getElementById('ep-note')?.value,
   });
