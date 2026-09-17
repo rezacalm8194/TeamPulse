@@ -114,3 +114,24 @@ test('pipeline columns follow inbox → active funnel → custom → win/loss or
     'ناموفق',
   ]));
 });
+
+test('inline archive status select saves through changeArchiveStage', async () => {
+  const rec = { id: 4, archived: true, relationship_status: 'تماس گرفته شد', customer_category: 'فروشگاهی' };
+  const calls = [];
+  const saveArchiveInlineField = loadFunction('saveArchiveInlineField', {
+    _db: { students: [rec] },
+    changeArchiveStage: async (id, value) => { calls.push(['status', id, value]); rec.relationship_status = value; },
+    window: { api: { students: { bulkArchiveAction: async payload => calls.push(['bulk', payload]) } } },
+    renderArchive: async () => {},
+    Date,
+    enDigits: v => String(v || ''),
+    archiveHeaderKey: v => String(v || ''),
+    _save: () => {},
+  });
+  await saveArchiveInlineField(4, 'relationship_status', 'جلسه');
+  await saveArchiveInlineField(4, 'customer_category', 'تولیدی');
+  assert.deepEqual(calls[0], ['status', 4, 'جلسه']);
+  assert.equal(calls[1][0], 'bulk');
+  assert.equal(calls[1][1].action, 'category');
+  assert.equal(rec.relationship_status, 'جلسه');
+});

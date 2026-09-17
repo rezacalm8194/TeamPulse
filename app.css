@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp263') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp264') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp263') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp264') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -4380,7 +4380,7 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .archive-sheet table{min-width:1007px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .archive-sheet th{position:sticky;top:0;z-index:2;background:var(--bg3);white-space:nowrap}
 .archive-sheet th,.archive-sheet td{padding-inline:9px}
-.archive-sheet td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.archive-sheet td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
 .archive-sheet .archive-col-address{width:92px;max-width:92px}
 .archive-sheet .archive-col-need{width:auto;max-width:none;min-width:114px}
 .archive-sheet .archive-col-name{width:101px;max-width:101px}
@@ -4422,18 +4422,83 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   touch-action:manipulation;
   user-select:none;
   flex-shrink:0;
+  position:relative;
+}
+.archive-check-wrap::before,
+.archive-check-wrap::after,
+.archive-sheet .archive-select-col::before,
+.archive-sheet .archive-select-col::after{
+  content:none!important;
+  display:none!important;
 }
 .archive-check{
-  width:18px;
-  height:18px;
+  width:16px;
+  height:16px;
   margin:0;
-  accent-color:var(--accent);
   cursor:pointer;
   pointer-events:auto;
   flex-shrink:0;
-  -webkit-appearance:checkbox;
-  appearance:auto;
+  appearance:none;
+  -webkit-appearance:none;
+  border:1.5px solid var(--border2);
+  border-radius:4px;
+  background:var(--bg3);
+  accent-color:var(--accent);
+  box-shadow:none;
 }
+.archive-check:checked{
+  background:var(--accent);
+  border-color:var(--accent);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.2' d='M3.5 8.5l3 3 6-6'/%3E%3C/svg%3E");
+  background-size:12px 12px;
+  background-position:center;
+  background-repeat:no-repeat;
+}
+.archive-check:indeterminate{
+  background:var(--accent);
+  border-color:var(--accent);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.2' d='M3 8h10'/%3E%3C/svg%3E");
+  background-size:12px 12px;
+  background-position:center;
+  background-repeat:no-repeat;
+}
+.archive-inline-select{
+  width:100%;
+  max-width:100%;
+  min-height:28px;
+  padding:2px 4px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--bg3);
+  color:var(--text);
+  font:800 10.5px var(--font);
+  cursor:pointer;
+}
+.archive-inline-status.archive-status-contacted{color:#74b7ff;border-color:rgba(55,148,255,.30);background:rgba(55,148,255,.15)}
+.archive-inline-status.archive-status-meeting{color:#b6a8ff;border-color:rgba(124,106,247,.34);background:rgba(124,106,247,.17)}
+.archive-inline-status.archive-status-followup{color:#ffb45f;border-color:rgba(255,145,47,.32);background:rgba(255,145,47,.15)}
+.archive-inline-status.archive-status-failed{color:#ff8f99;border-color:rgba(248,75,91,.27);background:rgba(248,75,91,.13)}
+.archive-inline-text{
+  display:block;
+  width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:inherit;
+  cursor:text;
+  padding:0;
+}
+.archive-inline-input{
+  width:100%;
+  min-height:28px;
+  padding:2px 6px;
+  font-size:12px;
+}
+.archive-mobile-head .archive-inline-select{flex:0 1 150px;max-width:150px}
 .archive-mobile-selectbar{display:none}
 .archive-mobile-list{display:none}
 .archive-mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:13px;padding:10px 11px;margin-bottom:8px;box-shadow:0 3px 12px rgba(0,0,0,.11)}
