@@ -34,7 +34,9 @@ test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /function _pendingBusinessDeltaIds\(/);
   assert.match(app, /function _dropStaleDurableBusinessDeltas\(/);
   assert.match(app, /if \(finance && prevHashes\[id\] && !_pendingBusinessDeltaIds\(key\)\.has\(id\)\) return/);
-  assert.match(app, /if \(localTs > remoteTs\) return local/);
+  assert.match(app, /if \(!_pendingBusinessDeltaIds\(collection\)\.has\(String\(id\)\)\) return remote/);
+  assert.match(app, /existing\.set\(id, finance \? row : _mergeBusinessRow/);
+  assert.match(app, /return _loadBusinessPage\(collection, \{ reset: true, search: normalizedSearch \}\)/);
 });
 
 test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {
