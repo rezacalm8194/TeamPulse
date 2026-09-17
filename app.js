@@ -5245,6 +5245,7 @@ function _pendingBusinessDeltaIds(collection) {
     .map(row => String(row.id)));
 }
 function _dropStaleDurableBusinessDeltas(collection, incoming) {
+	if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection)) return;
   if (typeof _readDurableBusinessDeltaQueue !== 'function') return;
   const queue = _readDurableBusinessDeltaQueue();
   if (!queue.length) return;
@@ -5510,6 +5511,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       if (!id) return;
       const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
         && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
+		if (finance && _pendingBusinessDeltaIds(collection).has(id)) return;
       existing.set(id, finance ? row : _mergeBusinessRow(collection, existing.get(id), row));
     });
     // A refresh response may predate an archive deletion made on this device.
