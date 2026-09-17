@@ -123,7 +123,7 @@ function upsertRows(db, storageKey, collection, rows, { refresh = true } = {}) {
   ensureBusinessStoreSchema(db);
   assertCollection(collection);
   const find = db.prepare(`
-    SELECT payload_hash FROM workspace_business_rows
+    SELECT payload,payload_hash FROM workspace_business_rows
     WHERE storage_key=? AND collection_key=? AND row_id=?
   `);
   const put = db.prepare(`
@@ -140,7 +140,16 @@ function upsertRows(db, storageKey, collection, rows, { refresh = true } = {}) {
     if (!id) continue;
     const payload = JSON.stringify(row);
     const payloadHash = hashText(payload);
-    if (find.get(storageKey, collection, id)?.payload_hash === payloadHash) continue;
+    const existing = find.get(storageKey, collection, id);
+    if (existing?.payload_hash === payloadHash) continue;
+    if (existing?.payload) {
+      try {
+        const prev = JSON.parse(existing.payload);
+        const prevTs = Date.parse(prev?.updated_at || prev?.created_at || '') || 0;
+        const nextTs = Date.parse(row?.updated_at || row?.created_at || '') || 0;
+        if (prevTs && (!nextTs || nextTs <= prevTs)) continue;
+      } catch (_) {}
+    }
     put.run(storageKey, collection, id, payload, payloadHash, row?.archived ? 1 : 0,
       dateKey(row, collection), searchableText(row, collection), row?.updated_at || row?.created_at || null);
     changed++;

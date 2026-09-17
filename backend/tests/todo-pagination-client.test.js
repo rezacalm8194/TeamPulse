@@ -33,7 +33,8 @@ test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /FINANCE_NEWEST_FIRST_KEYS.includes\(key\)\) return true/);
   assert.match(app, /function _pendingBusinessDeltaIds\(/);
   assert.match(app, /function _dropStaleDurableBusinessDeltas\(/);
-  assert.match(app, /if \(!_pendingBusinessDeltaIds\(collection\)\.has\(String\(id\)\)\) return remote/);
+  assert.match(app, /if \(finance && prevHashes\[id\] && !_pendingBusinessDeltaIds\(key\)\.has\(id\)\) return/);
+  assert.match(app, /if \(localTs > remoteTs\) return local/);
 });
 
 test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {

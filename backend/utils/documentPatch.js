@@ -25,6 +25,18 @@ function normalizeIdList(value) {
   return [...new Set(value.map(id => String(id)).filter(Boolean))];
 }
 
+function rowTimestamp(row) {
+  return Date.parse(row?.updated_at || row?.created_at || '') || 0;
+}
+
+function incomingIsNotNewer(existing, incoming) {
+  const prevTs = rowTimestamp(existing);
+  const nextTs = rowTimestamp(incoming);
+  if (!nextTs) return prevTs > 0;
+  if (!prevTs) return false;
+  return nextTs <= prevTs;
+}
+
 function applyCollectionChange(previousItems, change = {}) {
   const deleted = new Set(normalizeIdList(change.delete));
   const upserts = Array.isArray(change.upsert) ? change.upsert : [];
@@ -41,8 +53,10 @@ function applyCollectionChange(previousItems, change = {}) {
     if (!item || typeof item !== 'object' || item.id == null) return;
     const id = String(item.id);
     const index = next.findIndex(row => String(row?.id) === id);
-    if (index >= 0) next[index] = item;
-    else next.push(item);
+    if (index >= 0) {
+      if (incomingIsNotNewer(next[index], item)) return;
+      next[index] = item;
+    } else next.push(item);
   });
   return next;
 }
