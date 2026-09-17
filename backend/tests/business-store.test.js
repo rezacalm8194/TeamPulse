@@ -80,6 +80,23 @@ test('business pagination returns stable pages for packages', () => {
   assert.equal(second.next_cursor, null);
 });
 
+test('packages page newest ids first so sales match desktop', () => {
+  const db = makeDb();
+  replaceRows(db, 'acc-sales', 'packages', [
+    { id: 1, student_id: 10, start_date: '1404/12/01', created_at: '2026-01-01T00:00:00.000Z' },
+    { id: 2, student_id: 11, start_date: '1403/01/01', created_at: '2026-09-17T00:00:00.000Z' },
+    { id: 3, student_id: 12, start_date: '1404/06/01', created_at: '2026-06-01T00:00:00.000Z' },
+  ]);
+  const first = loadRowsPage(db, 'acc-sales', 'packages', { limit: 2, order: 'id_desc' });
+  assert.deepEqual(first.items.map(row => row.id), [3, 2]);
+  const second = loadRowsPage(db, 'acc-sales', 'packages', {
+    limit: 2,
+    order: 'id_desc',
+    cursor: first.next_cursor,
+  });
+  assert.deepEqual(second.items.map(row => row.id), [1]);
+});
+
 test('payments can page newest first so phones see current income', () => {
   const db = makeDb();
   replaceRows(db, 'acc-income', 'payments', [

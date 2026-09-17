@@ -215,19 +215,28 @@ function loadRowsPage(db, storageKey, collection, options = {}) {
   if (options.dateTo) { where.push('date_key<=?'); params.push(Number(String(options.dateTo).replace(/\D/g, '').slice(0, 8)) || 99999999); }
   if (options.search) { where.push('search_text LIKE ?'); params.push(`%${String(options.search).toLocaleLowerCase('fa').slice(0, 100)}%`); }
   if (options.studentId) { where.push("json_extract(payload,'$.student_id')=?"); params.push(String(options.studentId)); }
-  const desc = String(options.order || '').toLowerCase() === 'desc';
+  const order = String(options.order || '').toLowerCase();
+  const desc = order === 'desc';
+  const idDesc = order === 'id_desc';
   if (cursor) {
-    if (desc) {
+    if (idDesc) {
+      where.push('CAST(row_id AS INTEGER) < CAST(? AS INTEGER)');
+      params.push(String(cursor[1]));
+    } else if (desc) {
       where.push('(date_key<? OR (date_key=? AND row_id<?))');
+      params.push(Number(cursor[0]) || 0, Number(cursor[0]) || 0, String(cursor[1]));
     } else {
       where.push('(date_key>? OR (date_key=? AND row_id>?))');
+      params.push(Number(cursor[0]) || 0, Number(cursor[0]) || 0, String(cursor[1]));
     }
-    params.push(Number(cursor[0]) || 0, Number(cursor[0]) || 0, String(cursor[1]));
   }
+  let orderSql = 'date_key ASC,row_id ASC';
+  if (idDesc) orderSql = 'CAST(row_id AS INTEGER) DESC,row_id DESC';
+  else if (desc) orderSql = 'date_key DESC,row_id DESC';
   const rows = db.prepare(`
     SELECT row_id,payload,date_key FROM workspace_business_rows
     WHERE storage_key=? AND collection_key=?${where.length ? ` AND ${where.join(' AND ')}` : ''}
-    ORDER BY date_key ${desc ? 'DESC' : 'ASC'},row_id ${desc ? 'DESC' : 'ASC'} LIMIT ?
+    ORDER BY ${orderSql} LIMIT ?
   `).all(...params, limit + 1);
   const page = rows.slice(0, limit);
   return {
