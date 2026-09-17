@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp249';
+const TP_ASSET_V = 'tp250';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -4630,6 +4630,14 @@ const _KNOWLEDGE_SESSION_REFRESH_KEYS = new Set(['instructions', 'guide_categori
 const BUSINESS_PAGINATED_KEYS = Object.freeze([
   'students', 'sessions', 'payments', 'packages', 'families', 'reminders', 'expenses', 'wallet_tx',
 ]);
+// Income / purchase / cash lists are newest-first. Server default pages oldest
+// first, so Android's page-1 cache stayed years behind desktop receipts.
+const FINANCE_NEWEST_FIRST_KEYS = Object.freeze([
+  'payments', 'packages', 'expenses', 'wallet_tx',
+]);
+function _businessPageOrder(collection) {
+  return FINANCE_NEWEST_FIRST_KEYS.includes(collection) ? 'desc' : 'asc';
+}
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
 const _PAGE_DOCUMENT_PARTS = {
   // Home is cache-only: its first paint intentionally reads the in-memory snapshot.
@@ -5176,6 +5184,7 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
   if (!window._tpHydratingFromServer && !paging.loading && currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
+  if (FINANCE_NEWEST_FIRST_KEYS.includes(collection) && paging.order !== 'desc') reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
@@ -5186,10 +5195,12 @@ async function _ensureCompleteBusinessParts(collections = []) {
     const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
     for (let start = 0; start < keys.length; start += 3) {
       await Promise.all(keys.slice(start, start + 3).map(async key => {
-      await _ensureBusinessPartLoaded(key);
-      // A finished pager (done, cursor null) short-circuits _loadBusinessPage,
-      // so a finance open after desktop added income would spin without fetching
-      // the new tail pages. Reset once when still not fully loaded.
+      // Finance lists are newest-first on desktop. Always reset those keys so
+      // an Android pager that already marked oldest page-1 as done still pulls
+      // today's receipts before walking the rest for balances.
+      const resetFinance = FINANCE_NEWEST_FIRST_KEYS.includes(key);
+      if (resetFinance) await _loadBusinessPage(key, { reset: true });
+      else await _ensureBusinessPartLoaded(key);
       if (!_paginatedCollectionFullyLoaded(key) && _businessPagingState(key).done) {
         await _loadBusinessPage(key, { reset: true });
       }
@@ -5198,8 +5209,6 @@ async function _ensureCompleteBusinessParts(collections = []) {
         const ok = await _loadBusinessPage(key);
         pages += 1;
         if (!ok) break;
-        // _loadBusinessPage no-ops when done; avoid a 100-iteration spin when
-        // the server total is still ahead (cursor was already exhausted).
         if (_businessPagingState(key).done && !_paginatedCollectionFullyLoaded(key)) break;
       }
       }));
@@ -5246,6 +5255,7 @@ function _businessCollectionsNeedingServerHydration(status, candidates = BUSINES
     const localCount = _syncCollectionCount(_db, key);
     if (paging.loading) return false;
     if (etag && paging.fetchedEtag && paging.fetchedEtag !== etag) return true;
+    if (FINANCE_NEWEST_FIRST_KEYS.includes(key) && etag && paging.order !== 'desc') return true;
     // A first page with a cursor is intentionally partial, not behind.
     return !!paging.done && Number(totals[key] || 0) !== localCount;
   });
@@ -5264,18 +5274,7 @@ async function _reloadBusinessFirstPagesFromServer(collections = [], { reset = t
   window._tpDeferDatabasePersist = true;
   try {
     for (let start = 0; start < keys.length; start += 3) {
-      await Promise.all(keys.slice(start, start + 3).map(async key => {
-        await _loadBusinessPage(key, { reset });
-        // First-page-only refresh misses tail pages (server orders oldest-first,
-        // so desktop income added today lives past page one). Keep paging until
-        // done so finance on Android converges with desktop and stays synced.
-        let pages = 0;
-        while (!_businessPagingState(key).done && pages < 100) {
-          const ok = await _loadBusinessPage(key);
-          pages += 1;
-          if (!ok) break;
-        }
-      }));
+      await Promise.all(keys.slice(start, start + 3).map(key => _loadBusinessPage(key, { reset })));
     }
   } finally {
     window._tpHydratingFromServer = wasHydrating;
@@ -5310,15 +5309,18 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
   const state = _businessPagingState(collection);
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
   if (normalizedSearch !== state.search) reset = true;
+  const order = _businessPageOrder(collection);
+  if (order !== (state.order || 'asc')) reset = true;
   if (state.loading) return state.loading;
   if (state.done && !reset) return true;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return false;
-  if (reset) { state.cursor = null; state.done = false; state.search = normalizedSearch; }
+  if (reset) { state.cursor = null; state.done = false; state.search = normalizedSearch; state.order = order; }
   state.loading = (async () => {
     let query = _workspaceQuery() + '&limit=' + BUSINESS_SERVER_PAGE_SIZE;
     if (state.cursor) query += '&cursor=' + encodeURIComponent(state.cursor);
     if (normalizedSearch) query += '&search=' + encodeURIComponent(normalizedSearch);
+    if (order === 'desc') query += '&order=desc';
     const res = await _apiFetch('/api/data/' + accId + '/' + collection + query);
     if (!res.ok) return false;
     const payload = await res.json();
@@ -18986,7 +18988,11 @@ async function _pollServerStatus() {
     const pageBusinessKeys = BUSINESS_PAGINATED_KEYS.filter(key =>
       (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes(key)
     );
-    const laggingOnPage = _businessCollectionsNeedingServerHydration(status, pageBusinessKeys);
+    const financeOnPage = pageBusinessKeys.filter(key => FINANCE_NEWEST_FIRST_KEYS.includes(key));
+    const laggingOnPage = [...new Set([
+      ..._businessCollectionsNeedingServerHydration(status, pageBusinessKeys),
+      ...(etagChanged ? financeOnPage : []),
+    ])];
     const todoOnPage = (_partsForPage(typeof currentPage === 'string' ? currentPage : 'students') || []).includes('todos');
     // Small live parts (today's habits on home) are never re-fetched after
     // boot — refresh them here so phone check-ins arrive while we sit on home.
@@ -24083,7 +24089,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v248';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v250';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -741,6 +741,7 @@ for (const collection of BUSINESS_COLLECTIONS) {
       const page = loadRowsPage(db, workspace.storageKey, collection, {
         limit: req.query.limit,
         cursor: req.query.cursor,
+        order: req.query.order,
         archived: collection === 'students' && req.query.archived != null
           ? String(req.query.archived) === '1'
           : null,
