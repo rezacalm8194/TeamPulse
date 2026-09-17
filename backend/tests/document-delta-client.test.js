@@ -169,6 +169,8 @@ test('nested knowledge hashes restore the same folder on phone and laptop', () =
   assert.match(appSource, /_invalidateUnfetchedDocumentParts\(/);
   assert.match(appSource, /function _mergeBusinessRow\(/);
   assert.match(appSource, /function _keepLocalBusinessRow\(/);
+  assert.match(appSource, /function _pendingBusinessDeltaIds\(/);
+  assert.match(appSource, /Desktop\/server is source of truth for finance rows/);
   assert.match(appSource, /reset \|\| !_tpPartLoaded\(collection\)/);
   assert.match(appSource, /students: \['students'\]/);
   assert.match(appSource, /sessions: \['students', 'sessions'\]/);

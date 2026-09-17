@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp256';
+const TP_ASSET_V = 'tp257';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5234,15 +5234,47 @@ function _mergeIdList(localList, remoteList, idKey = 'id') {
   });
   return [...byId.values()];
 }
+function _pendingBusinessDeltaIds(collection) {
+  if (typeof _readDurableBusinessDeltaQueue !== 'function') return new Set();
+  return new Set(_readDurableBusinessDeltaQueue()
+    .filter(row => String(row?.collection) === String(collection) && row?.id != null
+      && String(row.operation || 'upsert') !== 'delete')
+    .map(row => String(row.id)));
+}
+function _dropStaleDurableBusinessDeltas(collection, incoming) {
+  if (typeof _readDurableBusinessDeltaQueue !== 'function') return;
+  const queue = _readDurableBusinessDeltaQueue();
+  if (!queue.length) return;
+  const incomingById = new Map();
+  (Array.isArray(incoming) ? incoming : []).forEach(row => {
+    if (row && row.id != null) incomingById.set(String(row.id), row);
+  });
+  const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
+    && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
+  const next = queue.filter(entry => {
+    if (String(entry?.collection) !== String(collection)) return true;
+    if (String(entry?.operation || 'upsert') === 'delete') return true;
+    const remote = incomingById.get(String(entry.id));
+    if (!remote) return true;
+    const queuedTs = _businessRowTimestamp(entry.item);
+    const remoteUpdated = Date.parse(remote.updated_at || '') || 0;
+    if (finance && !remoteUpdated) return false;
+    const remoteTs = finance ? remoteUpdated : _businessRowTimestamp(remote);
+    return queuedTs > remoteTs;
+  });
+  if (next.length !== queue.length) _writeDurableBusinessDeltaQueue(next);
+}
 function _mergeBusinessRow(collection, local, remote) {
   if (!local) return remote;
   if (!remote) return local;
   const localTs = _businessRowTimestamp(local);
   const remoteTs = _businessRowTimestamp(remote);
   const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
-  const newer = finance
-    ? (remoteTs >= localTs ? remote : local)
-    : (localTs >= remoteTs ? local : remote);
+  if (finance) {
+    const id = local?.id != null ? local.id : remote?.id;
+    if (!_pendingBusinessDeltaIds(collection).has(String(id))) return remote;
+  }
+  const newer = localTs >= remoteTs ? local : remote;
   if (collection === 'sessions') {
     return {
       ...newer,
@@ -5254,6 +5286,9 @@ function _mergeBusinessRow(collection, local, remote) {
 }
 function _keepLocalBusinessRow(row, collection) {
   if (!row) return false;
+  if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection)) {
+    return row.id != null && _pendingBusinessDeltaIds(collection).has(String(row.id));
+  }
   const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
   const ts = _businessRowTimestamp(row);
   const lastSync = Math.max(
@@ -5448,7 +5483,6 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     if (normalizedSearch) query += '&search=' + encodeURIComponent(normalizedSearch);
     if (order === 'desc') query += '&order=desc';
     if (order === 'id_desc') query += '&order=id_desc';
-    if (order === 'id_desc') query += '&order=id_desc';
     const res = await _apiFetch('/api/data/' + accId + '/' + collection + query);
     if (!res.ok) return false;
     const payload = await res.json();
@@ -5458,6 +5492,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       if (!row || row.id == null) return;
       existing.set(String(row.id), row);
     });
+    _dropStaleDurableBusinessDeltas(collection, incoming);
     incoming.forEach(row => {
       const id = String(row?.id);
       existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
@@ -17104,6 +17139,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         Object.assign(serverItem, _resolveIncomingTodo(localItem, serverItem, {
           authoritative: !!options.keepUnsyncedOnly,
         }));
+      } else if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(key)
+          && !_pendingBusinessDeltaIds(key).has(idKey)) {
+        // Desktop/server is source of truth for finance rows.
       } else if (keepUnsynced && (localTime > serverTime || (allowLocal && localTime === serverTime))) {
         Object.assign(serverItem, _cloneData(localItem));
         injectedLocal = true;
@@ -24231,7 +24269,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v256';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v257';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

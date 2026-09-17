@@ -31,6 +31,9 @@ test('client loads business collections from paginated endpoints', () => {
   assert.doesNotMatch(app, /function _reconcileLocalBusinessRowsToServerPages\(/);
   assert.match(app, /FINANCE_NEWEST_FIRST_KEYS.includes\(key\)/);
   assert.match(app, /FINANCE_NEWEST_FIRST_KEYS.includes\(key\)\) return true/);
+  assert.match(app, /function _pendingBusinessDeltaIds\(/);
+  assert.match(app, /function _dropStaleDurableBusinessDeltas\(/);
+  assert.match(app, /if \(!_pendingBusinessDeltaIds\(collection\)\.has\(String\(id\)\)\) return remote/);
 });
 
 test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {
