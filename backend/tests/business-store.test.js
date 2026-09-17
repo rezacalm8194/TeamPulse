@@ -80,6 +80,25 @@ test('business pagination returns stable pages for packages', () => {
   assert.equal(second.next_cursor, null);
 });
 
+test('payments can page newest first so phones see current income', () => {
+  const db = makeDb();
+  replaceRows(db, 'acc-income', 'payments', [
+    { id: 1, amount: 10, date_jalali: '1404/01/01' },
+    { id: 2, amount: 20, date_jalali: '1404/06/01' },
+    { id: 3, amount: 30, date_jalali: '1404/12/01' },
+  ]);
+  const first = loadRowsPage(db, 'acc-income', 'payments', { limit: 2, order: 'desc' });
+  assert.deepEqual(first.items.map(row => row.id), [3, 2]);
+  assert.ok(first.next_cursor);
+  const second = loadRowsPage(db, 'acc-income', 'payments', {
+    limit: 2,
+    order: 'desc',
+    cursor: first.next_cursor,
+  });
+  assert.deepEqual(second.items.map(row => row.id), [1]);
+  assert.equal(second.next_cursor, null);
+});
+
 test('business collections include phase 6 keys', () => {
   for (const key of PHASE6_COLLECTIONS) assert.ok(BUSINESS_COLLECTIONS.includes(key));
 });
