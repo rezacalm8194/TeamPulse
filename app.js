@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp253';
+const TP_ASSET_V = 'tp254';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -262,6 +262,36 @@ function readCalendarDateField(fieldId) {
   if (!el) return '';
   if (el.dataset.cal === 'gregorian') return isoToJalaliStr(el.value);
   return el.value || '';
+}
+function writeCalendarDateField(fieldId, jalaliValue) {
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  const value = String(jalaliValue || '').trim();
+  if (el.dataset.cal === 'gregorian') {
+    el.value = value ? jalaliStrToISO(value) : '';
+  } else {
+    el.value = value;
+    const wrap = el.closest('.jdate-wrap');
+    const gInput = wrap ? Array.from(wrap.querySelectorAll('input[type="date"]')).find(inp => inp !== el) : null;
+    if (gInput) {
+      const p = parseJalali(value);
+      if (p) {
+        const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+        gInput.value = `${gy}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}`;
+      } else {
+        gInput.value = '';
+      }
+    }
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function setPurchasePaymentDueEndOfMonth(dueFieldId, startFieldId) {
+  const start = readCalendarDateField(startFieldId) || formatJalali(...todayJalali());
+  const p = parseJalali(start);
+  if (!p) { showToast('تاریخ شروع معتبر نیست', 'error'); return; }
+  const [jy, jm] = p;
+  writeCalendarDateField(dueFieldId, formatJalali(jy, jm, jMonthLength(jy, jm)));
 }
 
 // ── Date picker widget ─────────────────────────────────────────────────────
@@ -8362,6 +8392,7 @@ function openNewPurchase(studentId, preset = {}) {
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید اولین پرداخت', false)}
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('np-payment-due','np-date')">محاسبه هزینه آخر ماه</button>
         <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری ساخته نمی‌شود.</p>
       </div>
       <div class="form-group full">
@@ -24143,7 +24174,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v253';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v254';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
