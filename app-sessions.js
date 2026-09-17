@@ -4,6 +4,34 @@ function sessionsBoardFilter(){try{const v=localStorage.getItem('tp_sessions_boa
 
 function setSessionsBoardFilter(value){const allowed=new Set(['all','open','overdue','no_month']);const next=allowed.has(value)?value:'all';try{localStorage.setItem('tp_sessions_board_filter',next);}catch{}_sessionBoardShown=SESSION_BOARD_COLUMN_CHUNK;renderSessions(currentStudentAccountSearch());}
 
+if(!window._expandedSessionCols) window._expandedSessionCols = new Set();
+function toggleSessionsColumnExpand(ev, studentId){
+  try{ if(ev){ ev.stopPropagation(); if(ev.preventDefault) ev.preventDefault(); } }catch(_){}
+  try{
+    if(!window._expandedSessionCols) window._expandedSessionCols = new Set();
+    const id = Number(studentId);
+    if(window._expandedSessionCols.has(id)) window._expandedSessionCols.delete(id);
+    else window._expandedSessionCols.add(id);
+    const cur = (typeof currentStudentAccountSearch==='function') ? currentStudentAccountSearch() : '';
+    const tops = {};
+    try{
+      document.querySelectorAll('.session-column[data-student-id]').forEach(col=>{
+        const b = col.querySelector('.session-column-body');
+        if(b) tops[col.dataset.studentId] = b.scrollTop;
+      });
+    }catch(_){}
+    Promise.resolve(renderSessions(cur)).then(()=>{
+      try{
+        Object.entries(tops).forEach(([sid, top])=>{
+          if(String(sid) === String(id)) return;
+          const b = document.querySelector('.session-column[data-student-id="'+sid+'"] .session-column-body');
+          if(b) b.scrollTop = top;
+        });
+      }catch(_){}
+    });
+  }catch(_){}
+}
+
 function sessionGroupMatchesBoardFilter(g,filter,todayParts){
   const [ty,tm]=todayParts||_todayJalali();
   const fus=(g.sessions||[]).flatMap(s=>s.followups||[]);
@@ -111,12 +139,12 @@ async function renderSessions(search = '') {
       <div class="session-column-body">
         ${g.sessions.length === 0
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
-          : (() => { const _vis = g.sessions.slice(0, 8); const _hid = g.sessions.length - _vis.length; return _vis.map(s => `
+          : (() => { const _isExp = !!(window._expandedSessionCols && window._expandedSessionCols.has(g.student_id)); const _vis = _isExp ? g.sessions : g.sessions.slice(0, 8); const _hid = g.sessions.length - _vis.length; const _totalExtra = g.sessions.length - 8; return _vis.map(s => `
           <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
             <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${DateService.disp(s.date_jalali)} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
             <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
             ${s.note ? `<div class="sc-excerpt">${escapeHtml(excerpt(s.note, 60))}</div>` : ''}
-          </div>`).join('') + (_hid > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="openSessionsSummary(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">+${fa(_hid)} جلسه دیگر</button>` : ''); })()}
+          </div>`).join('') + (!_isExp && _hid > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">+${fa(_hid)} جلسه دیگر</button>` : '') + (_isExp && _totalExtra > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">▲ بستن</button>` : ''); })()}
       </div>
     </div>`;
   });
