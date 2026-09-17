@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp258';
+const TP_ASSET_V = 'tp259';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5274,11 +5274,11 @@ function _mergeBusinessRow(collection, local, remote) {
   const remoteTs = _businessRowTimestamp(remote);
   const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
   if (finance) {
-    if (localTs > remoteTs) return local;
-    if (localTs < remoteTs) return remote;
     const id = local?.id != null ? local.id : remote?.id;
-    if (_pendingBusinessDeltaIds(collection).has(String(id))) return local;
-    return remote;
+    // Desktop/server is source of truth. A later local updated_at on the phone
+    // is usually a cache touch, not a real sale edit.
+    if (!_pendingBusinessDeltaIds(collection).has(String(id))) return remote;
+    return localTs > remoteTs ? local : remote;
   }
   const newer = localTs >= remoteTs ? local : remote;
   if (collection === 'sessions') {
@@ -5478,7 +5478,13 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
   if (normalizedSearch !== state.search) reset = true;
   const order = _businessPageOrder(collection);
   if (order !== (state.order || 'asc')) reset = true;
-  if (state.loading) return state.loading;
+  const currentEtag = window._serverDataEtag || window._serverHydratedEtag || '';
+  if (state.done && currentEtag && state.fetchedEtag && currentEtag !== state.fetchedEtag) reset = true;
+  if (state.loading) {
+    if (!reset) return state.loading;
+    await state.loading;
+    return _loadBusinessPage(collection, { reset: true, search: normalizedSearch });
+  }
   if (state.done && !reset) return true;
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return false;
@@ -5501,7 +5507,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     _dropStaleDurableBusinessDeltas(collection, incoming);
     incoming.forEach(row => {
       const id = String(row?.id);
-      existing.set(id, _mergeBusinessRow(collection, existing.get(id), row));
+      if (!id) return;
+      const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
+        && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
+      existing.set(id, finance ? row : _mergeBusinessRow(collection, existing.get(id), row));
     });
     // A refresh response may predate an archive deletion made on this device.
     // Read current tombstones after the request, before persisting stale rows.
@@ -17147,10 +17156,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         }));
       } else if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(key)
           && !_pendingBusinessDeltaIds(key).has(idKey)) {
-        if (localTime > serverTime) {
-          Object.assign(serverItem, _cloneData(localItem));
-          injectedLocal = true;
-        }
+        // Phone cache must not overlay desktop sales/receipts after a GET.
       } else if (keepUnsynced && (localTime > serverTime || (allowLocal && localTime === serverTime))) {
         Object.assign(serverItem, _cloneData(localItem));
         injectedLocal = true;
@@ -24278,7 +24284,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v258';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v259';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
