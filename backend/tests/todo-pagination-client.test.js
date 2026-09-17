@@ -26,6 +26,8 @@ test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /'packages', 'families', 'reminders', 'expenses', 'wallet_tx'/);
   assert.match(app, /FINANCE_NEWEST_FIRST_KEYS/);
   assert.match(app, /if \(order === 'desc'\) query \+= '&order=desc'/);
+  assert.match(app, /if \(order === 'id_desc'\) query \+= '&order=id_desc'/);
+  assert.match(app, /if \(collection === 'packages'\) return 'id_desc'/);
   assert.match(app, /if \(resetFinance\) await _loadBusinessPage\(key, \{ reset: true \}\)/);
 });
 

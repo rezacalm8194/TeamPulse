@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp250';
+const TP_ASSET_V = 'tp251';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -2102,6 +2102,13 @@ function _jalaliKey(str) {
   if(p.length!==3||p.some(isNaN))return 0;
   return p[0]*10000+p[1]*100+p[2];
 }
+function _sortPackagesNewestFirst(rows) {
+  return (rows || []).slice().sort((a, b) => {
+    const createdDiff = (Date.parse(b.created_at || b.updated_at || '') || 0) - (Date.parse(a.created_at || a.updated_at || '') || 0);
+    if (createdDiff) return createdDiff;
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+}
 function _sortPaymentsNewestFirst(rows) {
   return (rows || []).slice().sort((a, b) => {
     const dateDiff = _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali);
@@ -2874,7 +2881,7 @@ window.api = {
   },
 
   packages: {
-    getAll: ()=>_P([..._db.packages].reverse().map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
+    getAll: ()=>_P(_sortPackagesNewestFirst(_db.packages).map(p=>{const s=_db.students.find(x=>x.id===p.student_id);const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,name:s?s.name:'',lname:s?s.lname:'',type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
     getByStudent: (sid)=>_P(_rowsForStudent('packages',sid).slice().reverse().map(p=>{const pt=_resolvePackageType(p.type_id);const staff=_db.staff.find(x=>String(x.id)===String(p.staff_id||''));return{...p,type_label:pt?pt.label:'—',pkg_color:pt?pt.color:'#888',staff_name:staff?`${staff.name||''} ${staff.lname||''}`.trim():''};})),
     add: (p)=>{
       const pkgId=_nextId('packages');
@@ -2886,19 +2893,22 @@ window.api = {
       });
       if(duplicate)return _P({ok:true,id:duplicate.id,deduplicated:true});
       _db.packages.push(newPackage);
+      _enqueueDurableBusinessDelta('packages', newPackage, 'upsert');
       if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       if(p.current_payment>0)_reconcileStudentPaymentReminders(p.student_id);
-      _save(); return _P({ok:true,id:pkgId});
+      _save(true,{urgent:true}); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note});_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save();} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{
+      const row=(_db.packages||[]).find(x=>x.id===id);
       const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
       _recordDeletedItems('packages',id);
       _recordDeletedItems('reminders',reminderIds);
       _db.packages=_db.packages.filter(x=>String(x.id)!==String(id));
       _db.reminders=_db.reminders.filter(x=>String(x.package_id)!==String(id));
-      _save(); return _P({ok:true});
+      if(row) _enqueueDurableBusinessDelta('packages', row, 'delete');
+      _save(true,{urgent:true}); return _P({ok:true});
     },
   },
 
@@ -4636,6 +4646,7 @@ const FINANCE_NEWEST_FIRST_KEYS = Object.freeze([
   'payments', 'packages', 'expenses', 'wallet_tx',
 ]);
 function _businessPageOrder(collection) {
+  if (collection === 'packages') return 'id_desc';
   return FINANCE_NEWEST_FIRST_KEYS.includes(collection) ? 'desc' : 'asc';
 }
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
@@ -5184,7 +5195,7 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
   if (!window._tpHydratingFromServer && !paging.loading && currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
-  if (FINANCE_NEWEST_FIRST_KEYS.includes(collection) && paging.order !== 'desc') reset = true;
+  if (FINANCE_NEWEST_FIRST_KEYS.includes(collection) && paging.order !== _businessPageOrder(collection)) reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
@@ -5255,7 +5266,7 @@ function _businessCollectionsNeedingServerHydration(status, candidates = BUSINES
     const localCount = _syncCollectionCount(_db, key);
     if (paging.loading) return false;
     if (etag && paging.fetchedEtag && paging.fetchedEtag !== etag) return true;
-    if (FINANCE_NEWEST_FIRST_KEYS.includes(key) && etag && paging.order !== 'desc') return true;
+    if (FINANCE_NEWEST_FIRST_KEYS.includes(key) && etag && paging.order !== _businessPageOrder(key)) return true;
     // A first page with a cursor is intentionally partial, not behind.
     return !!paging.done && Number(totals[key] || 0) !== localCount;
   });
@@ -5321,6 +5332,8 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     if (state.cursor) query += '&cursor=' + encodeURIComponent(state.cursor);
     if (normalizedSearch) query += '&search=' + encodeURIComponent(normalizedSearch);
     if (order === 'desc') query += '&order=desc';
+    if (order === 'id_desc') query += '&order=id_desc';
+    if (order === 'id_desc') query += '&order=id_desc';
     const res = await _apiFetch('/api/data/' + accId + '/' + collection + query);
     if (!res.ok) return false;
     const payload = await res.json();
@@ -24089,7 +24102,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v250';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v251';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
