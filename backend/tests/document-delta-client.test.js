@@ -311,3 +311,8 @@ test('downloaded backups are gzip compressed while legacy json remains importabl
   assert.match(appSource, /bytes\[0\] === 0x1f && bytes\[1\] === 0x8b/);
   assert.match(appSource, /input\.accept='\.json,\.gz,\.json\.gz,application\/json,application\/gzip'/);
 });
+
+test('server-backed todo id collisions adopt the server copy instead of parking sync', () => {
+  assert.match(appSource, /function _adoptServerBackedTodo\(/);
+  assert.match(appSource, /adopt the server copy/);
+});

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp260';
+const TP_ASSET_V = 'tp261';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -17695,6 +17695,13 @@ function _remapTodoIdReferences(idRemap) {
   });
 }
 
+function _adoptServerBackedTodo(localTodo, serverTodo) {
+  if (!localTodo || !serverTodo) return false;
+  Object.keys(localTodo).forEach(key => { delete localTodo[key]; });
+  Object.assign(localTodo, _cloneData(serverTodo));
+  return true;
+}
+
 async function _reconcileTerminalTodoCollisions(pending) {
   const todoIds = [...new Set((Array.isArray(pending?.todoIds) ? pending.todoIds : []).map(String))].sort();
   const unknownKey = `${TODO_COLLISION_REPAIR_VERSION}:${todoIds.join(',')}:unknown`;
@@ -17738,7 +17745,18 @@ async function _reconcileTerminalTodoCollisions(pending) {
 
     _remapTodoIdReferences(idRemap);
     _syncTodoIdAllocator(_db);
-    if (serverBacked.length) _mergeServerTodosIntoLocal({ todos: serverBacked });
+    if (serverBacked.length) {
+      const localByIdAfterRemap = new Map((_db.todos || []).map(todo => [String(todo?.id), todo]));
+      serverBacked.forEach(serverTodo => {
+        const localTodo = localByIdAfterRemap.get(String(serverTodo?.id));
+        if (!localTodo) {
+          _db.todos.push(_cloneData(serverTodo));
+          return;
+        }
+        _adoptServerBackedTodo(localTodo, serverTodo);
+      });
+      try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    }
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
 
     _clearServerSyncPending(Infinity);
@@ -18277,11 +18295,16 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
           const todoDate = todo => String(todo?.occurrence_date || todo?.date_jalali || todo?.scheduled_date || todo?.scheduledDate || '');
           const todoRoot = todo => String(todo?.recurrence_parent_id ?? todo?.recurring_parent_id ?? todo?.parent_todo_id ?? todo?.root ?? '');
           const localTodos = _db.todos || [];
+          let adopted = false;
           localTodos.forEach(todo => {
             const oldId = String(todo?.id);
             if (!ids.has(oldId)) return;
-            // A matching current server id is ambiguous/server-backed; never remap it.
-            if (serverTodos.some(serverTodo => String(serverTodo?.id) === oldId)) return;
+            const serverTodo = serverTodos.find(item => String(item?.id) === oldId);
+            if (serverTodo) {
+              // Server-backed collision: adopt the server copy so sync can proceed (remapping would duplicate the todo).
+              if (_adoptServerBackedTodo(todo, serverTodo)) adopted = true;
+              return;
+            }
             const isRecurring = todo?._snapshot === true || todo?.recurrence_parent_id != null ||
               todo?.recurring_parent_id != null || todo?.parent_todo_id != null || todo?.root != null;
             let equivalent = null;
@@ -18308,7 +18331,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
               idRemap.set(oldId, newId);
             }
           });
-          if (idRemap.size) {
+          if (idRemap.size || adopted) {
             _db.todos = localTodos.filter(todo => !removeTodos.has(todo));
             _remapTodoIdReferences(idRemap);
             _syncTodoIdAllocator(_db);
@@ -24286,7 +24309,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v260';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v261';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
