@@ -78,6 +78,7 @@ async function openEditPackage(id) {
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || '', 'سررسید اولین پرداخت', false)}
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('ep-payment-due','ep-start')">محاسبه هزینه آخر ماه</button>
         <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری این خرید حذف می‌شود.</p>
       </div>
       <div class="form-group">
