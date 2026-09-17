@@ -430,6 +430,23 @@ function loadVersionSnapshot(db, accountId, versionId) {
   ).get(version.id).n;
   if (!refs || rows.length !== refs) return undefined;
   const data = {};
+  const loadBusinessCollection = (collectionKey) => {
+    const businessRows = db.prepare(`
+      SELECT b.payload FROM user_data_version_business_rows r
+      JOIN user_data_version_business_blobs b
+        ON b.account_id=? AND b.collection_key=r.collection_key AND b.row_hash=r.row_hash
+      WHERE r.version_id=? AND r.collection_key=? ORDER BY r.row_id
+    `).all(accountId, version.id, collectionKey);
+    const refs = db.prepare(`
+      SELECT COUNT(*) AS n FROM user_data_version_business_rows
+      WHERE version_id=? AND collection_key=?
+    `).get(version.id, collectionKey).n;
+    if (!refs) return null;
+    if (businessRows.length !== refs) return undefined;
+    return businessRows.map(item => {
+      try { return JSON.parse(item.payload); } catch (_) { return null; }
+    }).filter(Boolean);
+  };
   for (const row of rows) {
     if (row.part_key === 'todos') {
       const todoRows = db.prepare(`
@@ -456,21 +473,10 @@ function loadVersionSnapshot(db, accountId, versionId) {
       continue;
     }
     if (BUSINESS_COLLECTIONS.includes(row.part_key)) {
-      const businessRows = db.prepare(`
-        SELECT b.payload FROM user_data_version_business_rows r
-        JOIN user_data_version_business_blobs b
-          ON b.account_id=? AND b.collection_key=r.collection_key AND b.row_hash=r.row_hash
-        WHERE r.version_id=? AND r.collection_key=? ORDER BY r.row_id
-      `).all(accountId, version.id, row.part_key);
-      const refs = db.prepare(`
-        SELECT COUNT(*) AS n FROM user_data_version_business_rows
-        WHERE version_id=? AND collection_key=?
-      `).get(version.id, row.part_key).n;
-      if (refs) {
-        if (businessRows.length !== refs) return undefined;
-        data[row.part_key] = businessRows.map(item => {
-          try { return JSON.parse(item.payload); } catch (_) { return null; }
-        }).filter(Boolean);
+      const loaded = loadBusinessCollection(row.part_key);
+      if (loaded === undefined) return undefined;
+      if (loaded) {
+        data[row.part_key] = loaded;
       } else {
         try {
           const legacy = JSON.parse(row.data || '[]');
@@ -483,6 +489,12 @@ function loadVersionSnapshot(db, accountId, versionId) {
     try { value = JSON.parse(row.data); } catch (_) { return undefined; }
     if (row.part_key === '__scalars__') Object.assign(data, value && typeof value === 'object' ? value : {});
     else data[row.part_key] = Array.isArray(value) ? value : [];
+  }
+  for (const key of BUSINESS_COLLECTIONS) {
+    if (Array.isArray(data[key])) continue;
+    const loaded = loadBusinessCollection(key);
+    if (loaded === undefined) return undefined;
+    if (loaded) data[key] = loaded;
   }
   return data;
 }

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp252';
+const TP_ASSET_V = 'tp253';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -1832,6 +1832,10 @@ function _explicitDeletedIds(key) {
   return new Set(Object.keys(map).map(String));
 }
 function _collectionSyncDeleteBlocked(key, localItems, prevHashes) {
+  // Finance pages hydrate newest-first and can look "complete" after a short
+  // page set. Never infer deletes for those collections; only explicit
+  // tombstones may remove a payment/package/expense/wallet row.
+  if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(key)) return true;
   const localCount = Array.isArray(localItems) ? localItems.length : 0;
   const baselineCount = Object.keys(prevHashes || {}).length;
   if (typeof _paginatedCollectionFullyLoaded === 'function' && !_paginatedCollectionFullyLoaded(key)) return true;
@@ -5246,7 +5250,6 @@ async function _ensureCompleteBusinessParts(collections = []) {
           pages += 1;
           if (!ok) break;
         }
-        _reconcileLocalBusinessRowsToServerPages(key);
       }
       }));
     }
@@ -5273,7 +5276,6 @@ async function _reloadCompleteBusinessPartsFromServer(collections = BUSINESS_PAG
         pages += 1;
         if (!ok) break;
       }
-      _reconcileLocalBusinessRowsToServerPages(collection);
       }));
     }
   } finally {
@@ -5298,31 +5300,6 @@ function _businessCollectionsNeedingServerHydration(status, candidates = BUSINES
     return !!paging.done && Number(totals[key] || 0) !== localCount;
   });
 }
-function _pendingBusinessDeltaIds(collection) {
-  if (typeof _readDurableBusinessDeltaQueue !== 'function') return new Set();
-  return new Set(_readDurableBusinessDeltaQueue()
-    .filter(row => String(row?.collection) === String(collection) && row?.id != null)
-    .map(row => String(row.id)));
-}
-function _reconcileLocalBusinessRowsToServerPages(collection) {
-  if (!FINANCE_NEWEST_FIRST_KEYS.includes(collection)) return;
-  const paging = _businessPagingState(collection);
-  if (!paging?.done || paging.search) return;
-  const seen = paging.seenIds;
-  const serverTotal = Number(paging.serverTotal || 0);
-  if (!(seen instanceof Set) || !seen.size) return;
-  if (serverTotal > 0 && seen.size < serverTotal) return;
-  const pending = _pendingBusinessDeltaIds(collection);
-  const local = Array.isArray(_db?.[collection]) ? _db[collection] : [];
-  const next = local.filter(row => {
-    if (!row || row.id == null) return false;
-    const id = String(row.id);
-    return seen.has(id) || pending.has(id);
-  });
-  if (next.length === local.length) return;
-  _db[collection] = next;
-  if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
-}
 function _dirtyBusinessCollectionsForRebase() {
   try {
     const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
@@ -5346,7 +5323,6 @@ async function _reloadBusinessFirstPagesFromServer(collections = [], { reset = t
         pages += 1;
         if (!ok) break;
       }
-      _reconcileLocalBusinessRowsToServerPages(key);
     }
   } finally {
     window._tpHydratingFromServer = wasHydrating;
@@ -16596,6 +16572,8 @@ async function _sendChunkedWorkspacePayload(accId, payload) {
 
 async function _syncManualRestoreWithRetry(maxAttempts = 4) {
   window._manualRestoreSyncActive = true;
+  window._avoidFullDocumentSync = false;
+  _forceNextServerSync();
   try {
     const accountId = _teamAccessSession()?.ownerUserId || _sbUser?.id;
     if (accountId && _sbSession?.token) {
@@ -18058,8 +18036,10 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       client_saved_at: syncSavedAt,
       base_etag: window._serverDataEtag || null,
     };
-    const avoidFullDocument = !!window._avoidFullDocumentSync ||
-      String(_readServerSyncPending()?.reason || '') === 'payload-too-large';
+    const manualRestore = !!window._manualRestoreSyncActive ||
+      (typeof _isManualRestoreProtected === 'function' && _isManualRestoreProtected());
+    const avoidFullDocument = !manualRestore && (!!window._avoidFullDocumentSync ||
+      String(_readServerSyncPending()?.reason || '') === 'payload-too-large');
     if (avoidFullDocument) window._forceNextSync = false;
     let documentPatch = (forceSync && !avoidFullDocument) ? null : _buildServerSyncPatch(syncPayload);
     if (documentPatch && JSON.stringify({
@@ -24163,7 +24143,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v252';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v253';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

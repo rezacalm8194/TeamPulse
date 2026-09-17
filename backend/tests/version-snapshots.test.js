@@ -131,6 +131,22 @@ test('part snapshots store only one students blob when only todos change', () =>
   `).get('acc-parts').n, 2);
 });
 
+test('part snapshot restore loads business rows without a version_parts key', () => {
+  const db = makePartsDb();
+  writeWorkspaceDocument(db, 'acc-biz-restore', {
+    todos: [{ id: 1, title: 't' }],
+    packages: [{ id: 99, title: 'sale' }],
+    students: [{ id: 's1' }],
+  }, { replaceAll: true });
+  assert.equal(saveVersionSnapshotParts(db, 'acc-biz-restore', { force: true }), true);
+  const id = db.prepare(
+    'SELECT id FROM user_data_versions WHERE account_id=? ORDER BY id DESC'
+  ).get('acc-biz-restore').id;
+  db.prepare("DELETE FROM user_data_version_parts WHERE version_id=? AND part_key='packages'").run(id);
+  const restored = loadVersionSnapshot(db, 'acc-biz-restore', id);
+  assert.equal(restored.packages[0].id, 99);
+});
+
 test('part snapshot restore reassembles a full document', () => {
   const db = makePartsDb();
   const source = {
