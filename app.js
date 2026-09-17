@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp248';
+const TP_ASSET_V = 'tp249';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5187,11 +5187,20 @@ async function _ensureCompleteBusinessParts(collections = []) {
     for (let start = 0; start < keys.length; start += 3) {
       await Promise.all(keys.slice(start, start + 3).map(async key => {
       await _ensureBusinessPartLoaded(key);
+      // A finished pager (done, cursor null) short-circuits _loadBusinessPage,
+      // so a finance open after desktop added income would spin without fetching
+      // the new tail pages. Reset once when still not fully loaded.
+      if (!_paginatedCollectionFullyLoaded(key) && _businessPagingState(key).done) {
+        await _loadBusinessPage(key, { reset: true });
+      }
       let pages = 0;
       while (!_paginatedCollectionFullyLoaded(key) && pages < 100) {
         const ok = await _loadBusinessPage(key);
         pages += 1;
         if (!ok) break;
+        // _loadBusinessPage no-ops when done; avoid a 100-iteration spin when
+        // the server total is still ahead (cursor was already exhausted).
+        if (_businessPagingState(key).done && !_paginatedCollectionFullyLoaded(key)) break;
       }
       }));
     }
@@ -5255,7 +5264,18 @@ async function _reloadBusinessFirstPagesFromServer(collections = [], { reset = t
   window._tpDeferDatabasePersist = true;
   try {
     for (let start = 0; start < keys.length; start += 3) {
-      await Promise.all(keys.slice(start, start + 3).map(key => _loadBusinessPage(key, { reset })));
+      await Promise.all(keys.slice(start, start + 3).map(async key => {
+        await _loadBusinessPage(key, { reset });
+        // First-page-only refresh misses tail pages (server orders oldest-first,
+        // so desktop income added today lives past page one). Keep paging until
+        // done so finance on Android converges with desktop and stays synced.
+        let pages = 0;
+        while (!_businessPagingState(key).done && pages < 100) {
+          const ok = await _loadBusinessPage(key);
+          pages += 1;
+          if (!ok) break;
+        }
+      }));
     }
   } finally {
     window._tpHydratingFromServer = wasHydrating;
