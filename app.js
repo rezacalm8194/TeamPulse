@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp254';
+const TP_ASSET_V = 'tp255';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -286,12 +286,12 @@ function writeCalendarDateField(fieldId, jalaliValue) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
-function setPurchasePaymentDueEndOfMonth(dueFieldId, startFieldId) {
+function setPurchasePaymentDueEndOfMonth(dueFieldId, startFieldId, repeatFieldId) {
   const start = readCalendarDateField(startFieldId) || formatJalali(...todayJalali());
   const p = parseJalali(start);
   if (!p) { showToast('تاریخ شروع معتبر نیست', 'error'); return; }
-  const [jy, jm] = p;
-  writeCalendarDateField(dueFieldId, formatJalali(jy, jm, jMonthLength(jy, jm)));
+  const months = Math.max(1, +(document.getElementById(repeatFieldId)?.value || 1));
+  writeCalendarDateField(dueFieldId, formatJalali(...addJalaliMonths(p[0], p[1], p[2], months)));
 }
 
 // ── Date picker widget ─────────────────────────────────────────────────────
@@ -8392,7 +8392,7 @@ function openNewPurchase(studentId, preset = {}) {
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید اولین پرداخت', false)}
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('np-payment-due','np-date')">محاسبه هزینه آخر ماه</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('np-payment-due','np-date','np-repeat')">محاسبه هزینه آخر ماه</button>
         <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری ساخته نمی‌شود.</p>
       </div>
       <div class="form-group full">
@@ -24174,7 +24174,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v254';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v255';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
