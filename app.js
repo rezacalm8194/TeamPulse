@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp259';
+const TP_ASSET_V = 'tp260';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5245,6 +5245,7 @@ function _pendingBusinessDeltaIds(collection) {
     .map(row => String(row.id)));
 }
 function _dropStaleDurableBusinessDeltas(collection, incoming) {
+	if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection)) return;
   if (typeof _readDurableBusinessDeltaQueue !== 'function') return;
   const queue = _readDurableBusinessDeltaQueue();
   if (!queue.length) return;
@@ -5510,6 +5511,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       if (!id) return;
       const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
         && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
+		if (finance && _pendingBusinessDeltaIds(collection).has(id)) return;
       existing.set(id, finance ? row : _mergeBusinessRow(collection, existing.get(id), row));
     });
     // A refresh response may predate an archive deletion made on this device.
@@ -24284,7 +24286,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v259';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v260';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
