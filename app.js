@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp262';
+const TP_ASSET_V = 'tp263';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -12636,7 +12636,7 @@ function loadXlsxLibrary(){
   if(_xlsxLoaderPromise)return _xlsxLoaderPromise;
   _xlsxLoaderPromise=new Promise((resolve,reject)=>{
     const script=document.createElement('script');
-    script.src='/xlsx.full.min.js';
+      script.src='/xlsx.full.min.js?v='+TP_ASSET_V;
     script.async=true;
     script.onload=()=>typeof XLSX!=='undefined'?resolve(XLSX):reject(new Error('کتابخانه Excel بارگذاری نشد'));
     script.onerror=()=>reject(new Error('دانلود کتابخانه Excel ممکن نشد'));
@@ -12666,10 +12666,91 @@ async function exportArchiveExcel(){
 }
 
 let archiveImportRows=[],archiveImportColumns=[];
-function openArchiveImport(){openModal('📥 افزودن گروهی با Excel',`<div class="archive-import-help">ردیف اول فایل باید عنوان ستون‌ها باشد. <b>عنوان، ترتیب و تمام ستون‌های فایل شما عیناً در جدول بایگانی نمایش داده می‌شود</b> و ستون ناشناخته‌ای حذف نخواهد شد.<br>برای تبدیل درست به پرونده، وجود ستون نام یا نام خانوادگی پیشنهاد می‌شود.</div><input type="file" id="archive-file" class="form-input" accept=".xlsx,.xls,.csv" onchange="readArchiveImportFile(this.files[0])"><div id="archive-import-status" style="margin-top:12px"></div>`,[{label:'ثبت و استفاده از همین ستون‌ها',cls:'btn-primary',action:'commitArchiveImport()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);archiveImportRows=[];archiveImportColumns=[];}
-function mapArchiveImportRow(row){const data={};Object.keys(row||{}).forEach(label=>data[archiveHeaderKey(label)]=String(row[label]??'').trim());const result={archive_data:data};Object.keys(row||{}).forEach(label=>{const field=archiveFieldForHeader(label),value=String(row[label]??'').trim();if(!field)return;const target=field==='date_jalali'?'date':field;if(target==='description'&&result.description&&value&&!result.description.split('\n').includes(value))result.description+=`\n${value}`;else if(value||result[target]===undefined)result[target]=value;});result.phone=enDigits(result.phone||'').replace(/\.0$/,'');result.referral_source=String(result.referral_source||'').trim()||'متفرقه';return result;}
-async function readArchiveImportFile(file){if(!file)return;const status=document.getElementById('archive-import-status');status.innerHTML='در حال خواندن فایل...';try{if(typeof XLSX==='undefined')throw new Error('کتابخانه Excel بارگذاری نشده');const buffer=await file.arrayBuffer();const wb=/\.csv$/i.test(file.name)?XLSX.read(new TextDecoder('utf-8').decode(buffer).replace(/^\uFEFF/,''),{type:'string'}):XLSX.read(buffer,{type:'array',cellDates:false});const sheet=wb.Sheets[wb.SheetNames[0]];const matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false});const headerCells=matrix.shift()||[];const columnDefs=headerCells.map((x,index)=>({label:String(x||'').trim(),index})).filter(x=>x.label);archiveImportColumns=columnDefs.map(x=>x.label);if(!archiveImportColumns.length)throw new Error('ردیف عنوان ستون‌ها پیدا نشد');const raw=matrix.map(values=>Object.fromEntries(columnDefs.map(c=>[c.label,values[c.index]??''])));archiveImportRows=raw.map(mapArchiveImportRow).filter(r=>r.name||r.lname||Object.values(r.archive_data||{}).some(Boolean));status.innerHTML=`<div style="margin-bottom:8px;color:var(--green)">${fa(archiveImportRows.length)} ردیف و ${fa(archiveImportColumns.length)} ستون آماده ثبت است.</div><div class="archive-preview"><table dir="rtl"><thead><tr>${archiveImportColumns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${raw.slice(0,100).map(row=>`<tr>${archiveImportColumns.map(c=>`<td>${escapeHtml(row[c]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${archiveImportRows.length>100?'<div style="margin-top:6px;color:var(--text3)">فقط ۱۰۰ ردیف اول در پیش‌نمایش نشان داده شده است.</div>':''}`;}catch(e){archiveImportRows=[];archiveImportColumns=[];status.innerHTML=`<div style="color:var(--red)">خواندن فایل ممکن نشد: ${escapeHtml(e.message||'فرمت نامعتبر')}</div>`;}}
-async function commitArchiveImport(){if(!archiveImportRows.length||!archiveImportColumns.length){showToast('ابتدا یک فایل معتبر انتخاب کنید','error');return;}const result=await window.api.students.addArchivedBulk({rows:archiveImportRows,columns:archiveImportColumns});closeModal();showToast(`${fa(result.count)} نفر با ساختار ستون‌های فایل به بایگانی افزوده شد ✓`,'success');await renderArchive();}
+function openArchiveImport(){
+  openModal('📥 افزودن گروهی با Excel',`<div class="archive-import-help">ردیف اول فایل باید عنوان ستون‌ها باشد. <b>عنوان، ترتیب و تمام ستون‌های فایل شما عیناً در جدول بایگانی نمایش داده می‌شود</b> و ستون ناشناخته‌ای حذف نخواهد شد.<br>برای تبدیل درست به پرونده، وجود ستون نام یا نام خانوادگی پیشنهاد می‌شود.</div><input type="file" id="archive-file" class="form-input" accept=".xlsx,.xls,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onchange="readArchiveImportFile(event)"><div id="archive-import-status" style="margin-top:12px"></div>`,[{label:'ثبت و استفاده از همین ستون‌ها',cls:'btn-primary',action:'commitArchiveImport()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);
+  archiveImportRows=[];
+  archiveImportColumns=[];
+}
+function mapArchiveImportRow(row){
+  const data={};
+  Object.keys(row||{}).forEach(label=>data[archiveHeaderKey(label)]=String(row[label]??'').trim());
+  const result={archive_data:data};
+  Object.keys(row||{}).forEach(label=>{
+    const field=archiveFieldForHeader(label),value=String(row[label]??'').trim();
+    if(!field)return;
+    if(field==='full_name'){
+      if(value){
+        const parts=value.split(/\s+/).filter(Boolean);
+        if(!result.name)result.name=parts.shift()||'';
+        if(!result.lname)result.lname=parts.join(' ');
+      }
+      return;
+    }
+    const target=field==='date_jalali'?'date':field;
+    if(target==='description'&&result.description&&value&&!result.description.split('\n').includes(value))result.description+=`\n${value}`;
+    else if(value||result[target]===undefined)result[target]=value;
+  });
+  result.phone=enDigits(result.phone||'').replace(/\.0$/,'');
+  result.referral_source=String(result.referral_source||'').trim()||'متفرقه';
+  return result;
+}
+function readArchiveWorkbook(buffer,fileName){
+  const bytes=buffer instanceof Uint8Array?buffer:new Uint8Array(buffer);
+  const asText=()=>new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/,'');
+  if(/\.csv$/i.test(fileName||''))return XLSX.read(asText(),{type:'string'});
+  try{
+    return XLSX.read(bytes,{type:'array',cellDates:false});
+  }catch(e){
+    const text=asText();
+    if(/[,;\t]/.test(text)&&text.split(/\r?\n/).length>1)return XLSX.read(text,{type:'string'});
+    throw e;
+  }
+}
+function archiveImportMatrixFromWorkbook(wb){
+  let best=null;
+  (wb.SheetNames||[]).forEach(name=>{
+    const sheet=wb.Sheets[name];
+    if(!sheet)return;
+    const matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false});
+    const headerIndex=matrix.findIndex(row=>(row||[]).some(cell=>String(cell||'').trim()));
+    if(headerIndex<0)return;
+    const filled=(matrix[headerIndex]||[]).filter(x=>String(x||'').trim()).length;
+    if(!best||filled>best.filled)best={matrix:matrix.slice(headerIndex),filled};
+  });
+  return best?best.matrix:[];
+}
+async function readArchiveImportFile(fileOrEvent){
+  const file=fileOrEvent&&fileOrEvent.target&&fileOrEvent.target.files?fileOrEvent.target.files[0]:fileOrEvent;
+  if(!file||!file.name)return;
+  const status=document.getElementById('archive-import-status');
+  if(status)status.innerHTML='در حال خواندن فایل...';
+  try{
+    await loadXlsxLibrary();
+    const buffer=await file.arrayBuffer();
+    const matrix=archiveImportMatrixFromWorkbook(readArchiveWorkbook(buffer,file.name));
+    const headerCells=matrix.shift()||[];
+    const columnDefs=headerCells.map((x,index)=>({label:String(x||'').trim(),index})).filter(x=>x.label);
+    archiveImportColumns=columnDefs.map(x=>x.label);
+    if(!archiveImportColumns.length)throw new Error('ردیف عنوان ستون‌ها پیدا نشد');
+    const raw=matrix.map(values=>Object.fromEntries(columnDefs.map(c=>[c.label,values[c.index]??''])));
+    archiveImportRows=raw.map(mapArchiveImportRow).filter(r=>r.name||r.lname||Object.values(r.archive_data||{}).some(Boolean));
+    if(status)status.innerHTML=`<div style="margin-bottom:8px;color:var(--green)">${fa(archiveImportRows.length)} ردیف و ${fa(archiveImportColumns.length)} ستون آماده ثبت است.</div><div class="archive-preview"><table dir="rtl"><thead><tr>${archiveImportColumns.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${raw.slice(0,100).map(row=>`<tr>${archiveImportColumns.map(c=>`<td>${escapeHtml(row[c]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${archiveImportRows.length>100?'<div style="margin-top:6px;color:var(--text3)">فقط ۱۰۰ ردیف اول در پیش‌نمایش نشان داده شده است.</div>':''}`;
+  }catch(e){
+    archiveImportRows=[];
+    archiveImportColumns=[];
+    if(status)status.innerHTML=`<div style="color:var(--red)">خواندن فایل ممکن نشد: ${escapeHtml(e.message||'فرمت نامعتبر')}</div>`;
+  }
+}
+async function commitArchiveImport(){
+  if(!archiveImportRows.length||!archiveImportColumns.length){
+    showToast('ابتدا فایل Excel را انتخاب کنید تا پیش‌نمایش ردیف‌ها نمایش داده شود','error');
+    return;
+  }
+  const result=await window.api.students.addArchivedBulk({rows:archiveImportRows,columns:archiveImportColumns});
+  closeModal();
+  showToast(`${fa(result.count)} نفر با ساختار ستون‌های فایل به بایگانی افزوده شد ✓`,'success');
+  await renderArchive();
+}
 
 // ── Full sessions summary (journal-style) ─────────────────────────────────────
 async function openSessionsSummary(studentId, displayName) {
@@ -24309,7 +24390,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v262';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v263';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
