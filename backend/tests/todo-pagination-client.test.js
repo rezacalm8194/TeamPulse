@@ -28,7 +28,9 @@ test('client loads business collections from paginated endpoints', () => {
   assert.match(app, /if \(order === 'desc'\) query \+= '&order=desc'/);
   assert.match(app, /if \(order === 'id_desc'\) query \+= '&order=id_desc'/);
   assert.match(app, /if \(collection === 'packages'\) return 'id_desc'/);
-  assert.match(app, /if \(resetFinance\) await _loadBusinessPage\(key, \{ reset: true \}\)/);
+  assert.match(app, /function _reconcileLocalBusinessRowsToServerPages\(/);
+  assert.match(app, /FINANCE_NEWEST_FIRST_KEYS.includes\(key\)/);
+  assert.match(app, /seen < serverTotal/);
 });
 
 test('financial surfaces fully hydrate paginated data before rendering totals and rows', () => {
