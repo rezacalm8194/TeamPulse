@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp255';
+const TP_ASSET_V = 'tp256';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -292,6 +292,28 @@ function setPurchasePaymentDueEndOfMonth(dueFieldId, startFieldId, repeatFieldId
   if (!p) { showToast('تاریخ شروع معتبر نیست', 'error'); return; }
   const months = Math.max(1, +(document.getElementById(repeatFieldId)?.value || 1));
   writeCalendarDateField(dueFieldId, formatJalali(...addJalaliMonths(p[0], p[1], p[2], months)));
+}
+function onPurchaseDeferUntilDueChange(startFieldId, dueFieldId, repeatFieldId) {
+  const prefix = String(dueFieldId || '').replace(/-payment-due$/, '');
+  const checked = !!document.getElementById(prefix + '-defer-until-due')?.checked;
+  if (!checked) return;
+  const start = readCalendarDateField(startFieldId);
+  const due = readCalendarDateField(dueFieldId);
+  if (!due || due === start) setPurchasePaymentDueEndOfMonth(dueFieldId, startFieldId, repeatFieldId);
+}
+function purchaseDeferUntilDueCheckboxHtml(startFieldId, dueFieldId, repeatFieldId, checked) {
+  const prefix = String(dueFieldId || '').replace(/-payment-due$/, '');
+  return `<label style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;cursor:pointer">
+    <input type="checkbox" id="${prefix}-defer-until-due" ${checked ? 'checked' : ''} onchange="onPurchaseDeferUntilDueChange('${startFieldId}','${dueFieldId}','${repeatFieldId}')">
+    <span>
+      <span style="display:block;font-size:12px;font-weight:600">هزینه از تاریخ سررسید لحاظ شود</span>
+      <span style="display:block;font-size:10px;color:var(--text3);margin-top:2px;line-height:1.7">با تیک، مبلغ تا روز سررسید وارد بدهی الان نمی‌شود و همان تاریخ خودکار لحاظ می‌گردد.</span>
+    </span>
+  </label>`;
+}
+function readPurchaseDeferUntilDue(dueFieldId) {
+  const prefix = String(dueFieldId || '').replace(/-payment-due$/, '');
+  return !!document.getElementById(prefix + '-defer-until-due')?.checked;
 }
 
 // ── Date picker widget ─────────────────────────────────────────────────────
@@ -1001,6 +1023,7 @@ function _packageExactKey(p) {
     p?.student_id, p?.type_id, p?.staff_id || '', Number(p?.total_amount || 0),
     Number(p?.initial_cost || 0), Number(p?.repeat_months || 0),
     String(p?.start_date || ''), String(p?.payment_due_date || ''),
+    p?.defer_until_due ? '1' : '0', String(p?.charge_date || ''),
     String(p?.note || '').trim()
   ].map(value => String(value ?? '')).join('\u001f');
 }
@@ -2518,8 +2541,8 @@ function _studentListSummary(s) {
       type_color: pt ? pt.color : '#888',
       type_key: pt ? pt.key : '',
       grand_total: grandTotal,
-      due_total: grandTotal,
-      is_chargeable: true,
+      due_total: _isPackageChargeable(p) ? grandTotal : 0,
+      is_chargeable: _isPackageChargeable(p),
     };
   });
   const payments = _rowsForStudent('payments', s.id);
@@ -2559,10 +2582,35 @@ function _packagePaymentDueDate(pkg) {
   return String(pkg?.payment_due_date || pkg?.first_payment_due_date || pkg?.due_date_jalali || '').trim();
 }
 
+function _packageDefersUntilDue(pkg) {
+  return pkg?.defer_until_due === true || pkg?.defer_until_due === 1 || pkg?.defer_until_due === '1';
+}
+function _packageChargeDate(pkg) {
+  return String(pkg?.charge_date || _packagePaymentDueDate(pkg) || '').trim();
+}
+function _packageDeferPersist(src, existing) {
+  const defer = Object.prototype.hasOwnProperty.call(src || {}, 'defer_until_due')
+    ? !!src.defer_until_due
+    : _packageDefersUntilDue(existing);
+  if (!defer) return { defer_until_due: false, charge_date: '' };
+  const due = Object.prototype.hasOwnProperty.call(src || {}, 'payment_due_date')
+    ? _packagePaymentDueDate(src)
+    : _packagePaymentDueDate(existing || src || {});
+  const existingCharge = String(existing?.charge_date || '').trim();
+  const existingKey = _jalaliKey(existingCharge);
+  const todayKey = _jalaliKey(_formatJalali(..._todayJalali()));
+  if (existingCharge && existingKey && existingKey <= todayKey) {
+    return { defer_until_due: true, charge_date: existingCharge };
+  }
+  return { defer_until_due: true, charge_date: due || existingCharge };
+}
 function _isPackageChargeable(pkg) {
-  // A saved purchase is already a financial commitment. Its payment due date
-  // controls reminders, not whether the contract contributes to customer debt.
-  return true;
+  if (!_packageDefersUntilDue(pkg)) return true;
+  const date = _packageChargeDate(pkg);
+  if (!date) return false;
+  const dueKey = _jalaliKey(date);
+  if (!dueKey) return false;
+  return dueKey <= _jalaliKey(_formatJalali(..._todayJalali()));
 }
 
 function _nextFuturePaymentReminderDate(baseDate, repeatMonths) {
@@ -2847,7 +2895,7 @@ window.api = {
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
-        const row={id:pkgId,student_id:id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||'',created_at:createdAt};
+        const row={id:pkgId,student_id:id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||'',created_at:createdAt,..._packageDeferPersist(pkg)};
         _db.packages.push(row);
         _enqueueDurableBusinessDelta('packages', row, 'upsert');
         if(pkg.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:id,amount:pkg.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت اولیه',created_at:new Date().toISOString()});}
@@ -2890,10 +2938,10 @@ window.api = {
         const pkgId = target ? target.id : _nextId('packages');
         if(target){
           const startDate = pkg.start_date||target.start_date||s.date_jalali||'';
-          Object.assign(target,{type_id:pkg.type_id,staff_id:pkg.staff_id||target.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:Object.prototype.hasOwnProperty.call(pkg,'payment_due_date')?_packagePaymentDueDate(pkg):(target.payment_due_date||''),note:pkg.note||''});
+          Object.assign(target,{type_id:pkg.type_id,staff_id:pkg.staff_id||target.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:Object.prototype.hasOwnProperty.call(pkg,'payment_due_date')?_packagePaymentDueDate(pkg):(target.payment_due_date||''),note:pkg.note||'',..._packageDeferPersist(pkg,target)});
         }else{
           const startDate = pkg.start_date||s.date_jalali||'';
-          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||'',created_at:noteAt,updated_at:noteAt};
+          target = {id:pkgId,student_id:s.id,type_id:pkg.type_id,staff_id:pkg.staff_id||null,total_amount:pkg.total_amount||0,initial_cost:pkg.initial_cost||0,repeat_months:pkg.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(pkg),note:pkg.note||'',created_at:noteAt,updated_at:noteAt,..._packageDeferPersist(pkg)};
           _db.packages.push(target);
         }
         if (target) {
@@ -2926,7 +2974,7 @@ window.api = {
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
-      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString()};
+      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString(),..._packageDeferPersist(p)};
       const duplicate=_db.packages.find(existing=>{
         const age=Date.now()-(Date.parse(existing.created_at||'')||0);
         return age>=0&&age<=15000&&_packageExactKey(existing)===_packageExactKey(newPackage);
@@ -2939,7 +2987,7 @@ window.api = {
       if(p.current_payment>0)_reconcileStudentPaymentReminders(p.student_id);
       _save(true,{urgent:true}); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString(),..._packageDeferPersist(p,pkg)});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{
       const row=(_db.packages||[]).find(x=>x.id===id);
       const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
@@ -8392,7 +8440,6 @@ function openNewPurchase(studentId, preset = {}) {
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید اولین پرداخت', false)}
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="setPurchasePaymentDueEndOfMonth('np-payment-due','np-date','np-repeat')">محاسبه هزینه آخر ماه</button>
         <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری ساخته نمی‌شود.</p>
       </div>
       <div class="form-group full">
@@ -8404,6 +8451,9 @@ function openNewPurchase(studentId, preset = {}) {
           <option value="6" ${repeat===6?'selected':''}>هر ۶ ماه</option>
           <option value="12" ${repeat===12?'selected':''}>هر ۱۲ ماه</option>
         </select>
+      </div>
+      <div class="form-group full">
+        ${purchaseDeferUntilDueCheckboxHtml('np-date','np-payment-due','np-repeat', !!preset.defer_until_due)}
       </div>
       <div class="form-group full">
         <label class="form-label">توضیحات خرید</label>
@@ -8424,9 +8474,15 @@ async function saveNewPurchase(studentId, reminderId = 0) {
   try {
   const type_id = await resolvePurchaseTypeId('np');
   const date = readCalendarDateField('np-date');
+  const deferUntilDue = readPurchaseDeferUntilDue('np-payment-due');
+  if (deferUntilDue) onPurchaseDeferUntilDueChange('np-date','np-payment-due','np-repeat');
   const paymentDueDate = readCalendarDateField('np-payment-due');
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
   if (!type_id) return;
+  if (deferUntilDue && !paymentDueDate) {
+    showToast('برای لحاظ از سررسید، تاریخ سررسید را وارد کنید', 'error');
+    return;
+  }
   if (repeat_months > 0 && !paymentDueDate) {
     showToast('برای تکرار، سررسید پرداخت را وارد کنید یا تکرار را روی «بدون تکرار» بگذارید', 'error');
     return;
@@ -8446,6 +8502,7 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     note: document.getElementById('np-note')?.value || '',
     date,
     payment_due_date: paymentDueDate,
+    defer_until_due: deferUntilDue,
     skip_reminder: !!reminderId,
   });
   if (reminderId) {
@@ -24174,7 +24231,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v255';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v256';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
