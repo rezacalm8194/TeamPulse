@@ -37,6 +37,7 @@ const {
   allowedTeamDocumentPatch,
   canWriteTeamStudents,
   TEAM_STUDENT_RELATED_COLLECTIONS,
+  teamTodoWriteApplied,
 } = require('../utils/teamTodoMerge');
 const {
   MAX_VERSIONS_PER_WORKSPACE,
@@ -321,15 +322,44 @@ function getTeamGrant(req, targetId, workspaceId) {
   if (!grant) {
     const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail);
     const permissions = normalizeTeamPermissions(member?.permissions || []);
-    const staffId = String(member?.staff_id || member?.staffId || '').trim();
+    const staffId = staffIdFromWorkspaceStaff(
+      targetId,
+      workspaceId,
+      requesterEmail,
+      member?.staff_id || member?.staffId
+    );
     return permissions.length ? { email: requesterEmail, permissions, staffId } : null;
   }
   const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
   const currentPermissions = normalizeTeamPermissions(member?.permissions || []);
   const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
-  const staffId = String(member?.staff_id || member?.staffId || grant.staff_id || '').trim();
+  const staffId = staffIdFromWorkspaceStaff(
+    targetId,
+    workspaceId,
+    requesterEmail,
+    member?.staff_id || member?.staffId || grant.staff_id
+  );
   return { email: requesterEmail, permissions, staffId };
+}
+
+function staffIdFromWorkspaceStaff(targetId, workspaceId, memberEmail, fallback) {
+  const fallbackId = String(fallback || '').trim();
+  if (fallbackId) return fallbackId;
+  const email = String(memberEmail || '').trim().toLowerCase();
+  if (!email) return '';
+  const storageKey = workspaceStorageKey(targetId, workspaceId);
+  const meta = loadWorkspaceMeta(db, storageKey);
+  if (!meta) return '';
+  try {
+    const staff = meta.layout === 'parts'
+      ? (loadDocumentParts(db, storageKey, ['staff']).collections.staff || [])
+      : ((JSON.parse(meta.serialized || 'null') || {}).staff || []);
+    const row = (Array.isArray(staff) ? staff : []).find(item => staffEmail(item) === email);
+    return row?.id != null ? String(row.id) : '';
+  } catch {
+    return '';
+  }
 }
 
 function ownStaffRows(data, memberEmail) {
@@ -784,7 +814,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
-      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['staff'] : [])).data;
+      previousData = (await loadDocumentPartsAsync(db, storageKey, grant ? ['staff', 'team_members'] : [])).data;
       previousData.todos = grant
         ? loadAllTodos(db, storageKey)
         : loadTodosByIds(db, storageKey, incomingTodos.map(todo => todo.id));
@@ -819,7 +849,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       _workspaceId: workspace.workspaceId,
     };
     if (operation === 'delete') nextData._deletedTodoIds = deletedTodoIds;
-    if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant);
+    if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant, operation);
     else if (operation === 'delete') {
       const nextTodoIds = (nextData.todos || []).map(todo => String(todo.id));
       const removedTodoIds = previousTodos
@@ -833,7 +863,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     } else {
       if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
       if (grant && oldTodo && JSON.stringify(primaryIncoming) !== JSON.stringify(oldTodo) &&
-          JSON.stringify(savedTodo) === JSON.stringify(oldTodo)) {
+          !teamTodoWriteApplied(oldTodo, savedTodo, primaryIncoming, operation)) {
         return res.status(403).json({ error: 'todo_operation_forbidden' });
       }
     }

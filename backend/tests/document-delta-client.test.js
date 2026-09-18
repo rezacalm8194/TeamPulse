@@ -78,6 +78,12 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.doesNotMatch(appSource, /function _notifyRecentCreatedTodos\(/);
   assert.match(appSource, /_notifyTodoCreated\(accId, todoSnapshot\.id\)/);
   assert.doesNotMatch(appSource, /_notifyRecentCreatedTodos\(accId\)/);
+  assert.match(appSource, /function _todoLocalCompletionExtras\(/);
+  assert.match(appSource, /_scheduleTodoListReconcile\(\)/);
+  assert.match(appSource, /todo_operation_forbidden/);
+  assert.match(dataSource, /mergeAllowedTeamTodos\(previousData, nextData, grant, operation\)/);
+  assert.match(dataSource, /teamTodoWriteApplied\(/);
+  assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {

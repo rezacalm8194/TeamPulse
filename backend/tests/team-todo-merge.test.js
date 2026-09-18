@@ -6,6 +6,7 @@ const {
   mergeAllowedTeamTodos,
   mergeAllowedTeamDocument,
   allowedTeamDocumentPatch,
+  teamTodoWriteApplied,
 } = require('../utils/teamTodoMerge');
 
 const grant = {
@@ -89,6 +90,69 @@ test('recurring overdue tick stores snapshot and advances the template', () => {
   assert.equal(template.done, false);
   assert.ok(snapshot);
   assert.equal(snapshot.done, true);
+});
+
+test('recurring complete without a snapshot still advances the template date', () => {
+  const previous = {
+    todos: [{
+      id: 2,
+      title: 'ادمین اینستاگرام فاطمه',
+      assignee_id: 12,
+      repeat: 'daily',
+      done: false,
+      date_jalali: '1405/06/25',
+      scheduled_date: '1405/06/25',
+    }],
+    staff: [{ id: 12 }],
+  };
+  const next = mergeAllowedTeamTodos(previous, {
+    todos: [{
+      id: 2,
+      title: 'ادمین اینستاگرام فاطمه',
+      assignee_id: 12,
+      repeat: 'daily',
+      done: false,
+      date_jalali: '1405/06/27',
+      scheduled_date: '1405/06/27',
+      scheduledDate: '1405/06/27',
+      status: 'pending',
+      updated_at: '2026-09-18T07:05:00.000Z',
+    }],
+  }, grant, 'complete');
+  const template = next.todos.find(t => t.id === 2);
+  assert.equal(template.date_jalali, '1405/06/27');
+  assert.equal(template.done, false);
+});
+
+test('team_members staff_id counts as assigned when grant staffId is empty', () => {
+  const ids = ownStaffIdsForGrant({
+    staff: [{ id: 12, email: '' }],
+    team_members: [{ email: 'hasti@example.test', staff_id: '12' }],
+  }, { email: 'hasti@example.test', permissions: grant.permissions });
+  assert.equal(ids.has('12'), true);
+  assert.equal(todoAssignedToMember({ id: 1, assignee_id: 12 }, 'hasti@example.test', ids), true);
+});
+
+test('unassigned teammate cannot persist a history-only complete', () => {
+  const previous = {
+    todos: [{ id: 1, title: 'منیج فاطمه', assignee_id: 12, done: false, date_jalali: '1405/06/27' }],
+    staff: [{ id: 12 }],
+  };
+  const incoming = {
+    id: 1,
+    title: 'منیج فاطمه',
+    assignee_id: 12,
+    done: true,
+    status: 'completed',
+    updated_at: '2026-09-18T07:00:00.000Z',
+    history: [{ action: 'completed', created_at: '2026-09-18T07:00:00.000Z' }],
+  };
+  const outsider = { email: 'other@example.test', permissions: grant.permissions };
+  const next = mergeAllowedTeamTodos(previous, { todos: [incoming] }, outsider, 'complete');
+  const todo = next.todos.find(t => t.id === 1);
+  assert.equal(todo.done, false);
+  assert.equal(todo.updated_at, undefined);
+  assert.equal(teamTodoWriteApplied(previous.todos[0], todo, incoming, 'complete'), false);
 });
 
 test('archive-permission team write keeps student upsert and owner-only rows', () => {

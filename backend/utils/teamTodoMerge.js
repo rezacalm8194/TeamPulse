@@ -30,6 +30,13 @@ function ownStaffIdsForGrant(data, grant) {
   ownStaffRowsForGrant(data, grant).forEach(staff => {
     if (staff?.id != null) ids.add(String(staff.id));
   });
+  const memberEmail = String(grant?.email || '').trim().toLowerCase();
+  (Array.isArray(data?.team_members) ? data.team_members : []).forEach(member => {
+    if (!memberEmail || String(member?.email || '').trim().toLowerCase() !== memberEmail) return;
+    if (member?.status === 'حذف‌شده') return;
+    const staffId = String(member?.staff_id || member?.staffId || '').trim();
+    if (staffId) ids.add(staffId);
+  });
   return ids;
 }
 
@@ -81,15 +88,6 @@ function mergeTodoTombstones(previousData, _nextTodoIds, removedTodoIds) {
 
 function isCompletionSnapshot(todo) {
   return !!(todo && todo.archived && todo.done && (todo._snapshot || todo._occurrence));
-}
-
-function historyHasCompletedAfter(todo, afterMs) {
-  const rows = Array.isArray(todo?.history) ? todo.history : [];
-  return rows.some(row => {
-    if (row?.action !== 'completed') return false;
-    const at = Date.parse(row.created_at || '') || 0;
-    return at >= afterMs;
-  });
 }
 
 const TEAM_STUDENT_WRITE_PERMISSIONS = ['archive', 'customerlist', 'students', 'sessions'];
@@ -172,7 +170,23 @@ function allowedTeamDocumentPatch(patch, grant) {
   return { collections, scalars };
 }
 
-function mergeAllowedTeamTodos(previousData, nextData, grant) {
+function teamTodoWriteApplied(oldTodo, savedTodo, incoming, operation) {
+  if (!incoming) return true;
+  if (!savedTodo) return false;
+  const op = String(operation || 'upsert');
+  if (op === 'complete') {
+    if (incoming.done) return !!savedTodo.done;
+    const incomingKey = scheduledKey(incoming);
+    const savedKey = scheduledKey(savedTodo);
+    const oldKey = scheduledKey(oldTodo);
+    if (incomingKey && savedKey >= incomingKey && incomingKey >= oldKey) return true;
+    return !!savedTodo.done && !oldTodo?.done;
+  }
+  if (op === 'reopen') return !savedTodo.done;
+  return JSON.stringify(savedTodo) !== JSON.stringify(oldTodo);
+}
+
+function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upsert') {
   if (!grant || !previousData || !nextData) return nextData;
   const memberEmail = grant.email;
   const permissions = grant.permissions || [];
@@ -237,6 +251,18 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
     );
     const canEditManager = permissions.includes('todo_edit_manager');
     if (canEditManager) return { ...oldTodo, ...incoming };
+    const op = String(operation || 'upsert');
+    const dateAdvanced = scheduledKey(incoming) > scheduledKey(oldTodo);
+    const wantsComplete = !!incoming.done !== !!oldTodo.done || dateAdvanced ||
+      String(incoming.status || '') !== String(oldTodo.status || '');
+    if (!canCompleteOwn && wantsComplete) {
+      if (!canReportOwn) return oldTodo;
+      return {
+        ...oldTodo,
+        staff_report: incoming.staff_report || oldTodo.staff_report || '',
+        report_updated_at: incoming.report_updated_at || oldTodo.report_updated_at || null,
+      };
+    }
     const nextDone = canCompleteOwn ? !!incoming.done : !!oldTodo.done;
     const nextDoneAt = canCompleteOwn
       ? (nextDone ? (incoming.done_at || incoming.completedAt || incoming.completed_at || oldTodo.done_at || new Date().toISOString()) : null)
@@ -244,14 +270,10 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
     const nextStatus = canCompleteOwn
       ? (nextDone ? (incoming.status || oldTodo.status || 'completed') : (incoming.status || 'pending'))
       : oldTodo.status;
-    const oldUpdatedMs = Date.parse(oldTodo.updated_at || oldTodo.done_at || '') || 0;
-    const completedRecurringOccurrence = canCompleteOwn &&
-      oldTodo.repeat && oldTodo.repeat !== 'none' &&
-      !incoming.done &&
-      (
-        completedRoots.has(String(todoRootId(oldTodo))) ||
-        (scheduledKey(incoming) > scheduledKey(oldTodo) && historyHasCompletedAfter(incoming, oldUpdatedMs))
-      );
+    const completedRecurringOccurrence = canCompleteOwn && !incoming.done && (
+      completedRoots.has(String(todoRootId(oldTodo))) ||
+      ((op === 'complete' || (oldTodo.repeat && oldTodo.repeat !== 'none')) && dateAdvanced)
+    );
     return {
       ...oldTodo,
       done: nextDone,
@@ -263,8 +285,8 @@ function mergeAllowedTeamTodos(previousData, nextData, grant) {
       status: nextStatus,
       staff_report: canReportOwn ? (incoming.staff_report || oldTodo.staff_report || '') : oldTodo.staff_report,
       report_updated_at: canReportOwn ? (incoming.report_updated_at || oldTodo.report_updated_at || null) : oldTodo.report_updated_at,
-      history: incoming.history || oldTodo.history,
-      updated_at: incoming.updated_at || oldTodo.updated_at,
+      history: canCompleteOwn || canReportOwn ? (incoming.history || oldTodo.history) : oldTodo.history,
+      updated_at: canCompleteOwn || canReportOwn ? (incoming.updated_at || oldTodo.updated_at) : oldTodo.updated_at,
       ...(completedRecurringOccurrence ? {
         date_jalali: incoming.date_jalali || oldTodo.date_jalali,
         scheduled_date: incoming.scheduled_date || incoming.scheduledDate || oldTodo.scheduled_date,
@@ -340,4 +362,5 @@ module.exports = {
   canWriteTeamStudents,
   TEAM_STUDENT_RELATED_COLLECTIONS,
   isCompletionSnapshot,
+  teamTodoWriteApplied,
 };
