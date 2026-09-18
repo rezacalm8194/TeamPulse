@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp264';
+const TP_ASSET_V = 'tp265';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -17723,7 +17723,7 @@ function _rebuildDurableTodoDeltasFromPendingMarker() {
     const local = (_db?.todos || []).find(todo => String(todo?.id) === id);
     if (!local) return;
     const op = local.done ? 'complete' : 'reopen';
-    _enqueueDurableTodoDelta(local, op);
+    _enqueueDurableTodoDelta(local, op, _todoLocalCompletionExtras(local));
   });
 }
 
@@ -17748,7 +17748,10 @@ async function _drainDurableTodoDeltaQueue() {
         : (live ? _cloneData(live) : item.todo);
       if (item.operation !== 'delete' && !live && !item.todo) continue;
       try {
-        await _syncTodoDelta(todo, item.operation || 'upsert', item.extraTodos || []);
+        const extras = Array.isArray(item.extraTodos) && item.extraTodos.length
+          ? item.extraTodos
+          : _todoLocalCompletionExtras(todo);
+        await _syncTodoDelta(todo, item.operation || 'upsert', extras);
       } catch (e) {
         console.warn('[TeamPulse] durable todo-delta drain failed:', e?.message || e);
       }
@@ -18019,6 +18022,9 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   clearTimeout(window._serverSyncTimer);
   let todoSnapshot = _cloneData(todo);
   let extraSnapshots = (Array.isArray(extraTodos) ? extraTodos : []).map(item => _cloneData(item)).filter(item => item && item.id != null);
+  if ((operation === 'complete' || operation === 'reopen') && !extraSnapshots.length) {
+    extraSnapshots = _todoLocalCompletionExtras(todoSnapshot);
+  }
   if (todoSnapshot && todoSnapshot.id != null) {
     _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
   }
@@ -18088,6 +18094,18 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           if (operation === 'create') {
             setTimeout(() => _notifyTodoCreated(accId, todoSnapshot.id), 0);
           }
+          return res;
+        }
+        if (res.status === 403) {
+          _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
+            reason: 'todo-delta-conflict-stopped',
+            error: responseData?.error || 'todo_operation_forbidden',
+            todoIds: [String(todoSnapshot.id)],
+          });
+          if (teamSession && (operation === 'complete' || operation === 'reopen')) {
+            showToast('تیک روی حساب مدیر ذخیره نشد؛ لینک دسترسی را دوباره باز کن', 'error');
+          }
+          console.warn('[TeamPulse] todo delta forbidden:', responseData?.error || res.status);
           return res;
         }
         if (res.status === 409 && responseData?.error === 'todo_id_collision') {
@@ -20831,6 +20849,32 @@ function _todoRootId(t) {
   return t?.recurrence_parent_id || t?.recurring_parent_id || t?.parent_todo_id || t?.template_id || t?.id;
 }
 
+function _todoLocalCompletionExtras(todo) {
+  if (!todo || todo.id == null) return [];
+  const root = String(_todoRootId(todo));
+  const todoId = String(todo.id);
+  return (_db.todos || []).filter(item =>
+    item && item.id != null &&
+    String(item.id) !== todoId &&
+    String(_todoRootId(item)) === root &&
+    (item._snapshot || item._occurrence) &&
+    item.done
+  ).map(item => _cloneData(item));
+}
+
+function _todoLocalCompletionExtras(todo) {
+  if (!todo || todo.id == null) return [];
+  const root = String(_todoRootId(todo));
+  const todoId = String(todo.id);
+  return (_db.todos || []).filter(item =>
+    item && item.id != null &&
+    String(item.id) !== todoId &&
+    String(_todoRootId(item)) === root &&
+    (item._snapshot || item._occurrence) &&
+    item.done
+  ).map(item => _cloneData(item));
+}
+
 function _isTodoRecurring(t) {
   return !!(t && t.repeat && t.repeat !== 'none');
 }
@@ -21363,6 +21407,7 @@ function _paintTodoCheckedFast(id) {
     button.setAttribute('aria-pressed', 'true');
     button.title = 'برداشتن تیک';
   });
+  _scheduleTodoListReconcile();
   return true;
 }
 
@@ -24468,7 +24513,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v264';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v265';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
