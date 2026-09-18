@@ -408,7 +408,10 @@ function sanitizeDataForTeamMember(data, grant) {
         : [];
     });
   }
-  clean.team_members = [];
+  clean.team_members = (Array.isArray(data.team_members) ? data.team_members : []).filter(member =>
+    String(member?.email || '').trim().toLowerCase() === memberEmail &&
+    member?.status !== 'حذف‌شده'
+  );
   clean.team_invites = [];
   return clean;
 }

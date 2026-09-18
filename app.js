@@ -6435,10 +6435,11 @@ function _teamSyncSessionPermissions() {
   if (!session) return false;
   const staffId = String(session.staffId || session.staff_id || '');
   const email = String(session.email || '').trim().toLowerCase();
-  const member = (_db.team_members || []).find(m =>
-    (staffId && String(m.staff_id || '') === staffId) ||
-    (!staffId && String(m.email || '').trim().toLowerCase() === email)
-  );
+  const member = (_db.team_members || []).find(m => {
+    const sameEmail = email && String(m.email || '').trim().toLowerCase() === email;
+    const sameStaff = staffId && String(m.staff_id || m.staffId || '') === staffId;
+    return (sameEmail || sameStaff) && m.status !== 'حذف‌شده';
+  });
   if (!member) return false;
 
   const newPerms = _normalizeTeamPermissions(member.permissions);
@@ -10274,7 +10275,9 @@ async function addSamplePkgTypes() {
 }
 
 function _teamSectionLabel(key) {
-  return TEAM_ACCESS_SECTIONS.find(s => s.key === key)?.label || key;
+  return TEAM_ACCESS_SECTIONS.find(s => s.key === key)?.label
+    || TODO_TEAM_PERMISSIONS.find(s => s.key === key)?.label
+    || key;
 }
 
 function _teamRoleLabel(role) {
@@ -10744,7 +10747,8 @@ function _teamSettingsHtml() {
   const session = _teamAccessSession();
   if (session) {
     const sessionPermissions = _normalizeTeamPermissions(session.permissions);
-    const perms = sessionPermissions.map(p => _teamSectionLabel(p)).join('، ') || 'هیچ بخشی';
+    const permLabels = [...new Set(sessionPermissions.map(p => _teamSectionLabel(p)).filter(Boolean))];
+    const perms = permLabels.join('، ') || 'هنوز از سرور نیامده؛ لینک دعوت را دوباره باز کن';
     const roleLabel = _teamRoleLabel(session.roleKey || session.role_key || session.team_role || 'custom');
     const folderIds = _teamInstructionFolderIds(session);
     const folderLabel = sessionPermissions.includes('instructions')
