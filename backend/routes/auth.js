@@ -14,6 +14,11 @@ const {
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { loadWorkspaceMeta, loadDocumentParts } = require('../utils/documentStore');
 const { logger } = require('../utils/logger');
+const {
+  normalizeTeamPermissions,
+  parseJsonArray,
+  pickResolvedTeamPermissions,
+} = require('../utils/teamPermissions');
 
 ensureTeamAccessSchema(db);
 ensureTokenRevocationSchema(db);
@@ -26,43 +31,6 @@ function normalizeIranPhone(value) {
   else if (phone.startsWith('0098')) phone = '0' + phone.slice(4);
   else if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
   return /^09\d{9}$/.test(phone) ? phone : '';
-}
-
-const TODO_TEAM_PERMISSION_KEYS = [
-  'todo_view_assigned',
-  'todo_complete_own',
-  'todo_report_own',
-  'todo_view_shared',
-  'todo_view_clients',
-  'todo_create_self',
-  'todo_create_others',
-  'todo_edit_manager',
-  'todo_delete',
-  'todo_view_team',
-  'todo_view_self_report',
-  'todo_view_team_report',
-  'todo_manage_staff'
-];
-const TODO_DEFAULT_STAFF_PERMISSIONS = [
-  'todolist',
-  'todo_view_assigned',
-  'todo_complete_own',
-  'todo_report_own',
-  'todo_view_self_report',
-  'todo_create_self'
-];
-
-function normalizeTeamPermissions(permissions) {
-  const list = Array.isArray(permissions) ? [...new Set(permissions.filter(Boolean))] : [];
-  if (list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key)) && !list.includes('todolist')) {
-    list.unshift('todolist');
-  }
-  if (list.includes('todolist') && !list.some(key => TODO_TEAM_PERMISSION_KEYS.includes(key))) {
-    TODO_DEFAULT_STAFF_PERMISSIONS.forEach(key => {
-      if (!list.includes(key)) list.push(key);
-    });
-  }
-  return list;
 }
 
 router.post('/register', async (req, res) => {
@@ -252,31 +220,36 @@ router.post('/team-invite/resolve', auth, (req, res) => {
         members = Array.isArray(parsed?.team_members) ? parsed.team_members : [];
       } catch {}
     }
-    let member = storedGrant ? {
-      id: storedGrant.invite_id,
-      email: storedGrant.member_email,
-      staff_id: storedGrant.staff_id,
-      permissions: (() => { try { return JSON.parse(storedGrant.permissions || '[]'); } catch { return []; } })(),
-      instruction_folders: (() => { try { return JSON.parse(storedGrant.instruction_folders || '[]'); } catch { return []; } })()
-    } : members.find(m => {
+    let documentMember = members.find(m => {
       const sameEmail = String(m.email || '').trim().toLowerCase() === memberEmail;
       const sameInvite = !inviteId || String(m.id || '').trim() === inviteId;
       return sameEmail && sameInvite && m.status !== 'حذف‌شده';
     });
-    if (!member && inviteId) {
-      member = members.find(m =>
+    if (!documentMember) {
+      documentMember = members.find(m =>
         String(m.email || '').trim().toLowerCase() === memberEmail &&
         m.status !== 'حذف‌شده'
-      );
+      ) || null;
     }
-    // The owner document is the only authority for team access. Never create a
-    // grant from permissions supplied by the invitee's browser.
-    if (!member) return res.status(403).json({ error: 'team access not allowed' });
+    if (!documentMember && !storedGrant) return res.status(403).json({ error: 'team access not allowed' });
 
-    const permissions = normalizeTeamPermissions(member.permissions);
-    const staffId = String(member.staff_id || member.staffId || '').trim();
-    const roleKey = String(member.role_key || member.roleKey || member.team_role || 'staff_basic').trim();
-    member.permissions = permissions;
+    const roleKey = String(
+      documentMember?.role_key || documentMember?.roleKey || documentMember?.team_role || 'staff_basic'
+    ).trim() || 'staff_basic';
+    const permissions = pickResolvedTeamPermissions(
+      documentMember?.permissions,
+      storedGrant?.permissions,
+      roleKey
+    );
+    const staffId = String(
+      documentMember?.staff_id || documentMember?.staffId || storedGrant?.staff_id || ''
+    ).trim();
+    const instructionFolders = Array.isArray(documentMember?.instruction_folders)
+      ? documentMember.instruction_folders
+      : (Array.isArray(documentMember?.instructionFolders)
+        ? documentMember.instructionFolders
+        : parseJsonArray(storedGrant?.instruction_folders));
+    const inviteRecordId = String(documentMember?.id || storedGrant?.invite_id || inviteId || '');
 
     db.prepare(`
       INSERT INTO team_access_grants
@@ -294,9 +267,9 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       workspaceId,
       memberEmail,
       staffId,
-      inviteId || String(member.id || ''),
+      inviteId || inviteRecordId,
       JSON.stringify(permissions),
-      JSON.stringify(member.instruction_folders || member.instructionFolders || [])
+      JSON.stringify(instructionFolders || [])
     );
 
     res.json({
@@ -307,7 +280,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       staffId,
       roleKey,
       permissions,
-      instructionFolders: member.instruction_folders || member.instructionFolders || []
+      instructionFolders: instructionFolders || []
     });
   } catch (e) {
     if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) {
