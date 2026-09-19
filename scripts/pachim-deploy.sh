@@ -21,14 +21,19 @@ fi
 git merge --abort >/dev/null 2>&1 || true
 git rebase --abort >/dev/null 2>&1 || true
 
-# A concurrent or recently interrupted fetch can momentarily leave the remote
-# tracking ref changing underneath Git. Retry once before treating it as a real
-# deployment failure.
-if ! git fetch origin "$BRANCH"; then
-  echo "[deploy] Git fetch failed; retrying once in 3 seconds..." >&2
-  sleep 3
-  git fetch origin "$BRANCH"
-fi
+# Pachim may start its automatic hook while the desktop deploy is still
+# finishing. Wait out that short overlap instead of failing on origin/main's
+# compare-and-swap ref update.
+fetch_attempt=1
+while ! git fetch origin "$BRANCH"; do
+  if [ "$fetch_attempt" -ge 4 ]; then
+    echo "[deploy] Git fetch failed after $fetch_attempt attempts." >&2
+    exit 1
+  fi
+  echo "[deploy] Git fetch attempt $fetch_attempt failed; retrying in 5 seconds..." >&2
+  fetch_attempt=$((fetch_attempt + 1))
+  sleep 5
+done
 
 # Create/reset local BRANCH to match GitHub and drop local edits to tracked files.
 git checkout -B "$BRANCH" "origin/$BRANCH"

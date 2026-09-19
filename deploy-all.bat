@@ -26,6 +26,7 @@ rem live server over SSH (same host pattern as deploy-staging.bat).
 set "PROD_SSH=pachim@37.32.12.186"
 set "PROD_DIR=/home/pachim/TeamPulse.ir"
 set "COMMIT_MSG=deploy: update TeamPulse"
+set "WAIT_FOR_PACHIM_HOOK=0"
 
 echo.
 echo ================================
@@ -195,14 +196,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Merging main triggers Pachim's own deploy hook. Give that hook time to
+rem finish its git fetch before the SSH fallback touches the same repository.
+set "WAIT_FOR_PACHIM_HOOK=1"
+
 git fetch origin main
 
 :remote_deploy
 echo.
+if "!WAIT_FOR_PACHIM_HOOK!"=="1" (
+  echo Waiting 15 seconds for the automatic Pachim deploy hook...
+  timeout /t 15 /nobreak >nul
+)
 echo Syncing production server via SSH...
 rem Refresh the deploy script from GitHub first so a dirty/old server tree
 rem can still run the hardened reset path.
-ssh -o BatchMode=yes -o ConnectTimeout=20 %PROD_SSH% "cd %PROD_DIR% && (git fetch origin main || { echo '[deploy] Git fetch retry in 3 seconds...'; sleep 3; git fetch origin main; }) && git checkout origin/main -- scripts/pachim-deploy.sh && bash scripts/pachim-deploy.sh"
+ssh -o BatchMode=yes -o ConnectTimeout=20 %PROD_SSH% "cd %PROD_DIR% && (git fetch origin main || { echo '[deploy] Git fetch retry 1/3 in 5 seconds...'; sleep 5; git fetch origin main; } || { echo '[deploy] Git fetch retry 2/3 in 5 seconds...'; sleep 5; git fetch origin main; } || { echo '[deploy] Git fetch retry 3/3 in 5 seconds...'; sleep 5; git fetch origin main; }) && git checkout origin/main -- scripts/pachim-deploy.sh && bash scripts/pachim-deploy.sh"
 if errorlevel 1 (
   echo.
   echo Remote deploy failed.
