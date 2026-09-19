@@ -47,6 +47,11 @@ if errorlevel 1 (
 
 echo Refreshing remote branches...
 git fetch origin
+if errorlevel 1 (
+  echo GitHub connection failed; retrying once in 5 seconds...
+  timeout /t 5 /nobreak >nul
+  git fetch origin
+)
 if errorlevel 1 goto git_error
 
 rem Stash local dirt before leaving a non-develop branch so checkout can proceed.
@@ -197,7 +202,7 @@ echo.
 echo Syncing production server via SSH...
 rem Refresh the deploy script from GitHub first so a dirty/old server tree
 rem can still run the hardened reset path.
-ssh -o BatchMode=yes -o ConnectTimeout=20 %PROD_SSH% "cd %PROD_DIR% && git fetch origin main && git checkout origin/main -- scripts/pachim-deploy.sh && bash scripts/pachim-deploy.sh"
+ssh -o BatchMode=yes -o ConnectTimeout=20 %PROD_SSH% "cd %PROD_DIR% && (git fetch origin main || { echo '[deploy] Git fetch retry in 3 seconds...'; sleep 3; git fetch origin main; }) && git checkout origin/main -- scripts/pachim-deploy.sh && bash scripts/pachim-deploy.sh"
 if errorlevel 1 (
   echo.
   echo Remote deploy failed.

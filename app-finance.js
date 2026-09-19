@@ -439,6 +439,40 @@ function incomeFilterButton(kind, value, label, content, className = '') {
   return `<button type="button" class="income-filter-link ${className}" data-income-filter-kind="${escapeAttr(kind)}" data-income-filter-value="${escapeAttr(value)}" data-income-filter-label="${escapeAttr(label)}" onclick="setIncomeQuickFilter(this.dataset.incomeFilterKind,this.dataset.incomeFilterValue,this.dataset.incomeFilterLabel)">${content}</button>`;
 }
 
+function incomeStudentHistoryButton(studentId, content, kind) {
+  return `<button type="button" class="income-filter-link" onclick="openStudentIncomeHistory(${Number(studentId)},'${kind}')">${content}</button>`;
+}
+
+async function openStudentIncomeHistory(studentId, kind) {
+  if (!allStudents.length) allStudents = await window.api.students.getAll();
+  const student = allStudents.find(s => String(s.id) === String(studentId));
+  if (!student) return showToast('شاگرد پیدا نشد', 'error');
+  const fullName = `${student.name || ''} ${student.lname || ''}`.trim();
+
+  if (kind === 'sales') {
+    const sales = await window.api.packages.getByStudent(studentId);
+    const rows = sales.sort((a, b) => jalaliKey(b.start_date || '') - jalaliKey(a.start_date || '') || Number(b.id) - Number(a.id)).map(p => `<tr>
+      <td>${DateService.disp(p.start_date) || '—'}</td>
+      <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label || '—')}</span></td>
+      <td>${escapeHtml(p.staff_name || '—')}</td>
+      <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
+      <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '—')}</td>
+    </tr>`).join('') || '<tr><td colspan="5"><div class="empty">فروشی برای این شاگرد ثبت نشده</div></td></tr>';
+    openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>نوع خرید</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+    return;
+  }
+
+  const payments = await window.api.payments.getByStudent(studentId);
+  const rows = payments.sort((a, b) => jalaliKey(b.date_jalali || '') - jalaliKey(a.date_jalali || '') || Number(b.id) - Number(a.id)).map(p => `<tr>
+    <td>${DateService.disp(p.date_jalali) || '—'}</td>
+    <td>${escapeHtml(p.pkg_label || '—')}</td>
+    <td><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency || 'تومان')}</span></td>
+    <td>${escapeHtml(p.account_label || '—')}</td>
+    <td style="color:var(--text3);font-size:11px">${escapeHtml([p.note, p.method].filter(Boolean).join(' · ') || '—')}</td>
+  </tr>`).join('') || '<tr><td colspan="5"><div class="empty">دریافتی برای این شاگرد ثبت نشده</div></td></tr>';
+  openModal(`💳 دریافت‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>پکیج</th><th>مبلغ</th><th>واریز به حساب</th><th>یادداشت</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+}
+
 
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
@@ -501,7 +535,7 @@ async function renderPayments(search = '') {
       purchaseSlice.rows.forEach(p => {
         const saleMenuId = `sale-menu-${p.id}`;
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', p.student_id, `${p.name} ${p.lname}`.trim(), `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`)}</td>
+          <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</td>
           <td>${incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag')}</td>
           <td style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
@@ -549,7 +583,7 @@ async function renderPayments(search = '') {
       paymentSlice.rows.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', p.student_id, `${p.name} ${p.lname}`.trim(), `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`)}</td>
+          <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'payments')}</td>
           <td data-label="پکیج">${incomeFilterButton('type', p.pkg_label || '', p.pkg_label || 'بدون پکیج', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span>`, 'income-filter-tag')}</td>
           <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency||'تومان')}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
