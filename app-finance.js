@@ -412,7 +412,7 @@ function filterIncomeRows(tab, rows) {
     if (filter.kind === 'type') return String(row.type_label || row.pkg_label || '') === value;
     if (filter.kind === 'staff') return String(row.staff_name || '') === value;
     if (filter.kind === 'title') return String(row.title || '') === value;
-    return true;
+    return false;
   });
 }
 
@@ -436,7 +436,8 @@ function clearIncomeQuickFilter(tab = _paymentsTab) {
 }
 
 function incomeFilterButton(kind, value, label, content, className = '') {
-  return `<button type="button" class="income-filter-link ${className}" data-income-filter-kind="${escapeAttr(kind)}" data-income-filter-value="${escapeAttr(value)}" data-income-filter-label="${escapeAttr(label)}" onclick="setIncomeQuickFilter(this.dataset.incomeFilterKind,this.dataset.incomeFilterValue,this.dataset.incomeFilterLabel)">${content}</button>`;
+  const attr = value => escapeHtml(String(value == null ? '' : value));
+  return `<button type="button" class="income-filter-link ${className}" data-income-filter-kind="${attr(kind)}" data-income-filter-value="${attr(value)}" data-income-filter-label="${attr(label)}" onclick="setIncomeQuickFilter(this.dataset.incomeFilterKind,this.dataset.incomeFilterValue,this.dataset.incomeFilterLabel)">${content}</button>`;
 }
 
 function incomeStudentHistoryButton(studentId, content, kind) {

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp266';
+const TP_ASSET_V = 'tp267';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
