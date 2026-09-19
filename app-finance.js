@@ -390,6 +390,55 @@ function accountCustomerTabsHtml(tab, search = '') {
     </div>`;
 }
 
+// A small, client-side drill-down filter for the income tables.  Keeping it
+// per tab lets a user inspect a group and return to the other tabs unchanged.
+const _incomeQuickFilters = { purchases: null, payments: null, reminders: null };
+
+function incomeQuickFilterHtml(tab) {
+  const filter = _incomeQuickFilters[tab];
+  if (!filter) return '';
+  return `<div class="income-quick-filter" role="status">
+    <span>فیلتر: ${escapeHtml(filter.label)}</span>
+    <button type="button" onclick="clearIncomeQuickFilter('${tab}')" aria-label="حذف فیلتر">× حذف فیلتر</button>
+  </div>`;
+}
+
+function filterIncomeRows(tab, rows) {
+  const filter = _incomeQuickFilters[tab];
+  if (!filter) return rows;
+  const value = String(filter.value);
+  return rows.filter(row => {
+    if (filter.kind === 'student') return String(row.student_id) === value;
+    if (filter.kind === 'type') return String(row.type_label || row.pkg_label || '') === value;
+    if (filter.kind === 'staff') return String(row.staff_name || '') === value;
+    if (filter.kind === 'title') return String(row.title || '') === value;
+    return true;
+  });
+}
+
+function setIncomeQuickFilter(kind, value, label) {
+  const tab = _paymentsTab === 'reminders' ? 'reminders' : _paymentsTab;
+  if (!Object.prototype.hasOwnProperty.call(_incomeQuickFilters, tab)) return;
+  _incomeQuickFilters[tab] = { kind, value, label };
+  _paymentsListRenderKey = '';
+  const search = currentStudentAccountSearch();
+  if (currentPage === 'payments') renderPayments(search);
+  else if (tab === 'reminders') renderReminders(search);
+}
+
+function clearIncomeQuickFilter(tab = _paymentsTab) {
+  if (!_incomeQuickFilters[tab]) return;
+  _incomeQuickFilters[tab] = null;
+  _paymentsListRenderKey = '';
+  const search = currentStudentAccountSearch();
+  if (currentPage === 'payments') renderPayments(search);
+  else if (tab === 'reminders') renderReminders(search);
+}
+
+function incomeFilterButton(kind, value, label, content, className = '') {
+  return `<button type="button" class="income-filter-link ${className}" data-income-filter-kind="${escapeAttr(kind)}" data-income-filter-value="${escapeAttr(value)}" data-income-filter-label="${escapeAttr(label)}" onclick="setIncomeQuickFilter(this.dataset.incomeFilterKind,this.dataset.incomeFilterValue,this.dataset.incomeFilterLabel)">${content}</button>`;
+}
+
 
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
@@ -438,8 +487,9 @@ async function renderPayments(search = '') {
   if (tab === 'purchases') {
     let packages = await window.api.packages.getAll();
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
+    packages = filterIncomeRows('purchases', packages);
 
-    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-sales-table">
+    let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('purchases')}<div class="table-card tbl-responsive customer-sales-table">
       <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
@@ -451,9 +501,9 @@ async function renderPayments(search = '') {
       purchaseSlice.rows.forEach(p => {
         const saleMenuId = `sale-menu-${p.id}`;
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
-          <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span></td>
-          <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
+          <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', p.student_id, `${p.name} ${p.lname}`.trim(), `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`)}</td>
+          <td>${incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag')}</td>
+          <td style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
           <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
           <td style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
@@ -484,9 +534,10 @@ async function renderPayments(search = '') {
     const allPayments = await window.api.payments.getAll();
     let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
+    payments = filterIncomeRows('payments', payments);
     payments = _sortPaymentsNewestFirst(payments);
 
-    let html = `${accountCustomerTabsHtml(tab, search)}<div class="table-card tbl-responsive customer-payments-table">
+    let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('payments')}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
@@ -498,8 +549,8 @@ async function renderPayments(search = '') {
       paymentSlice.rows.forEach(p => {
         const student = allStudents.find(s => s.id === p.student_id);
         html += `<tr>
-          <td data-label="مشتری" style="font-weight:500"><button class="btn btn-ghost btn-sm" style="padding:0;border:0;background:none" onclick="openStudentDetail(${p.student_id})">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</button></td>
-          <td data-label="پکیج"><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span></td>
+          <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', p.student_id, `${p.name} ${p.lname}`.trim(), `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`)}</td>
+          <td data-label="پکیج">${incomeFilterButton('type', p.pkg_label || '', p.pkg_label || 'بدون پکیج', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span>`, 'income-filter-tag')}</td>
           <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency||'تومان')}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
           <td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
@@ -812,23 +863,24 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
       const due = jalaliKey(r.due_date_jalali);
       return !(Number(student.balance || 0) <= 0 && due && due <= today);
     });
+  const quickFiltered = filterIncomeRows('reminders', filtered);
 
   let html = `${contentPrefix}<div class="detail-section" style="margin-bottom:12px;border-color:rgba(124,106,247,.28)">
     <h3 style="margin-bottom:6px">چرخه فروش، دریافت و یادآوری</h3>
     <p style="font-size:12px;color:var(--text2);line-height:1.8;margin:0">
       فروش دوره‌ای را در بخش فروش ثبت کن؛ TeamPulse بر اساس سررسید اولین پرداخت و دوره تکرار، یادآوری پرداخت را خودش می‌سازد. وقتی از همین صفحه پرداخت را تأیید کنی، دریافت ثبت می‌شود و سررسید بعدی هم خودکار جلو می‌رود.
     </p>
-  </div><div class="table-card tbl-responsive customer-reminders-table">
-    <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(filtered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
+  </div>${incomeQuickFilterHtml('reminders')}<div class="table-card tbl-responsive customer-reminders-table">
+    <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(quickFiltered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
       <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>`;
 
-  if (filtered.length === 0) {
+  if (quickFiltered.length === 0) {
     html += `<tr><td colspan="7"><div class="empty"><span>🔍</span>چیزی پیدا نشد</div></td></tr>`;
   }
 
-  const reminderSlice = _visiblePaymentsSlice('reminders', filtered);
+  const reminderSlice = _visiblePaymentsSlice('reminders', quickFiltered);
   reminderSlice.rows.forEach(r => {
     const due = jalaliKey(r.due_date_jalali);
     const reminderMenuId = `reminder-menu-${r.id}`;
@@ -848,8 +900,8 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     }
 
     html += `<tr>
-      <td data-label="مشتری" style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
-      <td data-label="عنوان">${escapeHtml(r.title)}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
+      <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', r.student_id, `${r.name} ${r.lname}`.trim(), `${escapeHtml(r.name)} ${escapeHtml(r.lname)}`)}</td>
+      <td data-label="عنوان">${incomeFilterButton('title', r.title || '', r.title || 'بدون عنوان', escapeHtml(r.title))}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
       <td data-label="سررسید">
         <div>${DateService.disp(r.due_date_jalali)}</div>
       </td>
