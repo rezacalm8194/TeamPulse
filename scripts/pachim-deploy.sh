@@ -21,7 +21,14 @@ fi
 git merge --abort >/dev/null 2>&1 || true
 git rebase --abort >/dev/null 2>&1 || true
 
-git fetch origin "$BRANCH"
+# A concurrent or recently interrupted fetch can momentarily leave the remote
+# tracking ref changing underneath Git. Retry once before treating it as a real
+# deployment failure.
+if ! git fetch origin "$BRANCH"; then
+  echo "[deploy] Git fetch failed; retrying once in 3 seconds..." >&2
+  sleep 3
+  git fetch origin "$BRANCH"
+fi
 
 # Create/reset local BRANCH to match GitHub and drop local edits to tracked files.
 git checkout -B "$BRANCH" "origin/$BRANCH"
