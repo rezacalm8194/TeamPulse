@@ -6418,6 +6418,11 @@ async function _ensureTeamAccessOwner() {
     };
     localStorage.setItem(TEAM_ACCESS_SESSION_KEY, JSON.stringify(next));
     window._activeDBKey = _teamSessionStorageKey(next);
+    if (typeof currentPage !== 'undefined' && currentPage === 'settings' && typeof renderSettings === 'function') {
+      void Promise.resolve(renderSettings()).then(() => {
+        if (typeof switchSettingsTab === 'function') switchSettingsTab('team');
+      }).catch(() => {});
+    }
     return next;
   } catch(e) {
     if (!session.ownerUserId) {
@@ -19991,10 +19996,8 @@ async function _authOnSuccess() {
   }
   window._teamOwnerDataReady = false;
   const teamSessionAtStart = _teamAccessSession();
-  if (teamSessionAtStart && !teamSessionAtStart.ownerUserId) {
+  if (teamSessionAtStart) {
     await _ensureTeamAccessOwner();
-  } else if (teamSessionAtStart) {
-    void _ensureTeamAccessOwner();
   }
   window._activeDBKey = _teamActiveDBKey();
   await _loadPrimaryDatabase();
@@ -24517,7 +24520,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v265';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v267';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
