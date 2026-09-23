@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp269';
+const TP_ASSET_V = 'tp270';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18051,7 +18051,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     const accId = teamSession?.ownerUserId || _sbUser?.id;
     if (!accId || !_sbSession?.token) return null;
     try {
-      if (window._serverSyncInFlight) await window._serverSyncInFlight.catch(() => null);
+      if (window._serverSyncInFlight && !teamSession) await window._serverSyncInFlight.catch(() => null);
       let deltaCollisionAttempt = 0;
       let deltaStateConflictAttempt = 0;
       const resolvedCollisionIds = new Set();
@@ -18327,6 +18327,12 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       return null;
     }
     if (teamSession && !window._teamOwnerDataReady) {
+      if (_isTodoDeltaPendingReason() || _readDurableTodoDeltaQueue().length) {
+        if (!window._todoDeltaDrainInFlight && !_todoDeltaDrainBlocked()) {
+          void _drainDurableTodoDeltaQueue();
+        }
+        return null;
+      }
       const localPending = _cloneData(_db);
       const loaded = await _loadFromServer();
       if (!loaded && !window._teamOwnerDataReady) {
@@ -19097,6 +19103,8 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
         if (serverTime && serverTime >= pendingSavedAt) {
           _clearServerSyncPending(serverTime);
         } else {
+          window._teamOwnerDataReady = true;
+          if (incomingEtag) window._serverDataEtag = incomingEtag;
           _ensurePendingServerSync(50);
           if (!window._tpTeamPendingLocalWarnShown) {
             window._tpTeamPendingLocalWarnShown = true;
@@ -19126,8 +19134,17 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
       }
       if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) return false;
       if (_incomingServerDocumentLooksTruncated(localBeforeLoad, data)) {
+        // Invite-link GET is sanitized and paginated; it is smaller than the
+        // phone cache on purpose. Keep local rows, but treat the owner account
+        // as reachable so staff ticks can POST /todos/delta.
         console.warn('[TeamPulse] skipped truncated team owner replace');
-        return false;
+        window._teamOwnerDataReady = true;
+        if (incomingEtag) {
+          window._serverDataEtag = incomingEtag;
+          _markServerDocumentHydrated(incomingEtag);
+        }
+        _teamSyncSessionPermissions();
+        return true;
       }
       _db = data;
       _migrate(_db);
@@ -24529,7 +24546,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v269';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v270';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

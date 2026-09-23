@@ -86,6 +86,9 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
   assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, claimed\)/);
   assert.match(appSource, /staff_id: teamSession/);
+  assert.match(appSource, /skipped truncated team owner replace[\s\S]{0,500}window\._teamOwnerDataReady = true/);
+  assert.match(appSource, /if \(_isTodoDeltaPendingReason\(\) \|\| _readDurableTodoDeltaQueue\(\)\.length\) \{/);
+  assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight/);
   assert.match(appSource, /function _todoTabNeedsArchivedPages\(/);
   assert.match(appSource, /if \(_todoTabNeedsArchivedPages\(\)\) await _loadTodoPage\(true, \{ reset: true \}\)/);
   assert.match(dataSource, /pickResolvedTeamPermissions\(member\?\.permissions, storedPermissions, roleKey\)/);
@@ -131,7 +134,7 @@ test('pending server sync does not refetch the full document on every poll or re
   assert.match(appSource, /function _ensurePendingServerSync[\s\S]{0,160}_serverSyncConflictBackoffUntil/);
   assert.match(appSource, /_hasServerSyncPending\(\)[\s\S]{0,180}_serverSyncConflictBackoffUntil/);
   assert.match(appSource, /\(res\.status === 409 && responseData\?\.error === 'sync_conflict'\)/);
-  assert.match(appSource, /if \(window\._serverSyncInFlight\) await window\._serverSyncInFlight\.catch/);
+  assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight\.catch/);
 });
 
 test('sync conflicts use one delayed rebase and do not return a workspace document', () => {
