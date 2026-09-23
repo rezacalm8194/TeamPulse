@@ -26,6 +26,7 @@ const {
   patchLooksDestructive,
 } = require('../utils/deletedItems');
 const { mergeOwnerTodosWithPrevious, pickMergedTodo, applyTodoDeltaMerge } = require('../utils/todoMerge');
+const { pickResolvedTeamPermissions } = require('../utils/teamPermissions');
 const {
   staffEmail,
   ownStaffRowsForGrant,
@@ -321,7 +322,8 @@ function getTeamGrant(req, targetId, workspaceId) {
   `).get(targetId, workspaceId, requesterEmail);
   if (!grant) {
     const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail);
-    const permissions = normalizeTeamPermissions(member?.permissions || []);
+    const roleKey = member?.role_key || member?.roleKey || member?.team_role || 'staff_basic';
+    const permissions = pickResolvedTeamPermissions(member?.permissions, [], roleKey);
     const staffId = staffIdFromWorkspaceStaff(
       targetId,
       workspaceId,
@@ -330,10 +332,10 @@ function getTeamGrant(req, targetId, workspaceId) {
     );
     return permissions.length ? { email: requesterEmail, permissions, staffId } : null;
   }
-  const storedPermissions = normalizeTeamPermissions(parseJsonArray(grant.permissions));
+  const storedPermissions = parseJsonArray(grant.permissions);
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
-  const currentPermissions = normalizeTeamPermissions(member?.permissions || []);
-  const permissions = currentPermissions.length ? currentPermissions : storedPermissions;
+  const roleKey = member?.role_key || member?.roleKey || member?.team_role || 'staff_basic';
+  const permissions = pickResolvedTeamPermissions(member?.permissions, storedPermissions, roleKey);
   const staffId = staffIdFromWorkspaceStaff(
     targetId,
     workspaceId,

@@ -84,6 +84,9 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(dataSource, /mergeAllowedTeamTodos\(previousData, nextData, grant, operation\)/);
   assert.match(dataSource, /teamTodoWriteApplied\(/);
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
+  assert.match(appSource, /function _todoTabNeedsArchivedPages\(/);
+  assert.match(appSource, /if \(_todoTabNeedsArchivedPages\(\)\) await _loadTodoPage\(true, \{ reset: true \}\)/);
+  assert.match(dataSource, /pickResolvedTeamPermissions\(member\?\.permissions, storedPermissions, roleKey\)/);
 });
 
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
