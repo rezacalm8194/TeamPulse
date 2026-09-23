@@ -185,6 +185,20 @@ test('unassigned teammate cannot persist a history-only complete', () => {
   assert.equal(teamTodoWriteApplied(previous.todos[0], todo, incoming, 'complete'), false);
 });
 
+test('assigned complete is kept even when the invite permission list is empty', () => {
+  const previous = {
+    todos: [{ id: 1, title: 'امروز', assignee_id: 12, done: false, date_jalali: '1405/07/01' }],
+    staff: [{ id: 12 }],
+  };
+  const linked = { email: 'hasti@example.test', staffId: '12', permissions: [] };
+  const next = mergeAllowedTeamTodos(previous, {
+    todos: [{ id: 1, title: 'امروز', assignee_id: 12, done: true, status: 'completed' }],
+  }, linked, 'complete');
+  const todo = next.todos.find(t => t.id === 1);
+  assert.equal(todo.done, true);
+  assert.equal(teamTodoWriteApplied(previous.todos[0], todo, { id: 1, done: true }, 'complete'), true);
+});
+
 test('same-date recurring complete without a saved change is not treated as applied', () => {
   const oldTodo = {
     id: 2,
