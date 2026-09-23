@@ -850,7 +850,14 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       const assigneeId = String(oldTodo?.assignee_id || oldTodo?.assigneeId || primaryIncoming?.assignee_id || '').trim();
       grant = attachClaimedStaffId(grant, previousData, bodyStaffId || assigneeId);
       if (bodyStaffId && assigneeId && bodyStaffId === assigneeId) {
-        grant = { ...grant, staffId: bodyStaffId, claimedStaffId: bodyStaffId };
+        // First bind wins: never rebind a grant to a staff row already owned
+        // by another active teammate, otherwise ticking someone else's shared
+        // task would hijack their identity for all future ticks.
+        const clash = db.prepare(`
+          SELECT 1 FROM team_access_grants
+          WHERE owner_account_id=? AND workspace_id=? AND member_email<>? AND staff_id=? AND status='active'
+        `).get(targetId, workspace.workspaceId, grant.email, bodyStaffId);
+        if (!clash) grant = { ...grant, staffId: bodyStaffId, claimedStaffId: bodyStaffId };
       }
       if ((operation === 'complete' || operation === 'reopen') && !grant.permissions?.length) {
         grant = {

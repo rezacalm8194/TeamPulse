@@ -109,6 +109,27 @@ function isCompletionSnapshot(todo) {
   return !!(todo && todo.archived && todo.done && (todo._snapshot || todo._occurrence));
 }
 
+function completionSnapshotKey(todo) {
+  return 'snap|' + String(todoRootId(todo)) + '|' + String(scheduledKey(todo) || '');
+}
+
+function dropDuplicateCompletionSnapshots(todos) {
+  // One occurrence completed twice (tick → offline revert → re-tick) must not
+  // pile up as two done rows. Same root + same scheduled date = same occurrence.
+  const seen = new Set();
+  const out = [];
+  for (let i = todos.length - 1; i >= 0; i--) {
+    const todo = todos[i];
+    if (isCompletionSnapshot(todo)) {
+      const key = completionSnapshotKey(todo);
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.unshift(todo);
+  }
+  return out;
+}
+
 const TEAM_STUDENT_WRITE_PERMISSIONS = ['archive', 'customerlist', 'students', 'sessions'];
 const TEAM_STUDENT_RELATED_COLLECTIONS = [
   'packages',
@@ -324,23 +345,30 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
   }).filter(Boolean);
   if (permissions.includes('todo_create_self') || validCompletionSnapshots.length) {
     const completionSnapshotIds = new Set(validCompletionSnapshots.map(todo => String(todo.id)));
+    const existingSnapshotKeys = new Set();
+    nextTodos.forEach(todo => {
+      if (isCompletionSnapshot(todo)) existingSnapshotKeys.add(completionSnapshotKey(todo));
+    });
     incomingTodos.forEach(todo => {
       if (previousTodos.some(x => String(x.id) === String(todo.id))) return;
       if (tombstones.has(String(todo.id))) return;
       if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return;
       if (!permissions.includes('todo_create_self') && !completionSnapshotIds.has(String(todo.id))) return;
+      if (isCompletionSnapshot(todo) && existingSnapshotKeys.has(completionSnapshotKey(todo))) return;
+      if (isCompletionSnapshot(todo)) existingSnapshotKeys.add(completionSnapshotKey(todo));
       nextTodos.push(todo);
     });
   }
+  const dedupedTodos = dropDuplicateCompletionSnapshots(nextTodos);
   return {
     ...previousData,
-    todos: nextTodos,
+    todos: dedupedTodos,
     _todoTombstones: mergeTodoTombstones(
       previousData,
-      nextTodos.map(t => t.id),
+      dedupedTodos.map(t => t.id),
       previousTodos
         .map(todo => String(todo?.id))
-        .filter(id => id && !nextTodos.some(todo => String(todo?.id) === id))
+        .filter(id => id && !dedupedTodos.some(todo => String(todo?.id) === id))
     ),
     _lastSaved: nextData._lastSaved || previousData._lastSaved,
   };
