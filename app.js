@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp277';
+const TP_ASSET_V = 'tp278';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18080,6 +18080,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     if (!todoSnapshot || todoSnapshot.id == null) return null;
     const teamSession = _teamAccessSession();
     const accId = teamSession?.ownerUserId || _sbUser?.id;
+    if (teamSession) window._teamOwnerDataReady = true;
     if (!accId || !_sbSession?.token) return null;
     try {
       if (teamSession) _clearTodoDeltaSyncBlock(todoSnapshot.id);
@@ -18386,20 +18387,24 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
       const localPending = _cloneData(_db);
       const loaded = await _loadFromServer();
-      if (!loaded && !window._teamOwnerDataReady) {
-        if (!window._teamOwnerDataNotReadyWarned) {
-          window._teamOwnerDataNotReadyWarned = true;
-          showToast('ذخیره انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
+      if (loaded || window._teamOwnerDataReady) {
+        _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: true });
+        _migrate(_db);
+        try {
+          const key = window._activeDBKey || _teamActiveDBKey();
+          _persistDatabaseSnapshot(key, _db);
+        } catch(e) {}
+        window._teamOwnerDataReady = true;
+      } else {
+        // Invite GET is paginated; ticks still go through /todos/delta.
+        window._teamOwnerDataReady = true;
+        if (_isTodoDeltaPendingReason() || _readDurableTodoDeltaQueue().length) {
+          if (!window._todoDeltaDrainInFlight && !_todoDeltaDrainBlocked()) {
+            await _drainDurableTodoDeltaQueue();
+          }
         }
         return null;
       }
-      _db = _mergeLocalPendingChangesIntoOwnerData(localPending, _db, { teamSafe: true });
-      _migrate(_db);
-      try {
-        const key = window._activeDBKey || _teamActiveDBKey();
-        _persistDatabaseSnapshot(key, _db);
-      } catch(e) {}
-      window._teamOwnerDataReady = true;
     }
     if (!accId) return null;
     const activeWorkspaceId = _currentAccountId();
@@ -19101,7 +19106,12 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
         _forceNextServerSync();
         _ensurePendingServerSync(50);
         console.warn('[TeamPulse] ignored truncated adopt and kept local data');
-        return false;
+        if (teamSession) window._teamOwnerDataReady = true;
+        if (incomingEtag) {
+          window._serverDataEtag = incomingEtag;
+          _markServerDocumentHydrated(incomingEtag);
+        }
+        return true;
       }
       const persistKey = window._activeDBKey || (teamSession ? _teamActiveDBKey() : DB_KEY);
       try { _persistDatabaseSnapshot(persistKey, _db); } catch(e) {}
@@ -19183,7 +19193,11 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
         }
         return true;
       }
-      if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) return false;
+      if (!serverTime && !localTime && !_serverDataChanged(data, localBeforeLoad)) {
+        window._teamOwnerDataReady = true;
+        if (incomingEtag) window._serverDataEtag = incomingEtag;
+        return true;
+      }
       if (_incomingServerDocumentLooksTruncated(localBeforeLoad, data)) {
         // Invite-link GET is sanitized and paginated; it is smaller than the
         // phone cache on purpose. Keep local rows, but treat the owner account
@@ -20144,10 +20158,8 @@ async function _authOnSuccess() {
       applyMetaToUI();
       return;
     }
-    if (_teamAccessSession() && !window._teamOwnerDataReady) {
-      window._teamOwnerDataReady = false;
-      showToast('داده‌های حساب اصلی هنوز لود نشده؛ برای ذخیره دوباره صفحه را رفرش کن', 'error');
-    } else if (_teamAccessSession()) {
+    if (_teamAccessSession()) {
+      window._teamOwnerDataReady = true;
       updateAccountDisplay();
       if (_canAutoRefresh()) renderPage();
       applyMetaToUI();
@@ -24691,7 +24703,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v277';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v278';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

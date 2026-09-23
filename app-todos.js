@@ -4465,9 +4465,9 @@ async function deleteTodo(id) {
 async function _deleteTodoCompletely(id, options = {}) {
   if (_teamAccessSession() && !window._teamOwnerDataReady) {
     const loaded = await _loadFromServer();
-    if (!loaded && !window._teamOwnerDataReady) {
-      showToast('حذف انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است', 'error');
-      return;
+    window._teamOwnerDataReady = true;
+    if (!loaded && !_readDurableTodoDeltaQueue().length) {
+      // Still allow delete via /todos/delta; invite GET is often truncated.
     }
   }
   const t = _db.todos.find(x => x.id == id);

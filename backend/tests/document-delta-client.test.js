@@ -97,7 +97,9 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
   assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, bodyStaffId/);
   assert.match(appSource, /staff_id: teamSession/);
-  assert.match(appSource, /skipped truncated team owner replace[\s\S]{0,500}window\._teamOwnerDataReady = true/);
+  assert.match(appSource, /Invite GET is paginated; ticks still go through \/todos\/delta/);
+  assert.doesNotMatch(appSource, /ذخیره انجام نشد؛ داده‌های حساب اصلی هنوز کامل لود نشده است/);
+  assert.match(appSource, /if \(teamSession\) window\._teamOwnerDataReady = true;/);
   assert.match(appSource, /if \(_isTodoDeltaPendingReason\(\) \|\| _readDurableTodoDeltaQueue\(\)\.length\) \{/);
   assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight/);
   assert.match(appSource, /function _todoTabNeedsArchivedPages\(/);
