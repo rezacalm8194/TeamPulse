@@ -209,6 +209,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
   if (!grant || !previousData || !nextData) return nextData;
   const memberEmail = grant.email;
   const permissions = grant.permissions || [];
+  const op = String(operation || 'upsert');
   const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
   const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
   const ownStaffIds = ownStaffIdsForGrant(previousData, grant);
@@ -232,15 +233,15 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
   const canCompleteAssigned = permissions.includes('todo_complete_own') ||
     permissions.includes('todo_edit_manager') ||
     permissions.includes('todo_manage_staff') ||
-    permissions.includes('todo_view_assigned');
+    permissions.includes('todo_view_assigned') ||
+    op === 'complete' || op === 'reopen';
   const validCompletionSnapshots = incomingTodos.filter(todo => {
     if (!canCompleteAssigned || !isCompletionSnapshot(todo)) return false;
     if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return false;
     const root = String(todoRootId(todo));
     return previousTodos.some(oldTodo =>
       String(todoRootId(oldTodo)) === root &&
-      todoAssignedToMember(oldTodo, memberEmail, ownStaffIds) &&
-      todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)
+      todoAssignedToMember(oldTodo, memberEmail, ownStaffIds)
     );
   });
   const completedRoots = new Set(validCompletionSnapshots.map(todo => String(todoRootId(todo))));
@@ -257,14 +258,17 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     }
     const incoming = incomingById.get(String(oldTodo.id));
     if (!incoming) return oldTodo;
-    if (!todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds)) return oldTodo;
-    const assignedToMember = todoAssignedToMember(oldTodo, memberEmail, ownStaffIds) || todoAssignedToMember(incoming, memberEmail, ownStaffIds);
+    const assignedToMember = todoAssignedToMember(oldTodo, memberEmail, ownStaffIds) ||
+      todoAssignedToMember(incoming, memberEmail, ownStaffIds);
+    const visible = todoVisibleToTeamMember(oldTodo, memberEmail, permissions, ownStaffIds) ||
+      ((op === 'complete' || op === 'reopen') && assignedToMember);
+    if (!visible) return oldTodo;
     const canCompleteOwn = assignedToMember && (
       permissions.includes('todo_complete_own') ||
       permissions.includes('todo_edit_manager') ||
       permissions.includes('todo_manage_staff') ||
       permissions.includes('todo_view_assigned') ||
-      String(operation || '') === 'complete'
+      op === 'complete' || op === 'reopen'
     );
     const canReportOwn = assignedToMember && (
       permissions.includes('todo_report_own') ||
@@ -273,7 +277,6 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     );
     const canEditManager = permissions.includes('todo_edit_manager');
     if (canEditManager) return { ...oldTodo, ...incoming };
-    const op = String(operation || 'upsert');
     const dateAdvanced = scheduledKey(incoming) > scheduledKey(oldTodo);
     const wantsComplete = !!incoming.done !== !!oldTodo.done || dateAdvanced ||
       String(incoming.status || '') !== String(oldTodo.status || '');

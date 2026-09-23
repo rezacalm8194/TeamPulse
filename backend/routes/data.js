@@ -846,9 +846,18 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const primaryIncoming = incomingTodos[incomingTodos.length - 1];
     const oldTodo = previousTodos.find(todo => String(todo?.id) === String(primaryIncoming.id));
     if (grant) {
-      const claimed = String(req.body?.staff_id || req.body?.staffId || '').trim()
-        || String(primaryIncoming?.assignee_id || primaryIncoming?.assigneeId || '').trim();
-      grant = attachClaimedStaffId(grant, previousData, claimed);
+      const bodyStaffId = String(req.body?.staff_id || req.body?.staffId || '').trim();
+      const assigneeId = String(oldTodo?.assignee_id || oldTodo?.assigneeId || primaryIncoming?.assignee_id || '').trim();
+      grant = attachClaimedStaffId(grant, previousData, bodyStaffId || assigneeId);
+      if (bodyStaffId && assigneeId && bodyStaffId === assigneeId) {
+        grant = { ...grant, staffId: bodyStaffId, claimedStaffId: bodyStaffId };
+      }
+      if ((operation === 'complete' || operation === 'reopen') && !grant.permissions?.length) {
+        grant = {
+          ...grant,
+          permissions: pickResolvedTeamPermissions([], [], 'staff_basic'),
+        };
+      }
       persistGrantStaffId(targetId, workspace.workspaceId, grant);
     }
 
