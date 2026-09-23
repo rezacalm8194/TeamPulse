@@ -354,8 +354,11 @@ function persistGrantStaffId(targetId, workspaceId, grant) {
     UPDATE team_access_grants
     SET staff_id=?, updated_at=datetime('now')
     WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
-      AND (staff_id IS NULL OR staff_id='' OR staff_id=?)
-  `).run(staffId, targetId, workspaceId, email, staffId);
+      AND NOT EXISTS (
+        SELECT 1 FROM team_access_grants g2
+        WHERE g2.owner_account_id=? AND g2.workspace_id=? AND g2.member_email<>? AND g2.staff_id=? AND g2.status='active'
+      )
+  `).run(staffId, targetId, workspaceId, email, targetId, workspaceId, email, staffId);
 }
 
 function staffIdFromWorkspaceStaff(targetId, workspaceId, memberEmail, fallback) {
@@ -847,8 +850,9 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const oldTodo = previousTodos.find(todo => String(todo?.id) === String(primaryIncoming.id));
     if (grant) {
       const bodyStaffId = String(req.body?.staff_id || req.body?.staffId || '').trim();
-      const assigneeId = String(oldTodo?.assignee_id || oldTodo?.assigneeId || primaryIncoming?.assignee_id || '').trim();
-      grant = attachClaimedStaffId(grant, previousData, bodyStaffId || assigneeId);
+      const assigneeId = String(oldTodo?.assignee_id || oldTodo?.assigneeId || oldTodo?.staff_id || primaryIncoming?.assignee_id || '').trim();
+      grant = attachClaimedStaffId(grant, previousData, bodyStaffId);
+      grant = attachClaimedStaffId(grant, previousData, assigneeId);
       if (bodyStaffId && assigneeId && bodyStaffId === assigneeId) {
         // First bind wins: never rebind a grant to a staff row already owned
         // by another active teammate, otherwise ticking someone else's shared

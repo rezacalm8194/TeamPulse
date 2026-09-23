@@ -234,7 +234,20 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
   const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
   const incomingTodos = Array.isArray(nextData.todos) ? nextData.todos : [];
   const ownStaffIds = ownStaffIdsForGrant(previousData, grant);
-  const incomingById = new Map(incomingTodos.map(t => [String(t.id), t]));
+  const incomingTodosNormalized = incomingTodos.map(todo => {
+    if (!todo || !isCompletionSnapshot(todo)) return todo;
+    if (todoAssignedToMember(todo, memberEmail, ownStaffIds)) return todo;
+    const root = previousTodos.find(old => String(old?.id) === String(todoRootId(todo)));
+    if (!root || !todoAssignedToMember(root, memberEmail, ownStaffIds)) return todo;
+    return {
+      ...todo,
+      assignee_id: todo.assignee_id ?? root.assignee_id,
+      assigneeId: todo.assigneeId ?? root.assigneeId ?? root.assignee_id,
+      staff_id: todo.staff_id ?? root.staff_id ?? root.assignee_id,
+      assignee_email: todo.assignee_email || root.assignee_email,
+    };
+  });
+  const incomingById = new Map(incomingTodosNormalized.map(t => [String(t.id), t]));
   const tombstones = existingTodoTombstones(previousData);
   const deletedTodoIds = new Set(
     (Array.isArray(nextData._deletedTodoIds) ? nextData._deletedTodoIds : [])
@@ -256,7 +269,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     permissions.includes('todo_manage_staff') ||
     permissions.includes('todo_view_assigned') ||
     op === 'complete' || op === 'reopen';
-  const validCompletionSnapshots = incomingTodos.filter(todo => {
+  const validCompletionSnapshots = incomingTodosNormalized.filter(todo => {
     if (!canCompleteAssigned || !isCompletionSnapshot(todo)) return false;
     if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return false;
     const root = String(todoRootId(todo));
@@ -349,7 +362,7 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     nextTodos.forEach(todo => {
       if (isCompletionSnapshot(todo)) existingSnapshotKeys.add(completionSnapshotKey(todo));
     });
-    incomingTodos.forEach(todo => {
+    incomingTodosNormalized.forEach(todo => {
       if (previousTodos.some(x => String(x.id) === String(todo.id))) return;
       if (tombstones.has(String(todo.id))) return;
       if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return;
