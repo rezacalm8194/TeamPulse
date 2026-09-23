@@ -893,8 +893,15 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       _workspaceId: workspace.workspaceId,
     };
     if (operation === 'delete') nextData._deletedTodoIds = deletedTodoIds;
-    if (grant) nextData = mergeAllowedTeamTodos(previousData, nextData, grant, operation);
-    else if (operation === 'delete') {
+    if (grant) {
+      // Team complete/reopen must merge the request payload, not the
+      // applyTodoDeltaMerge candidate. That helper can keep a newer open
+      // template (owner catch-up) and then writeApplied 403s the tick.
+      if (operation === 'complete' || operation === 'reopen') {
+        nextData.todos = incomingTodos;
+      }
+      nextData = mergeAllowedTeamTodos(previousData, nextData, grant, operation);
+    } else if (operation === 'delete') {
       const nextTodoIds = (nextData.todos || []).map(todo => String(todo.id));
       const removedTodoIds = previousTodos
         .map(todo => String(todo?.id))
@@ -906,8 +913,14 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       if (oldTodo && savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
     } else {
       if (!savedTodo) return res.status(403).json({ error: 'todo_operation_forbidden' });
+      const snapshotApplied = grant && (nextData.todos || []).some(todo =>
+        todo && (todo._snapshot || todo._occurrence) &&
+        incomingTodos.some(item => String(item?.id) === String(todo.id)) &&
+        !previousTodos.some(item => String(item?.id) === String(todo.id))
+      );
       if (grant && oldTodo && JSON.stringify(primaryIncoming) !== JSON.stringify(oldTodo) &&
-          !teamTodoWriteApplied(oldTodo, savedTodo, primaryIncoming, operation)) {
+          !teamTodoWriteApplied(oldTodo, savedTodo, primaryIncoming, operation) &&
+          !snapshotApplied) {
         return res.status(403).json({ error: 'todo_operation_forbidden' });
       }
     }
