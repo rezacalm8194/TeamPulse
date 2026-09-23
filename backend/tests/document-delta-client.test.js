@@ -43,7 +43,11 @@ test('todo completion merge prefers done state and later recurring dates', () =>
 });
 
 test('todo tick keeps complete operation after advancing a recurring task', () => {
-  assert.match(todosSource, /const intendedOp = oldDone \? 'reopen' : 'complete'/);
+  assert.match(todosSource, /function _undoTodoTick\(/);
+  assert.match(todosSource, /_clearTodoDeltaSyncBlock\(t\.id\)/);
+  assert.match(appSource, /function _clearTodoDeltaSyncBlock\(/);
+  assert.match(appSource, /function _rewindRecurringTemplateFromSnapshot\(/);
+  assert.match(appSource, /if \(t\?\.done\) return true;/);
   assert.match(todosSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
   assert.match(todosSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
   assert.match(appSource, /تاریخچهٔ قدیمی سرور نباید تیک تازه‌تر همین دستگاه را برگرداند/);

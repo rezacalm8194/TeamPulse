@@ -3203,9 +3203,43 @@ function _toggleTodo(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
+  if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
+  const snapshot = (t.done && (t._snapshot || t._occurrence))
+    ? t
+    : (!t.done && typeof _todoTodaySnapshotForRoot === 'function' ? _todoTodaySnapshotForRoot(t) : null);
+  if (snapshot) {
+    if (!_todoCanComplete(snapshot) && !_todoCanComplete(t)) {
+      showToast('برای برداشتن تیک این کار دسترسی نداری', 'error');
+      return;
+    }
+    _undoTodoTick(snapshot);
+    return;
+  }
   if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این کار دسترسی نداری', 'error'); return; }
   if (_todoCompletionRequiresForm(t)) {
     _openTodoCompletionReport(id);
+    return;
+  }
+  _completeTodoWithReport(t, '');
+}
+
+function _undoTodoTick(t) {
+  if (!t) return;
+  if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
+  if (t._snapshot || t._occurrence || (t.archived && t.done)) {
+    const template = typeof _rewindRecurringTemplateFromSnapshot === 'function'
+      ? _rewindRecurringTemplateFromSnapshot(t)
+      : null;
+    if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos([t.id]);
+    _db.todos = (_db.todos || []).filter(row => String(row.id) !== String(t.id));
+    renderTodoList();
+    try {
+      _save(true, { scheduleServerSync: false, quiet: true });
+      void _syncTodoDelta(t, 'delete');
+      if (template) void _syncTodoDelta(template, 'edit');
+    } catch (e) {
+      console.error('[TeamPulse] todo undo persist failed:', e);
+    }
     return;
   }
   _completeTodoWithReport(t, '');
