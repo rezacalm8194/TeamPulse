@@ -24,3 +24,9 @@ test('staff_basic with empty document and grant still gets default todo access',
 test('custom role with empty lists stays empty', () => {
   assert.deepEqual(pickResolvedTeamPermissions([], [], 'custom'), []);
 });
+
+test('empty stored grant still completes own tasks for staff_basic', () => {
+  const perms = pickResolvedTeamPermissions([], '[]', 'staff_basic');
+  assert.equal(perms.includes('todo_complete_own'), true);
+  assert.equal(perms.includes('todo_view_assigned'), true);
+});

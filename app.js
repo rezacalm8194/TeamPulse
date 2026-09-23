@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp267';
+const TP_ASSET_V = 'tp268';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -5031,9 +5031,13 @@ function _businessPagesStaleForServerEtag(etag) {
   }
   return false;
 }
+function _todoTabNeedsArchivedPages() {
+  return _todoActiveTab === 'completed' || _todoActiveTab === 'archive'
+    || _todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report';
+}
 function _todoPagesStaleForServerEtag(etag) {
   if (!etag || window._tpHydratingFromServer || !window._tpSessionFetchedParts?.has('todos') || typeof _todoPagingState !== 'function') return false;
-  const includeArchived = _todoActiveTab === 'completed' || _todoActiveTab === 'archive';
+  const includeArchived = _todoTabNeedsArchivedPages();
   for (const archived of (includeArchived ? [false, true] : [false])) {
     const state = _todoPagingState(archived);
     if (state.loading) continue;
@@ -19368,6 +19372,8 @@ async function _pollServerStatus() {
       try {
         if (todoStale &&
             !await _loadTodoPage(false, { reset: true })) return false;
+        if (todoStale && _todoTabNeedsArchivedPages() &&
+            !await _loadTodoPage(true, { reset: true })) return false;
         // A status response identifies the lagging collections; do not turn a
         // one-key repair into a complete warehouse sweep.
         await _reloadBusinessFirstPagesFromServer(laggingBusinessKeys, { reset: true });
@@ -19408,7 +19414,10 @@ async function _pollServerStatus() {
     if (laggingOnPage.length || todoOnPage || liveSmallKeys.length) {
       window._tpHydratingFromServer = true;
       try {
-        if (todoOnPage) await _loadTodoPage(false, { reset: true });
+        if (todoOnPage) {
+          await _loadTodoPage(false, { reset: true });
+          if (_todoTabNeedsArchivedPages()) await _loadTodoPage(true, { reset: true });
+        }
         await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
         if (await _refreshLiveSmallPartsFromServer(liveSmallKeys)) liveSmallChanged = true;
       } finally {
@@ -19448,7 +19457,7 @@ function _refreshUiAfterServerLoad(updated, opts = {}) {
     if (!_canAutoRefresh({
       allowTodoList: true,
       forceStaffLive: watchingStaff,
-      ignoreScroll: force,
+      ignoreScroll: force || watchingStaff,
     })) return;
     const content = document.getElementById('content');
     const scrollTop = content?.scrollTop || 0;
@@ -20854,19 +20863,6 @@ function _todoIsOverdue(t, todayKey = _jalaliToday()) {
 
 function _todoRootId(t) {
   return t?.recurrence_parent_id || t?.recurring_parent_id || t?.parent_todo_id || t?.template_id || t?.id;
-}
-
-function _todoLocalCompletionExtras(todo) {
-  if (!todo || todo.id == null) return [];
-  const root = String(_todoRootId(todo));
-  const todoId = String(todo.id);
-  return (_db.todos || []).filter(item =>
-    item && item.id != null &&
-    String(item.id) !== todoId &&
-    String(_todoRootId(item)) === root &&
-    (item._snapshot || item._occurrence) &&
-    item.done
-  ).map(item => _cloneData(item));
 }
 
 function _todoLocalCompletionExtras(todo) {
@@ -24520,7 +24516,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v267';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v268';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
