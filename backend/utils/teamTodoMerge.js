@@ -25,7 +25,7 @@ function ownStaffRowsForGrant(data, grant) {
 
 function ownStaffIdsForGrant(data, grant) {
   const ids = new Set();
-  const grantStaffId = String(grant?.staffId || grant?.staff_id || '').trim();
+  const grantStaffId = String(grant?.staffId || grant?.staff_id || grant?.claimedStaffId || '').trim();
   if (grantStaffId) ids.add(grantStaffId);
   ownStaffRowsForGrant(data, grant).forEach(staff => {
     if (staff?.id != null) ids.add(String(staff.id));
@@ -38,6 +38,25 @@ function ownStaffIdsForGrant(data, grant) {
     if (staffId) ids.add(staffId);
   });
   return ids;
+}
+
+function attachClaimedStaffId(grant, data, claimedStaffId) {
+  if (!grant) return grant;
+  const claimed = String(claimedStaffId || '').trim();
+  if (!claimed) return grant;
+  const known = ownStaffIdsForGrant(data, grant);
+  if (known.has(claimed)) return { ...grant, staffId: grant.staffId || claimed, claimedStaffId: claimed };
+  const memberEmail = String(grant.email || '').trim().toLowerCase();
+  const staff = (Array.isArray(data?.staff) ? data.staff : []).find(row => String(row?.id) === claimed);
+  const member = (Array.isArray(data?.team_members) ? data.team_members : []).find(row =>
+    memberEmail && String(row?.email || '').trim().toLowerCase() === memberEmail && row?.status !== 'حذف‌شده'
+  );
+  const memberStaffId = String(member?.staff_id || member?.staffId || '').trim();
+  const emailMatchesStaff = !!(staff && memberEmail && staffEmail(staff) === memberEmail);
+  if (emailMatchesStaff || memberStaffId === claimed || (member && !memberStaffId && staff)) {
+    return { ...grant, staffId: claimed, claimedStaffId: claimed };
+  }
+  return grant;
 }
 
 function todoAssignedToMember(todo, memberEmail, ownStaffIds = new Set()) {
@@ -350,6 +369,7 @@ module.exports = {
   staffEmail,
   ownStaffRowsForGrant,
   ownStaffIdsForGrant,
+  attachClaimedStaffId,
   todoAssignedToMember,
   todoRootId,
   todoSharedWith,
