@@ -92,7 +92,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /function _todoLocalCompletionExtras\(/);
   assert.match(appSource, /_scheduleTodoListReconcile\(\)/);
   assert.match(appSource, /todo_operation_forbidden/);
-  assert.match(dataSource, /mergeAllowedTeamTodos\(previousData, nextData, grant, operation\)/);
+  assert.match(dataSource, /operation === 'complete' \|\| operation === 'reopen'/);
+  assert.match(dataSource, /nextData\.todos = incomingTodos/);
   assert.match(dataSource, /teamTodoWriteApplied\(/);
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
   assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, bodyStaffId/);

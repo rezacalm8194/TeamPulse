@@ -220,6 +220,7 @@ function teamTodoWriteApplied(oldTodo, savedTodo, incoming, operation) {
     const savedKey = scheduledKey(savedTodo);
     const oldKey = scheduledKey(oldTodo);
     if (incomingKey && oldKey && savedKey > oldKey) return true;
+    if (incomingKey && oldKey && incomingKey > oldKey && savedKey >= incomingKey) return true;
     return !!savedTodo.done && !oldTodo?.done;
   }
   if (op === 'reopen') return !savedTodo.done;
