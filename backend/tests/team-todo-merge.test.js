@@ -281,6 +281,24 @@ test('duplicate completion snapshots for the same occurrence collapse to one', (
   assert.equal(snaps[0].id, 100);
 });
 
+test('persian jalali recurring complete counts as applied when the date advanced', () => {
+  const oldTodo = {
+    id: 2,
+    assignee_id: 12,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '۱۴۰۵/۰۷/۰۱',
+    scheduled_date: '۱۴۰۵/۰۷/۰۱',
+  };
+  const incoming = {
+    ...oldTodo,
+    date_jalali: '۱۴۰۵/۰۷/۰۲',
+    scheduled_date: '۱۴۰۵/۰۷/۰۲',
+    scheduledDate: '۱۴۰۵/۰۷/۰۲',
+  };
+  assert.equal(teamTodoWriteApplied(oldTodo, incoming, incoming, 'complete'), true);
+});
+
 test('same-date recurring complete without a saved change is not treated as applied', () => {
   const oldTodo = {
     id: 2,
