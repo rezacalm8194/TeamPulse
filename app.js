@@ -18288,16 +18288,13 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     }
   };
   const previous = window._todoDeltaChain || Promise.resolve();
-  const run = previous.catch(() => null).then(execute).then(res => {
-    if (_teamAccessSession() && operation === 'complete' && !res) {
-      _revertLocalTeamComplete(todoSnapshot, extraSnapshots);
-    }
-    return res;
-  }).catch(error => {
+  // NOTE: never revert the optimistic tick here. A falsy res means a transient
+  // failure (offline, superseded epoch, no session) with a retry already
+  // scheduled — reverting would flash the tick off and risk a duplicate
+  // snapshot when the user re-ticks before the retry lands. Only a definitive
+  // 403 (handled inside execute) reverts a team tick.
+  const run = previous.catch(() => null).then(execute).catch(error => {
     console.warn('[TeamPulse] todo delta failed:', error?.message || error);
-    if (_teamAccessSession() && operation === 'complete') {
-      _revertLocalTeamComplete(todoSnapshot, extraSnapshots);
-    }
     return null;
   });
   const chained = run.finally(() => {

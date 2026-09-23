@@ -3228,7 +3228,11 @@ function _undoTodoTick(t) {
   if (!t) return;
   if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
   if (t._snapshot || t._occurrence || (t.archived && t.done)) {
-    const template = typeof _rewindRecurringTemplateFromSnapshot === 'function'
+    // Team guests must not rewind the template date: the server refuses
+    // scheduled-date regressions on team edits, so rewinding locally would
+    // diverge from the owner document (phone shows overdue, manager today).
+    // Dropping the snapshot is enough — the template stays on its next date.
+    const template = (!_isTeamGuest() && typeof _rewindRecurringTemplateFromSnapshot === 'function')
       ? _rewindRecurringTemplateFromSnapshot(t)
       : null;
     if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos([t.id]);

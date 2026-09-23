@@ -199,6 +199,42 @@ test('assigned complete is kept even when the invite permission list is empty', 
   assert.equal(teamTodoWriteApplied(previous.todos[0], todo, { id: 1, done: true }, 'complete'), true);
 });
 
+test('duplicate completion snapshots for the same occurrence collapse to one', () => {
+  const snapshot = (id, updated) => ({
+    id,
+    title: 'ادمین اینستاگرام فاطمه',
+    assignee_id: 12,
+    recurrence_parent_id: 2,
+    done: true,
+    archived: true,
+    _occurrence: true,
+    date_jalali: '1405/07/01',
+    scheduled_date: '1405/07/01',
+    updated_at: updated,
+  });
+  const previous = {
+    todos: [
+      { id: 2, title: 'ادمین اینستاگرام فاطمه', assignee_id: 12, repeat: 'daily', done: false, date_jalali: '1405/07/02' },
+      snapshot(99, '2026-09-23T10:00:00.000Z'),
+      snapshot(100, '2026-09-23T10:05:00.000Z'),
+    ],
+    staff: [{ id: 12 }],
+  };
+  const next = mergeAllowedTeamTodos(previous, {
+    todos: [{
+      id: 2,
+      title: 'ادمین اینستاگرام فاطمه',
+      assignee_id: 12,
+      repeat: 'daily',
+      done: false,
+      date_jalali: '1405/07/02',
+    }],
+  }, grant, 'complete');
+  const snaps = next.todos.filter(t => t._occurrence);
+  assert.equal(snaps.length, 1);
+  assert.equal(snaps[0].id, 100);
+});
+
 test('same-date recurring complete without a saved change is not treated as applied', () => {
   const oldTodo = {
     id: 2,
