@@ -47,6 +47,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(todosSource, /_clearTodoDeltaSyncBlock\(t\.id\)/);
   assert.match(appSource, /function _clearTodoDeltaSyncBlock\(/);
   assert.match(appSource, /function _rewindRecurringTemplateFromSnapshot\(/);
+  assert.match(appSource, /function _revertLocalTeamComplete\(/);
+  assert.match(appSource, /if \(operation === 'complete'\) _revertLocalTeamComplete\(todoSnapshot, extraSnapshots\)/);
   assert.match(appSource, /if \(t\?\.done\) return true;/);
   assert.match(todosSource, /_syncTodoDelta\(t, intendedOp, extraTodos\)/);
   assert.match(todosSource, /_queueTodoTickPersist\(t, intendedOp, extraTodos\)/);
