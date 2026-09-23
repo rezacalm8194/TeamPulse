@@ -7,7 +7,7 @@
  */
 const path = require('path');
 const accountId = String(process.argv[2] || '').trim();
-if (!accountId || accountId === 'OID') {
+if (!accountId || accountId === 'OID' || accountId === 'ACCOUNT_ID') {
   console.error('Usage: node backend/scripts/dump-staff-todos.js <accountId>');
   process.exit(1);
 }
