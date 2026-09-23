@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp270';
+const TP_ASSET_V = 'tp271';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6200,11 +6200,20 @@ function _todoCanView(t) {
 }
 function _todoCanComplete(t) {
   if (!_isTeamGuest()) return true;
-  return _todoIsOwnAssigned(t) && (
-    _teamPerm('todo_complete_own') ||
+  const assigned = _todoIsOwnAssigned(t) || _todoSnapshotAssignedToSelf(t);
+  if (!assigned) return false;
+  if (t?.done) return true;
+  return _teamPerm('todo_complete_own') ||
     _teamPerm('todo_edit_manager') ||
-    _teamPerm('todo_manage_staff')
+    _teamPerm('todo_manage_staff') ||
+    _teamPerm('todo_view_assigned');
+}
+function _todoSnapshotAssignedToSelf(t) {
+  if (!t || !(t._snapshot || t._occurrence || t.recurrence_parent_id)) return false;
+  const parent = (_db.todos || []).find(row =>
+    String(row?.id) === String(t.recurrence_parent_id || t.recurring_parent_id || '')
   );
+  return !!(parent && _todoIsOwnAssigned(parent));
 }
 function _todoCanReport(t) {
   if (!_isTeamGuest()) return true;
@@ -17548,6 +17557,27 @@ function _todoDeltaDrainBlocked() {
   return false;
 }
 
+function _clearTodoDeltaSyncBlock(todoId) {
+  window._todoDeltaConflictBackoffUntil = 0;
+  const pending = _readServerSyncPending();
+  if (!pending || !_todoDeltaTerminalPendingReason(pending.reason)) return;
+  const ids = Array.isArray(pending.todoIds) ? pending.todoIds.map(String) : [];
+  if (todoId && ids.length && !ids.includes(String(todoId))) return;
+  _clearServerSyncPending(Infinity);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 function _stopDurableTodoDeltaAfterConflict(todoId, operation, details = {}) {
   _dequeueDurableTodoDelta(todoId, operation);
   if (Array.isArray(details.alsoDequeueIds)) {
@@ -18051,6 +18081,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
     const accId = teamSession?.ownerUserId || _sbUser?.id;
     if (!accId || !_sbSession?.token) return null;
     try {
+      if (teamSession) _clearTodoDeltaSyncBlock(todoSnapshot.id);
       if (window._serverSyncInFlight && !teamSession) await window._serverSyncInFlight.catch(() => null);
       let deltaCollisionAttempt = 0;
       let deltaStateConflictAttempt = 0;
@@ -18119,13 +18150,25 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           return res;
         }
         if (res.status === 403) {
-          _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
-            reason: 'todo-delta-conflict-stopped',
-            error: responseData?.error || 'todo_operation_forbidden',
-            todoIds: [String(todoSnapshot.id)],
+          _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+          extraSnapshots.forEach(item => {
+            if (item?.id != null) _dequeueDurableTodoDelta(item.id);
           });
-          if (teamSession && (operation === 'complete' || operation === 'reopen')) {
-            showToast('تیک روی حساب مدیر ذخیره نشد؛ لینک دسترسی را دوباره باز کن', 'error');
+          if (teamSession && (operation === 'complete' || operation === 'reopen' || operation === 'delete')) {
+            _armTodoDeltaConflictBackoff(3000);
+            const remainingDeltaIds = _readDurableTodoDeltaQueue().map(item => String(item?.todoId)).filter(Boolean);
+            if (remainingDeltaIds.length) {
+              _markServerSyncPending('todo-delta-save', { todoIds: remainingDeltaIds });
+            } else {
+              _clearServerSyncPending(Infinity);
+            }
+            showToast('تیک روی حساب مدیر ذخیره نشد؛ یک‌بار دیگر تیک بزن', 'error');
+          } else {
+            _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
+              reason: 'todo-delta-conflict-stopped',
+              error: responseData?.error || 'todo_operation_forbidden',
+              todoIds: [String(todoSnapshot.id)],
+            });
           }
           console.warn('[TeamPulse] todo delta forbidden:', responseData?.error || res.status);
           return res;
@@ -20920,6 +20963,69 @@ function _todoDoneDayKey(t) {
   const [dy,dm,dd] = parts;
   return _jalaliKey(_formatJalali(dy,dm,dd));
 }
+
+function _todoTodaySnapshotForRoot(t) {
+  if (!t) return null;
+  const root = String(_todoRootId(t));
+  const todayKey = _jalaliToday();
+  return (_db.todos || []).find(row =>
+    row &&
+    row.done &&
+    (row._snapshot || row._occurrence) &&
+    String(_todoRootId(row)) === root &&
+    _todoIsDoneToday(row, todayKey)
+  ) || null;
+}
+
+function _rewindRecurringTemplateFromSnapshot(snapshot) {
+  const occDate = _todoScheduledDate(snapshot);
+  const rootId = String(_todoRootId(snapshot));
+  const template = (_db.todos || []).find(row => {
+    if (!row || String(row.id) === String(snapshot.id)) return false;
+    if (row._snapshot || row._occurrence) return false;
+    return String(row.id) === rootId || String(_todoRootId(row)) === rootId;
+  });
+  if (!template || !occDate) return template || null;
+  const templateKey = _jalaliKey(_todoScheduledDate(template) || '');
+  const occKey = _jalaliKey(occDate);
+  if (!templateKey || templateKey > occKey) {
+    template.date_jalali = occDate;
+    template.scheduled_date = occDate;
+    template.scheduledDate = occDate;
+  }
+  template.done = false;
+  template.archived = false;
+  template.status = 'pending';
+  template.done_at = null;
+  template.completedAt = null;
+  template.completed_at = null;
+  template.updated_at = new Date().toISOString();
+  return template;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function _todoIsDoneToday(t, todayKey = _jalaliToday()) {
   return !!(t?.done && _todoDoneDayKey(t) === todayKey);
@@ -24546,7 +24652,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v270';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v271';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
