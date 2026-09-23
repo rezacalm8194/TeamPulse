@@ -199,6 +199,52 @@ test('assigned complete is kept even when the invite permission list is empty', 
   assert.equal(teamTodoWriteApplied(previous.todos[0], todo, { id: 1, done: true }, 'complete'), true);
 });
 
+test('completion snapshot without assignee still binds to the assigned template', () => {
+  const previous = {
+    todos: [{
+      id: 438,
+      title: 'ادمین اینستاگرام فاطمه',
+      assignee_id: 2,
+      repeat: 'daily',
+      done: false,
+      date_jalali: '1405/07/01',
+      scheduled_date: '1405/07/01',
+    }],
+    staff: [{ id: 2, email: 'old@example.test' }],
+  };
+  const linked = { email: 'hasti@example.test', staffId: '2', permissions: ['todo_complete_own'] };
+  const next = mergeAllowedTeamTodos(previous, {
+    todos: [
+      {
+        id: 438,
+        title: 'ادمین اینستاگرام فاطمه',
+        assignee_id: 2,
+        repeat: 'daily',
+        done: false,
+        date_jalali: '1405/07/02',
+        scheduled_date: '1405/07/02',
+        scheduledDate: '1405/07/02',
+      },
+      {
+        id: 9001,
+        title: 'ادمین اینستاگرام فاطمه',
+        recurrence_parent_id: 438,
+        done: true,
+        archived: true,
+        _snapshot: true,
+        _occurrence: true,
+        date_jalali: '1405/07/01',
+        scheduled_date: '1405/07/01',
+      },
+    ],
+  }, linked, 'complete');
+  const template = next.todos.find(t => t.id === 438);
+  const snap = next.todos.find(t => t.id === 9001);
+  assert.equal(template.date_jalali, '1405/07/02');
+  assert.equal(!!snap, true);
+  assert.equal(String(snap.assignee_id), '2');
+});
+
 test('duplicate completion snapshots for the same occurrence collapse to one', () => {
   const snapshot = (id, updated) => ({
     id,
