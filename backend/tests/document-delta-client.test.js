@@ -44,6 +44,7 @@ test('todo completion merge prefers done state and later recurring dates', () =>
 
 test('todo tick keeps complete operation after advancing a recurring task', () => {
   assert.match(todosSource, /function _undoTodoTick\(/);
+  assert.match(todosSource, /تیک امروز این کار حذف شود؟/);
   assert.match(todosSource, /_clearTodoDeltaSyncBlock\(t\.id\)/);
   assert.match(appSource, /function _clearTodoDeltaSyncBlock\(/);
   assert.match(appSource, /function _rewindRecurringTemplateFromSnapshot\(/);
@@ -90,7 +91,7 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(dataSource, /mergeAllowedTeamTodos\(previousData, nextData, grant, operation\)/);
   assert.match(dataSource, /teamTodoWriteApplied\(/);
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
-  assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, claimed\)/);
+  assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, bodyStaffId/);
   assert.match(appSource, /staff_id: teamSession/);
   assert.match(appSource, /skipped truncated team owner replace[\s\S]{0,500}window\._teamOwnerDataReady = true/);
   assert.match(appSource, /if \(_isTodoDeltaPendingReason\(\) \|\| _readDurableTodoDeltaQueue\(\)\.length\) \{/);
