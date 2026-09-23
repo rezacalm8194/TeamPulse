@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp268';
+const TP_ASSET_V = 'tp269';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18069,6 +18069,15 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
             todos: extraSnapshots.length ? [...extraSnapshots, todoSnapshot] : undefined,
             base_etag: window._serverDataEtag || null,
             todo_id_high_water: _db?._todoIdHighWater || 0,
+            staff_id: teamSession
+              ? String(
+                  (typeof _todoSessionStaff === 'function' && _todoSessionStaff()?.id) ||
+                  teamSession.staffId ||
+                  teamSession.staff_id ||
+                  todoSnapshot?.assignee_id ||
+                  ''
+                )
+              : undefined,
           }),
         });
         let responseData = null;
@@ -19415,8 +19424,12 @@ async function _pollServerStatus() {
       window._tpHydratingFromServer = true;
       try {
         if (todoOnPage) {
-          await _loadTodoPage(false, { reset: true });
-          if (_todoTabNeedsArchivedPages()) await _loadTodoPage(true, { reset: true });
+          if (_todoActiveTab === 'staff' || _todoActiveTab === 'report') {
+            await _reloadCompleteTodosFromServer({ reset: true });
+          } else {
+            await _loadTodoPage(false, { reset: true });
+            if (_todoTabNeedsArchivedPages()) await _loadTodoPage(true, { reset: true });
+          }
         }
         await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
         if (await _refreshLiveSmallPartsFromServer(liveSmallKeys)) liveSmallChanged = true;
@@ -24516,7 +24529,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v268';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v269';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

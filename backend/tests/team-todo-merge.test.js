@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   ownStaffIdsForGrant,
+  attachClaimedStaffId,
   todoAssignedToMember,
   mergeAllowedTeamTodos,
   mergeAllowedTeamDocument,
@@ -122,6 +123,35 @@ test('recurring complete without a snapshot still advances the template date', (
   const template = next.todos.find(t => t.id === 2);
   assert.equal(template.date_jalali, '1405/06/27');
   assert.equal(template.done, false);
+});
+
+test('claimed staff id binds an invite whose email does not match the staff row', () => {
+  const data = {
+    staff: [{ id: 12, email: 'old-hasti@example.test' }],
+    team_members: [{ email: 'hasti870s.hasti@gmail.com' }],
+  };
+  const linked = attachClaimedStaffId(
+    { email: 'hasti870s.hasti@gmail.com', permissions: grant.permissions },
+    data,
+    '12'
+  );
+  assert.equal(linked.staffId, '12');
+  const ids = ownStaffIdsForGrant(data, linked);
+  assert.equal(todoAssignedToMember({ id: 1, assignee_id: 12 }, linked.email, ids), true);
+  const previous = {
+    ...data,
+    todos: [{ id: 1, title: 'امروز', assignee_id: 12, done: false, date_jalali: '1405/07/01' }],
+  };
+  const next = mergeAllowedTeamTodos(previous, {
+    todos: [{ id: 1, title: 'امروز', assignee_id: 12, done: true, status: 'completed' }],
+  }, linked, 'complete');
+  assert.equal(next.todos.find(t => t.id === 1).done, true);
+  const stranger = attachClaimedStaffId(
+    { email: 'other@example.test', permissions: grant.permissions },
+    data,
+    '12'
+  );
+  assert.equal(stranger.staffId, undefined);
 });
 
 test('team_members staff_id counts as assigned when grant staffId is empty', () => {

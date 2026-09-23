@@ -31,6 +31,7 @@ const {
   staffEmail,
   ownStaffRowsForGrant,
   ownStaffIdsForGrant,
+  attachClaimedStaffId,
   todoVisibleToTeamMember,
   mergeTodoTombstones,
   mergeAllowedTeamTodos,
@@ -343,6 +344,18 @@ function getTeamGrant(req, targetId, workspaceId) {
     member?.staff_id || member?.staffId || grant.staff_id
   );
   return { email: requesterEmail, permissions, staffId };
+}
+
+function persistGrantStaffId(targetId, workspaceId, grant) {
+  const staffId = String(grant?.staffId || '').trim();
+  const email = String(grant?.email || '').trim().toLowerCase();
+  if (!staffId || !email) return;
+  db.prepare(`
+    UPDATE team_access_grants
+    SET staff_id=?, updated_at=datetime('now')
+    WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
+      AND (staff_id IS NULL OR staff_id='' OR staff_id=?)
+  `).run(staffId, targetId, workspaceId, email, staffId);
 }
 
 function staffIdFromWorkspaceStaff(targetId, workspaceId, memberEmail, fallback) {
@@ -797,7 +810,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     if (!workspace) return;
     if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
     const storageKey = workspace.storageKey;
-    const grant = getTeamGrant(req, targetId, workspace.workspaceId);
+    let grant = getTeamGrant(req, targetId, workspace.workspaceId);
     const operation = String(req.body?.operation || 'upsert');
     if (!['create', 'edit', 'complete', 'reopen', 'upsert', 'delete'].includes(operation)) {
       return res.status(400).json({ error: 'invalid_todo_operation' });
@@ -832,6 +845,12 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
     const previousTodos = Array.isArray(previousData.todos) ? previousData.todos : [];
     const primaryIncoming = incomingTodos[incomingTodos.length - 1];
     const oldTodo = previousTodos.find(todo => String(todo?.id) === String(primaryIncoming.id));
+    if (grant) {
+      const claimed = String(req.body?.staff_id || req.body?.staffId || '').trim()
+        || String(primaryIncoming?.assignee_id || primaryIncoming?.assigneeId || '').trim();
+      grant = attachClaimedStaffId(grant, previousData, claimed);
+      persistGrantStaffId(targetId, workspace.workspaceId, grant);
+    }
 
     const deletedTodoIds = operation === 'delete'
       ? [...new Set(incomingTodos.map(todo => String(todo.id)))]

@@ -84,6 +84,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(dataSource, /mergeAllowedTeamTodos\(previousData, nextData, grant, operation\)/);
   assert.match(dataSource, /teamTodoWriteApplied\(/);
   assert.match(dataSource, /grant \? \['staff', 'team_members'\] : \[\]/);
+  assert.match(dataSource, /attachClaimedStaffId\(grant, previousData, claimed\)/);
+  assert.match(appSource, /staff_id: teamSession/);
   assert.match(appSource, /function _todoTabNeedsArchivedPages\(/);
   assert.match(appSource, /if \(_todoTabNeedsArchivedPages\(\)\) await _loadTodoPage\(true, \{ reset: true \}\)/);
   assert.match(dataSource, /pickResolvedTeamPermissions\(member\?\.permissions, storedPermissions, roleKey\)/);
@@ -278,7 +280,7 @@ test('sign-in waits for the authoritative etag before sending a document delta',
 test('poll never starts a collection reload during active hydration and GETs coalesce', () => {
   const poll = appSource.match(/async function _pollServerStatus\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(poll, /window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight \|\| window\._resumeServerSyncInFlight/);
-  assert.doesNotMatch(poll, /_reloadCompleteTodosFromServer/);
+  assert.match(poll, /if \(_todoActiveTab === 'staff' \|\| _todoActiveTab === 'report'\) \{\s*await _reloadCompleteTodosFromServer/);
   assert.match(appSource, /window\._tpInFlightGets = window\._tpInFlightGets \|\| new Map\(\)/);
   assert.match(appSource, /return shared\.clone\(\)/);
   assert.match(appSource, /const visible = new Set\(_partsForPage/);
