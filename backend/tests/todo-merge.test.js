@@ -60,6 +60,27 @@ test('stale complete delta does not overwrite a newer reopen', () => {
   assert.equal(merged.done, false);
 });
 
+test('recurring complete keeps the advanced date even if the server template is newer', () => {
+  const incoming = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '1405/07/02',
+    scheduled_date: '1405/07/02',
+    updated_at: '2026-09-23T12:00:00.000Z',
+  };
+  const previous = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '1405/07/01',
+    scheduled_date: '1405/07/01',
+    updated_at: '2026-09-23T13:00:00.000Z',
+  };
+  const merged = applyTodoDeltaMerge(incoming, previous, 'complete');
+  assert.equal(merged.date_jalali, '1405/07/02');
+});
+
 test('keeps later recurring date so an overdue tick is not rolled back', () => {
   const incoming = { id: 2, repeat: 'daily', done: false, date_jalali: '1403/05/31', updated_at: '2026-08-23T10:00:00.000Z' };
   const previous = { id: 2, repeat: 'daily', done: false, date_jalali: '1405/06/01', scheduled_date: '1405/06/01', updated_at: '2026-08-22T18:00:00.000Z' };

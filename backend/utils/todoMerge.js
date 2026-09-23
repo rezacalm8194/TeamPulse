@@ -59,7 +59,10 @@ function applyTodoDeltaMerge(incoming, previous, operation) {
   if (op === 'complete') {
     const incomingTime = Date.parse(incoming.updated_at || incoming.done_at || '') || 0;
     const previousTime = Date.parse(previous.updated_at || '') || 0;
-    if (!previous.done && previousTime > incomingTime) return previous;
+    const dateAdvanced = scheduledKey(incoming) > scheduledKey(previous);
+    // A newer open template (owner catch-up) must not swallow a staff tick
+    // that already moved the occurrence to the next date.
+    if (!previous.done && previousTime > incomingTime && !dateAdvanced) return previous;
     if (todoHasReopenAfter(previous, incomingTime)) return previous;
   }
   return pickMergedTodo(incoming, previous);
