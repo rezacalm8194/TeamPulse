@@ -3204,9 +3204,16 @@ function _toggleTodo(id) {
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
-  const snapshot = (t.done && (t._snapshot || t._occurrence))
+  const clickedDoneOccurrence = !!(t.done && (t._snapshot || t._occurrence || t.archived));
+  const todaySnap = (!clickedDoneOccurrence && typeof _todoTodaySnapshotForRoot === 'function')
+    ? _todoTodaySnapshotForRoot(t)
+    : null;
+  // Only undo when this row is the done occurrence, or the template already
+  // left today (painted-checked). An open row still due today/overdue must
+  // complete — a leftover snapshot from another date must not steal the tick.
+  const snapshot = clickedDoneOccurrence
     ? t
-    : (!t.done && typeof _todoTodaySnapshotForRoot === 'function' ? _todoTodaySnapshotForRoot(t) : null);
+    : (todaySnap && typeof _todoRemainsOpenToday === 'function' && !_todoRemainsOpenToday(t) ? todaySnap : null);
   if (snapshot) {
     if (!_todoCanComplete(snapshot) && !_todoCanComplete(t)) {
       showToast('برای برداشتن تیک این کار دسترسی نداری', 'error');
