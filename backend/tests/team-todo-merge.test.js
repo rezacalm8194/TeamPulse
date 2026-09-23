@@ -185,6 +185,19 @@ test('unassigned teammate cannot persist a history-only complete', () => {
   assert.equal(teamTodoWriteApplied(previous.todos[0], todo, incoming, 'complete'), false);
 });
 
+test('same-date recurring complete without a saved change is not treated as applied', () => {
+  const oldTodo = {
+    id: 2,
+    assignee_id: 12,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '1405/07/01',
+    scheduled_date: '1405/07/01',
+  };
+  const incoming = { ...oldTodo, updated_at: '2026-09-23T10:00:00.000Z', history: [{ action: 'completed' }] };
+  assert.equal(teamTodoWriteApplied(oldTodo, oldTodo, incoming, 'complete'), false);
+});
+
 test('archive-permission team write keeps student upsert and owner-only rows', () => {
   const previous = {
     students: [

@@ -198,7 +198,7 @@ function teamTodoWriteApplied(oldTodo, savedTodo, incoming, operation) {
     const incomingKey = scheduledKey(incoming);
     const savedKey = scheduledKey(savedTodo);
     const oldKey = scheduledKey(oldTodo);
-    if (incomingKey && savedKey >= incomingKey && incomingKey >= oldKey) return true;
+    if (incomingKey && oldKey && savedKey > oldKey) return true;
     return !!savedTodo.done && !oldTodo?.done;
   }
   if (op === 'reopen') return !savedTodo.done;
@@ -231,7 +231,8 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     permissions.includes('todo_edit_manager');
   const canCompleteAssigned = permissions.includes('todo_complete_own') ||
     permissions.includes('todo_edit_manager') ||
-    permissions.includes('todo_manage_staff');
+    permissions.includes('todo_manage_staff') ||
+    permissions.includes('todo_view_assigned');
   const validCompletionSnapshots = incomingTodos.filter(todo => {
     if (!canCompleteAssigned || !isCompletionSnapshot(todo)) return false;
     if (!todoAssignedToMember(todo, memberEmail, ownStaffIds)) return false;
@@ -261,7 +262,9 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
     const canCompleteOwn = assignedToMember && (
       permissions.includes('todo_complete_own') ||
       permissions.includes('todo_edit_manager') ||
-      permissions.includes('todo_manage_staff')
+      permissions.includes('todo_manage_staff') ||
+      permissions.includes('todo_view_assigned') ||
+      String(operation || '') === 'complete'
     );
     const canReportOwn = assignedToMember && (
       permissions.includes('todo_report_own') ||
