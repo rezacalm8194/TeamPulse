@@ -45,6 +45,8 @@ test('todo completion merge prefers done state and later recurring dates', () =>
 test('todo tick keeps complete operation after advancing a recurring task', () => {
   assert.match(todosSource, /function _undoTodoTick\(/);
   assert.match(todosSource, /تیک امروز این کار حذف شود؟/);
+  assert.match(todosSource, /clickedDoneOccurrence/);
+  assert.match(todosSource, /!_todoRemainsOpenToday\(t\) \? todaySnap : null/);
   assert.match(todosSource, /!\s*_isTeamGuest\(\) && typeof _rewindRecurringTemplateFromSnapshot/);
   assert.match(appSource, /never revert the optimistic tick here/);
   assert.doesNotMatch(appSource, /if \(_teamAccessSession\(\) && operation === 'complete' && !res\)/);
