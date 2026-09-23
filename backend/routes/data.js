@@ -337,12 +337,12 @@ function getTeamGrant(req, targetId, workspaceId) {
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
   const roleKey = member?.role_key || member?.roleKey || member?.team_role || 'staff_basic';
   const permissions = pickResolvedTeamPermissions(member?.permissions, storedPermissions, roleKey);
-  const staffId = staffIdFromWorkspaceStaff(
-    targetId,
-    workspaceId,
-    requesterEmail,
-    member?.staff_id || member?.staffId || grant.staff_id
-  );
+    const staffId = staffIdFromWorkspaceStaff(
+      targetId,
+      workspaceId,
+      requesterEmail,
+      grant.staff_id || member?.staff_id || member?.staffId
+    );
   return { email: requesterEmail, permissions, staffId };
 }
 
