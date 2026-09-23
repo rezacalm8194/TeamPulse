@@ -3,7 +3,8 @@ function todoRecency(item) {
 }
 
 function scheduledKey(item) {
-  const raw = String(item?.scheduled_date || item?.scheduledDate || item?.date_jalali || '');
+  const raw = String(item?.scheduled_date || item?.scheduledDate || item?.date_jalali || '')
+    .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
   const parts = raw.split(/[^\d]+/).filter(Boolean);
   if (parts.length < 3) return 0;
   return Number(parts[0]) * 10000 + Number(parts[1]) * 100 + Number(parts[2]);

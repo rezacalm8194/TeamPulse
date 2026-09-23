@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp278';
+const TP_ASSET_V = 'tp279';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18153,21 +18153,20 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
           return res;
         }
         if (res.status === 403) {
-          _dequeueDurableTodoDelta(todoSnapshot.id, operation);
-          extraSnapshots.forEach(item => {
-            if (item?.id != null) _dequeueDurableTodoDelta(item.id);
-          });
           if (teamSession && (operation === 'complete' || operation === 'reopen' || operation === 'delete')) {
             _armTodoDeltaConflictBackoff(3000);
-            const remainingDeltaIds = _readDurableTodoDeltaQueue().map(item => String(item?.todoId)).filter(Boolean);
-            if (remainingDeltaIds.length) {
-              _markServerSyncPending('todo-delta-save', { todoIds: remainingDeltaIds });
-            } else {
-              _clearServerSyncPending(Infinity);
-            }
+            _markServerSyncPending('todo-delta-save', {
+              todoIds: [String(todoSnapshot.id)].concat(
+                extraSnapshots.map(item => item?.id != null ? String(item.id) : '').filter(Boolean)
+              ),
+            });
             showToast('تیک روی حساب مدیر ذخیره نشد؛ یک‌بار دیگر تیک بزن', 'error');
-            if (operation === 'complete') _revertLocalTeamComplete(todoSnapshot, extraSnapshots);
+            _scheduleTodoDeltaRetry(todoSnapshot, operation, extraSnapshots, 3000);
           } else {
+            _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+            extraSnapshots.forEach(item => {
+              if (item?.id != null) _dequeueDurableTodoDelta(item.id);
+            });
             _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
               reason: 'todo-delta-conflict-stopped',
               error: responseData?.error || 'todo_operation_forbidden',
@@ -24703,7 +24702,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v278';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v279';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

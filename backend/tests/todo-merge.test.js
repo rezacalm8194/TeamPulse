@@ -81,6 +81,27 @@ test('recurring complete keeps the advanced date even if the server template is 
   assert.equal(merged.date_jalali, '1405/07/02');
 });
 
+test('persian jalali complete still advances past the previous scheduled day', () => {
+  const incoming = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '۱۴۰۵/۰۷/۰۲',
+    scheduled_date: '۱۴۰۵/۰۷/۰۲',
+    updated_at: '2026-09-23T12:00:00.000Z',
+  };
+  const previous = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '۱۴۰۵/۰۷/۰۱',
+    scheduled_date: '۱۴۰۵/۰۷/۰۱',
+    updated_at: '2026-09-23T13:00:00.000Z',
+  };
+  const merged = applyTodoDeltaMerge(incoming, previous, 'complete');
+  assert.equal(merged.date_jalali, '۱۴۰۵/۰۷/۰۲');
+});
+
 test('keeps later recurring date so an overdue tick is not rolled back', () => {
   const incoming = { id: 2, repeat: 'daily', done: false, date_jalali: '1403/05/31', updated_at: '2026-08-23T10:00:00.000Z' };
   const previous = { id: 2, repeat: 'daily', done: false, date_jalali: '1405/06/01', scheduled_date: '1405/06/01', updated_at: '2026-08-22T18:00:00.000Z' };
