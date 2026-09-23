@@ -3212,6 +3212,7 @@ function _toggleTodo(id) {
       showToast('برای برداشتن تیک این کار دسترسی نداری', 'error');
       return;
     }
+    if (!confirm('تیک امروز این کار حذف شود؟')) return;
     _undoTodoTick(snapshot);
     return;
   }
