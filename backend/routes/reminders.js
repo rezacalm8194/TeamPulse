@@ -150,7 +150,7 @@ function getActiveTeamGrant(ownerAccountId, workspaceId, memberEmail) {
   return {
     email: memberEmail,
     permissions,
-    staffId: String(member?.staff_id || member?.staffId || grant?.staff_id || '').trim(),
+    staffId: String(grant?.staff_id || member?.staff_id || member?.staffId || '').trim(),
   };
 }
 
