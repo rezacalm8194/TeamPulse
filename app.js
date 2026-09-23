@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp271';
+const TP_ASSET_V = 'tp272';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -18163,6 +18163,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
               _clearServerSyncPending(Infinity);
             }
             showToast('تیک روی حساب مدیر ذخیره نشد؛ یک‌بار دیگر تیک بزن', 'error');
+            if (operation === 'complete') _revertLocalTeamComplete(todoSnapshot, extraSnapshots);
           } else {
             _stopDurableTodoDeltaAfterConflict(todoSnapshot.id, operation, {
               reason: 'todo-delta-conflict-stopped',
@@ -21002,6 +21003,37 @@ function _rewindRecurringTemplateFromSnapshot(snapshot) {
   template.updated_at = new Date().toISOString();
   return template;
 }
+
+function _revertLocalTeamComplete(todo, extraTodos) {
+  if (!_teamAccessSession()) return;
+  const extras = Array.isArray(extraTodos) ? extraTodos : [];
+  extras.forEach(snap => {
+    if (!snap || snap.id == null) return;
+    _db.todos = (_db.todos || []).filter(row => String(row.id) !== String(snap.id));
+  });
+  const snap = extras.find(item => item && (item._snapshot || item._occurrence));
+  if (snap) _rewindRecurringTemplateFromSnapshot(snap);
+  const live = (_db.todos || []).find(row => String(row.id) === String(todo?.id));
+  if (live && live.done) {
+    live.done = false;
+    live.status = 'pending';
+    live.done_at = null;
+    live.completedAt = null;
+    live.completed_at = null;
+    live.archived = false;
+    live.updated_at = new Date().toISOString();
+  }
+  try { _persistTodoTickSnapshot(); } catch (e) {}
+  if (typeof currentPage === 'string' && currentPage === 'todolist' && typeof renderTodoList === 'function') {
+    try { renderTodoList({ skipMaintenance: true }); } catch (e) {}
+  }
+}
+
+
+function _todoIsDoneToday(t, todayKey = _jalaliToday()) {
+  return !!(t?.done && _todoDoneDayKey(t) === todayKey);
+}
+
 
 
 
@@ -24652,7 +24684,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v271';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v272';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
