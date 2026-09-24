@@ -16817,6 +16817,21 @@ function _apiErrorMessage(data, fallback) {
   return (data && (data.message || data.error)) || fallback;
 }
 
+async function _tpNukeClientCaches() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(reg => reg.unregister()));
+    }
+  } catch (e) {}
+  try {
+    if (window.caches && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+    }
+  } catch (e) {}
+}
+
 let _sbSession = null;
 let _sbUser = null;
 const TP_AUTH_CREDENTIALS_KEY = 'tp_auth_credentials_v1';
@@ -16900,12 +16915,12 @@ async function _apiFetch(path, opts = {}) {
           externalSignal.addEventListener('abort', onExternalAbort, { once: true });
         }
       }
-      return await fetch(url, { ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+      return await fetch(url, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
     } catch (error) {
       const publicUrl = _PUBLIC_API_ORIGIN + path;
       if (url !== publicUrl) {
         try {
-          return await fetch(publicUrl, { ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+          return await fetch(publicUrl, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
         } catch (fallbackError) {
           error = fallbackError;
         }
@@ -17086,10 +17101,12 @@ const _auth = {
 
   async signIn(email, password) {
     email = String(email || '').trim().toLowerCase();
-    const res = await _apiFetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password })
-    });
+    const payload = { method: 'POST', body: JSON.stringify({ email, password }) };
+    let res = await _apiFetch('/api/auth/login', payload);
+    if (res.status === 503) {
+      await _tpNukeClientCaches();
+      res = await _apiFetch('/api/auth/login', payload);
+    }
     const data = await _readApiJson(res);
     if (!res.ok) throw new Error(_apiErrorMessage(data, 'خطا در ورود'));
     _sbSession = { token: data.token };
@@ -20002,7 +20019,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
   ).join('');
 
   const resetForm =
-    '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doReset()" style="display:flex;flex-direction:column;gap:14px">' +
+    '<form id="auth-form" method="post" action="#" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doReset()" style="display:flex;flex-direction:column;gap:14px">' +
     '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
     '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" style="direction:ltr;width:100%"></div>' +
     '<button type="submit" class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;border-radius:12px">📧 ارسال لینک بازیابی</button>' +
@@ -20039,7 +20056,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     : 'حساب داری؟ <button type="button" onclick="_showAuthScreen(\'login\')" style="background:none;border:none;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px">وارد شو</button>';
 
   const mainForm =
-    '<form id="auth-form" method="post" action="/login" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doAuth(&#39;' + mode + '&#39;)" style="display:flex;flex-direction:column;gap:14px">' +
+    '<form id="auth-form" method="post" action="#" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doAuth(&#39;' + mode + '&#39;)" style="display:flex;flex-direction:column;gap:14px">' +
     (!isLogin ? '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">نام و نام خانوادگی</label>' +
     '<input class="form-input" id="auth-name" name="name" type="text" placeholder="مثلاً: رضا صفری" ' +
     'autocomplete="name" style="width:100%;font-size:14px" onkeydown="_tpFocusOnEnter(event,\'auth-phone\')"></div>' +
@@ -20185,7 +20202,7 @@ async function _doAuth(mode) {
     } else if (msg.includes('Email not confirmed')) {
       _authMsg('ایمیل تأیید نشده — صندوق ورودیت رو چک کن');
     } else if (msg.includes('network_unavailable') || msg.includes('ارتباط با سرور')) {
-      _authMsg('ارتباط با سرور برقرار نشد. اینترنت را چک کن، یا از مرورگر teampulse.ir/app وارد شو');
+      _authMsg('صفحه از کش قدیمی است و به سرور وصل نیست. در DevTools برو Application → Storage → Clear site data، بعد صفحه را رفرش کن');
     } else if (msg.includes('rate limit') || msg.includes('too many')) {
       _authMsg('خیلی زیاد تلاش کردی — چند دقیقه صبر کن');
     } else {
@@ -20785,6 +20802,7 @@ async function openAdminPanel() {
 }
 
 async function _initAuth() {
+  try { await _tpEnsureFreshClient(); } catch (e) {}
   // چک کردن URL param
   const urlParams = new URLSearchParams(window.location.search);
   const actionLogin = urlParams.get('action') === 'login';
