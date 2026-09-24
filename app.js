@@ -7338,10 +7338,10 @@ async function renderHome() {
     ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
   </div>`; }).join('');
   // سربرگ کارت کارها: دکمه جابه‌جایی «کارهای من / کارهای پرسنل» + لینک رفتن به لیست.
-  const homeTodoHead = _homeCanSeeStaffTodos ? `<div class="home-card-head"><h3>${homeTodoScope === 'staff' ? `کارهای پرسنل ${overdueStaffTodos.length ? `(${_homeFa(overdueStaffTodos.length)} معوق)` : ''}` : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها"><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(openStaffTodos.length)})</button></div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`
+  const homeTodoHead = _homeCanSeeStaffTodos ? `<div class="home-card-head"><h3>${homeTodoScope === 'staff' ? `کارهای پرسنل ${overdueStaffTodos.length ? `(${_homeFa(overdueStaffTodos.length)} معوق)` : ''}` : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها"><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(staffTodosSorted.length)})</button></div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`
     : `<div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>`;
   const homeTodoBody = homeTodoScope === 'staff'
-    ? (staffTodoRows || empty(openStaffTodos.length ? 'کار بازی برای امروز نیست.' : 'کاری برای پرسنل ثبت نشده است.'))
+    ? (staffTodoRows || empty(staffTodosSorted.length ? 'کار بازی برای امروز نیست.' : (openStaffTodos.length ? 'کار بازی برای امروز نیست.' : 'کاری برای پرسنل ثبت نشده است.')))
     : (todoRows || empty('کار بازی برای امروز نیست.'));
   const sessionRows = sessions.slice(0, 6).map(s => {
     const who = escapeHtml(_homeStudentName(s.student_id));
@@ -25288,6 +25288,25 @@ function _habitsInit() {
   if (!_db.habit_logs) _db.habit_logs = [];
   if (!_db._nextId) _db._nextId = {};
   if (!_db._nextId.habits) _db._nextId.habits = 1;
+  // habit_logs rows historically had no `id`, so the delta-sync patch
+  // (`_buildServerSyncPatch`) skipped them entirely: the toggle never reached
+  // the server and the next live refresh overwrote it (dashboard revert).
+  // Give every log a stable id so it syncs like any other id collection.
+  try {
+    const seen = new Map();
+    (_db.habit_logs || []).forEach(l => {
+      if (!l || l.habit_id == null || !l.date) return;
+      if (l.id == null) l.id = String(l.habit_id) + '__' + String(l.date);
+      const key = String(l.habit_id) + '__' + String(l.date);
+      const prev = seen.get(key);
+      if (!prev) { seen.set(key, l); return; }
+      // Duplicate rows from before the id fix: keep the newest (done wins).
+      const prevTs = Date.parse(prev.logged_at || '') || 0;
+      const nextTs = Date.parse(l.logged_at || '') || 0;
+      if ((l.done && !prev.done) || nextTs >= prevTs) seen.set(key, l);
+    });
+    if (seen.size !== (_db.habit_logs || []).length) _db.habit_logs = [...seen.values()];
+  } catch (e) {}
   _db.habits.forEach(h => {
     if ((h.remind_min === undefined || h.remind_min === null) && h.time) h.remind_min = 15;
   });

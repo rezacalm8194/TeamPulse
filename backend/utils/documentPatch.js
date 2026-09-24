@@ -26,7 +26,7 @@ function normalizeIdList(value) {
 }
 
 function rowTimestamp(row) {
-  return Date.parse(row?.updated_at || row?.created_at || '') || 0;
+  return Date.parse(row?.updated_at || row?.created_at || row?.logged_at || '') || 0;
 }
 
 function incomingIsNotNewer(existing, incoming) {
@@ -78,6 +78,23 @@ function applyDocumentPatch(previousData, patch = {}) {
     const current = next[key];
     if (current != null && !Array.isArray(current) && current !== undefined) return;
     next[key] = applyCollectionChange(Array.isArray(current) ? current : [], change);
+    // habit_logs gained stable ids (`habitId__date`) after shipping id-less.
+    // A delta upsert would otherwise leave the legacy id-less row next to the
+    // new one. Collapse by habit+date so the toggle stays single.
+    if (key === 'habit_logs' && Array.isArray(next[key])) {
+      const seen = new Map();
+      next[key].forEach(row => {
+        if (!row || row.habit_id == null || !row.date) return;
+        if (row.id == null) row.id = String(row.habit_id) + '__' + String(row.date);
+        const dedupeKey = String(row.habit_id) + '__' + String(row.date);
+        const prev = seen.get(dedupeKey);
+        if (!prev) { seen.set(dedupeKey, row); return; }
+        const prevTs = Date.parse(prev.logged_at || '') || 0;
+        const nextTs = Date.parse(row.logged_at || '') || 0;
+        if (nextTs >= prevTs) seen.set(dedupeKey, row);
+      });
+      if (seen.size !== next[key].length) next[key] = [...seen.values()];
+    }
   });
   const scalars = patch.scalars && typeof patch.scalars === 'object' ? patch.scalars : {};
   Object.keys(scalars).forEach(key => {

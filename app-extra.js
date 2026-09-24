@@ -5080,7 +5080,7 @@ function _goalLinkedStats(goalId) {
   const tasks = (_db.todos || []).filter(t => t.goal_id === goalId && !t.archived);
   const habits = (_db.habits || []).filter(h => h.goal_id === goalId && !h.archived);
   const doneTasks = tasks.filter(t => t.done).length;
-  const doneHabitsToday = habits.filter(h => (_db.habit_logs || []).some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
+  const doneHabitsToday = habits.filter(h => (_db.habit_logs || []).some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done)).length;
   return { tasks, habits, doneTasks, doneHabitsToday };
 }
 
@@ -6228,7 +6228,7 @@ function openGoalLinkedItems(id) {
     </div>`).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">کاری به این هدف لینک نشده</div>';
 
   const habitsHTML = habits.length ? habits.map(h => {
-    const doneToday = (_db.habit_logs||[]).some(l => l.habit_id === h.id && l.date === todayStr && l.done);
+    const doneToday = (_db.habit_logs||[]).some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done);
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
       <button onclick="toggleHabitToday(${h.id});openGoalLinkedItems(${id})" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;cursor:pointer;
         background:${doneToday?'var(--green)':'var(--bg4)'};border:2px solid ${doneToday?'var(--green)':'var(--border2)'};font-size:12px;display:flex;align-items:center;justify-content:center">
@@ -6675,15 +6675,15 @@ function renderHabits() {
   const archivedHabits = habits.filter(h => h.archived);
   let displayHabits;
   if (_habitFilter === 'archived') displayHabits = archivedHabits;
-  else if (_habitFilter === 'today_done') displayHabits = activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done));
-  else if (_habitFilter === 'today_undone') displayHabits = activeHabits.filter(h => !logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done));
+  else if (_habitFilter === 'today_done') displayHabits = activeHabits.filter(h => logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done));
+  else if (_habitFilter === 'today_undone') displayHabits = activeHabits.filter(h => !logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done));
   else displayHabits = activeHabits;
   displayHabits = [...displayHabits].sort((a,b) => (b.pinned?1:0) - (a.pinned?1:0));
 
   const filterTabs = [
     { key:'active', label:'همه', icon:'📋', count: activeHabits.length },
-    { key:'today_done', label:'انجام‌شده', icon:'✅', count: activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length },
-    { key:'today_undone', label:'انجام‌نشده', icon:'⭕', count: activeHabits.filter(h => !logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length },
+    { key:'today_done', label:'انجام‌شده', icon:'✅', count: activeHabits.filter(h => logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done)).length },
+    { key:'today_undone', label:'انجام‌نشده', icon:'⭕', count: activeHabits.filter(h => !logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done)).length },
     { key:'archived', label:'آرشیو', icon:'🗃', count: archivedHabits.length },
   ];
   const filterHTML = `
@@ -6700,7 +6700,7 @@ function renderHabits() {
 
   // ── آمار بالای صفحه ─────────────────────────────
   const bestStreakOverall = Math.max(0, ...activeHabits.map(h => getStreak(h.id)));
-  const doneTodayCount = activeHabits.filter(h => logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done)).length;
+  const doneTodayCount = activeHabits.filter(h => logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done)).length;
   const avgMonthSuccess = activeHabits.length ? Math.round(activeHabits.reduce((s,h)=>s+getMonthSuccess(h.id),0) / activeHabits.length) : 0;
 
   const statItem = (icon, label, value, color) => `
@@ -6755,7 +6755,7 @@ function renderHabits() {
   const nowHHMM = _appTimeLabel();
 
   const html = displayHabits.map(h => {
-    const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
+    const doneToday = logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done);
     const streak = getStreak(h.id);
     const bestStreak = getBestStreak(h.id);
     const monthSuccess = getMonthSuccess(h.id);
@@ -6770,7 +6770,7 @@ function renderHabits() {
         const d = new Date(gy,gm-1,gd - (6-i));
         const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
         const dateStr = formatJalali(...dj);
-        const done = logs.some(l => l.habit_id === h.id && l.date === dateStr && l.done);
+        const done = logs.some(l => String(l.habit_id) === String(h.id) && l.date === dateStr && l.done);
         const isToday = dateStr === todayStr;
         const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">
@@ -6901,7 +6901,7 @@ function renderHabits() {
       <div id="habits-compact-view" style="display:${_habitsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
           ${displayHabits.map(h => {
-            const doneToday = logs.some(l => l.habit_id === h.id && l.date === todayStr && l.done);
+            const doneToday = logs.some(l => String(l.habit_id) === String(h.id) && l.date === todayStr && l.done);
             const streak = getStreak(h.id);
             const monthSuccess = getMonthSuccess(h.id);
             const color = h.color || 'var(--amber)';
@@ -6965,12 +6965,24 @@ function _onHabitCardClick(event, habitId) {
 function toggleHabitToday(habitId) {
   _habitsInit();
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const existing = _db.habit_logs.find(l => l.habit_id === habitId && l.date === todayStr);
+  const logId = String(habitId) + '__' + String(todayStr);
+  const existing = (_db.habit_logs || []).find(l => String(l.id) === logId || (String(l.habit_id) === String(habitId) && l.date === todayStr));
   let nowDone;
-  if (existing) { existing.done = !existing.done; nowDone = existing.done; }
-  else { _db.habit_logs.push({ habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
+  if (existing) {
+    if (existing.id == null) existing.id = logId;
+    existing.habit_id = habitId;
+    existing.date = todayStr;
+    existing.done = !existing.done;
+    existing.logged_at = new Date().toISOString();
+    nowDone = existing.done;
+  }
+  else { _db.habit_logs.push({ id: logId, habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
   _justToggledHabitId = nowDone ? habitId : null;
-  _save(); renderHabits();
+  _save();
+  // Called from the dashboard too — renderHabits() would replace the home
+  // content, so only re-render the habits page when we are actually on it.
+  // The dashboard caller (_homeToggleHabit) re-renders home itself.
+  if (typeof currentPage === 'undefined' || currentPage === 'habits') renderHabits();
 }
 
 function openAddHabit() {
@@ -7194,8 +7206,8 @@ function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
 
 function deleteHabit(id) {
   if (!confirm('این عادت حذف شود؟ این کار قابل بازگشت نیست.')) return;
-  _db.habits = (_db.habits||[]).filter(x => x.id !== id);
-  _db.habit_logs = (_db.habit_logs||[]).filter(x => x.habit_id !== id);
+  _db.habits = (_db.habits||[]).filter(x => String(x.id) !== String(id));
+  _db.habit_logs = (_db.habit_logs||[]).filter(x => String(x.habit_id) !== String(id));
   _save(); showToast('حذف شد', 'error');
   if (currentPage === 'habits') renderHabits();
 }
@@ -7207,12 +7219,12 @@ function openHabitDetail(id) {
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
   const logs = _db.habit_logs || [];
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const doneToday = logs.some(l => l.habit_id === id && l.date === todayStr && l.done);
+  const doneToday = logs.some(l => String(l.habit_id) === String(id) && l.date === todayStr && l.done);
   const streak = _habitStreak(id);
   const bestStreak = _habitBestStreak(id);
   const monthSuccess = _habitMonthSuccess(id);
   const lastDone = _habitLastDone(id);
-  const totalDone = logs.filter(l => l.habit_id === id && l.done).length;
+  const totalDone = logs.filter(l => String(l.habit_id) === String(id) && l.done).length;
   const linkedGoal = h.goal_id ? (_db.goals||[]).find(x => x.id === h.goal_id) : null;
   const color = h.color || 'var(--amber)';
 
