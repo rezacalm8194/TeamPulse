@@ -845,7 +845,7 @@ button { cursor: pointer; font-family: var(--font); }
   border-color: transparent !important;
   box-shadow: none !important;
 }
-.todo-overdue-menu-btn { color: rgba(255,255,255,.42) !important; }
+.todo-overdue-menu-btn { color: var(--text2) !important; }
 .todo-overdue-menu-btn:hover { color: var(--text) !important; }
 .todo-edit-accordion {
   border: 1px solid rgba(96,165,250,.22);
