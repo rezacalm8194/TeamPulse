@@ -91,6 +91,18 @@ test('inline parser keeps habit card toggle handlers', () => {
   assert.ok(ctx._tpParseInline('event.stopPropagation();toggleHabitToday(12)'));
 });
 
+test('inline parser accepts nested calls, arrays, objects, and DOM statements', () => {
+  const ctx = loadBinder();
+  assert.ok(ctx._tpParseInline("openAllTopics(1, decodeURIComponent('Ali'))"));
+  assert.ok(ctx._tpParseInline("_instrOpenTransferModal([9],'move')"));
+  assert.ok(ctx._tpParseInline("openBalePaymentRequest({student_id:1,amount:2,title:'x'})"));
+  assert.ok(ctx._tpParseInline('window.print()'));
+  assert.ok(ctx._tpParseInline("this.classList.toggle('checked')"));
+  assert.ok(ctx._tpParseInline("this.closest('#wallet-alert').remove()"));
+  assert.ok(ctx._tpParseInline("this.style.background='var(--bg3)'"));
+  assert.ok(ctx._tpParseInline('openEditTopic(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)'));
+});
+
 test('inline parser rejects live identifiers like _instrParentId', () => {
   const ctx = loadBinder();
   assert.equal(ctx._tpParseInline("openAddInstruction(_instrParentId,'category')"), null);

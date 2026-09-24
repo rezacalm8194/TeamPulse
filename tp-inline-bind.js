@@ -62,9 +62,27 @@
     return null;
   }
 
+  var BAD_OBJ_KEY = /^(?:__proto__|prototype|constructor)$/;
+  var CSS_PROP_OK = /^[a-zA-Z][a-zA-Z0-9]*$/;
+  var CSS_VAL_OK = /^(?:|none|transparent|(?:\d+px\s+solid\s+)?var\(--[\w-]+\)|var\(--[\w-]+\)\d+|#[0-9a-fA-F]{3,8}|[a-zA-Z][\w-]*)$/;
+  var CLASS_OK = /^[a-zA-Z][\w-]*$/;
+  var SEL_OK = /^[#.]?[A-Za-z][\w-]*(?:\[[\w-]+(?:=['"]?[\w#-]+['"]?)?\])?$/;
+
   function parseExpr(s, i) {
     i = skipWs(s, i);
     if (i >= s.length) return null;
+    var ch = s.charAt(i);
+    if (ch === '+' || ch === '-') {
+      if (ch === '-' && /\d/.test(s.charAt(i + 1) || '')) {
+        /* fall through to numeric literal */
+      } else {
+        var innerU = parseExpr(s, i + 1);
+        if (!innerU) return null;
+        return { kind: 'unary', op: ch, expr: innerU, i: innerU.i };
+      }
+    }
+    if (ch === '[') return parseArray(s, i);
+    if (ch === '{') return parseObject(s, i);
     if (s.slice(i, i + 9) === 'undefined' && !/\w/.test(s.charAt(i + 9) || '')) {
       return { kind: 'lit', value: undefined, i: i + 9 };
     }
@@ -108,7 +126,105 @@
       if (s.charAt(i) === '(') return null;
       return { kind: 'this', path: tpath, i: i };
     }
+    var nested = parseCall(s, i);
+    if (nested && nested.kind === 'call') {
+      return { kind: 'ncall', name: nested.name, args: nested.args, i: nested.i };
+    }
     return null;
+  }
+
+  function parseArray(s, i) {
+    if (s.charAt(i) !== '[') return null;
+    i = skipWs(s, i + 1);
+    var items = [];
+    if (s.charAt(i) !== ']') {
+      while (true) {
+        var item = parseExpr(s, i);
+        if (!item) return null;
+        items.push(item);
+        i = skipWs(s, item.i);
+        if (s.charAt(i) === ',') { i = skipWs(s, i + 1); continue; }
+        break;
+      }
+    }
+    if (s.charAt(i) !== ']') return null;
+    return { kind: 'arr', items: items, i: i + 1 };
+  }
+
+  function parseObject(s, i) {
+    if (s.charAt(i) !== '{') return null;
+    i = skipWs(s, i + 1);
+    var pairs = [];
+    if (s.charAt(i) !== '}') {
+      while (true) {
+        var km = /^[A-Za-z_$][\w$]*/.exec(s.slice(i));
+        if (!km || BAD_OBJ_KEY.test(km[0])) return null;
+        i = skipWs(s, i + km[0].length);
+        if (s.charAt(i) !== ':') return null;
+        var val = parseExpr(s, i + 1);
+        if (!val) return null;
+        pairs.push({ k: km[0], v: val });
+        i = skipWs(s, val.i);
+        if (s.charAt(i) === ',') { i = skipWs(s, i + 1); continue; }
+        break;
+      }
+    }
+    if (s.charAt(i) !== '}') return null;
+    return { kind: 'obj', pairs: pairs, i: i + 1 };
+  }
+
+  function parseThisStyleAssign(s, i) {
+    if (s.slice(i, i + 11) !== 'this.style.') return null;
+    i += 11;
+    var pm = /^[A-Za-z][a-zA-Z0-9]*/.exec(s.slice(i));
+    if (!pm || !CSS_PROP_OK.test(pm[0]) || pm[0] === 'cssText') return null;
+    i = skipWs(s, i + pm[0].length);
+    if (s.charAt(i) !== '=') return null;
+    var val = parseExpr(s, i + 1);
+    if (!val || val.kind !== 'lit' || typeof val.value !== 'string' || !CSS_VAL_OK.test(val.value)) return null;
+    return { kind: 'style', prop: pm[0], value: val.value, i: val.i };
+  }
+
+  function parseClassToggle(s, i) {
+    if (s.slice(i, i + 22) !== 'this.classList.toggle(') return null;
+    i = skipWs(s, i + 22);
+    var cls = parseString(s, i);
+    if (!cls || !CLASS_OK.test(cls.value)) return null;
+    i = skipWs(s, cls.i);
+    var force = null;
+    if (s.charAt(i) === ',') {
+      force = parseExpr(s, i + 1);
+      if (!force) return null;
+      i = skipWs(s, force.i);
+    }
+    if (s.charAt(i) !== ')') return null;
+    return { kind: 'clstog', cls: cls.value, force: force, i: i + 1 };
+  }
+
+  function parseClosestRemove(s, i) {
+    if (s.slice(i, i + 13) !== 'this.closest(') return null;
+    i = skipWs(s, i + 13);
+    var sel = parseString(s, i);
+    if (!sel || !SEL_OK.test(sel.value)) return null;
+    i = skipWs(s, sel.i);
+    if (s.charAt(i) !== ')') return null;
+    i = skipWs(s, i + 1);
+    if (s.slice(i, i + 8) !== '.remove(') return null;
+    i = skipWs(s, i + 8);
+    if (s.charAt(i) !== ')') return null;
+    return { kind: 'closestRm', sel: sel.value, i: i + 1 };
+  }
+
+  function parseParentRemove(s, i) {
+    var which = null;
+    if (s.slice(i, i + 16) === 'this.parentNode.') which = 'parentNode';
+    else if (s.slice(i, i + 19) === 'this.parentElement.') which = 'parentElement';
+    if (!which) return null;
+    i += which === 'parentNode' ? 16 : 19;
+    if (s.slice(i, i + 7) !== 'remove(') return null;
+    i = skipWs(s, i + 7);
+    if (s.charAt(i) !== ')') return null;
+    return { kind: 'parentRm', which: which, i: i + 1 };
   }
 
   function parseCall(s, i) {
@@ -128,6 +244,19 @@
       if (s.charAt(i) !== ')') return null;
       return { kind: 'reload', i: i + 1 };
     }
+    if (s.slice(i, i + 12) === 'window.print' && s.charAt(i + 12) === '(') {
+      i = skipWs(s, i + 13);
+      if (s.charAt(i) !== ')') return null;
+      return { kind: 'print', i: i + 1 };
+    }
+    var styled = parseThisStyleAssign(s, i);
+    if (styled) return styled;
+    var tog = parseClassToggle(s, i);
+    if (tog) return tog;
+    var crm = parseClosestRemove(s, i);
+    if (crm) return crm;
+    var prm = parseParentRemove(s, i);
+    if (prm) return prm;
     var id = /^[A-Za-z_$][\w$]*/.exec(s.slice(i));
     if (!id) return null;
     var name = id[0];
@@ -210,9 +339,33 @@
   }
 
   function evalExpr(expr, el, event) {
+    if (!expr) return undefined;
     if (expr.kind === 'lit') return expr.value;
     if (expr.kind === 'this') return expr.path.length ? readPath(el, expr.path) : el;
     if (expr.kind === 'event') return expr.path.length ? readPath(event, expr.path) : event;
+    if (expr.kind === 'unary') {
+      var uv = Number(evalExpr(expr.expr, el, event));
+      return expr.op === '-' ? -uv : uv;
+    }
+    if (expr.kind === 'arr') {
+      var arr = [];
+      for (var ai = 0; ai < expr.items.length; ai++) arr.push(evalExpr(expr.items[ai], el, event));
+      return arr;
+    }
+    if (expr.kind === 'obj') {
+      var obj = Object.create(null);
+      for (var pi = 0; pi < expr.pairs.length; pi++) obj[expr.pairs[pi].k] = evalExpr(expr.pairs[pi].v, el, event);
+      return obj;
+    }
+    if (expr.kind === 'ncall') {
+      if (DENY[expr.name]) return undefined;
+      var nfn = global[expr.name];
+      if (typeof nfn !== 'function') return undefined;
+      if (nfn === eval || nfn === Function || nfn === setTimeout || nfn === setInterval) return undefined;
+      var nargs = [];
+      for (var na = 0; na < expr.args.length; na++) nargs.push(evalExpr(expr.args[na], el, event));
+      return nfn.apply(el, nargs);
+    }
     return undefined;
   }
 
@@ -223,6 +376,25 @@
       if (st.kind === 'stop') { if (event && event.stopPropagation) event.stopPropagation(); continue; }
       if (st.kind === 'prevent') { if (event && event.preventDefault) event.preventDefault(); continue; }
       if (st.kind === 'reload') { location.reload(); continue; }
+      if (st.kind === 'print') { if (global.print) global.print(); continue; }
+      if (st.kind === 'style') { _tpStyle(el, st.prop, st.value); continue; }
+      if (st.kind === 'clstog') {
+        if (el && el.classList && el.classList.toggle) {
+          if (st.force) el.classList.toggle(st.cls, !!evalExpr(st.force, el, event));
+          else el.classList.toggle(st.cls);
+        }
+        continue;
+      }
+      if (st.kind === 'closestRm') {
+        var node = el && el.closest ? el.closest(st.sel) : null;
+        if (node && node.remove) node.remove();
+        continue;
+      }
+      if (st.kind === 'parentRm') {
+        var par = el && el[st.which];
+        if (par && par.remove) par.remove();
+        continue;
+      }
       if (st.kind === 'retfalse') { if (event && event.preventDefault) event.preventDefault(); return false; }
       if (st.kind === 'ifs') {
         if (!event || event.target !== el) continue;
@@ -544,4 +716,73 @@ function _tpOnEnterOrSpace(event, name) {
   if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
   if (event.preventDefault) event.preventDefault();
   _tpSafeCall(name);
+}
+function _tpPrint() { if (typeof print === 'function') print(); }
+function _tpSetInputValue(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.value = val == null ? '' : String(val);
+}
+function _tpLater(name, ms) {
+  var key = String(name || '');
+  if (!/^[A-Za-z_][\w]*$/.test(key)) return;
+  setTimeout(function () { _tpSafeCall(key); }, Math.max(0, Number(ms) || 0));
+}
+function _tpCopyGlobal(key, msg) {
+  if (!/^_[A-Za-z_]\w*$/.test(String(key || ''))) return;
+  copyToClipboard(window[key] || '', msg);
+}
+function _tpInstrFilter(key) {
+  _instrFilter = key;
+  renderInstructions();
+}
+function _tpOpenCalendarCreate(kind) {
+  _openCalendarCreate(kind, (typeof _todoCalendarSelectedDate !== 'undefined' && _todoCalendarSelectedDate) || _todayJalaliStr());
+}
+function _tpRemoveNewTopicCheckItem(el, idx) {
+  if (el && el.parentNode && el.parentNode.remove) el.parentNode.remove();
+  if (typeof _newTopicChecklist !== 'undefined' && Array.isArray(_newTopicChecklist)) _newTopicChecklist.splice(idx, 1);
+}
+function _tpToggleCheckLabel(el) {
+  if (!el || !el.classList) return;
+  el.classList.toggle('checked');
+  var inp = el.querySelector && el.querySelector('input');
+  if (inp) inp.checked = el.classList.contains('checked');
+}
+function _tpSyncPkgCheckFromInput(el) {
+  var wrap = el && el.closest && el.closest('.pkg-check');
+  if (wrap && wrap.classList) wrap.classList.toggle('checked', !!(el && el.checked));
+}
+function _tpToggleTut(el) {
+  var body = el && el.parentElement && el.parentElement.querySelector && el.parentElement.querySelector('.tut-body');
+  if (!body || !body.style) return;
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+function _tpPickInstrIcon(inputId, btnSel, el, icon) {
+  _tpSetInputValue(inputId, icon);
+  var btns = document.querySelectorAll(btnSel);
+  for (var i = 0; i < btns.length; i++) { if (btns[i].style) btns[i].style.background = 'var(--bg3)'; }
+  if (el && el.style) el.style.background = 'var(--accent2)33';
+}
+function _tpPickInstrColor(inputId, dotSel, el, color) {
+  _tpSetInputValue(inputId, color);
+  var dots = document.querySelectorAll(dotSel);
+  for (var i = 0; i < dots.length; i++) { if (dots[i].style) dots[i].style.outline = 'none'; }
+  if (el && el.style) el.style.outline = '3px solid var(--text)';
+}
+function _tpVisionMusic(el) {
+  var f = el && el.files && el.files[0];
+  if (typeof _visionHandleMusic === 'function') _visionHandleMusic(f);
+}
+function _adminChangePlanSelected() {
+  var ids = [];
+  if (typeof _adminSelectedUsers !== 'undefined' && _adminSelectedUsers) {
+    if (typeof _adminSelectedUsers.forEach === 'function') _adminSelectedUsers.forEach(function (v) { ids.push(v); });
+    else ids = Array.prototype.slice.call(_adminSelectedUsers);
+  }
+  _adminChangePlan(ids);
+}
+function _tpCancelArchiveLoss() {
+  window._pendingArchiveLoss = null;
+  if (typeof closeModal === 'function') closeModal();
+  if (typeof renderArchive === 'function') renderArchive();
 }

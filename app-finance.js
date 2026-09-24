@@ -769,7 +769,7 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
 function openNewFamily() {
   const membersChecklist = allStudents.map(x => `
     <label class="pkg-check" for="fam-new-member-${x.id}" style="width:100%;justify-content:flex-start">
-      <input type="checkbox" id="fam-new-member-${x.id}" class="fam-member-cb" value="${x.id}" onchange="this.closest('.pkg-check')?.classList.toggle('checked', this.checked)"> ${escapeHtml(`${x.name} ${x.lname}`.trim())}
+      <input type="checkbox" id="fam-new-member-${x.id}" class="fam-member-cb" value="${x.id}" onchange="_tpSyncPkgCheckFromInput(this)"> ${escapeHtml(`${x.name} ${x.lname}`.trim())}
     </label>`).join('');
 
   openModal('افزودن گروه جدید', `
