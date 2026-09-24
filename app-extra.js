@@ -4187,23 +4187,21 @@ function _instrAttachSectionHtml(id, fileFirst) {
   const attachments = saved
     ? (((_db.instructions || []).find(n => +n.id === +id) || {}).attachments || [])
     : (window._pendingInstructionAttachments || []);
-  const photoAction = saved ? `_triggerAttach('instruction',${+id},'image')` : `_pickInstructionFiles('image')`;
-  const cameraAction = saved ? `_triggerAttach('instruction',${+id},'camera')` : `_pickInstructionFiles('camera')`;
+  const cameraAction = saved ? `_captureKnowledgeCamera(${+id})` : `_captureKnowledgeCamera(null)`;
   const fileAction = saved ? `_triggerAttach('instruction',${+id})` : `_pickInstructionFiles()`;
   const fileBtn = `<button type="button" class="btn ${fileFirst ? 'btn-primary' : 'btn-ghost'} btn-sm" onclick="${fileAction}">📎 فایل</button>`;
-  const photoBtns = `<button type="button" class="btn btn-ghost btn-sm" onclick="${photoAction}">📷 افزودن عکس</button>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="${cameraAction}">📸 عکس گرفتن</button>`;
+  const cameraBtn = `<button type="button" class="btn btn-ghost btn-sm" onclick="${cameraAction}">📸 عکس گرفتن</button>`;
   return `
     <div class="form-group full instr-attach-section">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap">
         <div>
           <label class="form-label" style="margin:0">${fileFirst ? '📎 فایل' : '📷 عکس و فایل'}</label>
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">حداکثر حجم هر فایل ۱۰ مگابایت — دسکتاپ و موبایل</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">عنوان و توضیح لازم نیست — حداکثر ۱۰ مگابایت</div>
         </div>
         <span id="instr-attach-count" style="font-size:11px;color:var(--text3)">${attachments.length ? fa(attachments.length) + ' پیوست' : ''}</span>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-        ${fileFirst ? `${fileBtn}${photoBtns}` : `${photoBtns}${fileBtn}`}
+        ${fileFirst ? `${fileBtn}${cameraBtn}` : `${cameraBtn}${fileBtn}`}
       </div>
       <div id="instr-attach-preview">
         ${attachments.length
@@ -4258,15 +4256,9 @@ function openAddInstruction(parentId, type) {
       ${_instrAttachSectionHtml(null)}`;
   } else if (isFile) {
     bodyHtml = `
-      <div class="form-group full">
-        <label class="form-label">عنوان</label>
-        <input class="form-input" id="instr-title" placeholder="${pholder}" autofocus>
-      </div>
       ${_instrAttachSectionHtml(null, true)}
-      <div class="form-group full">
-        <label class="form-label">توضیح (اختیاری)</label>
-        <textarea class="form-textarea" id="instr-content" rows="3" placeholder="توضیح کوتاه درباره فایل..."></textarea>
-      </div>
+      <input type="hidden" id="instr-title" value="">
+      <input type="hidden" id="instr-content" value="">
       ${iconColorBlock}`;
   } else {
     /* ── Notes: title + content up front; secondary fields are collapsible. ── */
@@ -4339,11 +4331,11 @@ function openAddInstruction(parentId, type) {
     if (first) first.style.background = 'var(--accent2)33';
     const firstDot = document.querySelector('.color-pick-dot');
     if (firstDot) firstDot.style.outline = '3px solid var(--text)';
-    document.getElementById('instr-title')?.focus();
+    if (!isFile) document.getElementById('instr-title')?.focus();
     ['instr-content','instr-extra'].forEach(function(id) {
       const ta = document.getElementById(id);
       const fmap = {'instr-content':'content','instr-extra':'extra_note'};
-      if (ta) ta.addEventListener('dblclick', function(){ _openFocusMode(ta, null, fmap[id]); });
+      if (ta && ta.tagName === 'TEXTAREA') ta.addEventListener('dblclick', function(){ _openFocusMode(ta, null, fmap[id]); });
     });
     if (isChecklist) {
       const ta = document.getElementById('instr-content');
@@ -4351,7 +4343,6 @@ function openAddInstruction(parentId, type) {
     }
     _bindInstructionImagePaste('instr-content');
     _bindInstructionImagePaste('instr-extra');
-    if (isFile) _pickInstructionFiles();
   }, 50);
 }
 
@@ -4360,7 +4351,12 @@ async function saveAddInstruction(parentId, type) {
   let title = document.getElementById('instr-title')?.value.trim();
   if (type === 'file') {
     if (!pending.length) { showToast('حداقل یک فایل انتخاب کنید', 'error'); return; }
-    if (!title) title = pending[0].name || 'فایل';
+    if (!title) {
+      const first = pending[0] || {};
+      const raw = String(first.name || '').replace(/\.[^.]+$/, '').trim();
+      const isImg = String(first.type || '').startsWith('image/');
+      title = raw && raw !== 'file' && raw !== 'عکس' ? raw : (isImg ? 'عکس' : 'فایل');
+    }
   } else if (!title) {
     showToast('عنوان را وارد کنید', 'error'); return;
   }
@@ -4447,15 +4443,12 @@ function openEditInstruction(id) {
       ${_instrAttachSectionHtml(id)}`;
   } else if (node.type === 'file') {
     bodyHtml = `
-      <div class="form-group full">
-        <label class="form-label">عنوان</label>
-        <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
-      </div>
       ${_instrAttachSectionHtml(id, true)}
       <div class="form-group full">
-        <label class="form-label">توضیح (اختیاری)</label>
-        <textarea class="form-textarea" id="ei-content" rows="3">${escapeHtml(_cleanupColorMarkers(node.content||''))}</textarea>
+        <label class="form-label">عنوان (اختیاری)</label>
+        <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
       </div>
+      <input type="hidden" id="ei-content" value="${escapeHtml(_cleanupColorMarkers(node.content||''))}">
       ${iconColorBlock}`;
   } else {
     /* ── Notes: title + content up front; secondary fields are collapsible. ── */
@@ -4538,8 +4531,12 @@ function openEditInstruction(id) {
 async function saveEditInstruction(id, type) {
   if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const existingNode = (_db.instructions || []).find(n => +n.id === +id);
-  const title = document.getElementById('ei-title')?.value.trim();
-  if (!title) { showToast('عنوان را وارد کنید','error'); return; }
+  let title = document.getElementById('ei-title')?.value.trim();
+  if (!title && (type === 'file' || existingNode?.type === 'file')) {
+    title = existingNode?.title || 'فایل';
+  } else if (!title) {
+    showToast('عنوان را وارد کنید','error'); return;
+  }
   const res = await window.api.instructions.update({
     id, title,
     icon: document.getElementById('ei-icon')?.value,

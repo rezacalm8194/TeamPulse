@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp285';
+const TP_ASSET_V = 'tp286';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -16663,7 +16663,92 @@ function _refreshInstrAttachPreview(savedId) {
   return true;
 }
 
+async function _applyInstructionCapturedFiles(savedId, files) {
+  const isNew = savedId == null || savedId === '' || savedId === 'new';
+  if (isNew) {
+    window._pendingInstructionAttachments = await _appendUploadedAttachments(window._pendingInstructionAttachments || [], files);
+    _refreshInstrAttachPreview();
+    return;
+  }
+  const node = (_db.instructions || []).find(n => n.id == savedId);
+  if (!node) { showToast('موردی یافت نشد', 'error'); return; }
+  node.attachments = await _appendUploadedAttachments(node.attachments || [], files);
+  _save();
+  if (_refreshInstrAttachPreview(savedId)) return;
+  const wasEditing = !!document.getElementById('ei-title') && Number(window._currentEditNoteId) === Number(savedId);
+  const isFolder = node.type === 'category' || node.type === 'kcategory';
+  if (wasEditing || isFolder) openEditInstruction(savedId);
+  else openNoteDetail(savedId);
+}
+
+function _tpStopMediaStream(stream) {
+  try { (stream?.getTracks?.() || []).forEach(t => t.stop()); } catch (_) {}
+}
+
+async function _captureKnowledgeCamera(savedId) {
+  if (document.getElementById('tp-camera-overlay')) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('دوربین در این دستگاه در دسترس نیست', 'error');
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    });
+  } catch (_) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+    } catch (err) {
+      showToast('دسترسی به دوربین داده نشد', 'error');
+      return;
+    }
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'tp-camera-overlay';
+  overlay.className = 'tp-camera-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', 'گرفتن عکس');
+  overlay.innerHTML = `
+    <video id="tp-camera-video" autoplay muted playsinline></video>
+    <div class="tp-camera-bar">
+      <button type="button" class="btn btn-ghost" data-cam-cancel>انصراف</button>
+      <button type="button" class="btn btn-primary" data-cam-shot>📸 گرفتن عکس</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const video = overlay.querySelector('#tp-camera-video');
+  video.srcObject = stream;
+  video.setAttribute('playsinline', '');
+  video.muted = true;
+  try { await video.play(); } catch (_) {}
+  const close = () => {
+    _tpStopMediaStream(stream);
+    overlay.remove();
+  };
+  overlay.querySelector('[data-cam-cancel]').onclick = close;
+  overlay.querySelector('[data-cam-shot]').onclick = async () => {
+    const w = video.videoWidth || 0;
+    const h = video.videoHeight || 0;
+    if (!w || !h) { showToast('تصویر دوربین آماده نیست', 'error'); return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+    close();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+    if (!blob) { showToast('ثبت عکس ناموفق بود', 'error'); return; }
+    const file = new File([blob], 'عکس.jpg', { type: 'image/jpeg' });
+    await _applyInstructionCapturedFiles(savedId, [file]);
+    showToast('عکس اضافه شد ✓', 'success');
+  };
+}
+
 async function _pickInstructionFiles(kind) {
+  if (kind === 'camera') {
+    await _captureKnowledgeCamera(null);
+    return;
+  }
   const current = window._pendingInstructionAttachments || [];
   window._pendingInstructionAttachments = await attachFiles('instruction', null, current, _attachKindOpts(kind));
   _refreshInstrAttachPreview();
@@ -16733,6 +16818,10 @@ async function _triggerAttach(entityType, entityId, kind) {
     };
     const node = findNode(_db.instructions || []);
     if (!node) { showToast('موردی یافت نشد', 'error'); return; }
+    if (kind === 'camera') {
+      await _captureKnowledgeCamera(id);
+      return;
+    }
     const wasEditing = !!document.getElementById('ei-title') && Number(window._currentEditNoteId) === Number(id);
     const newAttachments = await attachFiles(entityType, id, node.attachments || [], _attachKindOpts(kind));
     node.attachments = newAttachments;
@@ -24846,7 +24935,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v285';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v286';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

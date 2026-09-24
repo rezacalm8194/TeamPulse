@@ -113,11 +113,14 @@ test('login uses https API origin when the desktop shell is not http', () => {
 test('knowledge notes and folders can attach photos', () => {
   assert.match(appSource, /function _pickInstructionFiles\(/);
   assert.match(appSource, /function _bindInstructionImagePaste\(/);
+  assert.match(appSource, /function _captureKnowledgeCamera\(/);
+  assert.match(appSource, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(appSource, /attachments: Array\.isArray\(p\.attachments\) \? p\.attachments : \[\]/);
   assert.match(appSource, /_attachKindOpts\(kind\)/);
   assert.match(extraSource, /function _instrAttachSectionHtml\(/);
-  assert.match(extraSource, /افزودن عکس/);
+  assert.doesNotMatch(extraSource, /افزودن عکس/);
   assert.match(extraSource, /عکس گرفتن/);
+  assert.match(extraSource, /_captureKnowledgeCamera/);
   assert.match(extraSource, /attachments: pending/);
   assert.match(extraSource, /\$\{_instrAttachSectionHtml\(null\)\}/);
   assert.match(extraSource, /\$\{_instrAttachSectionHtml\(id\)\}/);
@@ -130,7 +133,8 @@ test('knowledge center can add a first-class file with 10MB cap', () => {
   assert.match(extraSource, /openAddInstruction\(\$\{_instrParentLiteral\(\)\},'file'\)/);
   assert.match(extraSource, /type:'file', icon:'📎', label:'فایل جدید'/);
   assert.match(extraSource, /type === 'file'/);
-  assert.match(extraSource, /حداکثر حجم هر فایل ۱۰ مگابایت/);
+  assert.match(extraSource, /حداکثر ۱۰ مگابایت/);
+  assert.match(extraSource, /عنوان و توضیح لازم نیست/);
   const filesRoute = fs.readFileSync(path.join(__dirname, '../routes/files.js'), 'utf8');
   assert.match(filesRoute, /const MAX_UPLOAD_BYTES = 10 \* 1024 \* 1024/);
   assert.match(filesRoute, /file_too_large/);
