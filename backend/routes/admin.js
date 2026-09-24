@@ -19,6 +19,7 @@ const {
   deleteWorkspaceDocumentsForAccount,
 } = require('../utils/documentStore');
 const { configureWebPush } = require('../utils/vapid');
+const { isValidBaleBotToken } = require('../utils/balePayCore');
 ensureTokenRevocationSchema(db);
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
@@ -373,12 +374,17 @@ router.get('/users/:id', auth, adminOnly, (req, res) => {
 router.put('/settings', auth, adminOnly, (req, res) => {
   try {
     const current = getAdminSettings();
+    const nextBotToken = req.body.bale_bot_token ?? current.bale_bot_token;
+    const botTokenStr = String(nextBotToken || '').trim();
+    if (botTokenStr && !isValidBaleBotToken(botTokenStr)) {
+      return res.status(400).json({ error: 'invalid_bot_token' });
+    }
     const updated = {
       ...current,
       card_number: req.body.card_number ?? current.card_number,
       daily_cost: req.body.daily_cost ?? current.daily_cost,
       tutorial_video_url: req.body.tutorial_video_url ?? current.tutorial_video_url,
-      bale_bot_token: req.body.bale_bot_token ?? current.bale_bot_token,
+      bale_bot_token: botTokenStr,
       bale_provider_token: req.body.bale_provider_token ?? current.bale_provider_token,
     };
     saveAdminSettings(updated);

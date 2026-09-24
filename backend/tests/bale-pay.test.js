@@ -20,6 +20,39 @@ test.afterEach(() => {
   core.setBaleFetch(null);
 });
 
+test('bale bot token rejects path-changing characters before fetch', async () => {
+  assert.equal(core.isValidBaleBotToken('123456:ABC-TESTTOKEN'), true);
+  assert.equal(core.isValidBaleBotToken('123456:ABC/getMe'), false);
+  assert.equal(core.isValidBaleBotToken('123456:ABC?foo=1'), false);
+  assert.equal(core.isValidBaleBotToken('123456:ABC#frag'), false);
+  assert.equal(core.isValidBaleBotToken('short'), false);
+
+  let fetched = false;
+  core.setBaleFetch(async () => {
+    fetched = true;
+    return { ok: true, async json() { return { ok: true, result: {} }; } };
+  });
+  await assert.rejects(
+    () => core.baleApi('123456:ABC/getMe', 'sendMessage', { text: 'x' }),
+    /invalid_bot_token/
+  );
+  await assert.rejects(
+    () => core.baleApi('123456:ABC-TESTTOKEN', 'send/Message', {}),
+    /invalid_bale_method/
+  );
+  assert.equal(fetched, false);
+
+  const calls = [];
+  core.setBaleFetch(async (url) => {
+    calls.push(url);
+    return { ok: true, async json() { return { ok: true, result: true }; } };
+  });
+  await core.baleApi('123456:ABC-TESTTOKEN', 'getMe', {});
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /\/bot123456:ABC-TESTTOKEN\/getMe$/);
+  assert.equal(calls[0].includes('/bot123456:ABC/'), false);
+});
+
 test('toman and rial conversion for Bale Pay amounts', () => {
   assert.equal(core.tomanToRial(150000), 1500000);
   assert.equal(core.tomanToRial(0), null);
