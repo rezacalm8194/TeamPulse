@@ -24,6 +24,7 @@ const driver = createStorageDriver();
 migrateSharedFilesToDisk(db, driver);
 const uploadDir = path.join(os.tmpdir(), 'teampulse-uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
@@ -31,7 +32,7 @@ const upload = multer({
       cb(null, `up-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     },
   }),
-  limits: { fileSize: 12 * 1024 * 1024, files: 1 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
 });
 
 const workspaceId = value => (/^[a-zA-Z0-9_-]{1,80}$/.test(String(value || '')) ? String(value) : 'default');
@@ -59,11 +60,25 @@ router.get('/usage', auth, (req, res) => {
   res.json(storageUsage(db, owner));
 });
 
-router.post('/', auth, upload.single('file'), (req, res) => {
+function handleFileUpload(req, res, next) {
+  upload.single('file')(req, res, err => {
+    if (!err) return next();
+    const isSize = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(isSize ? 413 : 400).json({
+      error: isSize ? 'file_too_large' : 'file_upload_failed',
+      max_bytes: MAX_UPLOAD_BYTES,
+    });
+  });
+}
+
+router.post('/', auth, handleFileUpload, (req, res) => {
   const tempPath = req.file?.path;
   let moved = false;
   try {
     if (!req.file) return res.status(400).json({ error: 'file_required' });
+    if (req.file.size > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'file_too_large', max_bytes: MAX_UPLOAD_BYTES });
+    }
     const owner = String(req.body.owner_account_id || req.user.id);
     const workspace = workspaceId(req.body.workspace_id);
     const id = String(req.body.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);

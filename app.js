@@ -1,4 +1,5 @@
-const TP_ASSET_V = 'tp284';
+const TP_ASSET_V = 'tp285';
+const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -118,6 +119,7 @@ function copyToClipboard(text, successMsg) {
 function _instrTypeMeta(item) {
   if (item?.type === 'kcategory') return { cls:'kcategory', icon:'🗂', label:'دسته‌بندی' };
   if (item?.type === 'category') return { cls:'category', icon:'📁', label:'پوشه' };
+  if (item?.type === 'file') return { cls:'file', icon:'📎', label:'فایل' };
   return { cls:'note', icon:'📝', label:'یادداشت' };
 }
 function _instrTypeBadge(item) {
@@ -16402,8 +16404,16 @@ async function _appendUploadedAttachments(existingAttachments, files) {
   const newAttachments = [...(existingAttachments || [])];
   const list = Array.from(files || []).filter(Boolean);
   if (!list.length) return newAttachments;
-  showToast('در حال بارگذاری فایل‌ها...', '');
+  const allowed = [];
+  let skippedLarge = 0;
   for (const file of list) {
+    if (file.size > TP_MAX_ATTACHMENT_BYTES) { skippedLarge++; continue; }
+    allowed.push(file);
+  }
+  if (skippedLarge) showToast('حداکثر حجم هر فایل ۱۰ مگابایت است', 'error');
+  if (!allowed.length) return newAttachments;
+  showToast('در حال بارگذاری فایل‌ها...', '');
+  for (const file of allowed) {
     const id = _fileId();
     try {
       const dataURL = await _readFileAsDataURL(file);
@@ -16471,7 +16481,7 @@ async function attachFiles(entityType, entityId, existingAttachments, opts) {
   });
 }
 
-async function _uploadSharedAttachment(id,fileOrBlob,name=''){if(!_sbSession?.token||!fileOrBlob)return false;try{const fd=new FormData();fd.append('id',id);fd.append('owner_account_id',_teamAccessSession()?.ownerUserId||_sbUser?.id||'');fd.append('workspace_id',_currentAccountId());fd.append('file',fileOrBlob,name||fileOrBlob.name||'file');const res=await _apiFetch('/api/files',{method:'POST',body:fd});if(res.status===413){showToast('فضای ذخیره فایل این حساب پر است','error');return false;}return res.ok;}catch(_){return false;}}
+async function _uploadSharedAttachment(id,fileOrBlob,name=''){if(!_sbSession?.token||!fileOrBlob)return false;if(fileOrBlob.size>TP_MAX_ATTACHMENT_BYTES){showToast('حداکثر حجم هر فایل ۱۰ مگابایت است','error');return false;}try{const fd=new FormData();fd.append('id',id);fd.append('owner_account_id',_teamAccessSession()?.ownerUserId||_sbUser?.id||'');fd.append('workspace_id',_currentAccountId());fd.append('file',fileOrBlob,name||fileOrBlob.name||'file');const res=await _apiFetch('/api/files',{method:'POST',body:fd});if(res.status===413){let payload={};try{payload=await res.clone().json();}catch(_){}showToast(payload.error==='file_too_large'?'حداکثر حجم هر فایل ۱۰ مگابایت است':'فضای ذخیره فایل این حساب پر است','error');return false;}return res.ok;}catch(_){return false;}}
 async function _attachmentDataURL(id){let data=await _IDB.get(id);if(data){const header=String(data).slice(0,80);if(_ACTIVE_FILE_MIME.test(header))data=_rewriteDataUrlMime(data,'application/octet-stream');return data;}if(!_sbSession?.token)return null;try{const res=await _apiFetch('/api/files/'+encodeURIComponent(id));if(!res.ok)return null;const blob=await res.blob();data=await _readFileAsDataURL(new Blob([blob],{type:_safeAttachmentMime(blob.type)}));await _IDB.save(id,data);return data;}catch(_){return null;}}
 async function _ensureEvalFormAttachmentsShared(studentId,formId){const forms=loadEvalForms(studentId),form=forms.find(x=>+x.id===+formId);if(!form?.attachments?.length)return;let changed=false;for(const a of form.attachments){if(a.server_stored)continue;const data=await _IDB.get(a.id);if(!data)continue;const blob=await(await fetch(data)).blob();if(await _uploadSharedAttachment(a.id,blob,a.name)){a.server_stored=true;changed=true;}}if(changed)saveEvalForms(studentId,forms);}
 
@@ -16647,7 +16657,7 @@ function _refreshInstrAttachPreview(savedId) {
     : (((_db.instructions || []).find(n => n.id == savedId) || {}).attachments || []);
   preview.innerHTML = attachments.length
     ? renderAttachmentsGrid(attachments, _instrAttachOnDelete(isNew ? null : savedId))
-    : '<p style="font-size:12px;color:var(--text3);margin:0">هنوز عکسی اضافه نشده</p>';
+    : '<p style="font-size:12px;color:var(--text3);margin:0">هنوز پیوستی اضافه نشده</p>';
   const countEl = document.getElementById('instr-attach-count');
   if (countEl) countEl.textContent = attachments.length ? fa(attachments.length) + ' پیوست' : '';
   return true;
@@ -24836,7 +24846,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v284';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v285';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
