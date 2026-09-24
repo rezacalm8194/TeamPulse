@@ -420,6 +420,8 @@ async function transcribeWithOpenAI(convertedBuffer, model, debug) {
   return (payload.text || '').trim();
 }
 
+router.use(auth);
+
 router.get('/debug-last-audio', async (req, res) => {
   if (!isDevelopment()) {
     return res.status(404).json({ error: 'not_found' });
@@ -444,11 +446,6 @@ router.get('/ping', (req, res) => {
 
 router.get('/health', async (req, res) => {
   const provider = speechProvider();
-  if (provider === 'vosk' && !voskWorkerState.ready && !voskWorkerState.initializing) {
-    startVoskWorker().catch(err => {
-      console.warn('[speech-health] vosk warmup failed', err.code || err.message);
-    });
-  }
   const [ffmpeg, ffprobe] = await Promise.all([
     toolAvailable('ffmpeg'),
     toolAvailable('ffprobe'),
