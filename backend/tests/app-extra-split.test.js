@@ -141,4 +141,5 @@ test('knowledge center can add a first-class file with 10MB cap', () => {
   const filesRoute = fs.readFileSync(path.join(__dirname, '../routes/files.js'), 'utf8');
   assert.match(filesRoute, /const MAX_UPLOAD_BYTES = 10 \* 1024 \* 1024/);
   assert.match(filesRoute, /file_too_large/);
+  assert.match(filesRoute, /sendStoredFile/);
 });

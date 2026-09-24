@@ -487,13 +487,14 @@ router.post('/users/:id/renew', auth, adminOnly, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/users/:id/reset-password', auth, adminOnly, (req, res) => {
+router.post('/users/:id/reset-password', auth, adminOnly, async (req, res) => {
   try {
     const password = String(req.body.password || '');
     if (password.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
+    const hash = await bcrypt.hash(password, 10);
     db.transaction(() => {
       db.prepare("UPDATE accounts SET password=?,updated_at=datetime('now') WHERE id=?")
-        .run(bcrypt.hashSync(password, 10), req.params.id);
+        .run(hash, req.params.id);
       bumpTokenVersion(db, req.params.id);
     })();
     res.json({ success: true });

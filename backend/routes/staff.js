@@ -11,12 +11,12 @@ router.get('/', auth, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/', auth, (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { name, phone, email, role, password, salary_type, salary_amount, commission_percent, notes } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     const id = randomUUID();
-    const hash = password ? bcrypt.hashSync(password, 10) : null;
+    const hash = password ? await bcrypt.hash(password, 10) : null;
     db.prepare('INSERT INTO staff (id,account_id,name,phone,email,role,password,salary_type,salary_amount,commission_percent,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(id, req.user.id, name, phone||null, email||null, role||'staff', hash, salary_type||'fixed', salary_amount||0, commission_percent||0, notes||null);
     res.status(201).json(db.prepare('SELECT id,name,phone,email,role,salary_type,salary_amount,commission_percent,is_active,notes,created_at FROM staff WHERE id=?').get(id));
   } catch (e) { res.status(500).json({ error: e.message }); }

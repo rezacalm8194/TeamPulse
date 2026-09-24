@@ -56,6 +56,35 @@ function createLocalDiskDriver(rootDir) {
     readSync(key) {
       return fs.readFileSync(resolveKey(root, key));
     },
+    statSync(key) {
+      try {
+        const info = fs.statSync(resolveKey(root, key));
+        return { key, bytes: info.size, mtimeMs: info.mtimeMs };
+      } catch (error) {
+        if (error && error.code === 'ENOENT') return null;
+        throw error;
+      }
+    },
+    readHeadSync(key, max = 1024) {
+      const filePath = resolveKey(root, key);
+      const size = fs.statSync(filePath).size;
+      const length = Math.min(max, size);
+      if (!length) return Buffer.alloc(0);
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        const head = Buffer.alloc(length);
+        fs.readSync(fd, head, 0, length, 0);
+        return head;
+      } finally {
+        fs.closeSync(fd);
+      }
+    },
+    createReadStream(key, options = {}) {
+      const opts = {};
+      if (Number.isInteger(options.start) && options.start >= 0) opts.start = options.start;
+      if (Number.isInteger(options.end) && options.end >= 0) opts.end = options.end;
+      return fs.createReadStream(resolveKey(root, key), opts);
+    },
     async stat(key) {
       try {
         const info = await fs.promises.stat(resolveKey(root, key));

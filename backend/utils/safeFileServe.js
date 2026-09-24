@@ -68,7 +68,42 @@ function contentDisposition(name) {
   return `attachment; filename*=UTF-8''${encoded}`;
 }
 
-function applyFileDownloadHeaders(res, name, rawMime, data) {
+function parseBytesRange(rangeHeader, size) {
+  const total = Number(size);
+  if (!Number.isFinite(total) || total < 0) return { unsatisfiable: true };
+  if (!rangeHeader) {
+    return total === 0
+      ? { start: 0, end: -1, partial: false }
+      : { start: 0, end: total - 1, partial: false };
+  }
+  const raw = String(rangeHeader).trim();
+  if (!raw) {
+    return total === 0
+      ? { start: 0, end: -1, partial: false }
+      : { start: 0, end: total - 1, partial: false };
+  }
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(raw);
+  if (!match || total === 0) return { unsatisfiable: true };
+  let start;
+  let end;
+  if (match[1] === '' && match[2] === '') return { unsatisfiable: true };
+  if (match[1] === '') {
+    const suffix = Number(match[2]);
+    if (!Number.isInteger(suffix) || suffix <= 0) return { unsatisfiable: true };
+    start = Math.max(0, total - suffix);
+    end = total - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === '' ? total - 1 : Number(match[2]);
+  }
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= total) {
+    return { unsatisfiable: true };
+  }
+  end = Math.min(end, total - 1);
+  return { start, end, partial: start !== 0 || end !== total - 1 };
+}
+
+function applyFileDownloadHeaders(res, name, rawMime, data, extra = {}) {
   const mime = servedMime(rawMime, data);
   res.setHeader('Content-Type', mime);
   res.setHeader('Content-Disposition', contentDisposition(name));
@@ -77,6 +112,10 @@ function applyFileDownloadHeaders(res, name, rawMime, data) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Accept-Ranges', 'bytes');
+  if (extra.contentRange) res.setHeader('Content-Range', extra.contentRange);
+  if (extra.length != null) res.setHeader('Content-Length', String(extra.length));
+  else if (extra.size != null) res.setHeader('Content-Length', String(extra.size));
   return mime;
 }
 
@@ -89,5 +128,6 @@ module.exports = {
   servedMime,
   safeDownloadName,
   contentDisposition,
+  parseBytesRange,
   applyFileDownloadHeaders,
 };
