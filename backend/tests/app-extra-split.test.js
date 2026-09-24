@@ -102,6 +102,14 @@ test('knowledge-center creates are confirmed across devices', () => {
   assert.match(extraSource, /ذخیره و بین دستگاه‌ها همگام شد/);
 });
 
+test('login uses https API origin when the desktop shell is not http', () => {
+  assert.match(appSource, /const _PUBLIC_API_ORIGIN = 'https:\/\/teampulse\.ir'/);
+  assert.match(appSource, /function _tpApiOrigin\(/);
+  assert.match(appSource, /_tpApiOrigin\(\) \+ path/);
+  assert.match(appSource, /login\|register\|me/);
+  assert.match(appSource, /function _apiErrorMessage\(/);
+});
+
 test('knowledge notes and folders can attach photos', () => {
   assert.match(appSource, /function _pickInstructionFiles\(/);
   assert.match(appSource, /function _bindInstructionImagePaste\(/);
