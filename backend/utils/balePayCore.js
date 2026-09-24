@@ -18,11 +18,85 @@ function isValidBaleApiMethod(method) {
   return BALE_API_METHOD_RE.test(String(method || ''));
 }
 
+const BALE_API_TIMEOUT_MS = Number(process.env.BALE_API_TIMEOUT_MS) || 8000;
+const BALE_API_MAX_INFLIGHT = Math.max(1, Number(process.env.BALE_API_MAX_INFLIGHT) || 2);
+const BALE_GETME_CACHE_MS = Number(process.env.BALE_GETME_CACHE_MS) || 10 * 60 * 1000;
+const BALE_GETME_NEG_CACHE_MS = 15 * 1000;
+
 let baleFetchImpl = (...args) => fetch(...args);
 let dbRef = null;
+let baleTimeoutMs = BALE_API_TIMEOUT_MS;
+let baleMaxInflight = BALE_API_MAX_INFLIGHT;
+let getMeTtlMs = BALE_GETME_CACHE_MS;
+const getMeCache = new Map();
+const getMeInflight = new Map();
+let baleInflight = 0;
+const baleWaiters = [];
+
+function tokenCacheKey(botToken) {
+  return crypto.createHash('sha256').update(String(botToken || '')).digest('hex').slice(0, 32);
+}
+
+function resetBaleRuntime() {
+  getMeCache.clear();
+  getMeInflight.clear();
+}
 
 function setBaleFetch(fn) {
   baleFetchImpl = typeof fn === 'function' ? fn : (...args) => fetch(...args);
+  resetBaleRuntime();
+}
+
+function setBaleApiOptions(opts = {}) {
+  if (opts.timeoutMs != null) baleTimeoutMs = Number(opts.timeoutMs) || BALE_API_TIMEOUT_MS;
+  if (opts.maxInflight != null) baleMaxInflight = Math.max(1, Number(opts.maxInflight) || 1);
+  if (opts.getMeTtlMs != null) getMeTtlMs = Number(opts.getMeTtlMs);
+  if (opts.reset) resetBaleRuntime();
+}
+
+function enqueueBaleCall(task) {
+  return new Promise((resolve, reject) => {
+    const start = () => {
+      baleInflight += 1;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          baleInflight -= 1;
+          const next = baleWaiters.shift();
+          if (next) next();
+        });
+    };
+    if (baleInflight < baleMaxInflight) start();
+    else baleWaiters.push(start);
+  });
+}
+
+async function fetchBaleWithTimeout(url, init) {
+  const timeoutMs = baleTimeoutMs;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer = null;
+  try {
+    const pending = baleFetchImpl(url, ctrl ? { ...init, signal: ctrl.signal } : init);
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        try { ctrl?.abort(); } catch (_) { /* ignore */ }
+        const err = new Error('bale_timeout');
+        err.code = 'BALE_TIMEOUT';
+        reject(err);
+      }, timeoutMs);
+    });
+    return await Promise.race([pending, timeout]);
+  } catch (e) {
+    if (e && (e.code === 'BALE_TIMEOUT' || e.message === 'bale_timeout' || e.name === 'AbortError')) {
+      const err = new Error('bale_timeout');
+      err.code = 'BALE_TIMEOUT';
+      throw err;
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function setBaleDb(nextDb) {
@@ -165,15 +239,9 @@ function credentialsPublicView(row) {
   };
 }
 
-async function baleApi(botToken, method, body = {}) {
-  if (!isValidBaleBotToken(botToken)) {
-    throw new Error('invalid_bot_token');
-  }
-  if (!isValidBaleApiMethod(method)) {
-    throw new Error('invalid_bale_method');
-  }
+async function baleApiRaw(botToken, method, body = {}) {
   const url = `${BALE_API_BASE}/bot${botToken}/${method}`;
-  const res = await baleFetchImpl(url, {
+  const res = await fetchBaleWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -191,6 +259,46 @@ async function baleApi(botToken, method, body = {}) {
     throw err;
   }
   return data.result;
+}
+
+async function cachedGetMe(botToken) {
+  const key = tokenCacheKey(botToken);
+  const now = Date.now();
+  const hit = getMeCache.get(key);
+  if (hit && hit.until > now) {
+    if (hit.error) throw hit.error;
+    return hit.value;
+  }
+  const pending = getMeInflight.get(key);
+  if (pending) return pending;
+
+  const request = enqueueBaleCall(() => baleApiRaw(botToken, 'getMe', {}))
+    .then((value) => {
+      getMeCache.set(key, { until: Date.now() + getMeTtlMs, value });
+      return value;
+    })
+    .catch((error) => {
+      getMeCache.set(key, { until: Date.now() + BALE_GETME_NEG_CACHE_MS, error });
+      throw error;
+    })
+    .finally(() => {
+      getMeInflight.delete(key);
+    });
+  getMeInflight.set(key, request);
+  return request;
+}
+
+async function baleApi(botToken, method, body = {}) {
+  if (!isValidBaleBotToken(botToken)) {
+    throw new Error('invalid_bot_token');
+  }
+  if (!isValidBaleApiMethod(method)) {
+    throw new Error('invalid_bale_method');
+  }
+  if (method === 'getMe') {
+    return cachedGetMe(botToken);
+  }
+  return enqueueBaleCall(() => baleApiRaw(botToken, method, body));
 }
 
 function newPaymentRequestId() {
@@ -392,6 +500,8 @@ module.exports = {
   isValidBaleBotToken,
   isValidBaleApiMethod,
   setBaleFetch,
+  setBaleApiOptions,
+  resetBaleRuntime,
   setBaleDb,
   activeDb,
   ensureBaleSchema,
