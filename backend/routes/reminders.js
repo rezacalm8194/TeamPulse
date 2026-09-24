@@ -11,19 +11,16 @@ const { randomUUID } = require('crypto');
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { loadWorkspaceMeta, loadDocumentParts, loadWorkspaceMetaAsync, loadDocumentPartsAsync, loadWorkspaceDocumentAsync } = require('../utils/documentStore');
 const {
-  IRAN_OFFSET_MS,
-  PUSH_CATCH_UP_MS,
-  jalaliToUTC,
-  iranTodayParts,
-  iranWallTimeToUTC,
-  jalaliDayKey,
   ensurePushDueIndexSchema,
   loadDeliveredKeys,
   upsertPushDueIndex,
   computePushDueIndex,
-  listPushScanAccountIds,
+  replacePushDueItems,
+  deletePushDueItem,
+  refreshAccountScheduleFromItems,
+  listDuePushItems,
+  listPushReindexAccountIds,
 } = require('../utils/pushDueIndex');
-const { isPaymentReminder } = require('../utils/reminderKind');
 const {
   todoShouldNotifyOwner,
   todoShouldNotifyTeamMember,
@@ -290,12 +287,6 @@ async function pushTodoToRecipients(accountId, workspaceId, userData, todo, titl
 }
 
 // ── Cron: هر دقیقه ─────────────────────────────────────────────
-function isDueForPush(now, scheduledAt, catchUpMs = PUSH_CATCH_UP_MS) {
-  if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return false;
-  const lateBy = now.getTime() - scheduledAt.getTime();
-  return lateBy >= 0 && lateBy <= catchUpMs;
-}
-
 function claimPushDelivery(deliveryKey, accountId, kind) {
   const result = db.prepare(`
     INSERT OR IGNORE INTO push_deliveries (delivery_key, account_id, kind)
@@ -339,6 +330,62 @@ function refreshPushDueIndex(accountId, userData, now) {
   let etag = '';
   try { etag = loadWorkspaceMeta(db, accountId)?.etag || ''; } catch (_) {}
   upsertPushDueIndex(db, accountId, etag, schedule);
+  replacePushDueItems(db, accountId, schedule.items || []);
+}
+
+async function deliverIndexedItem(item) {
+  const accountId = item.accountId;
+  const payload = item.payload || {};
+  const key = item.deliveryKey;
+  const kind = item.kind;
+
+  if (kind === 'todo') {
+    const todo = payload.todo || {};
+    const title = payload.title || todo.title || '';
+    const time = payload.time || todo.time || '';
+    const note = payload.note || todo.note || '';
+    console.log(`[Push] → "${title}" (account: ${accountId})`);
+    return deliverOnce(key, accountId, 'todo', () =>
+      pushTodoToRecipients(accountId, 'default', {}, todo, title, `ساعت ${time}${note ? ' — ' + String(note).slice(0, 50) : ''}`)
+    );
+  }
+
+  if (kind === 'habit') {
+    const title = payload.title || '';
+    console.log(`[Push] → habit "${title}" (account: ${accountId})`);
+    return deliverOnce(key, accountId, 'habit', () =>
+      pushToOwner(accountId, 'default', '🔥 ' + title, `وقت انجام عادت: ساعت ${payload.time || ''}${payload.desc ? ' — ' + String(payload.desc).slice(0, 50) : ''}`, {
+        kind: 'habit', tag: `habit-${payload.habitId}`, url: '/app#habits',
+      })
+    );
+  }
+
+  if (kind === 'financial-reminder') {
+    return deliverOnce(key, accountId, 'financial-reminder', () =>
+      pushToOwner(accountId, 'default', payload.title || 'یادآوری پرداخت', reminderBody(payload, payload.personName || ''), {
+        kind: 'financial-reminder', tag: `financial-${payload.reminderId}`, url: '/app#reminders',
+      })
+    );
+  }
+
+  if (kind === 'staff-reminder') {
+    return deliverOnce(key, accountId, 'staff-reminder', () =>
+      pushToOwner(accountId, 'default', payload.title || 'یادآوری حقوق', reminderBody(payload, payload.personName || ''), {
+        kind: 'staff-reminder', tag: `staff-reminder-${payload.reminderId}`, url: '/app#staff',
+      })
+    );
+  }
+
+  if (kind === 'key-event') {
+    const name = payload.personName || '';
+    return deliverOnce(key, accountId, 'key-event', () =>
+      pushToOwner(accountId, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(payload.text || '').slice(0, 100)}`, {
+        kind: 'key-event', tag: `key-event-${payload.eventId}`, url: '/app#students',
+      })
+    );
+  }
+
+  return false;
 }
 
 cron.schedule('* * * * *', async () => {
@@ -348,109 +395,23 @@ cron.schedule('* * * * *', async () => {
   pushCronRunning = true;
   try {
     const now = new Date();
-    const accountIds = listPushScanAccountIds(db, now);
+    const reindexIds = listPushReindexAccountIds(db, now);
 
-    for (const accountId of accountIds) {
-      // Yield between accounts so static files and API requests are not held
-      // behind a long reminder scan in Node's single event loop.
+    for (const accountId of reindexIds) {
       await new Promise(resolve => setImmediate(resolve));
       const userData = await loadAccountCollections(accountId, reminderCollectionKeys);
-      if (!userData) {
-        refreshPushDueIndex(accountId, {}, now);
-        continue;
+      refreshPushDueIndex(accountId, userData || {}, now);
+    }
+
+    const dueItems = listDuePushItems(db, now);
+    for (const item of dueItems) {
+      await new Promise(resolve => setImmediate(resolve));
+      const delivered = await deliverIndexedItem(item);
+      const already = db.prepare('SELECT 1 FROM push_deliveries WHERE delivery_key=?').get(item.deliveryKey);
+      if (delivered || already) {
+        deletePushDueItem(db, item.deliveryKey);
+        refreshAccountScheduleFromItems(db, item.accountId);
       }
-
-      for (const t of (userData.todos || [])) {
-        const scheduledDate = todoScheduledDate(t);
-        if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
-        if (!todoBelongsToAccount(t, accountId)) {
-          // This is an expected ownership guard, not an operational warning.
-          // Logging every skipped item each minute caused excessive PM2 disk I/O.
-          continue;
-        }
-
-        const taskUTC = jalaliToUTC(scheduledDate, t.time);
-        if (!taskUTC) continue;
-
-        const notifUTC = new Date(taskUTC.getTime() - t.remind_min * 60000);
-        if (isDueForPush(now, notifUTC)) {
-          const key = `todo:${accountId}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
-          console.log(`[Push] → "${t.title}" (account: ${accountId})`);
-          await deliverOnce(key, accountId, 'todo', () =>
-            pushTodoToRecipients(accountId, 'default', userData, t, t.title, `ساعت ${t.time}${t.note ? ' — ' + t.note.slice(0,50) : ''}`)
-          );
-        }
-      }
-
-      const today = iranTodayParts(now);
-      for (const h of (userData.habits || [])) {
-        if (h.archived || !h.time || !(h.remind_min > 0)) continue;
-
-        const habitUTC = iranWallTimeToUTC(today.gy, today.gm, today.gd, h.time);
-        if (!habitUTC) continue;
-
-        const notifUTC = new Date(habitUTC.getTime() - h.remind_min * 60000);
-        if (isDueForPush(now, notifUTC)) {
-          const key = `habit:${accountId}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
-          console.log(`[Push] → habit "${h.title}" (account: ${accountId})`);
-          await deliverOnce(key, accountId, 'habit', () =>
-            pushToOwner(accountId, 'default', '🔥 ' + h.title, `وقت انجام عادت: ساعت ${h.time}${h.desc ? ' — ' + h.desc.slice(0,50) : ''}`, {
-              kind: 'habit', tag: `habit-${h.id}`, url: '/app#habits',
-            })
-          );
-        }
-      }
-
-      // یادآوری‌های بدون ساعت (مالی، حقوق و رویدادهای مهم) از ساعت ۹
-      // به وقت ایران، یک‌بار برای هر سررسید ارسال می‌شوند.
-      const iranNow = new Date(now.getTime() + IRAN_OFFSET_MS);
-      if (iranNow.getUTCHours() >= 9) {
-        const todayDayKey = today.gy * 10000 + today.gm * 100 + today.gd;
-        const studentNames = new Map((userData.students || []).map(s => [
-          String(s.id), `${s.name || ''} ${s.lname || ''}`.trim(),
-        ]));
-        const staffNames = new Map((userData.staff || []).map(s => [
-          String(s.id), `${s.name || ''} ${s.lname || ''}`.trim(),
-        ]));
-
-        for (const r of (userData.reminders || [])) {
-          const dueDayKey = jalaliDayKey(r.due_date_jalali);
-          if (r.done || !isPaymentReminder(r) || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `financial:${accountId}:${r.id}:${r.due_date_jalali}`;
-          const name = studentNames.get(String(r.student_id)) || '';
-          await deliverOnce(key, accountId, 'financial-reminder', () =>
-            pushToOwner(accountId, 'default', r.title || 'یادآوری پرداخت', reminderBody(r, name), {
-              kind: 'financial-reminder', tag: `financial-${r.id}`, url: '/app#reminders',
-            })
-          );
-        }
-
-        for (const r of (userData.staff_reminders || [])) {
-          const dueDayKey = jalaliDayKey(r.due_date_jalali);
-          if (r.done || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `staff:${accountId}:${r.id}:${r.due_date_jalali}`;
-          const name = staffNames.get(String(r.staff_id)) || '';
-          await deliverOnce(key, accountId, 'staff-reminder', () =>
-            pushToOwner(accountId, 'default', r.title || 'یادآوری حقوق', reminderBody(r, name), {
-              kind: 'staff-reminder', tag: `staff-reminder-${r.id}`, url: '/app#staff',
-            })
-          );
-        }
-
-        for (const e of (userData.key_events || [])) {
-          const dueDayKey = jalaliDayKey(e.remind_date);
-          if (e.remind_done || !dueDayKey || dueDayKey > todayDayKey) continue;
-          const key = `key-event:${accountId}:${e.id}:${e.remind_date}`;
-          const name = studentNames.get(String(e.student_id)) || '';
-          await deliverOnce(key, accountId, 'key-event', () =>
-            pushToOwner(accountId, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(e.text || '').slice(0, 100)}`, {
-              kind: 'key-event', tag: `key-event-${e.id}`, url: '/app#students',
-            })
-          );
-        }
-      }
-
-      refreshPushDueIndex(accountId, userData, now);
     }
   } catch (e) {
     console.error('[Push Cron] Error:', e.message);

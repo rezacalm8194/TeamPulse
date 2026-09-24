@@ -5,6 +5,8 @@ const {
   ensurePushDueIndexSchema,
   upsertPushDueIndex,
   listPushScanAccountIds,
+  listDuePushItems,
+  replacePushDueItems,
   computePushDueIndex,
   jalaliToUTC,
   iranNineAmUtc,
@@ -60,8 +62,21 @@ test('idle subscribed accounts are not scanned every minute', () => {
   upsertPushDueIndex(db, 'due', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
   upsertPushDueIndex(db, 'nosub', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
   upsertPushDueIndex(db, 'inactive', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
+  replacePushDueItems(db, 'idle', [{
+    deliveryKey: 'todo:idle:1', kind: 'todo', dueMs: now.getTime() + 60 * 60 * 1000, payload: { title: 'later' },
+  }]);
+  replacePushDueItems(db, 'due', [{
+    deliveryKey: 'todo:due:1', kind: 'todo', dueMs: now.getTime() - 1000, payload: { title: 'now' },
+  }]);
+  replacePushDueItems(db, 'nosub', [{
+    deliveryKey: 'todo:nosub:1', kind: 'todo', dueMs: now.getTime() - 1000, payload: { title: 'now' },
+  }]);
+  replacePushDueItems(db, 'inactive', [{
+    deliveryKey: 'todo:inactive:1', kind: 'todo', dueMs: now.getTime() - 1000, payload: { title: 'now' },
+  }]);
 
-  assert.deepEqual(listPushScanAccountIds(db, now), ['due']);
+  assert.deepEqual(listPushScanAccountIds(db, now), []);
+  assert.deepEqual(listDuePushItems(db, now).map(row => row.accountId), ['due']);
 });
 
 test('etag changes wake the account even when the next due is in the future', () => {
@@ -111,4 +126,19 @@ test('timed todo index uses remind_min and skips already delivered keys', () => 
     todos: [{ id: 9, title: 'call', scheduled_date: scheduled, time, remind_min: remindMin }],
   }, now, new Set(['todo:acc:9:1405/06/01:16:00:30']));
   assert.equal(delivered.nextTimedMs, null);
+});
+
+test('index stores due items so cron can send without loading every account', () => {
+  const now = new Date('2026-08-23T12:00:00.000Z');
+  const schedule = computePushDueIndex('acc', {
+    todos: [{ id: 9, title: 'call', scheduled_date: '1405/06/01', time: '16:00', remind_min: 30 }],
+    reminders: [{ id: 1, due_date_jalali: '1405/06/01', done: false, title: 'قسط' }],
+  }, now, new Set());
+  assert.ok(schedule.items.some(item => item.kind === 'todo' && item.deliveryKey.includes('todo:acc:9')));
+  assert.ok(schedule.items.some(item => item.kind === 'financial-reminder'));
+
+  const remindersJs = require('fs').readFileSync(require('path').join(__dirname, '../routes/reminders.js'), 'utf8');
+  assert.match(remindersJs, /listDuePushItems\(db, now\)/);
+  assert.match(remindersJs, /listPushReindexAccountIds\(db, now\)/);
+  assert.doesNotMatch(remindersJs, /for \(const t of \(userData\.todos \|\| \[\]\)\)/);
 });

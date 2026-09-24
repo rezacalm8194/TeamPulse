@@ -8,7 +8,6 @@ const root = path.resolve(__dirname, '..', '..');
 const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
 const extraSource = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
-const remindersRoute = fs.readFileSync(path.join(root, 'backend', 'routes', 'reminders.js'), 'utf8');
 const { isPaymentReminder } = require('../utils/reminderKind');
 const { computePushDueIndex } = require('../utils/pushDueIndex');
 
@@ -64,7 +63,8 @@ test('financial reminder list and cash forecast skip session followups', () => {
   assert.match(financeSource, /const reminders = \(await window\.api\.reminders\.getAll\(\)\)\.filter\(_isPaymentReminder\)/);
   assert.match(financeSource, /updateReminderBadges\(_pendingPaymentReminderCount\(reminders\)\)/);
   assert.match(extraSource, /filter\(r=>!r\.done&&_isPaymentReminder\(r\)\)/);
-  assert.match(remindersRoute, /!isPaymentReminder\(r\)/);
+  const pushIndex = fs.readFileSync(path.join(root, 'backend', 'utils', 'pushDueIndex.js'), 'utf8');
+  assert.match(pushIndex, /if \(r\.done \|\| !isPaymentReminder\(r\)\) continue;/);
 });
 
 test('financial push index ignores session followup reminders', () => {

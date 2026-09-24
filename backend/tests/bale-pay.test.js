@@ -18,6 +18,7 @@ function makeTestDb() {
 test.afterEach(() => {
   core.setBaleDb(null);
   core.setBaleFetch(null);
+  core.setBaleApiOptions({ timeoutMs: 8000, maxInflight: 2, getMeTtlMs: 10 * 60 * 1000, reset: true });
 });
 
 test('bale bot token rejects path-changing characters before fetch', async () => {
@@ -232,4 +233,44 @@ test('client hooks and asset version for Bale Pay exist', () => {
   assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /\/api\/bale/);
   assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /baleInvoiceLimiter/);
   assert.match(fs.readFileSync(path.join(root, 'backend/routes/bale.js'), 'utf8'), /balePayCore/);
+});
+
+test('getMe is cached and Bale calls time out instead of hanging the request', async () => {
+  const token = '123456:ABC-TESTTOKEN';
+  let calls = 0;
+  core.setBaleFetch(async () => {
+    calls += 1;
+    return { ok: true, async json() { return { ok: true, result: { id: 1, username: 'tp_bot' } }; } };
+  });
+  const first = await core.baleApi(token, 'getMe', {});
+  const second = await core.baleApi(token, 'getMe', {});
+  assert.equal(first.username, 'tp_bot');
+  assert.equal(second.username, 'tp_bot');
+  assert.equal(calls, 1);
+
+  core.setBaleApiOptions({ timeoutMs: 40, maxInflight: 2, reset: true });
+  core.setBaleFetch(() => new Promise(() => {}));
+  const started = Date.now();
+  await assert.rejects(() => core.baleApi(token, 'createInvoiceLink', { title: 'x' }), /bale_timeout/);
+  assert.ok(Date.now() - started < 400);
+});
+
+test('createInvoiceLink shares a bounded outbound queue', async () => {
+  const token = '123456:ABC-TESTTOKEN';
+  let current = 0;
+  let max = 0;
+  core.setBaleApiOptions({ timeoutMs: 2000, maxInflight: 1, reset: true });
+  core.setBaleFetch(async () => {
+    current += 1;
+    max = Math.max(max, current);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    current -= 1;
+    return { ok: true, async json() { return { ok: true, result: 'https://pay.test/x' }; } };
+  });
+  await Promise.all([
+    core.baleApi(token, 'createInvoiceLink', { title: 'a' }),
+    core.baleApi(token, 'createInvoiceLink', { title: 'b' }),
+    core.baleApi(token, 'createInvoiceLink', { title: 'c' }),
+  ]);
+  assert.equal(max, 1);
 });
