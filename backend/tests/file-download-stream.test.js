@@ -73,6 +73,7 @@ test('file download route streams from disk instead of buffering the whole objec
   assert.match(filesRoute, /sendStoredFile/);
   assert.doesNotMatch(filesRoute, /readStoredFile/);
   assert.doesNotMatch(filesRoute, /res\.end\(data\)/);
+  assert.doesNotMatch(filesRoute, /migrateSharedFilesToDisk/);
 });
 
 test('password hashing on request routes stays async', () => {

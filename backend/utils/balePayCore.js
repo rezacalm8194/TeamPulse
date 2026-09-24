@@ -145,9 +145,13 @@ function ensureBaleSchema(db = activeDb()) {
     CREATE INDEX IF NOT EXISTS idx_bale_pay_owner_ws
       ON bale_payment_requests(owner_account_id, workspace_id, status, created_at);
   `);
-  const credCols = db.prepare('PRAGMA table_info(bale_workspace_credentials)').all().map((c) => c.name);
-  if (credCols.length && !credCols.includes('webhook_secret')) {
-    db.exec('ALTER TABLE bale_workspace_credentials ADD COLUMN webhook_secret TEXT');
+  try {
+    const credCols = db.prepare('PRAGMA table_info(bale_workspace_credentials)').all().map((c) => c.name);
+    if (credCols.length && !credCols.includes('webhook_secret')) {
+      db.exec('ALTER TABLE bale_workspace_credentials ADD COLUMN webhook_secret TEXT');
+    }
+  } catch (error) {
+    logger.warn('bale_schema_webhook_secret', { error: error.message });
   }
 }
 

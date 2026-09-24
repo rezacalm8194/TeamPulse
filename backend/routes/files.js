@@ -16,14 +16,24 @@ const {
   readHeadSync,
   sendStoredFile,
   upsertSharedFile,
-  migrateSharedFilesToDisk,
 } = require('../utils/fileStore');
 
-ensureSharedFilesSchema(db);
-const driver = createStorageDriver();
-migrateSharedFilesToDisk(db, driver);
+try {
+  ensureSharedFilesSchema(db);
+} catch (error) {
+  console.error('[files] schema init failed:', error && error.message);
+}
+let driver;
+function fileDriver() {
+  if (!driver) driver = createStorageDriver();
+  return driver;
+}
 const uploadDir = path.join(os.tmpdir(), 'teampulse-uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  fs.mkdirSync(uploadDir, { recursive: true });
+} catch (error) {
+  console.error('[files] upload dir init failed:', error && error.message);
+}
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({
   storage: multer.diskStorage({
@@ -99,7 +109,7 @@ router.post('/', auth, handleFileUpload, (req, res) => {
     const mime = storedMime(req.file.mimetype, head);
     const sha256 = hashFileSync(tempPath);
     const storageKey = objectKey(owner, workspace, id);
-    driver.moveFromPathSync(storageKey, tempPath);
+    fileDriver().moveFromPathSync(storageKey, tempPath);
     moved = true;
     const result = upsertSharedFile(db, {
       id,
@@ -113,7 +123,7 @@ router.post('/', auth, handleFileUpload, (req, res) => {
       createdBy: req.user.id,
     });
     if (!result.changes) {
-      driver.deleteSync(storageKey);
+      fileDriver().deleteSync(storageKey);
       return res.status(409).json({ error: 'file_id_conflict' });
     }
     res.json({ success: true, id, storage_key: storageKey, sha256 });
@@ -132,7 +142,7 @@ router.get('/:id', auth, (req, res) => {
   if (!row) return res.status(404).json({ error: 'file_not_found' });
   if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
   try {
-    const sent = sendStoredFile(req, res, row, driver);
+    const sent = sendStoredFile(req, res, row, fileDriver());
     if (!sent) return res.status(404).json({ error: 'file_not_found' });
   } catch (error) {
     if (error && error.code === 'ENOENT') return res.status(404).json({ error: 'file_not_found' });
@@ -146,7 +156,7 @@ router.delete('/:id', auth, (req, res) => {
   ).get(String(req.params.id));
   if (!row) return res.json({ success: true });
   if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
-  if (row.storage_key) driver.deleteSync(row.storage_key);
+  if (row.storage_key) fileDriver().deleteSync(row.storage_key);
   db.prepare('DELETE FROM shared_files WHERE id=?').run(String(req.params.id));
   res.json({ success: true });
 });
