@@ -1591,7 +1591,7 @@ if (!window._calendarAddMenuDismissBound) {
 
 function _calendarAddMenuHtml() {
   if (!_calendarAddMenuOpen) return '';
-  const item = (kind,icon,label) => `<button type="button" onclick="_openCalendarCreate('${kind}',_todoCalendarSelectedDate||_todayJalaliStr())">${icon} ${label}</button>`;
+  const item = (kind,icon,label) => `<button type="button" onclick="_tpOpenCalendarCreate('${kind}')">${icon} ${label}</button>`;
   return `<div class="calendar-add-menu" onclick="event.stopPropagation()">
     ${item('task','✅','کار جدید')}
     ${item('session','👥','جلسه')}

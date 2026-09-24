@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp287';
+const TP_ASSET_V = 'tp288';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -12571,7 +12571,7 @@ function archiveFailedSummaryHtml(){
 }
 const ARCHIVE_LOSS_REASON_CHIPS=['قیمت','زمان','رقبا','عدم پاسخ','سایر'];
 function archiveLossReasonFields(value=''){
-  return '<div class="form-group full" id="archive-loss-reason-wrap"><label class="form-label" for="ar-loss-reason">دلیل ناموفق</label><div class="archive-loss-chips">'+ARCHIVE_LOSS_REASON_CHIPS.map(c=>'<button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById(\'ar-loss-reason\').value=\''+c+'\'">'+c+'</button>').join('')+'</div><input class="form-input" id="ar-loss-reason" maxlength="200" value="'+escapeHtml(value||'')+'" placeholder="دلیل را بنویسید یا از گزینه‌های بالا انتخاب کنید"></div>';
+  return '<div class="form-group full" id="archive-loss-reason-wrap"><label class="form-label" for="ar-loss-reason">دلیل ناموفق</label><div class="archive-loss-chips">'+ARCHIVE_LOSS_REASON_CHIPS.map(c=>'<button type="button" class="btn btn-ghost btn-sm" onclick="_tpSetInputValue(\'ar-loss-reason\',\''+c+'\')">'+c+'</button>').join('')+'</div><input class="form-input" id="ar-loss-reason" maxlength="200" value="'+escapeHtml(value||'')+'" placeholder="دلیل را بنویسید یا از گزینه‌های بالا انتخاب کنید"></div>';
 }
 function readArchiveLossReason(required){
   const reason=String(document.getElementById('ar-loss-reason')?.value||'').trim().slice(0,200);
@@ -12620,7 +12620,7 @@ function openArchiveLossReasonModal(ids,value){
   const person=archiveStudents.find(s=>Number(s.id)===Number(ids[0]));
   openModal('دلیل ناموفق',archiveLossReasonFields(person?.loss_reason||''),[
     {label:'ذخیره',cls:'btn-primary',action:'commitArchiveLossReason()'},
-    {label:'انصراف',cls:'btn-ghost',action:'window._pendingArchiveLoss=null;closeModal();renderArchive()'},
+    {label:'انصراف',cls:'btn-ghost',action:'_tpCancelArchiveLoss()'},
   ]);
 }
 async function commitArchiveLossReason(){
@@ -12885,11 +12885,11 @@ async function openSessionsSummary(studentId, displayName) {
 
   openModal(`📋 خلاصه کل ${META.sessionPlural||'جلسات'} — ${escapeHtml(displayName)}`, `
     <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
-      <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(window._sessionsSummaryCopyText || '', 'کل متن خلاصه کپی شد ✓')" style="min-width:150px">📋 کپی کل متن</button>
+      <button class="btn btn-ghost btn-sm" onclick="_tpCopyGlobal('_sessionsSummaryCopyText', 'کل متن خلاصه کپی شد ✓')" style="min-width:150px">📋 کپی کل متن</button>
     </div>
     <div class="detail-section" style="max-height:60vh;overflow-y:auto">${body}</div>
   `, [
-    { label: '📋 کپی کل متن', cls: 'btn-ghost', action: `copyToClipboard(window._sessionsSummaryCopyText || '', 'کل متن خلاصه کپی شد ✓')` },
+    { label: '📋 کپی کل متن', cls: 'btn-ghost', action: `_tpCopyGlobal('_sessionsSummaryCopyText', 'کل متن خلاصه کپی شد ✓')` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
 }
@@ -14714,12 +14714,12 @@ async function _evalShare(filename, htmlContent, title, studentName) {
           <!-- دکمه‌های share -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
 
-            <a id="share-btn-whatsapp" href="https://api.whatsapp.com/send?text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-whatsapp" href="https://api.whatsapp.com/send?text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="_tpLater('closeShareModal',500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.3);color:#128c7e;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">📱</span> واتساپ
             </a>
 
-            <a id="share-btn-telegram" href="https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-telegram" href="https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(defaultMsg)}" target="_blank" rel="noopener noreferrer" onclick="_tpLater('closeShareModal',500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(41,182,246,.1);border:1px solid rgba(41,182,246,.3);color:#0088cc;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">✈️</span> تلگرام
             </a>
@@ -14739,7 +14739,7 @@ async function _evalShare(filename, htmlContent, title, studentName) {
               <span style="font-size:18px">📧</span> ایمیل
             </a>
 
-            <a id="share-btn-linkedin" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
+            <a id="share-btn-linkedin" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" target="_blank" rel="noopener noreferrer" onclick="_tpLater('closeShareModal',500)"
               style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(10,102,194,.1);border:1px solid rgba(10,102,194,.3);color:#0a66c2;text-decoration:none;font-size:12px;font-weight:600">
               <span style="font-size:18px">💼</span> لینکدین
             </a>
@@ -14840,7 +14840,7 @@ function _evalShareFallback(filename, htmlContent, title) {
               style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:7px;border:1px solid rgba(96,165,250,.3);background:rgba(96,165,250,.1);color:var(--blue);font-size:12px;cursor:pointer">
               ⬇ دانلود فایل HTML
             </button>
-            <a href="https://api.whatsapp.com/send?text=${encodedText}" target="_blank" rel="noopener noreferrer" onclick="setTimeout(closeShareModal,500)"
+            <a href="https://api.whatsapp.com/send?text=${encodedText}" target="_blank" rel="noopener noreferrer" onclick="_tpLater('closeShareModal',500)"
               style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:7px;border:1px solid rgba(37,211,102,.3);background:rgba(37,211,102,.1);color:#128c7e;text-decoration:none;font-size:12px;font-weight:600">
               📱 واتساپ
             </a>
@@ -15368,11 +15368,11 @@ async function openAllTopics(studentId, displayName) {
 
   openModal(`همه موضوعات مهم — ${escapeHtml(displayName)}`, `
     <div style="display:flex;justify-content:flex-start;margin-bottom:10px">
-      <button class="btn btn-primary btn-sm" type="button" onclick="copyToClipboard(window._allTopicsCopyText || '', 'همه موضوعات کپی شد ✓')" style="min-width:150px">کپی همه موضوعات</button>
+      <button class="btn btn-primary btn-sm" type="button" onclick="_tpCopyGlobal('_allTopicsCopyText', 'همه موضوعات کپی شد ✓')" style="min-width:150px">کپی همه موضوعات</button>
     </div>
     <div class="topics-all-list">${body}</div>
   `, [
-    { label: 'کپی همه موضوعات', cls: 'btn-ghost', action: `copyToClipboard(window._allTopicsCopyText || '', 'همه موضوعات کپی شد ✓')` },
+    { label: 'کپی همه موضوعات', cls: 'btn-ghost', action: `_tpCopyGlobal('_allTopicsCopyText', 'همه موضوعات کپی شد ✓')` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
 }
@@ -15426,7 +15426,7 @@ function _addNewTopicChecklistItem() {
     const idx = _newTopicChecklist.length - 1;
     const div = document.createElement('div');
     div.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;';
-    div.innerHTML = '<span style="color:var(--text3)">☐</span><span style="flex:1">' + escapeHtml(text) + '</span><button class="x-close-sm" onclick="this.parentNode.remove();_newTopicChecklist.splice(' + idx + ',1)">✕</button>';
+    div.innerHTML = '<span style="color:var(--text3)">☐</span><span style="flex:1">' + escapeHtml(text) + '</span><button class="x-close-sm" onclick="_tpRemoveNewTopicCheckItem(this,' + idx + ')">✕</button>';
     container.appendChild(div);
   }
 }
@@ -23678,7 +23678,7 @@ function _adminBulkActionsHtml(visibleUsers) {
     ${count ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-right:auto">
       <button class="btn btn-ghost btn-sm" onclick="_adminBulkStatus(1)">✅ فعال‌سازی</button>
       <button class="btn btn-ghost btn-sm" onclick="_adminBulkStatus(0)">🚫 مسدودکردن</button>
-      <button class="btn btn-ghost btn-sm" onclick="_adminChangePlan([..._adminSelectedUsers])">💎 تغییر پلن</button>
+      <button class="btn btn-ghost btn-sm" onclick="_adminChangePlanSelected()">💎 تغییر پلن</button>
       <button class="btn btn-ghost btn-sm" onclick="_adminNotifySelected()">🔔 ارسال اعلان</button>
       <button class="btn btn-ghost btn-sm" onclick="_adminExportSelected()">📊 خروجی Excel</button>
       <button class="btn btn-danger btn-sm" onclick="_adminBulkDelete()">🗑 حذف</button>
@@ -24978,7 +24978,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v287';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v288';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -1982,7 +1982,7 @@ async function openStaffMonthly(staffId, name) {
       </div>
     </div>
     ${roleRows ? `<div class="form-section">دستمزد نقش‌ها در این ماه</div>${roleRows}` : ''}
-    <label class="pkg-check" style="width:100%;margin-top:10px" onclick="this.classList.toggle('checked'); this.querySelector('input').checked = this.classList.contains('checked')">
+    <label class="pkg-check" style="width:100%;margin-top:10px" onclick="_tpToggleCheckLabel(this)">
       <input type="checkbox" id="sm-paid"> این ماه پرداخت شده است
     </label>
     <div class="form-group full" id="sm-paid-date-wrap" style="display:none;margin-top:8px">
@@ -2789,8 +2789,9 @@ function _instrCurrentLevel() {
   if (node.type === 'kcategory') return 'category';
   return 'folder';
 }
-/* CSP binder (tp-inline-bind) only accepts literals in onclick — not live
-   identifiers like `_instrParentId`. Bake the current folder id at render time. */
+/* CSP binder parses literals, this/event, nested calls, arrays/objects, and a
+   few DOM statements (classList.toggle, closest().remove, this.style). It still
+   rejects live identifiers like `_instrParentId` — bake those at render time. */
 function _instrParentLiteral() {
   return (_instrParentId == null || _instrParentId === '') ? 'null' : String(+_instrParentId);
 }
@@ -3283,7 +3284,7 @@ async function renderInstructions(instrSearch) {
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
 function _filterBtn(key, label) {
   const active = _instrFilter === key;
-  return `<button onclick="_instrFilter='${key}';renderInstructions()"
+  return `<button onclick="_tpInstrFilter('${key}')"
     style="padding:5px 13px;border-radius:20px;border:1px solid ${active?'var(--accent)':'var(--border)'};
     background:${active?'rgba(124,106,247,.15)':'var(--bg2)'};color:${active?'var(--accent2)':'var(--text2)'};
     font-size:11px;font-weight:${active?700:400};cursor:pointer;font-family:var(--font);transition:all .15s">${label}</button>`;
@@ -4216,10 +4217,10 @@ function openAddInstruction(parentId, type) {
   if (!_teamCanCreateInstruction(parentId)) { showToast('برای ساختن مورد جدید در این پوشه دسترسی نداری', 'error'); return; }
   if (!type) type = 'note';
   const iconBtns = INSTR_ICONS.map(i =>
-    `<button type="button" onclick="document.getElementById('instr-icon').value='${i}';document.querySelectorAll('.icon-pick-btn').forEach(b=>b.style.background='var(--bg3)');this.style.background='var(--accent2)33'" class="icon-pick-btn" style="width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer">${i}</button>`
+    `<button type="button" onclick="_tpPickInstrIcon('instr-icon','.icon-pick-btn',this,'${i}')" class="icon-pick-btn" style="width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer">${i}</button>`
   ).join('');
   const colorOpts = ['#7c6af7','#3ecf8e','#f87171','#60a5fa','#fbbf24','#f472b6','#34d399','#a78bfa','#fb923c','#06b6d4'].map(c =>
-    `<div onclick="document.getElementById('instr-color').value='${c}';document.querySelectorAll('.color-pick-dot').forEach(d=>d.style.outline='none');this.style.outline='3px solid var(--text)'" class="color-pick-dot" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0"></div>`
+    `<div onclick="_tpPickInstrColor('instr-color','.color-pick-dot',this,'${c}')" class="color-pick-dot" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0"></div>`
   ).join('');
 
   const isFile = type === 'file';
@@ -4413,10 +4414,10 @@ function openEditInstruction(id) {
   window._currentEditNoteId = numId;
 
   const iconBtns = INSTR_ICONS.map(i =>
-    `<button type="button" onclick="document.getElementById('ei-icon').value='${i}';document.querySelectorAll('.icon-pick-btn2').forEach(b=>b.style.background='var(--bg3)');this.style.background='var(--accent2)33'" class="icon-pick-btn2" style="width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid var(--border2);background:${i===node.icon?'var(--accent2)33':'var(--bg3)'};cursor:pointer">${i}</button>`
+    `<button type="button" onclick="_tpPickInstrIcon('ei-icon','.icon-pick-btn2',this,'${i}')" class="icon-pick-btn2" style="width:34px;height:34px;font-size:16px;border-radius:8px;border:1px solid var(--border2);background:${i===node.icon?'var(--accent2)33':'var(--bg3)'};cursor:pointer">${i}</button>`
   ).join('');
   const colorOpts = ['#7c6af7','#3ecf8e','#f87171','#60a5fa','#fbbf24','#f472b6','#34d399','#a78bfa','#fb923c','#06b6d4'].map(c =>
-    `<div onclick="document.getElementById('ei-color').value='${c}';document.querySelectorAll('.color-pick-dot2').forEach(d=>d.style.outline='none');this.style.outline='3px solid var(--text)'" class="color-pick-dot2" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0;outline:${c===node.color?'3px solid var(--text)':'none'}"></div>`
+    `<div onclick="_tpPickInstrColor('ei-color','.color-pick-dot2',this,'${c}')" class="color-pick-dot2" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0;outline:${c===node.color?'3px solid var(--text)':'none'}"></div>`
   ).join('');
 
   const iconColorBlock = `
@@ -4682,7 +4683,7 @@ async function renderTutorial() {
       ${sections.map(s => `
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;user-select:none"
-          onclick="this.parentElement.querySelector('.tut-body').style.display=this.parentElement.querySelector('.tut-body').style.display==='none'?'block':'none'">
+          onclick="_tpToggleTut(this)">
           <div style="width:38px;height:38px;border-radius:10px;background:${s.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${escapeHtml(s.icon)}</div>
           <div style="flex:1">
             <div style="font-weight:700;font-size:14px;color:var(--text)">${escapeHtml(s.title)}</div>
@@ -5733,7 +5734,7 @@ function _openGoalVisionBoardManager(ctx) {
         <div id="vision-music-upload-wrap" style="display:${state.music && !state.music.startsWith('preset:') ? 'block' : 'none'};margin-top:10px">
           <button type="button" onclick="_tpClickId('vision-music-picker')" class="btn btn-ghost">⬆ آپلود موسیقی</button>
           <span id="vision-music-name" style="font-size:11px;color:var(--text3);margin-right:8px">${state.music && state.music.startsWith('data:') ? 'فایل اختصاصی انتخاب شده' : 'فایل‌های صوتی رایج - حداکثر ۲۰ مگابایت'}</span>
-          <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_visionHandleMusic(this.files && this.files[0])">
+          <input id="vision-music-picker" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" style="display:none" onchange="_tpVisionMusic(this)">
         </div>
       </div>
     </div>
