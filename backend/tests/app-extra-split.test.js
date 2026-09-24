@@ -106,7 +106,7 @@ test('login uses https API origin when the desktop shell is not http', () => {
   assert.match(appSource, /const _PUBLIC_API_ORIGIN = 'https:\/\/teampulse\.ir'/);
   assert.match(appSource, /function _tpApiOrigin\(/);
   assert.match(appSource, /_tpApiOrigin\(\) \+ path/);
-  assert.match(appSource, /login\|register\|me/);
+  assert.match(appSource, /localhost\|127\\\.0\\\.0\\\.1/);
   assert.match(appSource, /function _apiErrorMessage\(/);
 });
 
