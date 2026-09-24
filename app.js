@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp283';
+const TP_ASSET_V = 'tp284';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16799,8 +16799,12 @@ const _PUBLIC_API_ORIGIN = 'https://teampulse.ir';
 function _tpApiOrigin() {
   try {
     const protocol = String(window.location?.protocol || '');
+    const host = String(window.location?.hostname || '');
     const origin = String(window.location?.origin || '');
-    if (/^https?:$/i.test(protocol) && origin && origin !== 'null') return origin.replace(/\/$/, '');
+    if (/^https?:$/i.test(protocol) && origin && origin !== 'null') {
+      if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/i.test(host)) return _PUBLIC_API_ORIGIN;
+      return origin.replace(/\/$/, '');
+    }
   } catch (e) {}
   return _PUBLIC_API_ORIGIN;
 }
@@ -16898,6 +16902,14 @@ async function _apiFetch(path, opts = {}) {
       }
       return await fetch(url, { ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
     } catch (error) {
+      const publicUrl = _PUBLIC_API_ORIGIN + path;
+      if (url !== publicUrl) {
+        try {
+          return await fetch(publicUrl, { ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
       if (attempt + 1 < attempts) {
         await new Promise(resolve => setTimeout(resolve, 450));
         continue;
@@ -24806,7 +24818,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v283';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v284';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
