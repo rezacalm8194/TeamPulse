@@ -118,6 +118,7 @@ function ensureBaleSchema(db = activeDb()) {
       bot_username TEXT,
       bot_id TEXT,
       webhook_registered INTEGER NOT NULL DEFAULT 0,
+      webhook_secret TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (owner_account_id, workspace_id)
     );
@@ -144,6 +145,10 @@ function ensureBaleSchema(db = activeDb()) {
     CREATE INDEX IF NOT EXISTS idx_bale_pay_owner_ws
       ON bale_payment_requests(owner_account_id, workspace_id, status, created_at);
   `);
+  const credCols = db.prepare('PRAGMA table_info(bale_workspace_credentials)').all().map((c) => c.name);
+  if (credCols.length && !credCols.includes('webhook_secret')) {
+    db.exec('ALTER TABLE bale_workspace_credentials ADD COLUMN webhook_secret TEXT');
+  }
 }
 
 function tomanToRial(toman) {
@@ -164,22 +169,94 @@ function maskSecret(value) {
   return s.slice(0, 4) + '…' + s.slice(-4);
 }
 
+const WEBHOOK_SECRET_HEADER = 'X-Telegram-Bot-Api-Secret-Token';
+const WEBHOOK_SECRET_HEADER_BALE = 'X-Bale-Bot-Api-Secret-Token';
+const WEBHOOK_SECRET_RE = /^[A-Za-z0-9_-]{32,256}$/;
+
+function newWebhookSecret() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function timingSafeEqualText(expected, provided) {
+  const a = Buffer.from(String(expected || ''), 'utf8');
+  const b = Buffer.from(String(provided || ''), 'utf8');
+  if (!a.length) return false;
+  const compare = Buffer.alloc(a.length);
+  b.copy(compare, 0, 0, Math.min(b.length, a.length));
+  const lengthOk = a.length === b.length;
+  const contentOk = crypto.timingSafeEqual(a, compare);
+  return lengthOk && contentOk;
+}
+
+function webhookSecretFromRequest(req) {
+  const header = req?.get?.bind(req);
+  return String(
+    (header && (header(WEBHOOK_SECRET_HEADER) || header(WEBHOOK_SECRET_HEADER_BALE)))
+    || req?.headers?.[WEBHOOK_SECRET_HEADER.toLowerCase()]
+    || req?.headers?.[WEBHOOK_SECRET_HEADER_BALE.toLowerCase()]
+    || ''
+  );
+}
+
+function verifyWebhookSecret(expected, provided) {
+  const secret = String(expected || '');
+  if (!WEBHOOK_SECRET_RE.test(secret)) return false;
+  return timingSafeEqualText(secret, provided);
+}
+
+function storeWebhookSecretValue(value) {
+  return canEncryptSecrets() ? encryptSecret(value) : value;
+}
+
+function persistWebhookSecret(ownerAccountId, workspaceId, secret) {
+  ensureBaleSchema();
+  activeDb().prepare(`
+    UPDATE bale_workspace_credentials
+    SET webhook_secret=?, updated_at=datetime('now')
+    WHERE owner_account_id=? AND workspace_id=?
+  `).run(storeWebhookSecretValue(secret), ownerAccountId, workspaceId);
+}
+
+function issueWebhookSecret(ownerAccountId, workspaceId) {
+  const secret = newWebhookSecret();
+  persistWebhookSecret(ownerAccountId, workspaceId, secret);
+  return secret;
+}
+
+function platformWebhookSecret() {
+  const fromEnv = String(process.env.BALE_PLATFORM_WEBHOOK_SECRET || '').trim();
+  if (WEBHOOK_SECRET_RE.test(fromEnv)) return fromEnv;
+  const seed = String(process.env.TOKEN_ENCRYPTION_KEY || process.env.JWT_SECRET || '').trim();
+  if (!seed) return '';
+  return crypto.createHmac('sha256', seed).update('teampulse-bale-platform-webhook-v1').digest('base64url');
+}
+
+function authorizeBaleWebhook(req, ownerAccountId, workspaceId) {
+  const creds = getCredentials(ownerAccountId, workspaceId);
+  if (!creds) return false;
+  return verifyWebhookSecret(creds.webhook_secret, webhookSecretFromRequest(req));
+}
+
 function sealCredentialRow(row) {
   if (!row) return null;
   const botToken = decryptSecret(row.bot_token);
   const providerToken = decryptSecret(row.provider_token);
-  if (
-    canEncryptSecrets()
-    && (!isEncryptedSecret(row.bot_token) || !isEncryptedSecret(row.provider_token))
-  ) {
+  const webhookSecret = decryptSecret(row.webhook_secret);
+  const needsSeal = canEncryptSecrets() && (
+    !isEncryptedSecret(row.bot_token)
+    || !isEncryptedSecret(row.provider_token)
+    || (row.webhook_secret && !isEncryptedSecret(row.webhook_secret))
+  );
+  if (needsSeal) {
     try {
       activeDb().prepare(`
         UPDATE bale_workspace_credentials
-        SET bot_token=?, provider_token=?
+        SET bot_token=?, provider_token=?, webhook_secret=?
         WHERE owner_account_id=? AND workspace_id=?
       `).run(
         encryptSecret(botToken),
         encryptSecret(providerToken),
+        row.webhook_secret ? encryptSecret(webhookSecret) : row.webhook_secret,
         row.owner_account_id,
         row.workspace_id
       );
@@ -187,7 +264,7 @@ function sealCredentialRow(row) {
       logger.warn('bale_credential_seal_failed', { error: e.message });
     }
   }
-  return { ...row, bot_token: botToken, provider_token: providerToken };
+  return { ...row, bot_token: botToken, provider_token: providerToken, webhook_secret: webhookSecret };
 }
 
 function getCredentials(ownerAccountId, workspaceId) {
@@ -518,4 +595,13 @@ module.exports = {
   publicBaseUrl,
   escapeHtml,
   handleWebhookUpdate,
+  WEBHOOK_SECRET_HEADER,
+  WEBHOOK_SECRET_HEADER_BALE,
+  newWebhookSecret,
+  webhookSecretFromRequest,
+  verifyWebhookSecret,
+  issueWebhookSecret,
+  persistWebhookSecret,
+  platformWebhookSecret,
+  authorizeBaleWebhook,
 };

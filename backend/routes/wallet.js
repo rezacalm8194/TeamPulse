@@ -323,19 +323,29 @@ router.post('/bale-webhook/register', auth, async (req, res) => {
         url,
       });
     }
-    await baleCore.baleApi(creds.bot_token, 'setWebhook', { url });
+    const secretToken = baleCore.platformWebhookSecret();
+    if (!secretToken) {
+      return res.status(400).json({ error: 'webhook_failed', message: 'webhook secret is not configured' });
+    }
+    await baleCore.baleApi(creds.bot_token, 'setWebhook', { url, secret_token: secretToken });
     res.json({ ok: true, url, test_mode: creds.test_mode });
   } catch (e) {
     res.status(400).json({ error: 'webhook_failed', message: e.message || String(e) });
   }
 });
 
-// وب‌هوک پلتفرم برای شارژ کیف پول (بدون احراز هویت؛ Bale امضا نمی‌فرستد)
+// وب‌هوک پلتفرم برای شارژ کیف پول — هدر secret_token الزامی است
 router.post('/bale-webhook', async (req, res) => {
   try {
     ensureWalletTables();
     const creds = getPlatformBaleCreds();
     if (!creds.bot_token) return res.sendStatus(200);
+    if (!baleCore.verifyWebhookSecret(
+      baleCore.platformWebhookSecret(),
+      baleCore.webhookSecretFromRequest(req)
+    )) {
+      return res.sendStatus(401);
+    }
     const update = req.body || {};
 
     if (update.pre_checkout_query) {
