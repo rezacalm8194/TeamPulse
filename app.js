@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp279';
+const TP_ASSET_V = 'tp280';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -6024,7 +6024,7 @@ function _getInitialPage() {
   return 'home';
 }
 let currentPage = _getInitialPage();
-let _studentsTab = currentPage === 'sessions' ? 'sessions' : 'students';
+let _studentsTab = 'sessions';
 let _paymentsTab = 'purchases';
 let _goalsViewMode = 'full'; // 'full' | 'compact'
 let _habitsViewMode = 'full'; // 'full' | 'compact'
@@ -7069,7 +7069,7 @@ function bindNavItems() {
       document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
+      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
       if (currentPage === 'todolist') _todoActiveTab = 'mine';
       updatePageTitle();
       renderPage();
@@ -7082,8 +7082,8 @@ bindNavItems();
 window.addEventListener('hashchange', () => {
   const parsed = _parseAppHash();
   const page = parsed.page;
-  if (page && _SAFE_RESTORE_PAGES.includes(page) && (page !== currentPage || page === 'instructions' || page === 'sessions' || (page === 'students' && _studentsTab !== 'students'))) {
-    if (page === 'students' || page === 'sessions') { _studentsTab = page === 'sessions' ? 'sessions' : 'students'; _keySessionsExpanded = false; }
+  if (page && _SAFE_RESTORE_PAGES.includes(page) && (page !== currentPage || page === 'instructions' || page === 'sessions')) {
+    if (page === 'students' || page === 'sessions') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
     currentPage = page;
     if (currentPage === 'todolist') _todoActiveTab = 'mine';
     updatePageTitle();
@@ -7928,17 +7928,17 @@ function renderCaseFormsSection(search = '') {
   const query = String(search || '').trim().toLowerCase();
   const forms = query ? allForms.filter(form => [form.title, form.description, form.content].some(value => String(value || '').toLowerCase().includes(query))) : allForms;
   if (!allForms.length) return `
-    <div class="table-card" style="margin-bottom:16px">
+    <div class="table-card" style="margin-top:16px">
       <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">فرم آماده‌ای ساخته نشده است</span></div></div>
       <div class="empty" style="padding:22px"><span>▣</span>با دکمه «افزودن فرم» یک فرم بسازید یا متن فرم آماده را وارد کنید</div>
     </div>`;
   if (!forms.length) return `
-    <div class="table-card" style="margin-bottom:16px">
+    <div class="table-card" style="margin-top:16px">
       <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">نتیجه‌ای برای جستجو پیدا نشد</span></div></div>
       <div class="empty" style="padding:22px"><span>🔎</span>فرمی با عبارت «${escapeHtml(search)}» پیدا نشد</div>
     </div>`;
   return `
-    <div class="table-card" style="margin-bottom:16px">
+    <div class="table-card" style="margin-top:16px">
       <div class="table-header"><div class="title-wrap"><span class="title">فرم‌های پرونده</span><span class="subtitle">${query ? `${fa(forms.length)} نتیجه از ${fa(allForms.length)} فرم` : `${fa(forms.length)} فرم ساخته‌شده`}</span></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;padding:14px">
         ${forms.map(form => {
@@ -8149,14 +8149,14 @@ async function _paintStudentsUi(search = '') {
     && _paginatedCollectionFullyLoaded('payments');
   const caseFormsHtml = window._tpCaseFormsRevealed
     ? _tpRevealCaseForms(search)
-    : '<div class="table-card" data-tp-lazy="case-forms" style="margin-bottom:16px;padding:18px;color:var(--text3);font-size:12px;text-align:center">فرم‌های پرونده با اسکرول بارگذاری می‌شوند…</div>';
+    : '<div class="table-card" data-tp-lazy="case-forms" style="margin-top:16px;padding:18px;color:var(--text3);font-size:12px;text-align:center">فرم‌های پرونده با اسکرول بارگذاری می‌شوند…</div>';
   const html = `
   ${studentSectionNav('students')}
-  ${caseFormsHtml}
   ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, financeReady, menuPrefix: 'stu' })}`;
-  setContent(html + (studentPaging.done ? '' :
-    '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'));
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, financeReady, menuPrefix: 'stu' })}
+  ${studentPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'}
+  ${caseFormsHtml}`;
+  setContent(html);
   _tpBindLazyLoaders();
 
   const si = document.querySelector('#topbar-actions .table-search input') ||
@@ -16244,7 +16244,7 @@ function applyNavOrder() {
       sidebar.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       currentPage = el.dataset.page;
-      if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
+      if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
       updatePageTitle();
       renderPage();
       closeSidebar();
@@ -24291,7 +24291,7 @@ function bnNav(el){
   document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
-  currentPage=page;if(currentPage==='students'){_studentsTab='students';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
+  currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
@@ -24315,7 +24315,7 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   navEl.classList.add('active');
   currentPage = page;
-  if (currentPage === 'students') { _studentsTab = 'students'; _keySessionsExpanded = false; }
+  if (currentPage === 'students') { _studentsTab = 'sessions'; _keySessionsExpanded = false; }
   updatePageTitle();
   renderPage();
 }, true); // capture phase
@@ -24702,7 +24702,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v279';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v280';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
