@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp288';
+const TP_ASSET_V = 'tp289';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -24978,7 +24978,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v288';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v289';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -25878,13 +25878,31 @@ function _voiceDebugRows(debug) {
     ['responseText', debug?.response?.responseText],
   ];
 }
+async function _voiceSpeechAuthHeaders() {
+  const authToken = _getApiAuthToken();
+  if (!authToken) return null;
+  return { Authorization: `Bearer ${authToken}` };
+}
+
 async function _voiceTestSpeechApi(debugEl) {
   const debug = {
     ping: { status: null, responseText: null, error: null, pageOrigin: location.origin, pageProtocol: location.protocol },
     response: { errorCode: null, status: null, responseText: null },
   };
   try {
-    const res = await fetch('/api/speech/ping', { method: 'GET', cache: 'no-store' });
+    const headers = await _voiceSpeechAuthHeaders();
+    if (!headers) {
+      debug.ping.status = 401;
+      debug.ping.error = 'auth_token_missing';
+      debug.ping.responseText = 'برای تست API گفتار باید وارد حساب شوید.';
+      debug.response.status = 401;
+      debug.response.errorCode = 'auth_token_missing';
+      debug.response.responseText = debug.ping.responseText;
+      console.log('[voice-api-ping]', debug);
+      _voiceShowDebugPanel(debugEl, debug);
+      return debug;
+    }
+    const res = await _apiFetch('/api/speech/ping', { method: 'GET', headers });
     const text = await res.text().catch(e => `__READ_RESPONSE_TEXT_FAILED__: ${e?.message || e}`);
     debug.ping.status = res.status;
     debug.ping.responseText = text;
@@ -25909,7 +25927,16 @@ async function _voiceTestSpeechHealth(debugEl) {
     response: { errorCode: null, status: null, responseText: null },
   };
   try {
-    const res = await fetch('/api/speech/health', { method: 'GET', cache: 'no-store' });
+    const headers = await _voiceSpeechAuthHeaders();
+    if (!headers) {
+      debug.response.status = 401;
+      debug.response.errorCode = 'auth_token_missing';
+      debug.response.responseText = 'برای بررسی سلامت موتور صدا باید وارد حساب شوید.';
+      console.log('[voice-health]', debug);
+      _voiceShowDebugPanel(debugEl, debug);
+      return debug;
+    }
+    const res = await _apiFetch('/api/speech/health', { method: 'GET', headers });
     const text = await res.text().catch(e => `__READ_RESPONSE_TEXT_FAILED__: ${e?.message || e}`);
     debug.response.status = res.status;
     debug.response.responseText = text;
@@ -25935,15 +25962,29 @@ async function _voiceTestSpeechHealth(debugEl) {
   _voiceShowDebugPanel(debugEl, debug);
   return debug;
 }
-function _voicePlayDebugAudio(type) {
-  const url = type === 'converted'
+async function _voicePlayDebugAudio(type) {
+  const headers = await _voiceSpeechAuthHeaders();
+  if (!headers) {
+    showToast('برای پخش فایل Debug باید وارد حساب شوید', 'warning');
+    return;
+  }
+  const path = type === 'converted'
     ? '/api/speech/debug-last-audio?type=converted'
     : '/api/speech/debug-last-audio';
-  const audio = new Audio(url + (url.includes('?') ? '&' : '?') + '_=' + Date.now());
-  audio.play().catch(err => {
+  try {
+    const res = await _apiFetch(path, { method: 'GET', headers });
+    if (!res.ok) throw new Error('debug_audio_http_' + res.status);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    const revoke = () => URL.revokeObjectURL(objectUrl);
+    audio.addEventListener('ended', revoke, { once: true });
+    audio.addEventListener('error', revoke, { once: true });
+    await audio.play();
+  } catch (err) {
     console.warn('[voice-debug] audio playback failed', { type, error: err?.message || err });
     showToast('پخش فایل Debug انجام نشد؛ Console را بررسی کن', 'warning');
-  });
+  }
 }
 function _voiceShowDebugPanel(debugEl, debug) {
   if (!debugEl) return;
