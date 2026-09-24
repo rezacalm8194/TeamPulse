@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp289';
+const TP_ASSET_V = 'tp290';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -23449,10 +23449,10 @@ function _adminOpenFinance(){
           <input class="form-input" id="admin-card" value="${escapeHtml(settings.card_number||'')}" placeholder="6037-xxxx-xxxx-xxxx" style="direction:ltr">
         </div>
         <div class="form-group"><label class="form-label">توکن بازوی بله (شارژ کیف پول)</label>
-          <input class="form-input" id="admin-bale-bot" type="password" autocomplete="off" dir="ltr" value="${escapeHtml(settings.bale_bot_token||'')}" placeholder="123456:ABC...">
+          <input class="form-input" id="admin-bale-bot" type="password" autocomplete="off" dir="ltr" value="" placeholder="${settings.bale_bot_token_set ? escapeHtml(settings.bale_bot_token_hint || 'تنظیم‌شده') : '123456:ABC...'}">
         </div>
         <div class="form-group"><label class="form-label">توکن پرداخت بله (خالی = تست)</label>
-          <input class="form-input" id="admin-bale-provider" type="password" autocomplete="off" dir="ltr" value="${escapeHtml(settings.bale_provider_token||'')}" placeholder="WALLET-TEST-...">
+          <input class="form-input" id="admin-bale-provider" type="password" autocomplete="off" dir="ltr" value="" placeholder="${settings.bale_provider_token_set ? escapeHtml(settings.bale_provider_token_hint || 'تنظیم‌شده') : 'WALLET-TEST-...'}">
         </div>
       </div>
       <p style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 0">همین بازو برای شارژ آنی کیف پول همه کاربران با بله‌پی استفاده می‌شود. وب‌هوک آن: <span dir="ltr">/api/wallet/bale-webhook</span></p>
@@ -24201,21 +24201,27 @@ async function _saveAdminSettings() {
     daily_cost: parseInt(document.getElementById('admin-daily-cost')?.value || '1000'),
     card_number: document.getElementById('admin-card')?.value.trim() || '',
     tutorial_video_url: document.getElementById('admin-video-url')?.value.trim() || currentSettings.tutorial_video_url || '',
-    bale_bot_token: document.getElementById('admin-bale-bot')?.value.trim() || currentSettings.bale_bot_token || '',
-    bale_provider_token: document.getElementById('admin-bale-provider')?.value.trim() || currentSettings.bale_provider_token || '',
+    bale_bot_token: document.getElementById('admin-bale-bot')?.value.trim() || '',
+    bale_provider_token: document.getElementById('admin-bale-provider')?.value.trim() || '',
   };
-  // ۱. ذخیره در localStorage
-  localStorage.setItem('tp_admin_settings', JSON.stringify(settings));
-  // ۲. ذخیره در _db (persistent با sync سرور)
+  const { bale_bot_token, bale_provider_token, ...safeSettings } = settings;
+  localStorage.setItem('tp_admin_settings', JSON.stringify(safeSettings));
   if (!_db.admin_settings) _db.admin_settings = {};
-  _db.admin_settings = { ..._db.admin_settings, ...settings };
+  _db.admin_settings = { ..._db.admin_settings, ...safeSettings };
   // ۳. ذخیره _db در localStorage
   _save(true);
   // ۴. ذخیره روی سرور
   try {
     await _apiFetch('/api/admin/settings', { method: 'PUT', body: JSON.stringify(settings) });
   } catch(e) {}
-  window._adminSettings={...currentSettings,...settings};
+  window._adminSettings={
+    ...currentSettings,
+    ...safeSettings,
+    bale_bot_token: '',
+    bale_provider_token: '',
+    bale_bot_token_set: !!(currentSettings.bale_bot_token_set || bale_bot_token),
+    bale_provider_token_set: !!(currentSettings.bale_provider_token_set || bale_provider_token),
+  };
   showToast('تنظیمات ذخیره شد ✓', 'success');
 }
 
@@ -24978,7 +24984,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v289';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v290';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

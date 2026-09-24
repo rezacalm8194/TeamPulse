@@ -36,6 +36,15 @@ test('legacy long-lived tokens are rejected even if signature is valid', () => {
   assert.throws(() => verify(token), { name: 'JsonWebTokenError' });
 });
 
+test('verify rejects tokens that are not HS256', () => {
+  const token = jwt.sign(
+    { id: 'user-1', tv: 0 },
+    process.env.JWT_SECRET,
+    { algorithm: 'HS384', expiresIn: '8h', jwtid: 'jti-hs384' }
+  );
+  assert.throws(() => verify(token), { name: 'JsonWebTokenError' });
+});
+
 test('missing JWT_SECRET fails when the module loads', () => {
   const previous = process.env.JWT_SECRET;
   process.env.JWT_SECRET = '';

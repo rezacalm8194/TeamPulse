@@ -180,21 +180,39 @@ test('webhook handler answers pre_checkout and settles successful_payment', asyn
   assert.equal(loadAllRows(db, owner, 'payments').length, 1);
 });
 
-test('publicBaseUrl forces https for public hosts and respects PUBLIC_BASE_URL', () => {
+test('publicBaseUrl ignores Host unless PUBLIC_BASE_URL is set', () => {
   const prev = process.env.PUBLIC_BASE_URL;
+  const prevApp = process.env.APP_URL;
   delete process.env.PUBLIC_BASE_URL;
+  delete process.env.APP_URL;
   assert.equal(
     core.publicBaseUrl({
-      headers: { 'x-forwarded-proto': 'http', host: 'teampulse.ir' },
+      headers: { 'x-forwarded-proto': 'https', host: 'evil.example' },
+      protocol: 'https',
+      get: () => 'evil.example',
+    }),
+    ''
+  );
+  assert.equal(
+    core.publicBaseUrl({
+      headers: { host: 'localhost:3001' },
       protocol: 'http',
-      get: () => 'teampulse.ir',
+      get: () => 'localhost:3001',
+    }),
+    'http://localhost:3001'
+  );
+  process.env.PUBLIC_BASE_URL = 'http://teampulse.ir/';
+  assert.equal(
+    core.publicBaseUrl({
+      headers: { host: 'evil.example' },
+      get: () => 'evil.example',
     }),
     'https://teampulse.ir'
   );
-  process.env.PUBLIC_BASE_URL = 'http://teampulse.ir/';
-  assert.equal(core.publicBaseUrl({}), 'https://teampulse.ir');
   if (prev == null) delete process.env.PUBLIC_BASE_URL;
   else process.env.PUBLIC_BASE_URL = prev;
+  if (prevApp == null) delete process.env.APP_URL;
+  else process.env.APP_URL = prevApp;
 });
 
 test('client hooks and asset version for Bale Pay exist', () => {
@@ -212,5 +230,6 @@ test('client hooks and asset version for Bale Pay exist', () => {
   assert.match(app, /\/api\/bale\/payment-requests/);
   assert.match(app, /sharePartyTransactionsLink/);
   assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /\/api\/bale/);
+  assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /baleInvoiceLimiter/);
   assert.match(fs.readFileSync(path.join(root, 'backend/routes/bale.js'), 'utf8'), /balePayCore/);
 });

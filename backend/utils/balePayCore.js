@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { workspaceStorageKey } = require('./teamAccessSchema');
 const { upsertRows, loadAllRows, ensureBusinessStoreSchema } = require('./businessStore');
 const { logger } = require('./logger');
+const { canEncryptSecrets, encryptSecret, decryptSecret, isEncryptedSecret } = require('./secretBox');
 
 const BALE_API_BASE = process.env.BALE_API_BASE || 'https://tapi.bale.ai';
 const TEST_PROVIDER_TOKEN = 'WALLET-TEST-1111111111111111';
@@ -89,12 +90,65 @@ function maskSecret(value) {
   return s.slice(0, 4) + '…' + s.slice(-4);
 }
 
+function sealCredentialRow(row) {
+  if (!row) return null;
+  const botToken = decryptSecret(row.bot_token);
+  const providerToken = decryptSecret(row.provider_token);
+  if (
+    canEncryptSecrets()
+    && (!isEncryptedSecret(row.bot_token) || !isEncryptedSecret(row.provider_token))
+  ) {
+    try {
+      activeDb().prepare(`
+        UPDATE bale_workspace_credentials
+        SET bot_token=?, provider_token=?
+        WHERE owner_account_id=? AND workspace_id=?
+      `).run(
+        encryptSecret(botToken),
+        encryptSecret(providerToken),
+        row.owner_account_id,
+        row.workspace_id
+      );
+    } catch (e) {
+      logger.warn('bale_credential_seal_failed', { error: e.message });
+    }
+  }
+  return { ...row, bot_token: botToken, provider_token: providerToken };
+}
+
 function getCredentials(ownerAccountId, workspaceId) {
   ensureBaleSchema();
-  return activeDb().prepare(`
+  const row = activeDb().prepare(`
     SELECT * FROM bale_workspace_credentials
     WHERE owner_account_id=? AND workspace_id=?
-  `).get(ownerAccountId, workspaceId) || null;
+  `).get(ownerAccountId, workspaceId);
+  return sealCredentialRow(row);
+}
+
+function persistCredentials({
+  ownerAccountId,
+  workspaceId,
+  botToken,
+  providerToken,
+  botUsername,
+  botId,
+}) {
+  ensureBaleSchema();
+  const storedBot = canEncryptSecrets() ? encryptSecret(botToken) : botToken;
+  const storedProvider = canEncryptSecrets() ? encryptSecret(providerToken) : providerToken;
+  activeDb().prepare(`
+    INSERT INTO bale_workspace_credentials
+      (owner_account_id, workspace_id, bot_token, provider_token, bot_username, bot_id, webhook_registered, updated_at)
+    VALUES (?,?,?,?,?,?,0,datetime('now'))
+    ON CONFLICT(owner_account_id, workspace_id) DO UPDATE SET
+      bot_token=excluded.bot_token,
+      provider_token=excluded.provider_token,
+      bot_username=excluded.bot_username,
+      bot_id=excluded.bot_id,
+      webhook_registered=0,
+      updated_at=datetime('now')
+  `).run(ownerAccountId, workspaceId, storedBot, storedProvider, botUsername, botId);
+  return getCredentials(ownerAccountId, workspaceId);
 }
 
 function credentialsPublicView(row) {
@@ -282,18 +336,12 @@ function publicBaseUrl(req) {
     return envBase.replace(/^http:\/\//i, 'https://');
   }
 
-  let proto = String(req?.headers?.['x-forwarded-proto'] || req?.protocol || 'https')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  if (proto !== 'http' && proto !== 'https') proto = 'https';
-
-  const host = String(req?.get?.('host') || req?.headers?.host || 'localhost')
+  // Do not trust Host / X-Forwarded-* for public URLs; require PUBLIC_BASE_URL in production.
+  const host = String(req?.get?.('host') || req?.headers?.host || '')
     .split(',')[0]
     .trim();
-  const isLocal = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
-  // Behind reverse proxies protocol is often reported as http; force https for public hosts.
-  if (!isLocal) proto = 'https';
+  if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host)) return '';
+  const proto = String(req?.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
   return `${proto}://${host}`;
 }
 
@@ -349,7 +397,9 @@ module.exports = {
   ensureBaleSchema,
   tomanToRial,
   rialToToman,
+  maskSecret,
   getCredentials,
+  persistCredentials,
   credentialsPublicView,
   baleApi,
   newPaymentRequestId,

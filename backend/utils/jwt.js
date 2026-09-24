@@ -41,10 +41,10 @@ module.exports = {
     const tv = Number.isFinite(Number(payload.tv)) ? Math.max(0, Math.floor(Number(payload.tv))) : 0;
     const jti = String(payload.jti || randomUUID()).trim();
     if (!jti) throw new Error('jwt payload requires jti');
-    return jwt.sign({ id, tv }, SECRET, { expiresIn: expiresInSeconds(), jwtid: jti });
+    return jwt.sign({ id, tv }, SECRET, { algorithm: 'HS256', expiresIn: expiresInSeconds(), jwtid: jti });
   },
   verify: (token) => {
-    const payload = jwt.verify(token, SECRET);
+    const payload = jwt.verify(token, SECRET, { algorithms: ['HS256'] });
     const id = payload && payload.id;
     const jti = payload && payload.jti;
     const tv = Number(payload && payload.tv);
