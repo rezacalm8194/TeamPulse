@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp282';
+const TP_ASSET_V = 'tp283';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -16795,7 +16795,23 @@ function _pickSessionFilesRefresh() {
 // SUPABASE AUTH SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 // ── TeamPulse Server API (سرور خودت) ─────────────────────────────────────
-const _API_URL = window.location.origin; // خودکار: همون سرور
+const _PUBLIC_API_ORIGIN = 'https://teampulse.ir';
+function _tpApiOrigin() {
+  try {
+    const protocol = String(window.location?.protocol || '');
+    const origin = String(window.location?.origin || '');
+    if (/^https?:$/i.test(protocol) && origin && origin !== 'null') return origin.replace(/\/$/, '');
+  } catch (e) {}
+  return _PUBLIC_API_ORIGIN;
+}
+const _API_URL = _tpApiOrigin();
+
+function _apiErrorMessage(data, fallback) {
+  if (data && data.error === 'network_unavailable') {
+    return data.message || 'ارتباط با سرور برقرار نشد. اینترنت را بررسی کنید و دوباره تلاش کنید.';
+  }
+  return (data && (data.message || data.error)) || fallback;
+}
 
 let _sbSession = null;
 let _sbUser = null;
@@ -16836,7 +16852,7 @@ async function _authTrySavedCredentialLogin() {
 
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
-  const url = _API_URL + path;
+  const url = _tpApiOrigin() + path;
   const isFormData = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
   const headers = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -16862,7 +16878,7 @@ async function _apiFetch(path, opts = {}) {
     return shared.clone();
   }
   const run = async () => {
-  const attempts = method === 'GET' ? 2 : 1;
+  const attempts = method === 'GET' || /^\/api\/auth\/(login|register|me)$/.test(path) ? 2 : 1;
   // Bound every request: without a timeout, one hung POST on flaky mobile
   // data stalls the serialized todo chain behind it indefinitely, so later
   // ticks never reach the other device. Abort feeds the normal retry paths.
@@ -17048,7 +17064,7 @@ const _auth = {
       body: JSON.stringify({ email, password, name: name || '', phone: phone || '' })
     });
     const data = await _readApiJson(res);
-    if (!res.ok) throw new Error(data.error || 'خطا در ثبت‌نام');
+    if (!res.ok) throw new Error(_apiErrorMessage(data, 'خطا در ثبت‌نام'));
     _sbSession = { token: data.token };
     _sbUser = data.user;
     _authSaveSession({ token: data.token, user: data.user });
@@ -17063,7 +17079,7 @@ const _auth = {
       body: JSON.stringify({ email, password })
     });
     const data = await _readApiJson(res);
-    if (!res.ok) throw new Error(data.error || 'خطا در ورود');
+    if (!res.ok) throw new Error(_apiErrorMessage(data, 'خطا در ورود'));
     _sbSession = { token: data.token };
     _sbUser = data.user;
     _authSaveSession({ token: data.token, user: data.user });
@@ -20156,6 +20172,8 @@ async function _doAuth(mode) {
       _authMsg('ایمیل یا رمز عبور اشتباه است');
     } else if (msg.includes('Email not confirmed')) {
       _authMsg('ایمیل تأیید نشده — صندوق ورودیت رو چک کن');
+    } else if (msg.includes('network_unavailable') || msg.includes('ارتباط با سرور')) {
+      _authMsg('ارتباط با سرور برقرار نشد. اینترنت را چک کن، یا از مرورگر teampulse.ir/app وارد شو');
     } else if (msg.includes('rate limit') || msg.includes('too many')) {
       _authMsg('خیلی زیاد تلاش کردی — چند دقیقه صبر کن');
     } else {
@@ -24788,7 +24806,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v282';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v283';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
