@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp286';
+const TP_ASSET_V = 'tp287';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1740,7 +1740,7 @@ const _SYNC_ID_COLLECTION_KEYS = new Set([
   'key_events','topics','staff','staff_payments','staff_reminders','staff_adjustments',
   'staff_monthly','instructions','guide_categories','guide_items','case_forms','todos',
   'staff_role_entries','team_members','team_invites','package_types','staff_roles',
-  'goals','habits','todo_history','todo_calendar_events'
+  'goals','goal_achievements','habits','habit_logs','todo_history','todo_calendar_events'
 ]);
 
 function _isSyncIdCollection(key, value) {
@@ -17452,12 +17452,54 @@ function _resolveIncomingTodo(local, remote, { authoritative = false } = {}) {
   return _pickMergedTodo(local, remote);
 }
 
+function _goalVisionMediaCount(g) {
+  if (!g) return 0;
+  if (Array.isArray(g.vision_assets)) {
+    return g.vision_assets.filter(item => item && (item.src || item.thumb || item.file_id)).length;
+  }
+  if (Array.isArray(g.vision_images)) return g.vision_images.filter(Boolean).length;
+  const raw = String(g.vision_images || '').trim();
+  return raw ? raw.split(/\n+/).filter(Boolean).length : 0;
+}
+
+function _preserveGoalVisionMedia(target, source) {
+  if (!target || !source) return target;
+  const localCount = _goalVisionMediaCount(source);
+  const remoteCount = _goalVisionMediaCount(target);
+  if (localCount && !remoteCount) {
+    const localT = Date.parse(source.updated_at || source.created_at || '') || 0;
+    const remoteT = Date.parse(target.updated_at || target.created_at || '') || 0;
+    const remoteCleared = Array.isArray(target.vision_assets) && target.vision_assets.length === 0 && remoteT > localT;
+    if (!remoteCleared) {
+      if (source.vision_assets) target.vision_assets = _cloneData(source.vision_assets);
+      else if (source.vision_images) target.vision_images = source.vision_images;
+    }
+  }
+  if (!String(target.music_url || '') && String(source.music_url || '')) {
+    target.music_url = source.music_url;
+  }
+  return target;
+}
+
+function _mergeGoalList(localList, remoteList) {
+  const merged = _mergeIdList(localList, remoteList);
+  const localById = new Map((Array.isArray(localList) ? localList : [])
+    .filter(item => item && item.id != null)
+    .map(item => [String(item.id), item]));
+  merged.forEach(item => {
+    if (!item || item.id == null) return;
+    _preserveGoalVisionMedia(item, localById.get(String(item.id)));
+  });
+  return merged;
+}
+
 function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, options = {}) {
   if (!localBeforeLoad || !ownerData) return ownerData;
   const collections = [
     'students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','wallet_tx','reminders','key_events','topics',
     'staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
-    'instructions','guide_categories','guide_items','case_forms','todos'
+    'instructions','guide_categories','guide_items','case_forms','todos',
+    'goals','goal_achievements','habits','habit_logs'
   ];
   const merged = ownerData;
   merged._nextId = merged._nextId || {};
@@ -17574,6 +17616,7 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         Object.assign(serverItem, _cloneData(localItem));
         injectedLocal = true;
       }
+      if (key === 'goals') _preserveGoalVisionMedia(serverItem, localItem);
     });
 
     merged[key] = serverArr;
@@ -19040,7 +19083,7 @@ function _mergeServerLoadedCollectionsIntoLocal(serverData) {
     };
     const remote = remoteList.filter(keep);
     const localKept = (Array.isArray(_db[key]) ? _db[key] : []).filter(keep);
-    const merged = _mergeIdList(localKept, remote);
+    const merged = key === 'goals' ? _mergeGoalList(localKept, remote) : _mergeIdList(localKept, remote);
     const localList = Array.isArray(_db[key]) ? _db[key] : [];
     if (merged.length !== localList.length) {
       _db[key] = merged;
@@ -24935,7 +24978,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v286';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v287';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
