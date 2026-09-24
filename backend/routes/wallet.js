@@ -3,6 +3,7 @@ const router = require('express').Router();
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const baleCore = require('../utils/balePayCore');
+const { decryptSecret } = require('../utils/secretBox');
 
 const MIN_CHARGE_AMOUNT = 10000;
 const MAX_CHARGE_AMOUNT = 10000000;
@@ -67,7 +68,12 @@ function ensureWalletTables() {
 function getAdminSettings() {
   try {
     const row = db.prepare("SELECT data FROM user_data WHERE account_id='__admin_settings__'").get();
-    return row ? JSON.parse(row.data) : {};
+    const parsed = row ? JSON.parse(row.data) : {};
+    return {
+      ...parsed,
+      bale_bot_token: decryptSecret(parsed.bale_bot_token),
+      bale_provider_token: decryptSecret(parsed.bale_provider_token),
+    };
   } catch {
     return {};
   }

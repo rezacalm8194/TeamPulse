@@ -40,20 +40,16 @@ router.put('/credentials', auth, async (req, res) => {
 
     const botUsername = me?.username ? String(me.username) : null;
     const botId = me?.id != null ? String(me.id) : null;
-    core.activeDb().prepare(`
-      INSERT INTO bale_workspace_credentials
-        (owner_account_id, workspace_id, bot_token, provider_token, bot_username, bot_id, webhook_registered, updated_at)
-      VALUES (?,?,?,?,?,?,0,datetime('now'))
-      ON CONFLICT(owner_account_id, workspace_id) DO UPDATE SET
-        bot_token=excluded.bot_token,
-        provider_token=excluded.provider_token,
-        bot_username=excluded.bot_username,
-        bot_id=excluded.bot_id,
-        webhook_registered=0,
-        updated_at=datetime('now')
-    `).run(req.user.id, workspaceId, botToken, providerToken, botUsername, botId);
+    const row = core.persistCredentials({
+      ownerAccountId: req.user.id,
+      workspaceId,
+      botToken,
+      providerToken,
+      botUsername,
+      botId,
+    });
 
-    res.json(core.credentialsPublicView(core.getCredentials(req.user.id, workspaceId)));
+    res.json(core.credentialsPublicView(row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -175,8 +175,17 @@ const speechLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'too_many_speech_requests' },
 });
+const baleInvoiceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_invoice_requests' },
+});
 app.use('/api/auth/login', authLoginLimiter);
 app.use('/api/auth/register', authRegisterLimiter);
+app.post('/api/bale/payment-requests', baleInvoiceLimiter);
+app.post('/api/wallet/bale-topup', baleInvoiceLimiter);
 app.use('/api/', noStoreApi);
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }));
 app.use('/api/auth', require('./routes/auth'));

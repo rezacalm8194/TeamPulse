@@ -19,7 +19,8 @@ const {
   deleteWorkspaceDocumentsForAccount,
 } = require('../utils/documentStore');
 const { configureWebPush } = require('../utils/vapid');
-const { isValidBaleBotToken } = require('../utils/balePayCore');
+const { isValidBaleBotToken, maskSecret } = require('../utils/balePayCore');
+const { encryptSecret, decryptSecret, canEncryptSecrets } = require('../utils/secretBox');
 ensureTokenRevocationSchema(db);
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
@@ -86,17 +87,41 @@ function ensureAdminAccountColumns() {
 function getAdminSettings() {
   try {
     const row = db.prepare("SELECT data FROM user_data WHERE account_id='__admin_settings__'").get();
-    return row ? JSON.parse(row.data) : { card_number: '', daily_cost: 1000, tutorial_video_url: '' };
+    const parsed = row ? JSON.parse(row.data) : { card_number: '', daily_cost: 1000, tutorial_video_url: '' };
+    return {
+      ...parsed,
+      bale_bot_token: decryptSecret(parsed.bale_bot_token),
+      bale_provider_token: decryptSecret(parsed.bale_provider_token),
+    };
   } catch(e) { return { card_number: '', daily_cost: 1000, tutorial_video_url: '' }; }
 }
 
 function saveAdminSettings(settings) {
+  const toStore = { ...settings };
+  if (canEncryptSecrets()) {
+    if (toStore.bale_bot_token) toStore.bale_bot_token = encryptSecret(toStore.bale_bot_token);
+    if (toStore.bale_provider_token) toStore.bale_provider_token = encryptSecret(toStore.bale_provider_token);
+  }
   const existing = db.prepare("SELECT account_id FROM user_data WHERE account_id='__admin_settings__'").get();
   if (existing) {
-    db.prepare("UPDATE user_data SET data=?, updated_at=datetime('now') WHERE account_id='__admin_settings__'").run(JSON.stringify(settings));
+    db.prepare("UPDATE user_data SET data=?, updated_at=datetime('now') WHERE account_id='__admin_settings__'").run(JSON.stringify(toStore));
   } else {
-    db.prepare("INSERT INTO user_data (account_id, data, updated_at) VALUES ('__admin_settings__', ?, datetime('now'))").run(JSON.stringify(settings));
+    db.prepare("INSERT INTO user_data (account_id, data, updated_at) VALUES ('__admin_settings__', ?, datetime('now'))").run(JSON.stringify(toStore));
   }
+}
+
+function publicAdminSettings(settings) {
+  const bot = String(settings?.bale_bot_token || '');
+  const provider = String(settings?.bale_provider_token || '');
+  return {
+    ...settings,
+    bale_bot_token: '',
+    bale_provider_token: '',
+    bale_bot_token_hint: bot ? maskSecret(bot) : '',
+    bale_provider_token_hint: provider ? maskSecret(provider) : '',
+    bale_bot_token_set: !!bot,
+    bale_provider_token_set: !!provider,
+  };
 }
 
 // نسخه پشتیبان جامع مدیر: اطلاعات احراز هویت (رمز و توکن‌ها) عمداً
@@ -154,7 +179,7 @@ router.get('/backup/all', auth, adminOnly, (req, res) => {
         app_data: appDataByAccount.get(String(account.id)) || null
       })),
       records,
-      admin_settings: adminSettings
+      admin_settings: publicAdminSettings(adminSettings)
     };
     const stamp = exportedAt.replace(/[:.]/g, '-');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -300,7 +325,7 @@ router.get('/stats', auth, adminOnly, (req, res) => {
       users: users.map(u => withProtectedFlag(db, { ...u, wallet: u.total_income })),
       dashboard,
       chargeReqs,
-      settings,
+      settings: publicAdminSettings(settings),
       storage: collectStorageReport(db),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -374,9 +399,9 @@ router.get('/users/:id', auth, adminOnly, (req, res) => {
 router.put('/settings', auth, adminOnly, (req, res) => {
   try {
     const current = getAdminSettings();
-    const nextBotToken = req.body.bale_bot_token ?? current.bale_bot_token;
-    const botTokenStr = String(nextBotToken || '').trim();
-    if (botTokenStr && !isValidBaleBotToken(botTokenStr)) {
+    const incomingBot = String(req.body.bale_bot_token || '').trim();
+    const incomingProvider = String(req.body.bale_provider_token || '').trim();
+    if (incomingBot && !isValidBaleBotToken(incomingBot)) {
       return res.status(400).json({ error: 'invalid_bot_token' });
     }
     const updated = {
@@ -384,8 +409,8 @@ router.put('/settings', auth, adminOnly, (req, res) => {
       card_number: req.body.card_number ?? current.card_number,
       daily_cost: req.body.daily_cost ?? current.daily_cost,
       tutorial_video_url: req.body.tutorial_video_url ?? current.tutorial_video_url,
-      bale_bot_token: botTokenStr,
-      bale_provider_token: req.body.bale_provider_token ?? current.bale_provider_token,
+      bale_bot_token: incomingBot || current.bale_bot_token || '',
+      bale_provider_token: incomingProvider || current.bale_provider_token || '',
     };
     saveAdminSettings(updated);
     res.json({ success: true });
