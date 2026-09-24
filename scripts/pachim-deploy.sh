@@ -9,7 +9,7 @@ SITE_DIR="${SITE_DIR:-/home/pachim/TeamPulse.ir}"
 BRANCH="${BRANCH:-main}"
 ENV_FILE="$SITE_DIR/backend/.env"
 ENV_BACKUP="/tmp/teampulse.env.bak.$$"
-HEALTH_URL="${HEALTH_URL:-https://teampulse.ir/api/health}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/api/health}"
 
 cd "$SITE_DIR"
 
@@ -45,14 +45,19 @@ if [ -f "$ENV_BACKUP" ]; then
   rm -f "$ENV_BACKUP"
 fi
 
-node "$SITE_DIR/scripts/precompress-assets.js"
+# Do not block deploy on PATH/node hangs or a dead public reverse-proxy.
+if command -v timeout >/dev/null 2>&1; then
+  timeout 30 node "$SITE_DIR/scripts/precompress-assets.js" || echo "[deploy] precompress skipped" >&2
+else
+  node "$SITE_DIR/scripts/precompress-assets.js" || echo "[deploy] precompress skipped" >&2
+fi
 
 if [ -f "$SITE_DIR/app.js" ]; then
   echo -n "[deploy] "
   head -n 1 "$SITE_DIR/app.js" || true
 fi
 
-if curl -fsS "$HEALTH_URL"; then
+if curl -fsS --max-time 8 "$HEALTH_URL"; then
   echo
 else
   echo "warning: health check failed: $HEALTH_URL" >&2
