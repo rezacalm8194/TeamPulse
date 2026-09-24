@@ -5,7 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
-const { storedMime, applyFileDownloadHeaders } = require('../utils/safeFileServe');
+const { storedMime } = require('../utils/safeFileServe');
 const { createStorageDriver } = require('../utils/storage');
 const {
   ensureSharedFilesSchema,
@@ -14,7 +14,7 @@ const {
   storageUsage,
   hashFileSync,
   readHeadSync,
-  readStoredFile,
+  sendStoredFile,
   upsertSharedFile,
   migrateSharedFilesToDisk,
 } = require('../utils/fileStore');
@@ -131,16 +131,13 @@ router.get('/:id', auth, (req, res) => {
   const row = db.prepare('SELECT * FROM shared_files WHERE id=?').get(String(req.params.id));
   if (!row) return res.status(404).json({ error: 'file_not_found' });
   if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
-  let data;
   try {
-    data = readStoredFile(row, driver);
+    const sent = sendStoredFile(req, res, row, driver);
+    if (!sent) return res.status(404).json({ error: 'file_not_found' });
   } catch (error) {
     if (error && error.code === 'ENOENT') return res.status(404).json({ error: 'file_not_found' });
     throw error;
   }
-  if (!data) return res.status(404).json({ error: 'file_not_found' });
-  applyFileDownloadHeaders(res, row.name, row.mime_type, data);
-  res.end(data);
 });
 
 router.delete('/:id', auth, (req, res) => {

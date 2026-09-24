@@ -1,6 +1,8 @@
 const { createHash } = require('crypto');
+const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
+const { applyFileDownloadHeaders, parseBytesRange } = require('./safeFileServe');
 
 const PLAN_STORAGE_BYTES = Object.freeze({
   free: 100 * 1024 * 1024,
@@ -262,6 +264,73 @@ function readStoredFile(row, driver) {
   return null;
 }
 
+function openStoredFile(row, driver) {
+  if (row?.storage_key && driver?.createReadStream) {
+    const stat = driver.statSync ? driver.statSync(row.storage_key) : null;
+    if (!stat) {
+      const error = new Error('ENOENT');
+      error.code = 'ENOENT';
+      throw error;
+    }
+    const head = driver.readHeadSync ? driver.readHeadSync(row.storage_key) : Buffer.alloc(0);
+    return {
+      size: stat.bytes,
+      head,
+      createStream(start, end) {
+        if (stat.bytes === 0) return Readable.from(Buffer.alloc(0));
+        return driver.createReadStream(row.storage_key, { start, end });
+      },
+    };
+  }
+  if (row?.data != null) {
+    const buf = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data || '');
+    return {
+      size: buf.length,
+      head: buf.subarray(0, Math.min(1024, buf.length)),
+      createStream(start, end) {
+        if (!buf.length) return Readable.from(Buffer.alloc(0));
+        return Readable.from(buf.subarray(start, end + 1));
+      },
+    };
+  }
+  return null;
+}
+
+function sendStoredFile(req, res, row, driver) {
+  const opened = openStoredFile(row, driver);
+  if (!opened) return false;
+  const size = opened.size;
+  const range = parseBytesRange(req.headers?.range, size);
+  if (range.unsatisfiable) {
+    applyFileDownloadHeaders(res, row.name, row.mime_type, opened.head, {
+      length: 0,
+      contentRange: `bytes */${size}`,
+    });
+    res.status(416).end();
+    return true;
+  }
+  const length = size === 0 ? 0 : (range.end - range.start + 1);
+  applyFileDownloadHeaders(res, row.name, row.mime_type, opened.head, {
+    length,
+    contentRange: range.partial ? `bytes ${range.start}-${range.end}/${size}` : undefined,
+  });
+  if (range.partial) res.status(206);
+  if (length === 0) {
+    res.end();
+    return true;
+  }
+  const stream = opened.createStream(range.start, range.end);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).end();
+    else res.destroy();
+  });
+  res.on('close', () => {
+    if (!stream.destroyed) stream.destroy();
+  });
+  stream.pipe(res);
+  return true;
+}
+
 module.exports = {
   PLAN_STORAGE_BYTES,
   planStorageLimit,
@@ -277,5 +346,7 @@ module.exports = {
   deleteStoredFiles,
   gcOrphanFiles,
   readStoredFile,
+  openStoredFile,
+  sendStoredFile,
   upsertSharedFile,
 };

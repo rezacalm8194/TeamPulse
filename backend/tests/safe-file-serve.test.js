@@ -28,6 +28,17 @@ test('real jpeg remains a jpeg content type', () => {
   assert.match(contentDisposition('photo.jpg'), /^attachment;/);
 });
 
+test('parseBytesRange supports suffix, open-end, and unsatisfiable ranges', () => {
+  const { parseBytesRange } = require('../utils/safeFileServe');
+  assert.deepEqual(parseBytesRange(undefined, 10), { start: 0, end: 9, partial: false });
+  assert.deepEqual(parseBytesRange('bytes=2-5', 10), { start: 2, end: 5, partial: true });
+  assert.deepEqual(parseBytesRange('bytes=7-', 10), { start: 7, end: 9, partial: true });
+  assert.deepEqual(parseBytesRange('bytes=-4', 10), { start: 6, end: 9, partial: true });
+  assert.equal(parseBytesRange('bytes=20-30', 10).unsatisfiable, true);
+  assert.equal(parseBytesRange('bytes=1-2,3-4', 10).unsatisfiable, true);
+  assert.equal(parseBytesRange('bytes=0-0', 0).unsatisfiable, true);
+});
+
 test('svg and xhtml types never stay executable', () => {
   assert.equal(storedMime('image/svg+xml', Buffer.from('<svg></svg>')), 'application/octet-stream');
   assert.equal(storedMime('application/xhtml+xml', Buffer.from('<html></html>')), 'application/octet-stream');
