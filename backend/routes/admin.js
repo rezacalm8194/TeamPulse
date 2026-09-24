@@ -18,10 +18,11 @@ const {
   writeWorkspaceDocument,
   deleteWorkspaceDocumentsForAccount,
 } = require('../utils/documentStore');
+const { configureWebPush } = require('../utils/vapid');
 ensureTokenRevocationSchema(db);
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
-webpush.setVapidDetails('mailto:notifications@teampulse.ir', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+const vapidReady = configureWebPush(webpush, process.env, logger);
 
 const ALLOWED_ACCOUNT_ROLES = new Set(['admin', 'owner', 'user']);
 
@@ -476,6 +477,9 @@ router.post('/users/notify', auth, adminOnly, async (req, res) => {
     if (!userIds.length || !body) return res.status(400).json({ error: 'recipients and body are required' });
     const placeholders = userIds.map(() => '?').join(',');
     const subscriptions = db.prepare(`SELECT id,subscription FROM push_subscriptions WHERE account_id IN (${placeholders})`).all(...userIds);
+    if (!vapidReady) {
+      return res.status(503).json({ error: 'push_not_configured', sent: 0, subscriptions: subscriptions.length });
+    }
     let sent = 0;
     for (const sub of subscriptions) {
       try {

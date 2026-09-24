@@ -10,11 +10,13 @@ const webpush = require('web-push');
 const { randomUUID } = require('crypto');
 
 // ── VAPID تنظیمات ──────────────────────────────────────────────
-webpush.setVapidDetails(
-  'mailto:notifications@teampulse.ir',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:notifications@teampulse.ir',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
 
 // ── جدول push_subscriptions باید وجود داشته باشه ──────────────
 // اگه وجود نداشت خودش می‌سازه

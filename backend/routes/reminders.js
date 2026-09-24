@@ -28,15 +28,12 @@ const {
   todoShouldNotifyOwner,
   todoShouldNotifyTeamMember,
 } = require('../utils/todoPushRecipients');
+const { configureWebPush, readVapidKeys } = require('../utils/vapid');
+const { logger } = require('../utils/logger');
 
 ensureTeamAccessSchema(db);
 
-// ── VAPID تنظیمات ──────────────────────────────────────────────
-webpush.setVapidDetails(
-  'mailto:notifications@teampulse.ir',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+const vapidReady = configureWebPush(webpush, process.env, logger);
 
 // ── جدول push_subscriptions باید وجود داشته باشه ──────────────
 // اگه وجود نداشت خودش می‌سازه
@@ -191,6 +188,7 @@ function isOwnerSubscription(sub, accountId, ownerEmail = '') {
 
 async function sendPushSubscriptions(subs, title, body, options = {}) {
   if (!subs.length) return { sent: 0, failed: 0 };
+  if (!vapidReady) return { sent: 0, failed: subs.length };
 
   const kind = options.kind || 'reminder';
   const prefixByKind = {
@@ -533,7 +531,7 @@ router.delete('/subscribe', auth, (req, res) => {
 
 // ── API: VAPID public key برای مرورگر ─────────────────────────
 router.get('/vapid-key', (req, res) => {
-  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
+  res.json({ publicKey: readVapidKeys().publicKey || '' });
 });
 
 // ── API: تست push برای دستگاه‌های کاربر فعلی ───────────────────
