@@ -3044,6 +3044,7 @@ async function renderInstructions(instrSearch) {
             style="--if-accent:${color};background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;position:relative;display:flex;flex-direction:column"
             onclick="_instrOpenFolder(${item.id},'${iconSafe}','${titleSafe}');_instrRecordOpen(${item.id})">
             <div style="height:3px;background:${color}"></div>
+            ${_instrCoverHtml(item)}
             <div class="_ifcard-body" style="padding:13px 14px 11px">
               ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px" title="پین شده">📌</span>` : ''}
               <div class="_ifcard-icon" style="font-size:28px;margin-bottom:7px">${escapeHtml(item.icon||'📁')}</div>
@@ -3053,6 +3054,7 @@ async function renderInstructions(instrSearch) {
               </div>
               <div class="_ifcard-divider" style="height:1px;background:var(--border);margin-bottom:6px"></div>
               <span style="font-size:11px;color:var(--text3)">${fa(childCount)} ${countLabel}</span>
+              ${_instrPhotoBadge(item)}
               ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">✏️ ${lastEdit}</div>` : ''}
               ${subfoldersHtml}
             </div>
@@ -3091,7 +3093,7 @@ async function renderInstructions(instrSearch) {
                 ${_instrTypeBadge(item)}
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
               </div>
-              <div style="font-size:11px;color:var(--text3);margin-top:1px">${fa(childCount)} ${countLabel}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:1px">${fa(childCount)} ${countLabel} ${_instrPhotoBadge(item)}</div>
             </div>
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);flex-shrink:0;white-space:nowrap">${lastEdit}</div>` : ''}
             <span style="color:var(--text3);flex-shrink:0;font-size:14px">‹</span>
@@ -3125,6 +3127,7 @@ async function renderInstructions(instrSearch) {
             <span class="_ifcard-title" style="font-size:12px;font-weight:500;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</span>
             ${_instrTypeBadge(item)}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
+            ${_instrPhotoBadge(item)}
             <span style="font-size:10px;color:var(--text3);flex-shrink:0">${fa(childCount)} ${countLabel}</span>
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
@@ -3160,6 +3163,7 @@ async function renderInstructions(instrSearch) {
             style="--if-accent:${color};background:var(--bg2);border:1px solid ${isKey?'var(--amber)':'var(--border)'};border-top:3px solid ${color};border-radius:14px;padding:14px 14px 12px;cursor:pointer;position:relative;min-height:112px;display:flex;flex-direction:column"
             onclick="openNoteDetail(${item.id});_instrRecordOpen(${item.id})">
             ${item.pinned ? `<span style="position:absolute;top:10px;left:10px;font-size:12px">📌</span>` : ''}
+            ${_instrCoverHtml(item)}
             <div class="_ifcard-icon" style="font-size:25px;margin-bottom:7px">${escapeHtml(item.icon||'📝')}</div>
             <div class="_ifcard-title-row" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0">
               <div class="_ifcard-title" style="font-weight:700;font-size:14px;color:var(--text);line-height:1.4;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
@@ -3167,6 +3171,7 @@ async function renderInstructions(instrSearch) {
             </div>
             ${isKey ? `<span style="display:inline-block;font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:5px;padding:2px 7px;font-weight:600;margin-bottom:8px">⭐ مهم</span>` : ''}
             ${_instrTagsHtml(item.tags||[], true)}
+            ${_instrPhotoBadge(item)}
             ${excerptText ? `<div class="_ifcard-preview" style="font-size:12px;color:var(--text2);line-height:1.65;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${escapeHtml(excerptText)}${(item.content||'').length>90?'…':''}</div>` : '<div style="flex:1"></div>'}
             ${lastEdit ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">✏️ ${lastEdit}</div>` : ''}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" style="position:absolute;top:8px;left:8px" title="بیشتر">⋮</button>
@@ -3201,6 +3206,7 @@ async function renderInstructions(instrSearch) {
                 ${_instrTypeBadge(item)}
                 ${isKey ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--amber);border-radius:4px;padding:1px 6px;font-weight:600;flex-shrink:0">⭐ مهم</span>` : ''}
                 ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
+                ${_instrPhotoBadge(item)}
               </div>
               ${excerptText ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(excerptText)}${(item.content||'').length>80?'…':''}</div>` : ''}
               ${_instrTagsHtml(item.tags||[], true)}
@@ -3234,6 +3240,7 @@ async function renderInstructions(instrSearch) {
             ${_instrTypeBadge(item)}
             ${isKey ? `<span style="font-size:10px;color:var(--amber);flex-shrink:0">⭐</span>` : ''}
             ${item.pinned ? `<span style="font-size:11px;flex-shrink:0">📌</span>` : ''}
+            ${_instrPhotoBadge(item)}
             <button type="button" class="_ifcard-more-btn" onclick="_ifToggleActions(this)" title="بیشتر">⋮</button>
             <div class="_ifcard-actions" style="display:flex;gap:3px;opacity:0;transition:opacity .15s;pointer-events:none;flex-shrink:0">
               <button onclick="event.stopPropagation();openEditInstruction(${item.id})" style="width:22px;height:22px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:10px">✏️</button>
@@ -4064,13 +4071,7 @@ function openNoteDetail(id) {
       <div style="margin-top:10px;font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">${renderRich(node.extra_note, {interactive:true,noteId:numId,field:'extra_note'})}</div>
     </div>` : ''}
     <div class="detail-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3>📎 پیوست‌ها</h3>
-        <button class="btn btn-ghost btn-sm" onclick="_triggerAttach('instruction',${id})">+ افزودن فایل</button>
-      </div>
-      ${(node.attachments||[]).length === 0
-        ? '<p style="font-size:12px;color:var(--text3)">هنوز پیوستی اضافه نشده</p>'
-        : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
+      ${_instrAttachSectionHtml(id)}
     </div>
     <details class="detail-section">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🏷 استیکر${stickers.length ? ` (${fa(stickers.length)})` : ''}</summary>
@@ -4159,6 +4160,48 @@ function _impChipsHtml(inputId, selected) {
     </div>`;
 }
 
+/* ── Photos/files on notes and folders ── */
+function _instrCoverHtml(item) {
+  const cover = (item.attachments || []).find(a => a.thumb && String(a.type || '').startsWith('image/'));
+  if (!cover) return '';
+  return `<div class="_ifcard-cover"><img src="${cover.thumb}" alt=""></div>`;
+}
+function _instrPhotoBadge(item) {
+  const n = (item.attachments || []).length;
+  if (!n) return '';
+  const imgs = (item.attachments || []).filter(a => String(a.type || '').startsWith('image/')).length;
+  return `<span class="_instr-photo-badge" title="پیوست">${imgs ? '📷' : '📎'} ${fa(n)}</span>`;
+}
+function _instrAttachSectionHtml(id) {
+  const saved = id != null && id !== '' && id !== 'null';
+  const attachments = saved
+    ? (((_db.instructions || []).find(n => +n.id === +id) || {}).attachments || [])
+    : (window._pendingInstructionAttachments || []);
+  const photoAction = saved ? `_triggerAttach('instruction',${+id},'image')` : `_pickInstructionFiles('image')`;
+  const cameraAction = saved ? `_triggerAttach('instruction',${+id},'camera')` : `_pickInstructionFiles('camera')`;
+  const fileAction = saved ? `_triggerAttach('instruction',${+id})` : `_pickInstructionFiles()`;
+  return `
+    <div class="form-group full instr-attach-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <div>
+          <label class="form-label" style="margin:0">📷 عکس و فایل</label>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">از گالری انتخاب کن، عکس بگیر، یا فایل پیوست کن</div>
+        </div>
+        <span id="instr-attach-count" style="font-size:11px;color:var(--text3)">${attachments.length ? fa(attachments.length) + ' پیوست' : ''}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="${photoAction}">📷 افزودن عکس</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="${cameraAction}">📸 عکس گرفتن</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="${fileAction}">📎 فایل</button>
+      </div>
+      <div id="instr-attach-preview">
+        ${attachments.length
+          ? renderAttachmentsGrid(attachments, _instrAttachOnDelete(saved ? id : null))
+          : '<p style="font-size:12px;color:var(--text3);margin:0">هنوز عکسی اضافه نشده</p>'}
+      </div>
+    </div>`;
+}
+
 function openAddInstruction(parentId, type) {
   if (!window._openingStaffInstruction) _staffInstructionContext = null;
   if (!_teamCanCreateInstruction(parentId)) { showToast('برای ساختن مورد جدید در این پوشه دسترسی نداری', 'error'); return; }
@@ -4177,6 +4220,7 @@ function openAddInstruction(parentId, type) {
   /* چک‌لیست از نظر ساختار داده همان «یادداشت» است، فقط محتوای اولیه‌اش با چند خط
      «[ ] ...» پر می‌شه تا کاربر مستقیم آیتم‌ها را تایپ کنه؛ ذخیره هم مثل note انجام می‌شه */
   const isChecklist = type === 'checklist';
+  window._pendingInstructionAttachments = [];
 
   const iconColorBlock = `
     <div class="form-group full">
@@ -4192,13 +4236,14 @@ function openAddInstruction(parentId, type) {
 
   let bodyHtml;
   if (type === 'category' || type === 'kcategory') {
-    /* ── Categories/Folders: just 3 fields, nothing to hide ── */
+    /* ── Categories/Folders: title + photos ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان *</label>
         <input class="form-input" id="instr-title" placeholder="${pholder}" autofocus>
       </div>
-      ${iconColorBlock}`;
+      ${iconColorBlock}
+      ${_instrAttachSectionHtml(null)}`;
   } else {
     /* ── Notes: title + content up front; secondary fields are collapsible. ── */
     bodyHtml = `
@@ -4211,6 +4256,7 @@ function openAddInstruction(parentId, type) {
         ${richToolbar('instr-content')}
         <textarea class="form-textarea note-content-textarea" id="instr-content" rows="6" placeholder="${isChecklist ? 'هر خط یک آیتم — مثلاً: خرید بلیط' : 'محتوای یادداشت...'}">${isChecklist ? '[ ] \n[ ] \n[ ] ' : ''}</textarea>
       </div>
+      ${_instrAttachSectionHtml(null)}
       <div class="form-group full">
         <button type="button" id="instr-adv-toggle" onclick="_toggleAdvanced('instr-advanced','instr-adv-toggle')"
           style="width:100%;text-align:center;padding:9px;border-radius:8px;border:1px dashed var(--border2);background:none;color:var(--text2);font-size:12px;font-family:var(--font);cursor:pointer">
@@ -4279,6 +4325,8 @@ function openAddInstruction(parentId, type) {
       const ta = document.getElementById('instr-content');
       if (ta) { const pos = ta.value.indexOf('[ ] ') + 4; ta.selectionStart = ta.selectionEnd = pos >= 4 ? pos : 0; }
     }
+    _bindInstructionImagePaste('instr-content');
+    _bindInstructionImagePaste('instr-extra');
   }, 50);
 }
 
@@ -4296,12 +4344,15 @@ async function saveAddInstruction(parentId, type) {
   const date_jalali = document.getElementById('instr-date')?.value || '';
   const status = document.getElementById('instr-status')?.value || 'active';
   const tags = _parseTags(document.getElementById('instr-tags')?.value || '');
+  const pending = window._pendingInstructionAttachments || [];
   const res = await window.api.instructions.add({
     parent_id: _parentId, title, icon, color, type: type||'note', content, extra_note, importance, date_jalali, status, tags,
+    attachments: pending,
     staff_id: staffCtx?.staffId || null,
     instruction_scope: staffCtx ? 'staff' : ''
   });
   if (res && res.ok === false) { showToast(res.error || 'ذخیره نشد', 'error'); return; }
+  window._pendingInstructionAttachments = [];
 
   // Do not claim cross-device success until the server has acknowledged this
   // exact database revision. The local copy remains safe when offline, while
@@ -4356,13 +4407,14 @@ function openEditInstruction(id) {
 
   let bodyHtml;
   if (node.type === 'category' || node.type === 'kcategory') {
-    /* ── Categories/Folders: just 3 fields, nothing to hide ── */
+    /* ── Categories/Folders: title, color, photos ── */
     bodyHtml = `
       <div class="form-group full">
         <label class="form-label">عنوان</label>
         <input class="form-input" id="ei-title" value="${escapeHtml(node.title)}">
       </div>
-      ${iconColorBlock}`;
+      ${iconColorBlock}
+      ${_instrAttachSectionHtml(id)}`;
   } else {
     /* ── Notes: title + content up front; secondary fields are collapsible. ── */
     bodyHtml = `
@@ -4375,15 +4427,7 @@ function openEditInstruction(id) {
         ${richToolbar('ei-content')}
         <textarea class="form-textarea note-content-textarea" id="ei-content" rows="6">${escapeHtml(_cleanupColorMarkers(node.content||''))}</textarea>
       </div>
-      <div class="detail-section" style="margin:0 0 12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
-          <div><h3 style="margin:0">📎 پیوست‌ها</h3><div style="font-size:10px;color:var(--text3);margin-top:3px">فایل، تصویر یا سند مرتبط با این یادداشت</div></div>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="_triggerAttach('instruction',${id})">+ افزودن فایل</button>
-        </div>
-        ${(node.attachments||[]).length === 0
-          ? '<p style="font-size:12px;color:var(--text3);margin:0">هنوز پیوستی اضافه نشده</p>'
-          : renderAttachmentsGrid(node.attachments||[], `(fid)=>_deleteAttachment('instruction',${id},fid)`)}
-      </div>
+      ${_instrAttachSectionHtml(id)}
       <details class="detail-section" style="margin:0 0 12px">
         <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">ℹ️ اطلاعات تکمیلی (تاریخ، اهمیت و وضعیت)</summary>
         <div class="form-grid" style="margin-top:12px">
@@ -4443,6 +4487,8 @@ function openEditInstruction(id) {
         const fmap2 = {'ei-content':'content','ei-extra':'extra_note'};
         if (ta) ta.addEventListener('dblclick', function(){ _openFocusMode(ta, numId, fmap2[fid]); });
       });
+      _bindInstructionImagePaste('ei-content', numId);
+      _bindInstructionImagePaste('ei-extra', numId);
     }, 80);
   }
 }

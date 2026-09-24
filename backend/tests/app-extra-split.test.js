@@ -101,3 +101,16 @@ test('knowledge-center creates are confirmed across devices', () => {
   assert.match(extraSource, /function _instrSameParent\(/);
   assert.match(extraSource, /ذخیره و بین دستگاه‌ها همگام شد/);
 });
+
+test('knowledge notes and folders can attach photos', () => {
+  assert.match(appSource, /function _pickInstructionFiles\(/);
+  assert.match(appSource, /function _bindInstructionImagePaste\(/);
+  assert.match(appSource, /attachments: Array\.isArray\(p\.attachments\) \? p\.attachments : \[\]/);
+  assert.match(appSource, /_attachKindOpts\(kind\)/);
+  assert.match(extraSource, /function _instrAttachSectionHtml\(/);
+  assert.match(extraSource, /افزودن عکس/);
+  assert.match(extraSource, /عکس گرفتن/);
+  assert.match(extraSource, /attachments: pending/);
+  assert.match(extraSource, /\$\{_instrAttachSectionHtml\(null\)\}/);
+  assert.match(extraSource, /\$\{_instrAttachSectionHtml\(id\)\}/);
+});

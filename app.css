@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp264') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp282') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp264') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp282') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -3059,6 +3059,35 @@ body.light .instr-view-select select option:checked{background:#dbeafe;color:#17
   height:auto;
   overflow:visible;
 }
+._ifcard-cover{
+  height:92px;
+  overflow:hidden;
+  background:var(--bg4);
+}
+._ifcard-cover img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+._ifcard-gallery[data-type="note"] ._ifcard-cover{
+  margin:-14px -14px 10px;
+  border-radius:11px 11px 0 0;
+}
+._instr-photo-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  font-size:10px;
+  color:var(--text2);
+  background:var(--bg3);
+  border:1px solid var(--border2);
+  border-radius:999px;
+  padding:1px 7px;
+  margin-inline-start:6px;
+  flex-shrink:0;
+}
+.instr-attach-section .btn-sm{white-space:nowrap}
 ._ifcard-subfolders{
   display:flex;
   flex-wrap:wrap;

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp281';
+const TP_ASSET_V = 'tp282';
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
 function _tpChunkSrc(file) { return '/' + file + '?v=' + TP_ASSET_V; }
@@ -3621,7 +3621,7 @@ window.api = {
         staff_id: p.staff_id || null,
         instruction_scope: p.instruction_scope || '',
         stickers: [],
-        attachments: [],
+        attachments: Array.isArray(p.attachments) ? p.attachments : [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -7026,7 +7026,7 @@ window.addEventListener('unhandledrejection', (e) => {
       var id = _db._nextId.instructions++;
       _db.instructions.push({id:id, parent_id:p.parent_id||null, title:p.title||'',
         icon:p.icon||'folder', color:p.color||'#7c6af7', type:p.type||'category',
-        content:p.content||'', attachments:[], created_at:new Date().toISOString()});
+        content:p.content||'', attachments: Array.isArray(p.attachments) ? p.attachments : [], created_at:new Date().toISOString()});
       _save();
       return Promise.resolve({ok:true, id:id});
     },
@@ -16398,12 +16398,45 @@ async function _makeThumbnail(file, maxW=200, maxH=200) {
 }
 
 // ── Upload attachments ────────────────────────────────────────────────────────
-async function attachFiles(entityType, entityId, existingAttachments) {
+async function _appendUploadedAttachments(existingAttachments, files) {
+  const newAttachments = [...(existingAttachments || [])];
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return newAttachments;
+  showToast('در حال بارگذاری فایل‌ها...', '');
+  for (const file of list) {
+    const id = _fileId();
+    try {
+      const dataURL = await _readFileAsDataURL(file);
+      await _IDB.save(id, dataURL);
+      const thumb = await _makeThumbnail(file);
+      const serverStored = await _uploadSharedAttachment(id, file);
+      newAttachments.push({
+        id,
+        name: file.name || (String(file.type || '').startsWith('image/') ? 'عکس' : 'فایل'),
+        type: file.type,
+        size: file.size,
+        thumb,
+        server_stored: serverStored,
+        created: new Date().toISOString(),
+      });
+    } catch (e) { showToast('خطا: ' + (file.name || 'فایل'), 'error'); }
+  }
+  return newAttachments;
+}
+
+function _attachKindOpts(kind) {
+  if (kind === 'image') return { accept: 'image/*' };
+  if (kind === 'camera') return { accept: 'image/*', capture: 'environment' };
+  return undefined;
+}
+
+async function attachFiles(entityType, entityId, existingAttachments, opts) {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.multiple = true;
-    input.accept = '*/*';
+    input.accept = (opts && opts.accept) || '*/*';
+    input.multiple = !(opts && opts.capture);
+    if (opts && opts.capture) input.setAttribute('capture', opts.capture);
     input.style.cssText = 'position:fixed;top:-100px;left:-100px;opacity:0';
     document.body.appendChild(input);
 
@@ -16420,19 +16453,7 @@ async function attachFiles(entityType, entityId, existingAttachments) {
       selectionProcessing = true;
       const files = Array.from(input.files || []);
       if (!files.length) { done(existingAttachments || []); return; }
-      const newAttachments = [...(existingAttachments || [])];
-      showToast('در حال بارگذاری فایل‌ها...', '');
-      for (const file of files) {
-        const id = _fileId();
-        try {
-          const dataURL = await _readFileAsDataURL(file);
-          await _IDB.save(id, dataURL);
-          const thumb = await _makeThumbnail(file);
-          const serverStored = await _uploadSharedAttachment(id, file);
-          newAttachments.push({ id, name: file.name, type: file.type, size: file.size, thumb, server_stored:serverStored, created: new Date().toISOString() });
-        } catch(e) { showToast('خطا: ' + file.name, 'error'); }
-      }
-      done(newAttachments);
+      done(await _appendUploadedAttachments(existingAttachments, files));
     };
 
     // fallback: اگه dialog بدون انتخاب بسته شد
@@ -16610,7 +16631,67 @@ function attachButtonHTML(entityType, entityId) {
 }
 
 // پیوست برای topics
-async function _triggerAttach(entityType, entityId) {
+function _instrAttachOnDelete(savedId) {
+  if (savedId == null || savedId === '' || savedId === 'new') {
+    return '(fid)=>{window._pendingInstructionAttachments=(window._pendingInstructionAttachments||[]).filter(a=>a.id!==fid);_refreshInstrAttachPreview();}';
+  }
+  return `(fid)=>_deleteAttachment('instruction',${+savedId},fid)`;
+}
+
+function _refreshInstrAttachPreview(savedId) {
+  const preview = document.getElementById('instr-attach-preview');
+  if (!preview) return false;
+  const isNew = savedId == null || savedId === '' || savedId === 'new';
+  const attachments = isNew
+    ? (window._pendingInstructionAttachments || [])
+    : (((_db.instructions || []).find(n => n.id == savedId) || {}).attachments || []);
+  preview.innerHTML = attachments.length
+    ? renderAttachmentsGrid(attachments, _instrAttachOnDelete(isNew ? null : savedId))
+    : '<p style="font-size:12px;color:var(--text3);margin:0">هنوز عکسی اضافه نشده</p>';
+  const countEl = document.getElementById('instr-attach-count');
+  if (countEl) countEl.textContent = attachments.length ? fa(attachments.length) + ' پیوست' : '';
+  return true;
+}
+
+async function _pickInstructionFiles(kind) {
+  const current = window._pendingInstructionAttachments || [];
+  window._pendingInstructionAttachments = await attachFiles('instruction', null, current, _attachKindOpts(kind));
+  _refreshInstrAttachPreview();
+}
+
+function _bindInstructionImagePaste(textareaId, savedId) {
+  const ta = document.getElementById(textareaId);
+  if (!ta || ta.dataset.instrPasteBound) return;
+  ta.dataset.instrPasteBound = '1';
+  ta.addEventListener('paste', async (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    const files = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    const isNew = savedId == null || savedId === '' || savedId === 'new';
+    if (isNew) {
+      window._pendingInstructionAttachments = await _appendUploadedAttachments(window._pendingInstructionAttachments || [], files);
+      _refreshInstrAttachPreview();
+    } else {
+      const node = (_db.instructions || []).find(n => n.id == savedId);
+      if (!node) return;
+      node.attachments = await _appendUploadedAttachments(node.attachments || [], files);
+      _save();
+      _refreshInstrAttachPreview(savedId);
+    }
+    showToast('عکس به پیوست‌ها اضافه شد ✓', 'success');
+  });
+}
+
+async function _triggerAttach(entityType, entityId, kind) {
   const id = +entityId || entityId;
   if (entityType === 'topic') {
     const topics = _db.topics || [];
@@ -16643,13 +16724,13 @@ async function _triggerAttach(entityType, entityId) {
     const node = findNode(_db.instructions || []);
     if (!node) { showToast('موردی یافت نشد', 'error'); return; }
     const wasEditing = !!document.getElementById('ei-title') && Number(window._currentEditNoteId) === Number(id);
-    const newAttachments = await attachFiles(entityType, id, node.attachments || []);
+    const newAttachments = await attachFiles(entityType, id, node.attachments || [], _attachKindOpts(kind));
     node.attachments = newAttachments;
     _save();
     showToast('پیوست اضافه شد ✓', 'success');
-    // در فرم ویرایش، همان فرم را دوباره باز کن تا پیش‌نمایش فایل تازه فوراً
-    // دیده شود؛ خارج از فرم ویرایش، جزئیات یادداشت را به‌روز نمایش بده.
-    if (wasEditing) openEditInstruction(id);
+    if (_refreshInstrAttachPreview(id)) return;
+    const isFolder = node.type === 'category' || node.type === 'kcategory';
+    if (wasEditing || isFolder) openEditInstruction(id);
     else openNoteDetail(id);
   }
 }
@@ -16675,7 +16756,12 @@ async function _deleteAttachment(entityType, entityId, fileId) {
   await _IDB.delete(fileId);
   _save();
   showToast('پیوست حذف شد', 'error');
-  if (entityType === 'instruction') openNoteDetail(id);
+  if (entityType === 'instruction') {
+    if (_refreshInstrAttachPreview(id)) return;
+    const isFolder = entity.type === 'category' || entity.type === 'kcategory';
+    if (isFolder) openEditInstruction(id);
+    else openNoteDetail(id);
+  }
 }
 
 
@@ -24702,7 +24788,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v281';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v282';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
