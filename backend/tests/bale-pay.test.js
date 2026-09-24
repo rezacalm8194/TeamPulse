@@ -128,6 +128,96 @@ test('successful payment settles into business payments store', () => {
   assert.equal(reminders[0].done, true);
 });
 
+test('webhook secret compare is constant-time and rejects missing secrets', () => {
+  const secret = core.newWebhookSecret();
+  assert.match(secret, /^[A-Za-z0-9_-]{32,256}$/);
+  assert.equal(core.verifyWebhookSecret(secret, secret), true);
+  assert.equal(core.verifyWebhookSecret(secret, secret.slice(0, -1) + 'x'), false);
+  assert.equal(core.verifyWebhookSecret(secret, ''), false);
+  assert.equal(core.verifyWebhookSecret('', secret), false);
+  assert.equal(core.verifyWebhookSecret('short', 'short'), false);
+  assert.equal(
+    core.webhookSecretFromRequest({
+      get: (name) => (name === core.WEBHOOK_SECRET_HEADER ? secret : ''),
+      headers: {},
+    }),
+    secret
+  );
+});
+
+test('issueWebhookSecret stores a sealed token used by authorizeBaleWebhook', () => {
+  const db = makeTestDb();
+  const owner = 'acc_sec';
+  db.prepare(`
+    INSERT INTO bale_workspace_credentials
+      (owner_account_id, workspace_id, bot_token, provider_token, bot_username, webhook_registered)
+    VALUES (?,?,?,?,?,0)
+  `).run(owner, 'default', '123456:ABC-TESTTOKEN', core.TEST_PROVIDER_TOKEN, 'tp_bot');
+  const secret = core.issueWebhookSecret(owner, 'default');
+  const creds = core.getCredentials(owner, 'default');
+  assert.equal(creds.webhook_secret, secret);
+  const raw = db.prepare(
+    'SELECT webhook_secret FROM bale_workspace_credentials WHERE owner_account_id=?'
+  ).get(owner);
+  if (process.env.JWT_SECRET || process.env.TOKEN_ENCRYPTION_KEY) {
+    assert.notEqual(raw.webhook_secret, secret);
+  }
+  assert.equal(core.authorizeBaleWebhook({
+    get: (name) => (name === core.WEBHOOK_SECRET_HEADER ? secret : ''),
+    headers: {},
+  }, owner, 'default'), true);
+  assert.equal(core.authorizeBaleWebhook({
+    get: () => '',
+    headers: {},
+  }, owner, 'default'), false);
+  assert.equal(core.authorizeBaleWebhook({
+    get: (name) => (name === core.WEBHOOK_SECRET_HEADER ? 'wrong-token-wrong-token-wrong-token-xx' : ''),
+    headers: {},
+  }, owner, 'default'), false);
+});
+
+test('forged successful_payment is ignored without webhook secret header', async () => {
+  const db = makeTestDb();
+  const owner = 'acc_http';
+  const id = 'bp_cccccccccccccccc';
+  const secret = core.newWebhookSecret();
+  db.prepare(`
+    INSERT INTO bale_workspace_credentials
+      (owner_account_id, workspace_id, bot_token, provider_token, bot_username, webhook_registered, webhook_secret)
+    VALUES (?,?,?,?,?,1,?)
+  `).run(owner, 'default', '123456:ABC-TESTTOKEN', core.TEST_PROVIDER_TOKEN, 'tp_bot', secret);
+  db.prepare(`
+    INSERT INTO bale_payment_requests (
+      id, owner_account_id, workspace_id, student_id, reminder_id, package_id,
+      amount_toman, amount_rial, title, description, status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?, 'pending')
+  `).run(id, owner, 'default', '1', null, null, 5000, 50000, 'پرداخت', 'desc');
+
+  const body = {
+    message: {
+      successful_payment: {
+        invoice_payload: id,
+        total_amount: 50000,
+        provider_payment_charge_id: 'p-fake',
+        telegram_payment_charge_id: 't-fake',
+      },
+    },
+  };
+  const forgedReq = { get: () => '', headers: {}, body };
+  assert.equal(core.authorizeBaleWebhook(forgedReq, owner, 'default'), false);
+  assert.equal(db.prepare('SELECT status FROM bale_payment_requests WHERE id=?').get(id).status, 'pending');
+
+  const okReq = {
+    get: (name) => (name === core.WEBHOOK_SECRET_HEADER ? secret : ''),
+    headers: {},
+    body,
+  };
+  assert.equal(core.authorizeBaleWebhook(okReq, owner, 'default'), true);
+  const paid = await core.handleWebhookUpdate(owner, 'default', body);
+  assert.equal(paid.kind, 'successful_payment');
+  assert.equal(db.prepare('SELECT status FROM bale_payment_requests WHERE id=?').get(id).status, 'paid');
+});
+
 test('webhook handler answers pre_checkout and settles successful_payment', async () => {
   const db = makeTestDb();
   const owner = 'acc_wh';
@@ -233,6 +323,8 @@ test('client hooks and asset version for Bale Pay exist', () => {
   assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /\/api\/bale/);
   assert.match(fs.readFileSync(path.join(root, 'backend/server.js'), 'utf8'), /baleInvoiceLimiter/);
   assert.match(fs.readFileSync(path.join(root, 'backend/routes/bale.js'), 'utf8'), /balePayCore/);
+  assert.match(fs.readFileSync(path.join(root, 'backend/routes/bale.js'), 'utf8'), /secret_token/);
+  assert.match(fs.readFileSync(path.join(root, 'backend/routes/bale.js'), 'utf8'), /authorizeBaleWebhook/);
 });
 
 test('getMe is cached and Bale calls time out instead of hanging the request', async () => {

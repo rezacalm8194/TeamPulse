@@ -85,7 +85,9 @@ router.post('/credentials/webhook', auth, async (req, res) => {
         url,
       });
     }
-    await core.baleApi(creds.bot_token, 'setWebhook', { url });
+    const secretToken = core.newWebhookSecret();
+    await core.baleApi(creds.bot_token, 'setWebhook', { url, secret_token: secretToken });
+    core.persistWebhookSecret(req.user.id, workspaceId, secretToken);
     core.activeDb().prepare(`
       UPDATE bale_workspace_credentials SET webhook_registered=1, updated_at=datetime('now')
       WHERE owner_account_id=? AND workspace_id=?
@@ -190,6 +192,9 @@ router.post('/webhook/:ownerAccountId/:workspaceId', async (req, res) => {
     const ownerAccountId = String(req.params.ownerAccountId || '');
     const workspaceId = normalizeWorkspaceId(req.params.workspaceId);
     if (!ownerAccountId || !workspaceId) return res.sendStatus(200);
+    if (!core.authorizeBaleWebhook(req, ownerAccountId, workspaceId)) {
+      return res.sendStatus(401);
+    }
     await core.handleWebhookUpdate(ownerAccountId, workspaceId, req.body || {});
     return res.sendStatus(200);
   } catch (e) {
