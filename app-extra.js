@@ -4933,7 +4933,12 @@ function _goalVisionImages(g) {
 
 function _goalVisionItems(g) {
   if (!g) return [];
-  if (Array.isArray(g.vision_assets)) return g.vision_assets.filter(x => x && x.src);
+  if (Array.isArray(g.vision_assets)) {
+    return g.vision_assets.filter(x => x && (x.src || x.thumb || x.file_id)).map(x => ({
+      ...x,
+      src: x.src || x.thumb || ''
+    }));
+  }
   const raw = Array.isArray(g.vision_images) ? g.vision_images.join('\n') : (g.vision_images || '');
   return raw.split(/\n+/).map(x => x.trim()).filter(Boolean).map((src, i) => ({
     id: 'url-' + i + '-' + Date.now(),
@@ -4943,6 +4948,128 @@ function _goalVisionItems(g) {
     category: '',
     source: 'url'
   }));
+}
+
+function _touchGoal(g) {
+  if (g) g.updated_at = new Date().toISOString();
+  return g;
+}
+
+const _VISION_INLINE_MAX = 80 * 1024;
+
+function _visionSrcIsInlineBlob(src) {
+  return typeof src === 'string' && src.startsWith('data:') && src.length > _VISION_INLINE_MAX;
+}
+
+function _visionDataUrlToFile(dataUrl, name) {
+  const raw = String(dataUrl || '');
+  const idx = raw.indexOf(',');
+  const header = raw.slice(0, Math.max(0, idx));
+  const mime = (header.match(/data:([^;]+)/i) || [])[1] || 'image/jpeg';
+  const payload = raw.slice(idx + 1);
+  try {
+    const bin = atob(payload);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], name || 'vision.jpg', { type: mime.split(';')[0] });
+  } catch (e) {
+    return null;
+  }
+}
+
+function _visionThumbFromDataUrl(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 320;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
+
+async function _persistVisionAsset(item) {
+  if (!item) return item;
+  const src = item.src || '';
+  if (item.source === 'url' && src && !src.startsWith('data:')) return { ...item, src };
+  if (!_visionSrcIsInlineBlob(src)) {
+    return { ...item, src: src || item.thumb || '' };
+  }
+  const id = item.file_id || (String(item.id || '').startsWith('f_') ? item.id : (typeof _fileId === 'function' ? _fileId() : ('f_' + Date.now())));
+  try {
+    if (typeof _IDB?.save === 'function') await _IDB.save(id, src);
+    const thumb = item.thumb && !_visionSrcIsInlineBlob(item.thumb) ? item.thumb : await _visionThumbFromDataUrl(src);
+    let serverStored = !!item.server_stored;
+    const file = _visionDataUrlToFile(src, item.name || 'vision.jpg');
+    if (file && typeof _uploadSharedAttachment === 'function' && !serverStored) {
+      serverStored = await _uploadSharedAttachment(id, file, file.name);
+    }
+    if (!thumb && !serverStored) return { ...item };
+    return {
+      id,
+      file_id: id,
+      type: 'image',
+      name: item.name || 'تصویر',
+      category: item.category || '',
+      source: item.source || 'upload',
+      thumb: thumb || '',
+      src: thumb || '',
+      server_stored: serverStored
+    };
+  } catch (e) {
+    return { ...item };
+  }
+}
+
+async function _persistVisionAssets(items) {
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  for (const item of list) out.push(await _persistVisionAsset(item));
+  return out;
+}
+
+async function _migrateInlineGoalVision() {
+  if (!_db || window._goalVisionMigrating) return;
+  const goals = Array.isArray(_db.goals) ? _db.goals : [];
+  const needs = goals.filter(g => _goalVisionItems(g).some(x => _visionSrcIsInlineBlob(x.src)));
+  if (!needs.length) return;
+  window._goalVisionMigrating = true;
+  try {
+    for (const g of needs) {
+      g.vision_assets = await _persistVisionAssets(_goalVisionItems(g));
+      g.vision_images = '';
+      _touchGoal(g);
+    }
+    _save();
+  } finally {
+    window._goalVisionMigrating = false;
+  }
+}
+
+function _scheduleGoalVisionPersist() {
+  if (window._goalVisionPersistScheduled) return;
+  window._goalVisionPersistScheduled = true;
+  setTimeout(() => { _migrateInlineGoalVision().catch(() => {}); }, 500);
+}
+
+function _hydrateGoalVisionSlides(g) {
+  const items = _goalVisionItems(g);
+  items.forEach(async (item, i) => {
+    const fid = item.file_id;
+    if (!fid || typeof _attachmentDataURL !== 'function') return;
+    try {
+      const full = await _attachmentDataURL(fid);
+      if (!full) return;
+      const img = document.querySelectorAll('#goal-experience-overlay .gv-slide')[i];
+      if (img) img.src = full;
+    } catch (e) {}
+  });
 }
 
 function _goalLinkedStats(goalId) {
@@ -5015,6 +5142,7 @@ function _goalTimelineHtml(g) {
 
 function renderGoals() {
   _goalsInit();
+  _scheduleGoalVisionPersist();
   _syncGoalAchievements();
   updateTopbarActions(`
     <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
@@ -5660,25 +5788,41 @@ function _visionDropFiles(e) {
 }
 
 function _visionHandleFiles(files) {
-  const list = Array.from(files || []);
-  list.forEach(file => _visionAddImageFile(file));
+  const list = Array.from(files || []).filter(Boolean);
+  list.forEach(file => { _visionAddImageFile(file); });
 }
 
-function _visionAddImageFile(file) {
-  const ok = /image\/(jpeg|png|webp|heic|heif)/i.test(file.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+async function _visionAddImageFile(file) {
+  const ok = /image\/(jpeg|png|webp|heic|heif|gif)/i.test(file.type) || /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(file.name);
   if (!ok) { showToast('این بخش فقط فایل تصویری را می‌پذیرد.', 'error'); return; }
   if (file.size > 10 * 1024 * 1024) { showToast('حداکثر حجم هر تصویر ۱۰ مگابایت است.', 'error'); return; }
+  if (!window._visionManager) return;
+  showToast('در حال افزودن تصویر...', '');
   const reader = new FileReader();
-  reader.onload = () => _visionCompressImage(reader.result, file.name, file.type).then(src => {
-    window._visionManager.items.push({ id:'img-' + Date.now() + Math.random(), type:'image', src, name:file.name, category:'', source:'upload' });
-    _renderVisionManager();
-  });
+  reader.onload = () => {
+    _visionCompressImage(reader.result, file.name, file.type).then(async src => {
+      if (/heic|heif/i.test(file.type || file.name) && src === reader.result) {
+        showToast('این فرمت تصویر در مرورگر پشتیبانی نشد. JPEG یا PNG بفرستید.', 'error');
+        return;
+      }
+      const persisted = await _persistVisionAsset({
+        id: typeof _fileId === 'function' ? _fileId() : ('f_' + Date.now()),
+        type: 'image',
+        src,
+        name: file.name,
+        category: '',
+        source: 'upload'
+      });
+      if (!window._visionManager) return;
+      window._visionManager.items.push(persisted);
+      _renderVisionManager();
+    });
+  };
   reader.readAsDataURL(file);
 }
 
 function _visionCompressImage(dataUrl, name, type) {
   return new Promise(resolve => {
-    if (/heic|heif/i.test(type || name)) { resolve(dataUrl); return; }
     const img = new Image();
     img.onload = () => {
       const max = 1600;
@@ -5769,46 +5913,72 @@ function _saveVisionBoardManager() {
   const vm = window._visionManager;
   if (!vm) return;
   const music = _visionSelectedMusic();
-  if (vm.ctx.goalId) {
-    const g = (_db.goals || []).find(x => x.id === vm.ctx.goalId);
-    if (g) { g.vision_assets = vm.items; g.vision_images = ''; g.music_url = music; _save(); }
-    closeVisionBoardManager(); openGoalDetail(vm.ctx.goalId);
-  } else {
-    window._goalFormVisionAssets[vm.ctx.prefix] = vm.items.map(x => ({...x}));
-    window._goalFormVisionMusic = window._goalFormVisionMusic || {};
-    window._goalFormVisionMusic[vm.ctx.prefix] = music || '';
-    closeVisionBoardManager(); _renderGoalVisionPreview(vm.ctx.prefix); _refreshGoalFormCompletion(vm.ctx.prefix);
-  }
-  showToast('تابلو آرزو ذخیره شد ✓', 'success');
+  _persistVisionAssets(vm.items).then(items => {
+    if (!window._visionManager) return;
+    window._visionManager.items = items;
+    if (vm.ctx.goalId) {
+      const g = (_db.goals || []).find(x => x.id === vm.ctx.goalId);
+      if (g) {
+        g.vision_assets = items;
+        g.vision_images = '';
+        g.music_url = music;
+        _touchGoal(g);
+        _save();
+      }
+      closeVisionBoardManager(); openGoalDetail(vm.ctx.goalId);
+    } else {
+      window._goalFormVisionAssets[vm.ctx.prefix] = items.map(x => ({...x}));
+      window._goalFormVisionMusic = window._goalFormVisionMusic || {};
+      window._goalFormVisionMusic[vm.ctx.prefix] = music || '';
+      closeVisionBoardManager(); _renderGoalVisionPreview(vm.ctx.prefix); _refreshGoalFormCompletion(vm.ctx.prefix);
+    }
+    showToast('تابلو آرزو ذخیره شد ✓', 'success');
+  });
 }
 
 function _previewVisionBoardManager() {
   const vm = window._visionManager;
   if (!vm) return;
-  const items = vm.items.map(x => ({...x}));
   const music = _visionSelectedMusic();
-  if (vm.ctx.goalId) {
-    _saveVisionBoardManager();
-    openGoalVisionMode(vm.ctx.goalId);
-    return;
-  }
   const prefix = vm.ctx.prefix;
-  const tempId = -Date.now();
-  window._goalTempExperienceId = tempId;
-  _db.goals = _db.goals || [];
-  _db.goals.push({
-    id: tempId,
-    title: document.getElementById(prefix + '-title')?.value || 'هدف جدید',
-    icon: document.getElementById(prefix + '-icon')?.value || '🎯',
-    why: document.getElementById(prefix + '-why')?.value || '',
-    vision: document.getElementById(prefix + '-vision')?.value || '',
-    vision_assets: items,
-    music_url: music,
-    progress: 0,
-    milestones: []
+  const goalId = vm.ctx.goalId;
+  _persistVisionAssets(vm.items).then(items => {
+    if (!window._visionManager) return;
+    window._visionManager.items = items;
+    if (goalId) {
+      const g = (_db.goals || []).find(x => x.id === goalId);
+      if (g) {
+        g.vision_assets = items;
+        g.vision_images = '';
+        g.music_url = music;
+        _touchGoal(g);
+        _save();
+      }
+      closeVisionBoardManager();
+      openGoalVisionMode(goalId);
+      return;
+    }
+    const tempId = -Date.now();
+    window._goalTempExperienceId = tempId;
+    _db.goals = _db.goals || [];
+    _db.goals.push({
+      id: tempId,
+      title: document.getElementById(prefix + '-title')?.value || 'هدف جدید',
+      icon: document.getElementById(prefix + '-icon')?.value || '🎯',
+      why: document.getElementById(prefix + '-why')?.value || '',
+      vision: document.getElementById(prefix + '-vision')?.value || '',
+      vision_assets: items,
+      music_url: music,
+      progress: 0,
+      milestones: []
+    });
+    window._goalFormVisionAssets = window._goalFormVisionAssets || {};
+    window._goalFormVisionAssets[prefix] = items.map(x => ({...x}));
+    window._goalFormVisionMusic = window._goalFormVisionMusic || {};
+    window._goalFormVisionMusic[prefix] = music || '';
+    closeVisionBoardManager();
+    openGoalVisionMode(tempId);
   });
-  _saveVisionBoardManager();
-  openGoalVisionMode(tempId);
 }
 
 function openAddGoal() {
@@ -5839,6 +6009,7 @@ function saveNewGoal() {
   _goalsInit();
   const title = document.getElementById('goal-title')?.value.trim();
   if (!title) { showToast('عنوان را وارد کنید', 'error'); return; }
+  const now = new Date().toISOString();
   const goal = {
     id: _db._nextId.goals++,
     title,
@@ -5856,13 +6027,17 @@ function saveNewGoal() {
     progress: 0,
     milestones: [],
     notes: '',
-    created_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
-  _db.goals.push(goal);
-  _save();
-  closeModal();
-  showToast('هدف ذخیره شد ✓', 'success');
-  if (currentPage === 'goals') renderGoals();
+  _persistVisionAssets(goal.vision_assets).then(items => {
+    goal.vision_assets = items;
+    _db.goals.push(goal);
+    _save();
+    closeModal();
+    showToast('هدف ذخیره شد ✓', 'success');
+    if (currentPage === 'goals') renderGoals();
+  });
 }
 
 function saveAchievementGoal() {
@@ -5888,15 +6063,19 @@ function saveAchievementGoal() {
     milestones: [],
     notes: '',
     created_at: now,
+    updated_at: now,
     completed_at: now,
     completed_date_jalali: _todayJalaliStr ? _todayJalaliStr() : '',
   };
-  _db.goals.push(goal);
-  _ensureGoalAchievement(goal);
-  _save();
-  closeModal();
-  showToast('دستاورد ثبت شد ✓', 'success');
-  if (currentPage === 'goals') renderGoals();
+  _persistVisionAssets(goal.vision_assets).then(items => {
+    goal.vision_assets = items;
+    _db.goals.push(goal);
+    _ensureGoalAchievement(goal);
+    _save();
+    closeModal();
+    showToast('دستاورد ثبت شد ✓', 'success');
+    if (currentPage === 'goals') renderGoals();
+  });
 }
 
 function openGoalDetail(id) {
@@ -6090,6 +6269,7 @@ function updateGoalProgress(id, val) {
   const prevAchieved = _isGoalAchieved(g);
   if (+val < 100 && !prevAchieved) g.progress_before_done = +val;
   g.progress = +val;
+  _touchGoal(g);
   if (g.progress >= 100) {
     g.progress = 100;
     g.status = 'done';
@@ -6131,6 +6311,7 @@ function toggleGoalAchievement(id) {
     _ensureGoalAchievement(g);
     showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
   }
+  _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
 }
@@ -6139,6 +6320,7 @@ function toggleMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g || !g.milestones[idx]) return;
   g.milestones[idx].done = !g.milestones[idx].done;
+  _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
@@ -6147,6 +6329,7 @@ function deleteMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g) return;
   g.milestones.splice(idx, 1);
+  _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
@@ -6158,6 +6341,7 @@ function addMilestone(goalId) {
   if (!title) return;
   if (!g.milestones) g.milestones = [];
   g.milestones.push({ title, done: false });
+  _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
@@ -6234,6 +6418,7 @@ function _openGoalExperience(id, mode) {
   `;
 
   document.body.appendChild(overlay);
+  _hydrateGoalVisionSlides(g);
   const escClose = function(e) { if (e.key === 'Escape') closeGoalExperience(); };
   document.addEventListener('keydown', escClose);
   let timer = null;
@@ -6358,11 +6543,16 @@ function saveEditGoal(id) {
     g.completed_date_jalali = '';
     _removeGoalAchievement(g.id);
   }
-  _save(); closeModal(); if (currentPage === 'goals') renderGoals();
-  showToast('تغییرات هدف ذخیره شد ✓', 'success');
+  _persistVisionAssets(g.vision_assets).then(items => {
+    g.vision_assets = items;
+    _touchGoal(g);
+    _save(); closeModal(); if (currentPage === 'goals') renderGoals();
+    showToast('تغییرات هدف ذخیره شد ✓', 'success');
+  });
 }
 function deleteGoal(id) {
   if (!confirm('این هدف حذف شود؟')) return;
+  if (typeof _recordDeletedItems === 'function') _recordDeletedItems('goals', [id]);
   _db.goals = (_db.goals||[]).filter(x=>x.id!==id);
   _removeGoalAchievement(id);
   _save(); showToast('حذف شد','error'); if (currentPage === 'goals') renderGoals();

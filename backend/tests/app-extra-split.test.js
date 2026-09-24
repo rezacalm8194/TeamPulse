@@ -40,6 +40,9 @@ test('startup bundle defers dashboard/staff/knowledge/tutorial parse', () => {
   assert.match(extraSource, /async function renderTutorial\(/);
   assert.match(extraSource, /function renderGoals\(/);
   assert.match(extraSource, /function renderHabits\(/);
+  assert.match(extraSource, /function _touchGoal\(/);
+  assert.match(extraSource, /async function _persistVisionAsset\(/);
+  assert.match(extraSource, /_scheduleGoalVisionPersist\(/);
 });
 
 test('first-session helpers stay in the core parse path', () => {

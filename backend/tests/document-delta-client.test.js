@@ -344,3 +344,32 @@ test('server-backed todo id collisions adopt the server copy instead of parking 
   assert.match(appSource, /function _adoptServerBackedTodo\(/);
   assert.match(appSource, /adopt the server copy/);
 });
+
+test('goal vision photos survive hydrate instead of being replaced by a photo-less server row', () => {
+  const vm = require('node:vm');
+  assert.match(appSource, /'goals','goal_achievements','habits','habit_logs'/);
+  assert.match(appSource, /function _preserveGoalVisionMedia\(/);
+  assert.match(appSource, /function _mergeGoalList\(/);
+  assert.match(appSource, /key === 'goals' \? _mergeGoalList\(localKept, remote\)/);
+  const cloneFn = appSource.match(/function _cloneData\(data\) \{[\s\S]*?\n\}/);
+  const start = appSource.indexOf('function _goalVisionMediaCount(');
+  const end = appSource.indexOf('function _mergeLocalPendingChangesIntoOwnerData(');
+  assert.ok(cloneFn && start > 0 && end > start);
+  const ctx = {};
+  vm.runInNewContext(cloneFn[0] + '\n' + appSource.slice(start, end), ctx);
+  const local = {
+    id: 1,
+    created_at: '2026-01-01T00:00:00.000Z',
+    vision_assets: [{ id: 'f_1', src: 'data:image/jpeg;base64,abc', file_id: 'f_1' }]
+  };
+  const remote = { id: 1, created_at: '2026-01-01T00:00:00.000Z', title: 'هدف' };
+  ctx._preserveGoalVisionMedia(remote, local);
+  assert.equal(remote.vision_assets[0].file_id, 'f_1');
+  const cleared = {
+    id: 1,
+    updated_at: '2026-02-01T00:00:00.000Z',
+    vision_assets: []
+  };
+  ctx._preserveGoalVisionMedia(cleared, local);
+  assert.equal(cleared.vision_assets.length, 0);
+});
