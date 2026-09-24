@@ -5,6 +5,17 @@ const { logger } = require('./logger');
 
 const BALE_API_BASE = process.env.BALE_API_BASE || 'https://tapi.bale.ai';
 const TEST_PROVIDER_TOKEN = 'WALLET-TEST-1111111111111111';
+/** BotFather-style token: numeric bot id, colon, then a secret without path/query chars. */
+const BALE_BOT_TOKEN_RE = /^\d{5,16}:[A-Za-z0-9_-]{8,128}$/;
+const BALE_API_METHOD_RE = /^[A-Za-z][A-Za-z0-9]{1,63}$/;
+
+function isValidBaleBotToken(botToken) {
+  return BALE_BOT_TOKEN_RE.test(String(botToken || ''));
+}
+
+function isValidBaleApiMethod(method) {
+  return BALE_API_METHOD_RE.test(String(method || ''));
+}
 
 let baleFetchImpl = (...args) => fetch(...args);
 let dbRef = null;
@@ -101,6 +112,12 @@ function credentialsPublicView(row) {
 }
 
 async function baleApi(botToken, method, body = {}) {
+  if (!isValidBaleBotToken(botToken)) {
+    throw new Error('invalid_bot_token');
+  }
+  if (!isValidBaleApiMethod(method)) {
+    throw new Error('invalid_bale_method');
+  }
   const url = `${BALE_API_BASE}/bot${botToken}/${method}`;
   const res = await baleFetchImpl(url, {
     method: 'POST',
@@ -324,6 +341,8 @@ async function handleWebhookUpdate(ownerAccountId, workspaceId, update) {
 module.exports = {
   BALE_API_BASE,
   TEST_PROVIDER_TOKEN,
+  isValidBaleBotToken,
+  isValidBaleApiMethod,
   setBaleFetch,
   setBaleDb,
   activeDb,

@@ -27,7 +27,7 @@ router.put('/credentials', auth, async (req, res) => {
     if (!workspaceId) return res.status(400).json({ error: 'invalid_workspace' });
     const botToken = String(req.body?.bot_token || '').trim();
     const providerToken = String(req.body?.provider_token || '').trim() || core.TEST_PROVIDER_TOKEN;
-    if (!botToken || botToken.length < 10) {
+    if (!core.isValidBaleBotToken(botToken)) {
       return res.status(400).json({ error: 'bot_token_required' });
     }
 
