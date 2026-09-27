@@ -42,6 +42,8 @@ function load() {
     '_jalaliKey',
     '_formatJalali',
     '_addDays',
+    '_jalaliDaysInMonth',
+    '_addMonths',
   ]) {
     vm.runInContext(fn(app, name), context);
   }
@@ -148,6 +150,28 @@ test('quick todo parser splits relative days and treats afternoon hour 4 as 16:0
   assert.equal(items[2].title, 'جلسه با نادر');
   assert.equal(items[2].time, '');
   assert.equal(ctx._jalaliKey(items[2].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۲۵'));
+});
+
+test('quick todo parser shifts months and years then weekday', () => {
+  const ctx = load();
+  const items = ctx._parseQuickTodos(
+    'دو ماه بعد ساعت ۳ جلسه با سپیده ۳ ماه بعد دوشنبه ساعت ۹ شب جلسه با علی یک سال بعد پنجشنبه جلسه با قادر ساعت ۱۰ شب',
+    { todayJalali: TODAY }
+  );
+  const today = ctx._jalaliParse(TODAY);
+  const plus2m = ctx._addMonths(today[0], today[1], today[2], 2);
+  const plus3m = ctx._addMonths(today[0], today[1], today[2], 3);
+  const plus1y = ctx._addMonths(today[0], today[1], today[2], 12);
+  assert.equal(items.length, 3);
+  assert.equal(items[0].title, 'جلسه با سپیده');
+  assert.equal(items[0].time, '15:00');
+  assert.equal(ctx._jalaliKey(items[0].dateJalali), ctx._jalaliKey(ctx._formatJalali(...plus2m)));
+  assert.equal(items[1].title, 'جلسه با علی');
+  assert.equal(items[1].time, '21:00');
+  assert.equal(ctx._jalaliKey(items[1].dateJalali), ctx._jalaliKey(ctx._quickTodoNextWeekday(plus3m, 1)));
+  assert.equal(items[2].title, 'جلسه با قادر');
+  assert.equal(items[2].time, '22:00');
+  assert.equal(ctx._jalaliKey(items[2].dateJalali), ctx._jalaliKey(ctx._quickTodoNextWeekday(plus1y, 4)));
 });
 
 test('add-todo modal has quick capture box and save uses parser', () => {
