@@ -102,6 +102,21 @@ test('schedule conflict helper flags overlap and nearby gaps', () => {
   assert.equal(near.gap, 10);
 });
 
+test('quick todo parser understands weekday next week and add-command filler', () => {
+  const ctx = load();
+  const items = ctx._parseQuickTodos(
+    'چهارشنبه هفته آینده جلسه با علی " رو اضافه کن',
+    { todayJalali: TODAY }
+  );
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'جلسه با علی');
+  assert.equal(ctx._jalaliKey(items[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۱۵'));
+  const flipped = ctx._parseQuickTodos('هفته آینده چهارشنبه جلسه با علی', { todayJalali: TODAY });
+  assert.equal(ctx._jalaliKey(flipped[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۱۵'));
+  const thisWeek = ctx._parseQuickTodos('چهارشنبه جلسه با علی', { todayJalali: TODAY });
+  assert.equal(ctx._jalaliKey(thisWeek[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۰۸'));
+});
+
 test('add-todo modal has quick capture box and save uses parser', () => {
   assert.match(todos, /id="todo-quick"/);
   assert.match(todos, /function _parseQuickTodos\(/);
