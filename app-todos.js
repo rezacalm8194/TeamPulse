@@ -3662,11 +3662,14 @@ function _normalizeQuickTodoText(text) {
     .replace(/\s+/g, ' ')
     .trim();
   const alt = _faNumWordAlt();
-  s = s.replace(new RegExp('(ساعت\\s*)(' + alt + ')', 'g'), (_, p, w) => {
+  s = s.replace(/سه[\s‌]+شنبه/g, 'سه‌شنبه')
+    .replace(/یک[\s‌]+شنبه/g, 'یکشنبه')
+    .replace(/پنج[\s‌]+شنبه/g, 'پنجشنبه');
+  s = s.replace(new RegExp('(ساعت\\s*)(' + alt + ')(?![\\s‌]*شنبه)', 'g'), (_, p, w) => {
     const n = _faNumWordValue(w);
     return p + (n != null ? n : w);
   });
-  s = s.replace(new RegExp('(' + alt + ')(\\s*(?:دقیقه|ساعت|ماه|سال|روز|صبح|ظهر|عصر|شب|بعد[\\s]*از[\\s]*ظهر))', 'g'), (_, w, rest) => {
+  s = s.replace(new RegExp('(' + alt + ')(?![\\s‌]*شنبه)(\\s*(?:دقیقه|ساعت|ماه|سال|روز|صبح|ظهر|عصر|شب(?!نبه)|بعد[\\s]*از[\\s]*ظهر))', 'g'), (_, w, rest) => {
     const n = _faNumWordValue(w);
     return (n != null ? n : w) + rest;
   });
@@ -3873,28 +3876,107 @@ function _quickTodoDateAnchorRe() {
 }
 
 function _quickTodoTimeAnchorRe() {
-  return /ساعت\s*\d{1,2}(?:[:.]\d{2})?(?:\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر))?|\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/g;
+  return /ساعت\s*\d{1,2}(?:[:.]\d{2})?(?:\s*(?:صبح|ظهر|عصر|شب(?!نبه)|بعد[\s]*از[\s]*ظهر))?|\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:صبح|ظهر|عصر|شب(?!نبه)|بعد[\s]*از[\s]*ظهر)/g;
 }
 
-function _matchIndexes(re, line) {
-  const out = [];
-  const r = new RegExp(re.source, 'g');
-  let m;
-  while ((m = r.exec(line))) out.push(m.index);
-  return out;
+function _quickTodoTokenSpecs() {
+  const weekday = '(?:جمعه|پنج[\\s‌]*شنبه|چهارشنبه|سه[\\s‌]*شنبه|دوشنبه|یکشنبه|شنبه)';
+  const nextWeek = 'هفته[\\s]*(?:ی\\s*)?(?:آینده|بعد|دیگر|دیگه)';
+  const period = '(?:صبح|ظهر|عصر|شب(?!نبه)|بعد[\\s]*از[\\s]*ظهر)';
+  return [
+    { type: 'date', re: /^(?:پس[\s-]*فردا|امروز|فردا)/ },
+    { type: 'date', re: /^\d+\s*(?:روز|ماه|سال)[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/ },
+    { type: 'date', re: new RegExp('^(?:این\\s+)?' + weekday + '(?:\\s+' + nextWeek + ')?') },
+    { type: 'date', re: new RegExp('^' + nextWeek + '(?:\\s+' + weekday + ')?') },
+    { type: 'date', re: /^(?:14\d{2}|13\d{2})[\/\-]\d{1,2}[\/\-]\d{1,2}/ },
+    { type: 'time', re: new RegExp('^ساعت\\s*\\d{1,2}(?:[:.]\\d{2})?(?:\\s*' + period + ')?') },
+    { type: 'time', re: /^\d{1,2}[:.]\d{2}/ },
+    { type: 'time', re: new RegExp('^\\d{1,2}\\s*' + period) },
+    { type: 'time', re: /^(?:1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|روز|ماه|سال|\d))/ },
+    { type: 'time', re: /^\d+(?:\.\d+)?\s*(?:دقیقه|ساعت)(?!\s*\d)/ },
+    { type: 'title', re: /^(?:جلسه|تماس|زنگ|قرار)\s+(?:با\s+)?\S+/ },
+  ];
 }
 
-function _quickTodoPrefixHasTitle(prefix) {
-  const stripped = String(prefix || '')
-    .replace(/ساعت\s*\d{1,2}(?:[:.]\d{2})?(?:\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر))?/g, ' ')
-    .replace(/\d{1,2}[:.]\d{2}/g, ' ')
-    .replace(/\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/g, ' ')
-    .replace(/\d+(?:\.\d+)?\s*(?:دقیقه|ساعت)/g, ' ')
-    .replace(/\d+\s*روز[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/g, ' ')
-    .replace(/\d+\s*(?:ماه|سال)[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/g, ' ')
-    .replace(/بعد[\s]*از[\s]*ظهر/g, ' ');
-  const title = _cleanQuickTodoTitle(stripped);
-  return !!(title && title.length > 1);
+function _quickTodoMatchAt(line, index) {
+  const raw = String(line || '').slice(index);
+  const ws = raw.match(/^\s*/);
+  const at = index + (ws ? ws[0].length : 0);
+  const rest = String(line || '').slice(at);
+  if (!rest) return null;
+  const specs = _quickTodoTokenSpecs();
+  for (const spec of specs) {
+    const m = rest.match(spec.re);
+    if (m) return { type: spec.type, text: m[0], start: at, end: at + m[0].length };
+  }
+  let next = rest.length;
+  for (const spec of specs) {
+    const found = rest.search(new RegExp(spec.re.source.replace(/^\^/, '')));
+    if (found > 0 && found < next) next = found;
+  }
+  return { type: 'title', text: rest.slice(0, next).trim(), start: at, end: at + next };
+}
+
+function _tokenizeQuickTodoLine(line) {
+  const tokens = [];
+  let i = 0;
+  while (i < line.length) {
+    const tok = _quickTodoMatchAt(line, i);
+    if (!tok || tok.end <= i) break;
+    if (tok.text) tokens.push(tok);
+    i = tok.end;
+  }
+  return tokens;
+}
+
+function _splitQuickTodoLine(line) {
+  const tokens = _tokenizeQuickTodoLine(line);
+  if (!tokens.length) return line ? [line] : [];
+  const chunks = [];
+  let parts = [];
+  let title = '';
+  let hasDate = false;
+  let pending = [];
+  const emit = () => {
+    const text = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+    if (text) chunks.push(text);
+  };
+  for (const tok of tokens) {
+    if (tok.type === 'title') {
+      const named = /^(?:جلسه|تماس|زنگ|قرار)(?:\s+با)?/.test(tok.text);
+      if (title && named) {
+        emit();
+        parts = pending.concat([tok.text]);
+        hasDate = pending.length > 0;
+        pending = [];
+        title = tok.text;
+      } else if (title) {
+        parts.push(tok.text);
+      } else {
+        title = tok.text;
+        hasDate = parts.length > 0;
+        parts.push(tok.text);
+      }
+      continue;
+    }
+    if (!title) {
+      parts.push(tok.text);
+      continue;
+    }
+    if (tok.type === 'date' && hasDate) {
+      pending.push(tok.text);
+      continue;
+    }
+    if (pending.length) {
+      pending.push(tok.text);
+      continue;
+    }
+    parts.push(tok.text);
+    if (tok.type === 'date') hasDate = true;
+  }
+  if (pending.length) parts.push(...pending);
+  emit();
+  return chunks.filter(Boolean);
 }
 
 function _splitQuickTodoChunks(text) {
@@ -3903,27 +3985,7 @@ function _splitQuickTodoChunks(text) {
   for (const raw of lines) {
     const line = _normalizeQuickTodoText(raw);
     if (!line) continue;
-    const dates = _matchIndexes(_quickTodoDateAnchorRe(), line);
-    const times = _matchIndexes(_quickTodoTimeAnchorRe(), line);
-    const cuts = new Set([0]);
-    dates.forEach(i => {
-      if (i <= 0) return;
-      const lastCut = Math.max(0, ...[...cuts].filter(c => c < i));
-      if (_quickTodoPrefixHasTitle(line.slice(lastCut, i))) cuts.add(i);
-    });
-    const bounds = [...cuts, line.length].sort((a, b) => a - b);
-    for (let d = 0; d < bounds.length - 1; d++) {
-      const from = bounds[d];
-      const to = bounds[d + 1];
-      times.filter(i => i >= from && i < to).slice(1).forEach(i => {
-        if (_quickTodoPrefixHasTitle(line.slice(from, i))) cuts.add(i);
-      });
-    }
-    const starts = [...cuts].sort((a, b) => a - b);
-    for (let i = 0; i < starts.length; i++) {
-      const part = line.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : line.length).trim();
-      if (part) chunks.push(part);
-    }
+    chunks.push(..._splitQuickTodoLine(line));
   }
   return chunks;
 }
@@ -3947,9 +4009,16 @@ function _parseQuickTodoChunk(chunk, defaults) {
 }
 
 function _parseQuickTodos(text, defaults) {
+  const seen = new Set();
   return _splitQuickTodoChunks(text)
     .map(chunk => _parseQuickTodoChunk(chunk, defaults || {}))
-    .filter(Boolean);
+    .filter(item => {
+      if (!item) return false;
+      const key = _quickTodoItemKey(item);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function _todoSameAssigneeId(t, assigneeId) {
