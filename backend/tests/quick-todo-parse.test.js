@@ -132,6 +132,24 @@ test('quick todo parser keeps time with the following date in one spoken sentenc
   assert.equal(ctx._jalaliKey(items[1].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۱۲'));
 });
 
+test('quick todo parser splits relative days and treats afternoon hour 4 as 16:00', () => {
+  const ctx = load();
+  const items = ctx._parseQuickTodos(
+    'فردا ساعت ۴ جلسه با سپیده هفته بعد پنجشنبه جلسه با علی ۲۰ روز دیگه جلسه با نادر',
+    { todayJalali: TODAY }
+  );
+  assert.equal(items.length, 3);
+  assert.equal(items[0].title, 'جلسه با سپیده');
+  assert.equal(items[0].time, '16:00');
+  assert.equal(ctx._jalaliKey(items[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۰۶'));
+  assert.equal(items[1].title, 'جلسه با علی');
+  assert.equal(items[1].time, '');
+  assert.equal(ctx._jalaliKey(items[1].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۱۶'));
+  assert.equal(items[2].title, 'جلسه با نادر');
+  assert.equal(items[2].time, '');
+  assert.equal(ctx._jalaliKey(items[2].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۲۵'));
+});
+
 test('add-todo modal has quick capture box and save uses parser', () => {
   assert.match(todos, /id="todo-quick"/);
   assert.match(todos, /function _removeQuickTodoPreview\(/);
