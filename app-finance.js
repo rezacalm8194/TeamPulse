@@ -56,7 +56,7 @@ async function openEditPackage(id) {
   const pts = await window.api.packageTypes.getAll();
   const typeOptions = pts.map(pt => `<option value="${pt.id}" ${pt.id===p.type_id?'selected':''}>${escapeHtml(pt.label)}</option>`).join('');
   openModal(`✏️ ویرایش خرید — ${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, `
-    <div class="form-grid">
+    <div class="form-grid purchase-compact">
       <div class="form-group full">
         <label class="form-label">نوع خرید</label>
         <select class="form-select" id="ep-type" onchange="onPurchaseTypeChange('ep')">${typeOptions}</select>
@@ -77,8 +77,7 @@ async function openEditPackage(id) {
         ${calendarDateFieldHtml('ep-start', p.start_date||'', 'تاریخ شروع')}
       </div>
       <div class="form-group">
-        ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || '', 'سررسید اولین پرداخت', false)}
-        <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری این خرید حذف می‌شود.</p>
+        ${calendarDateFieldHtml('ep-payment-due', p.payment_due_date || '', 'سررسید پرداخت', false)}
       </div>
       <div class="form-group">
         <label class="form-label">🔁 تکرار</label>

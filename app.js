@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp298';
+const TP_ASSET_V = 'tp299';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -307,11 +307,11 @@ function onPurchaseDeferUntilDueChange(startFieldId, dueFieldId, repeatFieldId) 
 }
 function purchaseDeferUntilDueCheckboxHtml(startFieldId, dueFieldId, repeatFieldId, checked) {
   const prefix = String(dueFieldId || '').replace(/-payment-due$/, '');
-  return `<label style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;cursor:pointer">
+  return `<label class="np-defer" title="با تیک، مبلغ تا روز سررسید وارد بدهی الان نمی‌شود و همان تاریخ خودکار لحاظ می‌گردد.">
     <input type="checkbox" id="${prefix}-defer-until-due" ${checked ? 'checked' : ''} onchange="onPurchaseDeferUntilDueChange('${startFieldId}','${dueFieldId}','${repeatFieldId}')">
     <span>
-      <span style="display:block;font-size:12px;font-weight:600">هزینه از تاریخ سررسید لحاظ شود</span>
-      <span style="display:block;font-size:10px;color:var(--text3);margin-top:2px;line-height:1.7">با تیک، مبلغ تا روز سررسید وارد بدهی الان نمی‌شود و همان تاریخ خودکار لحاظ می‌گردد.</span>
+      <span class="np-defer-title">هزینه از تاریخ سررسید لحاظ شود</span>
+      <span class="np-defer-desc">مبلغ تا سررسید وارد بدهی الان نمی‌شود.</span>
     </span>
   </label>`;
 }
@@ -8880,32 +8880,15 @@ function openNewPurchase(studentId, preset = {}) {
   window._npQuickAppliedIds = [];
 
   openModal(`🛍 ثبت خرید جدید — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
-    <div class="form-grid">
+    <div class="form-grid purchase-compact">
       <input type="hidden" id="np-reminder-type" value="${escapeHtml(String(preset.type_id || ''))}">
       ${newPurchaseServicePickerHtml(preset)}
-      <div class="form-group full">
-        <label class="form-label">مجری خدمت / پرسنل</label>
+      <div class="form-group">
+        <label class="form-label">مجری / پرسنل</label>
         <select class="form-select" id="np-staff">${purchaseStaffOptionsHtml(defaultPkgId, preset.staff_id || '')}</select>
       </div>
       <div class="form-group">
-        <label class="form-label">بدهی قبلی (تومان)</label>
-        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}" oninput="updateNewPurchaseSummary()">
-        <p style="font-size:11px;color:var(--text3);margin-top:4px">اگر چند خدمت انتخاب شود، فقط روی اولین خدمت می‌نشیند.</p>
-      </div>
-      <div class="form-group">
-        <label class="form-label">پرداختی حال حاضر (تومان)</label>
-        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}" oninput="updateNewPurchaseSummary()">
-        <p style="font-size:11px;color:var(--text3);margin-top:4px">بین خدمت‌ها به‌ترتیب تقسیم می‌شود.</p>
-      </div>
-      <div class="form-group">
-        ${calendarDateFieldHtml('np-date', date, 'تاریخ شروع خدمت')}
-      </div>
-      <div class="form-group">
-        ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید اولین پرداخت', false)}
-        <p style="font-size:11px;color:var(--text3);margin-top:4px">اختیاری. اگر خالی بماند یادآوری ساخته نمی‌شود.</p>
-      </div>
-      <div class="form-group full">
-        <label class="form-label">🔁 تکرار / یادآوری تجدید</label>
+        <label class="form-label">تکرار</label>
         <select class="form-select" id="np-repeat">
           <option value="0" ${repeat===0?'selected':''}>بدون تکرار</option>
           <option value="1" ${repeat===1?'selected':''}>هر ۱ ماه</option>
@@ -8914,12 +8897,26 @@ function openNewPurchase(studentId, preset = {}) {
           <option value="12" ${repeat===12?'selected':''}>هر ۱۲ ماه</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label" title="اگر چند خدمت انتخاب شود، فقط روی اولین خدمت می‌نشیند.">بدهی قبلی</label>
+        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}" oninput="updateNewPurchaseSummary()">
+      </div>
+      <div class="form-group">
+        <label class="form-label" title="بین خدمت‌ها به‌ترتیب تقسیم می‌شود.">پرداخت الآن</label>
+        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}" oninput="updateNewPurchaseSummary()">
+      </div>
+      <div class="form-group">
+        ${calendarDateFieldHtml('np-date', date, 'شروع خدمت')}
+      </div>
+      <div class="form-group">
+        ${calendarDateFieldHtml('np-payment-due', paymentDueDate, 'سررسید پرداخت', false)}
+      </div>
       <div class="form-group full">
         ${purchaseDeferUntilDueCheckboxHtml('np-date','np-payment-due','np-repeat', !!preset.defer_until_due)}
       </div>
       <div class="form-group full">
-        <label class="form-label">توضیحات خرید</label>
-        <input class="form-input" id="np-note" placeholder="توضیح یا یادداشت درباره این خرید..." value="${escapeHtml(note)}">
+        <label class="form-label">توضیحات</label>
+        <input class="form-input" id="np-note" placeholder="یادداشت این خرید..." value="${escapeHtml(note)}">
       </div>
     </div>
   `, [
@@ -25448,7 +25445,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v298';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v299';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
