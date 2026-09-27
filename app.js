@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp295';
+const TP_ASSET_V = 'tp296';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -50,7 +50,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openEditPackage', 'deletePackage', 'openEditPayment', 'deletePayment',
   'openGeneralPurchaseModal', 'openGeneralPaymentModal',
   'openServiceProductsCatalog', 'saveServiceProductPrice', 'saveServiceProductLabel',
-  'saveServiceProductUnit', 'addServiceProductFromCatalog',
+  'saveServiceProductUnit', 'saveServiceProductColor', 'addServiceProductFromCatalog',
   'openAddReminder', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
@@ -25445,7 +25445,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v295';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v296';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
