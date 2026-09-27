@@ -3660,6 +3660,8 @@ function _normalizeQuickTodoText(text) {
     .replace(/[ـ]/g, '')
     .replace(/نیم[\s]*ساعت/g, '30 دقیقه')
     .replace(/یک[\s]*ساعت[\s]*و[\s]*نیم/g, '90 دقیقه')
+    .replace(/["'«»]+/g, ' ')
+    .replace(/\s*(?:را|رو)?\s*(?:اضافه|ثبت|بذار|بگذار)\s*کن(?:ید)?\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   const alt = _faNumWordAlt();
@@ -3692,11 +3694,39 @@ function _quickTodoNextWeekday(parts, jsDay) {
   return _quickTodoShiftDate(parts, delta);
 }
 
+function _quickTodoWeekStartParts(parts) {
+  const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+  const js = new Date(gy, gm - 1, gd).getDay();
+  const daysFromSat = (js + 1) % 7;
+  return _addDays(parts[0], parts[1], parts[2], -daysFromSat);
+}
+
+function _quickTodoWeekdayInWeek(weekStartParts, jsDay) {
+  const offset = (jsDay + 1) % 7;
+  return _formatJalali(..._addDays(weekStartParts[0], weekStartParts[1], weekStartParts[2], offset));
+}
+
+function _quickTodoNextWeekRe() {
+  return /هفته[\s]*(?:ی\s*)?(?:آینده|بعد|دیگر|دیگه)/;
+}
+
+function _quickTodoFindWeekday(work) {
+  return _QUICK_TODO_WEEKDAYS.find(wd => wd.re.test(String(work || ''))) || null;
+}
+
 function _extractQuickTodoDate(line, defaults) {
   const todayParts = _quickTodoTodayParts(defaults);
   let work = line;
   let dateJalali = '';
-  if (/پس[\s-]*فردا/.test(work)) {
+  const nextWeekRe = _quickTodoNextWeekRe();
+  const wantsNextWeek = nextWeekRe.test(work);
+  const weekday = _quickTodoFindWeekday(work);
+  if (weekday && wantsNextWeek) {
+    const nextWeekStart = _addDays(..._quickTodoWeekStartParts(todayParts), 7);
+    dateJalali = _quickTodoWeekdayInWeek(nextWeekStart, weekday.js);
+    work = work.replace(nextWeekRe, ' ');
+    work = work.replace(new RegExp('(?:این\\s+)?' + weekday.re.source), ' ');
+  } else if (/پس[\s-]*فردا/.test(work)) {
     dateJalali = _quickTodoShiftDate(todayParts, 2);
     work = work.replace(/پس[\s-]*فردا/g, ' ');
   } else if (/فردا/.test(work)) {
@@ -3705,23 +3735,18 @@ function _extractQuickTodoDate(line, defaults) {
   } else if (/امروز/.test(work)) {
     dateJalali = _formatJalali(...todayParts);
     work = work.replace(/امروز/g, ' ');
-  } else if (/هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)/.test(work)) {
+  } else if (wantsNextWeek) {
     dateJalali = _quickTodoShiftDate(todayParts, 7);
-    work = work.replace(/هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)/g, ' ');
+    work = work.replace(nextWeekRe, ' ');
   }
   const dateMatch = work.match(/(14\d{2}|13\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
   if (dateMatch) {
     dateJalali = _formatJalali(+dateMatch[1], +dateMatch[2], +dateMatch[3]);
     work = work.replace(dateMatch[0], ' ');
   }
-  if (!dateJalali) {
-    for (const wd of _QUICK_TODO_WEEKDAYS) {
-      if (wd.re.test(work)) {
-        dateJalali = _quickTodoNextWeekday(todayParts, wd.js);
-        work = work.replace(new RegExp('(?:این\\s+)?' + wd.re.source, ''), ' ');
-        break;
-      }
-    }
+  if (!dateJalali && weekday) {
+    dateJalali = _quickTodoNextWeekday(todayParts, weekday.js);
+    work = work.replace(new RegExp('(?:این\\s+)?' + weekday.re.source), ' ');
   }
   return { dateJalali, rest: work };
 }
@@ -3783,7 +3808,7 @@ function _extractQuickTodoTime(line) {
 
 function _cleanQuickTodoTitle(s) {
   return String(s || '')
-    .replace(/\b(ساعت|تاریخ|روز|مدت|انجام)\b/g, ' ')
+    .replace(/\b(ساعت|تاریخ|روز|مدت|انجام|هفته|آینده|دیگر|دیگه)\b/g, ' ')
     .replace(/^[و،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g, '')
     .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')
@@ -3799,7 +3824,15 @@ function _guessQuickTodoCategory(title, fallback) {
 }
 
 function _quickTodoDateAnchorRe() {
-  return /امروز|فردا|پس[\s-]*فردا|هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)|(14\d{2}|13\d{2})[\/\-]\d{1,2}[\/\-]\d{1,2}|(?:این\s+)?(?:شنبه|یکشنبه|دوشنبه|سه[\s‌]*شنبه|چهارشنبه|پنج[\s‌]*شنبه|جمعه)/g;
+  const weekday = '(?:جمعه|پنج[\\s‌]*شنبه|چهارشنبه|سه[\\s‌]*شنبه|دوشنبه|یکشنبه|شنبه)';
+  const nextWeek = 'هفته[\\s]*(?:ی\\s*)?(?:آینده|بعد|دیگر|دیگه)';
+  return new RegExp(
+    'امروز|فردا|پس[\\s-]*فردا|' +
+    '(?:این\\s+)?' + weekday + '(?:\\s+' + nextWeek + ')?|' +
+    nextWeek + '(?:\\s+' + weekday + ')?|' +
+    '(14\\d{2}|13\\d{2})[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,2}',
+    'g'
+  );
 }
 
 function _quickTodoTimeAnchorRe() {
@@ -3988,7 +4021,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
   openModal('✅ کار جدید', `
     <div class="form-group full todo-quick-box">
       <label class="form-label">ثبت سریع چند کار (اختیاری)</label>
-      <textarea class="form-textarea" id="todo-quick" rows="3" oninput="_updateQuickTodoPreview()" autofocus placeholder="هر خط یک کار — مثلاً:&#10;فردا ۱۰ صبح تماس با اسرافیلیان ۳۰ دقیقه&#10;امروز ۱۶ جلسه با مهدی ۱ ساعت"></textarea>
+      <textarea class="form-textarea" id="todo-quick" rows="3" oninput="_updateQuickTodoPreview()" autofocus placeholder="هر خط یک کار — مثلاً:&#10;چهارشنبه هفته آینده جلسه با علی&#10;فردا ۱۰ صبح تماس با اسرافیلیان ۳۰ دقیقه"></textarea>
       <div id="todo-quick-preview" style="margin-top:8px"><div style="font-size:11px;color:var(--text3)">متن یا وویس بده؛ روز و ساعت را می‌خواند و اگر با برنامهٔ همان مسئول تداخل داشته باشد هشدار می‌دهد.</div></div>
     </div>
     <div class="form-group full">
