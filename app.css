@@ -1742,6 +1742,19 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   justify-content: space-between;
   gap: 8px;
 }
+.tq-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.tq-del {
+  flex: 0 0 auto;
+  border: 1px solid rgba(248,113,113,.35);
+  background: rgba(248,113,113,.12);
+  color: var(--red);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
 .tq-more {
   flex: 0 0 auto;
   border: 1px solid var(--border2);

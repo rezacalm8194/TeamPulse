@@ -3767,16 +3767,12 @@ function _extractQuickTodoDuration(line) {
 function _extractQuickTodoTime(line) {
   let work = line;
   let time = '';
-  const clock = work.match(/ساعت\s*(\d{1,2})(?:[:\.](\d{2}))?/);
-  const colon = work.match(/(\d{1,2})[:\.](\d{2})/);
-  const period = work.match(/(\d{1,2})(?:[:\.](\d{2}))?\s*(صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/);
-  if (period) {
-    let h = parseInt(period[1], 10);
-    const m = parseInt(period[2] || '0', 10);
-    const p = period[3];
+  const applyPeriod = (hRaw, mRaw, periodWord) => {
+    let h = parseInt(hRaw, 10);
+    const m = parseInt(mRaw || '0', 10);
+    const p = String(periodWord || '');
     if (/ظهر/.test(p) && !/بعد/.test(p)) {
-      if (h === 12) h = 12;
-      else if (h <= 4) h += 12;
+      if (h <= 4) h += 12;
     } else if (/عصر|بعد/.test(p)) {
       if (h < 12) h += 12;
     } else if (/شب/.test(p)) {
@@ -3785,7 +3781,18 @@ function _extractQuickTodoTime(line) {
     } else if (/صبح/.test(p) && h === 12) {
       h = 0;
     }
-    time = _quickTodoPadTime(h, m);
+    return _quickTodoPadTime(h, m);
+  };
+  const clockPeriod = work.match(/ساعت\s*(\d{1,2})(?:[:\.](\d{2}))?\s*(صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)?/);
+  const period = work.match(/(\d{1,2})(?:[:\.](\d{2}))?\s*(صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/);
+  const clock = work.match(/ساعت\s*(\d{1,2})(?:[:\.](\d{2}))?/);
+  const colon = work.match(/(\d{1,2})[:\.](\d{2})/);
+  if (clockPeriod && (clockPeriod[3] || period)) {
+    time = applyPeriod(clockPeriod[1], clockPeriod[2], clockPeriod[3] || (period && period[3]) || '');
+    work = work.replace(clockPeriod[0], ' ');
+    if (period && !clockPeriod[3]) work = work.replace(period[0], ' ');
+  } else if (period) {
+    time = applyPeriod(period[1], period[2], period[3]);
     work = work.replace(period[0], ' ');
   } else if (clock) {
     time = _quickTodoPadTime(clock[1], clock[2] || 0);
@@ -3805,7 +3812,8 @@ function _extractQuickTodoTime(line) {
 
 function _cleanQuickTodoTitle(s) {
   return String(s || '')
-    .replace(/\b(ساعت|تاریخ|روز|مدت|انجام|هفته|آینده|دیگر|دیگه)\b/g, ' ')
+    .replace(/بعد[\s]*از[\s]*ظهر/g, ' ')
+    .replace(/(?:^|[\s،,;؛])(?:ساعت|تاریخ|روز|مدت|انجام|هفته|آینده|دیگر|دیگه|صبح|ظهر|عصر|شب)(?=[\s،,;؛]|$)/g, ' ')
     .replace(/^[و،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g, '')
     .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')
@@ -3833,7 +3841,7 @@ function _quickTodoDateAnchorRe() {
 }
 
 function _quickTodoTimeAnchorRe() {
-  return /ساعت\s*\d{1,2}|\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)|(?:^|[^\d])(?:1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|\d))/g;
+  return /ساعت\s*\d{1,2}(?:[:.]\d{2})?(?:\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر))?|\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/g;
 }
 
 function _matchIndexes(re, line) {
@@ -3842,6 +3850,17 @@ function _matchIndexes(re, line) {
   let m;
   while ((m = r.exec(line))) out.push(m.index);
   return out;
+}
+
+function _quickTodoPrefixHasTitle(prefix) {
+  const stripped = String(prefix || '')
+    .replace(/ساعت\s*\d{1,2}(?:[:.]\d{2})?(?:\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر))?/g, ' ')
+    .replace(/\d{1,2}[:.]\d{2}/g, ' ')
+    .replace(/\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/g, ' ')
+    .replace(/\d+(?:\.\d+)?\s*(?:دقیقه|ساعت)/g, ' ')
+    .replace(/بعد[\s]*از[\s]*ظهر/g, ' ');
+  const title = _cleanQuickTodoTitle(stripped);
+  return !!(title && title.length > 1);
 }
 
 function _splitQuickTodoChunks(text) {
@@ -3853,12 +3872,18 @@ function _splitQuickTodoChunks(text) {
     const dates = _matchIndexes(_quickTodoDateAnchorRe(), line);
     const times = _matchIndexes(_quickTodoTimeAnchorRe(), line);
     const cuts = new Set([0]);
-    dates.forEach(i => { if (i > 0) cuts.add(i); });
-    const bounds = [...new Set([0, ...dates.filter(i => i > 0), line.length])].sort((a, b) => a - b);
+    dates.forEach(i => {
+      if (i <= 0) return;
+      const lastCut = Math.max(0, ...[...cuts].filter(c => c < i));
+      if (_quickTodoPrefixHasTitle(line.slice(lastCut, i))) cuts.add(i);
+    });
+    const bounds = [...cuts, line.length].sort((a, b) => a - b);
     for (let d = 0; d < bounds.length - 1; d++) {
       const from = bounds[d];
       const to = bounds[d + 1];
-      times.filter(i => i >= from && i < to).slice(1).forEach(i => cuts.add(i));
+      times.filter(i => i >= from && i < to).slice(1).forEach(i => {
+        if (_quickTodoPrefixHasTitle(line.slice(from, i))) cuts.add(i);
+      });
     }
     const starts = [...cuts].sort((a, b) => a - b);
     for (let i = 0; i < starts.length; i++) {
@@ -3977,6 +4002,18 @@ function _patchQuickTodoExtra(el) {
   else extras[key][field] = el.value;
 }
 
+function _removeQuickTodoPreview(btn) {
+  const card = btn?.closest?.('.todo-quick-hit');
+  if (!card) return;
+  const key = decodeURIComponent(card.dataset.qk || '');
+  if (!key) return;
+  const extras = _quickTodoExtrasStore();
+  extras[key] = extras[key] || {};
+  extras[key].deleted = true;
+  extras[key].open = false;
+  _updateQuickTodoPreview();
+}
+
 function _toggleQuickTodoExtra(btn) {
   const card = btn?.closest?.('.todo-quick-hit');
   if (!card) return;
@@ -4006,7 +4043,8 @@ function _mergeQuickTodoExtras(item) {
 function _collectQuickTodosForSave() {
   const defaults = _quickTodoDefaultsFromForm();
   return _parseQuickTodos(document.getElementById('todo-quick')?.value || '', defaults)
-    .map(_mergeQuickTodoExtras);
+    .map(_mergeQuickTodoExtras)
+    .filter(item => !(_quickTodoExtrasStore()[_quickTodoItemKey(item)] || {}).deleted);
 }
 
 function _quickTodoRemindOptions(selected) {
@@ -4027,15 +4065,17 @@ function _updateQuickTodoPreview() {
   const ta = document.getElementById('todo-quick');
   if (!el || !ta) return;
   const defaults = _quickTodoDefaultsFromForm();
-  const items = _parseQuickTodos(ta.value, defaults);
+  const items = _parseQuickTodos(ta.value, defaults).filter(item => {
+    return !(_quickTodoExtrasStore()[_quickTodoItemKey(item)] || {}).deleted;
+  });
   if (!items.length) {
     el.innerHTML = ta.value.trim()
-      ? '<div style="font-size:11px;color:var(--amber)">کاری تشخیص داده نشد — عنوان را واضح‌تر بنویس.</div>'
+      ? '<div style="font-size:11px;color:var(--amber)">کاری برای ثبت نمانده. متن را عوض کن یا حذف را برگردان.</div>'
       : '';
     return;
   }
   const live = items.map(_mergeQuickTodoExtras);
-  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(live.length)} کار تشخیص داده شد · برای هر کدام می‌توانی جزئیات جدا بگذاری</div>` +
+  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(live.length)} کار · جزئیات یا حذف برای هر مورد</div>` +
     live.map((item, idx) => {
       const parsed = items[idx];
       const others = live.filter((_, i) => i !== idx);
@@ -4062,7 +4102,10 @@ function _updateQuickTodoPreview() {
             <div class="tq-title">${escapeHtml(item.title)}${item.extraFilled ? ' ·' : ''}</div>
             <div class="tq-meta">${escapeHtml(when)}</div>
           </div>
-          <button type="button" class="tq-more" onclick="_toggleQuickTodoExtra(this)">${item.extraOpen ? 'بستن' : 'جزئیات'}</button>
+          <div class="tq-actions">
+            <button type="button" class="tq-more" onclick="_toggleQuickTodoExtra(this)">${item.extraOpen ? 'بستن' : 'جزئیات'}</button>
+            <button type="button" class="tq-del" onclick="_removeQuickTodoPreview(this)" title="حذف این کار">حذف</button>
+          </div>
         </div>
         ${warn}${extra}
       </div>`;
