@@ -488,6 +488,7 @@ function _confirmQuickStaffPick() {
 
 function _todoFormSections() {
   const byId = id => document.getElementById(id);
+  const quickCapture = byId('todo-quick')?.closest('.form-group');
   const titleGroup = byId('todo-title')?.closest('.form-group');
   const accessGroup = byId('todo-assignee')?.closest('.form-group');
   const noteGroup = byId('todo-note')?.closest('.form-group');
@@ -503,6 +504,7 @@ function _todoFormSections() {
   const gcalGroup = byId('todo-gcal')?.closest('.form-group');
   return {
     quick: [
+      quickCapture,
       titleGroup,
       dateGroup,
       timeGroup,
@@ -514,6 +516,7 @@ function _todoFormSections() {
       gcalGroup,
     ],
     details: [
+      quickCapture,
       noteGroup,
       accessGroup,
       mainTodayGroup,
@@ -3612,6 +3615,344 @@ function _todoRemainsOpenToday(t) {
 }
 
 
+const _QUICK_TODO_NEAR_MIN = 15;
+const _FA_NUM_WORDS = [
+  ['بیست و چهار', 24], ['بیست و سه', 23], ['بیست و دو', 22], ['بیست و یک', 21], ['بیست', 20],
+  ['نوزده', 19], ['هجده', 18], ['هفده', 17], ['شانزده', 16], ['پانزده', 15], ['چهارده', 14], ['سیزده', 13],
+  ['دوازده', 12], ['یازده', 11], ['ده', 10], ['نه', 9], ['هشت', 8], ['هفت', 7], ['شش', 6],
+  ['پنج', 5], ['چهار', 4], ['سه', 3], ['دو', 2], ['یک', 1], ['صفر', 0],
+  ['نود', 90], ['هشتاد', 80], ['هفتاد', 70], ['شصت', 60], ['پنجاه', 50], ['چهل', 40], ['سی', 30],
+];
+const _QUICK_TODO_WEEKDAYS = [
+  { re: /جمعه/, js: 5 },
+  { re: /پنج[\s‌]*شنبه/, js: 4 },
+  { re: /چهارشنبه/, js: 3 },
+  { re: /سه[\s‌]*شنبه/, js: 2 },
+  { re: /دوشنبه/, js: 1 },
+  { re: /یکشنبه/, js: 0 },
+  { re: /شنبه/, js: 6 },
+];
+
+function _quickTodoPadTime(h, m) {
+  const hour = ((Number(h) || 0) % 24 + 24) % 24;
+  const min = Math.max(0, Math.min(59, Number(m) || 0));
+  return String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+}
+
+function _quickTodoMinutes(time) {
+  const parts = String(time || '').split(':').map(Number);
+  if (parts.length < 2 || parts.some(n => !Number.isFinite(n))) return null;
+  return parts[0] * 60 + parts[1];
+}
+
+function _faNumWordAlt() {
+  return _FA_NUM_WORDS.map(([w]) => w.replace(/ /g, '\\s+')).join('|');
+}
+
+function _faNumWordValue(token) {
+  const found = _FA_NUM_WORDS.find(([word]) => new RegExp('^' + word.replace(/ /g, '\\s+') + '$').test(String(token || '').trim()));
+  return found ? found[1] : null;
+}
+
+function _normalizeQuickTodoText(text) {
+  let s = enDigits(String(text || ''))
+    .replace(/[‌]/g, ' ')
+    .replace(/[ـ]/g, '')
+    .replace(/نیم[\s]*ساعت/g, '30 دقیقه')
+    .replace(/یک[\s]*ساعت[\s]*و[\s]*نیم/g, '90 دقیقه')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const alt = _faNumWordAlt();
+  s = s.replace(new RegExp('(ساعت\\s*)(' + alt + ')', 'g'), (_, p, w) => {
+    const n = _faNumWordValue(w);
+    return p + (n != null ? n : w);
+  });
+  s = s.replace(new RegExp('(' + alt + ')(\\s*(?:دقیقه|ساعت|صبح|ظهر|عصر|شب|بعد[\\s]*از[\\s]*ظهر))', 'g'), (_, w, rest) => {
+    const n = _faNumWordValue(w);
+    return (n != null ? n : w) + rest;
+  });
+  return s;
+}
+
+function _quickTodoTodayParts(defaults) {
+  if (defaults && defaults.todayJalali && _jalaliKey(defaults.todayJalali)) {
+    return _jalaliParse(defaults.todayJalali);
+  }
+  return _todayJalali();
+}
+
+function _quickTodoShiftDate(parts, days) {
+  return _formatJalali(..._addDays(parts[0], parts[1], parts[2], days));
+}
+
+function _quickTodoNextWeekday(parts, jsDay) {
+  const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+  const current = new Date(gy, gm - 1, gd).getDay();
+  const delta = (jsDay - current + 7) % 7;
+  return _quickTodoShiftDate(parts, delta);
+}
+
+function _extractQuickTodoDate(line, defaults) {
+  const todayParts = _quickTodoTodayParts(defaults);
+  let work = line;
+  let dateJalali = '';
+  if (/پس[\s-]*فردا/.test(work)) {
+    dateJalali = _quickTodoShiftDate(todayParts, 2);
+    work = work.replace(/پس[\s-]*فردا/g, ' ');
+  } else if (/فردا/.test(work)) {
+    dateJalali = _quickTodoShiftDate(todayParts, 1);
+    work = work.replace(/فردا/g, ' ');
+  } else if (/امروز/.test(work)) {
+    dateJalali = _formatJalali(...todayParts);
+    work = work.replace(/امروز/g, ' ');
+  } else if (/هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)/.test(work)) {
+    dateJalali = _quickTodoShiftDate(todayParts, 7);
+    work = work.replace(/هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)/g, ' ');
+  }
+  const dateMatch = work.match(/(14\d{2}|13\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (dateMatch) {
+    dateJalali = _formatJalali(+dateMatch[1], +dateMatch[2], +dateMatch[3]);
+    work = work.replace(dateMatch[0], ' ');
+  }
+  if (!dateJalali) {
+    for (const wd of _QUICK_TODO_WEEKDAYS) {
+      if (wd.re.test(work)) {
+        dateJalali = _quickTodoNextWeekday(todayParts, wd.js);
+        work = work.replace(new RegExp('(?:این\\s+)?' + wd.re.source, ''), ' ');
+        break;
+      }
+    }
+  }
+  return { dateJalali, rest: work };
+}
+
+function _extractQuickTodoDuration(line) {
+  let work = line;
+  let durationMin = 0;
+  const hourDur = work.match(/(\d+(?:\.\d+)?)\s*ساعت(?!\s*\d)/);
+  const minDur = work.match(/(\d+)\s*دقیقه/);
+  if (hourDur) {
+    durationMin += Math.round(Number(hourDur[1]) * 60);
+    work = work.replace(hourDur[0], ' ');
+  }
+  if (minDur) {
+    durationMin += parseInt(minDur[1], 10) || 0;
+    work = work.replace(minDur[0], ' ');
+  }
+  return { durationMin, rest: work };
+}
+
+function _extractQuickTodoTime(line) {
+  let work = line;
+  let time = '';
+  const clock = work.match(/ساعت\s*(\d{1,2})(?:[:\.](\d{2}))?/);
+  const colon = work.match(/(\d{1,2})[:\.](\d{2})/);
+  const period = work.match(/(\d{1,2})(?:[:\.](\d{2}))?\s*(صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/);
+  if (period) {
+    let h = parseInt(period[1], 10);
+    const m = parseInt(period[2] || '0', 10);
+    const p = period[3];
+    if (/ظهر/.test(p) && !/بعد/.test(p)) {
+      if (h === 12) h = 12;
+      else if (h <= 4) h += 12;
+    } else if (/عصر|بعد/.test(p)) {
+      if (h < 12) h += 12;
+    } else if (/شب/.test(p)) {
+      if (h === 12) h = 0;
+      else if (h < 12) h += 12;
+    } else if (/صبح/.test(p) && h === 12) {
+      h = 0;
+    }
+    time = _quickTodoPadTime(h, m);
+    work = work.replace(period[0], ' ');
+  } else if (clock) {
+    time = _quickTodoPadTime(clock[1], clock[2] || 0);
+    work = work.replace(clock[0], ' ');
+  } else if (colon) {
+    time = _quickTodoPadTime(colon[1], colon[2]);
+    work = work.replace(colon[0], ' ');
+  } else {
+    const military = work.match(/(?:^|[^\d])(1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|\d))/);
+    if (military) {
+      time = _quickTodoPadTime(military[1], 0);
+      work = work.replace(military[1], ' ');
+    }
+  }
+  return { time, rest: work };
+}
+
+function _cleanQuickTodoTitle(s) {
+  return String(s || '')
+    .replace(/\b(ساعت|تاریخ|روز|مدت|انجام)\b/g, ' ')
+    .replace(/^[و،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g, '')
+    .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function _guessQuickTodoCategory(title, fallback) {
+  const t = String(title || '');
+  if (/تماس|زنگ|پیگیری|مشتری/.test(t)) return 'clients';
+  if (/ورزش|پیاده|باشگاه|دویدن|روتین|عادت/.test(t)) return 'routine';
+  if (/شخصی|خانواده|خانه/.test(t)) return 'personal';
+  return fallback || 'general';
+}
+
+function _quickTodoDateAnchorRe() {
+  return /امروز|فردا|پس[\s-]*فردا|هفته[\s]*(?:ی\s*)?(?:دیگر|دیگه)|(14\d{2}|13\d{2})[\/\-]\d{1,2}[\/\-]\d{1,2}|(?:این\s+)?(?:شنبه|یکشنبه|دوشنبه|سه[\s‌]*شنبه|چهارشنبه|پنج[\s‌]*شنبه|جمعه)/g;
+}
+
+function _quickTodoTimeAnchorRe() {
+  return /ساعت\s*\d{1,2}|\d{1,2}[:.]\d{2}|\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)|(?:^|[^\d])(?:1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|\d))/g;
+}
+
+function _matchIndexes(re, line) {
+  const out = [];
+  const r = new RegExp(re.source, 'g');
+  let m;
+  while ((m = r.exec(line))) out.push(m.index);
+  return out;
+}
+
+function _splitQuickTodoChunks(text) {
+  const chunks = [];
+  const lines = String(text || '').split(/\n+|؛|;/);
+  for (const raw of lines) {
+    const line = _normalizeQuickTodoText(raw);
+    if (!line) continue;
+    const dates = _matchIndexes(_quickTodoDateAnchorRe(), line);
+    const times = _matchIndexes(_quickTodoTimeAnchorRe(), line);
+    const cuts = new Set([0]);
+    dates.forEach(i => { if (i > 0) cuts.add(i); });
+    const bounds = [...new Set([0, ...dates.filter(i => i > 0), line.length])].sort((a, b) => a - b);
+    for (let d = 0; d < bounds.length - 1; d++) {
+      const from = bounds[d];
+      const to = bounds[d + 1];
+      times.filter(i => i >= from && i < to).slice(1).forEach(i => cuts.add(i));
+    }
+    const starts = [...cuts].sort((a, b) => a - b);
+    for (let i = 0; i < starts.length; i++) {
+      const part = line.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : line.length).trim();
+      if (part) chunks.push(part);
+    }
+  }
+  return chunks;
+}
+
+function _parseQuickTodoChunk(chunk, defaults) {
+  const dated = _extractQuickTodoDate(chunk, defaults);
+  const timed = _extractQuickTodoTime(dated.rest);
+  const dur = _extractQuickTodoDuration(timed.rest);
+  const title = _cleanQuickTodoTitle(dur.rest);
+  if (!title) return null;
+  const dateJalali = dated.dateJalali || defaults?.dateJalali || _formatJalali(..._quickTodoTodayParts(defaults));
+  const time = timed.time || '';
+  const durationMin = time ? (dur.durationMin || Number(defaults?.durationMin) || 30) : 0;
+  return {
+    title,
+    dateJalali,
+    time,
+    durationMin,
+    category: _guessQuickTodoCategory(title, defaults?.category),
+  };
+}
+
+function _parseQuickTodos(text, defaults) {
+  return _splitQuickTodoChunks(text)
+    .map(chunk => _parseQuickTodoChunk(chunk, defaults || {}))
+    .filter(Boolean);
+}
+
+function _todoSameAssigneeId(t, assigneeId) {
+  const id = String(assigneeId || '');
+  const todoId = String(t?.assignee_id || t?.staff_id || '');
+  if (id) return todoId === id;
+  return !todoId;
+}
+
+function _quickTodoRange(time, durationMin) {
+  const start = _quickTodoMinutes(time);
+  if (start == null) return null;
+  const dur = Math.max(5, Number(durationMin) || 30);
+  return { start, end: start + dur };
+}
+
+function _quickTodoConflictAgainst(item, other, nearMin) {
+  if (!item?.time || !other?.time) return null;
+  if (_jalaliKey(item.dateJalali || item.date_jalali) !== _jalaliKey(other.dateJalali || other.scheduled_date || other.date_jalali || '')) return null;
+  const a = _quickTodoRange(item.time, item.durationMin || item.duration_min);
+  const b = _quickTodoRange(other.time, other.durationMin || other.duration_min);
+  if (!a || !b) return null;
+  const overlap = a.start < b.end && b.start < a.end;
+  if (overlap) return { kind: 'overlap', other };
+  const gap = a.start >= b.end ? a.start - b.end : b.start - a.end;
+  if (gap > 0 && gap <= (nearMin || _QUICK_TODO_NEAR_MIN)) return { kind: 'near', other, gap };
+  return null;
+}
+
+function _quickTodoConflicts(item, opts) {
+  const nearMin = opts?.nearMin ?? _QUICK_TODO_NEAR_MIN;
+  const assigneeId = opts?.assigneeId || '';
+  const extras = Array.isArray(opts?.extras) ? opts.extras : [];
+  const existing = ((_db && _db.todos) || []).filter(t =>
+    t && !t.done && !t.archived && t.status !== 'deleted' && t.time &&
+    _todoSameAssigneeId(t, assigneeId) &&
+    _jalaliKey(_todoScheduledDate(t) || t.date_jalali) === _jalaliKey(item.dateJalali)
+  );
+  const hits = [];
+  existing.forEach(other => {
+    const hit = _quickTodoConflictAgainst(item, {
+      title: other.title,
+      time: other.time,
+      durationMin: _todoDurationMinutes(other) || 30,
+      dateJalali: _todoScheduledDate(other) || other.date_jalali,
+    }, nearMin);
+    if (hit) hits.push(hit);
+  });
+  extras.forEach(other => {
+    if (!other || other === item) return;
+    const hit = _quickTodoConflictAgainst(item, other, nearMin);
+    if (hit) hits.push({ ...hit, other, fromBatch: true });
+  });
+  return hits;
+}
+
+function _quickTodoDefaultsFromForm() {
+  return {
+    dateJalali: document.getElementById('todo-date')?.value.trim() || _todayJalaliStr(),
+    durationMin: _todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30,
+    category: document.getElementById('todo-category')?.value || 'general',
+    assigneeId: document.getElementById('todo-assignee')?.value || '',
+  };
+}
+
+function _updateQuickTodoPreview() {
+  const el = document.getElementById('todo-quick-preview');
+  const ta = document.getElementById('todo-quick');
+  if (!el || !ta) return;
+  const defaults = _quickTodoDefaultsFromForm();
+  const items = _parseQuickTodos(ta.value, defaults);
+  if (!items.length) {
+    el.innerHTML = ta.value.trim()
+      ? '<div style="font-size:11px;color:var(--amber)">کاری با عنوان قابل تشخیص پیدا نشد — هر خط یک کار، با روز و ساعت.</div>'
+      : '<div style="font-size:11px;color:var(--text3)">هر خط یک کار. مثلاً: فردا ۱۰ صبح تماس با مشتری ۳۰ دقیقه</div>';
+    return;
+  }
+  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(items.length)} کار تشخیص داده شد</div>` +
+    items.map((item, idx) => {
+      const others = items.filter((_, i) => i !== idx);
+      const conflicts = _quickTodoConflicts(item, { extras: others, assigneeId: defaults.assigneeId });
+      const when = `${DateService.disp(item.dateJalali)}${item.time ? ' · ' + item.time + (item.durationMin ? ' تا ' + _todoEndTime(item.time, item.durationMin) : '') : ' · بدون ساعت'}`;
+      const warn = conflicts.map(c => {
+        const label = c.other?.title || 'کار ثبت‌شده';
+        const where = c.fromBatch ? ' در همین متن' : '';
+        if (c.kind === 'overlap') return `<div class="todo-quick-warn is-overlap">تداخل با «${escapeHtml(label)}»${where}</div>`;
+        return `<div class="todo-quick-warn is-near">نزدیک به «${escapeHtml(label)}»${where} (${fa(c.gap)} دقیقه فاصله)</div>`;
+      }).join('');
+      return `<div class="todo-quick-hit"><div class="tq-title">${escapeHtml(item.title)}</div><div class="tq-meta">${escapeHtml(when)}${item.category ? ' · ' + escapeHtml(item.category === 'clients' ? 'مشتریان' : item.category === 'routine' ? 'روتین' : item.category === 'personal' ? 'شخصی' : 'عمومی') : ''}</div>${warn}</div>`;
+    }).join('');
+}
+
 function openAddTodo(dateStr, presetAssigneeId = '') {
   if (!_todoCanCreateForStaff(presetAssigneeId)) { showToast('برای ساخت این کار دسترسی نداری', 'error'); return; }
   const ownStaff = _todoSessionStaff();
@@ -3645,9 +3986,14 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
   ).join('');
 
   openModal('✅ کار جدید', `
+    <div class="form-group full todo-quick-box">
+      <label class="form-label">ثبت سریع چند کار (اختیاری)</label>
+      <textarea class="form-textarea" id="todo-quick" rows="3" oninput="_updateQuickTodoPreview()" autofocus placeholder="هر خط یک کار — مثلاً:&#10;فردا ۱۰ صبح تماس با اسرافیلیان ۳۰ دقیقه&#10;امروز ۱۶ جلسه با مهدی ۱ ساعت"></textarea>
+      <div id="todo-quick-preview" style="margin-top:8px"><div style="font-size:11px;color:var(--text3)">متن یا وویس بده؛ روز و ساعت را می‌خواند و اگر با برنامهٔ همان مسئول تداخل داشته باشد هشدار می‌دهد.</div></div>
+    </div>
     <div class="form-group full">
       <label class="form-label">عنوان کار *</label>
-      <input class="form-input" id="todo-title" placeholder="مثلاً: تماس با مشتری" autofocus>
+      <input class="form-input" id="todo-title" placeholder="مثلاً: تماس با مشتری">
     </div>
     <div class="form-group full">
       <label class="form-label">توضیحات</label>
@@ -3666,7 +4012,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
       <label class="form-label">مسئول و دسترسی</label>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
-        <select class="form-input" id="todo-assignee" ${canChooseAssignee ? '' : 'disabled'}>${assigneeOptions}</select>
+        <select class="form-input" id="todo-assignee" onchange="_updateQuickTodoPreview()" ${canChooseAssignee ? '' : 'disabled'}>${assigneeOptions}</select>
         <select class="form-input" id="todo-visibility"><option value="private" ${selectedAssigneeId ? '' : 'selected'}>فقط من</option><option value="assignee" ${selectedAssigneeId ? 'selected' : ''}>فقط مسئول انجام</option><option value="selected">افراد انتخاب‌شده</option><option value="team">اعضای مجاز تیم</option></select>
         <select class="form-input" id="todo-requires-report"><option value="none">گزارش لازم نیست</option><option value="optional">گزارش اختیاری</option><option value="required">گزارش الزامی</option></select>
         <select class="form-input" id="todo-requires-attachment"><option value="none">فایل لازم نیست</option><option value="optional">فایل اختیاری</option><option value="required">فایل الزامی</option></select>
@@ -3760,7 +4106,14 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     {label: '+ ذخیره', cls: 'btn-primary', action: 'saveTodo()'},
     {label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()'},
   ]);
-  setTimeout(() => { initDatePickers(); _updateTodoEndPreview(); _initTodoFormTabs(); }, 50);
+  setTimeout(() => {
+    initDatePickers();
+    _updateTodoEndPreview();
+    _initTodoFormTabs();
+    _updateQuickTodoPreview();
+    document.getElementById('todo-date')?.addEventListener('change', _updateQuickTodoPreview);
+    document.getElementById('todo-date')?.addEventListener('input', _updateQuickTodoPreview);
+  }, 50);
 }
 
 
@@ -3821,12 +4174,7 @@ async function _onTodoGcalToggle(cb) {
 }
 
 
-async function saveTodo() {
-  if (window._todoSaveInProgress) return;
-  window._todoSaveInProgress = true;
-  _todosInit();
-  const title = document.getElementById('todo-title')?.value.trim();
-  if (!title) { window._todoSaveInProgress = false; showToast('عنوان کار را وارد کنید', 'error'); return; }
+function _todoCreateMetaFromForm() {
   const repeat = document.getElementById('todo-repeat')?.value || 'none';
   const weekdays = repeat === 'custom_weekdays'
     ? (document.getElementById('todo-weekdays')?.value || '')
@@ -3835,16 +4183,6 @@ async function saveTodo() {
   const dateJalali = document.getElementById('todo-date')?.value.trim() || _todayJalaliStr();
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
-  if (remindMin > 0 && !time) {
-    window._todoSaveInProgress = false;
-    showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
-    return;
-  }
-  if (remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) {
-    window._todoSaveInProgress = false;
-    return;
-  }
-
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
   const goalId = document.getElementById('todo-goal')?.value || '';
@@ -3852,38 +4190,54 @@ async function saveTodo() {
   const syncGcal = !!document.getElementById('todo-gcal')?.checked;
   const assigneeEl = document.getElementById('todo-assignee');
   const ownStaff = _todoSessionStaff();
+  const note = document.getElementById('todo-note')?.value.trim() || '';
 
   if (_isTeamGuest() && _teamPerm('todo_create_self') && !ownStaff) {
-    window._todoSaveInProgress = false;
-    showToast('حساب پرسنلی شما شناسایی نشد', 'error');
-    return;
+    return { error: 'حساب پرسنلی شما شناسایی نشد' };
   }
-
   let assigneeId = assigneeEl?.value || (assigneeEl?.disabled && ownStaff ? String(ownStaff.id) : '');
-
   if (_isTeamGuest() && ownStaff && !_teamPerm('todo_create_others')) {
     assigneeId = String(ownStaff.id);
   }
-
-  if (!_todoCanCreateForStaff(assigneeId)) { window._todoSaveInProgress = false; showToast('برای ساخت این چک‌لیست دسترسی نداری', 'error'); return; }
+  if (!_todoCanCreateForStaff(assigneeId)) {
+    return { error: 'برای ساخت این چک‌لیست دسترسی نداری' };
+  }
   const assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(assigneeId));
   const visibility = document.getElementById('todo-visibility')?.value || (assignee ? 'assignee' : 'private');
+  return {
+    repeat, weekdays, remindMin, dateJalali, time, durationMin, priority, category, goalId,
+    mainTodayRank, syncGcal, assignee, ownStaff, visibility, note,
+    requires_report: document.getElementById('todo-requires-report')?.value || 'none',
+    requires_attachment: document.getElementById('todo-requires-attachment')?.value || 'none',
+    requires_approval: !!document.getElementById('todo-requires-approval')?.checked,
+  };
+}
+
+function _buildTodoRecord(meta, fields) {
+  const dateJalali = fields.dateJalali || meta.dateJalali;
+  const time = fields.time != null ? fields.time : meta.time;
+  const durationMin = time ? (Number(fields.durationMin != null ? fields.durationMin : meta.durationMin) || 30) : 0;
+  const title = fields.title;
+  const note = fields.note != null ? fields.note : (meta.note || '');
   const id = _allocateTodoId();
-  const newTodo = {
+  const assignee = meta.assignee;
+  const ownStaff = meta.ownStaff;
+  const mainTodayRank = fields.mainTodayRank != null ? fields.mainTodayRank : meta.mainTodayRank;
+  return {
     id, title,
-    note: document.getElementById('todo-note')?.value.trim() || '',
-    manager_note: document.getElementById('todo-note')?.value.trim() || '',
+    note,
+    manager_note: note,
     assignee_id: assignee?.id || ownStaff?.id || null,
     assignee_email:
       assignee?.email ||
       ownStaff?.email ||
       (_isTeamGuest() ? _teamEmail() : '') ||
       '',
-    visibility,
+    visibility: meta.visibility,
     shared_with: [],
-    requires_report: document.getElementById('todo-requires-report')?.value || 'none',
-    requires_attachment: document.getElementById('todo-requires-attachment')?.value || 'none',
-    requires_approval: !!document.getElementById('todo-requires-approval')?.checked,
+    requires_report: meta.requires_report,
+    requires_attachment: meta.requires_attachment,
+    requires_approval: meta.requires_approval,
     owner_id: _todoActiveOwnerId() || 'local-owner',
     created_by: _sbUser?.id || 'local-owner',
     created_by_name: _sbUser?.name || '',
@@ -3892,20 +4246,23 @@ async function saveTodo() {
     scheduledDate: dateJalali,
     time,
     duration_min: durationMin,
-    repeat,
-    weekdays,
-    priority,
-    category,
-    main_today_rank: _jalaliKey(dateJalali) === _jalaliToday() ? mainTodayRank : 0,
-    goal_id: goalId ? +goalId : null,
-    remind_min: remindMin,
-    sync_gcal: syncGcal,
+    repeat: meta.repeat,
+    weekdays: meta.weekdays,
+    priority: meta.priority,
+    category: fields.category || meta.category,
+    main_today_rank: _jalaliKey(dateJalali) === _jalaliToday() ? (mainTodayRank || 0) : 0,
+    goal_id: meta.goalId ? +meta.goalId : null,
+    remind_min: meta.remindMin,
+    sync_gcal: meta.syncGcal,
     gcal_event_id: null,
-    gcal_calendar_id: syncGcal ? _gcal.calendarId() : null,
+    gcal_calendar_id: meta.syncGcal ? _gcal.calendarId() : null,
     done: false, done_at: null, completedAt: null, completed_at: null, archived: false, status: 'pending',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+}
+
+function _applyTodoMainTodayRank(newTodo) {
   let relatedRankChanged = false;
   if (newTodo.main_today_rank > 0) {
     (_db.todos || []).forEach(t => {
@@ -3916,45 +4273,101 @@ async function saveTodo() {
       }
     });
   }
-  if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
-    window._todoSaveInProgress = false;
-    showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
-    return;
-  }
+  return relatedRankChanged;
+}
 
-  _db.todos.push(newTodo);
-
-  // Schedule notification
-  if (remindMin > 0 && time && dateJalali) {
-    _scheduleTodoNotification(id, title, dateJalali, time, remindMin);
-  }
-
-  // Sync to Google Calendar if requested
-  if (syncGcal && dateJalali) {
-    _gcal.upsertEvent(newTodo);
-  }
-
+async function _commitNewTodos(created, relatedRankChanged) {
+  created.forEach(newTodo => {
+    if (newTodo.remind_min > 0 && newTodo.time && newTodo.date_jalali) {
+      _scheduleTodoNotification(newTodo.id, newTodo.title, newTodo.date_jalali, newTodo.time, newTodo.remind_min);
+    }
+    if (newTodo.sync_gcal && newTodo.date_jalali) _gcal.upsertEvent(newTodo);
+  });
   closeModal();
-  showToast('کار روی دستگاه ذخیره شد ✓', 'success');
+  showToast(created.length === 1 ? 'کار روی دستگاه ذخیره شد ✓' : `${fa(created.length)} کار روی دستگاه ذخیره شد ✓`, 'success');
   renderTodoList();
-  // Let iOS/Android paint the optimistic UI before serializing the large local
-  // database. The Todo is already in _db; persistence and upload follow next.
   await new Promise(resolve => requestAnimationFrame(() => resolve()));
   _save(true, { scheduleServerSync: false });
   window._todoSaveInProgress = false;
-
-  const syncPromise = relatedRankChanged ? _syncToServer() : _syncTodoDelta(newTodo, 'create');
+  const syncPromise = relatedRankChanged
+    ? _syncToServer()
+    : _syncTodoDelta(created[0], 'create', created.slice(1));
+  const ids = created.map(t => t.id);
   void syncPromise.then(async syncRes => {
     if (syncRes && syncRes.status === 403 && _teamAccessSession()) {
-      // A definitive permission rejection must be rolled back. Transient
-      // network/server failures stay local and are retried automatically.
-      _db.todos = _db.todos.filter(t => t.id !== id);
+      _db.todos = _db.todos.filter(t => !ids.includes(t.id));
       _save();
       showToast('ذخیره کار رد شد؛ دسترسی هم‌تیمی را بررسی کن', 'error');
       await _loadFromServer();
       renderTodoList();
     }
   });
+}
+
+async function saveTodo() {
+  if (window._todoSaveInProgress) return;
+  window._todoSaveInProgress = true;
+  _todosInit();
+  const quickRaw = document.getElementById('todo-quick')?.value || '';
+  const quickItems = _parseQuickTodos(quickRaw, _quickTodoDefaultsFromForm());
+  if (quickRaw.trim()) {
+    if (!quickItems.length) {
+      window._todoSaveInProgress = false;
+      showToast('در متن سریع کاری تشخیص داده نشد', 'error');
+      return;
+    }
+    const meta = _todoCreateMetaFromForm();
+    if (meta.error) { window._todoSaveInProgress = false; showToast(meta.error, 'error'); return; }
+    if (meta.remindMin > 0 && !quickItems.some(item => item.time)) {
+      window._todoSaveInProgress = false;
+      showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
+      return;
+    }
+    if (meta.remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) {
+      window._todoSaveInProgress = false;
+      return;
+    }
+    const created = quickItems.map(item => _buildTodoRecord(meta, {
+      title: item.title,
+      dateJalali: item.dateJalali,
+      time: item.time,
+      durationMin: item.durationMin,
+      category: item.category,
+      note: '',
+      mainTodayRank: 0,
+    }));
+    if (_isTeamGuest() && created.some(t => !t.assignee_id && !t.assignee_email)) {
+      window._todoSaveInProgress = false;
+      showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
+      return;
+    }
+    created.forEach(t => _db.todos.push(t));
+    await _commitNewTodos(created, false);
+    return;
+  }
+
+  const title = document.getElementById('todo-title')?.value.trim();
+  if (!title) { window._todoSaveInProgress = false; showToast('عنوان کار را وارد کنید', 'error'); return; }
+  const meta = _todoCreateMetaFromForm();
+  if (meta.error) { window._todoSaveInProgress = false; showToast(meta.error, 'error'); return; }
+  if (meta.remindMin > 0 && !meta.time) {
+    window._todoSaveInProgress = false;
+    showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
+    return;
+  }
+  if (meta.remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) {
+    window._todoSaveInProgress = false;
+    return;
+  }
+  const newTodo = _buildTodoRecord(meta, { title });
+  if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
+    window._todoSaveInProgress = false;
+    showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
+    return;
+  }
+  const relatedRankChanged = _applyTodoMainTodayRank(newTodo);
+  _db.todos.push(newTodo);
+  await _commitNewTodos([newTodo], relatedRankChanged);
 }
 
 
