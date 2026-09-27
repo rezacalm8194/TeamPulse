@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp294';
+const TP_ASSET_V = 'tp295';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -731,12 +731,14 @@ function _pkgUnitSelectHtml(pt, { id = '', customId = '', onchange = '', customO
     ['custom', 'سفارشی'],
   ].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('');
   const customStyle = kind === 'custom' ? '' : 'display:none';
-  return `<select class="form-select service-unit-select"${id ? ` id="${escapeHtml(id)}"` : ''} onchange="${onchange}">${opts}</select>
-    <input class="form-input service-unit-custom" ${customId ? `id="${escapeHtml(customId)}"` : ''} placeholder="مثلاً بسته" value="${escapeHtml(pt?.unit_label || '')}" style="${customStyle}"${customOnchange ? ` onchange="${customOnchange}"` : ''}>`;
+  return `<span class="service-unit-wrap">
+    <select class="form-select service-unit-select"${id ? ` id="${escapeHtml(id)}"` : ''} onchange="${onchange}">${opts}</select>
+    <input class="form-input service-unit-custom" ${customId ? `id="${escapeHtml(customId)}"` : ''} placeholder="بسته" value="${escapeHtml(pt?.unit_label || '')}" style="${customStyle}"${customOnchange ? ` onchange="${customOnchange}"` : ''}>
+  </span>`;
 }
 
 function onPkgUnitKindChange(selectEl) {
-  const custom = selectEl?.closest('.service-price-row, .settings-pkg-row, .modal-actions, .np-new-service-row')?.querySelector('.service-unit-custom');
+  const custom = selectEl?.closest('.service-price-row, .service-price-add, .settings-pkg-row, .modal-actions, .np-new-service-row')?.querySelector('.service-unit-custom');
   if (custom) custom.style.display = selectEl.value === 'custom' ? '' : 'none';
 }
 
@@ -25443,7 +25445,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v294';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v295';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

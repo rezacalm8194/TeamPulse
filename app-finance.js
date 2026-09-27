@@ -273,7 +273,7 @@ async function openServiceProductsCatalog() {
   const rows = PKG_TYPES.length ? PKG_TYPES.map(pt => {
     const price = _pkgTypePrice(pt.price);
     const hint = _pkgTypeUnitHint(pt);
-    return `<div class="settings-pkg-row service-price-row">
+    return `<div class="service-price-row">
       <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
       <input class="form-input service-price-name" value="${escapeHtml(pt.label)}" onchange="saveServiceProductLabel(${pt.id}, this.value)">
       ${_pkgUnitSelectHtml(pt, {
@@ -282,18 +282,16 @@ async function openServiceProductsCatalog() {
       })}
       <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
     </div>`;
-  }).join('') : `<div class="empty" style="padding:28px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
+  }).join('') : `<div class="empty" style="padding:18px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
   openModal('خدمات و محصولات', `
-    <p style="font-size:12px;color:var(--text2);margin:0 0 12px;line-height:1.8">
-      نام، واحد سنجش (کیلو، عدد یا سفارشی) و قیمت پیش‌فرض هر خدمت را وارد یا ویرایش کنید. در فروش جدید همین مبلغ به‌صورت خودکار پیشنهاد می‌شود.
-    </p>
-    <div class="settings-list service-price-list">${rows}</div>
-    <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;flex-wrap:wrap">
-      <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید" style="min-width:160px;flex:1">
+    <p class="service-price-hint">نام، واحد و قیمت پیش‌فرض — در فروش جدید همین مبلغ پیشنهاد می‌شود.</p>
+    <div class="service-price-list">${rows}</div>
+    <div class="service-price-add">
+      <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید">
       ${_pkgUnitSelectHtml({}, { id: 'svc-cat-new-unit', customId: 'svc-cat-new-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
-      <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت (تومان)" style="width:140px">
+      <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت">
       <input type="color" class="color-input" id="svc-cat-new-color" value="#7c6af7">
-      <button class="btn btn-primary" type="button" onclick="addServiceProductFromCatalog()">+ افزودن</button>
+      <button class="btn btn-primary btn-sm" type="button" onclick="addServiceProductFromCatalog()">+ افزودن</button>
     </div>
   `, [
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
@@ -327,7 +325,7 @@ async function saveServiceProductLabel(id, label) {
 }
 
 async function saveServiceProductUnit(id, el) {
-  const row = el?.closest('.service-price-row, .settings-pkg-row, .modal-actions');
+  const row = el?.closest('.service-price-row, .service-price-add, .settings-pkg-row, .modal-actions');
   const select = row?.querySelector('.service-unit-select');
   const custom = row?.querySelector('.service-unit-custom');
   const unit = _pkgTypeUnitKind(select?.value);
