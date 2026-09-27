@@ -57,11 +57,11 @@ const TODAY = '۱۴۰۵/۰۷/۰۵';
 test('quick todo parser reads date, time and duration from each line', () => {
   const ctx = load();
   const items = ctx._parseQuickTodos(
-    'فردا ۱۰ صبح تماس با اسرافیلیان ۳۰ دقیقه\nامروز ۱۶ جلسه با مهدی ۱ ساعت',
+    'فردا ۱۰ صبح تماس با فاطمه ۳۰ دقیقه\nامروز ۱۶ جلسه با مهدی ۱ ساعت',
     { todayJalali: TODAY, durationMin: 30, category: 'personal' }
   );
   assert.equal(items.length, 2);
-  assert.equal(items[0].title, 'تماس با اسرافیلیان');
+  assert.equal(items[0].title, 'تماس با فاطمه');
   assert.equal(ctx._jalaliKey(items[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۰۶'));
   assert.equal(items[0].time, '10:00');
   assert.equal(items[0].durationMin, 30);

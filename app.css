@@ -1115,9 +1115,9 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .todo-form-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  margin: 10px 0 12px;
+  margin: 0 0 10px;
 }
 .todo-form-tabs button {
   border: 1px solid var(--border2);
@@ -1720,6 +1720,15 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .np-quick-box .form-textarea,
 .todo-quick-box .form-textarea { padding-left: 42px; padding-bottom: 36px; }
+.todo-quick-box {
+  margin: 0;
+  padding: 10px;
+}
+.todo-quick-box .form-textarea {
+  min-height: 92px;
+}
+#todo-quick-preview { margin-top: 8px; }
+#todo-quick-preview:empty { display: none; }
 .todo-quick-hit {
   display: flex; flex-direction: column; gap: 4px;
   padding: 8px 10px; border-radius: 9px; margin-bottom: 5px;
