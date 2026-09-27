@@ -11,7 +11,7 @@ async function renderPurchases(search = '') {
     packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
   }
   let html = `<div class="table-card">
-    <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span></div>
+    <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button></div></div>
     <table><thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
   if (packages.length === 0) {
     html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
@@ -266,6 +266,51 @@ function confirmGeneralPurchaseStudent() {
   const id = +document.getElementById('gpur-student')?.value;
   closeModal();
   if (id) openNewPurchase(id);
+}
+
+async function openServiceProductsCatalog() {
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  const rows = PKG_TYPES.length ? PKG_TYPES.map(pt => {
+    const price = _pkgTypePrice(pt.price);
+    return `<div class="settings-pkg-row service-price-row">
+      <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
+      <span class="service-price-name">${escapeHtml(pt.label)}</span>
+      <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="قیمت (تومان)" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
+    </div>`;
+  }).join('') : `<div class="empty" style="padding:28px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
+  openModal('خدمات و محصولات', `
+    <p style="font-size:12px;color:var(--text2);margin:0 0 12px;line-height:1.8">
+      قیمت پیش‌فرض هر خدمت را وارد یا ویرایش کنید. در فروش جدید همین مبلغ به‌صورت خودکار پیشنهاد می‌شود.
+    </p>
+    <div class="settings-list service-price-list">${rows}</div>
+    <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;flex-wrap:wrap">
+      <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید" style="min-width:160px;flex:1">
+      <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت (تومان)" style="width:140px">
+      <input type="color" class="color-input" id="svc-cat-new-color" value="#7c6af7">
+      <button class="btn btn-primary" type="button" onclick="addServiceProductFromCatalog()">+ افزودن</button>
+    </div>
+  `, [
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+async function saveServiceProductPrice(id, price) {
+  const next = _pkgTypePrice(price);
+  await window.api.packageTypes.update({ id, price: next });
+  const pt = PKG_TYPES.find(x => x.id === id);
+  if (pt) pt.price = next;
+  showToast('قیمت ذخیره شد ✓', 'success');
+}
+
+async function addServiceProductFromCatalog() {
+  const label = document.getElementById('svc-cat-new-label')?.value.trim();
+  const color = document.getElementById('svc-cat-new-color')?.value || '#7c6af7';
+  const price = _pkgTypePrice(document.getElementById('svc-cat-new-price')?.value);
+  if (!label) { showToast('نام خدمت را وارد کنید', 'error'); return; }
+  await window.api.packageTypes.add({ label, color, price });
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  showToast('اضافه شد ✓', 'success');
+  await openServiceProductsCatalog();
 }
 
 
@@ -525,7 +570,7 @@ async function renderPayments(search = '') {
     packages = filterIncomeRows('purchases', packages);
 
     let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('purchases')}<div class="table-card tbl-responsive customer-sales-table">
-      <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div>
+      <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div></div>
       <table>
         <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
