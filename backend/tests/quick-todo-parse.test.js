@@ -119,7 +119,8 @@ test('quick todo parser understands weekday next week and add-command filler', (
 
 test('add-todo modal has quick capture box and save uses parser', () => {
   assert.match(todos, /id="todo-quick"/);
-  assert.match(todos, /function _parseQuickTodos\(/);
-  assert.match(fn(todos, 'saveTodo'), /_parseQuickTodos/);
+  assert.match(todos, /function _toggleQuickTodoExtra\(/);
+  assert.match(todos, /_collectQuickTodosForSave/);
+  assert.match(fn(todos, 'saveTodo'), /_collectQuickTodosForSave/);
   assert.match(fn(todos, 'saveTodo'), /todo-quick/);
 });
