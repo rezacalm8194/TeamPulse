@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp291';
+const TP_ASSET_V = 'tp293';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8498,11 +8498,312 @@ async function resolvePurchaseTypeId(prefix) {
   return +item.id || +(PKG_TYPES.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label))?.id || 0);
 }
 
+function _purchaseAmountFromMatch(numRaw, unitWord, tomanWord) {
+  const base = Number(String(numRaw || '').replace(/[^0-9]/g, '')) || 0;
+  if (!base) return 0;
+  const u = String(unitWord || '');
+  if (/میلیارد/.test(u)) return base * 1e9;
+  if (/میلیون|ملیون/.test(u)) return base * 1e6;
+  if (/هزار/.test(u)) return base * 1e3;
+  if (tomanWord) return base;
+  return base >= 1000 ? base : 0;
+}
+
+function _cleanPurchaseQuery(s) {
+  return String(s || '')
+    .replace(/^[،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g, '')
+    .replace(/^[وHo]\s+/, '')
+    .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function _purchaseServiceTokens(key) {
+  return String(key || '').split(/\s+/).filter(t => t.length > 1);
+}
+
+function _matchPurchaseService(query, catalog) {
+  const q = _serviceMergeKey(query);
+  if (!q) return { status: 'empty', query: '' };
+  const scored = (catalog || []).map(pt => {
+    const label = _serviceMergeKey(pt.label);
+    let score = 0;
+    if (label === q) score = 100;
+    else if (label.includes(q) || q.includes(label)) score = 78 + Math.min(18, Math.min(q.length, label.length));
+    else {
+      const qt = _purchaseServiceTokens(q);
+      const lt = _purchaseServiceTokens(label);
+      const hit = qt.filter(t => lt.some(x => x.includes(t) || t.includes(x))).length;
+      if (hit) score = 42 + (hit / Math.max(qt.length, 1)) * 28;
+    }
+    return { pt, score };
+  }).filter(x => x.score >= 42).sort((a, b) => b.score - a.score || String(a.pt.label).localeCompare(String(b.pt.label), 'fa'));
+  if (!scored.length) return { status: 'unmatched', query: String(query || '').trim() };
+  if (scored.length > 1 && scored[0].score < 100 && scored[0].score - scored[1].score < 8) {
+    return { status: 'ambiguous', query: String(query || '').trim(), options: scored.slice(0, 3).map(x => x.pt) };
+  }
+  return { status: 'matched', query: String(query || '').trim(), type: scored[0].pt, score: scored[0].score };
+}
+
+function _parseQuickPurchases(text, catalog) {
+  const out = [];
+  const seen = new Set();
+  const amtRe = /(\d[\d,\.٬،\s]*\d|\d)\s*(میلیارد|میلیون|ملیون|هزار)?\s*(تومانی|تومان|تومن|ت)?/g;
+  const chunks = String(text || '').split(/\n+/).flatMap(line => String(line || '').split(/[؛;]+/));
+  for (const raw of chunks) {
+    const line = String(raw || '').trim();
+    if (!line) continue;
+    const norm = enDigits(line);
+    const matches = [...norm.matchAll(amtRe)]
+      .map(m => ({ raw: m[0], num: m[1], unit: m[2] || '', toman: m[3] || '', idx: m.index || 0, len: m[0].length }))
+      .filter(m => _purchaseAmountFromMatch(m.num, m.unit, m.toman) > 0);
+    let amount = 0;
+    let name = line;
+    if (matches.length) {
+      const m = matches[matches.length - 1];
+      amount = _purchaseAmountFromMatch(m.num, m.unit, m.toman);
+      name = _cleanPurchaseQuery(line.slice(0, m.idx) + ' ' + line.slice(m.idx + m.len));
+    } else {
+      name = _cleanPurchaseQuery(line);
+    }
+    if (!name) continue;
+    const matched = _matchPurchaseService(name, catalog);
+    const key = matched.status === 'matched' ? 'id:' + matched.type.id : 'q:' + _serviceMergeKey(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...matched, amount, query: name });
+  }
+  return out;
+}
+
+function _splitPurchasePayments(totals, payment) {
+  const amounts = (totals || []).map(n => Math.max(0, Number(n) || 0));
+  let left = Math.max(0, Math.round(Number(payment) || 0));
+  return amounts.map((total, i) => {
+    if (!left) return 0;
+    if (i === amounts.length - 1) {
+      const pay = left;
+      left = 0;
+      return pay;
+    }
+    const pay = Math.min(left, total);
+    left -= pay;
+    return pay;
+  });
+}
+
+function newPurchaseServicePickerHtml(preset = {}) {
+  const selectedId = preset.type_id != null && preset.type_id !== '' ? String(preset.type_id) : '';
+  const types = _packageTypesList();
+  const rows = types.map(pt => {
+    const on = selectedId && String(pt.id) === selectedId;
+    const catalogPrice = packageTypeDefaultPrice(pt.id);
+    const price = on && Number(preset.amount) > 0 ? Number(preset.amount) : catalogPrice;
+    return `
+      <div class="np-svc-row${on ? ' is-on' : ''}" data-type-id="${pt.id}" data-label="${escapeHtml(pt.label || '')}">
+        <label class="pkg-check${on ? ' checked' : ''}">
+          <input type="checkbox" class="np-svc-cb" value="${pt.id}" ${on ? 'checked' : ''} onchange="onNewPurchaseServiceToggle(this)">
+          <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
+          <span class="np-svc-name">${escapeHtml(pt.label || '')}</span>
+        </label>
+        <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+      </div>`;
+  }).join('');
+  return `
+    <div class="form-group full np-quick-box">
+      <label class="form-label">⚡ ثبت سریع چند خدمت (اختیاری)</label>
+      <textarea class="form-textarea" id="np-quick" rows="3" oninput="onNewPurchaseQuickInput()" placeholder="هر خط یک خدمت — مثلاً:&#10;پخت و ریز کردن پگ گوسفندی&#10;خورش قیمه ۸۰۰ هزار"></textarea>
+      <div id="np-quick-preview" class="np-quick-preview"><div style="font-size:11px;color:var(--text3)">نام خدمت را بنویس یا بگو؛ قیمت از کاتالوگ می‌آید مگر مبلغ را بنویسی.</div></div>
+    </div>
+    <div class="form-group full">
+      <label class="form-label">خدمات این فروش *</label>
+      <input class="form-input" id="np-svc-filter" placeholder="جستجوی خدمت..." oninput="filterNewPurchaseServices()">
+      <div class="np-svc-list" id="np-svc-list">${rows || '<div class="np-svc-empty">هنوز خدمتی در کاتالوگ نیست</div>'}</div>
+    </div>
+    <div class="form-group full np-new-service-wrap">
+      <label class="pkg-check" id="np-new-toggle-label">
+        <input type="checkbox" id="np-new-toggle" onchange="toggleNewPurchaseNewService()">
+        <span>+ ساخت خدمت جدید</span>
+      </label>
+      <div id="np-new-service-fields" class="np-new-service-fields" style="display:none">
+        <div class="np-new-service-row">
+          <input class="form-input" id="np-new-service-label" placeholder="نام خدمت جدید">
+          <input type="color" class="color-input" id="np-new-service-color" value="#7c6af7">
+          <input class="form-input amount-input" id="np-new-service-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت" oninput="updateNewPurchaseSummary()">
+        </div>
+      </div>
+    </div>
+    <div class="np-cart-summary" id="np-cart-summary"></div>`;
+}
+
+function collectNewPurchaseServices() {
+  return [...document.querySelectorAll('#np-svc-list .np-svc-row')]
+    .filter(row => row.querySelector('.np-svc-cb')?.checked)
+    .map(row => ({
+      type_id: +row.dataset.typeId,
+      total_amount: +(row.querySelector('.np-svc-amount')?.value || 0),
+      label: row.dataset.label || '',
+    }));
+}
+
+function setNewPurchaseServiceChecked(typeId, checked, amount) {
+  const row = document.querySelector(`#np-svc-list .np-svc-row[data-type-id="${typeId}"]`);
+  if (!row) return;
+  const cb = row.querySelector('.np-svc-cb');
+  const amt = row.querySelector('.np-svc-amount');
+  const label = row.querySelector('.pkg-check');
+  if (cb) cb.checked = !!checked;
+  row.classList.toggle('is-on', !!checked);
+  label?.classList.toggle('checked', !!checked);
+  if (amt) {
+    amt.disabled = !checked;
+    if (checked) {
+      const catalogPrice = packageTypeDefaultPrice(typeId);
+      const next = Number(amount) > 0 ? Number(amount) : catalogPrice;
+      const prevAuto = Number(amt.dataset.autoPrice || 0);
+      const current = Number(amt.value || 0);
+      if (Number(amount) > 0 || !current || current === prevAuto) {
+        amt.value = next || '';
+        amt.dataset.autoPrice = String(Number(amount) > 0 ? next : catalogPrice || 0);
+      }
+    }
+  }
+}
+
+function onNewPurchaseServiceToggle(checkbox) {
+  const row = checkbox?.closest('.np-svc-row');
+  if (!row) return;
+  setNewPurchaseServiceChecked(row.dataset.typeId, checkbox.checked);
+  updateNewPurchaseSummary();
+}
+
+function filterNewPurchaseServices() {
+  const q = _serviceLabelKey(document.getElementById('np-svc-filter')?.value || '');
+  document.querySelectorAll('#np-svc-list .np-svc-row').forEach(row => {
+    const on = row.querySelector('.np-svc-cb')?.checked;
+    const label = _serviceLabelKey(row.dataset.label || '');
+    row.style.display = !q || on || label.includes(q) ? '' : 'none';
+  });
+}
+
+function toggleNewPurchaseNewService() {
+  const on = !!document.getElementById('np-new-toggle')?.checked;
+  const fields = document.getElementById('np-new-service-fields');
+  const label = document.getElementById('np-new-toggle-label');
+  if (fields) fields.style.display = on ? 'block' : 'none';
+  label?.classList.toggle('checked', on);
+  updateNewPurchaseSummary();
+}
+
+function refreshNewPurchaseStaffOptions() {
+  const sel = document.getElementById('np-staff');
+  if (!sel) return;
+  const first = collectNewPurchaseServices()[0];
+  const selected = sel.value;
+  sel.innerHTML = purchaseStaffOptionsHtml(first?.type_id || '', selected);
+}
+
+function newPurchaseCartState() {
+  const services = collectNewPurchaseServices();
+  const extraOn = !!document.getElementById('np-new-toggle')?.checked;
+  const extraLabel = document.getElementById('np-new-service-label')?.value.trim() || '';
+  const extraAmount = +(document.getElementById('np-new-service-amount')?.value || 0);
+  const totals = services.map(x => x.total_amount);
+  if (extraOn) totals.push(extraAmount);
+  const count = services.length + (extraOn ? 1 : 0);
+  const total = totals.reduce((s, n) => s + n, 0);
+  const paid = +(document.getElementById('np-current')?.value || 0);
+  const initial = +(document.getElementById('np-initial')?.value || 0);
+  return { services, extraOn, extraLabel, extraAmount, count, total, paid, remain: Math.max(0, total + initial - paid) };
+}
+
+function updateNewPurchaseSummary() {
+  const el = document.getElementById('np-cart-summary');
+  if (!el) return;
+  const state = newPurchaseCartState();
+  if (!state.count) {
+    el.innerHTML = '<span style="color:var(--text3)">هنوز خدمتی انتخاب نشده</span>';
+  } else {
+    el.innerHTML = `<span>${fa(state.count)} خدمت</span><span>جمع ${fmt(state.total)} ت</span><span>پرداخت ${fmt(state.paid)} ت</span><span>مانده ${fmt(state.remain)} ت</span>`;
+  }
+  const btn = document.querySelector('#modal-overlay .modal-actions .btn-primary');
+  if (btn) btn.textContent = state.count > 1 ? `ثبت ${fa(state.count)} فروش` : 'ثبت خرید';
+  refreshNewPurchaseStaffOptions();
+}
+
+function applyQuickPurchasesToList(items) {
+  const nextIds = new Set();
+  (items || []).forEach(item => {
+    if (item.status !== 'matched' || !item.type) return;
+    const id = String(item.type.id);
+    nextIds.add(id);
+    setNewPurchaseServiceChecked(id, true, item.amount);
+  });
+  (window._npQuickAppliedIds || []).forEach(id => {
+    if (!nextIds.has(String(id))) setNewPurchaseServiceChecked(id, false);
+  });
+  window._npQuickAppliedIds = [...nextIds];
+}
+
+function onNewPurchaseQuickInput() {
+  const el = document.getElementById('np-quick-preview');
+  const ta = document.getElementById('np-quick');
+  if (!el || !ta) return;
+  const items = _parseQuickPurchases(ta.value, _packageTypesList());
+  if (!items.length) {
+    el.innerHTML = ta.value.trim()
+      ? '<div style="font-size:11px;color:var(--amber)">خدمتی از کاتالوگ تشخیص داده نشد</div>'
+      : '<div style="font-size:11px;color:var(--text3)">نام خدمت را بنویس یا بگو؛ قیمت از کاتالوگ می‌آید مگر مبلغ را بنویسی.</div>';
+    applyQuickPurchasesToList([]);
+    updateNewPurchaseSummary();
+    return;
+  }
+  el.innerHTML = items.map(item => {
+    if (item.status === 'matched') {
+      const price = item.amount || packageTypeDefaultPrice(item.type.id);
+      return `<div class="np-quick-hit">${escapeHtml(item.type.label)}<b>${fmt(price)}</b></div>`;
+    }
+    if (item.status === 'ambiguous') {
+      const opts = (item.options || []).map(pt =>
+        `<button type="button" class="btn btn-ghost btn-sm" onclick="chooseQuickPurchaseService(${pt.id})">${escapeHtml(pt.label)}</button>`
+      ).join('');
+      return `<div class="np-quick-miss">«${escapeHtml(item.query)}» مبهم است ${opts}</div>`;
+    }
+    return `<div class="np-quick-miss">«${escapeHtml(item.query)}» در کاتالوگ نیست</div>`;
+  }).join('');
+  applyQuickPurchasesToList(items);
+  updateNewPurchaseSummary();
+}
+
+function chooseQuickPurchaseService(typeId) {
+  setNewPurchaseServiceChecked(typeId, true);
+  window._npQuickAppliedIds = [...new Set([...(window._npQuickAppliedIds || []), String(typeId)])];
+  updateNewPurchaseSummary();
+}
+
+async function resolveNewPurchaseExtraService() {
+  if (!document.getElementById('np-new-toggle')?.checked) return null;
+  const label = document.getElementById('np-new-service-label')?.value.trim();
+  const color = document.getElementById('np-new-service-color')?.value || '#7c6af7';
+  const amount = +(document.getElementById('np-new-service-amount')?.value || 0);
+  if (!label) {
+    showToast('نام خدمت جدید را وارد کنید', 'error');
+    return false;
+  }
+  const item = await window.api.packageTypes.add({ label, color, price: amount });
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  const typeId = +item.id || +(PKG_TYPES.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label))?.id || 0);
+  if (!typeId) {
+    showToast('خدمت جدید ساخته نشد', 'error');
+    return false;
+  }
+  return { type_id: typeId, total_amount: amount || packageTypeDefaultPrice(typeId), label };
+}
+
 function openNewPurchase(studentId, preset = {}) {
   const s = allStudents.find(x => x.id === studentId);
   if (!s) return;
-  const defaultPkgId = preset.type_id || _getDefaultPkgTypeId();
-  const amount = Number(preset.amount || 0) || packageTypeDefaultPrice(defaultPkgId);
+  const defaultPkgId = preset.type_id || '';
   const initial = Number(preset.initial_cost || 0);
   const current = Number(preset.current_payment || 0);
   const repeat = Number(preset.repeat_months || 0);
@@ -8510,30 +8811,25 @@ function openNewPurchase(studentId, preset = {}) {
   const paymentDueDate = preset.payment_due_date || '';
   const note = preset.note || '';
   const reminderId = preset.reminder_id ? Number(preset.reminder_id) : 0;
-  const typeOptions = purchaseTypeOptionsHtml(defaultPkgId);
+  window._npQuickAppliedIds = [];
 
   openModal(`🛍 ثبت خرید جدید — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
     <div class="form-grid">
-      <div class="form-group full">
-        <label class="form-label">پکیج / خدمت *</label>
-        <select class="form-select" id="np-type" onchange="onPurchaseTypeChange('np')">${typeOptions}</select>
-      </div>
-      ${newPurchaseServiceFieldsHtml('np')}
+      <input type="hidden" id="np-reminder-type" value="${escapeHtml(String(preset.type_id || ''))}">
+      ${newPurchaseServicePickerHtml(preset)}
       <div class="form-group full">
         <label class="form-label">مجری خدمت / پرسنل</label>
         <select class="form-select" id="np-staff">${purchaseStaffOptionsHtml(defaultPkgId, preset.staff_id || '')}</select>
       </div>
       <div class="form-group">
-        <label class="form-label">مبلغ کل / دوره‌ای (تومان)</label>
-        <input class="form-input amount-input" id="np-amount" type="number" placeholder="0" value="${amount || ''}" data-auto-price="${amount || 0}">
-      </div>
-      <div class="form-group">
         <label class="form-label">بدهی قبلی (تومان)</label>
-        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}">
+        <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}" oninput="updateNewPurchaseSummary()">
+        <p style="font-size:11px;color:var(--text3);margin-top:4px">اگر چند خدمت انتخاب شود، فقط روی اولین خدمت می‌نشیند.</p>
       </div>
       <div class="form-group">
         <label class="form-label">پرداختی حال حاضر (تومان)</label>
-        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}">
+        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}" oninput="updateNewPurchaseSummary()">
+        <p style="font-size:11px;color:var(--text3);margin-top:4px">بین خدمت‌ها به‌ترتیب تقسیم می‌شود.</p>
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('np-date', date, 'تاریخ شروع خدمت')}
@@ -8565,20 +8861,26 @@ function openNewPurchase(studentId, preset = {}) {
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   initDatePickers();
-  onPurchaseTypeChange('np');
+  updateNewPurchaseSummary();
 }
 
 async function saveNewPurchase(studentId, reminderId = 0) {
   if (window._savingNewPurchase) return;
   window._savingNewPurchase = true;
   try {
-  const type_id = await resolvePurchaseTypeId('np');
+  const extra = await resolveNewPurchaseExtraService();
+  if (extra === false) return;
+  const services = collectNewPurchaseServices();
+  if (extra && !services.some(x => String(x.type_id) === String(extra.type_id))) services.push(extra);
+  if (!services.length) {
+    showToast('حداقل یک خدمت را تیک بزنید', 'error');
+    return;
+  }
   const date = readCalendarDateField('np-date');
   const deferUntilDue = readPurchaseDeferUntilDue('np-payment-due');
   if (deferUntilDue) onPurchaseDeferUntilDueChange('np-date','np-payment-due','np-repeat');
   const paymentDueDate = readCalendarDateField('np-payment-due');
   const repeat_months = +(document.getElementById('np-repeat')?.value || 0);
-  if (!type_id) return;
   if (deferUntilDue && !paymentDueDate) {
     showToast('برای لحاظ از سررسید، تاریخ سررسید را وارد کنید', 'error');
     return;
@@ -8591,22 +8893,38 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     showToast('تاریخ سررسید معتبر نیست؛ تاریخ را اصلاح کنید', 'error');
     return;
   }
-  const res = await window.api.packages.add({
-    student_id: studentId,
-    type_id,
-    staff_id: document.getElementById('np-staff')?.value || null,
-    total_amount: +(document.getElementById('np-amount')?.value || 0),
-    initial_cost: +(document.getElementById('np-initial')?.value || 0),
-    current_payment: +(document.getElementById('np-current')?.value || 0),
-    repeat_months,
-    note: document.getElementById('np-note')?.value || '',
-    date,
-    payment_due_date: paymentDueDate,
-    defer_until_due: deferUntilDue,
-    skip_reminder: !!reminderId,
-  });
+  const payments = _splitPurchasePayments(services.map(x => x.total_amount), document.getElementById('np-current')?.value);
+  const initial = +(document.getElementById('np-initial')?.value || 0);
+  const staffId = document.getElementById('np-staff')?.value || null;
+  const note = document.getElementById('np-note')?.value || '';
+  const reminderType = String(document.getElementById('np-reminder-type')?.value || '');
+  let reminderIndex = 0;
+  if (reminderId && reminderType) {
+    const idx = services.findIndex(x => String(x.type_id) === reminderType);
+    if (idx >= 0) reminderIndex = idx;
+  }
+  let reminderPkgId = 0;
+  for (let i = 0; i < services.length; i++) {
+    const svc = services[i];
+    const skipReminder = !!reminderId && i === reminderIndex;
+    const res = await window.api.packages.add({
+      student_id: studentId,
+      type_id: svc.type_id,
+      staff_id: staffId,
+      total_amount: svc.total_amount,
+      initial_cost: i === 0 ? initial : 0,
+      current_payment: payments[i] || 0,
+      repeat_months,
+      note,
+      date,
+      payment_due_date: paymentDueDate,
+      defer_until_due: deferUntilDue,
+      skip_reminder: skipReminder,
+    });
+    if (skipReminder) reminderPkgId = res?.id;
+  }
   if (reminderId) {
-    const completed = await window.api.reminders.completePurchase({ id: reminderId, package_id: res?.id, repeat_months, payment_due_date: paymentDueDate });
+    const completed = await window.api.reminders.completePurchase({ id: reminderId, package_id: reminderPkgId, repeat_months, payment_due_date: paymentDueDate });
     if (!completed?.ok) {
       closeModal();
       showToast(completed?.error || 'خرید ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
@@ -8615,7 +8933,13 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     }
   }
   closeModal();
-  showToast(paymentDueDate ? (repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید ثبت شد و یادآوری سررسید ساخته شد ✓') : 'خرید جدید ثبت شد ✓', 'success');
+  const count = services.length;
+  showToast(
+    count > 1
+      ? `${fa(count)} فروش ثبت شد ✓`
+      : (paymentDueDate ? (repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید ثبت شد و یادآوری سررسید ساخته شد ✓') : 'خرید جدید ثبت شد ✓'),
+    'success'
+  );
   if (currentPage === 'reminders') await renderReminders();
   else if (currentPage === 'payments' && _paymentsTab === 'reminders') await renderPayments();
   else if (currentPage === 'payments') await renderPayments();
@@ -25036,7 +25360,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v291';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v293';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
