@@ -3956,6 +3956,72 @@ function _quickTodoDefaultsFromForm() {
   };
 }
 
+function _quickTodoItemKey(item) {
+  return [item.title || '', item.dateJalali || '', item.time || ''].join('\t');
+}
+
+function _quickTodoExtrasStore() {
+  return (window._quickTodoExtras = window._quickTodoExtras || {});
+}
+
+function _patchQuickTodoExtra(el) {
+  const card = el?.closest?.('.todo-quick-hit');
+  if (!card) return;
+  const key = decodeURIComponent(card.dataset.qk || '');
+  if (!key) return;
+  const extras = _quickTodoExtrasStore();
+  extras[key] = extras[key] || { open: true };
+  extras[key].open = true;
+  const field = el.dataset.field;
+  if (field === 'durationMin' || field === 'remindMin') extras[key][field] = el.value === '' ? '' : Number(el.value);
+  else extras[key][field] = el.value;
+}
+
+function _toggleQuickTodoExtra(btn) {
+  const card = btn?.closest?.('.todo-quick-hit');
+  if (!card) return;
+  const key = decodeURIComponent(card.dataset.qk || '');
+  const extras = _quickTodoExtrasStore();
+  extras[key] = extras[key] || {};
+  extras[key].open = !extras[key].open;
+  _updateQuickTodoPreview();
+}
+
+function _mergeQuickTodoExtras(item) {
+  const extra = _quickTodoExtrasStore()[_quickTodoItemKey(item)] || {};
+  const time = extra.time != null && extra.time !== '' ? extra.time : item.time;
+  const durationMin = extra.durationMin ? Number(extra.durationMin) : item.durationMin;
+  const remindMin = extra.remindMin === '' || extra.remindMin == null ? null : Number(extra.remindMin);
+  return {
+    ...item,
+    time,
+    durationMin: time ? (durationMin || 30) : 0,
+    note: extra.note || '',
+    remindMin,
+    extraOpen: !!extra.open,
+    extraFilled: !!(extra.note || extra.time || (extra.remindMin !== '' && extra.remindMin != null)),
+  };
+}
+
+function _collectQuickTodosForSave() {
+  const defaults = _quickTodoDefaultsFromForm();
+  return _parseQuickTodos(document.getElementById('todo-quick')?.value || '', defaults)
+    .map(_mergeQuickTodoExtras);
+}
+
+function _quickTodoRemindOptions(selected) {
+  const opts = [
+    ['', 'یادآوری فرم'],
+    ['0', 'بدون یادآوری'],
+    ['5', '۵ دقیقه قبل'],
+    ['15', '۱۵ دقیقه قبل'],
+    ['30', '۳۰ دقیقه قبل'],
+    ['60', '۱ ساعت قبل'],
+  ];
+  const cur = selected == null || selected === '' ? '' : String(selected);
+  return opts.map(([val, label]) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${label}</option>`).join('');
+}
+
 function _updateQuickTodoPreview() {
   const el = document.getElementById('todo-quick-preview');
   const ta = document.getElementById('todo-quick');
@@ -3968,9 +4034,11 @@ function _updateQuickTodoPreview() {
       : '';
     return;
   }
-  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(items.length)} کار تشخیص داده شد</div>` +
-    items.map((item, idx) => {
-      const others = items.filter((_, i) => i !== idx);
+  const live = items.map(_mergeQuickTodoExtras);
+  el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(live.length)} کار تشخیص داده شد · برای هر کدام می‌توانی جزئیات جدا بگذاری</div>` +
+    live.map((item, idx) => {
+      const parsed = items[idx];
+      const others = live.filter((_, i) => i !== idx);
       const conflicts = _quickTodoConflicts(item, { extras: others, assigneeId: defaults.assigneeId });
       const when = `${DateService.disp(item.dateJalali)}${item.time ? ' · ' + item.time + (item.durationMin ? ' تا ' + _todoEndTime(item.time, item.durationMin) : '') : ' · بدون ساعت'}`;
       const warn = conflicts.map(c => {
@@ -3979,7 +4047,25 @@ function _updateQuickTodoPreview() {
         if (c.kind === 'overlap') return `<div class="todo-quick-warn is-overlap">تداخل با «${escapeHtml(label)}»${where}</div>`;
         return `<div class="todo-quick-warn is-near">نزدیک به «${escapeHtml(label)}»${where} (${fa(c.gap)} دقیقه فاصله)</div>`;
       }).join('');
-      return `<div class="todo-quick-hit"><div class="tq-title">${escapeHtml(item.title)}</div><div class="tq-meta">${escapeHtml(when)}${item.category ? ' · ' + escapeHtml(item.category === 'clients' ? 'مشتریان' : item.category === 'routine' ? 'روتین' : item.category === 'personal' ? 'شخصی' : 'عمومی') : ''}</div>${warn}</div>`;
+      const key = encodeURIComponent(_quickTodoItemKey(parsed));
+      const extra = item.extraOpen ? `<div class="todo-quick-extra">
+        <textarea class="form-textarea" rows="2" data-field="note" data-no-voice placeholder="توضیح همین کار" oninput="_patchQuickTodoExtra(this)">${escapeHtml(item.note || '')}</textarea>
+        <div class="todo-quick-extra-row">
+          <input class="form-input" type="time" data-field="time" value="${escapeHtml(item.time || '')}" oninput="_patchQuickTodoExtra(this)" style="direction:ltr">
+          <input class="form-input" type="number" min="5" step="5" data-field="durationMin" value="${item.durationMin || 30}" oninput="_patchQuickTodoExtra(this)" placeholder="دقیقه" style="direction:ltr;text-align:center">
+          <select class="form-input" data-field="remindMin" onchange="_patchQuickTodoExtra(this)">${_quickTodoRemindOptions(item.remindMin)}</select>
+        </div>
+      </div>` : '';
+      return `<div class="todo-quick-hit${item.extraOpen ? ' is-open' : ''}" data-qk="${key}">
+        <div class="todo-quick-hit-head">
+          <div>
+            <div class="tq-title">${escapeHtml(item.title)}${item.extraFilled ? ' ·' : ''}</div>
+            <div class="tq-meta">${escapeHtml(when)}</div>
+          </div>
+          <button type="button" class="tq-more" onclick="_toggleQuickTodoExtra(this)">${item.extraOpen ? 'بستن' : 'جزئیات'}</button>
+        </div>
+        ${warn}${extra}
+      </div>`;
     }).join('');
 }
 
@@ -3994,6 +4080,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
     return;
   }
   _requestNotificationPermission();
+  window._quickTodoExtras = {};
   const today = _todayJalaliStr();
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
   const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
@@ -4281,7 +4368,7 @@ function _buildTodoRecord(meta, fields) {
     category: fields.category || meta.category,
     main_today_rank: _jalaliKey(dateJalali) === _jalaliToday() ? (mainTodayRank || 0) : 0,
     goal_id: meta.goalId ? +meta.goalId : null,
-    remind_min: meta.remindMin,
+    remind_min: fields.remindMin != null ? Number(fields.remindMin) : meta.remindMin,
     sync_gcal: meta.syncGcal,
     gcal_event_id: null,
     gcal_calendar_id: meta.syncGcal ? _gcal.calendarId() : null,
@@ -4338,7 +4425,7 @@ async function saveTodo() {
   window._todoSaveInProgress = true;
   _todosInit();
   const quickRaw = document.getElementById('todo-quick')?.value || '';
-  const quickItems = _parseQuickTodos(quickRaw, _quickTodoDefaultsFromForm());
+  const quickItems = _collectQuickTodosForSave();
   if (quickRaw.trim()) {
     if (!quickItems.length) {
       window._todoSaveInProgress = false;
@@ -4347,12 +4434,13 @@ async function saveTodo() {
     }
     const meta = _todoCreateMetaFromForm();
     if (meta.error) { window._todoSaveInProgress = false; showToast(meta.error, 'error'); return; }
-    if (meta.remindMin > 0 && !quickItems.some(item => item.time)) {
+    const anyRemind = quickItems.some(item => (item.remindMin != null ? item.remindMin : meta.remindMin) > 0);
+    if (anyRemind && !quickItems.some(item => item.time)) {
       window._todoSaveInProgress = false;
       showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
       return;
     }
-    if (meta.remindMin > 0 && !(await _ensureReminderPushEnabled('notif-status'))) {
+    if (anyRemind && !(await _ensureReminderPushEnabled('notif-status'))) {
       window._todoSaveInProgress = false;
       return;
     }
@@ -4362,8 +4450,9 @@ async function saveTodo() {
       time: item.time,
       durationMin: item.durationMin,
       category: item.category,
-      note: '',
+      note: item.note || '',
       mainTodayRank: 0,
+      remindMin: item.remindMin != null ? item.remindMin : meta.remindMin,
     }));
     if (_isTeamGuest() && created.some(t => !t.assignee_id && !t.assignee_email)) {
       window._todoSaveInProgress = false;
