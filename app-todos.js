@@ -3666,7 +3666,7 @@ function _normalizeQuickTodoText(text) {
     const n = _faNumWordValue(w);
     return p + (n != null ? n : w);
   });
-  s = s.replace(new RegExp('(' + alt + ')(\\s*(?:دقیقه|ساعت|صبح|ظهر|عصر|شب|بعد[\\s]*از[\\s]*ظهر))', 'g'), (_, w, rest) => {
+  s = s.replace(new RegExp('(' + alt + ')(\\s*(?:دقیقه|ساعت|ماه|سال|روز|صبح|ظهر|عصر|شب|بعد[\\s]*از[\\s]*ظهر))', 'g'), (_, w, rest) => {
     const n = _faNumWordValue(w);
     return (n != null ? n : w) + rest;
   });
@@ -3711,8 +3711,15 @@ function _quickTodoFindWeekday(work) {
   return _QUICK_TODO_WEEKDAYS.find(wd => wd.re.test(String(work || ''))) || null;
 }
 
-function _quickTodoRelDaysRe() {
-  return /(\d+)\s*روز[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/;
+function _quickTodoRelDateRe() {
+  return /(\d+)\s*(روز|ماه|سال)[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/;
+}
+
+function _quickTodoShiftByRel(parts, n, unit) {
+  const count = parseInt(n, 10) || 0;
+  if (unit === 'سال') return _addMonths(parts[0], parts[1], parts[2], count * 12);
+  if (unit === 'ماه') return _addMonths(parts[0], parts[1], parts[2], count);
+  return _addDays(parts[0], parts[1], parts[2], count);
 }
 
 function _quickTodoGuessHour(h, periodWord) {
@@ -3740,15 +3747,25 @@ function _extractQuickTodoDate(line, defaults) {
   const nextWeekRe = _quickTodoNextWeekRe();
   const wantsNextWeek = nextWeekRe.test(work);
   const weekday = _quickTodoFindWeekday(work);
-  const rel = work.match(_quickTodoRelDaysRe());
+  const rel = work.match(_quickTodoRelDateRe());
+  const stripWeekday = () => {
+    if (!weekday) return;
+    work = work.replace(nextWeekRe, ' ');
+    work = work.replace(new RegExp('(?:این\\s+)?' + weekday.re.source), ' ');
+  };
   if (rel) {
-    dateJalali = _quickTodoShiftDate(todayParts, parseInt(rel[1], 10) || 0);
+    const shifted = _quickTodoShiftByRel(todayParts, rel[1], rel[2]);
     work = work.replace(rel[0], ' ');
+    if (weekday) {
+      dateJalali = _quickTodoNextWeekday(shifted, weekday.js);
+      stripWeekday();
+    } else {
+      dateJalali = _formatJalali(...shifted);
+    }
   } else if (weekday && wantsNextWeek) {
     const nextWeekStart = _addDays(..._quickTodoWeekStartParts(todayParts), 7);
     dateJalali = _quickTodoWeekdayInWeek(nextWeekStart, weekday.js);
-    work = work.replace(nextWeekRe, ' ');
-    work = work.replace(new RegExp('(?:این\\s+)?' + weekday.re.source), ' ');
+    stripWeekday();
   } else if (/پس[\s-]*فردا/.test(work)) {
     dateJalali = _quickTodoShiftDate(todayParts, 2);
     work = work.replace(/پس[\s-]*فردا/g, ' ');
@@ -3791,7 +3808,7 @@ function _extractQuickTodoDuration(line) {
 }
 
 function _extractQuickTodoTime(line) {
-  let work = String(line || '').replace(_quickTodoRelDaysRe(), ' ');
+  let work = String(line || '').replace(_quickTodoRelDateRe(), ' ');
   let time = '';
   const applyPeriod = (hRaw, mRaw, periodWord) => {
     return _quickTodoPadTime(_quickTodoGuessHour(hRaw, periodWord), parseInt(mRaw || '0', 10));
@@ -3814,7 +3831,7 @@ function _extractQuickTodoTime(line) {
     time = _quickTodoPadTime(colon[1], colon[2]);
     work = work.replace(colon[0], ' ');
   } else {
-    const military = work.match(/(?:^|[^\d])(1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|روز|\d))/);
+    const military = work.match(/(?:^|[^\d])(1[3-9]|2[0-3])(?!\s*(?:دقیقه|ساعت|روز|ماه|سال|\d))/);
     if (military) {
       time = _quickTodoPadTime(military[1], 0);
       work = work.replace(military[1], ' ');
@@ -3826,8 +3843,8 @@ function _extractQuickTodoTime(line) {
 function _cleanQuickTodoTitle(s) {
   return String(s || '')
     .replace(/بعد[\s]*از[\s]*ظهر/g, ' ')
-    .replace(/\d+\s*روز/g, ' ')
-    .replace(/(?:^|[\s،,;؛])(?:ساعت|تاریخ|روز|مدت|انجام|هفته|آینده|دیگر|دیگه|صبح|ظهر|عصر|شب)(?=[\s،,;؛]|$)/g, ' ')
+    .replace(/\d+\s*(?:روز|ماه|سال)/g, ' ')
+    .replace(/(?:^|[\s،,;؛])(?:ساعت|تاریخ|روز|ماه|سال|مدت|انجام|هفته|آینده|دیگر|دیگه|صبح|ظهر|عصر|شب)(?=[\s،,;؛]|$)/g, ' ')
     .replace(/^[و،,؛;:.+\-*/|\\()\[\]{}"'\s]+/g, '')
     .replace(/[،,؛;:.+\-*/|\\()\[\]{}"'\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')
@@ -3847,7 +3864,7 @@ function _quickTodoDateAnchorRe() {
   const nextWeek = 'هفته[\\s]*(?:ی\\s*)?(?:آینده|بعد|دیگر|دیگه)';
   return new RegExp(
     'امروز|فردا|پس[\\s-]*فردا|' +
-    '\\d+\\s*روز[\\s]*(?:ی\\s*)?(?:دیگه|دیگر|بعد)|' +
+    '\\d+\\s*(?:روز|ماه|سال)[\\s]*(?:ی\\s*)?(?:دیگه|دیگر|بعد)|' +
     '(?:این\\s+)?' + weekday + '(?:\\s+' + nextWeek + ')?|' +
     nextWeek + '(?:\\s+' + weekday + ')?|' +
     '(14\\d{2}|13\\d{2})[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,2}',
@@ -3874,6 +3891,7 @@ function _quickTodoPrefixHasTitle(prefix) {
     .replace(/\d{1,2}\s*(?:صبح|ظهر|عصر|شب|بعد[\s]*از[\s]*ظهر)/g, ' ')
     .replace(/\d+(?:\.\d+)?\s*(?:دقیقه|ساعت)/g, ' ')
     .replace(/\d+\s*روز[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/g, ' ')
+    .replace(/\d+\s*(?:ماه|سال)[\s]*(?:ی\s*)?(?:دیگه|دیگر|بعد)/g, ' ')
     .replace(/بعد[\s]*از[\s]*ظهر/g, ' ');
   const title = _cleanQuickTodoTitle(stripped);
   return !!(title && title.length > 1);
