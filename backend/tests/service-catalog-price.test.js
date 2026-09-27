@@ -24,6 +24,7 @@ test('sales header exposes the services and products catalog', () => {
   assert.match(finance, /saveServiceProductPrice/);
   assert.match(finance, /saveServiceProductLabel/);
   assert.match(finance, /saveServiceProductUnit/);
+  assert.match(finance, /saveServiceProductColor/);
   assert.match(app, /کیلو/);
   assert.match(app, /سفارشی/);
   assert.match(app, /openServiceProductsCatalog/);

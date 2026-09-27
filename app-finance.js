@@ -274,23 +274,27 @@ async function openServiceProductsCatalog() {
     const price = _pkgTypePrice(pt.price);
     const hint = _pkgTypeUnitHint(pt);
     return `<div class="service-price-row">
-      <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
+      <input type="color" class="color-input" value="${escapeHtml(pt.color || '#7c6af7')}" title="رنگ خدمت" onchange="saveServiceProductColor(${pt.id}, this.value)">
       <input class="form-input service-price-name" value="${escapeHtml(pt.label)}" onchange="saveServiceProductLabel(${pt.id}, this.value)">
       ${_pkgUnitSelectHtml(pt, {
         onchange: `onPkgUnitKindChange(this);saveServiceProductUnit(${pt.id}, this)`,
         customOnchange: `saveServiceProductUnit(${pt.id}, this)`,
       })}
-      <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
+      <div class="service-price-amount">
+        <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
+      </div>
     </div>`;
   }).join('') : `<div class="empty" style="padding:18px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
   openModal('خدمات و محصولات', `
-    <p class="service-price-hint">نام، واحد و قیمت پیش‌فرض — در فروش جدید همین مبلغ پیشنهاد می‌شود.</p>
+    <p class="service-price-hint">نام، رنگ، واحد و قیمت پیش‌فرض — در فروش جدید همین مبلغ پیشنهاد می‌شود.</p>
     <div class="service-price-list">${rows}</div>
     <div class="service-price-add">
       <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید">
       ${_pkgUnitSelectHtml({}, { id: 'svc-cat-new-unit', customId: 'svc-cat-new-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
-      <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت">
-      <input type="color" class="color-input" id="svc-cat-new-color" value="#7c6af7">
+      <div class="service-price-amount">
+        <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت">
+      </div>
+      <input type="color" class="color-input" id="svc-cat-new-color" value="#7c6af7" title="رنگ خدمت">
       <button class="btn btn-primary btn-sm" type="button" onclick="addServiceProductFromCatalog()">+ افزودن</button>
     </div>
   `, [
@@ -304,6 +308,14 @@ async function saveServiceProductPrice(id, price) {
   const pt = PKG_TYPES.find(x => x.id === id);
   if (pt) pt.price = next;
   showToast('قیمت ذخیره شد ✓', 'success');
+}
+
+async function saveServiceProductColor(id, color) {
+  const next = color || '#7c6af7';
+  await window.api.packageTypes.update({ id, color: next });
+  const pt = PKG_TYPES.find(x => x.id === id);
+  if (pt) pt.color = next;
+  showToast('رنگ ذخیره شد ✓', 'success');
 }
 
 async function saveServiceProductLabel(id, label) {
