@@ -701,9 +701,24 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .service-price-row .service-price-name {
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
   font-size: 13px;
   font-weight: 600;
+}
+.service-unit-select {
+  width: 96px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+}
+.service-unit-custom {
+  width: 92px;
+  flex-shrink: 0;
+}
+.np-svc-unit {
+  font-size: 11px;
+  color: var(--text3);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .service-price-row .amount-input {
   width: 150px;
@@ -1931,7 +1946,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 /* ── Settings page ──────────────────────────────────────────────────── */
 .settings-list { display: flex; flex-direction: column; gap: 8px; }
 .settings-pkg-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 12px; background: var(--bg3); border-radius: 8px;
 }
 .color-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; border: 2px solid var(--border2); }
@@ -2869,7 +2884,9 @@ body.light mark { background: rgba(251,191,36,.5); }
   .service-price-row{
     flex-wrap:wrap;
   }
-  .service-price-row .amount-input{
+  .service-price-row .amount-input,
+  .service-price-row .service-unit-select,
+  .service-price-row .service-unit-custom{
     width:100%;
   }
   .np-svc-row{

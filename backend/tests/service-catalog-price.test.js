@@ -22,10 +22,14 @@ test('sales header exposes the services and products catalog', () => {
   assert.match(finance, /openServiceProductsCatalog\(\)/);
   assert.match(finance, /خدمات و محصولات/);
   assert.match(finance, /saveServiceProductPrice/);
+  assert.match(finance, /saveServiceProductLabel/);
+  assert.match(finance, /saveServiceProductUnit/);
+  assert.match(finance, /کیلو/);
+  assert.match(finance, /سفارشی/);
   assert.match(app, /openServiceProductsCatalog/);
 });
 
-test('package type price is stored, updated, and reused as default sale amount', () => {
+test('package type price and unit are stored and reused', () => {
   const db = {
     package_types: [{ id: 1, key: 'pt1', label: 'پخت پیک گوسفندی', color: '#f87171', price: 0 }],
     packages: [],
@@ -42,13 +46,25 @@ test('package type price is stored, updated, and reused as default sale amount',
   });
   vm.runInContext(fn(app, '_pkgTypePrice'), context);
   vm.runInContext(fn(app, 'packageTypeDefaultPrice'), context);
+  vm.runInContext(fn(app, '_pkgTypeUnitKind'), context);
+  vm.runInContext(fn(app, '_pkgTypeUnitLabel'), context);
+  vm.runInContext(fn(app, '_pkgTypeUnitHint'), context);
+  vm.runInContext(fn(app, '_pkgTypeUnitPatch'), context);
   context._mergeDuplicatePackageTypes = () => ({ merged: 0, reassigned: 0 });
   const start = app.indexOf('  packageTypes: {');
   const end = app.indexOf('\n  families:', start);
   context.api = vm.runInContext('({' + app.slice(start, end) + '})', context).packageTypes;
-  return context.api.update({ id: 1, price: '2500000' }).then(() => {
+  return context.api.update({ id: 1, price: '2500000', unit: 'kg', label: 'پخت پیک گوسفندی' }).then(() => {
     assert.equal(db.package_types[0].price, 2500000);
+    assert.equal(db.package_types[0].unit, 'kg');
+    assert.equal(db.package_types[0].label, 'پخت پیک گوسفندی');
     assert.equal(context.packageTypeDefaultPrice(1), 2500000);
+    assert.equal(context._pkgTypeUnitLabel(db.package_types[0]), 'کیلو');
+    assert.equal(context._pkgTypeUnitHint(db.package_types[0]), 'تومان / کیلو');
     assert.equal(context.packageTypeDefaultPrice(99), 0);
+  }).then(() => context.api.update({ id: 1, unit: 'custom', unit_label: 'بسته' })).then(() => {
+    assert.equal(db.package_types[0].unit, 'custom');
+    assert.equal(db.package_types[0].unit_label, 'بسته');
+    assert.equal(context._pkgTypeUnitLabel(db.package_types[0]), 'بسته');
   });
 });
