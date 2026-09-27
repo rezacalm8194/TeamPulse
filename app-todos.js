@@ -490,12 +490,9 @@ function _todoFormSections() {
   const byId = id => document.getElementById(id);
   const quickCapture = byId('todo-quick')?.closest('.form-group');
   const titleGroup = byId('todo-title')?.closest('.form-group');
-  const accessGroup = byId('todo-assignee')?.closest('.form-group');
   const noteGroup = byId('todo-note')?.closest('.form-group');
+  const accessGroup = byId('todo-assignee')?.closest('.form-group');
   const mainTodayGroup = byId('todo-main-today-rank')?.closest('.form-group');
-  const dateGroup = byId('todo-date')?.closest('.form-group');
-  const timeGroup = byId('todo-time')?.closest('.form-group');
-  const durationGroup = byId('todo-duration')?.closest('.form-group');
   const priorityGroup = byId('todo-priority')?.closest('div[style*="margin-bottom"]');
   const categoryGroup = byId('todo-category')?.closest('.form-group');
   const goalGroup = byId('todo-goal')?.closest('.form-group');
@@ -505,21 +502,18 @@ function _todoFormSections() {
   return {
     quick: [
       quickCapture,
+    ],
+    details: [
       titleGroup,
-      dateGroup,
-      timeGroup,
-      durationGroup,
+      noteGroup,
+      accessGroup,
+      mainTodayGroup,
+      byId('todo-schedule-row'),
       repeatGroup,
       byId('weekdays-picker'),
       remindGroup,
       byId('notif-status'),
       gcalGroup,
-    ],
-    details: [
-      quickCapture,
-      noteGroup,
-      accessGroup,
-      mainTodayGroup,
       priorityGroup,
       categoryGroup,
       goalGroup,
@@ -534,12 +528,15 @@ function _setTodoFormTab(tab) {
   const all = new Set();
   Object.values(sections).flat().filter(Boolean).forEach(el => all.add(el));
   all.forEach(el => { el.style.display = 'none'; });
-  (sections[tab] || sections.quick).filter(Boolean).forEach(el => { el.style.display = ''; });
-  if (tab === 'quick') {
+  (sections[tab] || sections.quick).filter(Boolean).forEach(el => {
+    el.style.display = el.id === 'todo-schedule-row' ? 'grid' : '';
+  });
+  if (tab === 'details') {
     _onTodoRepeatChange(document.getElementById('todo-repeat')?.value || 'none');
   } else {
     const weekdays = document.getElementById('weekdays-picker');
     if (weekdays) weekdays.style.display = 'none';
+    setTimeout(() => document.getElementById('todo-quick')?.focus(), 30);
   }
 }
 
@@ -547,7 +544,6 @@ function _setTodoFormTab(tab) {
 function _initTodoFormTabs() {
   const title = document.getElementById('todo-title');
   if (!title || document.getElementById('todo-form-tabs')) return;
-  const noteGroup = document.getElementById('todo-note')?.closest('.form-group');
   const tabs = document.createElement('div');
   tabs.id = 'todo-form-tabs';
   tabs.className = 'todo-form-tabs';
@@ -555,7 +551,8 @@ function _initTodoFormTabs() {
     <button type="button" class="active" data-tab="quick" onclick="_setTodoFormTab('quick')">سریع</button>
     <button type="button" data-tab="details" onclick="_setTodoFormTab('details')">جزئیات</button>
   `;
-  (noteGroup || title.closest('.form-group'))?.before(tabs);
+  const mount = document.getElementById('todo-quick')?.closest('.form-group') || title.closest('.form-group');
+  mount?.before(tabs);
   _setTodoFormTab('quick');
 }
 
@@ -3967,8 +3964,8 @@ function _updateQuickTodoPreview() {
   const items = _parseQuickTodos(ta.value, defaults);
   if (!items.length) {
     el.innerHTML = ta.value.trim()
-      ? '<div style="font-size:11px;color:var(--amber)">کاری با عنوان قابل تشخیص پیدا نشد — هر خط یک کار، با روز و ساعت.</div>'
-      : '<div style="font-size:11px;color:var(--text3)">هر خط یک کار. مثلاً: فردا ۱۰ صبح تماس با مشتری ۳۰ دقیقه</div>';
+      ? '<div style="font-size:11px;color:var(--amber)">کاری تشخیص داده نشد — عنوان را واضح‌تر بنویس.</div>'
+      : '';
     return;
   }
   el.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:6px">${fa(items.length)} کار تشخیص داده شد</div>` +
@@ -4020,9 +4017,8 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
 
   openModal('✅ کار جدید', `
     <div class="form-group full todo-quick-box">
-      <label class="form-label">ثبت سریع چند کار (اختیاری)</label>
-      <textarea class="form-textarea" id="todo-quick" rows="3" oninput="_updateQuickTodoPreview()" autofocus placeholder="هر خط یک کار — مثلاً:&#10;چهارشنبه هفته آینده جلسه با علی&#10;فردا ۱۰ صبح تماس با اسرافیلیان ۳۰ دقیقه"></textarea>
-      <div id="todo-quick-preview" style="margin-top:8px"><div style="font-size:11px;color:var(--text3)">متن یا وویس بده؛ روز و ساعت را می‌خواند و اگر با برنامهٔ همان مسئول تداخل داشته باشد هشدار می‌دهد.</div></div>
+      <textarea class="form-textarea" id="todo-quick" rows="4" oninput="_updateQuickTodoPreview()" autofocus placeholder="هر خط یک کار — مثلاً:&#10;چهارشنبه هفته آینده جلسه با فاطمه&#10;فردا ۱۰ صبح تماس با فاطمه ۳۰ دقیقه"></textarea>
+      <div id="todo-quick-preview"></div>
     </div>
     <div class="form-group full">
       <label class="form-label">عنوان کار *</label>
@@ -4052,7 +4048,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
       </div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text2);cursor:pointer"><input type="checkbox" id="todo-requires-approval" style="width:16px;height:16px;accent-color:var(--accent)"> نیاز به تأیید مدیر دارد</label>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:start">
+    <div id="todo-schedule-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:start">
       <div class="form-group">
         <label class="form-label" style="display:flex;align-items:center;gap:4px">
           📅 تاریخ
