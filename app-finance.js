@@ -272,19 +272,25 @@ async function openServiceProductsCatalog() {
   PKG_TYPES = await window.api.packageTypes.getAll();
   const rows = PKG_TYPES.length ? PKG_TYPES.map(pt => {
     const price = _pkgTypePrice(pt.price);
+    const hint = _pkgTypeUnitHint(pt);
     return `<div class="settings-pkg-row service-price-row">
       <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
-      <span class="service-price-name">${escapeHtml(pt.label)}</span>
-      <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="قیمت (تومان)" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
+      <input class="form-input service-price-name" value="${escapeHtml(pt.label)}" onchange="saveServiceProductLabel(${pt.id}, this.value)">
+      ${_pkgUnitSelectHtml(pt, {
+        onchange: `onPkgUnitKindChange(this);saveServiceProductUnit(${pt.id}, this)`,
+        customOnchange: `saveServiceProductUnit(${pt.id}, this)`,
+      })}
+      <input class="form-input amount-input" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${price || ''}" onchange="saveServiceProductPrice(${pt.id}, this.value)">
     </div>`;
   }).join('') : `<div class="empty" style="padding:28px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
   openModal('خدمات و محصولات', `
     <p style="font-size:12px;color:var(--text2);margin:0 0 12px;line-height:1.8">
-      قیمت پیش‌فرض هر خدمت را وارد یا ویرایش کنید. در فروش جدید همین مبلغ به‌صورت خودکار پیشنهاد می‌شود.
+      نام، واحد سنجش (کیلو، عدد یا سفارشی) و قیمت پیش‌فرض هر خدمت را وارد یا ویرایش کنید. در فروش جدید همین مبلغ به‌صورت خودکار پیشنهاد می‌شود.
     </p>
     <div class="settings-list service-price-list">${rows}</div>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;flex-wrap:wrap">
       <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید" style="min-width:160px;flex:1">
+      ${_pkgUnitSelectHtml({}, { id: 'svc-cat-new-unit', customId: 'svc-cat-new-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
       <input class="form-input amount-input" id="svc-cat-new-price" type="number" min="0" placeholder="قیمت (تومان)" style="width:140px">
       <input type="color" class="color-input" id="svc-cat-new-color" value="#7c6af7">
       <button class="btn btn-primary" type="button" onclick="addServiceProductFromCatalog()">+ افزودن</button>
@@ -302,12 +308,45 @@ async function saveServiceProductPrice(id, price) {
   showToast('قیمت ذخیره شد ✓', 'success');
 }
 
+async function saveServiceProductLabel(id, label) {
+  const next = String(label || '').trim();
+  if (!next) {
+    showToast('نام خدمت را وارد کنید', 'error');
+    await openServiceProductsCatalog();
+    return;
+  }
+  const result = await window.api.packageTypes.update({ id, label: next });
+  const pt = PKG_TYPES.find(x => x.id === id);
+  if (pt) pt.label = next;
+  if (result?.merged) {
+    showToast(`${fa(result.merged)} مورد تکراری با حفظ سوابق ادغام شد ✓`, 'success');
+    await openServiceProductsCatalog();
+    return;
+  }
+  showToast('نام ذخیره شد ✓', 'success');
+}
+
+async function saveServiceProductUnit(id, el) {
+  const row = el?.closest('.service-price-row, .settings-pkg-row, .modal-actions');
+  const select = row?.querySelector('.service-unit-select');
+  const custom = row?.querySelector('.service-unit-custom');
+  const unit = _pkgTypeUnitKind(select?.value);
+  const unit_label = unit === 'custom' ? String(custom?.value || '').trim() : '';
+  await window.api.packageTypes.update({ id, unit, unit_label });
+  const pt = PKG_TYPES.find(x => x.id === id);
+  if (pt) { pt.unit = unit; pt.unit_label = unit_label; }
+  showToast('واحد ذخیره شد ✓', 'success');
+}
+
 async function addServiceProductFromCatalog() {
   const label = document.getElementById('svc-cat-new-label')?.value.trim();
   const color = document.getElementById('svc-cat-new-color')?.value || '#7c6af7';
   const price = _pkgTypePrice(document.getElementById('svc-cat-new-price')?.value);
+  const unit = _pkgTypeUnitKind(document.getElementById('svc-cat-new-unit')?.value);
+  const unit_label = unit === 'custom' ? String(document.getElementById('svc-cat-new-unit-label')?.value || '').trim() : '';
   if (!label) { showToast('نام خدمت را وارد کنید', 'error'); return; }
-  await window.api.packageTypes.add({ label, color, price });
+  if (unit === 'custom' && !unit_label) { showToast('نام واحد سفارشی را وارد کنید', 'error'); return; }
+  await window.api.packageTypes.add({ label, color, price, unit, unit_label });
   PKG_TYPES = await window.api.packageTypes.getAll();
   showToast('اضافه شد ✓', 'success');
   await openServiceProductsCatalog();

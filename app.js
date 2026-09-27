@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp293';
+const TP_ASSET_V = 'tp294';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -49,7 +49,8 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'renderPayments', 'renderFamilies', 'renderReminders', 'renderPurchases',
   'openEditPackage', 'deletePackage', 'openEditPayment', 'deletePayment',
   'openGeneralPurchaseModal', 'openGeneralPaymentModal',
-  'openServiceProductsCatalog', 'saveServiceProductPrice', 'addServiceProductFromCatalog',
+  'openServiceProductsCatalog', 'saveServiceProductPrice', 'saveServiceProductLabel',
+  'saveServiceProductUnit', 'addServiceProductFromCatalog',
   'openAddReminder', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
@@ -693,6 +694,52 @@ function packageTypeDefaultPrice(typeId) {
   return _pkgTypePrice(pt?.price);
 }
 
+function _pkgTypeUnitKind(v) {
+  const s = String(v || '').trim();
+  return s === 'kg' || s === 'count' || s === 'custom' ? s : '';
+}
+
+function _pkgTypeUnitLabel(pt) {
+  const kind = _pkgTypeUnitKind(pt?.unit);
+  if (kind === 'kg') return 'کیلو';
+  if (kind === 'count') return 'عدد';
+  if (kind === 'custom') return String(pt?.unit_label || '').trim();
+  return '';
+}
+
+function _pkgTypeUnitHint(pt) {
+  const label = _pkgTypeUnitLabel(pt);
+  return label ? `تومان / ${label}` : 'تومان';
+}
+
+function _pkgTypeUnitPatch(p) {
+  const unit = Object.prototype.hasOwnProperty.call(p || {}, 'unit') ? _pkgTypeUnitKind(p.unit) : undefined;
+  const unit_label = Object.prototype.hasOwnProperty.call(p || {}, 'unit_label') ? String(p.unit_label || '').trim() : undefined;
+  const patch = {};
+  if (unit !== undefined) patch.unit = unit;
+  if (unit_label !== undefined) patch.unit_label = unit === 'custom' || unit === undefined ? unit_label : '';
+  if (patch.unit && patch.unit !== 'custom') patch.unit_label = '';
+  return patch;
+}
+
+function _pkgUnitSelectHtml(pt, { id = '', customId = '', onchange = '', customOnchange = '' } = {}) {
+  const kind = _pkgTypeUnitKind(pt?.unit);
+  const opts = [
+    ['', 'واحد'],
+    ['kg', 'کیلو'],
+    ['count', 'عدد'],
+    ['custom', 'سفارشی'],
+  ].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('');
+  const customStyle = kind === 'custom' ? '' : 'display:none';
+  return `<select class="form-select service-unit-select"${id ? ` id="${escapeHtml(id)}"` : ''} onchange="${onchange}">${opts}</select>
+    <input class="form-input service-unit-custom" ${customId ? `id="${escapeHtml(customId)}"` : ''} placeholder="مثلاً بسته" value="${escapeHtml(pt?.unit_label || '')}" style="${customStyle}"${customOnchange ? ` onchange="${customOnchange}"` : ''}>`;
+}
+
+function onPkgUnitKindChange(selectEl) {
+  const custom = selectEl?.closest('.service-price-row, .settings-pkg-row, .modal-actions, .np-new-service-row')?.querySelector('.service-unit-custom');
+  if (custom) custom.style.display = selectEl.value === 'custom' ? '' : 'none';
+}
+
 function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
   if (!d || !Array.isArray(d.package_types) || d.package_types.length < 2) return { merged:0, reassigned:0 };
   const packages = Array.isArray(d.packages) ? d.packages : [];
@@ -738,6 +785,10 @@ function _mergeDuplicatePackageTypes(d, { keepBackup = true } = {}) {
     const canonical = group[0].item;
     group.slice(1).forEach(({item}) => {
       if (!_pkgTypePrice(canonical.price) && _pkgTypePrice(item.price)) canonical.price = _pkgTypePrice(item.price);
+      if (!_pkgTypeUnitKind(canonical.unit) && _pkgTypeUnitKind(item.unit)) {
+        canonical.unit = _pkgTypeUnitKind(item.unit);
+        canonical.unit_label = item.unit === 'custom' ? String(item.unit_label || '').trim() : '';
+      }
       packages.forEach(pkg => {
         if (String(pkg.type_id) === String(item.id)) { pkg.type_id = canonical.id; reassigned++; }
       });
@@ -2839,15 +2890,16 @@ window.api = {
       const existing = _db.package_types.find(x => _serviceMergeKey(x.label) === _serviceMergeKey(label));
       const item = existing || (() => {
         const id=_nextId('package_types');
-        const next={id,key:'pt'+id,label,color:p.color||'#7c6af7',price:_pkgTypePrice(p.price)};
+        const next={id,key:'pt'+id,label,color:p.color||'#7c6af7',price:_pkgTypePrice(p.price),..._pkgTypeUnitPatch(p)};
         _db.package_types.push(next);
         return next;
       })();
       if (existing && Object.prototype.hasOwnProperty.call(p, 'price')) existing.price = _pkgTypePrice(p.price);
+      if (existing) Object.assign(existing, _pkgTypeUnitPatch(p));
       _save();
       return _P(item);
     },
-    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id);let merge={merged:0,reassigned:0};if(pt){if(p.label!=null)pt.label=String(p.label||'').trim();if(p.color!=null)pt.color=p.color;if(Object.prototype.hasOwnProperty.call(p,'price'))pt.price=_pkgTypePrice(p.price);merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(merge.merged)_forceNextServerSync();_save();} return _P({ok:true,...merge}); },
+    update: (p)=>{ const pt=_db.package_types.find(x=>x.id===p.id);let merge={merged:0,reassigned:0};if(pt){if(p.label!=null)pt.label=String(p.label||'').trim();if(p.color!=null)pt.color=p.color;if(Object.prototype.hasOwnProperty.call(p,'price'))pt.price=_pkgTypePrice(p.price);Object.assign(pt,_pkgTypeUnitPatch(p));merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(merge.merged)_forceNextServerSync();_save();} return _P({ok:true,...merge}); },
     mergeDuplicates: ()=>{const result=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(result.merged){_forceNextServerSync();_save();}return _P({ok:true,...result});},
     delete: (id)=>{ if(_db.packages.some(p=>p.type_id===id))return _P({ok:false,error:'این نوع پکیج در حال استفاده است'}); _db.package_types=_db.package_types.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
     reorder: (order)=>{ const s=[]; order.forEach(id=>{const pt=_db.package_types.find(x=>x.id===id);if(pt)s.push(pt);}); _db.package_types.filter(x=>!order.includes(x.id)).forEach(x=>s.push(x)); _db.package_types=s; _save(); return _P({ok:true}); },
@@ -8599,14 +8651,17 @@ function newPurchaseServicePickerHtml(preset = {}) {
     const on = selectedId && String(pt.id) === selectedId;
     const catalogPrice = packageTypeDefaultPrice(pt.id);
     const price = on && Number(preset.amount) > 0 ? Number(preset.amount) : catalogPrice;
+    const unitLabel = _pkgTypeUnitLabel(pt);
+    const hint = _pkgTypeUnitHint(pt);
     return `
       <div class="np-svc-row${on ? ' is-on' : ''}" data-type-id="${pt.id}" data-label="${escapeHtml(pt.label || '')}">
         <label class="pkg-check${on ? ' checked' : ''}">
           <input type="checkbox" class="np-svc-cb" value="${pt.id}" ${on ? 'checked' : ''} onchange="onNewPurchaseServiceToggle(this)">
           <span class="color-dot" style="background:${escapeHtml(pt.color || '#7c6af7')}"></span>
           <span class="np-svc-name">${escapeHtml(pt.label || '')}</span>
+          ${unitLabel ? `<span class="np-svc-unit">/ ${escapeHtml(unitLabel)}</span>` : ''}
         </label>
-        <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+        <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
       </div>`;
   }).join('');
   return `
@@ -8628,6 +8683,7 @@ function newPurchaseServicePickerHtml(preset = {}) {
       <div id="np-new-service-fields" class="np-new-service-fields" style="display:none">
         <div class="np-new-service-row">
           <input class="form-input" id="np-new-service-label" placeholder="نام خدمت جدید">
+          ${_pkgUnitSelectHtml({}, { id: 'np-new-service-unit', customId: 'np-new-service-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
           <input type="color" class="color-input" id="np-new-service-color" value="#7c6af7">
           <input class="form-input amount-input" id="np-new-service-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت" oninput="updateNewPurchaseSummary()">
         </div>
@@ -8786,11 +8842,17 @@ async function resolveNewPurchaseExtraService() {
   const label = document.getElementById('np-new-service-label')?.value.trim();
   const color = document.getElementById('np-new-service-color')?.value || '#7c6af7';
   const amount = +(document.getElementById('np-new-service-amount')?.value || 0);
+  const unit = _pkgTypeUnitKind(document.getElementById('np-new-service-unit')?.value);
+  const unit_label = unit === 'custom' ? String(document.getElementById('np-new-service-unit-label')?.value || '').trim() : '';
   if (!label) {
     showToast('نام خدمت جدید را وارد کنید', 'error');
     return false;
   }
-  const item = await window.api.packageTypes.add({ label, color, price: amount });
+  if (unit === 'custom' && !unit_label) {
+    showToast('نام واحد سفارشی را وارد کنید', 'error');
+    return false;
+  }
+  const item = await window.api.packageTypes.add({ label, color, price: amount, unit, unit_label });
   PKG_TYPES = await window.api.packageTypes.getAll();
   const typeId = +item.id || +(PKG_TYPES.find(x => _serviceLabelKey(x.label) === _serviceLabelKey(label))?.id || 0);
   if (!typeId) {
@@ -11354,6 +11416,7 @@ async function renderSettings() {
       </div>
       <div class="modal-actions" style="justify-content:center;margin-top:14px">
         <input class="form-input" id="new-pkg-label" placeholder="نام خدمت جدید" style="max-width:220px">
+        ${_pkgUnitSelectHtml({}, { id: 'new-pkg-unit', customId: 'new-pkg-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
         <input class="form-input amount-input" id="new-pkg-price" type="number" min="0" placeholder="قیمت (تومان)" style="width:140px">
         <input type="color" class="color-input" id="new-pkg-color" value="#7c6af7">
         <button class="btn btn-primary btn-sm" onclick="addPkgType()">+ افزودن</button>
@@ -11366,13 +11429,18 @@ async function renderSettings() {
           <span class="drag-handle" title="بکش تا جابجا کنی" style="color:var(--text3);font-size:18px;cursor:grab;flex-shrink:0">⠿</span>
           <input type="color" class="color-input" value="${pt.color}" onchange="updatePkgType(${pt.id}, this.value, null)">
           <input class="form-input" style="flex:1" value="${escapeHtml(pt.label)}" onchange="updatePkgType(${pt.id}, null, this.value)">
-          <input class="form-input amount-input" type="number" min="0" placeholder="قیمت" title="قیمت پیش‌فرض (تومان)" style="width:120px" value="${pt.price || ''}" onchange="updatePkgTypePrice(${pt.id}, this.value)">
+          ${_pkgUnitSelectHtml(pt, {
+            onchange: `onPkgUnitKindChange(this);updatePkgTypeUnit(${pt.id}, this)`,
+            customOnchange: `updatePkgTypeUnit(${pt.id}, this)`,
+          })}
+          <input class="form-input amount-input" type="number" min="0" placeholder="${escapeHtml(_pkgTypeUnitHint(pt))}" title="${escapeHtml(_pkgTypeUnitHint(pt))}" style="width:120px" value="${pt.price || ''}" onchange="updatePkgTypePrice(${pt.id}, this.value)">
           <button class="btn btn-danger btn-sm" onclick="deletePkgType(${pt.id})">🗑</button>
         </div>`).join('')}
     </div>
     <p style="font-size:10px;color:var(--text3);margin-top:4px">⠿ کنار هر خدمت را بکش تا ترتیب آن را تغییر دهی</p>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:12px">
       <input class="form-input" id="new-pkg-label" placeholder="نام خدمت جدید" style="max-width:220px">
+      ${_pkgUnitSelectHtml({}, { id: 'new-pkg-unit', customId: 'new-pkg-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
       <input class="form-input amount-input" id="new-pkg-price" type="number" min="0" placeholder="قیمت (تومان)" style="width:140px">
       <input type="color" class="color-input" id="new-pkg-color" value="#7c6af7">
       <button class="btn btn-primary" onclick="addPkgType()">+ افزودن</button>
@@ -12074,8 +12142,11 @@ async function addPkgType() {
   const label = document.getElementById('new-pkg-label')?.value.trim();
   const color = document.getElementById('new-pkg-color')?.value || '#7c6af7';
   const price = _pkgTypePrice(document.getElementById('new-pkg-price')?.value);
+  const unit = _pkgTypeUnitKind(document.getElementById('new-pkg-unit')?.value);
+  const unit_label = unit === 'custom' ? String(document.getElementById('new-pkg-unit-label')?.value || '').trim() : '';
   if (!label) { showToast('نام پکیج را وارد کنید', 'error'); return; }
-  await window.api.packageTypes.add({ label, color, price });
+  if (unit === 'custom' && !unit_label) { showToast('نام واحد سفارشی را وارد کنید', 'error'); return; }
+  await window.api.packageTypes.add({ label, color, price, unit, unit_label });
   showToast('اضافه شد ✓', 'success');
   await renderSettings();
 }
@@ -12086,6 +12157,18 @@ async function updatePkgTypePrice(id, price) {
   const pt = PKG_TYPES.find(x => x.id === id);
   if (pt) pt.price = next;
   showToast('قیمت ذخیره شد ✓', 'success');
+}
+
+async function updatePkgTypeUnit(id, el) {
+  const row = el?.closest('.settings-pkg-row');
+  const select = row?.querySelector('.service-unit-select');
+  const custom = row?.querySelector('.service-unit-custom');
+  const unit = _pkgTypeUnitKind(select?.value);
+  const unit_label = unit === 'custom' ? String(custom?.value || '').trim() : '';
+  await window.api.packageTypes.update({ id, unit, unit_label });
+  const pt = PKG_TYPES.find(x => x.id === id);
+  if (pt) { pt.unit = unit; pt.unit_label = unit_label; }
+  showToast('واحد ذخیره شد ✓', 'success');
 }
 
 async function updatePkgType(id, color, label) {
@@ -25360,7 +25443,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v293';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v294';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
