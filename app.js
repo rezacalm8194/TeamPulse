@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp297';
+const TP_ASSET_V = 'tp298';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8663,7 +8663,9 @@ function newPurchaseServicePickerHtml(preset = {}) {
           <span class="np-svc-name">${escapeHtml(pt.label || '')}</span>
           ${unitLabel ? `<span class="np-svc-unit">/ ${escapeHtml(unitLabel)}</span>` : ''}
         </label>
-        <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+        <div class="np-svc-amount-wrap">
+          <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+        </div>
       </div>`;
   }).join('');
   return `
@@ -16365,6 +16367,7 @@ function initDatePickers() {
 function initAmountHints() {
   document.querySelectorAll('.amount-input').forEach(input => {
     if (input._hintAttached) return;
+    if (input.classList.contains('np-svc-amount')) return;
     input._hintAttached = true;
     const hint = document.createElement('div');
     hint.className = 'amount-hint';
@@ -25445,7 +25448,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v297';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v298';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
