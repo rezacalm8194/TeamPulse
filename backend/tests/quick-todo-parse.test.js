@@ -117,9 +117,24 @@ test('quick todo parser understands weekday next week and add-command filler', (
   assert.equal(ctx._jalaliKey(thisWeek[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۰۸'));
 });
 
+test('quick todo parser keeps time with the following date in one spoken sentence', () => {
+  const ctx = load();
+  const items = ctx._parseQuickTodos(
+    'ساعت ۲ بعد از ظهر فردا جلسه با سپیده هفته بعد ساعت ۹ شب جلسه با مهدی',
+    { todayJalali: TODAY }
+  );
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, 'جلسه با سپیده');
+  assert.equal(items[0].time, '14:00');
+  assert.equal(ctx._jalaliKey(items[0].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۰۶'));
+  assert.equal(items[1].title, 'جلسه با مهدی');
+  assert.equal(items[1].time, '21:00');
+  assert.equal(ctx._jalaliKey(items[1].dateJalali), ctx._jalaliKey('۱۴۰۵/۰۷/۱۲'));
+});
+
 test('add-todo modal has quick capture box and save uses parser', () => {
   assert.match(todos, /id="todo-quick"/);
-  assert.match(todos, /function _toggleQuickTodoExtra\(/);
+  assert.match(todos, /function _removeQuickTodoPreview\(/);
   assert.match(todos, /_collectQuickTodosForSave/);
   assert.match(fn(todos, 'saveTodo'), /_collectQuickTodosForSave/);
   assert.match(fn(todos, 'saveTodo'), /todo-quick/);
