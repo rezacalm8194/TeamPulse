@@ -1610,6 +1610,48 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .pkg-check input[type=checkbox] { display: none; }
 .pkg-check.checked { border-color: var(--accent); background: rgba(124,106,247,.12); color: var(--accent2); }
 
+.np-quick-box {
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(124,106,247,.06);
+  position: relative;
+}
+.np-quick-box .form-textarea { padding-left: 42px; padding-bottom: 36px; }
+.np-svc-amount:disabled { opacity: .45; }
+.np-quick-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.np-quick-hit, .np-quick-miss {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 9px; font-size: 12px; flex-wrap: wrap;
+}
+.np-quick-hit { border: 1px solid var(--border2); background: var(--bg2); }
+.np-quick-miss { border: 1px solid rgba(251,191,36,.35); color: var(--amber); }
+.np-svc-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 240px; overflow: auto;
+  margin-top: 8px; padding: 6px;
+  border: 1px solid var(--border2); border-radius: 12px; background: var(--bg3);
+}
+.np-svc-row {
+  display: grid; grid-template-columns: minmax(0,1fr) 118px;
+  gap: 8px; align-items: center;
+  padding: 6px; border-radius: 10px; border: 1px solid transparent;
+}
+.np-svc-row.is-on { border-color: var(--accent); background: rgba(124,106,247,.10); }
+.np-svc-row .pkg-check { width: 100%; }
+.np-svc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-svc-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--text3); }
+.np-new-service-fields { margin-top: 8px; }
+.np-new-service-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.np-new-service-row .form-input { flex: 1; min-width: 140px; }
+.np-cart-summary {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  font-size: 12px; color: var(--text2);
+}
+
 /* ── Detail panel ───────────────────────────────────────── */
 .detail-section {
   background: var(--bg2); border: 1px solid var(--border);
@@ -2828,6 +2870,12 @@ body.light mark { background: rgba(251,191,36,.5); }
     flex-wrap:wrap;
   }
   .service-price-row .amount-input{
+    width:100%;
+  }
+  .np-svc-row{
+    grid-template-columns:1fr;
+  }
+  .np-svc-row .np-svc-amount{
     width:100%;
   }
 
