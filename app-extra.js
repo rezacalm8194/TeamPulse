@@ -5673,17 +5673,8 @@ function _commitGoalPathTodos(goalId, prefix) {
   return created;
 }
 
-function _syncGoalProgressFromLinkedWork(goalId) {
-  const g = (_db.goals || []).find(x => x.id === goalId);
-  if (!g) return;
-  const tasks = _goalLinkedTasks(goalId);
-  if (!tasks.length) return;
-  const milestones = g.milestones || [];
-  const taskRatio = tasks.filter(t => t.done).length / tasks.length;
-  const msRatio = milestones.length ? milestones.filter(m => m.done).length / milestones.length : null;
-  const pct = Math.round((msRatio == null ? taskRatio : (taskRatio * 0.7 + msRatio * 0.3)) * 100);
-  if (pct === +(g.progress || 0)) return;
-  updateGoalProgress(goalId, pct);
+function _syncGoalProgressFromLinkedWork(_goalId) {
+  // انجام اقدام یا اقدامک یعنی حرکت در مسیر، نه رسیدن به خود هدف.
 }
 
 function _goalLinkedPathPreviewHtml(g) {
@@ -6642,174 +6633,97 @@ function _goalStatusMeta(g) {
 function _goalJourneyData(id) {
   _goalsInit();
   if (typeof _todosInit === 'function') _todosInit();
-  if (typeof _habitsInit === 'function') _habitsInit();
   const g = (_db.goals || []).find(x => x.id === id);
   if (!g) return null;
-  const tasks = _goalLinkedTasks(id).slice();
-  const doneTasks = tasks.filter(t => t.done).sort((a, b) =>
+  const doneTasks = _goalLinkedTasks(id).filter(t => t.done).sort((a, b) =>
     (_goalTodoDoneStamp(a) - _goalTodoDoneStamp(b)) || (_goalTodoCreatedStamp(a) - _goalTodoCreatedStamp(b)));
-  const openTasks = tasks.filter(t => !t.done).sort((a, b) => _goalTodoCreatedStamp(a) - _goalTodoCreatedStamp(b));
-  const milestones = g.milestones || [];
-  const habits = (_db.habits || []).filter(h => h.goal_id === id && !h.archived);
-  const habitRows = habits.map(h => {
-    const logs = (_db.habit_logs || []).filter(l => String(l.habit_id) === String(h.id) && l.done);
-    const last = logs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-    return {
-      habit: h,
-      doneCount: logs.length,
-      streak: typeof _habitStreak === 'function' ? _habitStreak(h.id) : 0,
-      lastDate: last ? DateService.disp(last.date) : '',
-    };
-  });
-  const health = _goalHealth(g);
-  const prediction = _goalPrediction(g);
-  const actionsDone = doneTasks.filter(t => _goalActionKind(t) !== 'micro').length;
-  const microsDone = doneTasks.filter(t => _goalActionKind(t) === 'micro').length;
+  const doneActions = doneTasks.filter(t => _goalActionKind(t) !== 'micro');
+  const doneMicros = doneTasks.filter(t => _goalActionKind(t) === 'micro');
   return {
-    g, tasks, doneTasks, openTasks, milestones, habitRows, health, prediction,
-    actionsDone, microsDone,
-    doneMilestones: milestones.filter(m => m.done).length,
+    g,
+    doneActions,
+    doneMicros,
+    milestones: g.milestones || [],
   };
 }
 
 function _goalTaskReportLine(t) {
   const kind = _goalActionKind(t) === 'micro' ? 'اقدامک' : 'اقدام';
-  const mark = t.done ? '✅' : '○';
-  const extra = t.staff_report ? `\n   گزارش انجام: ${t.staff_report}` : '';
-  const note = t.note ? `\n   یادداشت: ${t.note}` : '';
-  return `${mark} [${kind}] ${t.title} — ${_goalTodoWhenLabel(t)}${extra}${note}`;
+  return `✓ ${t.title}${_goalTodoWhenLabel(t) ? ' — ' + _goalTodoWhenLabel(t) : ''} [${kind}]`;
 }
 
 function _goalJourneyText(id) {
   const data = _goalJourneyData(id);
   if (!data) return '';
-  const { g, doneTasks, openTasks, milestones, habitRows, health, prediction } = data;
+  const { g, doneActions, doneMicros, milestones } = data;
   const fa = _goalFaNum;
-  const sc = _goalStatusMeta(g);
   const lines = [
     `گزارش مسیر هدف`,
     `${g.icon || '🎯'} ${g.title}`,
-    `وضعیت: ${sc.label} · پیشرفت ${fa(g.progress || 0)}٪ · سلامت ${health.label} (${fa(health.score)}٪)`,
-    `احتمال موفقیت: ${prediction.value}`,
-    g.why ? `چرا: ${g.why}` : '',
-    g.vision ? `چشم‌انداز: ${g.vision}` : '',
-    g.created_at ? `شروع: ${_goalDispWhen(g.created_at)}` : '',
-    g.deadline ? `ددلاین: ${DateService.disp(g.deadline)}` : '',
-    g.completed_at ? `تکمیل: ${_goalDispWhen(g.completed_at)}` : '',
     '',
-    `اقدام‌های انجام‌شده (${fa(doneTasks.length)})`,
-    ...(doneTasks.length ? doneTasks.map(_goalTaskReportLine) : ['— موردی ثبت نشده']),
+    `اقدام‌های انجام‌شده (${fa(doneActions.length)})`,
+    ...(doneActions.length ? doneActions.map(_goalTaskReportLine) : ['— هنوز اقدامی انجام نشده']),
     '',
-    `اقدام‌های باقیمانده (${fa(openTasks.length)})`,
-    ...(openTasks.length ? openTasks.map(_goalTaskReportLine) : ['— مورد باز نیست']),
+    `اقدامک‌های انجام‌شده (${fa(doneMicros.length)})`,
+    ...(doneMicros.length ? doneMicros.map(_goalTaskReportLine) : ['— هنوز اقدامکی انجام نشده']),
   ];
   if (milestones.length) {
-    lines.push('', `مراحل (${fa(data.doneMilestones)}/${fa(milestones.length)})`);
+    lines.push('', `مراحل (${fa(milestones.filter(m => m.done).length)}/${fa(milestones.length)})`);
     milestones.forEach(m => lines.push(`${m.done ? '✓' : '○'} ${m.title}`));
   }
-  if (habitRows.length) {
-    lines.push('', `عادت‌های مرتبط (${fa(habitRows.length)})`);
-    habitRows.forEach(row => {
-      lines.push(`🔥 ${row.habit.title} · ${fa(row.doneCount)} روز ثبت · استریک ${fa(row.streak)}${row.lastDate ? ' · آخرین: ' + row.lastDate : ''}`);
-    });
-  }
-  if (g.notes) lines.push('', 'یادداشت:', g.notes);
   lines.push('', `TeamPulse · ${DateService.disp((_todayJalaliStr && _todayJalaliStr()) || '')}`);
   return lines.filter((x, i, arr) => x !== '' || arr[i - 1] !== '').join('\n');
 }
 
+function _goalDoneCheckHtml(print) {
+  const bg = print ? '#059669' : 'var(--green)';
+  return `<span style="width:20px;height:20px;border-radius:50%;background:${bg};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;line-height:1">✓</span>`;
+}
+
 function _goalTaskRowHtml(t, print) {
   const kind = _goalActionKind(t) === 'micro' ? 'اقدامک' : 'اقدام';
-  const kindColor = _goalActionKind(t) === 'micro' ? (print ? '#b45309' : 'var(--amber)') : (print ? '#2563eb' : '#60a5fa');
-  const titleColor = t.done ? (print ? '#6b7280' : 'var(--text3)') : (print ? '#111827' : 'var(--text)');
-  const bg = print ? (t.done ? '#f0fdf4' : '#f9fafb') : 'var(--bg3)';
-  const report = t.staff_report ? `<div style="font-size:11px;color:${print ? '#047857' : 'var(--green)'};line-height:1.7;margin-top:4px">گزارش: ${escapeHtml(t.staff_report)}</div>` : '';
-  const note = t.note ? `<div style="font-size:11px;color:${print ? '#6b7280' : 'var(--text3)'};line-height:1.7;margin-top:3px">${escapeHtml(t.note)}</div>` : '';
-  return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;background:${bg};border-radius:8px;margin-bottom:6px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
-    <span style="width:20px;text-align:center;flex-shrink:0">${t.done ? '✅' : '○'}</span>
-    <span style="font-size:10px;font-weight:800;color:${kindColor};padding:2px 7px;border-radius:999px;flex-shrink:0;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">${kind}</span>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:13px;color:${titleColor};${t.done ? 'text-decoration:line-through' : ''}">${escapeHtml(t.title)}</div>
-      ${report}${note}
-    </div>
+  const kindColor = kind === 'اقدامک' ? (print ? '#b45309' : 'var(--amber)') : (print ? '#2563eb' : '#60a5fa');
+  const text = print ? '#111827' : 'var(--text)';
+  const bg = print ? '#fff' : 'var(--bg3)';
+  return `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:${bg};border-radius:8px;margin-bottom:6px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+    ${_goalDoneCheckHtml(print)}
+    <span style="font-size:10px;font-weight:800;color:${kindColor};padding:2px 7px;border-radius:999px;flex-shrink:0">${kind}</span>
+    <span style="flex:1;font-size:13px;color:${text};line-height:1.7">${escapeHtml(t.title)}</span>
     <span style="font-size:10px;color:${print ? '#9ca3af' : 'var(--text3)'};flex-shrink:0">${escapeHtml(_goalTodoWhenLabel(t))}</span>
   </div>`;
 }
 
-function _goalJourneyBodyHtml(data, filter, print) {
+function _goalJourneyBodyHtml(data, print) {
   const fa = _goalFaNum;
-  const { g, doneTasks, openTasks, milestones, habitRows, health, prediction } = data;
-  const showDone = filter !== 'open';
-  const showOpen = filter !== 'done';
-  const sc = _goalStatusMeta(g);
-  const cardBg = print ? '#f9fafb' : 'var(--bg3)';
-  const muted = print ? '#6b7280' : 'var(--text3)';
+  const { g, doneActions, doneMicros, milestones } = data;
   const text = print ? '#111827' : 'var(--text)';
-  const card = (val, label, color) => `<div style="background:${cardBg};border-radius:10px;padding:10px;text-align:center;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
-    <div style="font-size:16px;font-weight:800;color:${color || text}">${val}</div>
-    <div style="font-size:9px;color:${muted};margin-top:3px">${label}</div>
-  </div>`;
+  const muted = print ? '#6b7280' : 'var(--text3)';
+  const heading = print ? '#6b7280' : 'var(--text2)';
+  const border = print ? '#e5e7eb' : 'var(--border)';
   const section = (title, inner) => `<div style="margin-bottom:16px">
-    <div style="font-size:12px;font-weight:800;color:${print ? '#6b7280' : 'var(--text2)'};margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${print ? '#e5e7eb' : 'var(--border)'}">${title}</div>
+    <div style="font-size:12px;font-weight:800;color:${heading};margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${border}">${title}</div>
     ${inner}
   </div>`;
   const empty = msg => `<div style="text-align:center;color:${muted};font-size:12px;padding:10px">${msg}</div>`;
   return `
-    ${g.why ? `<div style="background:${print ? '#ecfdf5' : 'rgba(62,207,142,.09)'};border:1px solid ${print ? '#bbf7d0' : 'rgba(62,207,142,.25)'};border-radius:12px;padding:12px 14px;margin-bottom:14px">
-      <div style="font-size:11px;font-weight:800;color:${print ? '#047857' : 'var(--green)'};margin-bottom:6px">چرا این هدف؟</div>
-      <div style="font-size:13px;line-height:1.9;color:${text}">${escapeHtml(g.why)}</div>
-    </div>` : ''}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
-      ${card(fa(g.progress || 0) + '٪', 'پیشرفت', print ? '#7c3aed' : 'var(--accent2)')}
-      ${card(escapeHtml(health.label), 'سلامت ' + fa(health.score) + '٪', health.color === 'var(--green)' ? (print ? '#059669' : 'var(--green)') : (health.color === 'var(--amber)' ? (print ? '#d97706' : 'var(--amber)') : (print ? '#dc2626' : 'var(--red)')))}
-      ${card(fa(data.doneTasks.length) + '/' + fa(data.tasks.length), 'اقدام انجام‌شده', print ? '#2563eb' : '#60a5fa')}
-      ${card(fa(data.doneMilestones) + '/' + fa(milestones.length), 'مراحل', print ? '#059669' : 'var(--green)')}
-    </div>
-    <div style="font-size:12px;color:${print ? '#4b5563' : 'var(--text2)'};line-height:1.8;margin-bottom:14px">
-      وضعیت: <b>${escapeHtml(sc.label)}</b>
-      ${g.created_at ? ' · شروع ' + escapeHtml(_goalDispWhen(g.created_at)) : ''}
-      ${g.deadline ? ' · ددلاین ' + escapeHtml(DateService.disp(g.deadline)) : ''}
-      ${g.completed_at ? ' · تکمیل ' + escapeHtml(_goalDispWhen(g.completed_at)) : ''}
-      <div style="margin-top:4px">${escapeHtml(prediction.text)}</div>
-    </div>
-    ${g.vision ? section('چشم‌انداز', `<div style="font-size:13px;line-height:1.9;color:${text}">${escapeHtml(g.vision)}</div>`) : ''}
-    ${showDone ? section(`مسیر طی‌شده · اقدام‌های انجام‌شده (${fa(doneTasks.length)})`,
-      doneTasks.length ? doneTasks.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامی کامل نشده')) : ''}
-    ${showOpen ? section(`اقدام‌های باقیمانده (${fa(openTasks.length)})`,
-      openTasks.length ? openTasks.map(t => _goalTaskRowHtml(t, print)).join('') : empty('اقدام بازی نمانده')) : ''}
-    ${milestones.length ? section(`مراحل (${fa(data.doneMilestones)} از ${fa(milestones.length)})`,
-      milestones.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:${m.done ? muted : text};${m.done ? 'text-decoration:line-through' : ''}">
-        <span>${m.done ? '✓' : '○'}</span><span>${escapeHtml(m.title)}</span>
+    <div style="font-size:16px;font-weight:800;color:${text};line-height:1.7;margin-bottom:16px">${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}</div>
+    ${section(`اقدام‌های انجام‌شده (${fa(doneActions.length)})`,
+      doneActions.length ? doneActions.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامی انجام نشده'))}
+    ${section(`اقدامک‌های انجام‌شده (${fa(doneMicros.length)})`,
+      doneMicros.length ? doneMicros.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامکی انجام نشده'))}
+    ${milestones.length ? section(`مراحل (${fa(milestones.filter(m => m.done).length)} از ${fa(milestones.length)})`,
+      milestones.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:${print ? '#fff' : 'var(--bg3)'};border-radius:8px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+        ${m.done ? _goalDoneCheckHtml(print) : `<span style="width:20px;height:20px;border-radius:50%;border:2px solid ${print ? '#d1d5db' : 'var(--border2)'};flex-shrink:0"></span>`}
+        <span style="font-size:13px;color:${text};line-height:1.7">${escapeHtml(m.title)}</span>
       </div>`).join('')) : ''}
-    ${habitRows.length ? section(`عادت‌های پشتیبان (${fa(habitRows.length)})`,
-      habitRows.map(row => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${cardBg};border-radius:8px;margin-bottom:6px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
-        <span>🔥</span>
-        <span style="flex:1;font-size:13px;color:${text}">${escapeHtml(row.habit.title)}</span>
-        <span style="font-size:11px;color:${muted}">${fa(row.doneCount)} روز · استریک ${fa(row.streak)}${row.lastDate ? ' · ' + escapeHtml(row.lastDate) : ''}</span>
-      </div>`).join('')) : ''}
-    ${g.notes ? section('یادداشت', `<div style="font-size:13px;line-height:1.9;color:${text};white-space:pre-wrap">${escapeHtml(g.notes)}</div>`) : ''}
   `;
 }
 
-function openGoalJourneyReport(id, filter) {
+function openGoalJourneyReport(id) {
   const data = _goalJourneyData(id);
   if (!data) { showToast('هدف پیدا نشد', 'error'); return; }
-  const mode = (filter === 'done' || filter === 'open') ? filter : 'all';
-  const fa = _goalFaNum;
-  const g = data.g;
-  const chip = (key, label) => {
-    const on = mode === key;
-    return `<button type="button" onclick="openGoalJourneyReport(${id},'${key}')" style="font-size:11px;padding:5px 10px;border-radius:999px;cursor:pointer;font-family:var(--font);border:1px solid ${on ? 'var(--accent)' : 'var(--border2)'};background:${on ? 'rgba(124,106,247,.16)' : 'var(--bg3)'};color:${on ? 'var(--accent2)' : 'var(--text2)'}">${label}</button>`;
-  };
-  openModal(`📊 گزارش مسیر · ${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}`, `
-    <div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        ${chip('all', 'همه · ' + fa(data.tasks.length))}
-        ${chip('done', 'انجام‌شده · ' + fa(data.doneTasks.length))}
-        ${chip('open', 'باقیمانده · ' + fa(data.openTasks.length))}
-      </div>
-      ${_goalJourneyBodyHtml(data, mode, false)}
-    </div>
+  openModal(`📊 گزارش مسیر`, `
+    ${_goalJourneyBodyHtml(data, false)}
   `, [
     { label: '← جزئیات', cls: 'btn-ghost', action: `openGoalDetail(${id})` },
     { label: '📋 کپی', cls: 'btn-ghost', action: `copyGoalJourneyReport(${id})` },
@@ -6890,7 +6804,7 @@ function printGoalJourneyReport(id) {
   const data = _goalJourneyData(id);
   if (!data) return;
   const title = `گزارش مسیر هدف · ${data.g.title || ''}`;
-  const html = _goalPrintShell(title, _goalJourneyBodyHtml(data, 'all', true));
+  const html = _goalPrintShell(title, _goalJourneyBodyHtml(data, true));
   _goalOpenPrintHtml(`گزارش-مسیر-${(data.g.title || 'هدف').replace(/[\\/:*?"<>|]/g, ' ')}.html`, html);
 }
 
