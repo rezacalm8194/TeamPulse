@@ -5221,6 +5221,7 @@ function renderGoals() {
   _scheduleGoalVisionPersist();
   _syncGoalAchievements();
   updateTopbarActions(`
+    <button class="btn btn-ghost" onclick="openGoalsReportPicker()">📊 گزارش</button>
     <button class="btn btn-primary" onclick="openNewItemSheet()">+ جدید</button>
   `);
 
@@ -5365,6 +5366,7 @@ function renderGoals() {
         <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${escapeHtml(health.icon)} سلامت ${escapeHtml(health.label)}</span>
         ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
         ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
+        <span onclick="event.stopPropagation();openGoalJourneyReport(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(124,106,247,.12);color:var(--accent2);font-weight:600">📊 گزارش مسیر</span>
       </div>
 
       ${msPreview ? `<div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:${g.why?'10px':'0'}">${msPreview}</div>` : ''}
@@ -6429,9 +6431,12 @@ function _goalDetailPathHtml(id) {
   }).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز اقدام یا اقدامکی ثبت نشده</div>';
   return `
       <div style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
           <span style="font-size:12px;font-weight:600;color:var(--text2)">⚡ مسیر اجرا · کارهای این هدف</span>
-          <span style="font-size:11px;color:var(--text3)">${fa(openCount)} باز از ${fa(tasks.length)}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span style="font-size:11px;color:var(--text3)">${fa(openCount)} باز از ${fa(tasks.length)}</span>
+            <button type="button" onclick="openGoalJourneyReport(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.12);color:#93c5fd;cursor:pointer;font-family:var(--font)">گزارش</button>
+          </div>
         </div>
         <div>${rows}</div>
         <div style="margin-top:10px">
@@ -6531,6 +6536,7 @@ function openGoalDetail(id) {
             <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">مدیریت</button>
             <button onclick="openGoalVisionMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.13);color:var(--accent2);cursor:pointer;font-family:var(--font)">نمایش انگیزشی</button>
             <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز</button>
+            <button onclick="openGoalJourneyReport(${id})" style="font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.12);color:#93c5fd;cursor:pointer;font-family:var(--font)">📊 گزارش مسیر</button>
           </div>
         </div>
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
@@ -6539,6 +6545,7 @@ function openGoalDetail(id) {
       </div>` : `<div style="margin:14px 0;display:flex;justify-content:flex-end">
         <button onclick="openGoalVisionBoardManager(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);margin-left:6px">✨ مدیریت تابلو آرزو</button>
         <button onclick="openGoalFocusMode(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font)">حالت تمرکز هدف</button>
+        <button onclick="openGoalJourneyReport(${id})" style="font-size:11px;padding:6px 12px;border-radius:8px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.12);color:#93c5fd;cursor:pointer;font-family:var(--font);margin-right:6px">📊 گزارش مسیر</button>
       </div>`}
 
       <div style="margin-bottom:14px">
@@ -6577,6 +6584,7 @@ function openGoalDetail(id) {
   `, [
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `closeModal();openEditGoal(${id})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteGoal(${id})` },
+    { label: '📊 گزارش', cls: 'btn-ghost', action: `openGoalJourneyReport(${id})` },
     { label: '💾 ذخیره', cls: 'btn-primary', action: `saveGoalDetailAndClose(${id})` },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
@@ -6588,6 +6596,402 @@ function saveGoalDetailAndClose(id) {
   if (currentPage === 'goals') renderGoals();
   closeModal();
   showToast('تغییرات هدف ذخیره شد ✓', 'success');
+}
+
+function _goalFaNum(n) {
+  return String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+}
+
+function _goalDispWhen(value) {
+  if (!value) return '';
+  const str = String(value);
+  const isIso = /^\d{4}-\d{2}-\d{2}T/.test(str) || (str.includes('T') && Number.isFinite(Date.parse(str)));
+  if (isIso && typeof _jalaliFromInstant === 'function') {
+    const parts = _jalaliFromInstant(str);
+    if (parts) return DateService.disp(formatJalali(...parts));
+  }
+  return DateService.disp(str) || str;
+}
+
+function _goalTodoDoneStamp(t) {
+  return Date.parse(t?.done_at || t?.completed_at || t?.completedAt || '') || 0;
+}
+
+function _goalTodoCreatedStamp(t) {
+  return Date.parse(t?.created_at || t?.updated_at || '') || (Number(t?.id) || 0);
+}
+
+function _goalTodoWhenLabel(t) {
+  if (t?.done) {
+    const done = _goalDispWhen(t.done_at || t.completed_at || t.completedAt);
+    if (done) return done;
+  }
+  if (t?.date_jalali) return DateService.disp(t.date_jalali);
+  return _goalDispWhen(t?.created_at) || 'بدون تاریخ';
+}
+
+function _goalStatusMeta(g) {
+  const map = {
+    active: { label: 'در جریان', color: '#60a5fa' },
+    done: { label: 'تکمیل شده', color: 'var(--green)' },
+    paused: { label: 'متوقف', color: 'var(--amber)' },
+  };
+  return map[g?.status || 'active'] || map.active;
+}
+
+function _goalJourneyData(id) {
+  _goalsInit();
+  if (typeof _todosInit === 'function') _todosInit();
+  if (typeof _habitsInit === 'function') _habitsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g) return null;
+  const tasks = _goalLinkedTasks(id).slice();
+  const doneTasks = tasks.filter(t => t.done).sort((a, b) =>
+    (_goalTodoDoneStamp(a) - _goalTodoDoneStamp(b)) || (_goalTodoCreatedStamp(a) - _goalTodoCreatedStamp(b)));
+  const openTasks = tasks.filter(t => !t.done).sort((a, b) => _goalTodoCreatedStamp(a) - _goalTodoCreatedStamp(b));
+  const milestones = g.milestones || [];
+  const habits = (_db.habits || []).filter(h => h.goal_id === id && !h.archived);
+  const habitRows = habits.map(h => {
+    const logs = (_db.habit_logs || []).filter(l => String(l.habit_id) === String(h.id) && l.done);
+    const last = logs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    return {
+      habit: h,
+      doneCount: logs.length,
+      streak: typeof _habitStreak === 'function' ? _habitStreak(h.id) : 0,
+      lastDate: last ? DateService.disp(last.date) : '',
+    };
+  });
+  const health = _goalHealth(g);
+  const prediction = _goalPrediction(g);
+  const actionsDone = doneTasks.filter(t => _goalActionKind(t) !== 'micro').length;
+  const microsDone = doneTasks.filter(t => _goalActionKind(t) === 'micro').length;
+  return {
+    g, tasks, doneTasks, openTasks, milestones, habitRows, health, prediction,
+    actionsDone, microsDone,
+    doneMilestones: milestones.filter(m => m.done).length,
+  };
+}
+
+function _goalTaskReportLine(t) {
+  const kind = _goalActionKind(t) === 'micro' ? 'اقدامک' : 'اقدام';
+  const mark = t.done ? '✅' : '○';
+  const extra = t.staff_report ? `\n   گزارش انجام: ${t.staff_report}` : '';
+  const note = t.note ? `\n   یادداشت: ${t.note}` : '';
+  return `${mark} [${kind}] ${t.title} — ${_goalTodoWhenLabel(t)}${extra}${note}`;
+}
+
+function _goalJourneyText(id) {
+  const data = _goalJourneyData(id);
+  if (!data) return '';
+  const { g, doneTasks, openTasks, milestones, habitRows, health, prediction } = data;
+  const fa = _goalFaNum;
+  const sc = _goalStatusMeta(g);
+  const lines = [
+    `گزارش مسیر هدف`,
+    `${g.icon || '🎯'} ${g.title}`,
+    `وضعیت: ${sc.label} · پیشرفت ${fa(g.progress || 0)}٪ · سلامت ${health.label} (${fa(health.score)}٪)`,
+    `احتمال موفقیت: ${prediction.value}`,
+    g.why ? `چرا: ${g.why}` : '',
+    g.vision ? `چشم‌انداز: ${g.vision}` : '',
+    g.created_at ? `شروع: ${_goalDispWhen(g.created_at)}` : '',
+    g.deadline ? `ددلاین: ${DateService.disp(g.deadline)}` : '',
+    g.completed_at ? `تکمیل: ${_goalDispWhen(g.completed_at)}` : '',
+    '',
+    `اقدام‌های انجام‌شده (${fa(doneTasks.length)})`,
+    ...(doneTasks.length ? doneTasks.map(_goalTaskReportLine) : ['— موردی ثبت نشده']),
+    '',
+    `اقدام‌های باقیمانده (${fa(openTasks.length)})`,
+    ...(openTasks.length ? openTasks.map(_goalTaskReportLine) : ['— مورد باز نیست']),
+  ];
+  if (milestones.length) {
+    lines.push('', `مراحل (${fa(data.doneMilestones)}/${fa(milestones.length)})`);
+    milestones.forEach(m => lines.push(`${m.done ? '✓' : '○'} ${m.title}`));
+  }
+  if (habitRows.length) {
+    lines.push('', `عادت‌های مرتبط (${fa(habitRows.length)})`);
+    habitRows.forEach(row => {
+      lines.push(`🔥 ${row.habit.title} · ${fa(row.doneCount)} روز ثبت · استریک ${fa(row.streak)}${row.lastDate ? ' · آخرین: ' + row.lastDate : ''}`);
+    });
+  }
+  if (g.notes) lines.push('', 'یادداشت:', g.notes);
+  lines.push('', `TeamPulse · ${DateService.disp((_todayJalaliStr && _todayJalaliStr()) || '')}`);
+  return lines.filter((x, i, arr) => x !== '' || arr[i - 1] !== '').join('\n');
+}
+
+function _goalTaskRowHtml(t, print) {
+  const kind = _goalActionKind(t) === 'micro' ? 'اقدامک' : 'اقدام';
+  const kindColor = _goalActionKind(t) === 'micro' ? (print ? '#b45309' : 'var(--amber)') : (print ? '#2563eb' : '#60a5fa');
+  const titleColor = t.done ? (print ? '#6b7280' : 'var(--text3)') : (print ? '#111827' : 'var(--text)');
+  const bg = print ? (t.done ? '#f0fdf4' : '#f9fafb') : 'var(--bg3)';
+  const report = t.staff_report ? `<div style="font-size:11px;color:${print ? '#047857' : 'var(--green)'};line-height:1.7;margin-top:4px">گزارش: ${escapeHtml(t.staff_report)}</div>` : '';
+  const note = t.note ? `<div style="font-size:11px;color:${print ? '#6b7280' : 'var(--text3)'};line-height:1.7;margin-top:3px">${escapeHtml(t.note)}</div>` : '';
+  return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;background:${bg};border-radius:8px;margin-bottom:6px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+    <span style="width:20px;text-align:center;flex-shrink:0">${t.done ? '✅' : '○'}</span>
+    <span style="font-size:10px;font-weight:800;color:${kindColor};padding:2px 7px;border-radius:999px;flex-shrink:0;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">${kind}</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;color:${titleColor};${t.done ? 'text-decoration:line-through' : ''}">${escapeHtml(t.title)}</div>
+      ${report}${note}
+    </div>
+    <span style="font-size:10px;color:${print ? '#9ca3af' : 'var(--text3)'};flex-shrink:0">${escapeHtml(_goalTodoWhenLabel(t))}</span>
+  </div>`;
+}
+
+function _goalJourneyBodyHtml(data, filter, print) {
+  const fa = _goalFaNum;
+  const { g, doneTasks, openTasks, milestones, habitRows, health, prediction } = data;
+  const showDone = filter !== 'open';
+  const showOpen = filter !== 'done';
+  const sc = _goalStatusMeta(g);
+  const cardBg = print ? '#f9fafb' : 'var(--bg3)';
+  const muted = print ? '#6b7280' : 'var(--text3)';
+  const text = print ? '#111827' : 'var(--text)';
+  const card = (val, label, color) => `<div style="background:${cardBg};border-radius:10px;padding:10px;text-align:center;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+    <div style="font-size:16px;font-weight:800;color:${color || text}">${val}</div>
+    <div style="font-size:9px;color:${muted};margin-top:3px">${label}</div>
+  </div>`;
+  const section = (title, inner) => `<div style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:800;color:${print ? '#6b7280' : 'var(--text2)'};margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${print ? '#e5e7eb' : 'var(--border)'}">${title}</div>
+    ${inner}
+  </div>`;
+  const empty = msg => `<div style="text-align:center;color:${muted};font-size:12px;padding:10px">${msg}</div>`;
+  return `
+    ${g.why ? `<div style="background:${print ? '#ecfdf5' : 'rgba(62,207,142,.09)'};border:1px solid ${print ? '#bbf7d0' : 'rgba(62,207,142,.25)'};border-radius:12px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:800;color:${print ? '#047857' : 'var(--green)'};margin-bottom:6px">چرا این هدف؟</div>
+      <div style="font-size:13px;line-height:1.9;color:${text}">${escapeHtml(g.why)}</div>
+    </div>` : ''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px">
+      ${card(fa(g.progress || 0) + '٪', 'پیشرفت', print ? '#7c3aed' : 'var(--accent2)')}
+      ${card(escapeHtml(health.label), 'سلامت ' + fa(health.score) + '٪', health.color === 'var(--green)' ? (print ? '#059669' : 'var(--green)') : (health.color === 'var(--amber)' ? (print ? '#d97706' : 'var(--amber)') : (print ? '#dc2626' : 'var(--red)')))}
+      ${card(fa(data.doneTasks.length) + '/' + fa(data.tasks.length), 'اقدام انجام‌شده', print ? '#2563eb' : '#60a5fa')}
+      ${card(fa(data.doneMilestones) + '/' + fa(milestones.length), 'مراحل', print ? '#059669' : 'var(--green)')}
+    </div>
+    <div style="font-size:12px;color:${print ? '#4b5563' : 'var(--text2)'};line-height:1.8;margin-bottom:14px">
+      وضعیت: <b>${escapeHtml(sc.label)}</b>
+      ${g.created_at ? ' · شروع ' + escapeHtml(_goalDispWhen(g.created_at)) : ''}
+      ${g.deadline ? ' · ددلاین ' + escapeHtml(DateService.disp(g.deadline)) : ''}
+      ${g.completed_at ? ' · تکمیل ' + escapeHtml(_goalDispWhen(g.completed_at)) : ''}
+      <div style="margin-top:4px">${escapeHtml(prediction.text)}</div>
+    </div>
+    ${g.vision ? section('چشم‌انداز', `<div style="font-size:13px;line-height:1.9;color:${text}">${escapeHtml(g.vision)}</div>`) : ''}
+    ${showDone ? section(`مسیر طی‌شده · اقدام‌های انجام‌شده (${fa(doneTasks.length)})`,
+      doneTasks.length ? doneTasks.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامی کامل نشده')) : ''}
+    ${showOpen ? section(`اقدام‌های باقیمانده (${fa(openTasks.length)})`,
+      openTasks.length ? openTasks.map(t => _goalTaskRowHtml(t, print)).join('') : empty('اقدام بازی نمانده')) : ''}
+    ${milestones.length ? section(`مراحل (${fa(data.doneMilestones)} از ${fa(milestones.length)})`,
+      milestones.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:${m.done ? muted : text};${m.done ? 'text-decoration:line-through' : ''}">
+        <span>${m.done ? '✓' : '○'}</span><span>${escapeHtml(m.title)}</span>
+      </div>`).join('')) : ''}
+    ${habitRows.length ? section(`عادت‌های پشتیبان (${fa(habitRows.length)})`,
+      habitRows.map(row => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${cardBg};border-radius:8px;margin-bottom:6px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+        <span>🔥</span>
+        <span style="flex:1;font-size:13px;color:${text}">${escapeHtml(row.habit.title)}</span>
+        <span style="font-size:11px;color:${muted}">${fa(row.doneCount)} روز · استریک ${fa(row.streak)}${row.lastDate ? ' · ' + escapeHtml(row.lastDate) : ''}</span>
+      </div>`).join('')) : ''}
+    ${g.notes ? section('یادداشت', `<div style="font-size:13px;line-height:1.9;color:${text};white-space:pre-wrap">${escapeHtml(g.notes)}</div>`) : ''}
+  `;
+}
+
+function openGoalJourneyReport(id, filter) {
+  const data = _goalJourneyData(id);
+  if (!data) { showToast('هدف پیدا نشد', 'error'); return; }
+  const mode = (filter === 'done' || filter === 'open') ? filter : 'all';
+  const fa = _goalFaNum;
+  const g = data.g;
+  const chip = (key, label) => {
+    const on = mode === key;
+    return `<button type="button" onclick="openGoalJourneyReport(${id},'${key}')" style="font-size:11px;padding:5px 10px;border-radius:999px;cursor:pointer;font-family:var(--font);border:1px solid ${on ? 'var(--accent)' : 'var(--border2)'};background:${on ? 'rgba(124,106,247,.16)' : 'var(--bg3)'};color:${on ? 'var(--accent2)' : 'var(--text2)'}">${label}</button>`;
+  };
+  openModal(`📊 گزارش مسیر · ${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}`, `
+    <div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        ${chip('all', 'همه · ' + fa(data.tasks.length))}
+        ${chip('done', 'انجام‌شده · ' + fa(data.doneTasks.length))}
+        ${chip('open', 'باقیمانده · ' + fa(data.openTasks.length))}
+      </div>
+      ${_goalJourneyBodyHtml(data, mode, false)}
+    </div>
+  `, [
+    { label: '← جزئیات', cls: 'btn-ghost', action: `openGoalDetail(${id})` },
+    { label: '📋 کپی', cls: 'btn-ghost', action: `copyGoalJourneyReport(${id})` },
+    { label: '📤 اشتراک', cls: 'btn-ghost', action: `shareGoalJourneyReport(${id})` },
+    { label: '🖨 چاپ / PDF', cls: 'btn-primary', action: `printGoalJourneyReport(${id})` },
+  ]);
+}
+
+function copyGoalJourneyReport(id) {
+  const text = _goalJourneyText(id);
+  if (!text) return;
+  copyToClipboard(text, 'متن گزارش مسیر کپی شد ✓');
+}
+
+async function shareGoalJourneyReport(id) {
+  const text = _goalJourneyText(id);
+  if (!text) return;
+  const g = (_db.goals || []).find(x => x.id === id);
+  const title = 'گزارش مسیر هدف' + (g ? ' · ' + g.title : '');
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text });
+      showToast('گزارش آماده اشتراک‌گذاری شد ✓', 'success');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  copyToClipboard(text, 'متن گزارش کپی شد ✓');
+}
+
+function _goalPrintShell(title, bodyHtml) {
+  const safeTitle = escapeHtml(title);
+  return `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/fonts/vazirmatn.css">
+<title>${safeTitle}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Vazirmatn',Tahoma,sans-serif;direction:rtl;background:#fff;color:#1a1d2e;padding:32px 36px;font-size:13px;line-height:1.8}
+h1{font-size:18px;font-weight:800;margin-bottom:4px}
+.meta{font-size:11px;color:#6b7280;margin-bottom:18px}
+.footer{margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#9ca3af;display:flex;justify-content:space-between}
+@media print{body{padding:16px 20px}}
+</style>
+</head>
+<body>
+<h1>${safeTitle}</h1>
+<div class="meta">تاریخ تهیه: ${escapeHtml(DateService.disp((_todayJalaliStr && _todayJalaliStr()) || '') || '')}</div>
+${bodyHtml}
+<div class="footer"><span>TeamPulse · گزارش مسیر هدف</span><span>${safeTitle}</span></div>
+</body></html>`;
+}
+
+function _goalOpenPrintHtml(filename, html) {
+  const w = window.open('', '_blank');
+  if (!w) {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast('فایل گزارش دانلود شد ✓', 'success');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400);
+}
+
+function printGoalJourneyReport(id) {
+  const data = _goalJourneyData(id);
+  if (!data) return;
+  const title = `گزارش مسیر هدف · ${data.g.title || ''}`;
+  const html = _goalPrintShell(title, _goalJourneyBodyHtml(data, 'all', true));
+  _goalOpenPrintHtml(`گزارش-مسیر-${(data.g.title || 'هدف').replace(/[\\/:*?"<>|]/g, ' ')}.html`, html);
+}
+
+function openGoalsReportPicker() {
+  _goalsInit();
+  const goals = (_db.goals || []).slice().sort(_sortGoalsNewestFirst);
+  if (!goals.length) { showToast('هنوز هدفی برای گزارش نیست', 'warning'); return; }
+  if (goals.length === 1) { openGoalJourneyReport(goals[0].id); return; }
+  const fa = _goalFaNum;
+  const rows = goals.map(g => {
+    const tasks = _goalLinkedTasks(g.id);
+    const done = tasks.filter(t => t.done).length;
+    const sc = _goalStatusMeta(g);
+    return `<button type="button" onclick="openGoalJourneyReport(${g.id})" style="width:100%;text-align:right;display:flex;align-items:center;gap:10px;padding:12px;margin-bottom:8px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);color:inherit;cursor:pointer;font-family:var(--font)">
+      <span style="font-size:18px">${escapeHtml(g.icon || '🎯')}</span>
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-size:13px;font-weight:800;color:var(--text)">${escapeHtml(g.title)}</span>
+        <span style="display:block;font-size:11px;color:var(--text3);margin-top:3px">${escapeHtml(sc.label)} · پیشرفت ${fa(g.progress || 0)}٪ · ${fa(done)}/${fa(tasks.length)} اقدام</span>
+      </span>
+      <span style="color:var(--accent2);font-size:16px">‹</span>
+    </button>`;
+  }).join('');
+  openModal('📊 گزارش اهداف', `
+    <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:12px">یک هدف را انتخاب کن تا مسیر اقدامات انجام‌شده تا رسیدن به آن را ببینی.</div>
+    <button type="button" onclick="openGoalsOverviewReport()" style="width:100%;margin-bottom:12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(124,106,247,.3);background:rgba(124,106,247,.12);color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800">گزارش کلی همه اهداف</button>
+    ${rows}
+  `, [
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+function openGoalsOverviewReport() {
+  _goalsInit();
+  if (typeof _todosInit === 'function') _todosInit();
+  const goals = (_db.goals || []).slice().sort(_sortGoalsNewestFirst);
+  const fa = _goalFaNum;
+  const rows = goals.map(g => {
+    const tasks = _goalLinkedTasks(g.id);
+    const done = tasks.filter(t => t.done).length;
+    const sc = _goalStatusMeta(g);
+    const ms = g.milestones || [];
+    return `<tr>
+      <td style="padding:8px 10px"><button type="button" onclick="openGoalJourneyReport(${g.id})" style="background:none;border:none;color:var(--accent2);cursor:pointer;font-family:var(--font);font-weight:800;padding:0">${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}</button></td>
+      <td style="padding:8px 10px;color:${sc.color}">${escapeHtml(sc.label)}</td>
+      <td style="padding:8px 10px">${fa(g.progress || 0)}٪</td>
+      <td style="padding:8px 10px">${fa(done)}/${fa(tasks.length)}</td>
+      <td style="padding:8px 10px">${fa(ms.filter(m => m.done).length)}/${fa(ms.length)}</td>
+      <td style="padding:8px 10px;color:var(--text3)">${g.deadline ? escapeHtml(DateService.disp(g.deadline)) : '—'}</td>
+    </tr>`;
+  }).join('');
+  const printRows = goals.map(g => {
+    const tasks = _goalLinkedTasks(g.id);
+    const done = tasks.filter(t => t.done).length;
+    const sc = _goalStatusMeta(g);
+    const ms = g.milestones || [];
+    return `<tr>
+      <td style="padding:8px 10px">${escapeHtml(g.title)}</td>
+      <td style="padding:8px 10px">${escapeHtml(sc.label)}</td>
+      <td style="padding:8px 10px">${fa(g.progress || 0)}٪</td>
+      <td style="padding:8px 10px">${fa(done)}/${fa(tasks.length)}</td>
+      <td style="padding:8px 10px">${fa(ms.filter(m => m.done).length)}/${fa(ms.length)}</td>
+      <td style="padding:8px 10px">${g.deadline ? escapeHtml(DateService.disp(g.deadline)) : '—'}</td>
+    </tr>`;
+  }).join('');
+  window._goalsOverviewPrintBody = `<table style="width:100%;border-collapse:collapse">
+    <thead><tr>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">هدف</th>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">وضعیت</th>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">پیشرفت</th>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">اقدام‌ها</th>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">مراحل</th>
+      <th style="text-align:right;padding:8px 10px;border-bottom:2px solid #e5e7eb">ددلاین</th>
+    </tr></thead>
+    <tbody>${printRows}</tbody>
+  </table>`;
+  openModal('📊 گزارش کلی اهداف', `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--text3)">
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">هدف</th>
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">وضعیت</th>
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">پیشرفت</th>
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">اقدام‌ها</th>
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">مراحل</th>
+          <th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border)">ددلاین</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `, [
+    { label: '← انتخاب هدف', cls: 'btn-ghost', action: 'openGoalsReportPicker()' },
+    { label: '🖨 چاپ / PDF', cls: 'btn-primary', action: 'printGoalsOverviewReport()' },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+function printGoalsOverviewReport() {
+  const body = window._goalsOverviewPrintBody || '';
+  if (!body) { openGoalsOverviewReport(); return; }
+  const html = _goalPrintShell('گزارش کلی اهداف', body);
+  _goalOpenPrintHtml('گزارش-کلی-اهداف.html', html);
 }
 
 function openGoalLinkedItems(id) {
