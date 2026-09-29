@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp307';
+const TP_ASSET_V = 'tp308';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1007,7 +1007,7 @@ function _migrate(d) {
   d.archive_categories=[...requiredArchiveCategories,...savedArchiveCategories.filter(x=>!requiredArchiveCategories.includes(x))];
   d.archive_relationship_statuses = Array.isArray(d.archive_relationship_statuses) && d.archive_relationship_statuses.length ? d.archive_relationship_statuses : ['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'];
   if (!d.eval_forms) d.eval_forms = {};
-  d.topics.forEach(t=>{if(!t.checklist)t.checklist=[];});
+  d.topics.forEach(t=>{if(!t.checklist)t.checklist=[];if(!t.pinned)t.pinned=false;});
   d.staff.forEach(s=>{if(!s.card_number)s.card_number='';if(!s.roles)s.roles=[];if(!s.person_type)s.person_type='personnel';});
   d.staff_reminders.forEach(r=>{if(!r.notified_levels)r.notified_levels=[];});
   // نسخه‌های قدیمی در «ثبت دستی پرداخت» کل حقوق را، حتی بعد از یک
@@ -3102,12 +3102,13 @@ window.api = {
   },
 
   topics: {
-    getByStudent: (sid)=>_P(_db.topics.filter(t=>t.student_id===sid).slice().sort((a,b)=>_jalaliKey(b.date_jalali)-_jalaliKey(a.date_jalali))),
-    add: (p)=>{ _db.topics.push({id:_nextId('topics'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),title:p.title||'',text:p.text||'',checklist:(p.checklist||[]).map((c,i)=>({id:i+1,text:c.text||c,done:false})),created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
+    getByStudent: (sid)=>_P(_sortStudentTopics(_db.topics.filter(t=>t.student_id===sid))),
+    add: (p)=>{ _db.topics.push({id:_nextId('topics'),student_id:p.student_id,date_jalali:p.date||_formatJalali(..._todayJalali()),title:p.title||'',text:p.text||'',pinned:!!p.pinned,checklist:(p.checklist||[]).map((c,i)=>({id:i+1,text:c.text||c,done:false})),created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
     addChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){if(!t.checklist)t.checklist=[];const maxId=Math.max(0,...t.checklist.map(c=>c.id||0));t.checklist.push({id:maxId+1,text:p.text,done:false});t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
     toggleChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){const c=t.checklist.find(x=>x.id===p.item_id);if(c){c.done=!c.done;t.updated_at=new Date().toISOString();_save();}} return _P({ok:true}); },
     deleteChecklistItem: (p)=>{ const t=_db.topics.find(x=>x.id===p.topic_id); if(t){t.checklist=t.checklist.filter(x=>x.id!==p.item_id);t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
-    update: (p)=>{ const t=_db.topics.find(x=>x.id===p.id); if(t){if(p.title!==undefined)t.title=p.title;if(p.text!==undefined)t.text=p.text;if(p.date_jalali!==undefined)t.date_jalali=p.date_jalali;t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    update: (p)=>{ const t=_db.topics.find(x=>x.id===p.id); if(t){if(p.title!==undefined)t.title=p.title;if(p.text!==undefined)t.text=p.text;if(p.date_jalali!==undefined)t.date_jalali=p.date_jalali;if(p.pinned!==undefined)t.pinned=!!p.pinned;t.updated_at=new Date().toISOString();_save();} return _P({ok:true}); },
+    togglePin: (id)=>{ const t=_db.topics.find(x=>x.id===id); if(t){t.pinned=!t.pinned;t.updated_at=new Date().toISOString();_save();} return _P({ok:true,pinned:!!t?.pinned}); },
     delete: (id)=>{ _db.topics=_db.topics.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
   },
 
@@ -9956,6 +9957,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
   openModal(title, `
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
+    <div id="ses-current-topics-wrap"></div>
 
     <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
     <div class="ses-meta-bar">
@@ -10075,7 +10077,10 @@ async function openAddSessionGeneral(presetStudentId = null) {
   if (window.innerWidth > 768) setTimeout(() => document.getElementById('f-ses-title')?.focus(), 50);
   setTimeout(() => {
     const sid = initStudentId || +document.getElementById('f-ses-student')?.value;
-    if (sid) _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
+    if (sid) {
+      _renderAchievementTagPicker(_primaryEvalFormId(sid), []);
+      _renderSessionCurrentTopics(sid);
+    }
     _updateSesPeriodBadge();
     _updateSesMetaSummary();
     _bindSessionTextareaVisibilityGuard();
@@ -10323,6 +10328,7 @@ async function openEditSession(sessionId) {
   openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${escapeHtml(student.name)} ${escapeHtml(student.lname)}</div>`, `
     <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
+    <div id="ses-current-topics-wrap"></div>
 
     <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
     <div class="ses-meta-bar">
@@ -10443,6 +10449,7 @@ async function openEditSession(sessionId) {
   }
   setTimeout(() => {
     _renderAchievementTagPicker(_primaryEvalFormId(session.student_id) || session.eval_form_id, session.achievement_tags || []);
+    _renderSessionCurrentTopics(session.student_id);
     _updateSesPeriodBadge();
     _updateSesMetaSummary();
     _bindSessionTextareaVisibilityGuard();
@@ -13611,6 +13618,7 @@ function _onSesStudentChangeRebuildPeriods(selectEl) {
   if (preContainer && studentId) {
     _buildPreSessionSummary(studentId).then(html => { preContainer.innerHTML = html; });
   }
+  _renderSessionCurrentTopics(studentId);
   _updateSesMetaSummary();
 }
 
@@ -15737,10 +15745,79 @@ function buildEvalTrendChart(form, totals, highlightA, highlightB) {
     </div>`;
 }
 
+function _sortStudentTopics(list) {
+  return (list || []).slice().sort((a, b) => {
+    const pin = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+    if (pin) return pin;
+    return _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali) || (b.id - a.id);
+  });
+}
+
+function _topicSearchHay(t) {
+  return `${t.title || ''} ${_topicPlainText(t.text)}`.replace(/\s+/g, ' ').trim();
+}
+
+function _topicItemHtml(t, studentId, displayName) {
+  const pinned = !!t.pinned;
+  return `
+          <div class="topic-item${pinned ? ' is-pinned' : ''}" data-hay="${escapeHtml(_topicSearchHay(t))}">
+            <div class="topic-item-head">
+              <div class="topic-item-date">${pinned ? '<span class="topic-current-badge">بالای لیست</span>' : ''}${DateService.disp(t.date_jalali)}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
+              <button type="button" class="btn btn-ghost btn-sm topic-pin-btn${pinned ? ' is-on' : ''}" title="${pinned ? 'برداشتن از بالای لیست این شاگرد' : 'چسباندن به بالای لیست این شاگرد'}" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();toggleTopicPin(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">${pinned ? '↑ بالا' : 'سنجاق'}</button>
+            </div>
+            <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
+            <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${renderRich(excerpt(t.text, 90))}</div>
+            <div class="topic-item-actions">
+              <button class="btn btn-ghost btn-sm" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();openEditTopic(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">✏️ ویرایش</button>
+              <button class="btn btn-ghost btn-sm topic-copy-btn" onclick="event.stopPropagation();openCopyTopic(${t.id}, ${studentId})">📋 کپی</button>
+            </div>
+          </div>`;
+}
+
+function _filterTopicsList(q) {
+  const query = String(q || '').trim();
+  document.querySelectorAll('#topics-list .topic-item').forEach(el => {
+    const hay = el.getAttribute('data-hay') || '';
+    el.style.display = !query || hay.includes(query) ? '' : 'none';
+  });
+  document.querySelectorAll('#topics-list .topics-group-label').forEach(label => {
+    const group = label.nextElementSibling;
+    if (!group || !group.classList.contains('topics-group')) return;
+    const visible = [...group.querySelectorAll('.topic-item')].some(item => item.style.display !== 'none');
+    label.style.display = visible ? '' : 'none';
+    group.style.display = visible ? '' : 'none';
+  });
+}
+
+async function toggleTopicPin(topicId, studentId, displayName) {
+  const result = await window.api.topics.togglePin(topicId);
+  showToast(result?.pinned ? 'به بالای لیست این شاگرد چسبید' : 'از بالای لیست برداشته شد', 'success');
+  await openTopics(studentId, displayName);
+}
+
+async function _renderSessionCurrentTopics(studentId) {
+  const wrap = document.getElementById('ses-current-topics-wrap');
+  if (!wrap) return;
+  if (!studentId) { wrap.innerHTML = ''; return; }
+  try { await _ensureDocumentParts(['topics']); } catch (e) {}
+  const pinned = (await window.api.topics.getByStudent(studentId)).filter(t => t.pinned);
+  if (!pinned.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = `<div class="ses-current-topics" aria-label="موضوعات جاری این شاگرد">
+    <span class="ses-current-topics-label">📍 موضوعات جاری این شاگرد</span>
+    ${pinned.map(t => {
+      const title = t.title || '(بدون عنوان)';
+      const tip = excerpt(_topicPlainText(t.text), 120);
+      return `<span class="ses-current-topic-chip" title="${escapeHtml(tip || title)}">${escapeHtml(title)}</span>`;
+    }).join('')}
+  </div>`;
+}
+
 // ── Important Topics (per-student, title + full description) ─────────────────
 async function openTopics(studentId, displayName) {
   try { await _ensureDocumentParts(['topics']); } catch (e) {}
   const topics = await window.api.topics.getByStudent(studentId);
+  const pinned = topics.filter(t => t.pinned);
+  const rest = topics.filter(t => !t.pinned);
 
   openModal(`📌 موضوعات مهم — ${escapeHtml(displayName)}`, `
     <div class="form-group full">
@@ -15761,6 +15838,10 @@ async function openTopics(studentId, displayName) {
         <button class="btn btn-primary" onclick="saveTopic(${studentId}, ${escapeAttr(displayName)})">+ افزودن</button>
       </div>
     </div>
+    <label class="topic-pin-new">
+      <input type="checkbox" id="f-topic-pin">
+      <span>چسباندن به بالای لیست این شاگرد</span>
+    </label>
     <div class="form-group full" style="margin-top:8px">
       <label class="form-label">✅ آیتم‌های چک‌لیست (اختیاری)</label>
       <div id="new-topic-checklist" style="margin-bottom:6px"></div>
@@ -15773,19 +15854,12 @@ async function openTopics(studentId, displayName) {
       <div class="form-section">موضوعات ثبت‌شده</div>
       ${topics.length ? `<button class="btn btn-ghost btn-sm topics-show-all-btn" type="button" onclick="openAllTopics(${studentId}, decodeURIComponent('${encodeURIComponent(displayName)}'))">نمایش و کپی همه</button>` : ''}
     </div>
+    ${topics.length ? `<input class="form-input topics-filter" id="topics-filter" placeholder="جستجو در موضوعات این شاگرد..." oninput="_filterTopicsList(this.value)">` : ''}
     <div id="topics-list">
       ${topics.length === 0
         ? '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>'
-        : topics.map(t => `
-          <div class="topic-item">
-            <div class="topic-item-date">${DateService.disp(t.date_jalali)}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
-            <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
-            <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${renderRich(excerpt(t.text, 90))}</div>
-            <div style="display:flex;gap:6px;margin-top:4px">
-              <button class="btn btn-ghost btn-sm" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();openEditTopic(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">✏️ ویرایش</button>
-              <button class="btn btn-ghost btn-sm topic-copy-btn" onclick="event.stopPropagation();openCopyTopic(${t.id}, ${studentId})">📋 کپی</button>
-            </div>
-          </div>`).join('')}
+        : `${pinned.length ? `<div class="topics-group-label">موضوعات جاری</div><div class="topics-group">${pinned.map(t => _topicItemHtml(t, studentId, displayName)).join('')}</div>` : ''}
+          ${rest.length ? `${pinned.length ? `<div class="topics-group-label">سایر موضوعات</div>` : ''}<div class="topics-group">${rest.map(t => _topicItemHtml(t, studentId, displayName)).join('')}</div>` : ''}`}
     </div>
   `, [
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
@@ -15801,7 +15875,7 @@ function _topicPlainText(value) {
 
 async function openAllTopics(studentId, displayName) {
   const topics = await window.api.topics.getByStudent(studentId);
-  const sortedTopics = topics.slice().sort((a, b) => jalaliKey(b.date_jalali) - jalaliKey(a.date_jalali) || b.id - a.id);
+  const sortedTopics = _sortStudentTopics(topics);
   const divider = '\n\n--------------------\n\n';
   const topicCopyEntries = sortedTopics.map((t, index) => {
       const checklist = (t.checklist || []).map(c => `${c.done ? '☑' : '☐'} ${_topicPlainText(c.text)}`).join('\n');
@@ -15819,7 +15893,7 @@ async function openAllTopics(studentId, displayName) {
   const body = sortedTopics.length ? sortedTopics.map(t => {
     const checklist = t.checklist || [];
     return `<article class="topics-all-item">
-      <div class="topic-item-date">${DateService.disp(t.date_jalali)}</div>
+      <div class="topic-item-date">${t.pinned ? '<span class="topic-current-badge">بالای لیست</span>' : ''}${DateService.disp(t.date_jalali)}</div>
       <div class="topics-all-title">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
       ${t.text ? `<div class="topics-all-text">${renderRich(t.text)}</div>` : ''}
       ${checklist.length ? `<div class="topics-all-checklist">${checklist.map(c => `<div>${c.done ? '☑' : '☐'} ${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
@@ -15896,7 +15970,8 @@ async function saveTopic(studentId, displayName) {
   const text = document.getElementById('f-topic-text')?.value.trim();
   const date = document.getElementById('f-topic-date')?.value;
   if (!title && !text) { showToast('عنوان یا توضیحات را وارد کنید', 'error'); return; }
-  await window.api.topics.add({ student_id: studentId, date, title, text, checklist: _newTopicChecklist.map(c => ({text: c.text})) });
+  const pinned = !!document.getElementById('f-topic-pin')?.checked;
+  await window.api.topics.add({ student_id: studentId, date, title, text, pinned, checklist: _newTopicChecklist.map(c => ({text: c.text})) });
   _newTopicChecklist = [];
   showToast('موضوع ثبت شد ✓', 'success');
   await openTopics(studentId, displayName);
@@ -15913,6 +15988,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
   openModal(`📌 ${escapeHtml(t.title) || '(بدون عنوان)'}`, `
     <div class="detail-section">
       <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${DateService.disp(t.date_jalali)}</span></div>
+      <div class="detail-row"><span class="detail-key">جایگاه</span><span class="detail-val">${t.pinned ? '📍 بالای لیست این شاگرد' : 'در لیست زمانی'}</span></div>
     </div>
     <div class="detail-section">
       <h3>توضیحات کامل</h3>
@@ -15950,6 +16026,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
         : renderAttachmentsGrid(topicAttachments, null)}
     </div>
   `, [
+    { label: t.pinned ? 'برداشتن از بالا' : '📍 چسباندن به بالا', cls: 'btn-ghost', action: `toggleTopicPin(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `openEditTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `deleteTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
     { label: '↩️ بازگشت', cls: 'btn-ghost', action: `closeModal();openTopics(${studentId}, ${escapeAttr(displayName)})` },
@@ -25445,7 +25522,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v307';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v308';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

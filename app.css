@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp288') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp308') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp288') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp308') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -2365,10 +2365,46 @@ body.light mark { background: rgba(251,191,36,.5); }
   cursor: pointer; transition: border-color .12s;
 }
 .topic-item:hover { border-color: var(--accent2); }
+.topic-item.is-pinned {
+  border-color: rgba(124,106,247,.45);
+  background: linear-gradient(180deg, rgba(124,106,247,.1), var(--bg3));
+}
+.topic-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .topic-item-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; cursor: pointer; }
 .topic-item-date { font-size: 10px; color: var(--text3); margin-bottom: 4px; }
 .topic-item-excerpt { font-size: 11px; color: var(--text2); line-height: 1.6; cursor: pointer; }
-.topic-copy-btn { margin-top: 6px; font-size: 10px; }
+.topic-item-actions { display: flex; gap: 6px; margin-top: 4px; }
+.topic-copy-btn { font-size: 10px; }
+.topic-pin-btn { flex-shrink: 0; min-height: 28px; }
+.topic-pin-btn.is-on { color: var(--accent2); border-color: rgba(124,106,247,.4); background: rgba(124,106,247,.12); }
+.topic-current-badge {
+  display: inline-block; margin-left: 6px;
+  font-size: 10px; font-weight: 700; color: var(--accent2);
+  background: rgba(124,106,247,.12); border-radius: 20px; padding: 1px 7px;
+}
+.topic-pin-new {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  font-size: 12px; color: var(--text2); cursor: pointer;
+}
+.topic-pin-new input { width: 16px; height: 16px; }
+.topics-filter { margin-bottom: 8px; }
+.topics-group-label {
+  font-size: 11px; font-weight: 700; color: var(--accent2); margin: 6px 0 8px;
+}
+.ses-current-topics {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px 10px; margin: 0 0 10px;
+  border: 1px solid rgba(124,106,247,.3);
+  border-radius: 10px;
+  background: rgba(124,106,247,.06);
+}
+.ses-current-topics-label { font-size: 11px; font-weight: 700; color: var(--accent2); }
+.ses-current-topic-chip {
+  font-size: 11px; padding: 4px 10px; border-radius: 20px;
+  background: var(--bg3); border: 1px solid rgba(124,106,247,.25);
+  color: var(--text); max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .topics-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-top: 12px; margin-bottom: 8px;
