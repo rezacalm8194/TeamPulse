@@ -2903,7 +2903,13 @@ function renderTodoList(options = {}) {
           ${(()=>{
             if (!t.goal_id) return '';
             const g = (_db.goals||[]).find(x=>x.id===t.goal_id);
-            return g ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">' + (g.icon||'🎯') + ' ' + escapeHtml(g.title) + '</span>' : '';
+            return g ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">' + (g.icon||'🎯') + ' ' + escapeHtml(g.title) + '</span>'
+              + (t.goal_action_kind === 'micro'
+                ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(251,191,36,.14);color:var(--amber);font-weight:700">اقدامک</span>'
+                : t.goal_action_kind === 'action'
+                  ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.14);color:#60a5fa;font-weight:700">اقدام</span>'
+                  : '')
+              : '';
           })()}
           ${t.remind_min>0&&!t.done?'<span style="font-size:10px;color:var(--amber)">🔔</span>':''}
           ${_todoAssigneeLabel(t)?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:700">👤 ${escapeHtml(_todoAssigneeLabel(t))}</span>`:''}
@@ -3323,6 +3329,9 @@ function _completeTodoWithReport(t, report) {
   }
   t.updated_at = new Date().toISOString();
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
+  if (t.goal_id && typeof _syncGoalProgressFromLinkedWork === 'function') {
+    _syncGoalProgressFromLinkedWork(t.goal_id);
+  }
 
   if (t.done) {
     if (t.repeat && t.repeat !== 'none') {

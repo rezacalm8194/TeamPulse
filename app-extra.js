@@ -5416,12 +5416,229 @@ function _toggleGoalsView() {
   if (label) label.textContent = _goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
 }
 
+function _goalPathDraft(prefix) {
+  window._goalFormPath = window._goalFormPath || {};
+  if (!window._goalFormPath[prefix]) window._goalFormPath[prefix] = { actions: [], micros: [] };
+  return window._goalFormPath[prefix];
+}
+
+function _resetGoalPathDraft(prefix) {
+  window._goalFormPath = window._goalFormPath || {};
+  window._goalFormPath[prefix] = { actions: [], micros: [] };
+}
+
+function _goalPathTitleKey(title) {
+  if (typeof _todoNormalizedTitle === 'function') return _todoNormalizedTitle(title);
+  return String(title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function _goalPathChipHtml(prefix, listKey, idx, title, badge) {
+  return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-bottom:6px">
+    <span style="font-size:10px;font-weight:800;color:var(--accent2);background:rgba(124,106,247,.12);padding:2px 7px;border-radius:999px;flex-shrink:0">${badge}</span>
+    <span style="flex:1;font-size:13px;color:var(--text);line-height:1.6">${escapeHtml(title)}</span>
+    <button type="button" onclick="_removeGoalPathItem('${prefix}','${listKey}',${idx})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1">×</button>
+  </div>`;
+}
+
+function _renderGoalPathDraft(prefix) {
+  const draft = _goalPathDraft(prefix);
+  const actionsEl = document.getElementById(prefix + '-path-actions-list');
+  const microsEl = document.getElementById(prefix + '-path-micros-list');
+  if (actionsEl) {
+    actionsEl.innerHTML = draft.actions.map((title, i) => _goalPathChipHtml(prefix, 'actions', i, title, 'اقدام')).join('');
+  }
+  if (microsEl) {
+    microsEl.innerHTML = draft.micros.map((title, i) => _goalPathChipHtml(prefix, 'micros', i, title, 'اقدامک')).join('');
+  }
+  _refreshGoalFormCompletion(prefix);
+}
+
+function _addGoalPathItem(prefix, kind) {
+  const inputId = prefix + '-path-' + kind;
+  const input = document.getElementById(inputId);
+  const title = (input?.value || '').trim();
+  if (!title) { showToast(kind === 'micro' ? 'اقدامک را بنویس' : 'اقدام را بنویس', 'error'); return; }
+  const draft = _goalPathDraft(prefix);
+  const listKey = kind === 'micro' ? 'micros' : 'actions';
+  const max = 3;
+  if (draft[listKey].length >= max) {
+    showToast(kind === 'micro' ? 'در ساخت هدف حداکثر ۳ اقدامک' : 'در ساخت هدف حداکثر ۳ اقدام', 'warning');
+    return;
+  }
+  const key = _goalPathTitleKey(title);
+  if (draft[listKey].some(x => _goalPathTitleKey(x) === key)) {
+    showToast('این مورد را همین الان اضافه کردی', 'warning');
+    return;
+  }
+  draft[listKey].push(title);
+  if (input) input.value = '';
+  _renderGoalPathDraft(prefix);
+}
+
+function _removeGoalPathItem(prefix, listKey, idx) {
+  const draft = _goalPathDraft(prefix);
+  if (!draft[listKey]) return;
+  draft[listKey].splice(idx, 1);
+  _renderGoalPathDraft(prefix);
+}
+
+function _flushGoalPathInputs(prefix) {
+  ['action', 'micro'].forEach(kind => {
+    const input = document.getElementById(prefix + '-path-' + kind);
+    const title = (input?.value || '').trim();
+    if (!title) return;
+    const draft = _goalPathDraft(prefix);
+    const listKey = kind === 'micro' ? 'micros' : 'actions';
+    if (draft[listKey].length >= 3) return;
+    const key = _goalPathTitleKey(title);
+    if (draft[listKey].some(x => _goalPathTitleKey(x) === key)) return;
+    draft[listKey].push(title);
+    input.value = '';
+  });
+}
+
+function _goalLinkedTasks(goalId) {
+  if (typeof _todosInit === 'function') _todosInit();
+  return (_db.todos || []).filter(t => t.goal_id === goalId && !t.archived);
+}
+
+function _goalActionKind(t) {
+  if (t?.goal_action_kind === 'micro' || t?.goal_action_kind === 'action') return t.goal_action_kind;
+  const today = typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '';
+  if (today && (t.date_jalali === today || t.scheduled_date === today)) return 'micro';
+  return 'action';
+}
+
+function _createLinkedGoalTodo(goalId, title, kind) {
+  if (typeof _todosInit === 'function') _todosInit();
+  const trimmed = String(title || '').trim();
+  if (!trimmed || !goalId) return null;
+  const key = _goalPathTitleKey(trimmed);
+  const dup = _goalLinkedTasks(goalId).some(t => _goalPathTitleKey(t.title) === key);
+  if (dup) return null;
+  const today = (typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '') || '';
+  const isMicro = kind === 'micro';
+  const dateJalali = isMicro ? today : '';
+  const now = new Date().toISOString();
+  const todo = {
+    id: _allocateTodoId(),
+    title: trimmed,
+    note: '',
+    manager_note: '',
+    assignee_id: null,
+    assignee_email: '',
+    visibility: 'private',
+    shared_with: [],
+    requires_report: 'none',
+    requires_attachment: 'none',
+    requires_approval: false,
+    owner_id: (typeof _todoActiveOwnerId === 'function' && _todoActiveOwnerId()) || 'local-owner',
+    created_by: _sbUser?.id || 'local-owner',
+    created_by_name: _sbUser?.name || '',
+    date_jalali: dateJalali,
+    scheduled_date: dateJalali,
+    scheduledDate: dateJalali,
+    occurrence_date: dateJalali,
+    time: '',
+    duration_min: 0,
+    repeat: 'none',
+    weekdays: '',
+    priority: isMicro ? 'high' : 'medium',
+    category: 'personal',
+    goal_id: +goalId,
+    goal_action_kind: isMicro ? 'micro' : 'action',
+    remind_min: 0,
+    sync_gcal: false,
+    gcal_event_id: null,
+    gcal_calendar_id: null,
+    done: false,
+    done_at: null,
+    completedAt: null,
+    completed_at: null,
+    archived: false,
+    status: 'pending',
+    created_at: now,
+    updated_at: now,
+  };
+  _db.todos.push(todo);
+  return todo;
+}
+
+function _commitGoalPathTodos(goalId, prefix) {
+  _flushGoalPathInputs(prefix);
+  const draft = _goalPathDraft(prefix);
+  const created = [];
+  (draft.actions || []).forEach(title => {
+    const todo = _createLinkedGoalTodo(goalId, title, 'action');
+    if (todo) created.push(todo);
+  });
+  (draft.micros || []).forEach(title => {
+    const todo = _createLinkedGoalTodo(goalId, title, 'micro');
+    if (todo) created.push(todo);
+  });
+  _resetGoalPathDraft(prefix);
+  return created;
+}
+
+function _syncGoalProgressFromLinkedWork(goalId) {
+  const g = (_db.goals || []).find(x => x.id === goalId);
+  if (!g) return;
+  const tasks = _goalLinkedTasks(goalId);
+  if (!tasks.length) return;
+  const milestones = g.milestones || [];
+  const taskRatio = tasks.filter(t => t.done).length / tasks.length;
+  const msRatio = milestones.length ? milestones.filter(m => m.done).length / milestones.length : null;
+  const pct = Math.round((msRatio == null ? taskRatio : (taskRatio * 0.7 + msRatio * 0.3)) * 100);
+  if (pct === +(g.progress || 0)) return;
+  updateGoalProgress(goalId, pct);
+}
+
+function _goalLinkedPathPreviewHtml(g) {
+  if (!g || !g.id) return '';
+  const tasks = _goalLinkedTasks(g.id);
+  if (!tasks.length) return '';
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const open = tasks.filter(t => !t.done).length;
+  return `<div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:10px">الان ${fa(tasks.length)} کار لینک‌شده داری · ${fa(open)} باز. موارد جدید زیر مستقیم به لیست کارها اضافه می‌شوند.</div>`;
+}
+
+function _goalPathComposerHtml(prefix, g) {
+  if (prefix === 'ach') return '';
+  return `
+    <details open style="background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.22);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#60a5fa">⚡ مسیر اجرا</summary>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 12px">اقدام و اقدامک مستقیم به‌صورت کار در لیست کارها ثبت می‌شوند. اقدامک یعنی کوچک‌ترین حرکت امروز.</div>
+      ${_goalLinkedPathPreviewHtml(g)}
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">اقدام‌ها <span style="font-weight:600;color:var(--text3)">(تا ۳ مورد)</span></div>
+        <div id="${prefix}-path-actions-list"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="${prefix}-path-action" placeholder="مثلاً: رزومه را برای ۳ شرکت بفرست" onkeydown="if(event.key==='Enter'){event.preventDefault();_addGoalPathItem('${prefix}','action')}">
+          <button type="button" onclick="_addGoalPathItem('${prefix}','action')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-size:18px;font-weight:800">+</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">اقدامک امروز <span style="font-weight:600;color:var(--text3)">(تا ۳ مورد، تاریخ امروز)</span></div>
+        <div id="${prefix}-path-micros-list"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="${prefix}-path-micro" placeholder="مثلاً: لیست ۱۰ شرکت را در نوت بنویس" onkeydown="if(event.key==='Enter'){event.preventDefault();_addGoalPathItem('${prefix}','micro')}">
+          <button type="button" onclick="_addGoalPathItem('${prefix}','micro')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-size:18px;font-weight:800">+</button>
+        </div>
+      </div>
+    </details>`;
+}
+
 function _goalFormCompletion(prefix) {
+  const draft = window._goalFormPath && window._goalFormPath[prefix];
+  const hasPath = !!(draft && ((draft.actions && draft.actions.length) || (draft.micros && draft.micros.length)
+    || document.getElementById(prefix + '-path-action')?.value.trim()
+    || document.getElementById(prefix + '-path-micro')?.value.trim()));
   const checks = [
     !!document.getElementById(prefix + '-title')?.value.trim(),
     !!document.getElementById(prefix + '-category')?.value.trim(),
     !!document.getElementById(prefix + '-icon')?.value.trim(),
     !!document.getElementById(prefix + '-why')?.value.trim(),
+    hasPath,
     !!document.getElementById(prefix + '-vision')?.value.trim(),
     !!readCalendarDateField(prefix + '-deadline'),
     !!((window._goalFormVisionAssets && window._goalFormVisionAssets[prefix] || []).length)
@@ -5541,6 +5758,8 @@ function _syncGoalCustomIcon(prefix) {
 function _goalFormHtml(prefix, g) {
   g = g || {};
   const imageCount = _goalVisionItems(g).length;
+  const visionOpen = !!(g.vision);
+  const boardOpen = imageCount > 0;
   return `
     <div style="background:linear-gradient(135deg,rgba(124,106,247,.18),rgba(62,207,142,.08));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:16px;margin-bottom:14px">
       <div style="font-size:28px;margin-bottom:6px">🎯</div>
@@ -5572,7 +5791,9 @@ function _goalFormHtml(prefix, g) {
       <textarea class="form-textarea" id="${prefix}-why" rows="3" placeholder="دلیل واقعی‌ات را بنویس؛ همان چیزی که روزهای سخت نگهت می‌دارد..." style="margin-top:10px">${escapeHtml(g.why||'')}</textarea>
     </details>
 
-    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
+    ${_goalPathComposerHtml(prefix, g)}
+
+    <details ${visionOpen ? 'open' : ''} style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">👁 تصویر ذهنی</summary>
       <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0">
         وقتی رسیدی چه می‌بینی؟ چه می‌شنوی؟ کنارت چه کسانی هستند؟ چه احساسی داری؟
@@ -5580,7 +5801,7 @@ function _goalFormHtml(prefix, g) {
       <textarea class="form-textarea" id="${prefix}-vision" rows="3" placeholder="مثلاً صبح بیدار می‌شوم و..." >${escapeHtml(g.vision||'')}</textarea>
     </details>
 
-    <details open style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
+    <details ${boardOpen ? 'open' : ''} style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--text)">🖼 تابلو آرزو</summary>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0">
         <div style="min-width:0">
@@ -5636,6 +5857,11 @@ function _initGoalFormUX(prefix) {
     const el = document.getElementById(prefix + '-' + k);
     if (el) el.addEventListener('input', refresh);
   });
+  ['path-action','path-micro'].forEach(k => {
+    const el = document.getElementById(prefix + '-' + k);
+    if (el) el.addEventListener('input', refresh);
+  });
+  _renderGoalPathDraft(prefix);
   refresh();
 }
 
@@ -5987,6 +6213,7 @@ function openAddGoal() {
   window._goalFormVisionMusic = window._goalFormVisionMusic || {};
   window._goalFormVisionAssets.goal = [];
   window._goalFormVisionMusic.goal = '';
+  _resetGoalPathDraft('goal');
   openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
     { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -6034,9 +6261,16 @@ function saveNewGoal() {
   _persistVisionAssets(goal.vision_assets).then(items => {
     goal.vision_assets = items;
     _db.goals.push(goal);
+    const created = _commitGoalPathTodos(goal.id, 'goal');
     _save();
+    if (created.length && typeof _syncTodoDelta === 'function') {
+      void _syncTodoDelta(created[0], 'create', created.slice(1));
+    }
     closeModal();
-    showToast('هدف ذخیره شد ✓', 'success');
+    const extra = created.length
+      ? (created.length === 1 ? ' · یک کار در لیست کارها ثبت شد' : ` · ${created.length} کار در لیست کارها ثبت شد`)
+      : '';
+    showToast('هدف ذخیره شد ✓' + extra, 'success');
     if (currentPage === 'goals') renderGoals();
   });
 }
@@ -6077,6 +6311,72 @@ function saveAchievementGoal() {
     showToast('دستاورد ثبت شد ✓', 'success');
     if (currentPage === 'goals') renderGoals();
   });
+}
+
+function _goalDetailPathHtml(id) {
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  const tasks = _goalLinkedTasks(id).slice().sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+    const ka = _goalActionKind(a) === 'micro' ? 0 : 1;
+    const kb = _goalActionKind(b) === 'micro' ? 0 : 1;
+    return ka - kb;
+  });
+  const openCount = tasks.filter(t => !t.done).length;
+  const rows = tasks.length ? tasks.map(t => {
+    const kind = _goalActionKind(t);
+    const badge = kind === 'micro' ? 'اقدامک' : 'اقدام';
+    const dateLabel = t.date_jalali ? DateService.disp(t.date_jalali) : 'بدون تاریخ';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
+      <button type="button" onclick="_toggleGoalPathTodo(${id},${t.id})" style="width:20px;height:20px;border-radius:50%;flex-shrink:0;cursor:pointer;
+        border:2px solid ${t.done?'var(--green)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:11px;font-weight:700">
+        ${t.done?'✓':''}
+      </button>
+      <span style="font-size:10px;font-weight:800;color:${kind==='micro'?'var(--amber)':'#60a5fa'};background:${kind==='micro'?'rgba(251,191,36,.12)':'rgba(96,165,250,.12)'};padding:2px 7px;border-radius:999px;flex-shrink:0">${badge}</span>
+      <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(t.title)}</span>
+      <span style="font-size:10px;color:var(--text3);flex-shrink:0">${dateLabel}</span>
+    </div>`;
+  }).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز اقدام یا اقدامکی ثبت نشده</div>';
+  return `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text2)">⚡ مسیر اجرا · کارهای این هدف</span>
+          <span style="font-size:11px;color:var(--text3)">${fa(openCount)} باز از ${fa(tasks.length)}</span>
+        </div>
+        <div>${rows}</div>
+        <div style="margin-top:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (بدون تاریخ، در لیست کارها)</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input class="form-input" id="goal-detail-path-action" placeholder="اقدام بعدی مسیر..." onkeydown="if(event.key==='Enter'){event.preventDefault();addGoalPathTodoFromDetail(${id},'action')}">
+            <button type="button" onclick="addGoalPathTodoFromDetail(${id},'action')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-size:18px;font-weight:800">+</button>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدامک امروز</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="goal-detail-path-micro" placeholder="کوچک‌ترین حرکت امروز..." onkeydown="if(event.key==='Enter'){event.preventDefault();addGoalPathTodoFromDetail(${id},'micro')}">
+            <button type="button" onclick="addGoalPathTodoFromDetail(${id},'micro')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.12);color:var(--amber);cursor:pointer;font-size:18px;font-weight:800">+</button>
+          </div>
+        </div>
+      </div>`;
+}
+
+function addGoalPathTodoFromDetail(goalId, kind) {
+  const input = document.getElementById(kind === 'micro' ? 'goal-detail-path-micro' : 'goal-detail-path-action');
+  const title = (input?.value || '').trim();
+  if (!title) { showToast(kind === 'micro' ? 'اقدامک را بنویس' : 'اقدام را بنویس', 'error'); return; }
+  const created = _createLinkedGoalTodo(goalId, title, kind);
+  if (!created) { showToast('این مورد از قبل در کارهای این هدف هست', 'warning'); return; }
+  if (typeof _syncTodoDelta === 'function') void _syncTodoDelta(created, 'create');
+  _save();
+  _syncGoalProgressFromLinkedWork(goalId);
+  openGoalDetail(goalId);
+  showToast(kind === 'micro' ? 'اقدامک در لیست کارها ثبت شد ✓' : 'اقدام در لیست کارها ثبت شد ✓', 'success');
+}
+
+function _toggleGoalPathTodo(goalId, todoId) {
+  if (typeof _toggleTodo === 'function') _toggleTodo(todoId);
+  setTimeout(() => {
+    _syncGoalProgressFromLinkedWork(goalId);
+    openGoalDetail(goalId);
+  }, 40);
 }
 
 function openGoalDetail(id) {
@@ -6160,6 +6460,8 @@ function openGoalDetail(id) {
           onchange="updateGoalProgress(${id},this.value)">
       </div>
 
+      ${_goalDetailPathHtml(id)}
+
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-size:12px;font-weight:600;color:var(--text2)">🏁 مراحل (Milestones)</span>
@@ -6172,25 +6474,13 @@ function openGoalDetail(id) {
 
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:600;color:var(--text2)">🔗 ارتباط با کارها و عادت‌ها</span>
-          <button onclick="closeModal();openGoalLinkedItems(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer">مشاهده همه</button>
+          <span style="font-size:12px;font-weight:600;color:var(--text2)">🔥 عادت‌های مرتبط</span>
+          <button onclick="closeModal();openGoalLinkedItems(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer">مشاهده</button>
         </div>
-        <div style="display:flex;gap:8px">
-          <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:#60a5fa">✅ ${fa(linked.tasks.length)}</div>
-            <div style="font-size:9px;color:var(--text3)">کار مرتبط</div>
-          </div>
-          <div style="flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:15px;font-weight:700;color:var(--amber)">🔥 ${fa(linked.habits.length)}</div>
-            <div style="font-size:9px;color:var(--text3)">عادت مرتبط</div>
-          </div>
+        <div style="background:var(--bg3);border-radius:8px;padding:8px 10px;text-align:center">
+          <div style="font-size:15px;font-weight:700;color:var(--amber)">🔥 ${fa(linked.habits.length)}</div>
+          <div style="font-size:9px;color:var(--text3)">عادت مرتبط</div>
         </div>
-      </div>
-
-      <div style="margin-top:14px;background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(124,106,247,.10));border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px 14px">
-        <div style="font-size:12px;font-weight:800;color:#60a5fa;margin-bottom:5px">🚀 اولین قدم امروز</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">امروز چه کاری انجام می‌دهی که این هدف یک میلی‌متر جلو برود؟</div>
-        <button onclick="closeModal();openAddTodoForGoal(${id})" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:800">➕ تبدیل اولین قدم به کار</button>
       </div>
     </div>
   `, [
@@ -6323,6 +6613,7 @@ function toggleMilestone(goalId, idx) {
   g.milestones[idx].done = !g.milestones[idx].done;
   _touchGoal(g);
   _save();
+  _syncGoalProgressFromLinkedWork(goalId);
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
 }
@@ -6513,6 +6804,7 @@ function openEditGoal(id) {
   window._goalFormVisionMusic = window._goalFormVisionMusic || {};
   window._goalFormVisionAssets.eg = _goalVisionItems(g).map(x => ({...x}));
   window._goalFormVisionMusic.eg = g.music_url || '';
+  _resetGoalPathDraft('eg');
   openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
     { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -6546,9 +6838,16 @@ function saveEditGoal(id) {
   }
   _persistVisionAssets(g.vision_assets).then(items => {
     g.vision_assets = items;
+    const created = _commitGoalPathTodos(g.id, 'eg');
     _touchGoal(g);
     _save(); closeModal(); if (currentPage === 'goals') renderGoals();
-    showToast('تغییرات هدف ذخیره شد ✓', 'success');
+    if (created.length && typeof _syncTodoDelta === 'function') {
+      void _syncTodoDelta(created[0], 'create', created.slice(1));
+    }
+    const extra = created.length
+      ? (created.length === 1 ? ' · یک کار جدید ثبت شد' : ` · ${created.length} کار جدید ثبت شد`)
+      : '';
+    showToast('تغییرات هدف ذخیره شد ✓' + extra, 'success');
   });
 }
 function deleteGoal(id) {
