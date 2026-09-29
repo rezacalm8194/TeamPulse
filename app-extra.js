@@ -4824,6 +4824,7 @@ function toggleGoalPin(id) {
   }
   g.pinned = !g.pinned;
   g.pinned_at = g.pinned ? new Date().toISOString() : '';
+  if (g.pinned) _goalsPeriodOpen[_goalPeriod(g)] = true;
   _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
@@ -5373,9 +5374,9 @@ function renderGoals() {
       </div>` : ''}
     </div>`;
   };
-  const firstOpenKey = GOAL_PERIODS.find(p => goals.some(g => !g.pinned && _goalPeriod(g) === p.key))?.key;
+  const firstOpenKey = GOAL_PERIODS.find(p => goals.some(g => _goalPeriod(g) === p.key))?.key;
   const html = GOAL_PERIODS.map(period => {
-    const periodGoals = goals.filter(g => !g.pinned && _goalPeriod(g) === period.key).slice().sort(_sortGoalsNewestFirst);
+    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key).slice().sort(_sortGoalsNewestFirst);
     if (!periodGoals.length) return '';
     const defaultOpen = period.key === firstOpenKey;
     const open = _goalPeriodIsOpen(period.key, defaultOpen);
@@ -5405,7 +5406,11 @@ function renderGoals() {
       ${pinnedGoals.map(renderGoalCard).join('')}
     </section>` : '';
 
-  const compactGoals = goals.filter(g => !g.pinned).slice().sort(_sortGoalsNewestFirst);
+  const compactGoals = goals.slice().sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    if (a.pinned && b.pinned) return _sortPinnedGoals(a, b);
+    return _sortGoalsNewestFirst(a, b);
+  });
 
   setContent(`
     <div style="max-width:920px;margin:0 auto">
