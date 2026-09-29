@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp309';
+const TP_ASSET_V = 'tp310';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -9942,6 +9942,149 @@ function _togglePreSummaryBox() {
   if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
 }
 
+function _sessionEditorFieldsHtml(opts) {
+  const importance = opts.importance === 'key' ? 'key' : 'normal';
+  const extraOpen = !!opts.extraOpen;
+  const extraHas = !!(opts.extraNote || '').trim();
+  return `
+    <div class="ses-context-bar ses-meta-bar" id="ses-context-bar">
+      <button type="button" class="ses-context-toggle ses-meta-toggle" onclick="_toggleSesMeta()" aria-expanded="false" aria-controls="ses-meta-body">
+        <span class="ses-context-summary ses-meta-summary" id="ses-meta-summary"></span>
+      </button>
+      <div class="ses-meta-body" id="ses-meta-body">
+        <div id="ses-current-topics-wrap" class="ses-context-topics" hidden></div>
+        ${opts.showStudentStatic ? `
+        <div class="meta-row" id="meta-student-static-row">
+          <span class="meta-icon">👤</span>
+          <span class="meta-student-static" id="ses-meta-student-static">${escapeHtml(opts.studentName || '')}</span>
+          ${opts.showChangeStudent ? `<button type="button" class="meta-change-link" onclick="_toggleSesStudentEdit()">✏️ تغییر</button>` : ''}
+        </div>` : ''}
+        <div class="meta-row" id="meta-student-select-row" style="${opts.showStudentSelect ? 'display:flex' : 'display:none'}">
+          <span class="meta-icon">👤</span>
+          <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts.studentSelectHtml || ''}</select>
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">📅</span>
+          <input class="form-input jdate" id="f-ses-date" value="${escapeHtml(opts.date || '')}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
+        </div>
+        <div class="meta-row">
+          <span class="meta-icon">🏷️</span>
+          <div class="seg-sm" id="f-ses-importance-seg">
+            <button type="button" data-val="normal" class="${importance !== 'key' ? 'active' : ''}" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
+            <button type="button" data-val="key" class="${importance === 'key' ? 'active' : ''}" onclick="_setImportanceSeg('key')">⭐ مهم</button>
+          </div>
+          <input type="hidden" id="f-ses-importance" value="${importance}">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-grid ses-composer">
+      <div class="form-group full ses-title-row">
+        <div class="ses-title-head">
+          <input class="form-input ses-title-input" id="f-ses-title" value="${escapeHtml(opts.title || '')}" placeholder="${escapeHtml(opts.titlePlaceholder || 'عنوان جلسه')}" aria-label="عنوان جلسه">
+          <button type="button" class="ses-timer" id="ses-form-timer" onclick="_toggleSessionTimer()" aria-label="شروع تایمر جلسه" title="شروع یا توقف تایمر جلسه">
+            <span class="ses-timer-icon" id="ses-timer-icon">▶</span>
+            <span class="ses-timer-time" id="ses-timer-time">00:00</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group full session-note-wrap">
+        ${richToolbar('f-ses-note', { compact: true })}
+        <textarea class="form-textarea" id="f-ses-note" rows="6" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." aria-label="توضیحات جلسه" data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(opts.note || '')}</textarea>
+      </div>
+
+      <div class="ses-sec">
+        <div class="ses-sec-tabs" role="tablist">
+          <button type="button" class="ses-sec-tab" data-tab="fu" role="tab" aria-selected="false" onclick="_setSesSecTab('fu')">
+            📌 اقدامات <span class="ses-sec-count" id="ses-fu-count" hidden></span>
+          </button>
+          <button type="button" class="ses-sec-tab" data-tab="ach" role="tab" aria-selected="false" onclick="_setSesSecTab('ach')">
+            🌱 پیشرفت‌ها <span class="ses-sec-count" id="ses-ach-count" hidden></span>
+          </button>
+        </div>
+        <div class="ses-sec-panel" id="ses-sec-fu" hidden>
+          <div id="${escapeHtml(opts.followupListId || 'ses-followup-list')}">${opts.followupListHtml || ''}</div>
+          <div class="ses-fu-add">
+            <input class="form-input" id="${escapeHtml(opts.followupInputId)}" placeholder="افزودن اقدام جدید..." onkeydown="${escapeHtml(opts.followupKeydown || '')}">
+            <div class="session-fu-due-field">${calendarDateFieldHtml(opts.followupDueId, '', 'موعد', false)}</div>
+            <button type="button" class="ses-fu-plus" onclick="${opts.followupAddAction}" aria-label="افزودن اقدام">+</button>
+          </div>
+        </div>
+        <div class="ses-sec-panel" id="ses-sec-ach" hidden>
+          <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..." data-no-voice oninput="_updateSesSecCounts()">${escapeHtml(opts.achievements || '')}</textarea>
+          <div id="f-ses-period-badge" class="ses-period-badge"></div>
+          <div id="ses-ach-tags"></div>
+        </div>
+      </div>
+
+      <div class="form-group full ses-adv-wrap">
+        <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn" class="ses-adv-toggle">
+          <span id="f-ses-adv-arrow">▶</span>
+          <span>⋮ تنظیمات بیشتر</span>
+          ${extraHas ? '<span class="ses-sec-count">●</span>' : ''}
+        </button>
+        <div id="f-ses-adv-body" style="display:none;padding-top:8px">
+          <div class="form-group full" style="margin:0 0 12px">
+            <button type="button" onclick="_toggleExtraNote()" class="ses-extra-toggle${extraHas ? ' has-content' : ''}">
+              <span id="f-ses-extra-arrow" style="${extraOpen ? 'transform:rotate(90deg)' : ''}">▶</span>
+              <span style="font-weight:600">یادداشت‌های خصوصی</span>
+              ${extraHas ? '<span class="ses-extra-dot">● دارای محتوا</span>' : '<span style="color:var(--text3);font-size:11px">(اختیاری)</span>'}
+            </button>
+            <div id="f-ses-extra-body" style="display:${extraOpen ? 'block' : 'none'};margin-top:6px">
+              ${richToolbar('f-ses-extra')}
+              <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه...">${escapeHtml(opts.extraNote || '')}</textarea>
+            </div>
+          </div>
+          <div class="form-group full ses-adv-check">
+            <input type="checkbox" id="f-ses-add-topic">
+            <label for="f-ses-add-topic">📌 این جلسه به‌عنوان «موضوع مهم» هم ثبت شود</label>
+          </div>
+          ${opts.attachmentsBlock || ''}
+          ${opts.caseFormBlock || ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+function _setSesSecTab(tab) {
+  const current = document.querySelector('.ses-sec-tab.active')?.dataset.tab;
+  const next = current === tab ? '' : tab;
+  document.querySelectorAll('.ses-sec-tab').forEach(b => {
+    const on = b.dataset.tab === next;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const fu = document.getElementById('ses-sec-fu');
+  const ach = document.getElementById('ses-sec-ach');
+  if (fu) fu.hidden = next !== 'fu';
+  if (ach) ach.hidden = next !== 'ach';
+}
+
+function _updateSesSecCounts() {
+  const fuList = document.getElementById('ses-followup-list') || document.getElementById('ses-edit-followup-list');
+  const fuCount = fuList ? fuList.querySelectorAll(':scope > div').length : (window._pendingFollowups || []).length;
+  const fuEl = document.getElementById('ses-fu-count');
+  if (fuEl) {
+    fuEl.textContent = fuCount ? String(fuCount) : '';
+    fuEl.hidden = !fuCount;
+  }
+  const ach = document.getElementById('f-ses-achievements')?.value.trim();
+  const achEl = document.getElementById('ses-ach-count');
+  if (achEl) {
+    achEl.textContent = ach ? '●' : '';
+    achEl.hidden = !ach;
+  }
+}
+
+function _initSessionEditorUI({ followupCount = 0, hasAchievements = false } = {}) {
+  _updateSesMetaSummary();
+  _updateSesSecCounts();
+  if (followupCount) _setSesSecTab('fu');
+  else if (hasAchievements) _setSesSecTab('ach');
+  _bindSessionTextareaVisibilityGuard();
+}
+
 async function openAddSessionGeneral(presetStudentId = null) {
   // Same lazy fill as the students page: ensure only fills _db, so re-read allStudents via the api.
   if (!allStudents.length) { try { await _ensureBusinessPartLoaded('students'); allStudents = await window.api.students.getAll(); } catch (e) {} }
@@ -9955,118 +10098,40 @@ async function openAddSessionGeneral(presetStudentId = null) {
   const title = `ثبت ${META.sessionSingular || 'جلسه'}${initStudent ? `<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${escapeHtml(initStudent.name)} ${escapeHtml(initStudent.lname)}</div>` : '<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px"></div>'}`;
 
   openModal(title, `
-    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
-    <div id="ses-current-topics-wrap"></div>
-
-    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
-    <div class="ses-meta-bar">
-      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-summary" id="ses-meta-summary"></span>
-      </button>
-      <div class="ses-meta-body" id="ses-meta-body">
-        <div class="meta-row" id="meta-student-static-row" style="${presetStudentId ? '' : 'display:none'}">
-          <span class="meta-icon">👤</span>
-          <span class="meta-student-static" id="ses-meta-student-static">${initStudent ? escapeHtml(initStudent.name + ' ' + initStudent.lname) : ''}</span>
-          <button type="button" class="meta-change-link" onclick="_toggleSesStudentEdit()">✏️ تغییر</button>
-        </div>
-        <div class="meta-row" id="meta-student-select-row" style="${presetStudentId ? 'display:none' : 'display:flex'}">
-          <span class="meta-icon">👤</span>
-          <select class="form-select" id="f-ses-student" onchange="_onSesStudentChangeRebuildPeriods(this)">${opts}</select>
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">📅</span>
-          <input class="form-input jdate" id="f-ses-date" value="${formatJalali(...todayJalali())}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">🏷️</span>
-          <div class="seg-sm" id="f-ses-importance-seg">
-            <button type="button" data-val="normal" class="active" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
-            <button type="button" data-val="key" onclick="_setImportanceSeg('key')">⭐ مهم</button>
-          </div>
-          <input type="hidden" id="f-ses-importance" value="normal">
-        </div>
-      </div>
-    </div>
-
-    <div class="form-grid">
-
-      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <div class="ses-title-head">
-          <label class="form-label ses-title-label">📝 عنوان جلسه</label>
-          <button type="button" class="ses-timer" id="ses-form-timer" onclick="_toggleSessionTimer()" aria-label="شروع تایمر جلسه" title="شروع یا توقف تایمر جلسه">
-            <span class="ses-timer-icon" id="ses-timer-icon">▶</span>
-            <span class="ses-timer-time" id="ses-timer-time">00:00</span>
-          </button>
-        </div>
-        <input class="form-input ses-title-input" id="f-ses-title" placeholder="مثلاً: بررسی اهداف سه‌ماهه" style="padding:13px 14px">
-      </div>
-
-      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full session-note-wrap">
-        <label class="form-label">توضیحات جلسه</label>
-        ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" placeholder="خلاصه جلسه، موضوع بحث، نکات گفته‌شده..." data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')"></textarea>
-      </div>
-
-      <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <label class="form-label">📌 اقدامات تا جلسه بعد</label>
-        <div id="ses-followup-list" style="margin-bottom:6px"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
-          <input class="form-input" id="f-ses-followup-input" placeholder="مثلاً: تماس با مشتری جدید..." style="flex:1;min-width:160px" onkeydown="_tpOnEnter(event,'_addSesFollowupItem')">
-          <div class="session-fu-due-field">${calendarDateFieldHtml('f-ses-followup-due','','موعد (اختیاری)',false)}</div>
-          <button type="button" class="btn btn-ghost" onclick="_addSesFollowupItem()">+ افزودن</button>
-        </div>
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">🌱 پیشرفت‌ها و دستاوردها</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌های مشاهده‌شده، موفقیت‌ها، تغییرات مثبت..." data-no-voice></textarea>
-        <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
-        <div id="ses-ach-tags"></div>
-      </div>
-
-      <!-- ── تنظیمات بیشتر (Accordion) ────────────────────────────────── -->
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
-        <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn"
-          style="display:flex;align-items:center;gap:6px;padding:8px 0;background:none;border:none;cursor:pointer;font-family:var(--font);color:var(--text3);font-size:12px;width:100%">
-          <span id="f-ses-adv-arrow" style="transition:transform .2s;font-size:10px">▶</span>
-          <span>⋮ تنظیمات بیشتر</span>
-        </button>
-        <div id="f-ses-adv-body" style="display:none;padding-top:8px">
-          <div class="form-group full" style="margin:0 0 12px">
-            <button type="button" onclick="_toggleExtraNote()"
-              style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s">
-              <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s">▶</span>
-              <span style="font-weight:600">یادداشت‌های خصوصی</span>
-              <span style="color:var(--text3);font-size:11px">(اختیاری)</span>
-            </button>
-            <div id="f-ses-extra-body" style="display:none;margin-top:6px">
-              ${richToolbar('f-ses-extra')}
-              <textarea class="form-textarea" id="f-ses-extra" rows="3" placeholder="نکات تکمیلی، یادداشت‌های اضافه..."></textarea>
-            </div>
-          </div>
-          <div class="form-group full" style="flex-direction:row;align-items:center;gap:8px;padding:2px 0 12px;flex-wrap:nowrap;margin-top:0">
-            <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-            <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
-          </div>
+    ${_sessionEditorFieldsHtml({
+      studentName: initStudent ? `${initStudent.name} ${initStudent.lname}` : '',
+      date: formatJalali(...todayJalali()),
+      importance: 'normal',
+      showStudentStatic: !!presetStudentId,
+      showChangeStudent: !!presetStudentId,
+      showStudentSelect: !presetStudentId,
+      studentSelectHtml: opts,
+      title: '',
+      titlePlaceholder: 'عنوان جلسه، مثلاً: بررسی اهداف سه‌ماهه',
+      note: '',
+      extraNote: '',
+      extraOpen: false,
+      achievements: '',
+      followupListId: 'ses-followup-list',
+      followupInputId: 'f-ses-followup-input',
+      followupDueId: 'f-ses-followup-due',
+      followupKeydown: "_tpOnEnter(event,'_addSesFollowupItem')",
+      followupAddAction: '_addSesFollowupItem()',
+      attachmentsBlock: `
           <div class="form-group full" style="margin-top:0">
             <label class="form-label">📎 پیوست‌ها</label>
             <div id="ses-attach-preview" style="margin-bottom:8px"></div>
             <button type="button" class="btn btn-ghost btn-sm" onclick="_pickSessionFiles()">📎 افزودن فایل یا عکس</button>
             <div id="ses-attach-count" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
-          </div>
-          <div class="form-group full" style="margin:0 0 12px;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+          </div>`,
+      caseFormBlock: `
+          <div class="form-group full ses-case-form-box">
             <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
             <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(null)}</select>
             <div id="session-case-form-fields" style="margin-top:10px"></div>
-          </div>
-      </div>
-      </div>
-
-    </div>
+          </div>`,
+    })}
   `, [
     { label: 'ثبت جلسه', cls: 'btn-primary', action: `saveSessionGeneral()` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -10082,8 +10147,7 @@ async function openAddSessionGeneral(presetStudentId = null) {
       _renderSessionCurrentTopics(sid);
     }
     _updateSesPeriodBadge();
-    _updateSesMetaSummary();
-    _bindSessionTextareaVisibilityGuard();
+    _initSessionEditorUI();
   }, 0);
 }
 
@@ -10096,11 +10160,11 @@ function _setImportanceSeg(val) {
 
 function _toggleSesMeta() {
   const body = document.getElementById('ses-meta-body');
-  const arrow = document.getElementById('ses-meta-arrow');
+  const toggle = document.querySelector('.ses-context-toggle, .ses-meta-toggle');
   if (!body) return;
   const open = body.classList.contains('open');
   body.classList.toggle('open', !open);
-  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+  if (toggle) toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
 }
 
 function _sesImportanceLabel(val) { return val === 'key' ? '⭐ مهم' : '🟢 معمولی'; }
@@ -10119,10 +10183,14 @@ function _updateSesMetaSummary() {
     const opt = sel?.options[sel.selectedIndex];
     studentLabel = opt ? opt.textContent : '';
   }
+  const topics = window._sesCurrentTopicTitles || [];
+  const topicHtml = topics.length
+    ? `<span class="dot">•</span><span class="ses-context-topic">📍 ${escapeHtml(topics[0])}${topics.length > 1 ? ' +' + (topics.length - 1) : ''}</span>`
+    : '';
   summaryEl.innerHTML = `
     ${studentLabel ? `<span>👤 ${escapeHtml(studentLabel)}</span><span class="dot">•</span>` : ''}
-    <span>📅 ${date}</span><span class="dot">•</span>
-    <span>${_sesImportanceLabel(importance)}</span>`;
+    <span>📅 ${escapeHtml(date)}</span><span class="dot">•</span>
+    <span>${_sesImportanceLabel(importance)}</span>${topicHtml}`;
 }
 
 function _toggleSesStudentEdit() {
@@ -10268,6 +10336,7 @@ function _renderSesFollowupList() {
       ${sessionFollowupDueHtml(f)}
       <button class="x-close-sm" onclick="_removeSesFollowupItem(${i})">✕</button>
     </div>`).join('');
+  _updateSesSecCounts();
 }
 
 async function saveSessionGeneral() {
@@ -10324,119 +10393,39 @@ async function openEditSession(sessionId) {
   if (!session) return;
 
   const preSummary = await _buildPreSessionSummary(session.student_id, sessionId);
+  const followups = session.followups || [];
+  const followupListHtml = followups.map(f => _sesEditFollowupRowHtml(sessionId, f)).join('');
+  const extraNote = session.extra_note || '';
 
   openModal(`ویرایش ${META.sessionSingular||'جلسه'}<div id="ses-modal-subtitle" style="font-size:11px;font-weight:500;color:var(--text3);margin-top:2px">${META.entitySingular||'شاگرد'}: ${escapeHtml(student.name)} ${escapeHtml(student.lname)}</div>`, `
-    <!-- ── خلاصه قبل از جلسه (Accordion) ─────────────────────────────── -->
     <div id="ses-presummary-container">${preSummary}</div>
-    <div id="ses-current-topics-wrap"></div>
-
-    <!-- ── نوار اطلاعات جلسه: شاگرد/تاریخ/اهمیت (Context، نه محتوای اصلی) ── -->
-    <div class="ses-meta-bar">
-      <button type="button" class="ses-meta-toggle" onclick="_toggleSesMeta()">
-        <span class="ses-meta-summary" id="ses-meta-summary"></span>
-      </button>
-      <div class="ses-meta-body" id="ses-meta-body">
-        <div class="meta-row" id="meta-student-static-row">
-          <span class="meta-icon">👤</span>
-          <span class="meta-student-static" id="ses-meta-student-static">${escapeHtml(student.name + ' ' + student.lname)}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">📅</span>
-          <input class="form-input jdate" id="f-ses-date" value="${escapeHtml(session.date_jalali)}" oninput="_updateSesPeriodBadge();_updateSesMetaSummary()" onchange="_updateSesPeriodBadge();_updateSesMetaSummary()">
-        </div>
-        <div class="meta-row">
-          <span class="meta-icon">🏷️</span>
-          <div class="seg-sm" id="f-ses-importance-seg">
-            <button type="button" data-val="normal" class="${session.importance!=='key'?'active':''}" onclick="_setImportanceSeg('normal')">🟢 معمولی</button>
-            <button type="button" data-val="key" class="${session.importance==='key'?'active':''}" onclick="_setImportanceSeg('key')">⭐ مهم</button>
-          </div>
-          <input type="hidden" id="f-ses-importance" value="${session.importance==='key'?'key':'normal'}">
-        </div>
-      </div>
-    </div>
-
-    <div class="form-grid">
-
-      <!-- ── اطلاعات اصلی ──────────────────────────────────────────────── -->
-      <div class="form-group full">
-        <div class="ses-title-head">
-          <label class="form-label ses-title-label">📝 عنوان جلسه</label>
-          <button type="button" class="ses-timer" id="ses-form-timer" onclick="_toggleSessionTimer()" aria-label="شروع تایمر جلسه" title="شروع یا توقف تایمر جلسه">
-            <span class="ses-timer-icon" id="ses-timer-icon">▶</span>
-            <span class="ses-timer-time" id="ses-timer-time">00:00</span>
-          </button>
-        </div>
-        <input class="form-input ses-title-input" id="f-ses-title" value="${escapeHtml(session.title)}" style="padding:13px 14px">
-      </div>
-
-      <!-- ── محتوای جلسه ──────────────────────────────────────────────── -->
-      <div class="form-group full session-note-wrap">
-        <label class="form-label">توضیحات جلسه</label>
-        ${richToolbar('f-ses-note')}
-        <textarea class="form-textarea" id="f-ses-note" rows="4" data-no-autogrow onpaste="pasteRichClipboard(event, 'f-ses-note')">${escapeHtml(session.note)}</textarea>
-      </div>
-
-      <!-- ── پیگیری‌ها ─────────────────────────────────────────────────── -->
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <label class="form-label">📌 اقدامات تا جلسه بعد</label>
-        <div id="ses-edit-followup-list">
-          ${(session.followups || []).map((f, i) => `
-            <div class="session-fu-edit-row" style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
-              <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
-              <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
-              ${sessionFollowupDueHtml(f)}
-              <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-fu-due-'+f.id, f.due_date_jalali||'', 'موعد', false)}</div>
-              <button type="button" class="btn btn-ghost btn-sm" onclick="saveEditFollowupDue(${sessionId}, ${f.id})">ذخیره موعد</button>
-              <button class="x-close-sm" onclick="deleteEditFollowup(${sessionId}, ${f.id})">✕</button>
-            </div>`).join('')}
-        </div>
-        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:flex-end">
-          <input class="form-input" id="f-edit-followup-input" placeholder="افزودن اقدام جدید..." style="flex:1;min-width:160px" onkeydown="_tpOnEnter1(event,'addEditFollowup',${sessionId})">
-          <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-followup-due','','موعد (اختیاری)',false)}</div>
-          <button type="button" class="btn btn-ghost" onclick="addEditFollowup(${sessionId})">+ افزودن</button>
-        </div>
-      </div>
-
-      <div class="form-group full">
-        <label class="form-label">🌱 پیشرفت‌ها و دستاوردهای مشاهده‌شده</label>
-        <textarea class="form-textarea" id="f-ses-achievements" rows="3" placeholder="پیشرفت‌ها، موفقیت‌ها، تغییرات مثبت..." data-no-voice>${escapeHtml(session.achievements || '')}</textarea>
-        <div id="f-ses-period-badge" style="margin-top:8px;font-size:11px;color:var(--text3);line-height:1.8"></div>
-        <div id="ses-ach-tags"></div>
-      </div>
-
-      <!-- ── تنظیمات بیشتر (Accordion) ────────────────────────────────── -->
-      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
-        <button type="button" onclick="_toggleAdvSes()" id="f-ses-adv-btn"
-          style="display:flex;align-items:center;gap:6px;padding:8px 0;background:none;border:none;cursor:pointer;font-family:var(--font);color:var(--text3);font-size:12px;width:100%">
-          <span id="f-ses-adv-arrow" style="transition:transform .2s;font-size:10px">▶</span>
-          <span>⋮ تنظیمات بیشتر</span>
-        </button>
-        <div id="f-ses-adv-body" style="display:none;padding-top:8px">
-          <div class="form-group full" style="margin:0 0 12px">
-            <button type="button" onclick="_toggleExtraNote()"
-              style="display:flex;align-items:center;gap:7px;padding:9px 12px;width:100%;background:${session.extra_note?'var(--bg2)':'var(--bg3)'};border:1px solid ${session.extra_note?'var(--accent)':'var(--border)'};border-radius:8px;cursor:pointer;font-family:var(--font);color:var(--text2);font-size:12px;transition:all .15s">
-              <span id="f-ses-extra-arrow" style="font-size:10px;transition:transform .2s;${session.extra_note?'transform:rotate(90deg)':''}">▶</span>
-              <span style="font-weight:600">یادداشت‌های خصوصی</span>
-              ${session.extra_note ? '<span style="font-size:10px;color:var(--accent2)">● دارای محتوا</span>' : '<span style="color:var(--text3);font-size:11px">(اختیاری)</span>'}
-            </button>
-            <div id="f-ses-extra-body" style="display:${session.extra_note?'block':'none'};margin-top:6px">
-              ${richToolbar('f-ses-extra')}
-              <textarea class="form-textarea" id="f-ses-extra" rows="4">${escapeHtml(session.extra_note || '')}</textarea>
-            </div>
-          </div>
-          <div class="form-group full" style="flex-direction:row;align-items:center;gap:8px;padding:2px 0;flex-wrap:nowrap;margin-top:0">
-            <input type="checkbox" id="f-ses-add-topic" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;margin:0">
-            <label for="f-ses-add-topic" style="font-size:12px;cursor:pointer;margin:0">📌 این جلسه به‌عنوان "موضوع مهم" هم ثبت شود</label>
-          </div>
-          <div class="form-group full" style="margin:12px 0 0;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:9px">
+    ${_sessionEditorFieldsHtml({
+      studentName: `${student.name} ${student.lname}`,
+      date: session.date_jalali,
+      importance: session.importance === 'key' ? 'key' : 'normal',
+      showStudentStatic: true,
+      showChangeStudent: false,
+      showStudentSelect: false,
+      studentSelectHtml: `<option value="${session.student_id}" selected>${escapeHtml(student.name)} ${escapeHtml(student.lname)}</option>`,
+      title: session.title || '',
+      titlePlaceholder: 'عنوان جلسه',
+      note: session.note || '',
+      extraNote,
+      extraOpen: !!extraNote.trim(),
+      achievements: session.achievements || '',
+      followupListId: 'ses-edit-followup-list',
+      followupListHtml,
+      followupInputId: 'f-edit-followup-input',
+      followupDueId: 'f-edit-followup-due',
+      followupKeydown: `_tpOnEnter1(event,'addEditFollowup',${sessionId})`,
+      followupAddAction: `addEditFollowup(${sessionId})`,
+      caseFormBlock: `
+          <div class="form-group full ses-case-form-box">
             <label class="form-label" for="f-ses-case-form">فرم پرونده در این جلسه</label>
             <select class="form-select" id="f-ses-case-form" onchange="_onSessionCaseFormChange(this)">${_sessionCaseFormOptions(session.case_form_id)}</select>
             <div id="session-case-form-fields" style="margin-top:10px">${_sessionCaseFormFieldsHtml(session.case_form_id, session.case_form_responses || [])}</div>
-          </div>
-        </div>
-      </div>
-
-    </div>
+          </div>`,
+    })}
   `, [
     { label: 'ذخیره جلسه', cls: 'btn-primary', action: `saveEditSession(${sessionId})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -10451,8 +10440,10 @@ async function openEditSession(sessionId) {
     _renderAchievementTagPicker(_primaryEvalFormId(session.student_id) || session.eval_form_id, session.achievement_tags || []);
     _renderSessionCurrentTopics(session.student_id);
     _updateSesPeriodBadge();
-    _updateSesMetaSummary();
-    _bindSessionTextareaVisibilityGuard();
+    _initSessionEditorUI({
+      followupCount: followups.length,
+      hasAchievements: !!(session.achievements || '').trim(),
+    });
   }, 0);
 }
 
@@ -10516,6 +10507,18 @@ async function deleteEditFollowup(sessionId, itemId) {
   await _refreshEditFollowupList(sessionId);
 }
 
+function _sesEditFollowupRowHtml(sessionId, f) {
+  return `
+    <div class="session-fu-edit-row" style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
+      <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
+      <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
+      ${sessionFollowupDueHtml(f)}
+      <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-fu-due-'+f.id, f.due_date_jalali||'', 'موعد', false)}</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="saveEditFollowupDue(${sessionId}, ${f.id})">ذخیره موعد</button>
+      <button class="x-close-sm" onclick="deleteEditFollowup(${sessionId}, ${f.id})">✕</button>
+    </div>`;
+}
+
 async function _refreshEditFollowupList(sessionId) {
   const groups = await window.api.sessions.getAll();
   let session = null;
@@ -10525,16 +10528,9 @@ async function _refreshEditFollowupList(sessionId) {
   }
   const container = document.getElementById('ses-edit-followup-list');
   if (!session || !container) return;
-  container.innerHTML = (session.followups || []).map((f, i) => `
-    <div class="session-fu-edit-row" style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px;font-size:12px;flex-wrap:wrap">
-      <input type="checkbox" ${f.done ? 'checked' : ''} onchange="toggleEditFollowup(${sessionId}, ${f.id}, this)" style="width:15px;height:15px;accent-color:var(--accent2)">
-      <span style="flex:1;${f.done ? 'text-decoration:line-through;color:var(--text3)' : ''}">${escapeHtml(f.text)}</span>
-      ${sessionFollowupDueHtml(f)}
-      <div class="session-fu-due-field">${calendarDateFieldHtml('f-edit-fu-due-'+f.id, f.due_date_jalali||'', 'موعد', false)}</div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="saveEditFollowupDue(${sessionId}, ${f.id})">ذخیره موعد</button>
-      <button class="x-close-sm" onclick="deleteEditFollowup(${sessionId}, ${f.id})">✕</button>
-    </div>`).join('');
+  container.innerHTML = (session.followups || []).map(f => _sesEditFollowupRowHtml(sessionId, f)).join('');
   initDatePickers();
+  _updateSesSecCounts();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -12214,14 +12210,17 @@ async function deletePkgType(id) {
   await renderSettings();
 }
 
-function richToolbar(textareaId) {
+function richToolbar(textareaId, opts = {}) {
   // فقط پراستفاده‌ترین ابزارها همیشه نمایش داده می‌شوند؛ بقیه پشت دکمه «+» هستند (مثل Notion)
   // «حالت تمرکز» چون خیلی زیاد استفاده می‌شود همیشه در دسترس است، نه پشت «+»
-  const mainStickers = ['⭐','📌','🔥','✅','⚠️'];
-  const moreStickers = ['❗','💡','👍','❤️','🎯'];
+  const compact = !!opts.compact;
+  const mainStickers = compact ? [] : ['⭐','📌','🔥','✅','⚠️'];
+  const moreStickers = compact
+    ? ['⭐','📌','🔥','✅','⚠️','❗','💡','👍','❤️','🎯']
+    : ['❗','💡','👍','❤️','🎯'];
   const moreId = textareaId + '-more';
   return `
-  <div class="rich-toolbar">
+  <div class="rich-toolbar${compact ? ' rich-toolbar-compact' : ''}">
     ${mainStickers.map(s => `<button type="button" class="rt-btn rt-sticker" onclick="insertAtCursor('${textareaId}','${s}')">${s}</button>`).join('')}
     <button type="button" class="rt-btn" title="هایلایت" onclick="wrapSelection('${textareaId}','==','==')">🖍️</button>
     <span class="rt-sep"></span>
@@ -15820,18 +15819,22 @@ async function toggleTopicPin(topicId, studentId, displayName) {
 async function _renderSessionCurrentTopics(studentId) {
   const wrap = document.getElementById('ses-current-topics-wrap');
   if (!wrap) return;
-  if (!studentId) { wrap.innerHTML = ''; return; }
+  window._sesCurrentTopicTitles = [];
+  if (!studentId) { wrap.innerHTML = ''; wrap.hidden = true; _updateSesMetaSummary(); return; }
   try { await _ensureDocumentParts(['topics']); } catch (e) {}
   const pinned = (await window.api.topics.getByStudent(studentId)).filter(t => t.pinned);
-  if (!pinned.length) { wrap.innerHTML = ''; return; }
+  if (!pinned.length) { wrap.innerHTML = ''; wrap.hidden = true; _updateSesMetaSummary(); return; }
+  window._sesCurrentTopicTitles = pinned.map(t => t.title || '(بدون عنوان)');
+  wrap.hidden = false;
   wrap.innerHTML = `<div class="ses-current-topics" aria-label="موضوعات جاری این شاگرد">
-    <span class="ses-current-topics-label">📍 موضوعات جاری این شاگرد</span>
+    <span class="ses-current-topics-label">موضوعات جاری</span>
     ${pinned.map(t => {
       const title = t.title || '(بدون عنوان)';
       const tip = excerpt(_topicPlainText(t.text), 120);
       return `<span class="ses-current-topic-chip" title="${escapeHtml(tip || title)}">${escapeHtml(title)}</span>`;
     }).join('')}
   </div>`;
+  _updateSesMetaSummary();
 }
 
 // ── Important Topics (per-student, title + full description) ─────────────────
@@ -25556,7 +25559,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v309';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v310';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
