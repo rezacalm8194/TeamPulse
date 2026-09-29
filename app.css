@@ -1704,13 +1704,14 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .session-editor-modal .modal {
   height: calc(var(--modal-vh, 100dvh) * .92);
   max-height: calc(var(--modal-vh, 100dvh) * .92);
+  overflow: hidden;
 }
 .session-editor-modal .modal-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0%;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .session-editor-modal #ses-presummary-container { flex: 0 0 auto; }
 .session-editor-modal .ses-presummary-box { margin-bottom: 8px; }
@@ -1745,18 +1746,22 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .session-editor-modal .form-grid.ses-composer {
   display: flex !important;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
   gap: 8px;
   margin-bottom: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .session-editor-modal .ses-title-row { flex: 0 0 auto; margin: 0; }
 .session-editor-modal .session-note-wrap {
-  flex: 1 1 auto !important;
-  min-height: 0;
+  flex: 1 1 0% !important;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   margin: 0;
+  overflow: hidden;
+  position: relative;
 }
 .session-editor-modal .session-note-wrap > .rich-toolbar {
   flex: 0 0 auto;
@@ -1769,12 +1774,17 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   margin: 0;
 }
 .session-editor-modal #f-ses-note {
-  flex: 1 1 auto;
-  min-height: 140px;
+  flex: 1 1 0%;
+  min-height: 120px;
   overflow-y: auto;
   resize: none;
 }
-.ses-sec { flex: 0 0 auto; }
+.ses-sec {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  background: var(--bg2);
+}
 .ses-sec-tabs {
   display: flex; gap: 6px; align-items: center;
 }
@@ -1814,7 +1824,15 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 }
 .ses-fu-plus:hover { border-color: var(--accent2); color: var(--accent2); }
 .ses-period-badge { margin-top: 6px; font-size: 11px; color: var(--text3); line-height: 1.8; }
-.ses-adv-wrap { flex: 0 0 auto; margin: 0; border-top: 1px solid var(--border); padding-top: 2px; }
+.ses-adv-wrap {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  background: var(--bg2);
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
 .ses-adv-toggle {
   display: flex; align-items: center; gap: 6px; padding: 8px 0;
   background: none; border: none; cursor: pointer;
@@ -4702,10 +4720,9 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   }
   .session-editor-modal .modal-body,
   body.modal-keyboard-open .session-editor-modal .modal-body {
-    flex: 1 1 auto !important;
+    flex: 1 1 0% !important;
     min-height: 0 !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
+    overflow: hidden !important;
     padding: 10px 18px 10px !important;
     -webkit-overflow-scrolling: touch !important;
     overscroll-behavior: contain !important;
@@ -4717,9 +4734,11 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   body.modal-keyboard-open .session-editor-modal .modal-body > .form-grid {
     display: flex !important;
     flex-direction: column !important;
+    flex: 1 1 0% !important;
     gap: 8px !important;
     min-height: 0 !important;
-    overflow: visible !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     padding-bottom: 8px !important;
   }
   body.modal-keyboard-open .session-editor-modal #ses-presummary-container,
@@ -4739,10 +4758,11 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   }
   .session-editor-modal .session-note-wrap,
   body.modal-keyboard-open .session-editor-modal .session-note-wrap {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
+    flex: 1 1 0% !important;
+    min-height: 120px !important;
     display: flex !important;
     flex-direction: column !important;
+    overflow: hidden !important;
     contain: layout style;
   }
   body.modal-keyboard-open .session-editor-modal .session-note-wrap .rich-toolbar {
@@ -4752,8 +4772,8 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
   }
   .session-editor-modal #f-ses-note,
   body.modal-keyboard-open .session-editor-modal #f-ses-note {
-    flex: 1 1 auto !important;
-    min-height: 180px !important;
+    flex: 1 1 0% !important;
+    min-height: 120px !important;
     max-height: none !important;
     overflow-y: auto !important;
     resize: none !important;
