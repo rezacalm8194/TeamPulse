@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp308';
+const TP_ASSET_V = 'tp309';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -15759,23 +15759,19 @@ function _topicSearchHay(t) {
 
 function _topicItemHtml(t, studentId, displayName) {
   const pinned = !!t.pinned;
-  return `
-          <div class="topic-item${pinned ? ' is-pinned' : ''}" data-hay="${escapeHtml(_topicSearchHay(t))}">
-            <div class="topic-item-head">
-              <div class="topic-item-date">${pinned ? '<span class="topic-current-badge">بالای لیست</span>' : ''}${DateService.disp(t.date_jalali)}${t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : ''}</div>
-              <button type="button" class="btn btn-ghost btn-sm topic-pin-btn${pinned ? ' is-on' : ''}" title="${pinned ? 'برداشتن از بالای لیست این شاگرد' : 'چسباندن به بالای لیست این شاگرد'}" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();toggleTopicPin(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">${pinned ? '↑ بالا' : 'سنجاق'}</button>
-            </div>
-            <div class="topic-item-title" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
-            <div class="topic-item-excerpt" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">${renderRich(excerpt(t.text, 90))}</div>
-            <div class="topic-item-actions">
-              <button class="btn btn-ghost btn-sm" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();openEditTopic(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">✏️ ویرایش</button>
-              <button class="btn btn-ghost btn-sm topic-copy-btn" onclick="event.stopPropagation();openCopyTopic(${t.id}, ${studentId})">📋 کپی</button>
-            </div>
-          </div>`;
+  const checks = t.checklist?.length ? ` · ☑ ${fa(t.checklist.filter(c=>c.done).length)}/${fa(t.checklist.length)}` : '';
+  return `<div class="topic-item${pinned ? ' is-pinned' : ''}" data-hay="${escapeHtml(_topicSearchHay(t))}" onclick="openTopicDetail(${t.id}, ${studentId}, ${escapeAttr(displayName)})">
+    <div class="topic-item-main">
+      <div class="topic-item-title">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
+      <div class="topic-item-date">${DateService.disp(t.date_jalali)}${checks}</div>
+    </div>
+    <button type="button" class="topic-pin-btn${pinned ? ' is-on' : ''}" title="${pinned ? 'برداشتن از بالای لیست این شاگرد' : 'چسباندن به بالای لیست این شاگرد'}" aria-label="${pinned ? 'برداشتن سنجاق' : 'سنجاق کردن'}" aria-pressed="${pinned ? 'true' : 'false'}" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();toggleTopicPin(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">📍</button>
+  </div>`;
 }
 
 function _filterTopicsList(q) {
   const query = String(q || '').trim();
+  window._topicsListFilter = String(q || '');
   document.querySelectorAll('#topics-list .topic-item').forEach(el => {
     const hay = el.getAttribute('data-hay') || '';
     el.style.display = !query || hay.includes(query) ? '' : 'none';
@@ -15787,6 +15783,32 @@ function _filterTopicsList(q) {
     label.style.display = visible ? '' : 'none';
     group.style.display = visible ? '' : 'none';
   });
+}
+
+function _toggleTopicsComposer(force) {
+  const box = document.getElementById('topics-composer');
+  const btn = document.getElementById('topics-composer-toggle');
+  if (!box) return;
+  const open = force === true ? true : force === false ? false : box.hidden;
+  box.hidden = !open;
+  if (btn) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.textContent = open ? 'بستن فرم' : '+ موضوع جدید';
+  }
+  if (open) {
+    initDatePickers();
+    setTimeout(() => document.getElementById('f-topic-title')?.focus(), 40);
+  }
+}
+
+function _toggleTopicComposerExtra() {
+  const extra = document.getElementById('topics-composer-extra');
+  const btn = document.getElementById('topics-composer-extra-btn');
+  if (!extra) return;
+  const open = extra.hidden;
+  extra.hidden = !open;
+  if (btn) btn.textContent = open ? 'تنظیمات کمتر' : 'بیشتر: تاریخ، سنجاق، چک‌لیست';
+  if (open) initDatePickers();
 }
 
 async function toggleTopicPin(topicId, studentId, displayName) {
@@ -15818,46 +15840,56 @@ async function openTopics(studentId, displayName) {
   const topics = await window.api.topics.getByStudent(studentId);
   const pinned = topics.filter(t => t.pinned);
   const rest = topics.filter(t => !t.pinned);
+  _newTopicChecklist = [];
+  if (window._topicsFilterSid !== studentId) {
+    window._topicsListFilter = '';
+    window._topicsFilterSid = studentId;
+  }
+  const composerOpen = !topics.length;
+  const encodedName = encodeURIComponent(displayName);
 
   openModal(`📌 موضوعات مهم — ${escapeHtml(displayName)}`, `
-    <div class="form-group full">
-      <label class="form-label">عنوان موضوع</label>
-      <input class="form-input" id="f-topic-title" placeholder="مثلاً: تصمیم برای تغییر شغل">
+    <div class="topics-toolbar">
+      ${topics.length ? `<input class="form-input topics-filter" id="topics-filter" placeholder="جستجو..." value="${escapeHtml(window._topicsListFilter || '')}" oninput="_filterTopicsList(this.value)">` : '<span class="topics-toolbar-spacer"></span>'}
+      <button type="button" class="btn btn-primary btn-sm" id="topics-composer-toggle" aria-expanded="${composerOpen ? 'true' : 'false'}" onclick="_toggleTopicsComposer()">${composerOpen ? 'بستن فرم' : '+ موضوع جدید'}</button>
+      ${topics.length ? `<button class="btn btn-ghost btn-sm" type="button" onclick="openAllTopics(${studentId}, decodeURIComponent('${encodedName}'))">کپی همه</button>` : ''}
     </div>
-    <div class="form-group full" style="margin-top:8px">
-      <label class="form-label">توضیحات کامل</label>
-      ${richToolbar('f-topic-text')}
-      <textarea class="form-textarea" id="f-topic-text" rows="4" placeholder="توضیح کامل این موضوع..."></textarea>
-    </div>
-    <div class="form-grid" style="margin-top:8px">
-      <div class="form-group">
-        <label class="form-label">تاریخ (شمسی)</label>
-        <input class="form-input jdate" id="f-topic-date" value="${formatJalali(...todayJalali())}">
+    <div id="topics-composer" class="topics-composer"${composerOpen ? '' : ' hidden'}>
+      <div class="form-group full">
+        <label class="form-label">عنوان موضوع</label>
+        <input class="form-input" id="f-topic-title" placeholder="مثلاً: تصمیم برای تغییر شغل">
       </div>
-      <div class="form-group" style="align-self:flex-end">
-        <button class="btn btn-primary" onclick="saveTopic(${studentId}, ${escapeAttr(displayName)})">+ افزودن</button>
+      <div class="form-group full" style="margin-top:8px">
+        <label class="form-label">توضیحات</label>
+        ${richToolbar('f-topic-text')}
+        <textarea class="form-textarea" id="f-topic-text" rows="3" placeholder="توضیح کامل این موضوع..."></textarea>
+      </div>
+      <div class="topics-composer-actions">
+        <button class="btn btn-primary" type="button" onclick="saveTopic(${studentId}, ${escapeAttr(displayName)})">+ افزودن</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="topics-composer-extra-btn" onclick="_toggleTopicComposerExtra()">بیشتر: تاریخ، سنجاق، چک‌لیست</button>
+      </div>
+      <div id="topics-composer-extra" class="topics-composer-extra" hidden>
+        <div class="form-group">
+          <label class="form-label">تاریخ (شمسی)</label>
+          <input class="form-input jdate" id="f-topic-date" value="${formatJalali(...todayJalali())}">
+        </div>
+        <label class="topic-pin-new">
+          <input type="checkbox" id="f-topic-pin">
+          <span>چسباندن به بالای لیست این شاگرد</span>
+        </label>
+        <div class="form-group full">
+          <label class="form-label">✅ آیتم‌های چک‌لیست (اختیاری)</label>
+          <div id="new-topic-checklist" style="margin-bottom:6px"></div>
+          <div style="display:flex;gap:6px">
+            <input class="form-input" id="f-new-checklist-item" placeholder="متن آیتم چک‌لیست..." style="flex:1" onkeydown="_tpOnEnter(event,'_addNewTopicChecklistItem')">
+            <button class="btn btn-ghost" type="button" onclick="_addNewTopicChecklistItem()">+ اضافه</button>
+          </div>
+        </div>
       </div>
     </div>
-    <label class="topic-pin-new">
-      <input type="checkbox" id="f-topic-pin">
-      <span>چسباندن به بالای لیست این شاگرد</span>
-    </label>
-    <div class="form-group full" style="margin-top:8px">
-      <label class="form-label">✅ آیتم‌های چک‌لیست (اختیاری)</label>
-      <div id="new-topic-checklist" style="margin-bottom:6px"></div>
-      <div style="display:flex;gap:6px">
-        <input class="form-input" id="f-new-checklist-item" placeholder="متن آیتم چک‌لیست..." style="flex:1" onkeydown="_tpOnEnter(event,'_addNewTopicChecklistItem')">
-        <button class="btn btn-ghost" onclick="_addNewTopicChecklistItem()">+ اضافه</button>
-      </div>
-    </div>
-    <div class="topics-section-head">
-      <div class="form-section">موضوعات ثبت‌شده</div>
-      ${topics.length ? `<button class="btn btn-ghost btn-sm topics-show-all-btn" type="button" onclick="openAllTopics(${studentId}, decodeURIComponent('${encodeURIComponent(displayName)}'))">نمایش و کپی همه</button>` : ''}
-    </div>
-    ${topics.length ? `<input class="form-input topics-filter" id="topics-filter" placeholder="جستجو در موضوعات این شاگرد..." oninput="_filterTopicsList(this.value)">` : ''}
     <div id="topics-list">
       ${topics.length === 0
-        ? '<p style="font-size:12px;color:var(--text3)">هنوز موضوعی ثبت نشده</p>'
+        ? '<p class="topics-empty">هنوز موضوعی ثبت نشده</p>'
         : `${pinned.length ? `<div class="topics-group-label">موضوعات جاری</div><div class="topics-group">${pinned.map(t => _topicItemHtml(t, studentId, displayName)).join('')}</div>` : ''}
           ${rest.length ? `${pinned.length ? `<div class="topics-group-label">سایر موضوعات</div>` : ''}<div class="topics-group">${rest.map(t => _topicItemHtml(t, studentId, displayName)).join('')}</div>` : ''}`}
     </div>
@@ -15865,6 +15897,7 @@ async function openTopics(studentId, displayName) {
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
   ]);
   initDatePickers();
+  if (window._topicsListFilter) _filterTopicsList(window._topicsListFilter);
 }
 
 function _topicPlainText(value) {
@@ -15893,7 +15926,7 @@ async function openAllTopics(studentId, displayName) {
   const body = sortedTopics.length ? sortedTopics.map(t => {
     const checklist = t.checklist || [];
     return `<article class="topics-all-item">
-      <div class="topic-item-date">${t.pinned ? '<span class="topic-current-badge">بالای لیست</span>' : ''}${DateService.disp(t.date_jalali)}</div>
+      <div class="topic-item-date">${t.pinned ? '📍 ' : ''}${DateService.disp(t.date_jalali)}</div>
       <div class="topics-all-title">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
       ${t.text ? `<div class="topics-all-text">${renderRich(t.text)}</div>` : ''}
       ${checklist.length ? `<div class="topics-all-checklist">${checklist.map(c => `<div>${c.done ? '☑' : '☐'} ${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
@@ -15968,7 +16001,7 @@ function _addNewTopicChecklistItem() {
 async function saveTopic(studentId, displayName) {
   const title = document.getElementById('f-topic-title')?.value.trim();
   const text = document.getElementById('f-topic-text')?.value.trim();
-  const date = document.getElementById('f-topic-date')?.value;
+  const date = document.getElementById('f-topic-date')?.value || formatJalali(...todayJalali());
   if (!title && !text) { showToast('عنوان یا توضیحات را وارد کنید', 'error'); return; }
   const pinned = !!document.getElementById('f-topic-pin')?.checked;
   await window.api.topics.add({ student_id: studentId, date, title, text, pinned, checklist: _newTopicChecklist.map(c => ({text: c.text})) });
@@ -16028,6 +16061,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
   `, [
     { label: t.pinned ? 'برداشتن از بالا' : '📍 چسباندن به بالا', cls: 'btn-ghost', action: `toggleTopicPin(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
     { label: '✏️ ویرایش', cls: 'btn-ghost', action: `openEditTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
+    { label: '📋 کپی', cls: 'btn-ghost', action: `openCopyTopic(${topicId}, ${studentId})` },
     { label: '🗑 حذف', cls: 'btn-danger', action: `deleteTopic(${topicId}, ${studentId}, ${escapeAttr(displayName)})` },
     { label: '↩️ بازگشت', cls: 'btn-ghost', action: `closeModal();openTopics(${studentId}, ${escapeAttr(displayName)})` },
     { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' },
@@ -25522,7 +25556,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v308';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v309';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
