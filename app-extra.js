@@ -4755,6 +4755,8 @@ function _saveAdminVideoUrl() {
 // GOALS + HABITS PAGE UI - deferred from first paint
 // ============================================================================
 let _goalAchievementsOpen = false;
+let _goalsPeriodOpen = {};
+const GOAL_PIN_MAX = 8;
 
 function toggleGoalAchievements() {
   _goalAchievementsOpen = !_goalAchievementsOpen;
@@ -4778,6 +4780,78 @@ function _goalPeriod(g) {
 }
 function _goalPeriodMeta(period) {
   return GOAL_PERIODS.find(x => x.key === period) || GOAL_PERIODS[0];
+}
+function _goalCreatedStamp(g) {
+  const ts = Date.parse(g?.created_at || '') || 0;
+  const id = Number(g?.id) || 0;
+  return ts || id;
+}
+function _sortGoalsNewestFirst(a, b) {
+  const diff = _goalCreatedStamp(b) - _goalCreatedStamp(a);
+  if (diff) return diff;
+  return (Number(b?.id) || 0) - (Number(a?.id) || 0);
+}
+function _sortPinnedGoals(a, b) {
+  const pa = Date.parse(a?.pinned_at || '') || 0;
+  const pb = Date.parse(b?.pinned_at || '') || 0;
+  if (pb !== pa) return pb - pa;
+  return _sortGoalsNewestFirst(a, b);
+}
+function _goalPeriodIsOpen(key, defaultOpen) {
+  if (Object.prototype.hasOwnProperty.call(_goalsPeriodOpen, key)) return !!_goalsPeriodOpen[key];
+  return !!defaultOpen;
+}
+function toggleGoalPeriod(key, defaultOpen) {
+  const next = !_goalPeriodIsOpen(key, !!defaultOpen);
+  _goalsPeriodOpen[key] = next;
+  const body = document.getElementById('goals-period-body-' + key);
+  const chevron = document.getElementById('goals-period-chevron-' + key);
+  const trigger = document.getElementById('goals-period-trigger-' + key);
+  if (body) body.hidden = !next;
+  if (chevron) chevron.textContent = next ? '⌄' : '‹';
+  if (trigger) trigger.setAttribute('aria-expanded', String(next));
+}
+function toggleGoalPin(id) {
+  _goalsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g) return;
+  if (!g.pinned) {
+    const pinnedCount = (_db.goals || []).filter(x => x.pinned && x.id !== id).length;
+    if (pinnedCount >= GOAL_PIN_MAX) {
+      showToast('حداکثر ' + GOAL_PIN_MAX + ' هدف را می‌توان پین کرد', 'warning');
+      return;
+    }
+  }
+  g.pinned = !g.pinned;
+  g.pinned_at = g.pinned ? new Date().toISOString() : '';
+  _touchGoal(g);
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  showToast(g.pinned ? 'هدف در بالای صفحه پین شد 📌' : 'پین برداشته شد', 'success');
+}
+function _goalsStickyAddHtml() {
+  return `<div class="todo-sticky-add-box goals-sticky-add-box">
+    <button class="tp-cta" onclick="openAddGoal()"
+      style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
+        font-family:var(--font);font-size:15px;font-weight:700;
+        background:linear-gradient(135deg,#7c6af7,#5b4de0);
+        color:white;letter-spacing:.01em;
+        box-shadow:0 4px 20px rgba(124,106,247,.4);
+        display:flex;align-items:center;justify-content:center;gap:10px">
+      <span>🎯 هدف جدید اضافه کن</span>
+      <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
+        display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
+    </button>
+  </div>`;
+}
+function _goalPinButtonHtml(g) {
+  const on = !!g.pinned;
+  return `<button type="button" onclick="event.stopPropagation();toggleGoalPin(${g.id})" title="${on ? 'برداشتن پین' : 'پین کردن در بالای صفحه'}"
+    aria-label="${on ? 'برداشتن پین' : 'پین کردن'}" aria-pressed="${on ? 'true' : 'false'}"
+    style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
+      border:1px solid ${on ? 'rgba(251,191,36,.55)' : 'var(--border2)'};background:${on ? 'rgba(251,191,36,.16)' : 'var(--bg3)'};font-size:14px">
+    ${on ? '📌' : '📍'}
+  </button>`;
 }
 function _goalPeriodSelectHtml(prefix, value) {
   const current = _goalPeriod({ period:value });
@@ -5155,15 +5229,15 @@ function renderGoals() {
 
   if (goals.length === 0) {
     setContent(`
-      <div style="max-width:920px;margin:40px auto;text-align:center;padding:40px 20px">
-        <div style="font-size:56px;margin-bottom:16px">🎯</div>
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز هدفی تعریف نکرده‌ای</h2>
-        <p style="color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.8">
-          اهداف بزرگ‌ات را اینجا ثبت کن. هر هدف می‌تواند مراحل، یادداشت و deadline داشته باشد.
-        </p>
-        <button class="btn btn-primary" style="padding:12px 28px;font-size:14px" onclick="openAddGoal()">
-          🎯 اولین هدفم را بسازم
-        </button>
+      <div style="max-width:920px;margin:0 auto">
+        ${_goalsStickyAddHtml()}
+        <div style="margin:40px auto;text-align:center;padding:40px 20px">
+          <div style="font-size:56px;margin-bottom:16px">🎯</div>
+          <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز هدفی تعریف نکرده‌ای</h2>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:8px;line-height:1.8">
+            اهداف بزرگ‌ات را از دکمه بالای صفحه ثبت کن. هر هدف می‌تواند مراحل، یادداشت و deadline داشته باشد.
+          </p>
+        </div>
       </div>`);
     return;
   }
@@ -5253,7 +5327,7 @@ function renderGoals() {
     return `<div style="background:var(--bg2);border:1px solid ${urgencyColor};border-radius:14px;padding:18px;margin-bottom:14px;cursor:pointer;transition:border-color .15s"
       onclick="openGoalDetail(${g.id})"
       onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.6)')"
-      onmouseleave="_tpStyle(this,'borderColor','$urgencyColor')">
+      onmouseleave="_tpStyle(this,'borderColor','${urgencyColor}')">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
           style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
@@ -5269,7 +5343,8 @@ function renderGoals() {
           </div>
           ${g.category ? `<span style="font-size:11px;color:var(--text3)">${escapeHtml(g.category)}</span>` : ''}
         </div>
-        <div style="text-align:center;flex-shrink:0">
+        <div style="text-align:center;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:8px">
+          ${_goalPinButtonHtml(g)}
           <div style="font-size:22px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
           <div style="font-size:9px;color:var(--text3)">پیشرفت</div>
         </div>
@@ -5298,37 +5373,47 @@ function renderGoals() {
       </div>` : ''}
     </div>`;
   };
+  const firstOpenKey = GOAL_PERIODS.find(p => goals.some(g => !g.pinned && _goalPeriod(g) === p.key))?.key;
   const html = GOAL_PERIODS.map(period => {
-    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key);
+    const periodGoals = goals.filter(g => !g.pinned && _goalPeriod(g) === period.key).slice().sort(_sortGoalsNewestFirst);
     if (!periodGoals.length) return '';
+    const defaultOpen = period.key === firstOpenKey;
+    const open = _goalPeriodIsOpen(period.key, defaultOpen);
     return `
-      <section style="margin-bottom:18px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
-          <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
-          <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
+      <section class="goals-period-section" style="margin-bottom:12px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+        <button type="button" id="goals-period-trigger-${period.key}" aria-expanded="${open}" onclick="toggleGoalPeriod('${period.key}', ${defaultOpen})"
+          style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:none;background:transparent;color:inherit;cursor:pointer;font-family:var(--font);text-align:right">
+          <span style="display:flex;align-items:center;gap:8px;min-width:0">
+            <span id="goals-period-chevron-${period.key}" style="font-size:16px;color:var(--text3);width:16px;flex-shrink:0">${open ? '⌄' : '‹'}</span>
+            <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
+          </span>
+          <span style="font-size:11px;color:var(--text3);flex-shrink:0">${fa(periodGoals.length)} هدف</span>
+        </button>
+        <div id="goals-period-body-${period.key}" ${open ? '' : 'hidden'} style="padding:0 12px 12px">
+          ${periodGoals.map(renderGoalCard).join('')}
         </div>
-        ${periodGoals.map(renderGoalCard).join('')}
       </section>`;
   }).join('');
 
+  const pinnedGoals = goals.filter(g => g.pinned).slice().sort(_sortPinnedGoals);
+  const pinnedHTML = pinnedGoals.length ? `
+    <section style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
+        <h3 style="font-size:14px;font-weight:900;color:var(--text);margin:0">📌 اهداف پین‌شده</h3>
+        <span style="font-size:11px;color:var(--text3)">${fa(pinnedGoals.length)} هدف</span>
+      </div>
+      ${pinnedGoals.map(renderGoalCard).join('')}
+    </section>` : '';
+
+  const compactGoals = goals.filter(g => !g.pinned).slice().sort(_sortGoalsNewestFirst);
+
   setContent(`
     <div style="max-width:920px;margin:0 auto">
-      <div style="margin-bottom:16px">
-        <button class="tp-cta" onclick="openAddGoal()"
-          style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
-            font-family:var(--font);font-size:15px;font-weight:700;
-            background:linear-gradient(135deg,#7c6af7,#5b4de0);
-            color:white;letter-spacing:.01em;
-            box-shadow:0 4px 20px rgba(124,106,247,.4);
-            display:flex;align-items:center;justify-content:center;gap:10px">
-          <span>🎯 هدف جدید اضافه کن</span>
-          <span style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.2);
-            display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>
-        </button>
-      </div>
+      ${_goalsStickyAddHtml()}
       ${statsHTML}
       ${_goalAchievementsHtml()}
       ${todayWidgetHTML}
+      ${pinnedHTML}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
         <div style="display:flex;align-items:center;gap:8px">
@@ -5341,7 +5426,7 @@ function renderGoals() {
       </div>
       <div id="goals-compact-view" style="display:${_goalsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-          ${goals.map(g => {
+          ${compactGoals.map(g => {
             const sc = statusColors[g.status || 'active'] || statusColors.active;
             const progress = g.progress || 0;
             const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
@@ -5366,7 +5451,8 @@ function renderGoals() {
                     <span style="font-size:10px;color:var(--accent2)">${_goalPeriodMeta(_goalPeriod(g)).icon} ${_goalPeriodMeta(_goalPeriod(g)).label}</span>
                   </div>
                 </div>
-                <div style="text-align:center;flex-shrink:0">
+                <div style="text-align:center;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px">
+                  ${_goalPinButtonHtml(g)}
                   <div style="font-size:18px;font-weight:800;color:${progressColor}">${fa(progress)}٪</div>
                   <div style="font-size:9px;color:var(--text3)">پیشرفت</div>
                 </div>

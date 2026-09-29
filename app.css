@@ -5214,6 +5214,18 @@ body { top: 0 !important; }
 .tp-cta {
   transition: filter .1s ease;
 }
+.goals-sticky-add-box {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 60 !important;
+  background: var(--bg) !important;
+  padding: 0 0 12px !important;
+  margin: 0 0 14px !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,.22);
+}
+@media (max-width:720px), (pointer:coarse) {
+  .goals-sticky-add-box .tp-cta { padding:11px 14px !important; font-size:14px !important; box-shadow: none !important; }
+}
 @media (hover: hover) and (pointer: fine) {
   ._ifcard:hover {
     background: var(--bg3) !important;
