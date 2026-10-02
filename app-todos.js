@@ -33,9 +33,12 @@ function _openMyTodoReport() {
 
 
 function _openStaffTodoReport(staffId) {
-  _todoStaffReportId = String(staffId || '');
-  _todoStaffFilter.staffId = _todoStaffReportId || _todoStaffFilter.staffId;
-  openModal('گزارش عملکرد', _todoReportForStaffHtml(_todoStaffReportId), [
+  _todoStaffReportId = String(staffId || _todoStaffFilter.staffId || 'all');
+  if (_todoStaffReportId && _todoStaffReportId !== 'all') {
+    _todoStaffFilter.staffId = _todoStaffReportId;
+  }
+  _todoReportFilter.range = 'month';
+  openModal('گزارش کارهای پرسنل', _todoReportForStaffHtml(_todoStaffReportId), [
     { label:'بستن', cls:'btn-ghost', action:'closeModal()' }
   ], { size:'large' });
 }
@@ -734,6 +737,7 @@ function _todoStaffDashboardHtml() {
     <div class="todo-staff-lite-bar">
       <button type="button" class="btn btn-primary btn-sm" onclick="_openQuickStaffChecklistFromFilter()">+ کار پرسنل</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="openAddPersonnelFromTodo()">پرسنل</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_openStaffTodoReport('${String(_todoStaffFilter.staffId || 'all')}')">گزارش</button>
     </div>
     <div class="todo-staff-chips" id="todo-staff-chips">${_todoStaffChipsHtml()}</div>
     <div class="todo-staff-filters">
@@ -927,23 +931,135 @@ function _openStaffTodoChecklist(staffId) {
 }
 
 
+function _todoStaffReportSource(staffId) {
+  const want = String(staffId || 'all');
+  return (_db.todos || []).filter(t => {
+    if (!_todoCanView(t) || !_todoIsStaffAssignedTask(t)) return false;
+    if (t.status === 'skipped') return false;
+    if (want && want !== 'all' && String(t.assignee_id || t.staff_id) !== want) return false;
+    return true;
+  });
+}
+
+
+function _todoStaffReportInRange(t, range, from, to) {
+  const b = _todoRangeBounds(range, from, to);
+  const fromK = _jalaliKey(b.from);
+  const toK = _jalaliKey(b.to);
+  const doneKey = _todoDoneDayKey(t);
+  const schedKey = _jalaliKey(_todoScheduledDate(t) || '');
+  const key = doneKey || schedKey;
+  if (!key) return false;
+  return key >= fromK && key <= toK;
+}
+
+
+function _todoStaffReportGroupKey(t) {
+  const root = String(_todoRootId(t) || t?.id || '');
+  const assignee = String(t?.assignee_id || t?.staff_id || t?.assignee_email || '').trim().toLowerCase();
+  return root + '|' + assignee;
+}
+
+
+function _todoStaffReportGroups(staffId) {
+  const range = _todoReportFilter.range;
+  const from = _todoReportFilter.from;
+  const to = _todoReportFilter.to;
+  const ticks = _uniqueTodoStaffDoneItems(
+    _todoStaffReportSource(staffId).filter(t => t.done && _todoStaffReportInRange(t, range, from, to))
+  );
+  const reports = _uniqueTodoStaffDoneItems(
+    _todoStaffReportSource(staffId).filter(t => t.done && String(t.staff_report || '').trim() && _todoStaffReportInRange(t, range, from, to))
+  );
+  const groups = new Map();
+  const ensure = (t) => {
+    const key = _todoStaffReportGroupKey(t);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        title: t.title || 'بدون عنوان',
+        person: _todoAssigneeLabel(t) || 'پرسنل',
+        ticks: [],
+        reports: [],
+      });
+    }
+    return groups.get(key);
+  };
+  ticks.forEach(t => ensure(t).ticks.push(t));
+  reports.forEach(t => ensure(t).reports.push(t));
+  const sortByWhen = (a, b) => (b.done_at || b.completed_at || '') > (a.done_at || a.completed_at || '') ? 1 : -1;
+  groups.forEach(g => {
+    g.ticks.sort(sortByWhen);
+    g.reports.sort(sortByWhen);
+  });
+  return [...groups.values()].sort((a, b) =>
+    b.ticks.length - a.ticks.length ||
+    b.reports.length - a.reports.length ||
+    String(a.title).localeCompare(String(b.title), 'fa')
+  );
+}
+
+
+function _todoStaffReportRangeLabel(range) {
+  return ({ today: 'امروز', week: 'این هفته', month: 'این ماه', year: 'امسال' })[range] || 'این بازه';
+}
+
+
 function _todoReportForStaffHtml(staffId) {
-  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
-  const list = (_db.todos || [])
-    .filter(t => _todoCanView(t) && String(t.assignee_id || '') === String(staffId))
-    .filter(t => _todoInRange(t, _todoReportFilter.range, _todoReportFilter.from, _todoReportFilter.to));
+  const selected = String(staffId || 'all');
+  const staff = selected !== 'all'
+    ? (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === selected)
+    : null;
+  const range = _todoReportFilter.range || 'month';
+  const list = _uniqueTodoStaffDoneItems(
+    _todoStaffReportSource(selected).filter(t =>
+      _todoInRange(t, range, _todoReportFilter.from, _todoReportFilter.to) ||
+      (t.done && _todoStaffReportInRange(t, range, _todoReportFilter.from, _todoReportFilter.to))
+    )
+  );
   const perf = _todoPerf(list);
-  return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      <div style="font-size:14px;font-weight:900">گزارش عملکرد ${escapeHtml(staff ? _todoStaffName(staff) : 'پرسنل')}</div>
-      <select class="form-input" style="max-width:160px" onchange="_tpTodoReportRange(this,'modal')">
-        <option value="today" ${_todoReportFilter.range==='today'?'selected':''}>روزانه</option>
-        <option value="week" ${_todoReportFilter.range==='week'?'selected':''}>هفتگی</option>
-        <option value="month" ${_todoReportFilter.range==='month'?'selected':''}>ماهانه</option>
-        <option value="year" ${_todoReportFilter.range==='year'?'selected':''}>سالانه</option>
+  const groups = _todoStaffReportGroups(selected);
+  const rangeLabel = _todoStaffReportRangeLabel(range);
+  const heading = staff ? _todoStaffName(staff) : 'همه پرسنل';
+  const showPerson = selected === 'all';
+  const taskHtml = groups.map(g => {
+    const dates = g.ticks.map(t => {
+      const scheduled = _todoScheduledDate(t);
+      if (scheduled) return DateService.disp(scheduled);
+      const parts = t.done_at ? _jalaliFromInstant(t.done_at) : null;
+      return parts ? DateService.disp(_formatJalali(...parts)) : '';
+    }).filter(Boolean).slice(0, 8).join('، ');
+    const reportHtml = g.reports.map(t => {
+      const when = _todoScheduledDate(t) || '';
+      const whenLabel = when ? DateService.disp(when) : '';
+      const file = t.report_attachment_name ? `<div class="todo-staff-report-file">پیوست: ${escapeHtml(t.report_attachment_name)}</div>` : '';
+      return `<div class="todo-staff-report-note"><b>${whenLabel ? escapeHtml(whenLabel) + ' · ' : ''}گزارش انجام کار</b>${escapeHtml(String(t.staff_report || '').trim())}${file}</div>`;
+    }).join('');
+    return `<article class="todo-staff-report-task">
+      <div class="todo-staff-report-task-head">
+        <div>
+          <div class="todo-staff-report-title">${escapeHtml(g.title)}</div>
+          <div class="todo-staff-report-meta">${showPerson ? escapeHtml(g.person) : ''}${showPerson && dates ? ' · ' : ''}${dates ? escapeHtml(dates) : ''}</div>
+        </div>
+        <span class="todo-staff-report-count">${fa(g.ticks.length)} تیک ${rangeLabel}</span>
+      </div>
+      ${reportHtml || (g.ticks.length ? '<div class="todo-staff-report-empty">برای این کار گزارشی ثبت نشده است.</div>' : '')}
+    </article>`;
+  }).join('');
+  return `<div class="todo-staff-report">
+    <div class="todo-staff-report-toolbar">
+      <div class="todo-staff-report-heading">گزارش کارهای ${escapeHtml(heading)}</div>
+      <select class="form-input" onchange="_tpTodoReportStaff(this)">
+        ${_todoStaffOptions(selected)}
+      </select>
+      <select class="form-input" onchange="_tpTodoReportRange(this,'modal')">
+        <option value="today" ${range==='today'?'selected':''}>روزانه</option>
+        <option value="week" ${range==='week'?'selected':''}>هفتگی</option>
+        <option value="month" ${range==='month'?'selected':''}>ماهانه</option>
+        <option value="year" ${range==='year'?'selected':''}>سالانه</option>
       </select>
     </div>
     ${_todoPerfCards(perf)}
+    ${taskHtml || `<div class="todo-staff-empty">برای ${rangeLabel} تیک یا گزارشی ثبت نشده است.</div>`}
   </div>`;
 }
 
