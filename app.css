@@ -4190,9 +4190,37 @@ body.instr-select-mode ._ifcard.instr-selected {
 }
 .todo-staff-report-heading { flex:1 1 160px;font-size:14px;font-weight:900; }
 .todo-staff-report-toolbar .form-input { max-width:160px;height:36px;font-size:12px; }
+.todo-staff-report-nav {
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;
+}
+.todo-staff-report-nav .btn { flex:0 0 auto;min-width:64px;height:34px; }
+.todo-staff-report-period {
+  flex:1;text-align:center;font-size:13px;font-weight:800;color:var(--text);
+}
+.todo-staff-report-summary {
+  display:flex;flex-direction:column;gap:3px;margin-bottom:10px;
+  padding:10px 12px;border-radius:12px;background:var(--bg2);border:1px solid var(--border);
+  font-size:12px;color:var(--text2);line-height:1.7;
+}
+.todo-staff-report-stats { margin-bottom:10px; }
+.todo-staff-report-stats > summary {
+  cursor:pointer;font-size:12px;font-weight:800;color:var(--text3);padding:4px 2px;
+}
+.todo-staff-report-tabs {
+  display:flex;gap:6px;margin-bottom:10px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:12px;padding:4px;
+}
+.todo-staff-report-tab {
+  flex:1;height:34px;border:0;border-radius:9px;background:transparent;color:var(--text2);
+  font:800 12px var(--font);cursor:pointer;
+}
+.todo-staff-report-tab.on { background:rgba(124,106,247,.18);color:var(--text); }
+.todo-staff-report-actions { display:flex;gap:8px;margin-bottom:12px; }
+.todo-staff-report-actions .btn { flex:1;height:36px; }
+.todo-staff-report-body { display:flex;flex-direction:column;gap:8px; }
 .todo-staff-report-task {
   border:1px solid var(--border);border-radius:12px;background:var(--bg2);
-  padding:10px 12px;margin-bottom:8px;
+  padding:10px 12px;
 }
 .todo-staff-report-task-head { display:flex;justify-content:space-between;gap:8px;align-items:flex-start; }
 .todo-staff-report-title { font-size:13px;font-weight:800;color:var(--text);line-height:1.5; }
@@ -4202,13 +4230,37 @@ body.instr-select-mode ._ifcard.instr-selected {
   background:rgba(62,207,142,.10);border:1px solid rgba(62,207,142,.24);
   border-radius:8px;padding:3px 8px;white-space:nowrap;
 }
+.todo-staff-report-dots { display:flex;flex-wrap:wrap;gap:4px;margin-top:8px; }
+.todo-staff-report-dot {
+  width:24px;height:24px;border-radius:7px;border:1px solid var(--border);
+  background:transparent;color:var(--text3);font:800 10px var(--font);cursor:pointer;padding:0;
+}
+.todo-staff-report-dot.is-done { background:rgba(62,207,142,.2);border-color:rgba(62,207,142,.45);color:var(--green); }
+.todo-staff-report-dot.is-late { background:rgba(249,115,22,.18);border-color:rgba(249,115,22,.45);color:#fb923c; }
+.todo-staff-report-dot.is-missed { background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.4);color:var(--red); }
+.todo-staff-report-dot.is-future { opacity:.4; }
+.todo-staff-report-dot.is-open { box-shadow:0 0 0 2px rgba(124,106,247,.45); }
+.todo-staff-report-year { display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px; }
+.todo-staff-report-month {
+  border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--text2);
+  font:800 11px var(--font);padding:7px 6px;cursor:pointer;display:flex;flex-direction:column;gap:2px;align-items:center;
+}
+.todo-staff-report-month b { font-size:12px;color:var(--text); }
+.todo-staff-report-month.is-done { background:rgba(62,207,142,.12);border-color:rgba(62,207,142,.35); }
+.todo-staff-report-month.is-late { background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35); }
+.todo-staff-report-month.is-missed { background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3); }
+.todo-staff-report-tick-panel {
+  margin-top:8px;padding:8px;border-radius:10px;background:rgba(124,106,247,.08);
+  border:1px solid rgba(124,106,247,.22);
+}
+.todo-staff-report-tick-panel-head { font-size:11px;font-weight:800;color:var(--text3);margin-bottom:4px; }
 .todo-staff-report-note {
   font-size:12px;color:var(--text2);line-height:1.8;margin-top:8px;padding-top:8px;
   border-top:1px solid var(--border);white-space:pre-wrap;
 }
 .todo-staff-report-note b { color:var(--text3);font-weight:700;display:block;margin-bottom:2px;font-size:11px; }
 .todo-staff-report-file { font-size:11px;color:var(--text3);margin-top:4px; }
-.todo-staff-report-empty { font-size:11px;color:var(--text3);margin-top:8px; }
+.todo-staff-report-empty { font-size:11px;color:var(--text3);margin-top:4px; }
 .todo-staff-chips {
   display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
   padding:0 0 10px;scrollbar-width:none;overscroll-behavior-x:contain;
