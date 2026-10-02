@@ -33,11 +33,17 @@ function _openMyTodoReport() {
 
 
 function _openStaffTodoReport(staffId) {
-  _todoStaffReportId = String(staffId || _todoStaffFilter.staffId || 'all');
+  const saved = _readStaffTodoReportState();
+  const passed = staffId === undefined || staffId === null ? '' : String(staffId);
+  _todoStaffReportId = passed || saved.staffId || _todoStaffFilter.staffId || 'all';
   if (_todoStaffReportId && _todoStaffReportId !== 'all') {
     _todoStaffFilter.staffId = _todoStaffReportId;
   }
-  _todoReportFilter.range = 'month';
+  _todoReportFilter.range = saved.range || 'month';
+  _todoReportFilter.view = saved.view || 'all';
+  _todoReportFilter.cursor = saved.cursor || _todayJalaliStr();
+  _todoReportFilter.openTick = null;
+  _writeStaffTodoReportState();
   openModal('گزارش کارهای پرسنل', _todoReportForStaffHtml(_todoStaffReportId), [
     { label:'بستن', cls:'btn-ghost', action:'closeModal()' }
   ], { size:'large' });
@@ -931,6 +937,106 @@ function _openStaffTodoChecklist(staffId) {
 }
 
 
+function _todoStaffReportStateKey() { return 'tp_staff_todo_report'; }
+
+function _readStaffTodoReportState() {
+  try { return JSON.parse(localStorage.getItem(_todoStaffReportStateKey()) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+function _writeStaffTodoReportState() {
+  try {
+    localStorage.setItem(_todoStaffReportStateKey(), JSON.stringify({
+      staffId: _todoStaffReportId || 'all',
+      range: _todoReportFilter.range || 'month',
+      cursor: _todoReportFilter.cursor || _todayJalaliStr(),
+      view: _todoReportFilter.view || 'all',
+    }));
+  } catch (e) {}
+}
+
+function _todoStaffReportCursorParts() {
+  const raw = _todoReportFilter.cursor || _todayJalaliStr();
+  const p = _jalaliParse(raw);
+  if (p && p.length === 3 && p.every(n => Number.isFinite(n))) return p;
+  return _jalaliParse(_todayJalaliStr());
+}
+
+function _todoStaffReportBoundsFromCursor(range, cursorParts) {
+  const [jy, jm, jd] = cursorParts;
+  const kind = range || 'month';
+  if (kind === 'today') {
+    const d = _formatJalali(jy, jm, jd);
+    return { from: d, to: d };
+  }
+  if (kind === 'week') {
+    const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+    const dow = new Date(gy, gm - 1, gd).getDay();
+    const daysFromSaturday = (dow + 1) % 7;
+    const start = _addDays(jy, jm, jd, -daysFromSaturday);
+    const end = _addDays(start[0], start[1], start[2], 6);
+    return { from: _formatJalali(...start), to: _formatJalali(...end) };
+  }
+  if (kind === 'month') {
+    return { from: _formatJalali(jy, jm, 1), to: _formatJalali(jy, jm, _jalaliDaysInMonth(jy, jm)) };
+  }
+  if (kind === 'year') {
+    return { from: _formatJalali(jy, 1, 1), to: _formatJalali(jy, 12, _jalaliDaysInMonth(jy, 12)) };
+  }
+  return _todoRangeBounds(kind, _todoReportFilter.from, _todoReportFilter.to);
+}
+
+function _todoStaffReportBounds() {
+  return _todoStaffReportBoundsFromCursor(_todoReportFilter.range || 'month', _todoStaffReportCursorParts());
+}
+
+function _todoStaffReportShiftedCursor(dir) {
+  const range = _todoReportFilter.range || 'month';
+  const [jy, jm, jd] = _todoStaffReportCursorParts();
+  let next;
+  if (range === 'today') next = _addDays(jy, jm, jd, dir);
+  else if (range === 'week') next = _addDays(jy, jm, jd, dir * 7);
+  else if (range === 'month') next = _addMonths(jy, jm, 1, dir);
+  else if (range === 'year') next = [jy + dir, 1, 1];
+  else next = _addDays(jy, jm, jd, dir);
+  return _formatJalali(...next);
+}
+
+function _todoStaffReportCanShift(dir) {
+  if (dir < 0) return true;
+  const nextCursor = _todoStaffReportShiftedCursor(1);
+  const nextBounds = _todoStaffReportBoundsFromCursor(_todoReportFilter.range || 'month', _jalaliParse(nextCursor));
+  return _jalaliKey(nextBounds.from) <= _jalaliToday();
+}
+
+function _shiftStaffTodoReport(dir) {
+  if (!_todoStaffReportCanShift(dir)) return;
+  _todoReportFilter.cursor = _todoStaffReportShiftedCursor(dir);
+  _todoReportFilter.openTick = null;
+  _writeStaffTodoReportState();
+  _tpRefreshStaffTodoReportModal();
+}
+
+function _setStaffTodoReportView(view) {
+  _todoReportFilter.view = view || 'all';
+  _writeStaffTodoReportState();
+  _tpRefreshStaffTodoReportModal();
+}
+
+function _todoStaffReportPeriodTitle(bounds, range) {
+  const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const p = _jalaliParse(bounds.from);
+  if (range === 'today') return DateService.disp(bounds.from);
+  if (range === 'week') return `${DateService.disp(bounds.from)} تا ${DateService.disp(bounds.to)}`;
+  if (range === 'month') return `${months[(p[1] || 1) - 1] || ''} ${fa(p[0] || '')}`.trim();
+  if (range === 'year') return fa(p[0] || '');
+  return `${DateService.disp(bounds.from)} تا ${DateService.disp(bounds.to)}`;
+}
+
+function _todoStaffReportPrevLabel(range) {
+  return ({ today: 'روز قبل', week: 'هفته قبل', month: 'ماه قبل', year: 'سال قبل' })[range] || 'بازه قبل';
+}
+
 function _todoStaffReportSource(staffId) {
   const want = String(staffId || 'all');
   return (_db.todos || []).filter(t => {
@@ -941,11 +1047,9 @@ function _todoStaffReportSource(staffId) {
   });
 }
 
-
-function _todoStaffReportInRange(t, range, from, to) {
-  const b = _todoRangeBounds(range, from, to);
-  const fromK = _jalaliKey(b.from);
-  const toK = _jalaliKey(b.to);
+function _todoStaffReportInRange(t, bounds) {
+  const fromK = _jalaliKey(bounds.from);
+  const toK = _jalaliKey(bounds.to);
   const doneKey = _todoDoneDayKey(t);
   const schedKey = _jalaliKey(_todoScheduledDate(t) || '');
   const key = doneKey || schedKey;
@@ -953,56 +1057,347 @@ function _todoStaffReportInRange(t, range, from, to) {
   return key >= fromK && key <= toK;
 }
 
-
 function _todoStaffReportGroupKey(t) {
   const root = String(_todoRootId(t) || t?.id || '');
   const assignee = String(t?.assignee_id || t?.staff_id || t?.assignee_email || '').trim().toLowerCase();
   return root + '|' + assignee;
 }
 
+function _todoStaffReportAnchorDate(t, ticks) {
+  let fromTicks = '';
+  (ticks || []).forEach(x => {
+    const d = _todoScheduledDate(x);
+    if (d && (!fromTicks || _jalaliKey(d) < _jalaliKey(fromTicks))) fromTicks = d;
+  });
+  if (fromTicks) return fromTicks;
+  const created = t?.created_at ? _jalaliFromInstant(t.created_at) : null;
+  if (created) return _formatJalali(...created);
+  return _todoScheduledDate(t) || _todayJalaliStr();
+}
 
-function _todoStaffReportGroups(staffId) {
-  const range = _todoReportFilter.range;
-  const from = _todoReportFilter.from;
-  const to = _todoReportFilter.to;
-  const ticks = _uniqueTodoStaffDoneItems(
-    _todoStaffReportSource(staffId).filter(t => t.done && _todoStaffReportInRange(t, range, from, to))
-  );
-  const reports = _uniqueTodoStaffDoneItems(
-    _todoStaffReportSource(staffId).filter(t => t.done && String(t.staff_report || '').trim() && _todoStaffReportInRange(t, range, from, to))
-  );
+function _todoJalaliDayDiff(from, to) {
+  const a = _jalaliParse(from);
+  const b = _jalaliParse(to);
+  if (!a || !b || a.length !== 3 || b.length !== 3) return 0;
+  const ag = jalaliToGregorian(a[0], a[1], a[2]);
+  const bg = jalaliToGregorian(b[0], b[1], b[2]);
+  return Math.round((Date.UTC(bg[0], bg[1] - 1, bg[2]) - Date.UTC(ag[0], ag[1] - 1, ag[2])) / 86400000);
+}
+
+function _todoStaffReportOccursOn(t, dateStr, ticks) {
+  const repeat = t?.repeat || 'none';
+  const created = t?.created_at ? _jalaliFromInstant(t.created_at) : null;
+  const createdKey = created ? _jalaliKey(_formatJalali(...created)) : 0;
+  const k = _jalaliKey(dateStr);
+  if (createdKey && k < createdKey) return false;
+  if (!repeat || repeat === 'none') return _todoScheduledDate(t) === dateStr;
+  const [jy, jm, jd] = _jalaliParse(dateStr);
+  const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+  const jsDay = new Date(gy, gm - 1, gd).getDay();
+  const anchor = _todoStaffReportAnchorDate(t, ticks);
+  if (repeat === 'daily') return true;
+  if (repeat === 'every2days') {
+    const diff = _todoJalaliDayDiff(anchor, dateStr);
+    return ((diff % 2) + 2) % 2 === 0;
+  }
+  if (repeat === 'weekly') {
+    const ap = _jalaliParse(anchor);
+    const ag = jalaliToGregorian(ap[0], ap[1], ap[2]);
+    return new Date(ag[0], ag[1] - 1, ag[2]).getDay() === jsDay;
+  }
+  if (repeat === 'monthly') {
+    const ad = _jalaliParse(anchor)[2];
+    return jd === Math.min(ad, _jalaliDaysInMonth(jy, jm));
+  }
+  if (repeat === 'yearly') {
+    const ap = _jalaliParse(anchor);
+    return jm === ap[1] && jd === ap[2];
+  }
+  if (repeat === 'custom_weekdays') {
+    const dayMap = { sat:6, sun:0, mon:1, tue:2, wed:3, thu:4, fri:5 };
+    const days = String(t.weekdays || '').split(',').map(s => s.trim()).filter(Boolean);
+    const name = Object.keys(dayMap).find(x => dayMap[x] === jsDay);
+    return days.includes(name);
+  }
+  return false;
+}
+
+function _todoStaffReportExpectedDates(template, bounds, ticks) {
+  if (!template) return [];
+  const repeat = template.repeat || 'none';
+  if (!repeat || repeat === 'none') {
+    const sched = _todoScheduledDate(template);
+    return sched && _jalaliKey(sched) >= _jalaliKey(bounds.from) && _jalaliKey(sched) <= _jalaliKey(bounds.to) ? [sched] : [];
+  }
+  const dates = [];
+  const toK = _jalaliKey(bounds.to);
+  let [jy, jm, jd] = _jalaliParse(bounds.from);
+  for (let i = 0; i < 400; i++) {
+    const str = _formatJalali(jy, jm, jd);
+    const k = _jalaliKey(str);
+    if (!k || k > toK) break;
+    if (_todoStaffReportOccursOn(template, str, ticks)) dates.push(str);
+    const n = _addDays(jy, jm, jd, 1);
+    jy = n[0]; jm = n[1]; jd = n[2];
+  }
+  return dates;
+}
+
+function _todoStaffReportTickDate(t) {
+  const scheduled = _todoScheduledDate(t);
+  if (scheduled) return scheduled;
+  const parts = t?.done_at ? _jalaliFromInstant(t.done_at) : null;
+  return parts ? _formatJalali(...parts) : '';
+}
+
+function _todoStaffReportEnsureGroup(groups, t) {
+  const key = _todoStaffReportGroupKey(t);
+  if (!groups.has(key)) {
+    groups.set(key, {
+      key,
+      title: t.title || 'بدون عنوان',
+      person: _todoAssigneeLabel(t) || 'پرسنل',
+      template: null,
+      ticks: [],
+      reports: [],
+    });
+  }
+  const g = groups.get(key);
+  const isLive = !t._snapshot && !t._occurrence && !t.archived;
+  if (isLive) g.template = t;
+  else if (!g.template) g.template = t;
+  return g;
+}
+
+function _todoStaffReportGroups(staffId, bounds) {
   const groups = new Map();
-  const ensure = (t) => {
-    const key = _todoStaffReportGroupKey(t);
-    if (!groups.has(key)) {
-      groups.set(key, {
-        title: t.title || 'بدون عنوان',
-        person: _todoAssigneeLabel(t) || 'پرسنل',
-        ticks: [],
-        reports: [],
-      });
-    }
-    return groups.get(key);
-  };
-  ticks.forEach(t => ensure(t).ticks.push(t));
-  reports.forEach(t => ensure(t).reports.push(t));
+  const source = _todoStaffReportSource(staffId);
+  source.forEach(t => {
+    if (!t._snapshot && !t._occurrence && !t.archived) _todoStaffReportEnsureGroup(groups, t);
+  });
+  _uniqueTodoStaffDoneItems(source.filter(t => t.done && _todoStaffReportInRange(t, bounds))).forEach(t => {
+    _todoStaffReportEnsureGroup(groups, t).ticks.push(t);
+  });
+  _uniqueTodoStaffDoneItems(source.filter(t => t.done && String(t.staff_report || '').trim() && _todoStaffReportInRange(t, bounds))).forEach(t => {
+    _todoStaffReportEnsureGroup(groups, t).reports.push(t);
+  });
+  const todayK = _jalaliToday();
   const sortByWhen = (a, b) => (b.done_at || b.completed_at || '') > (a.done_at || a.completed_at || '') ? 1 : -1;
+  const out = [];
   groups.forEach(g => {
     g.ticks.sort(sortByWhen);
     g.reports.sort(sortByWhen);
+    const sample = g.template || g.ticks[0] || g.reports[0];
+    const expected = sample && (sample.repeat && sample.repeat !== 'none')
+      ? _todoStaffReportExpectedDates(sample, bounds, g.ticks)
+      : [...new Set(g.ticks.map(_todoStaffReportTickDate).filter(Boolean))].sort((a, b) => _jalaliKey(a) - _jalaliKey(b));
+    const expectedPast = expected.filter(d => _jalaliKey(d) <= todayK);
+    const byDate = new Map();
+    g.ticks.forEach(t => {
+      const d = _todoStaffReportTickDate(t);
+      if (d) byDate.set(d, t);
+    });
+    g.expected = expected;
+    g.expectedPast = expectedPast;
+    g.byDate = byDate;
+    g.prevTicks = 0;
+    if (!g.ticks.length && !g.reports.length && !expectedPast.length) return;
+    out.push(g);
   });
-  return [...groups.values()].sort((a, b) =>
-    b.ticks.length - a.ticks.length ||
-    b.reports.length - a.reports.length ||
-    String(a.title).localeCompare(String(b.title), 'fa')
-  );
+  return out;
 }
 
+function _todoStaffReportAttachPrev(groups, staffId, range, bounds) {
+  const prevCursor = (() => {
+    const [jy, jm, jd] = _jalaliParse(bounds.from);
+    if (range === 'today') return _formatJalali(..._addDays(jy, jm, jd, -1));
+    if (range === 'week') return _formatJalali(..._addDays(jy, jm, jd, -7));
+    if (range === 'month') return _formatJalali(..._addMonths(jy, jm, 1, -1));
+    if (range === 'year') return _formatJalali(jy - 1, 1, 1);
+    return _formatJalali(..._addDays(jy, jm, jd, -1));
+  })();
+  const prevBounds = _todoStaffReportBoundsFromCursor(range, _jalaliParse(prevCursor));
+  const prevGroups = _todoStaffReportGroups(staffId, prevBounds);
+  const prevMap = new Map(prevGroups.map(g => [g.key, g.ticks.length]));
+  groups.forEach(g => { g.prevTicks = prevMap.get(g.key) || 0; });
+  return prevBounds;
+}
+
+function _todoStaffReportDeltaText(current, previous, prevLabel) {
+  const diff = current - previous;
+  if (!previous && !current) return '';
+  if (diff === 0) return `بدون تغییر نسبت به ${prevLabel}`;
+  if (diff > 0) return `${fa(diff)} تیک بیشتر از ${prevLabel}`;
+  return `${fa(-diff)} تیک کمتر از ${prevLabel}`;
+}
 
 function _todoStaffReportRangeLabel(range) {
   return ({ today: 'امروز', week: 'این هفته', month: 'این ماه', year: 'امسال' })[range] || 'این بازه';
 }
 
+function _todoStaffReportTickKind(g, dateStr) {
+  const t = g.byDate.get(dateStr);
+  const todayK = _jalaliToday();
+  const k = _jalaliKey(dateStr);
+  if (t) {
+    const late = _todoScheduledDate(t) && _todoDoneDayKey(t) > _jalaliKey(_todoScheduledDate(t));
+    return late ? 'late' : 'done';
+  }
+  if (k > todayK) return 'future';
+  return 'missed';
+}
+
+function _openStaffReportTick(groupKey, dateStr) {
+  let key = String(groupKey || '');
+  try { key = decodeURIComponent(key); } catch (e) {}
+  _todoReportFilter.openTick = { groupKey: key, date: String(dateStr || '') };
+  _tpRefreshStaffTodoReportModal();
+  requestAnimationFrame(() => {
+    document.getElementById('staff-report-tick-panel')?.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function _todoStaffReportTickPanelHtml(g, dateStr) {
+  const t = g.byDate.get(dateStr);
+  const kind = _todoStaffReportTickKind(g, dateStr);
+  const when = DateService.disp(dateStr);
+  const status = kind === 'done' ? 'انجام شده' : kind === 'late' ? 'انجام‌شده با تأخیر' : kind === 'future' ? 'هنوز نرسیده' : 'انجام نشده';
+  const report = t && String(t.staff_report || '').trim();
+  const file = t?.report_attachment_name ? `<div class="todo-staff-report-file">پیوست: ${escapeHtml(t.report_attachment_name)}</div>` : '';
+  return `<div class="todo-staff-report-tick-panel" id="staff-report-tick-panel">
+    <div class="todo-staff-report-tick-panel-head">${escapeHtml(when)} · ${status}</div>
+    ${report ? `<div class="todo-staff-report-note">${escapeHtml(report)}${file}</div>` : `<div class="todo-staff-report-empty">${t ? 'برای این نوبت گزارشی ثبت نشده است.' : 'برای این نوبت تیک یا گزارشی نیست.'}</div>`}
+  </div>`;
+}
+
+function _todoStaffReportTimelineHtml(g, range, openTick) {
+  const openDate = openTick && openTick.groupKey === g.key ? openTick.date : '';
+  if (range === 'year') {
+    const months = ['فرو','ارد','خرد','تیر','مرد','شهر','مهر','آبا','آذر','دی','بهم','اسف'];
+    const [jy] = _jalaliParse(g.expected[0] || _todoStaffReportBounds().from);
+    const cells = months.map((label, i) => {
+      const jm = i + 1;
+      const monthFrom = _formatJalali(jy, jm, 1);
+      const monthTo = _formatJalali(jy, jm, _jalaliDaysInMonth(jy, jm));
+      const fromK = _jalaliKey(monthFrom);
+      const toK = _jalaliKey(monthTo);
+      const done = g.ticks.filter(t => {
+        const k = _jalaliKey(_todoStaffReportTickDate(t));
+        return k >= fromK && k <= toK;
+      }).length;
+      const expected = g.expected.filter(d => {
+        const k = _jalaliKey(d);
+        return k >= fromK && k <= toK && k <= _jalaliToday();
+      }).length;
+      const cls = done && expected && done >= expected ? 'is-done' : done ? 'is-late' : expected ? 'is-missed' : 'is-future';
+      return `<button type="button" class="todo-staff-report-month ${cls}" onclick="_focusStaffTodoReportMonth(${jy},${jm})" title="${label}">${label}<b>${fa(done)}${expected ? '/' + fa(expected) : ''}</b></button>`;
+    }).join('');
+    return `<div class="todo-staff-report-year">${cells}</div>`;
+  }
+  const dates = g.expected.length ? g.expected : [...g.byDate.keys()].sort((a, b) => _jalaliKey(a) - _jalaliKey(b));
+  const dots = dates.map(d => {
+    const kind = _todoStaffReportTickKind(g, d);
+    const day = _jalaliParse(d)[2];
+    const open = openDate === d ? ' is-open' : '';
+    return `<button type="button" class="todo-staff-report-dot is-${kind}${open}" onclick="_openStaffReportTick('${encodeURIComponent(g.key)}','${d}')" title="${DateService.disp(d)}">${fa(day)}</button>`;
+  }).join('');
+  const panel = openDate ? _todoStaffReportTickPanelHtml(g, openDate) : '';
+  return `<div class="todo-staff-report-dots">${dots}</div>${panel}`;
+}
+
+function _focusStaffTodoReportMonth(jy, jm) {
+  _todoReportFilter.range = 'month';
+  _todoReportFilter.cursor = _formatJalali(jy, jm, 1);
+  _todoReportFilter.openTick = null;
+  _writeStaffTodoReportState();
+  _tpRefreshStaffTodoReportModal();
+}
+
+function _todoStaffReportUniverse(staffId, bounds) {
+  const fromK = _jalaliKey(bounds.from);
+  const toK = _jalaliKey(bounds.to);
+  return _uniqueTodoStaffDoneItems(
+    _todoStaffReportSource(staffId).filter(t => {
+      const schedK = _jalaliKey(_todoScheduledDate(t) || '');
+      const inSched = schedK && schedK >= fromK && schedK <= toK;
+      return inSched || (t.done && _todoStaffReportInRange(t, bounds));
+    })
+  );
+}
+
+function _todoStaffReportVisibleGroups(groups) {
+  const view = _todoReportFilter.view || 'all';
+  return (groups || []).filter(g => {
+    if (view === 'reported') return g.reports.length > 0;
+    if (view === 'plain') return g.reports.length === 0;
+    return true;
+  }).sort((a, b) =>
+    (b.reports.length > 0) - (a.reports.length > 0) ||
+    b.ticks.length - a.ticks.length ||
+    String(a.title).localeCompare(String(b.title), 'fa')
+  );
+}
+
+function _staffTodoReportPlainText(staffId) {
+  const selected = String(staffId || 'all');
+  const range = _todoReportFilter.range || 'month';
+  const bounds = _todoStaffReportBounds();
+  const allGroups = _todoStaffReportGroups(selected, bounds);
+  _todoStaffReportAttachPrev(allGroups, selected, range, bounds);
+  const groups = _todoStaffReportVisibleGroups(allGroups);
+  const heading = selected === 'all'
+    ? 'همه پرسنل'
+    : _todoStaffName((_db.staff || []).find(s => String(s.id) === selected) || {});
+  const period = _todoStaffReportPeriodTitle(bounds, range);
+  const lines = [`گزارش کارهای پرسنل — ${heading}`, period, ''];
+  groups.forEach(g => {
+    const expectedN = g.expectedPast.length;
+    lines.push(`${g.title}${selected === 'all' ? ' · ' + g.person : ''}`);
+    lines.push(`تیک: ${g.ticks.length}${expectedN ? ' از ' + expectedN : ''}`);
+    g.reports.forEach(t => {
+      const when = _todoStaffReportTickDate(t);
+      lines.push((when ? DateService.disp(when) + ' — ' : '') + String(t.staff_report || '').trim());
+    });
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
+function _copyStaffTodoReport() {
+  copyToClipboard(_staffTodoReportPlainText(_todoStaffReportId || 'all'), 'گزارش کپی شد ✓');
+}
+
+function _printStaffTodoReport() {
+  const selected = String(_todoStaffReportId || 'all');
+  const range = _todoReportFilter.range || 'month';
+  const bounds = _todoStaffReportBounds();
+  const allGroups = _todoStaffReportGroups(selected, bounds);
+  _todoStaffReportAttachPrev(allGroups, selected, range, bounds);
+  const groups = _todoStaffReportVisibleGroups(allGroups);
+  const heading = selected === 'all'
+    ? 'همه پرسنل'
+    : _todoStaffName((_db.staff || []).find(s => String(s.id) === selected) || {});
+  const period = _todoStaffReportPeriodTitle(bounds, range);
+  const body = groups.map(g => {
+    const expectedN = g.expectedPast.length;
+    const reports = g.reports.map(t => {
+      const when = _todoStaffReportTickDate(t);
+      return `<div class="note"><b>${when ? DateService.disp(when) + ' · ' : ''}گزارش</b>${escapeHtml(String(t.staff_report || '').trim())}</div>`;
+    }).join('');
+    return `<article><h2>${escapeHtml(g.title)}</h2><div class="meta">${selected === 'all' ? escapeHtml(g.person) + ' · ' : ''}${fa(g.ticks.length)} تیک${expectedN ? ' از ' + fa(expectedN) : ''}</div>${reports}</article>`;
+  }).join('') || '<p>موردی نیست.</p>';
+  const popup = window.open('', '_blank', 'width=960,height=760');
+  if (!popup) { showToast('مرورگر اجازه بازکردن پنجره چاپ را نداد', 'error'); return; }
+  popup.document.open();
+  popup.document.write(`<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>گزارش کارهای پرسنل</title><style>
+    body{direction:rtl;font-family:Tahoma,Arial,sans-serif;color:#1f2937;background:#fff;max-width:860px;margin:0 auto;padding:28px 32px;font-size:13px;line-height:1.9}
+    h1{font-size:20px;margin:0 0 4px} .sub{color:#6b7280;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid #e5e7eb}
+    article{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid #e5e7eb} h2{font-size:14px;margin:0 0 4px}
+    .meta{font-size:12px;color:#6b7280;margin-bottom:6px} .note{margin-top:8px;white-space:pre-wrap} .note b{display:block;font-size:11px;color:#6b7280}
+    @page{size:A4;margin:14mm}
+  </style></head><body><h1>گزارش کارهای پرسنل — ${escapeHtml(heading)}</h1><div class="sub">${escapeHtml(period)}</div>${body}<script>window.onload=()=>{window.focus();setTimeout(()=>window.print(),300);}<\/script></body></html>`);
+  popup.document.close();
+}
 
 function _todoReportForStaffHtml(staffId) {
   const selected = String(staffId || 'all');
@@ -1010,41 +1405,53 @@ function _todoReportForStaffHtml(staffId) {
     ? (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === selected)
     : null;
   const range = _todoReportFilter.range || 'month';
-  const list = _uniqueTodoStaffDoneItems(
-    _todoStaffReportSource(selected).filter(t =>
-      _todoInRange(t, range, _todoReportFilter.from, _todoReportFilter.to) ||
-      (t.done && _todoStaffReportInRange(t, range, _todoReportFilter.from, _todoReportFilter.to))
-    )
-  );
+  const view = _todoReportFilter.view || 'all';
+  const bounds = _todoStaffReportBounds();
+  const list = _todoStaffReportUniverse(selected, bounds);
   const perf = _todoPerf(list);
-  const groups = _todoStaffReportGroups(selected);
+  const groups = _todoStaffReportGroups(selected, bounds);
+  _todoStaffReportAttachPrev(groups, selected, range, bounds);
   const rangeLabel = _todoStaffReportRangeLabel(range);
+  const periodTitle = _todoStaffReportPeriodTitle(bounds, range);
+  const prevLabel = _todoStaffReportPrevLabel(range);
   const heading = staff ? _todoStaffName(staff) : 'همه پرسنل';
   const showPerson = selected === 'all';
-  const taskHtml = groups.map(g => {
-    const dates = g.ticks.map(t => {
-      const scheduled = _todoScheduledDate(t);
-      if (scheduled) return DateService.disp(scheduled);
-      const parts = t.done_at ? _jalaliFromInstant(t.done_at) : null;
-      return parts ? DateService.disp(_formatJalali(...parts)) : '';
-    }).filter(Boolean).slice(0, 8).join('، ');
+  const filtered = _todoStaffReportVisibleGroups(groups);
+  const withReport = groups.filter(g => g.reports.length).length;
+  const tickSum = groups.reduce((n, g) => n + g.ticks.length, 0);
+  const expectSum = groups.reduce((n, g) => n + g.expectedPast.length, 0);
+  const prevSum = groups.reduce((n, g) => n + g.prevTicks, 0);
+  const delta = _todoStaffReportDeltaText(tickSum, prevSum, prevLabel);
+  const expectLine = expectSum
+    ? `${fa(tickSum)} از ${fa(expectSum)} نوبت مورد انتظار`
+    : `${fa(tickSum)} تیک ${rangeLabel}`;
+  const canNext = _todoStaffReportCanShift(1);
+  const openTick = _todoReportFilter.openTick;
+  const taskHtml = filtered.map(g => {
+    const expectedN = g.expectedPast.length;
+    const countLabel = expectedN
+      ? `${fa(g.ticks.length)} از ${fa(expectedN)}`
+      : `${fa(g.ticks.length)} تیک`;
+    const deltaG = _todoStaffReportDeltaText(g.ticks.length, g.prevTicks, prevLabel);
     const reportHtml = g.reports.map(t => {
-      const when = _todoScheduledDate(t) || '';
+      const when = _todoStaffReportTickDate(t);
       const whenLabel = when ? DateService.disp(when) : '';
       const file = t.report_attachment_name ? `<div class="todo-staff-report-file">پیوست: ${escapeHtml(t.report_attachment_name)}</div>` : '';
       return `<div class="todo-staff-report-note"><b>${whenLabel ? escapeHtml(whenLabel) + ' · ' : ''}گزارش انجام کار</b>${escapeHtml(String(t.staff_report || '').trim())}${file}</div>`;
     }).join('');
-    return `<article class="todo-staff-report-task">
+    return `<article class="todo-staff-report-task" id="staff-report-task-${encodeURIComponent(g.key)}">
       <div class="todo-staff-report-task-head">
         <div>
           <div class="todo-staff-report-title">${escapeHtml(g.title)}</div>
-          <div class="todo-staff-report-meta">${showPerson ? escapeHtml(g.person) : ''}${showPerson && dates ? ' · ' : ''}${dates ? escapeHtml(dates) : ''}</div>
+          <div class="todo-staff-report-meta">${[showPerson ? g.person : '', deltaG].filter(Boolean).map(escapeHtml).join(' · ')}</div>
         </div>
-        <span class="todo-staff-report-count">${fa(g.ticks.length)} تیک ${rangeLabel}</span>
+        <span class="todo-staff-report-count">${countLabel}</span>
       </div>
-      ${reportHtml || (g.ticks.length ? '<div class="todo-staff-report-empty">برای این کار گزارشی ثبت نشده است.</div>' : '')}
+      ${_todoStaffReportTimelineHtml(g, range, openTick)}
+      ${reportHtml}
     </article>`;
   }).join('');
+  const tab = (id, label) => `<button type="button" class="todo-staff-report-tab${view === id ? ' on' : ''}" onclick="_setStaffTodoReportView('${id}')">${label}</button>`;
   return `<div class="todo-staff-report">
     <div class="todo-staff-report-toolbar">
       <div class="todo-staff-report-heading">گزارش کارهای ${escapeHtml(heading)}</div>
@@ -1058,8 +1465,28 @@ function _todoReportForStaffHtml(staffId) {
         <option value="year" ${range==='year'?'selected':''}>سالانه</option>
       </select>
     </div>
-    ${_todoPerfCards(perf)}
-    ${taskHtml || `<div class="todo-staff-empty">برای ${rangeLabel} تیک یا گزارشی ثبت نشده است.</div>`}
+    <div class="todo-staff-report-nav">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_shiftStaffTodoReport(-1)">قبلی</button>
+      <div class="todo-staff-report-period">${escapeHtml(periodTitle)}</div>
+      <button type="button" class="btn btn-ghost btn-sm" ${canNext ? '' : 'disabled'} onclick="_shiftStaffTodoReport(1)">بعدی</button>
+    </div>
+    <div class="todo-staff-report-summary">
+      <div>${escapeHtml(expectLine)}${delta ? ' · ' + escapeHtml(delta) : ''}</div>
+      <div>${fa(perf.percent)}٪ انجام · ${fa(withReport)} کار با گزارش</div>
+    </div>
+    <details class="todo-staff-report-stats"><summary>جزئیات آماری</summary>${_todoPerfCards(perf)}</details>
+    <div class="todo-staff-report-tabs" role="tablist">
+      ${tab('all', 'همه')}
+      ${tab('reported', 'با گزارش')}
+      ${tab('plain', 'بدون گزارش')}
+    </div>
+    <div class="todo-staff-report-actions">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_copyStaffTodoReport()">کپی</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_printStaffTodoReport()">چاپ / PDF</button>
+    </div>
+    <div class="todo-staff-report-body">
+      ${taskHtml || `<div class="todo-staff-empty">برای ${escapeHtml(periodTitle)} موردی در این فیلتر نیست.</div>`}
+    </div>
   </div>`;
 }
 

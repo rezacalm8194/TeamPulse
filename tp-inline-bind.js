@@ -645,13 +645,19 @@ function _tpRefreshStaffTodoReportModal() {
 function _tpTodoReportStaff(el) {
   _todoStaffReportId = String(el.value || 'all');
   if (_todoStaffReportId !== 'all') _todoStaffFilter.staffId = _todoStaffReportId;
+  if (typeof _writeStaffTodoReportState === 'function') _writeStaffTodoReportState();
   _tpRefreshStaffTodoReportModal();
 }
 function _tpTodoReportRange(el, mode) {
   _todoReportFilter.range = el.value;
-  if (mode === 'modal' && _todoStaffReportId) {
-    _tpRefreshStaffTodoReportModal();
-    return;
+  if (mode === 'modal') {
+    _todoReportFilter.cursor = (typeof _todayJalaliStr === 'function') ? _todayJalaliStr() : _todoReportFilter.cursor;
+    _todoReportFilter.openTick = null;
+    if (typeof _writeStaffTodoReportState === 'function') _writeStaffTodoReportState();
+    if (_todoStaffReportId) {
+      _tpRefreshStaffTodoReportModal();
+      return;
+    }
   }
   if (mode === 'list') renderTodoList();
   else _renderTodoStaffFilteredList();
