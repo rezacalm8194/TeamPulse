@@ -4347,7 +4347,27 @@ function openAddInstruction(parentId, type) {
   }, 50);
 }
 
+function _setInstructionSaveBusy(busy) {
+  const actions = document.querySelector('#modal-overlay .modal-actions');
+  if (!actions) return;
+  actions.querySelectorAll('button').forEach(btn => {
+    btn.disabled = !!busy;
+    if (!btn.classList.contains('btn-primary')) return;
+    if (busy) {
+      if (!btn.dataset.prevLabel) btn.dataset.prevLabel = btn.textContent;
+      btn.textContent = 'در حال ذخیره...';
+    } else if (btn.dataset.prevLabel) {
+      btn.textContent = btn.dataset.prevLabel;
+      delete btn.dataset.prevLabel;
+    }
+  });
+}
+
 async function saveAddInstruction(parentId, type) {
+  if (window._instrSaveInProgress) return;
+  window._instrSaveInProgress = true;
+  _setInstructionSaveBusy(true);
+  try {
   const pending = window._pendingInstructionAttachments || [];
   let title = document.getElementById('instr-title')?.value.trim();
   if (type === 'file') {
@@ -4404,6 +4424,10 @@ async function saveAddInstruction(parentId, type) {
     return;
   }
   renderInstructions();
+  } finally {
+    window._instrSaveInProgress = false;
+    _setInstructionSaveBusy(false);
+  }
 }
 
 function openEditInstruction(id) {
@@ -4530,6 +4554,10 @@ function openEditInstruction(id) {
 }
 
 async function saveEditInstruction(id, type) {
+  if (window._instrSaveInProgress) return;
+  window._instrSaveInProgress = true;
+  _setInstructionSaveBusy(true);
+  try {
   if (!_teamCanInstructionNode(id)) { showToast('به این مورد دسترسی نداری', 'error'); return; }
   const existingNode = (_db.instructions || []).find(n => +n.id === +id);
   let title = document.getElementById('ei-title')?.value.trim();
@@ -4557,6 +4585,10 @@ async function saveEditInstruction(id, type) {
     return;
   }
   renderInstructions();
+  } finally {
+    window._instrSaveInProgress = false;
+    _setInstructionSaveBusy(false);
+  }
 }
 
 async function deleteInstruction(id) {
