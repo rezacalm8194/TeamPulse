@@ -105,6 +105,19 @@ test('knowledge-center creates are confirmed across devices', () => {
   assert.match(extraSource, /ذخیره و بین دستگاه‌ها همگام شد/);
 });
 
+test('new knowledge notes ignore repeat save clicks until the first save finishes', () => {
+  assert.match(extraSource, /function _setInstructionSaveBusy\(/);
+  assert.match(extraSource, /window\._instrSaveInProgress/);
+  assert.match(extraSource, /در حال ذخیره\.\.\./);
+  const addFn = extraSource.slice(
+    extraSource.indexOf('async function saveAddInstruction('),
+    extraSource.indexOf('function openEditInstruction(')
+  );
+  assert.match(addFn, /if \(window\._instrSaveInProgress\) return/);
+  assert.match(addFn, /_setInstructionSaveBusy\(true\)/);
+  assert.match(addFn, /finally \{[\s\S]*_instrSaveInProgress = false/);
+});
+
 test('login uses https API origin when the desktop shell is not http', () => {
   assert.match(appSource, /const _PUBLIC_API_ORIGIN = 'https:\/\/teampulse\.ir'/);
   assert.match(appSource, /function _tpApiOrigin\(/);
