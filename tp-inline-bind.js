@@ -638,11 +638,19 @@ function _tpTodoStaffField(field, el) {
   _todoStaffFilter[field] = el.value;
   _renderTodoStaffFilteredList();
 }
+function _tpRefreshStaffTodoReportModal() {
+  var body = document.querySelector('.modal-overlay.open .modal-body');
+  if (body) body.innerHTML = _todoReportForStaffHtml(_todoStaffReportId || 'all');
+}
+function _tpTodoReportStaff(el) {
+  _todoStaffReportId = String(el.value || 'all');
+  if (_todoStaffReportId !== 'all') _todoStaffFilter.staffId = _todoStaffReportId;
+  _tpRefreshStaffTodoReportModal();
+}
 function _tpTodoReportRange(el, mode) {
   _todoReportFilter.range = el.value;
   if (mode === 'modal' && _todoStaffReportId) {
-    var body = document.querySelector('.modal-overlay.open .modal-body');
-    if (body) body.innerHTML = _todoReportForStaffHtml(_todoStaffReportId);
+    _tpRefreshStaffTodoReportModal();
     return;
   }
   if (mode === 'list') renderTodoList();

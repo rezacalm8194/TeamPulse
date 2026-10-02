@@ -4185,6 +4185,30 @@ body.instr-select-mode ._ifcard.instr-selected {
 .todo-staff-lite { max-width:760px;margin:0 auto;overflow-anchor:none; }
 .todo-staff-lite-bar { display:flex;gap:8px;margin-bottom:10px; }
 .todo-staff-lite-bar .btn { flex:1;height:40px; }
+.todo-staff-report-toolbar {
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;
+}
+.todo-staff-report-heading { flex:1 1 160px;font-size:14px;font-weight:900; }
+.todo-staff-report-toolbar .form-input { max-width:160px;height:36px;font-size:12px; }
+.todo-staff-report-task {
+  border:1px solid var(--border);border-radius:12px;background:var(--bg2);
+  padding:10px 12px;margin-bottom:8px;
+}
+.todo-staff-report-task-head { display:flex;justify-content:space-between;gap:8px;align-items:flex-start; }
+.todo-staff-report-title { font-size:13px;font-weight:800;color:var(--text);line-height:1.5; }
+.todo-staff-report-meta { font-size:11px;color:var(--text3);margin-top:3px;line-height:1.6; }
+.todo-staff-report-count {
+  flex-shrink:0;font-size:11px;font-weight:800;color:var(--green);
+  background:rgba(62,207,142,.10);border:1px solid rgba(62,207,142,.24);
+  border-radius:8px;padding:3px 8px;white-space:nowrap;
+}
+.todo-staff-report-note {
+  font-size:12px;color:var(--text2);line-height:1.8;margin-top:8px;padding-top:8px;
+  border-top:1px solid var(--border);white-space:pre-wrap;
+}
+.todo-staff-report-note b { color:var(--text3);font-weight:700;display:block;margin-bottom:2px;font-size:11px; }
+.todo-staff-report-file { font-size:11px;color:var(--text3);margin-top:4px; }
+.todo-staff-report-empty { font-size:11px;color:var(--text3);margin-top:8px; }
 .todo-staff-chips {
   display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
   padding:0 0 10px;scrollbar-width:none;overscroll-behavior-x:contain;
