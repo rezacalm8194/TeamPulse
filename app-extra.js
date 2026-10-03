@@ -6429,6 +6429,21 @@ function saveAchievementGoal() {
   });
 }
 
+function _goalPathTodoRowHtml(goalId, t) {
+  const kind = _goalActionKind(t);
+  const badge = kind === 'micro' ? 'اقدامک' : 'اقدام';
+  const dateLabel = t.date_jalali ? DateService.disp(t.date_jalali) : 'بدون تاریخ';
+  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
+      <button type="button" onclick="_toggleGoalPathTodo(${goalId},${t.id})" style="width:20px;height:20px;border-radius:50%;flex-shrink:0;cursor:pointer;
+        border:2px solid ${t.done?'var(--green)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:11px;font-weight:700">
+        ${t.done?'✓':''}
+      </button>
+      <span style="font-size:10px;font-weight:800;color:${kind==='micro'?'var(--amber)':'#60a5fa'};background:${kind==='micro'?'rgba(251,191,36,.12)':'rgba(96,165,250,.12)'};padding:2px 7px;border-radius:999px;flex-shrink:0">${badge}</span>
+      <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(t.title)}</span>
+      <span style="font-size:10px;color:var(--text3);flex-shrink:0">${dateLabel}</span>
+    </div>`;
+}
+
 function _goalDetailPathHtml(id) {
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
   const tasks = _goalLinkedTasks(id).slice().sort((a, b) => {
@@ -6437,31 +6452,35 @@ function _goalDetailPathHtml(id) {
     const kb = _goalActionKind(b) === 'micro' ? 0 : 1;
     return ka - kb;
   });
-  const openCount = tasks.filter(t => !t.done).length;
-  const rows = tasks.length ? tasks.map(t => {
-    const kind = _goalActionKind(t);
-    const badge = kind === 'micro' ? 'اقدامک' : 'اقدام';
-    const dateLabel = t.date_jalali ? DateService.disp(t.date_jalali) : 'بدون تاریخ';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
-      <button type="button" onclick="_toggleGoalPathTodo(${id},${t.id})" style="width:20px;height:20px;border-radius:50%;flex-shrink:0;cursor:pointer;
-        border:2px solid ${t.done?'var(--green)':'var(--border2)'};background:${t.done?'var(--green)':'transparent'};color:white;font-size:11px;font-weight:700">
-        ${t.done?'✓':''}
-      </button>
-      <span style="font-size:10px;font-weight:800;color:${kind==='micro'?'var(--amber)':'#60a5fa'};background:${kind==='micro'?'rgba(251,191,36,.12)':'rgba(96,165,250,.12)'};padding:2px 7px;border-radius:999px;flex-shrink:0">${badge}</span>
-      <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)'}">${escapeHtml(t.title)}</span>
-      <span style="font-size:10px;color:var(--text3);flex-shrink:0">${dateLabel}</span>
-    </div>`;
-  }).join('') : '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز اقدام یا اقدامکی ثبت نشده</div>';
+  const openTasks = tasks.filter(t => !t.done);
+  const doneTasks = tasks.filter(t => t.done);
+  const openRows = openTasks.map(t => _goalPathTodoRowHtml(id, t)).join('');
+  const doneRows = doneTasks.map(t => _goalPathTodoRowHtml(id, t)).join('');
+  let listHtml;
+  if (!tasks.length) {
+    listHtml = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز اقدام یا اقدامکی ثبت نشده</div>';
+  } else {
+    const openBlock = openRows
+      ? `<div style="max-height:220px;overflow-y:auto">${openRows}</div>`
+      : '<div style="font-size:12px;color:var(--text3);padding:6px 2px 8px">الان کار بازی نیست</div>';
+    const doneBlock = doneTasks.length
+      ? `<details style="margin-top:4px">
+          <summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text3);padding:6px 0">انجام‌شده (${fa(doneTasks.length)}) · برای دیدن باز کن</summary>
+          <div style="margin-top:6px;max-height:220px;overflow-y:auto">${doneRows}</div>
+        </details>`
+      : '';
+    listHtml = openBlock + doneBlock;
+  }
   return `
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
           <span style="font-size:12px;font-weight:600;color:var(--text2)">⚡ مسیر اجرا · کارهای این هدف</span>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <span style="font-size:11px;color:var(--text3)">${fa(openCount)} باز از ${fa(tasks.length)}</span>
+            <span style="font-size:11px;color:var(--text3)">${fa(openTasks.length)} باز از ${fa(tasks.length)}</span>
             <button type="button" onclick="openGoalJourneyReport(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.12);color:#93c5fd;cursor:pointer;font-family:var(--font)">گزارش</button>
           </div>
         </div>
-        <div>${rows}</div>
+        <div>${listHtml}</div>
         <div style="margin-top:10px">
           <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (تاریخ امروز، در لیست کارها)</div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
