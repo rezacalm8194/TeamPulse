@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp321';
+const TP_ASSET_V = 'tp322';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -25559,7 +25559,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v321';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v322';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
