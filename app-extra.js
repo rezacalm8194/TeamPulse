@@ -5643,7 +5643,7 @@ function _createLinkedGoalTodo(goalId, title, kind) {
   if (dup) return null;
   const today = (typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '') || '';
   const isMicro = kind === 'micro';
-  const dateJalali = isMicro ? today : '';
+  const dateJalali = today;
   const now = new Date().toISOString();
   const todo = {
     id: _allocateTodoId(),
@@ -5726,7 +5726,7 @@ function _goalPathComposerHtml(prefix, g) {
       <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 12px">اقدام و اقدامک مستقیم به‌صورت کار در لیست کارها ثبت می‌شوند. اقدامک یعنی کوچک‌ترین حرکت امروز.</div>
       ${_goalLinkedPathPreviewHtml(g)}
       <div style="margin-bottom:12px">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">اقدام‌ها <span style="font-weight:600;color:var(--text3)">(تا ۳ مورد)</span></div>
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">اقدام‌ها <span style="font-weight:600;color:var(--text3)">(تا ۳ مورد، تاریخ امروز)</span></div>
         <div id="${prefix}-path-actions-list"></div>
         <div style="display:flex;gap:8px;align-items:center">
           <input class="form-input" id="${prefix}-path-action" placeholder="مثلاً: رزومه را برای ۳ شرکت بفرست" onkeydown="if(event.key==='Enter'){event.preventDefault();_addGoalPathItem('${prefix}','action')}">
@@ -6463,7 +6463,7 @@ function _goalDetailPathHtml(id) {
         </div>
         <div>${rows}</div>
         <div style="margin-top:10px">
-          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (بدون تاریخ، در لیست کارها)</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (تاریخ امروز، در لیست کارها)</div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <input class="form-input" id="goal-detail-path-action" placeholder="اقدام بعدی مسیر..." onkeydown="if(event.key==='Enter'){event.preventDefault();addGoalPathTodoFromDetail(${id},'action')}">
             <button type="button" onclick="addGoalPathTodoFromDetail(${id},'action')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-size:18px;font-weight:800">+</button>
