@@ -72,6 +72,7 @@ test('staff role rows all include add-item UI like bonus', () => {
   assert.match(extraSource, /function staffRoleRowHtml\(/);
   assert.match(extraSource, /class="role-row staff-items-row"/);
   assert.match(extraSource, /آیتم‌های \$\{escapeHtml\(role\.label\)\}/);
+  assert.match(extraSource, /شرح کارهای \$\{escapeHtml\(role\.label\)\}/);
   assert.match(extraSource, /bonus_items: bonusItems\.length \? bonusItems : \[\{ amount: 0, note: '' \}\]/);
   assert.match(extraSource, /container\.insertAdjacentHTML\('beforeend', staffRoleRowHtml\(newRole/);
 });
@@ -79,7 +80,7 @@ test('staff role rows all include add-item UI like bonus', () => {
 test('staff role occurrence count is editable, persisted, and included in totals', () => {
   assert.match(extraSource, /class="form-input role-count"[^>]*oninput="updateRoleRowTotal\(this\)"/);
   assert.doesNotMatch(extraSource, /class="form-input role-count"[^>]*readonly/);
-  assert.match(extraSource, /const total = amountTotal \* countValue/);
+  assert.match(extraSource, /const total = unitRate \* countValue/);
   assert.match(extraSource, /count: Math\.max\(0, \+\(row\.querySelector\('\.role-count'\)\?\.value \|\| 0\)\)/);
 });
 
