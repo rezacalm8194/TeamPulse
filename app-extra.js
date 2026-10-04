@@ -772,7 +772,7 @@ async function renderStaff() {
         <td data-label="نوع"><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
         <td data-label="نقش‌ها" class="staff-role-cell"><div class="staff-role-cell-inner">${staffIsPersonnel(s) ? roleTags : '<span style="color:var(--text3)">عضو پرداختی</span>'}</div></td>
         <td data-label="شماره کارت">${cardMasked}</td>
-        <td data-label="حقوق این ماه"><span class="amount amount-neutral">${fmt(s.expectedMonthly)} ت</span></td>
+        <td data-label="حقوق این ماه"><span class="amount ${(s.remainingThisMonth??s.expectedMonthly)<=0?'amount-paid':'amount-neutral'}">${fmt(s.remainingThisMonth??s.expectedMonthly)} ت</span></td>
         <td data-label="جمع پرداختی"><span class="amount amount-paid">${fmt(totalPaidDisplay)} ت</span></td>
         <td data-label="سررسید این ماه" style="font-size:12px;color:var(--text2)">${dueDateCell}</td>
         <td data-label="عملیات" class="staff-actions-cell">

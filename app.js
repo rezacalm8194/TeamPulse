@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp337';
+const TP_ASSET_V = 'tp338';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2859,6 +2859,22 @@ function _staffRolePayTotal(role) {
   return Math.max(0, +(role?.amount || 0)) * count;
 }
 
+function _staffRemainingThisMonth(staffId, expectedMonthly, paidThisMonth) {
+  if (paidThisMonth) return 0;
+  const rem=_db.staff_reminders
+    .filter(r=>r.staff_id===staffId&&!r.done)
+    .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
+  const paid=rem?_staffReminderPaidAmount(rem):0;
+  return Math.max(0,(expectedMonthly||0)-paid);
+}
+
+function _resetStaffRoleCountsForNewCycle(s) {
+  (s.roles||[]).forEach(r=>{
+    r.count=0;
+    (r.bonus_items||[]).forEach(item=>{item.count=0;});
+  });
+}
+
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
   const paymentsTotal=_db.staff_payments.filter(p=>p.staff_id===s.id).reduce((a,p)=>a+(p.amount||0),0);
@@ -2870,7 +2886,8 @@ function _staffSummary(s) {
     .filter(r=>r.staff_id===s.id&&!r.done)
     .sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))[0];
   const daysUntil=rem?_daysUntil(rem.due_date_jalali):null;
-  return{...s,roles,expectedMonthly,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
+  const remainingThisMonth=_staffRemainingThisMonth(s.id,expectedMonthly,paidThisMonth);
+  return{...s,roles,expectedMonthly,remainingThisMonth,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
 }
 
 function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
@@ -3595,7 +3612,7 @@ window.api = {
         }
         rem.notified_levels=[];
       }
-      (s.roles||[]).forEach(r=>{r.count=0;});
+      _resetStaffRoleCountsForNewCycle(s);
       _save(); return _P({ok:true,amount});
     },
   },
@@ -3634,7 +3651,8 @@ window.api = {
         const paidAmount=_staffReminderPaidAmount(r);
         const settledByPayments=expectedAmount>0&&paidAmount>=expectedAmount;
         const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===r.staff_id&&m.jy===tjy&&m.jm===tjm&&m.paid);
-        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:Math.max(0,expectedAmount-paidAmount),paid_amount:paidAmount,settled_by_payments:settledByPayments,paid_this_month:paidThisMonth};
+        const liveAmount=paidThisMonth?0:Math.max(0,expectedAmount-paidAmount);
+        return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali),live_amount:liveAmount,paid_amount:paidAmount,settled_by_payments:settledByPayments,paid_this_month:paidThisMonth};
       }).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali)));
     },
     add: (p)=>{ _db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:p.staff_id,title:p.title||'پرداخت حقوق',due_date_jalali:p.due_date,repeat_months:p.repeat_months ?? 1,amount:p.amount||0,done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
