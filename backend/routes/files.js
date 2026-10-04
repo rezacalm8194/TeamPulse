@@ -42,7 +42,7 @@ const upload = multer({
       cb(null, `up-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     },
   }),
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fieldArrayIndexLimit: 0 },
 });
 
 const workspaceId = value => (/^[a-zA-Z0-9_-]{1,80}$/.test(String(value || '')) ? String(value) : 'default');

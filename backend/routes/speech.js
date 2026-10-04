@@ -48,7 +48,7 @@ const voskWorkerState = {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024, files: 1, fieldArrayIndexLimit: 0 },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype || !file.mimetype.startsWith('audio/')) {
       return cb(new Error('audio file required'));
