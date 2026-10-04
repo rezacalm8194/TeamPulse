@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp333';
+const TP_ASSET_V = 'tp334';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -677,7 +677,7 @@ function _serviceMergeKey(label) {
 }
 
 function _isGenericStaffServiceLabel(label) {
-  return /^(پرسنل|کارمند|عضو|همکار)$/i.test(String(label || '').trim()) || /پاداش|bonus/i.test(label || '');
+  return /^(پرسنل|کارمند|عضو|همکار|طراحی کاور|طراح کاور)$/i.test(String(label || '').trim()) || /پاداش|bonus/i.test(label || '');
 }
 
 function _syncServiceCatalogs(d, { from = 'both' } = {}) {
@@ -945,7 +945,7 @@ function _freshData() {
     package_types: [],
     families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], expense_reminders:[], financial_accounts:[], fiscal_year_closings:[], financial_budgets:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
-    staff_roles:[{id:1,label:'پرسنل'}],
+    staff_roles:[{id:1,label:'طراحی کاور'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
     team_members:[], team_invites:[],
     session_order:[],
@@ -983,7 +983,23 @@ function _migrate(d) {
   ['families','students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
-  d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'پرسنل'}];
+  d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'طراحی کاور'}];
+  if (!d.meta.staff_personnel_role_renamed_v1) {
+    let renamed = false;
+    (d.staff_roles || []).forEach(role => {
+      if (String(role.label || '').trim() === 'پرسنل') { role.label = 'طراحی کاور'; renamed = true; }
+    });
+    (d.staff_role_entries || []).forEach(entry => {
+      if (String(entry.role_label || '').trim() === 'پرسنل') { entry.role_label = 'طراحی کاور'; renamed = true; }
+    });
+    (d.staff_monthly || []).forEach(month => {
+      (month.roles || []).forEach(role => {
+        if (String(role.role_label || '').trim() === 'پرسنل') { role.role_label = 'طراحی کاور'; renamed = true; }
+      });
+    });
+    d.meta.staff_personnel_role_renamed_v1 = true;
+    if (renamed) d._staffRoleCatalogNeedsSave = true;
+  }
   d.session_order = d.session_order||[];
   d.archive_columns = Array.isArray(d.archive_columns) && d.archive_columns.length
     ? d.archive_columns
@@ -25624,7 +25640,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v333';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v334';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
