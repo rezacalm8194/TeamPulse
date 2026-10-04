@@ -5440,32 +5440,12 @@ function renderGoals() {
       ${pinnedGoals.map(renderGoalCard).join('')}
     </section>` : '';
 
-  const compactGoals = goals.slice().sort((a, b) => {
+  const sortCompactGoals = (a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
     if (a.pinned && b.pinned) return _sortPinnedGoals(a, b);
     return _sortGoalsNewestFirst(a, b);
-  });
-
-  setContent(`
-    <div style="max-width:920px;margin:0 auto">
-      ${_goalsStickyAddHtml()}
-      ${statsHTML}
-      ${_goalAchievementsHtml()}
-      ${todayWidgetHTML}
-      ${pinnedHTML}
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
-          <button id="goals-view-toggle" onclick="_toggleGoalsView()" title="تغییر نما"
-            style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
-            <span id="goals-view-icon">${_goalsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="goals-view-label">${_goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
-          </button>
-        </div>
-      </div>
-      <div id="goals-compact-view" style="display:${_goalsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-          ${compactGoals.map(g => {
+  };
+  const renderCompactCard = (g) => {
             const sc = statusColors[g.status || 'active'] || statusColors.active;
             const progress = g.progress || 0;
             const progressColor = progress >= 100 ? 'var(--green)' : progress >= 60 ? 'var(--accent)' : '#60a5fa';
@@ -5506,8 +5486,41 @@ function renderGoals() {
                 ${linkedHabitCount > 0 ? `<span style="font-size:11px;color:var(--amber)">🔥 ${fa(linkedHabitCount)}</span>` : ''}
               </div>
             </div>`;
-          }).join('')}
+  };
+  const compactByPeriodHTML = GOAL_PERIODS.map(period => {
+    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key).slice().sort(sortCompactGoals);
+    if (!periodGoals.length) return '';
+    return `
+      <section style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
+          <h3 style="font-size:13px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
+          <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
         </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+          ${periodGoals.map(renderCompactCard).join('')}
+        </div>
+      </section>`;
+  }).join('');
+
+  setContent(`
+    <div style="max-width:920px;margin:0 auto">
+      ${_goalsStickyAddHtml()}
+      ${statsHTML}
+      ${_goalAchievementsHtml()}
+      ${todayWidgetHTML}
+      ${pinnedHTML}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:15px;font-weight:700">لیست اهداف</h2>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;color:var(--text3)">${fa(goals.length)} هدف</span>
+          <button id="goals-view-toggle" onclick="_toggleGoalsView()" title="تغییر نما"
+            style="padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px">
+            <span id="goals-view-icon">${_goalsViewMode === 'compact' ? '📋' : '🗂'}</span><span id="goals-view-label">${_goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه'}</span>
+          </button>
+        </div>
+      </div>
+      <div id="goals-compact-view" style="display:${_goalsViewMode === 'compact' ? 'block' : 'none'};margin-bottom:16px">
+        ${compactByPeriodHTML}
       </div>
       <div id="goals-full-view" style="display:${_goalsViewMode === 'compact' ? 'none' : 'block'}">
       ${html}
