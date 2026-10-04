@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp336';
+const TP_ASSET_V = 'tp337';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2831,11 +2831,39 @@ function _staffReminderPaidAmount(reminder) {
   }).reduce((total,payment)=>total+Number(payment.amount||0),0);
 }
 
+function _isStaffBonusRoleLabel(label) {
+  return /پاداش|bonus/i.test(label || '');
+}
+
+function _staffRoleFilledItems(role) {
+  return (Array.isArray(role?.bonus_items) ? role.bonus_items : []).filter(item =>
+    +(item.amount || 0) > 0 || String(item.note || '').trim() || +(item.count || 0) > 0
+  );
+}
+
+function _staffRoleItemRate(role, item) {
+  const n = +(item?.amount || 0);
+  return n > 0 ? n : Math.max(0, +(role?.amount || 0));
+}
+
+function _staffRolePayTotal(role) {
+  const items = _staffRoleFilledItems(role);
+  const count = Math.max(0, +(role?.count ?? 1));
+  if (_isStaffBonusRoleLabel(role?.role_label || role?.label || '')) {
+    const sum = items.length ? items.reduce((a, item) => a + (+(item.amount || 0)), 0) : +(role?.amount || 0);
+    return sum * Math.max(0, +(role?.count ?? 1));
+  }
+  if (items.some(item => +(item.count || 0) > 0)) {
+    return items.reduce((a, item) => a + _staffRoleItemRate(role, item) * Math.max(0, +(item.count || 0)), 0);
+  }
+  return Math.max(0, +(role?.amount || 0)) * count;
+}
+
 function _staffSummary(s) {
   const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{...r,role_label:rr?rr.label:'—'};});
   const paymentsTotal=_db.staff_payments.filter(p=>p.staff_id===s.id).reduce((a,p)=>a+(p.amount||0),0);
   const adjTotal=_db.staff_adjustments.filter(a=>a.staff_id===s.id).reduce((a,adj)=>a+(adj.type==='penalty'?-(adj.amount||0):(adj.amount||0)),0);
-  const expectedMonthly=(s.salary||0)+roles.reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
+  const expectedMonthly=(s.salary||0)+roles.reduce((a,r)=>a+_staffRolePayTotal(r),0);
   const [tjy,tjm]=_todayJalali();
   const paidThisMonth=_db.staff_monthly.some(m=>m.staff_id===s.id&&m.jy===tjy&&m.jm===tjm&&m.paid);
   const rem=_db.staff_reminders
@@ -3504,7 +3532,7 @@ window.api = {
       const id=_nextId('staff');
       const paymentTiming=p.payment_timing==='start'?'start':'end';
       _db.staff.push({id,name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||'',card_number:p.card_number||'',person_type:p.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,start_date:p.start_date||'',payment_timing:paymentTiming,note:p.note||'',created_at:new Date().toISOString()});
-      const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
+      const totalSalary=(p.salary||0)+(p.roles||[]).reduce((a,r)=>a+_staffRolePayTotal(r),0);
       const repeatMonths = p.repeat_months ?? 1;
       if(totalSalary>0&&p.start_date&&repeatMonths>0){const[jy,jm,jd]=_jalaliParse(p.start_date);const firstDue=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,repeatMonths);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...firstDue),repeat_months:repeatMonths,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}
       _save(); return _P({id});
@@ -3516,7 +3544,7 @@ window.api = {
       const paymentTiming=p.payment_timing==='start'?'start':'end';
       Object.assign(s,{name:p.name,lname:p.lname||'',phone:p.phone||'',email:p.email||s.email||'',card_number:p.card_number||'',person_type:p.person_type||s.person_type||'personnel',role_id:p.role_id,roles:p.roles||[],salary:p.salary||0,payment_timing:paymentTiming,note:p.note||''});
       if(p.start_date)s.start_date=p.start_date;
-      const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+(r.amount||0)*(r.count??1),0);
+      const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+_staffRolePayTotal(r),0);
       const er=_db.staff_reminders.find(r=>r.staff_id===s.id);
       const rm=p.repeat_months!==undefined?p.repeat_months:(er?.repeat_months??1);
       if(rm>0){if(er){er.repeat_months=rm;er.amount=totalSalary;if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
@@ -3541,7 +3569,7 @@ window.api = {
       const tjm = p.for_jm || tm;
       const JMONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
       const faNum=n=>String(n).replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[+d]);
-      const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:(r.amount||0)*(r.count??1)};});
+      const roles=(s.roles||[]).map(r=>{const rr=_db.staff_roles.find(x=>x.id===r.role_id);return{role_id:r.role_id,role_label:rr?rr.label:'—',rate:r.amount||0,count:r.count??1,amount:_staffRolePayTotal(r),bonus_items:Array.isArray(r.bonus_items)?r.bonus_items:[]};});
       const total=(s.salary||0)+roles.reduce((a,r)=>a+r.amount,0);
       const rem=_db.staff_reminders
         .filter(x=>x.staff_id===s.id&&!x.done)
@@ -25640,7 +25668,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v336';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v337';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

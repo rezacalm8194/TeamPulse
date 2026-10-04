@@ -1250,20 +1250,17 @@ async function saveQuickStaff() {
 
 function staffRoleTagSuffix(r) {
   const label = r.role_label || r.label || '';
-  const items = Array.isArray(r.bonus_items) ? r.bonus_items.filter(i => i.amount > 0 || String(i.note || '').trim()) : [];
+  const items = Array.isArray(r.bonus_items) ? r.bonus_items.filter(i => i.amount > 0 || String(i.note || '').trim() || +(i.count || 0) > 0) : [];
+  const total = _staffRolePayTotal({ ...r, label });
+  if (!total && !items.length) return '';
   if (isStaffBonusRoleLabel(label)) {
-    const total = items.length
-      ? items.reduce((a, i) => a + (i.amount || 0), 0)
-      : (r.amount || 0) * (r.count ?? 1);
-    if (!total && !items.length) return '';
     if (items.length > 1) return `: ${fmt(total)} (${fa(items.length)} آیتم)`;
     return `: ${fmt(total)}`;
   }
-  const rate = +(r.amount || 0);
-  const count = Math.max(0, +(r.count ?? 1));
-  const total = rate * count;
-  if (!total && !items.length) return '';
-  if (count > 1) return `: ${fmt(rate)}×${fa(count)}`;
+  const rates = [...new Set(items.map(i => _staffRoleItemRate(r, i)).filter(n => n > 0))];
+  const count = items.reduce((a, i) => a + Math.max(0, +(i.count || 0)), 0) || Math.max(0, +(r.count ?? 1));
+  if (rates.length > 1) return `: ${fmt(total)} (${fa(count)} نفر، نرخ‌های مختلف)`;
+  if (count > 1 && rates.length === 1) return `: ${fmt(rates[0])}×${fa(count)}`;
   return `: ${fmt(total)}`;
 }
 
@@ -1273,6 +1270,8 @@ function isStaffBonusRoleLabel(label) {
 
 function staffBonusItemsFromRole(role) {
   const saved = Array.isArray(role?.bonus_items) ? role.bonus_items : [];
+  const defaultRate = Math.max(0, +(role?.amount || 0));
+  const isBonus = isStaffBonusRoleLabel(role?.role_label || role?.label || '');
   const items = (saved.length ? saved : [{ amount: 0, note: '', count: 0 }]).map(item => ({
     amount: +(item?.amount || 0),
     note: item?.note || '',
@@ -1280,6 +1279,9 @@ function staffBonusItemsFromRole(role) {
   }));
   const hasRowCount = items.some(item => item.count > 0);
   if (!hasRowCount && Math.max(0, +(role?.count || 0)) > 0) items[0].count = Math.max(0, +(role.count || 0));
+  if (!isBonus && defaultRate > 0) {
+    items.forEach(item => { if (item.amount <= 0) item.amount = defaultRate; });
+  }
   return items;
 }
 
@@ -1291,6 +1293,10 @@ function staffBonusItemHtml(item = {}, disabled = false, roleLabel = '') {
       <div class="role-field">
         <label class="form-label">شرح کار</label>
         <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="مثلاً از Export 101 تا 126 — رضا" oninput="updateStaffBonusTotal(this)">
+      </div>
+      <div class="role-field role-field-sm">
+        <label class="form-label">نرخ</label>
+        <input class="form-input work-rate" type="number" min="0" inputmode="numeric" value="${Math.max(0, +(item.amount || 0))}" ${disabled ? 'disabled' : ''} oninput="updateStaffBonusTotal(this)">
       </div>
       <div class="role-field role-field-sm">
         <label class="form-label">تعداد</label>
@@ -1315,17 +1321,19 @@ function staffBonusItemHtml(item = {}, disabled = false, roleLabel = '') {
 
 function staffRoleRowHtml(role, existing) {
   const checked = !!existing;
-  const items = staffBonusItemsFromRole(existing);
   const isBonus = isStaffBonusRoleLabel(role.label);
+  const defaultRate = isBonus
+    ? 0
+    : (Math.max(0, +(existing?.amount || 0)) || (+(existing?.bonus_items?.find(item => +(item.amount || 0) > 0)?.amount || 0)));
+  const items = staffBonusItemsFromRole({ ...(existing || {}), amount: isBonus ? existing?.amount : defaultRate, label: role.label });
   const count = isBonus
     ? Math.max(0, +(existing?.count ?? 1))
     : items.reduce((a, item) => a + Math.max(0, +(item.count || 0)), 0);
   const rate = isBonus
     ? items.reduce((a, item) => a + (+(item.amount || 0)), 0)
-    : (Math.max(0, +(existing?.amount || 0)) || (+(items.find(item => +(item.amount || 0) > 0)?.amount || 0)));
-  const total = rate * count;
-  const noteCount = items.filter(item => String(item.note || '').trim() || +(item.amount || 0) > 0 || +(item.count || 0) > 0).length;
-  const summaryText = isBonus ? `${fmt(rate)} تومان` : (count ? `${fa(count)} نفر` : (noteCount ? `${fa(noteCount)} شرح` : 'بدون شرح'));
+    : defaultRate;
+  const total = _staffRolePayTotal({ ...(existing || {}), amount: isBonus ? rate : defaultRate, count, bonus_items: items, label: role.label });
+  const summaryText = isBonus ? `${fmt(rate)} تومان` : (count ? `${fa(count)} نفر` : 'بدون تعداد');
   return `
     <div class="role-row staff-items-row" data-role-label="${escapeHtml(role.label)}" data-role-kind="${isBonus ? 'bonus' : 'rate'}">
       <label class="role-row-label">
@@ -1336,11 +1344,11 @@ function staffRoleRowHtml(role, existing) {
       ${isBonus ? '' : `
       <div class="role-rate-row">
         <div class="role-field">
-          <label class="form-label">نرخ هر کار (تومان)</label>
+          <label class="form-label">نرخ پیش‌فرض (تومان)</label>
           <input class="form-input role-amount amount-input" type="number" min="0" placeholder="0" value="${rate}" ${checked ? '' : 'disabled'} oninput="updateRoleRowTotal(this)">
         </div>
       </div>
-      <p class="role-rate-hint">نرخ این پرسنل ثابت است. تعداد هر مشتری را روی همان ردیف بزن؛ پایین جمع تعداد و مبلغ حساب می‌شود.</p>
+      <p class="role-rate-hint">این نرخ روی ردیف جدید می‌نشیند. برای یک مشتری خاص، نرخ همان ردیف را عوض کن؛ جمع پایین از ردیف‌ها حساب می‌شود.</p>
       `}
       <details class="bonus-details" ${checked ? 'open' : ''}>
         <summary>
@@ -1363,7 +1371,7 @@ function staffRoleRowHtml(role, existing) {
           <input class="form-input role-count" type="number" min="0" step="1" inputmode="numeric" placeholder="1" value="${count}" ${checked ? '' : 'disabled'} ${isBonus ? 'oninput="updateRoleRowTotal(this)"' : 'readonly'}>
         </div>
         <div class="role-field role-total-wrap">
-          <label class="form-label">${isBonus ? 'جمع کل این نقش' : 'جمع = نرخ × تعداد'}</label>
+          <label class="form-label">${isBonus ? 'جمع کل این نقش' : 'جمع ردیف‌ها'}</label>
           <div class="role-total-amount">${fmt(total)} تومان</div>
           <div class="role-total-words">${total > 0 ? numberToPersianWords(total) + ' تومان' : ''}</div>
         </div>
@@ -1435,7 +1443,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
       <div id="staff-role-rows">
         ${roleRows}
       </div>
-      <p style="font-size:11px;color:var(--text3);margin-top:6px">حقوق کل ماهانه = حقوق ثابت + (نرخ هر کار × جمع تعداد ردیف‌ها) برای نقش‌های فعال.</p>
+      <p style="font-size:11px;color:var(--text3);margin-top:6px">حقوق کل ماهانه = حقوق ثابت + جمع ردیف‌های نقش‌های فعال (هر ردیف: نرخ همان ردیف × تعداد).</p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <input class="form-input" id="st-newrole" placeholder="نقش جدید..." style="max-width:200px">
         <button class="btn btn-ghost btn-sm" onclick="addRoleInline()">+ افزودن نقش جدید</button>
@@ -1465,7 +1473,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
 
 function onRoleCheckChange(checkbox) {
   const row = checkbox.closest('.role-row');
-  row.querySelectorAll('.role-amount,.role-count,.bonus-amount,.bonus-note,.bonus-count').forEach(el => el.disabled = !checkbox.checked);
+  row.querySelectorAll('.role-amount,.role-count,.bonus-amount,.bonus-note,.bonus-count,.work-rate').forEach(el => el.disabled = !checkbox.checked);
   const bonusDetails = row.querySelector('.bonus-details');
   if (bonusDetails && checkbox.checked) bonusDetails.open = true;
   updateRoleRowTotal(row.querySelector('.role-amount'));
@@ -1491,14 +1499,23 @@ function updateStaffBonusTotal(elOrRow) {
   const count = row.querySelector('.role-count');
   let unitRate = +(amount?.value || 0);
   let countValue = Math.max(0, +(count?.value || 0));
+  let total;
   if (isBonus) {
     unitRate = [...row.querySelectorAll('.bonus-amount')].reduce((a, input) => a + (+(input.value || 0)), 0);
     if (amount) amount.value = unitRate;
+    total = unitRate * countValue;
   } else {
-    countValue = [...row.querySelectorAll('.bonus-count')].reduce((a, input) => a + Math.max(0, +(input.value || 0)), 0);
+    const defaultRate = Math.max(0, +(amount?.value || 0));
+    countValue = 0;
+    total = 0;
+    row.querySelectorAll('.bonus-item').forEach(item => {
+      const n = Math.max(0, +(item.querySelector('.bonus-count')?.value || 0));
+      const rate = Math.max(0, +(item.querySelector('.work-rate')?.value || 0)) || defaultRate;
+      countValue += n;
+      total += rate * n;
+    });
     if (count) count.value = countValue;
   }
-  const total = unitRate * countValue;
   row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
   row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
   const summaryAmount = row.querySelector('.bonus-summary-amount');
@@ -1516,7 +1533,8 @@ function addStaffBonusItem(button) {
     onRoleCheckChange(checkbox);
   }
   const box = row.querySelector('.bonus-items');
-  box.insertAdjacentHTML('beforeend', staffBonusItemHtml({}, false, row.dataset.roleLabel || ''));
+  const defaultRate = +(row.querySelector('.role-amount')?.value || 0);
+  box.insertAdjacentHTML('beforeend', staffBonusItemHtml({ amount: defaultRate, count: 0, note: '' }, false, row.dataset.roleLabel || ''));
   updateStaffBonusTotal(row);
   initAmountHints();
 }
@@ -1529,9 +1547,11 @@ function removeStaffBonusItem(button) {
     const amount = item.querySelector('.bonus-amount');
     const note = item.querySelector('.bonus-note');
     const rowCount = item.querySelector('.bonus-count');
+    const workRate = item.querySelector('.work-rate');
     if (amount) amount.value = 0;
     if (note) note.value = '';
     if (rowCount) rowCount.value = 0;
+    if (workRate) workRate.value = 0;
   } else {
     button.closest('.bonus-item').remove();
   }
@@ -1552,11 +1572,12 @@ async function addRoleInline() {
 }
 
 function collectStaffRoleItems(row) {
+  const isBonus = row.dataset.roleKind === 'bonus' || isStaffBonusRoleLabel(row.dataset.roleLabel);
   return [...row.querySelectorAll('.bonus-item')].map(item => ({
-    amount: +(item.querySelector('.bonus-amount')?.value || 0),
+    amount: +(item.querySelector('.work-rate')?.value || item.querySelector('.bonus-amount')?.value || 0),
     note: item.querySelector('.bonus-note')?.value || '',
     count: Math.max(0, +(item.querySelector('.bonus-count')?.value || 0)),
-  })).filter(item => item.amount > 0 || item.note.trim() || item.count > 0);
+  })).filter(item => isBonus ? (item.amount > 0 || item.note.trim()) : (item.note.trim() || item.count > 0));
 }
 
 function collectStaffRoles() {
@@ -1757,10 +1778,14 @@ async function openStaffDetail(id) {
         if (!items.length) return escapeHtml(r.role_label);
         const bits = items.map(i => {
           const note = String(i.note || '').trim();
-          const amt = +(i.amount || 0);
           const n = Math.max(0, +(i.count || 0));
-          const head = note ? escapeHtml(note) : (amt ? fmt(amt) : 'شرح');
-          return n ? `${head} × ${fa(n)}` : (amt && note ? `${fmt(amt)} (${escapeHtml(note)})` : head);
+          const rate = +(i.amount || 0);
+          if (note && n && rate) return `${escapeHtml(note)} · ${fmt(rate)} × ${fa(n)}`;
+          if (note && n) return `${escapeHtml(note)} × ${fa(n)}`;
+          if (note && rate) return `${escapeHtml(note)} · ${fmt(rate)}`;
+          if (note) return escapeHtml(note);
+          if (n && rate) return `${fmt(rate)} × ${fa(n)}`;
+          return rate ? fmt(rate) : 'شرح';
         }).join('، ');
         return `${escapeHtml(r.role_label)}: ${bits}`;
       }).join('؛ ')||'—'}</span></div>
@@ -1811,7 +1836,7 @@ async function openStaffDetail(id) {
         <div class="detail-row">
           <span class="detail-key">
             ${escapeHtml(m.label)} ${trendBadge}${m.paid?' <span class="status status-ok" style="margin-right:4px">پرداخت‌شده</span>':''}
-            ${m.roles && m.roles.length ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">${m.roles.map(r=>`${escapeHtml(r.role_label)}: ${fa(r.count||1)}×${fmt(r.rate||r.amount||0)}=${fmt(r.amount)}`).join(' | ')}</div>` : ''}
+            ${m.roles && m.roles.length ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">${m.roles.map(r=>`${escapeHtml(r.role_label)}: ${fmt(r.amount)}`).join(' | ')}</div>` : ''}
           </span>
           <span class="detail-val" style="display:flex;align-items:center;gap:6px">
             ${fmt(m.total)} تومان
@@ -2381,7 +2406,7 @@ async function payStaffSalary(staffId, name) {
     `<option value="${i+1}" ${i+1===defJm?'selected':''}>${mn}</option>`).join('');
 
   openModal(`✓ تأیید پرداخت حقوق — ${name}`, `
-    <p style="font-size:12px;color:var(--text2);margin-bottom:4px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + نقش‌ها × تعداد)</p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:4px">حقوق کل این ماه: <b>${fmt(s.expectedMonthly)} تومان</b> (حقوق ثابت + جمع ردیف‌های نقش‌ها)</p>
     <p style="font-size:13px;color:var(--amber);margin-bottom:8px">مانده قابل پرداخت: <b>${fmt(remainingAmount)} تومان</b></p>
 
     <div class="form-group full">
