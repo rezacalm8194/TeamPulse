@@ -3217,6 +3217,171 @@ function _todoShowMore(key) {
   renderTodoList({ skipMaintenance: true });
 }
 
+const _TODO_135_SLOTS = [
+  { rank: 1, kind: 'big', kindLabel: 'بزرگ', slotLabel: '۱ بزرگ' },
+  { rank: 2, kind: 'medium', kindLabel: 'متوسط', slotLabel: 'متوسط ۱' },
+  { rank: 3, kind: 'medium', kindLabel: 'متوسط', slotLabel: 'متوسط ۲' },
+  { rank: 4, kind: 'medium', kindLabel: 'متوسط', slotLabel: 'متوسط ۳' },
+  { rank: 5, kind: 'small', kindLabel: 'کوچک', slotLabel: 'کوچک ۱' },
+  { rank: 6, kind: 'small', kindLabel: 'کوچک', slotLabel: 'کوچک ۲' },
+  { rank: 7, kind: 'small', kindLabel: 'کوچک', slotLabel: 'کوچک ۳' },
+  { rank: 8, kind: 'small', kindLabel: 'کوچک', slotLabel: 'کوچک ۴' },
+  { rank: 9, kind: 'small', kindLabel: 'کوچک', slotLabel: 'کوچک ۵' },
+];
+const _TODO_135_BANDS = [
+  { kind: 'big', title: '۱ بزرگ', hint: 'تمرکز اصلی', ranks: [1] },
+  { kind: 'medium', title: '۳ متوسط', hint: 'کارهای مهم', ranks: [2, 3, 4] },
+  { kind: 'small', title: '۵ کوچک', hint: 'کارهای سریع', ranks: [5, 6, 7, 8, 9] },
+];
+
+function _parseMainTodayRank(value) {
+  const n = parseInt(value || '0', 10) || 0;
+  return Math.max(0, Math.min(9, n));
+}
+
+function _todo135SlotMeta(rank) {
+  return _TODO_135_SLOTS.find(s => s.rank === +rank) || null;
+}
+
+function _todo135RankSelectHtml(selectedRank) {
+  const selected = _parseMainTodayRank(selectedRank);
+  const opts = ['<option value="0"' + (selected === 0 ? ' selected' : '') + '>در قانون ۱-۳-۵ نیست</option>']
+    .concat(_TODO_135_SLOTS.map(s =>
+      '<option value="' + s.rank + '"' + (selected === s.rank ? ' selected' : '') + '>' + s.slotLabel + '</option>'
+    ));
+  return opts.join('');
+}
+
+function _todo135ByRank(todayTodos) {
+  const map = {};
+  (todayTodos || []).forEach(t => {
+    const rank = _parseMainTodayRank(t.main_today_rank);
+    if (rank > 0 && !map[rank]) map[rank] = t;
+  });
+  return map;
+}
+
+function _clearConflictingTodo135Ranks(rank, exceptId) {
+  const extras = [];
+  const slot = _parseMainTodayRank(rank);
+  if (slot <= 0) return extras;
+  const todayKey = _jalaliToday();
+  (_db.todos || []).forEach(t => {
+    if (String(t.id) === String(exceptId)) return;
+    if (t.archived) return;
+    if (_jalaliKey(t.date_jalali || t.scheduled_date || t.scheduledDate || '') !== todayKey) return;
+    if (_parseMainTodayRank(t.main_today_rank) !== slot) return;
+    t.main_today_rank = 0;
+    t.updated_at = new Date().toISOString();
+    extras.push(t);
+  });
+  return extras;
+}
+
+function _todo135BoardHtml(todayTodos) {
+  const byRank = _todo135ByRank(todayTodos);
+  const filled = _TODO_135_SLOTS.filter(s => byRank[s.rank]).length;
+  const doneCnt = _TODO_135_SLOTS.filter(s => byRank[s.rank]?.done).length;
+  const bands = _TODO_135_BANDS.map(band => {
+    const slots = band.ranks.map(rank => {
+      const t = byRank[rank];
+      const meta = _todo135SlotMeta(rank);
+      if (!t) {
+        return `<button type="button" class="todo-135-empty" onclick="_openTodo135Picker(${rank})" aria-label="انتخاب ${escapeHtml(meta?.slotLabel || '')}">
+          <span class="todo-135-plus">+</span><span>انتخاب</span>
+        </button>`;
+      }
+      return `<div class="todo-135-item${t.done ? ' is-done' : ''}" data-todo-id="${t.id}" draggable="false">
+        <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" aria-label="تکمیل">${t.done ? '✓' : ''}</button>
+        <span class="todo-135-item-title" onclick="${_todoCanEdit(t) ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        <button type="button" class="todo-135-unpin" onclick="event.stopPropagation();_clearTodo135Slot(${t.id})" title="خارج از ۱-۳-۵" aria-label="خارج از ۱-۳-۵">×</button>
+      </div>`;
+    }).join('');
+    return `<div class="todo-135-band">
+      <div class="todo-135-band-label"><span>${band.title}</span><span>${band.hint}</span></div>
+      <div class="todo-135-slots is-${band.kind}">${slots}</div>
+    </div>`;
+  }).join('');
+  return `<section class="todo-135" aria-label="قانون ۱-۳-۵">
+    <div class="todo-135-head">
+      <h3 class="todo-135-title">قانون ۱-۳-۵</h3>
+      <span class="todo-135-count">${fa(doneCnt)} / ${fa(filled)} از ۹</span>
+    </div>
+    ${bands}
+  </section>`;
+}
+
+function _openTodo135Picker(rank) {
+  _todosInit();
+  const slot = _todo135SlotMeta(_parseMainTodayRank(rank));
+  if (!slot) return;
+  const todayKey = _jalaliToday();
+  const candidates = (_db.todos || []).filter(t => {
+    if (!_todoCanView(t) || !_todoIsMineScope(t) || t.archived || t.done) return false;
+    const scheduled = _todoScheduledDate(t);
+    const key = scheduled ? _jalaliKey(scheduled) : todayKey;
+    return !scheduled || key === todayKey;
+  }).sort((a, b) => {
+    const ak = _jalaliKey(_todoScheduledDate(a)) || todayKey;
+    const bk = _jalaliKey(_todoScheduledDate(b)) || todayKey;
+    if (ak !== bk) return ak - bk;
+    return _sortByTime(a, b);
+  });
+  const rows = candidates.map(t => {
+    const current = _todo135SlotMeta(t.main_today_rank);
+    const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
+    const when = t.time ? `<span class="todo-135-pick-time">${escapeHtml(t.time)}</span>` : '';
+    return `<button type="button" class="todo-135-pick-row" onclick="_assignTodo135Slot(${t.id},${slot.rank})">
+      <span class="todo-135-pick-title">${escapeHtml(t.title || 'بدون عنوان')}</span>
+      <span class="todo-135-pick-meta">${when}${badge}</span>
+    </button>`;
+  }).join('');
+  openModal('جایگاه ' + slot.slotLabel, `
+    <div class="todo-135-picker">
+      <button type="button" class="todo-135-pick-add" onclick="_addTodoTo135Slot(${slot.rank})">+ کار جدید در این جایگاه</button>
+      ${rows || '<div class="todo-135-pick-empty">کار بازی برای امروز نیست. یک کار جدید اضافه کن.</div>'}
+    </div>
+  `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+}
+
+function _addTodoTo135Slot(rank) {
+  closeModal();
+  openAddTodo(_todayJalaliStr(), '', _parseMainTodayRank(rank));
+}
+
+function _assignTodo135Slot(id, rank) {
+  _todosInit();
+  const t = (_db.todos || []).find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای این کار دسترسی نداری', 'error'); return; }
+  const slot = _parseMainTodayRank(rank);
+  if (slot <= 0) return;
+  const today = _todayJalaliStr();
+  const extras = _clearConflictingTodo135Ranks(slot, t.id);
+  t.date_jalali = today;
+  t.scheduled_date = today;
+  t.scheduledDate = today;
+  t.main_today_rank = slot;
+  t.updated_at = new Date().toISOString();
+  _save(true, { scheduleServerSync: false });
+  closeModal();
+  renderTodoList();
+  if (extras.length) void _syncToServer();
+  else void _syncTodoDelta(t, 'edit');
+}
+
+function _clearTodo135Slot(id) {
+  _todosInit();
+  const t = (_db.todos || []).find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای این کار دسترسی نداری', 'error'); return; }
+  t.main_today_rank = 0;
+  t.updated_at = new Date().toISOString();
+  _save(true, { scheduleServerSync: false });
+  renderTodoList();
+  void _syncTodoDelta(t, 'edit');
+}
+
 function renderTodoList(options = {}) {
   _todosInit();
   if (_isTeamGuest() && !window._teamTodoPushAsked) {
@@ -3378,9 +3543,8 @@ function renderTodoList(options = {}) {
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
   const activeCount = todos.filter(t => !t.done).length;
   const mainTodayTodos = todayTodos
-    .filter(t => !t.done && +t.main_today_rank > 0)
-    .sort((a,b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a,b))
-    .slice(0, 3);
+    .filter(t => +t.main_today_rank > 0)
+    .sort((a,b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a,b));
   const mainTodayIds = new Set(mainTodayTodos.map(t => t.id));
 
   const renderTodo = (t) => {
@@ -3503,13 +3667,7 @@ function renderTodoList(options = {}) {
     html += `</div>`;
   }
 
-  // ── مهم‌ترین کارهای امروز ──
-  if (mainTodayTodos.length > 0) {
-    html += sectionHeader('⭐', 'مهم‌ترین کارهای امروز', `${fa(mainTodayTodos.length)} از ۳ کار اصلی`, 'var(--amber)');
-    html += `<div style="background:rgba(251,191,36,.055);border:1px solid rgba(251,191,36,.22);border-radius:10px;padding:8px;margin-bottom:10px">`;
-    html += mainTodayTodos.map(renderTodo).join('');
-    html += `</div>`;
-  }
+  html += _todo135BoardHtml(todayTodos);
 
   // ── امروز ──
   html += sectionHeader('☀️', 'امروز', `${today} · ${fa(pending)} باقیمانده`, 'var(--text)');
@@ -3522,7 +3680,7 @@ function renderTodoList(options = {}) {
     const regularToday = todayTodos.filter(t => !mainTodayIds.has(t.id)).sort(_sortByTime);
     html += regularToday.length
       ? _todoRenderedListHtml(regularToday, 'today', renderTodo)
-      : (pending > 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای اصلی امروز در بخش بالا هستند.</div>` : '');
+      : (pending > 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای ۱-۳-۵ امروز در بخش بالا هستند.</div>` : '');
   }
 
   // ── فردا (کشویی - بسته) ──
@@ -4767,7 +4925,7 @@ function _updateQuickTodoPreview() {
     }).join('');
 }
 
-function openAddTodo(dateStr, presetAssigneeId = '') {
+function openAddTodo(dateStr, presetAssigneeId = '', presetMainTodayRank = 0) {
   if (!_todoCanCreateForStaff(presetAssigneeId)) { showToast('برای ساخت این کار دسترسی نداری', 'error'); return; }
   const ownStaff = _todoSessionStaff();
   if (_isTeamGuest() && !ownStaff) {
@@ -4780,6 +4938,7 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
   _requestNotificationPermission();
   window._quickTodoExtras = {};
   const today = _todayJalaliStr();
+  const presetRank = _parseMainTodayRank(presetMainTodayRank);
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
   const selectedAssigneeId = String(presetAssigneeId || forcedSelfId || '');
   const isStaffTodo = !!selectedAssigneeId;
@@ -4813,15 +4972,12 @@ function openAddTodo(dateStr, presetAssigneeId = '') {
       <label class="form-label">توضیحات</label>
       <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات..."></textarea>
     </div>
-    <div class="form-group full" style="border:1px solid rgba(251,191,36,.28);border-radius:10px;padding:10px;background:rgba(251,191,36,.045)">
-      <label class="form-label">⭐ جایگاه در مهم‌ترین کارهای امروز</label>
+    <div class="form-group full" style="border:1px solid rgba(124,106,247,.28);border-radius:10px;padding:10px;background:rgba(124,106,247,.045)">
+      <label class="form-label">قانون ۱-۳-۵ امروز</label>
       <select class="form-input" id="todo-main-today-rank">
-        <option value="0">کار اصلی امروز نیست</option>
-        <option value="1">کار اصلی ۱ امروز</option>
-        <option value="2">کار اصلی ۲ امروز</option>
-        <option value="3">کار اصلی ۳ امروز</option>
+        ${_todo135RankSelectHtml(presetRank)}
       </select>
-      <div style="font-size:11px;color:var(--text3);margin-top:5px">اگر تاریخ کار امروز باشد، در بخش «مهم‌ترین کارهای امروز» نمایش داده می‌شود.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:5px">اگر تاریخ کار امروز باشد، قبل از بخش امروز در جایگاه انتخاب‌شده می‌نشیند.</div>
     </div>
     <div class="form-group full" style="border:1px solid rgba(96,165,250,.24);border-radius:10px;padding:10px;background:rgba(96,165,250,.035)">
       <label class="form-label">مسئول و دسترسی</label>
@@ -5000,7 +5156,7 @@ function _todoCreateMetaFromForm() {
   const priority = document.getElementById('todo-priority')?.value || 'medium';
   const category = document.getElementById('todo-category')?.value || 'general';
   const goalId = document.getElementById('todo-goal')?.value || '';
-  const mainTodayRank = Math.max(0, Math.min(3, parseInt(document.getElementById('todo-main-today-rank')?.value || '0', 10) || 0));
+  const mainTodayRank = _parseMainTodayRank(document.getElementById('todo-main-today-rank')?.value);
   const syncGcal = !!document.getElementById('todo-gcal')?.checked;
   const assigneeEl = document.getElementById('todo-assignee');
   const ownStaff = _todoSessionStaff();
@@ -5077,17 +5233,8 @@ function _buildTodoRecord(meta, fields) {
 }
 
 function _applyTodoMainTodayRank(newTodo) {
-  let relatedRankChanged = false;
-  if (newTodo.main_today_rank > 0) {
-    (_db.todos || []).forEach(t => {
-      if (!t.archived && !t.done && _jalaliKey(t.date_jalali || t.scheduled_date || t.scheduledDate || '') === _jalaliToday() && +t.main_today_rank === newTodo.main_today_rank) {
-        t.main_today_rank = 0;
-        t.updated_at = new Date().toISOString();
-        relatedRankChanged = true;
-      }
-    });
-  }
-  return relatedRankChanged;
+  const extras = _clearConflictingTodo135Ranks(newTodo.main_today_rank, newTodo.id);
+  return extras.length > 0;
 }
 
 async function _commitNewTodos(created, relatedRankChanged) {
@@ -5275,14 +5422,11 @@ function openEditTodo(id) {
         <div class="todo-edit-section-title"><span>زمان‌بندی</span><small>چه زمانی؟ چگونه تکرار شود؟</small></div>
         <div class="todo-edit-grid-3">
           <div class="form-group">
-            <label class="form-label">⭐ ۳ کار اصلی امروز</label>
+            <label class="form-label">قانون ۱-۳-۵ امروز</label>
             <select class="form-input" id="todo-main-today-rank">
-              <option value="0" ${(+t.main_today_rank||0)===0?'selected':''}>کار اصلی امروز نیست</option>
-              <option value="1" ${(+t.main_today_rank||0)===1?'selected':''}>کار اصلی ۱ امروز</option>
-              <option value="2" ${(+t.main_today_rank||0)===2?'selected':''}>کار اصلی ۲ امروز</option>
-              <option value="3" ${(+t.main_today_rank||0)===3?'selected':''}>کار اصلی ۳ امروز</option>
+              ${_todo135RankSelectHtml(t.main_today_rank)}
             </select>
-            <div style="font-size:10px;color:var(--text3);margin-top:5px;line-height:1.6">اگر تاریخ کار امروز باشد، بالای بخش امروز نمایش داده می‌شود.</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:5px;line-height:1.6">اگر تاریخ کار امروز باشد، قبل از بخش امروز نمایش داده می‌شود.</div>
           </div>
           <div class="form-group">
             <label class="form-label">تاریخ</label>
@@ -5540,7 +5684,7 @@ async function updateTodo(id) {
   const dateJalali = document.getElementById('todo-date')?.value.trim() || t.date_jalali;
   const time = document.getElementById('todo-time')?.value || '';
   const durationMin = time ? (_todoDurationMinutes(document.getElementById('todo-duration')?.value || '30') || 30) : 0;
-  const mainTodayRank = Math.max(0, Math.min(3, parseInt(document.getElementById('todo-main-today-rank')?.value || '0', 10) || 0));
+  const mainTodayRank = _parseMainTodayRank(document.getElementById('todo-main-today-rank')?.value);
   const normalizedMainTodayRank = _jalaliKey(dateJalali) === _jalaliToday() ? mainTodayRank : 0;
   if (remindMin > 0 && !time) {
     showToast('برای ارسال نوتیفیکیشن، ساعت کار را مشخص کن', 'error');
@@ -5559,12 +5703,7 @@ async function updateTodo(id) {
   const prevCalendarId = t.gcal_calendar_id || _gcal.calendarId();
   const originalScheduledDate = _todoScheduledDate(t);
   if (normalizedMainTodayRank > 0) {
-    (_db.todos || []).forEach(other => {
-      if (String(other.id) !== String(t.id) && !other.archived && !other.done && _jalaliKey(other.date_jalali || other.scheduled_date || other.scheduledDate || '') === _jalaliToday() && +other.main_today_rank === normalizedMainTodayRank) {
-        other.main_today_rank = 0;
-        other.updated_at = new Date().toISOString();
-      }
-    });
+    _clearConflictingTodo135Ranks(normalizedMainTodayRank, t.id);
   }
   const isPastRecurringOccurrence = _isTodoRecurring(t) && originalScheduledDate && _jalaliKey(originalScheduledDate) < _jalaliToday();
   if (isPastRecurringOccurrence) {
