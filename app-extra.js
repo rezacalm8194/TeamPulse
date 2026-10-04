@@ -781,7 +781,7 @@ async function renderStaff() {
             <div class="row-menu-panel" id="${rowMenuId}">
               ${!isPaid ? `<div class="row-menu-item" onclick="openSalaryTransfer(${s.id})">💳 واریز حقوق</div><div class="row-menu-item" onclick="payStaffSalary(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ ثبت دستی پرداخت</div>` : `<div class="row-menu-item" onclick="payStaffSalary(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ ثبت پرداخت اصلاحی</div>`}
               <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
-              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ تنظیمات حساب</div>
+              <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ حساب و کتاب</div>
               <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
               <div class="row-menu-divider"></div>
               <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑 حذف</div>
@@ -1343,7 +1343,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
   const currentRepeat = existingRem ? existingRem.repeat_months : (editing ? -1 : 1); // -1 = no reminder yet
   const roleRows = STAFF_ROLES.map(r => staffRoleRowHtml(r, (s?.roles || []).find(x => x.role_id === r.id))).join('');
 
-  openModal(editing ? 'تنظیمات حساب' : (isPersonnel ? 'افزودن پرسنل' : 'افزودن عضو'), `
+  openModal(editing ? 'حساب و کتاب' : (isPersonnel ? 'افزودن پرسنل' : 'افزودن عضو'), `
     ${!editing ? `<div style="background:rgba(124,106,247,.10);border:1px solid rgba(124,106,247,.22);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">${isPersonnel ? 'پرسنل برای نقش‌ها، چک‌لیست و گزارش عملکرد استفاده می‌شود.' : 'عضو فقط طرف حساب پرداختی است و وارد چک‌لیست پرسنل نمی‌شود.'}</div>
       <div style="font-size:11px;color:var(--text3);line-height:1.8">برای افزودن فوری فقط نام را وارد کن و ذخیره بزن. اگر خواستی، شماره تماس، کارت، مبلغ پرداخت و یادآوری را هم تکمیل کن.</div>
