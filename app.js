@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp332';
+const TP_ASSET_V = 'tp333';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -25624,7 +25624,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v332';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v333';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -26378,6 +26378,7 @@ class MediaRecorderVoiceEngine {
             else if (code === 'audio_unprocessable') onError && onError({ code: 'audio-unprocessable', debug: debugPayload });
             else if (code === 'audio_tool_missing') onError && onError({ code: 'audio-tool-missing', debug: debugPayload });
             else if (code === 'audio_too_large') onError && onError({ code: 'audio-too-large', debug: debugPayload });
+            else if (code === 'speech_busy') onError && onError({ code: 'speech-busy', debug: debugPayload });
             else if (code === 'audio_upload_failed') onError && onError({ code: 'audio-upload-failed', debug: debugPayload });
             else if (code === 'openai_rate_limit_or_quota') onError && onError({ code: 'openai-rate-limit-or-quota', debug: debugPayload });
             else if (code === 'openai_auth_failed') onError && onError({ code: 'openai-auth-failed', debug: debugPayload });
@@ -26815,6 +26816,8 @@ function _toggleVoiceInput(el, btn, statusEl, debugEl) {
         msg = 'برای استفاده از تبدیل صدا باید وارد حساب شوید.';
       } else if (errCode === 'audio-too-large') {
         msg = 'حجم فایل صوتی بیشتر از حد مجاز سرور است';
+      } else if (errCode === 'speech-busy') {
+        msg = 'ظرفیت تبدیل صدا پر است؛ کمی بعد دوباره تلاش کنید';
       } else if (errCode === 'audio-upload-failed') {
         msg = 'آپلود فایل صوتی در سرور ناموفق بود';
       } else if (errCode === 'openai-rate-limit-or-quota') {
