@@ -5641,8 +5641,8 @@ body { top: 0 !important; }
 .home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .home-card{min-width:0;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--bg2)}
 .home-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}.home-card h3{margin:0;color:var(--text);font-size:14px}.home-link{border:0;background:transparent;color:var(--accent2);font:inherit;font-size:11px;cursor:pointer;padding:7px;border-radius:7px}.home-link:hover,.home-link:focus-visible{background:var(--bg3);outline:none}
-.home-scope-toggle{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--border);border-radius:99px;background:var(--bg3)}
-.home-scope-btn{border:0;background:transparent;color:var(--text2);font:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:5px 10px;border-radius:99px;white-space:nowrap}
+.home-scope-toggle{display:inline-flex;flex-wrap:wrap;gap:4px;padding:3px;border:1px solid var(--border);border-radius:12px;background:var(--bg3)}
+.home-scope-btn{border:0;background:transparent;color:var(--text2);font:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:5px 8px;border-radius:99px;white-space:nowrap}
 .home-scope-btn:hover{color:var(--text)}
 .home-scope-btn.is-active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 2px 8px rgba(124,106,247,.4)}
 .home-row{display:flex;align-items:center;gap:9px;min-height:42px;padding:6px 0;border-top:1px solid var(--border)}.home-row:first-of-type{border-top:0}.home-row.is-done .home-row-title{text-decoration:line-through;color:var(--text3)}

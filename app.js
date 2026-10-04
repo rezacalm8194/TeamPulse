@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp338';
+const TP_ASSET_V = 'tp340';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -6162,7 +6162,7 @@ let currentPage = _getInitialPage();
 let _studentsTab = 'sessions';
 let _paymentsTab = 'purchases';
 let _goalsViewMode = 'compact'; // 'full' | 'compact'
-let _habitsViewMode = 'full'; // 'full' | 'compact'
+let _habitsViewMode = 'compact'; // 'full' | 'compact'
 let _keySessionsExpanded = false;
 
 const TEAM_ACCESS_SESSION_KEY = 'tp_team_access_session';
@@ -7280,11 +7280,18 @@ function _homeToggleTodo(id) {
     if (currentPage === 'home') renderHome();
   });
 }
-// اسکوپ نمایشی کارت «کارها» در داشبورد: mine = کارهای من، staff = کارهای پرسنل.
+// اسکوپ نمایشی کارت «کارها» در داشبورد: 135 = قانون ۱-۳-۵، mine = کارهای من، staff = کارهای پرسنل.
 if (typeof window._homeTodoScope === 'undefined') window._homeTodoScope = 'mine';
 function _homeSetTodoScope(scope) {
-  window._homeTodoScope = scope === 'staff' ? 'staff' : 'mine';
+  window._homeTodoScope = scope === 'staff' ? 'staff' : (scope === '135' ? '135' : 'mine');
   if (currentPage === 'home') renderHome();
+}
+function _homeTodo135SlotLabel(rank) {
+  const n = parseInt(rank || '0', 10) || 0;
+  if (n === 1) return '۱ بزرگ';
+  if (n >= 2 && n <= 4) return 'متوسط ' + _homeFa(n - 1);
+  if (n >= 5 && n <= 9) return 'کوچک ' + _homeFa(n - 4);
+  return '';
 }
 function _homeGotoSessions() { _homeNavigate('students', 'sessions'); }
 function _homeOpenSession(id) {
@@ -7377,7 +7384,9 @@ async function renderHome() {
   });
   const overdueStaffTodos = openStaffTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayStaffTodos = openStaffTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
-  const homeTodoScope = window._homeTodoScope === 'staff' && _homeCanSeeStaffTodos ? 'staff' : 'mine';
+  let homeTodoScope = window._homeTodoScope;
+  if (homeTodoScope === 'staff' && !_homeCanSeeStaffTodos) homeTodoScope = 'mine';
+  if (homeTodoScope !== 'staff' && homeTodoScope !== '135') homeTodoScope = 'mine';
   window._homeTodoScope = homeTodoScope;
   // Same order as the todo list page: overdue by (date, time), then pinned
   // today items by rank, then the rest of today by time (_sortByTime keeps
@@ -7452,6 +7461,15 @@ async function renderHome() {
     ...pinnedStaffToday,
     ...todayStaffTodos.filter(t => !pinnedStaffIds.has(t.id)).sort(_sortByTime),
   ];
+  const todos135Sorted = openTodos
+    .filter(t => {
+      const rank = parseInt(t.main_today_rank || '0', 10) || 0;
+      if (rank < 1 || rank > 9) return false;
+      const scheduled = _todoScheduledDate(t);
+      const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
+      return !scheduled || scheduledKey === todayKey;
+    })
+    .sort((a, b) => (parseInt(a.main_today_rank, 10) || 99) - (parseInt(b.main_today_rank, 10) || 99) || _sortByTime(a, b));
   const todoRows = todosSorted.slice(0, 6).map(t => {
     const k = _jalaliKey(_todoScheduledDate(t));
     const overdue = k > 0 && k < todayKey;
@@ -7470,12 +7488,26 @@ async function renderHome() {
     <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}${who ? ` <span style="color:var(--text3)">· ${escapeHtml(who)}</span>` : ''}</span>
     ${overdue ? `<span class="home-row-meta" style="color:var(--red)">معوق</span>` : (t.time ? `<span class="home-row-meta">${escapeHtml(t.time)}</span>` : '')}
   </div>`; }).join('');
-  // سربرگ کارت کارها: دکمه جابه‌جایی «کارهای من / کارهای پرسنل» + لینک رفتن به لیست.
-  const homeTodoHead = _homeCanSeeStaffTodos ? `<div class="home-card-head"><h3>${homeTodoScope === 'staff' ? `کارهای پرسنل ${overdueStaffTodos.length ? `(${_homeFa(overdueStaffTodos.length)} معوق)` : ''}` : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها"><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(staffTodosSorted.length)})</button></div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`
-    : `<div class="home-card-head"><h3>کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}</h3><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div>`;
+  const todo135Rows = todos135Sorted.map(t => {
+    const slot = _homeTodo135SlotLabel(t.main_today_rank);
+    return `<div class="home-row">
+    <button type="button" class="home-check" aria-label="تکمیل کار ${escapeHtml(t.title)}" aria-pressed="false" onclick="_homeToggleTodo(${Number(t.id)})"></button>
+    <span class="home-row-title">${escapeHtml(t.title || 'کار بدون عنوان')}</span>
+    ${slot ? `<span class="home-row-meta" style="direction:rtl">${escapeHtml(slot)}</span>` : ''}
+  </div>`;
+  }).join('');
+  const homeTodoTitle = homeTodoScope === 'staff'
+    ? `کارهای پرسنل ${overdueStaffTodos.length ? `(${_homeFa(overdueStaffTodos.length)} معوق)` : ''}`
+    : homeTodoScope === '135'
+      ? `کار ۱-۳-۵${todos135Sorted.length ? ` (${_homeFa(todos135Sorted.length)} از ۹)` : ''}`
+      : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`;
+  const homeTodoScopeBtns = `<button type="button" role="tab" aria-selected="${homeTodoScope === '135' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === '135' ? 'is-active' : ''}" onclick="_homeSetTodoScope('135')">کار ۱-۳-۵</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button>${_homeCanSeeStaffTodos ? `<button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(staffTodosSorted.length)})</button>` : ''}`;
+  const homeTodoHead = `<div class="home-card-head"><h3>${homeTodoTitle}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها">${homeTodoScopeBtns}</div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`;
   const homeTodoBody = homeTodoScope === 'staff'
     ? (staffTodoRows || empty(staffTodosSorted.length ? 'کار بازی برای امروز نیست.' : (openStaffTodos.length ? 'کار بازی برای امروز نیست.' : 'کاری برای پرسنل ثبت نشده است.')))
-    : (todoRows || empty('کار بازی برای امروز نیست.'));
+    : homeTodoScope === '135'
+      ? (todo135Rows || empty('کاری در قانون ۱-۳-۵ امروز نیست.'))
+      : (todoRows || empty('کار بازی برای امروز نیست.'));
   const sessionRows = sessions.slice(0, 6).map(s => {
     const who = escapeHtml(_homeStudentName(s.student_id));
     const title = s.title ? ` <span style="color:var(--text3)">· ${escapeHtml(s.title)}</span>` : '';
@@ -25686,7 +25718,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v337';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v340';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
