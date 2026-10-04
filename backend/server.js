@@ -224,6 +224,7 @@ app.get('/pay/bale/:id', require('./routes/bale').servePayPage);
 const {
   setStaticCacheHeaders,
   createServePrecompressedStatic,
+  createBlockSensitiveStatic,
 } = require('./utils/staticServing');
 app.get('/app', applyCsp, (req, res) => {
   const appHtmlPath = path.join(__dirname, '../app.html');
@@ -235,22 +236,12 @@ app.use('/api', (req, res) => res.status(404).json({
   path: req.originalUrl,
   message: 'API route was not found on this server',
 }));
-function blockSensitiveStatic(req, res, next) {
-  const p = req.path.replace(/\\/g, '/');
-  const blockedPath = /^\/(?:backend|\.git|\.agents|\.codex|\.trash|win_package)(?:\/|$)/i;
-  const blockedFile = /(?:^|\/)(?:\.env(?:\..*)?|server(?:\.backup-before-speech-fix)?\.js|changed\.tmp|git|deploy-.*\.bat)$/i;
-  const blockedExt = /\.(?:db|sqlite|sqlite3|db-shm|db-wal|pem|key|crt|bak)$/i;
-  if (blockedPath.test(p) || blockedFile.test(p) || blockedExt.test(p)) {
-    return res.status(404).send('Not found');
-  }
-  next();
-}
 const STATIC_ROOT = path.join(__dirname, '../');
 const servePrecompressedStatic = createServePrecompressedStatic({
   root: STATIC_ROOT,
   cspValue,
 });
-app.use(blockSensitiveStatic);
+app.use(createBlockSensitiveStatic());
 app.use(servePrecompressedStatic);
 app.use(express.static(STATIC_ROOT, {
   dotfiles: 'ignore',
