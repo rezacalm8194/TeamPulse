@@ -8,6 +8,8 @@ const webpush = require('web-push');
 
 const backendDir = path.resolve(__dirname, '..');
 const sourceDb = path.join(backendDir, 'database', 'teampulse.db');
+const schemaSql = fs.readFileSync(path.join(backendDir, 'database', 'schema.sql'), 'utf8');
+const Database = require('better-sqlite3');
 
 function startServer({ port, dbPath, logDir, crash }) {
   const vapid = webpush.generateVAPIDKeys();
@@ -36,7 +38,7 @@ function startServer({ port, dbPath, logDir, crash }) {
 
 async function waitForHealth(port, child) {
   for (let i = 0; i < 80; i += 1) {
-    if (child.exitCode != null) throw new Error(`server exited before health check: ${child.exitCode}`);
+    if (child.exitCode != null) throw new Error(`server exited before health check: ${child.exitCode}\n${child.capturedOutput}`);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/health`);
       if (response.ok) return;
@@ -85,6 +87,13 @@ test('logs survive server restart and fatal process events terminate cleanly', {
   const dbPath = path.join(tempDir, 'test.db');
   const logDir = path.join(tempDir, 'logs');
   fs.copyFileSync(sourceDb, dbPath);
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(sourceDb + suffix)) fs.copyFileSync(sourceDb + suffix, dbPath + suffix);
+  }
+  const seed = new Database(dbPath);
+  const hasAccounts = seed.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'").get();
+  if (!hasAccounts) seed.exec(schemaSql);
+  seed.close();
   const children = [];
   t.after(async () => {
     await Promise.all(children.map(stop));

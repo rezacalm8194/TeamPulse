@@ -3,6 +3,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
+const { publicBaseUrl } = require('../utils/balePayCore');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS share_pages (
@@ -46,12 +47,18 @@ router.post('/', requireAuth, (req, res) => {
   const expires = new Date(Date.now() + SHARE_TTL_DAYS * 86400000);
   const expiresStr = expires.toISOString().replace('T', ' ').slice(0, 19);
 
+  const base = publicBaseUrl(req);
+  if (!base) {
+    return res.status(503).json({
+      error: 'public_base_url_required',
+      message: 'آدرس عمومی سرور تنظیم نشده است. PUBLIC_BASE_URL را روی سرور تنظیم کنید.',
+    });
+  }
+
   db.prepare(`INSERT INTO share_pages (token, html, expires_at) VALUES (?, ?, ?)`)
     .run(token, html, expiresStr);
 
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  const url = `${protocol}://${req.get('host')}/share/${token}`;
-  res.json({ token, url });
+  res.json({ token, url: `${base}/share/${token}` });
 });
 
 function serveShare(req, res) {

@@ -110,7 +110,8 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(appSource, /if \(_isTodoDeltaPendingReason\(\) \|\| _readDurableTodoDeltaQueue\(\)\.length\) \{/);
   assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight/);
   assert.match(appSource, /function _todoTabNeedsArchivedPages\(/);
-  assert.match(appSource, /if \(_todoTabNeedsArchivedPages\(\)\) await _loadTodoPage\(true, \{ reset: true \}\)/);
+  assert.match(appSource, /if \(!todoOk\) return false/);
+  assert.match(appSource, /if \(_todoTabNeedsArchivedPages\(\) && _todoActiveTab !== 'staff'/);
   assert.match(dataSource, /pickResolvedTeamPermissions\(member\?\.permissions, storedPermissions, roleKey\)/);
 });
 
@@ -227,11 +228,11 @@ test('hydration scopes visible collections and keeps full backfill explicit', ()
   assert.match(appSource, /async function _reloadBusinessFirstPagesFromServer/);
   assert.match(appSource, /Promise\.all\(keys\.slice\(start, start \+ 3\)/);
   assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status/);
-  assert.match(appSource, /laggingOnPage = _businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
+  assert.match(appSource, /laggingOnPage = \[\.\.\.new Set\(\[[\s\S]*_businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
   assert.doesNotMatch(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
   assert.match(appSource, /!window\._tpHydratingFromServer && !paging\.loading && currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
-  assert.match(appSource, /\['payments', 'transactions', 'dashboard'\]\.includes\(currentPage\)/);
+  assert.match(appSource, /\['payments', 'transactions', 'dashboard', 'home'\]\.includes\(currentPage\)/);
   assert.match(appSource, /async function _tpEnsureFreshClient\(/);
   assert.match(appSource, /await _tpEnsureFreshClient\(\)/);
   assert.match(appSource, /health\?\.client_asset/);
@@ -252,7 +253,7 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.match(appSource, /function _businessPagesStaleForServerEtag\(/);
   assert.match(appSource, /function _todoPagesStaleForServerEtag\(/);
   assert.match(appSource, /function _businessPagesStaleForServerEtag[\s\S]{0,350}_partsForPage/);
-  assert.match(appSource, /const includeArchived = _todoActiveTab === 'completed' \|\| _todoActiveTab === 'archive'/);
+  assert.match(appSource, /const includeArchived = _todoTabNeedsArchivedPages\(\)/);
   assert.doesNotMatch(appSource, /remoteDocumentChanged && includeKeys && !lightweightRebase[\s\S]{0,160}return _loadFromServerImpl\(\)/);
   assert.match(appSource, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
   assert.match(appSource, /function _resolveIncomingTodo\(/);
@@ -274,7 +275,7 @@ test('phones adopt a newer imported server document instead of keeping a partial
 
 test('customer affairs refresh keeps unsynced local rows during partial server load', () => {
   assert.match(appSource, /const localBeforeLoad = !skipLocalSnapshot && _db && typeof _db === 'object' \? _cloneData\(_db\) : null/);
-  assert.match(appSource, /laggingOnPage = _businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
+  assert.match(appSource, /laggingOnPage = \[\.\.\.new Set\(\[[\s\S]*_businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
   assert.match(appSource, /function _collectionSyncDeleteBlocked\(/);
   assert.match(appSource, /function _paginatedCollectionFullyLoaded\(/);
   assert.match(appSource, /reset: false/);
@@ -301,9 +302,10 @@ test('sign-in waits for the authoritative etag before sending a document delta',
 });
 
 test('poll never starts a collection reload during active hydration and GETs coalesce', () => {
-  const poll = appSource.match(/async function _pollServerStatus\(\) \{[\s\S]*?\n\}/)?.[0] || '';
-  assert.match(poll, /window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight \|\| window\._resumeServerSyncInFlight/);
-  assert.match(poll, /if \(_todoActiveTab === 'staff' \|\| _todoActiveTab === 'report'\) \{\s*await _reloadCompleteTodosFromServer/);
+  assert.match(appSource, /window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight \|\| window\._resumeServerSyncInFlight/);
+  assert.match(appSource, /_todoActiveTab === 'staff' \|\| _todoActiveTab === 'report' \|\| _todoActiveTab === 'my_report'/);
+  assert.match(appSource, /\? await _reloadCompleteTodosFromServer\(\{ reset: true \}\)/);
+  assert.match(appSource, /if \(!todoOk\) return false/);
   assert.match(appSource, /window\._tpInFlightGets = window\._tpInFlightGets \|\| new Map\(\)/);
   assert.match(appSource, /return shared\.clone\(\)/);
   assert.match(appSource, /const visible = new Set\(_partsForPage/);

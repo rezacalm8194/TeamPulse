@@ -91,6 +91,12 @@ test('inline parser keeps habit card toggle handlers', () => {
   assert.ok(ctx._tpParseInline('event.stopPropagation();toggleHabitToday(12)'));
 });
 
+test('inline parser accepts Enter-key if blocks used by goal path inputs', () => {
+  const ctx = loadBinder();
+  assert.ok(ctx._tpParseInline("if(event.key==='Enter'){event.preventDefault();_addGoalPathItem('1','action')}"));
+  assert.ok(ctx._tpParseInline("if(event.key==='Enter'){event.preventDefault();addGoalPathTodoFromDetail(1,'micro')}"));
+});
+
 test('inline parser accepts nested calls, arrays, objects, and DOM statements', () => {
   const ctx = loadBinder();
   assert.ok(ctx._tpParseInline("openAllTopics(1, decodeURIComponent('Ali'))"));

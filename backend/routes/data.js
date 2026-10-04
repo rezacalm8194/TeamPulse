@@ -519,6 +519,15 @@ async function persistWorkspaceDocumentLocked(req, res, {
         etag: currentEtag,
       });
     }
+    const previousTodoCount = Array.isArray(previousData?.todos) ? previousData.todos.length : 0;
+    const incomingTodoCount = Array.isArray(data?.todos) ? data.todos.length : 0;
+    const explicitTodoDeletes = Array.isArray(data?._deletedTodoIds) ? data._deletedTodoIds.length : 0;
+    if (!grant && incomingTodoCount === 0 && previousTodoCount >= 3 && !explicitTodoDeletes && !force) {
+      return res.status(409).json({
+        error: 'destructive_overwrite_blocked',
+        message: 'Refusing to overwrite existing account data with an almost empty payload.',
+      });
+    }
     if (grant) {
       data = mergeAllowedTeamDocument(previousData, data, grant);
     } else if (replaceAll || Array.isArray(previousData?.todos) || Array.isArray(data?.todos)) {

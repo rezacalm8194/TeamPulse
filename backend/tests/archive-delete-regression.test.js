@@ -25,6 +25,10 @@ test('refresh pagination cannot restore archive rows deleted while the request w
     _businessPagingState: () => state, _teamAccessSession: () => null,
     _workspaceQuery: () => '?workspace=default', _apiFetch: () => pending,
     _mergeBusinessRow: (key, local, remote) => remote,
+    _businessPageOrder: () => 'asc',
+    FINANCE_NEWEST_FIRST_KEYS: [],
+    _dropStaleDurableBusinessDeltas: () => {},
+    _pendingBusinessDeltaIds: () => new Set(),
     _persistPartLoadState: () => {}, _persistDatabaseSnapshot: () => {},
   });
   vm.runInContext(source.slice(start, end), c);

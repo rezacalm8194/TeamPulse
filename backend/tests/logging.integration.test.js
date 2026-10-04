@@ -11,6 +11,19 @@ const { classifySyncOutcome } = require('../utils/logger');
 
 const backendDir = path.resolve(__dirname, '..');
 const sourceDb = path.join(backendDir, 'database', 'teampulse.db');
+const schemaSql = fs.readFileSync(path.join(backendDir, 'database', 'schema.sql'), 'utf8');
+
+function copySqliteFixture(src, dest) {
+  fs.copyFileSync(src, dest);
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(src + suffix)) fs.copyFileSync(src + suffix, dest + suffix);
+  }
+}
+
+function ensureAccountsTable(db) {
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'").get();
+  if (!row) db.exec(schemaSql);
+}
 
 async function waitForServer(url, child) {
   for (let i = 0; i < 80; i += 1) {
@@ -28,7 +41,7 @@ test('application logging scenarios are structured and redact secrets', async t 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'teampulse-logging-'));
   const testDb = path.join(tempDir, 'test.db');
   const logDir = path.join(tempDir, 'logs');
-  fs.copyFileSync(sourceDb, testDb);
+  copySqliteFixture(sourceDb, testDb);
   let db;
   try {
     db = new Database(testDb);
@@ -37,6 +50,7 @@ test('application logging scenarios are structured and redact secrets', async t 
     t.skip(`better-sqlite3 native binary is incompatible with this test runtime: ${error.code || error.message}`);
     return;
   }
+  ensureAccountsTable(db);
   const userId = 'logging-test-user';
   db.prepare('DELETE FROM accounts WHERE id=? OR lower(email)=?').run(userId, 'logging-test@example.test');
   db.prepare(`INSERT INTO accounts (id,name,email,password,role,is_active) VALUES (?,?,?,?,?,1)`)

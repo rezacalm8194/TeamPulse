@@ -18,6 +18,7 @@ const {
   parseCollectionInclude,
 } = require('../utils/documentStore');
 const { applyDocumentPatch } = require('../utils/documentPatch');
+const { collectionState, loadAllRows } = require('../utils/businessStore');
 
 function makeDb() {
   const db = new Database(':memory:');
@@ -57,7 +58,8 @@ test('writing a document stores collections as separate SQLite parts', () => {
   assert.equal(row.data, PARTS_MARKER);
   assert.equal(row.data_etag, first.etag);
   const parts = db.prepare('SELECT part_key FROM user_data_parts WHERE account_id=? ORDER BY part_key').all('acc-1');
-  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART, 'students'].sort());
+  assert.deepEqual(parts.map(p => p.part_key), [SCALARS_PART]);
+  assert.equal(loadAllRows(db, 'acc-1', 'students').length, 2);
   assert.equal(db.prepare(
     'SELECT COUNT(*) AS n FROM workspace_todos WHERE storage_key=?'
   ).get('acc-1').n, 1);
@@ -74,9 +76,7 @@ test('a later patch stringify/writes only the changed collection', () => {
     todos: [{ id: 10, title: 'old' }],
     _lastSaved: 1,
   }, { replaceAll: true });
-  const beforeStudents = db.prepare(
-    'SELECT data, data_hash, updated_at FROM user_data_parts WHERE account_id=? AND part_key=?'
-  ).get('acc-1', 'students');
+  const beforeStudents = collectionState(db, 'acc-1', 'students');
 
   const previous = loadDocumentParts(db, 'acc-1', ['todos']).data;
   const next = applyDocumentPatch(previous, {
@@ -88,10 +88,7 @@ test('a later patch stringify/writes only the changed collection', () => {
     replaceTodoCollection: true,
   });
 
-  const afterStudents = db.prepare(
-    'SELECT data, data_hash, updated_at FROM user_data_parts WHERE account_id=? AND part_key=?'
-  ).get('acc-1', 'students');
-  assert.equal(afterStudents.data, beforeStudents.data);
+  const afterStudents = collectionState(db, 'acc-1', 'students');
   assert.equal(afterStudents.data_hash, beforeStudents.data_hash);
   const loaded = loadWorkspaceDocument(db, 'acc-1');
   assert.equal(loaded.data.todos[0].title, 'new');
