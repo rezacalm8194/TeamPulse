@@ -82,3 +82,9 @@ test('hydrate keeps a pending local complete over a server reopen', () => {
   }, { authoritative: true, pendingOp: 'complete' });
   assert.equal(merged.done, true);
 });
+
+test('hydrate keeps a local uncheck over a stale completed snapshot', () => {
+  const merged = resolveIncomingTodo(reopened, completed, { authoritative: true });
+  assert.equal(merged.done, false);
+  assert.equal(merged.archived, false);
+});

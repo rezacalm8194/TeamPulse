@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp327';
+const TP_ASSET_V = 'tp329';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -57,6 +57,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
 [
   'renderTodoList', 'renderCalendar', 'openAddTodo',
   '_openTodo135Picker', '_assignTodo135Slot', '_clearTodo135Slot', '_addTodoTo135Slot',
+  '_todo135NewKey', '_createTodoIn135Slot',
   '_renderTodoStaffFilteredList', '_setTodoViewMode', '_patchTodoStaffLive',
   '_selectTodoStaffChip', '_openTodoStaffPersonMenu',
   '_toggleTodo', '_todoShowMore', '_completeTodoWithReport',
@@ -18045,6 +18046,14 @@ function _resolveIncomingTodo(local, remote, { authoritative = false } = {}) {
         return _cloneData(local);
       }
     }
+    const remoteDoneAt = Date.parse(remote.done_at || remote.completed_at || remote.completedAt || remote.updated_at || '') || 0;
+    if (!local.done && remote.done && (_todoHasReopenAfter(local, remoteDoneAt) || _todoHasReopenAfter(remote, remoteDoneAt))) {
+      return _cloneData(local);
+    }
+    if (!local.done && !local.archived && remote.archived &&
+        (_todoHasReopenAfter(local, _todoMergeTime(remote)) || _todoHasReopenAfter(remote, _todoMergeTime(remote)))) {
+      return _cloneData(local);
+    }
     return _cloneData(remote);
   }
   return _pickMergedTodo(local, remote);
@@ -18589,18 +18598,29 @@ function _mergeDurableBusinessDeltasIntoCollections(collections) {
 }
 
 function _enqueueDurableTodoDelta(todo, operation, extraTodos = []) {
-  if (!todo || todo.id == null) return;
+  if (!todo || todo.id == null) return false;
   const todoId = String(todo.id);
   const op = String(operation || 'upsert');
-  window._todoDeltaEpoch = window._todoDeltaEpoch || {};
-  window._todoDeltaEpoch[todoId] = (window._todoDeltaEpoch[todoId] || 0) + 1;
   const opposite = op === 'reopen' ? 'complete' : (op === 'complete' ? 'reopen' : null);
+  const incomingTime = Date.parse(todo?.updated_at || '') || Date.now();
+  let skipPush = false;
   const list = _readDurableTodoDeltaQueue().filter(item => {
     if (String(item?.todoId) !== todoId) return true;
     if (String(item?.operation || '') === op) return false;
-    if (opposite && String(item?.operation || '') === opposite) return false;
+    if (opposite && String(item?.operation || '') === opposite) {
+      const prevTime = Date.parse(item?.todo?.updated_at || '') || Number(item?.enqueuedAt || 0) || 0;
+      if (incomingTime >= prevTime) return false;
+      skipPush = true;
+      return true;
+    }
     return true;
   });
+  if (skipPush) {
+    _writeDurableTodoDeltaQueue(list);
+    return false;
+  }
+  window._todoDeltaEpoch = window._todoDeltaEpoch || {};
+  window._todoDeltaEpoch[todoId] = (window._todoDeltaEpoch[todoId] || 0) + 1;
   list.push({
     todoId,
     operation: op,
@@ -18612,6 +18632,7 @@ function _enqueueDurableTodoDelta(todo, operation, extraTodos = []) {
     epoch: window._todoDeltaEpoch[todoId],
   });
   _writeDurableTodoDeltaQueue(list);
+  return true;
 }
 
 function _dequeueDurableTodoDelta(todoId, operation) {
@@ -18940,8 +18961,12 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   if ((operation === 'complete' || operation === 'reopen') && !extraSnapshots.length) {
     extraSnapshots = _todoLocalCompletionExtras(todoSnapshot);
   }
+  if (operation === 'complete' || operation === 'delete') {
+    const deleted = typeof _localDeletedTodoIds === 'function' ? _localDeletedTodoIds() : new Set();
+    extraSnapshots = extraSnapshots.filter(item => item && item.id != null && !deleted.has(String(item.id)));
+  }
   if (todoSnapshot && todoSnapshot.id != null) {
-    _enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots);
+    if (!_enqueueDurableTodoDelta(todoSnapshot, operation, extraSnapshots)) return Promise.resolve(null);
   }
   const deltaEpoch = todoSnapshot?.id != null
     ? Number((window._todoDeltaEpoch || {})[String(todoSnapshot.id)] || 0)
@@ -18963,6 +18988,15 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
         if (deltaEpoch && Number((window._todoDeltaEpoch || {})[String(todoSnapshot.id)] || 0) !== deltaEpoch) {
           _dequeueDurableTodoDelta(todoSnapshot.id, operation);
           return null;
+        }
+        const liveBeforeSend = (_db.todos || []).find(item => String(item?.id) === String(todoSnapshot.id));
+        if (operation === 'complete' && liveBeforeSend && !liveBeforeSend.done) {
+          const liveTime = _todoMergeTime(liveBeforeSend);
+          const snapTime = _todoMergeTime(todoSnapshot);
+          if (liveTime > snapTime || _todoHasReopenAfter(liveBeforeSend, snapTime)) {
+            _dequeueDurableTodoDelta(todoSnapshot.id, operation);
+            return null;
+          }
         }
         const res = await _apiFetch('/api/data/' + accId + '/todos/delta' + _workspaceQuery(), {
           method: 'POST',
@@ -21879,13 +21913,9 @@ function _rewindRecurringTemplateFromSnapshot(snapshot) {
     return String(row.id) === rootId || String(_todoRootId(row)) === rootId;
   });
   if (!template || !occDate) return template || null;
-  const templateKey = _jalaliKey(_todoScheduledDate(template) || '');
-  const occKey = _jalaliKey(occDate);
-  if (!templateKey || templateKey > occKey) {
-    template.date_jalali = occDate;
-    template.scheduled_date = occDate;
-    template.scheduledDate = occDate;
-  }
+  template.date_jalali = occDate;
+  template.scheduled_date = occDate;
+  template.scheduledDate = occDate;
   template.done = false;
   template.archived = false;
   template.status = 'pending';
@@ -22064,10 +22094,11 @@ function _todoHasCatchUpOnScheduledDay(t) {
       return taskId === todoId || taskId === rootId;
     }) : []),
   ];
-  if (historyRows.some(row =>
-    (row?.action === 'completed' || row?.action === 'skipped') &&
-    _todoInstantJalaliKey(row.created_at) === scheduledKey
-  )) return true;
+  const dayRows = historyRows.filter(row => _todoInstantJalaliKey(row.created_at) === scheduledKey);
+  const lastUncheck = Math.max(0, ...dayRows.filter(row => row?.action === 'unchecked').map(row => Date.parse(row.created_at || '') || 0));
+  const lastClose = Math.max(0, ...dayRows.filter(row => row?.action === 'completed' || row?.action === 'skipped').map(row => Date.parse(row.created_at || '') || 0));
+  if (lastUncheck && lastUncheck >= lastClose) return false;
+  if (lastClose) return true;
   return (_db.todos || []).some(x => {
     if (!x || String(_todoRootId(x)) !== rootId) return false;
     if (!(x.archived && (x._snapshot || x._occurrence))) return false;
@@ -22428,6 +22459,15 @@ function _persistTodoTickSnapshot() {
   const key = window._activeDBKey || DB_KEY;
   _queueIndexedDBSnapshot(key, _db, 'todo-tick');
   _markServerSyncPending('todo-delta-save');
+}
+
+function _dropStaleTodoTickPersists(ids) {
+  const set = new Set((Array.isArray(ids) ? ids : [ids]).map(id => String(id)).filter(Boolean));
+  if (!set.size) return;
+  _todoPersistQueue = (_todoPersistQueue || []).filter(item => {
+    if (set.has(String(item?.todo?.id))) return false;
+    return !(Array.isArray(item?.extraTodos) ? item.extraTodos : []).some(row => set.has(String(row?.id)));
+  });
 }
 
 function _queueTodoTickPersist(todo, operation, extraTodos) {
@@ -25582,7 +25622,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v327';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v329';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
