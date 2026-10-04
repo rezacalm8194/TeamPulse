@@ -79,7 +79,9 @@ test('staff role rows all include add-item UI like bonus', () => {
 
 test('staff role occurrence count is editable, persisted, and included in totals', () => {
   assert.match(extraSource, /class="form-input role-count"[^>]*oninput="updateRoleRowTotal\(this\)"/);
-  assert.doesNotMatch(extraSource, /class="form-input role-count"[^>]*readonly/);
+  assert.match(extraSource, /class="form-input bonus-count"/);
+  assert.match(extraSource, /class="form-input role-count"[^>]*readonly/);
+  assert.match(extraSource, /countValue = \[\.\.\.row\.querySelectorAll\('\.bonus-count'\)\]/);
   assert.match(extraSource, /const total = unitRate \* countValue/);
   assert.match(extraSource, /count: Math\.max\(0, \+\(row\.querySelector\('\.role-count'\)\?\.value \|\| 0\)\)/);
 });
