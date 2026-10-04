@@ -77,6 +77,8 @@ test('1-3-5 focus board sits before today and uses ranks 1-9', () => {
   assert.match(todos, /function _addTodoTo135Slot\(/);
   assert.match(todos, /function _createTodoIn135Slot\(/);
   assert.match(todos, /todo-135-new-title/);
+  assert.match(todos, /افزودن/);
+  assert.match(todos, /event\.preventDefault\(\);_addTodoTo135Slot/);
   assert.doesNotMatch(todos, /openAddTodo\(_todayJalaliStr\(\), '', _parseMainTodayRank\(rank\)\)/);
   assert.doesNotMatch(todos, /مهم‌ترین کارهای امروز/);
   assert.doesNotMatch(todos, /Math\.min\(3, parseInt\(document\.getElementById\('todo-main-today-rank'\)/);

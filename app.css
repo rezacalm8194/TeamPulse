@@ -4231,12 +4231,9 @@ body.instr-select-mode ._ifcard.instr-selected {
 }
 .todo-135-unpin:hover { color:var(--red); }
 .todo-135-picker { display:flex;flex-direction:column;gap:6px; }
-.todo-135-pick-composer { display:flex;flex-direction:column;gap:6px; }
-.todo-135-pick-add {
-  width:100%;padding:10px 12px;border-radius:10px;border:1px dashed rgba(124,106,247,.4);
-  background:rgba(124,106,247,.08);color:var(--text);font-family:var(--font);
-  font-size:13px;font-weight:800;cursor:pointer;
-}
+.todo-135-pick-composer { display:flex;align-items:center;gap:8px; }
+.todo-135-pick-composer .form-input { flex:1;min-width:0; }
+.todo-135-pick-submit { flex-shrink:0;height:40px;padding:0 16px;font-weight:800; }
 .todo-135-pick-row {
   width:100%;text-align:right;padding:9px 11px;border-radius:10px;border:1px solid var(--border);
   background:var(--bg2);color:var(--text);font-family:var(--font);cursor:pointer;
