@@ -82,6 +82,9 @@ test('1-3-5 focus board sits before today and uses ranks 1-9', () => {
   assert.doesNotMatch(todos, /openAddTodo\(_todayJalaliStr\(\), '', _parseMainTodayRank\(rank\)\)/);
   assert.doesNotMatch(todos, /مهم‌ترین کارهای امروز/);
   assert.doesNotMatch(todos, /Math\.min\(3, parseInt\(document\.getElementById\('todo-main-today-rank'\)/);
+  assert.match(app, /function _homeTodo135SlotLabel\(/);
+  assert.match(app, /_homeSetTodoScope\('135'\)/);
+  assert.match(app, /homeTodoScope === '135'/);
 });
 
 test('completed today todos stay inline in the today list', () => {
