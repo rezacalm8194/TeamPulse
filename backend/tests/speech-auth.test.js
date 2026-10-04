@@ -23,6 +23,7 @@ test('speech ping, health, and debug audio sit behind router.use(auth)', () => {
   assert.ok(authAt >= 0, 'speech router must apply auth globally');
   assert.ok(authAt < pingAt && authAt < healthAt && authAt < debugAt && authAt < transcribeAt);
   assert.match(speech, /router\.post\('\/transcribe'.*\bauth\b/);
+  assert.match(speech, /router\.post\('\/transcribe'.*\bspeechConcurrencyGuard\b/);
 });
 
 test('speech health GET does not start the Vosk worker', () => {
@@ -37,4 +38,6 @@ test('client speech debug probes send Authorization and do not use unauthenticat
   assert.match(app, /\/api\/speech\/debug-last-audio/);
   assert.doesNotMatch(app, /new Audio\(url \+/);
   assert.match(app, /function _voiceSpeechAuthHeaders/);
+  assert.match(app, /code === 'speech_busy'/);
+  assert.match(app, /errCode === 'speech-busy'/);
 });

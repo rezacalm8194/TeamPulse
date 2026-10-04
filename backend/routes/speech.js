@@ -7,6 +7,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
 const auth = require('../middleware/auth');
+const { createSpeechConcurrencyGuard } = require('../utils/speechConcurrency');
 
 const DEBUG_AUDIO_DIR = path.join(__dirname, '..', '.speech-debug');
 const VOSK_MODEL_DIR = process.env.VOSK_MODEL_PATH || path.join(__dirname, '..', 'speech-models', 'fa');
@@ -46,16 +47,14 @@ const voskWorkerState = {
   stdoutBuffer: '',
 };
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024, files: 1, fieldArrayIndexLimit: 0 },
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype || !file.mimetype.startsWith('audio/')) {
-      return cb(new Error('audio file required'));
-    }
-    cb(null, true);
-  },
-});
+const SPEECH_UPLOAD_DIR = path.join(os.tmpdir(), 'teampulse-speech');
+try {
+  fs.mkdirSync(SPEECH_UPLOAD_DIR, { recursive: true });
+} catch (error) {
+  console.error('[speech] upload dir init failed:', error && error.message);
+}
+const MAX_SPEECH_CONCURRENT = Math.max(1, parseInt(process.env.SPEECH_MAX_CONCURRENT || '2', 10) || 2);
+const speechConcurrencyGuard = createSpeechConcurrencyGuard(MAX_SPEECH_CONCURRENT);
 
 function isDevelopment() {
   return process.env.NODE_ENV !== 'production';
@@ -87,6 +86,22 @@ function audioExtension(filename, mimetype) {
   if ((mimetype || '').includes('mpeg')) return '.mp3';
   return '.audio';
 }
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: SPEECH_UPLOAD_DIR,
+    filename(_req, file, cb) {
+      cb(null, `up-${Date.now()}-${Math.random().toString(16).slice(2)}${audioExtension(file.originalname, file.mimetype)}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1, fieldArrayIndexLimit: 0 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('audio/')) {
+      return cb(new Error('audio file required'));
+    }
+    cb(null, true);
+  },
+});
 
 function runTool(command, args) {
   return new Promise((resolve, reject) => {
@@ -494,6 +509,7 @@ function speechRouteHit(req, res, next) {
 function handleSpeechUpload(req, res, next) {
   upload.single('audio')(req, res, err => {
     if (!err) return next();
+    unlinkQuiet(req.file && req.file.path);
     console.error('[speech-upload-error]', err);
     const isSize = err.code === 'LIMIT_FILE_SIZE';
     return res.status(isSize ? 413 : 400).json({
@@ -510,28 +526,37 @@ function handleSpeechUpload(req, res, next) {
   });
 }
 
-router.post('/transcribe', speechRouteHit, auth, handleSpeechUpload, async (req, res) => {
+router.post('/transcribe', speechRouteHit, auth, speechConcurrencyGuard, handleSpeechUpload, async (req, res) => {
   let persistDebug = false;
   let rawPath;
   let convertedPath;
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.path) {
       return res.status(400).json({ error: 'audio_required', message: 'audio file required' });
     }
 
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
     const provider = speechProvider();
     persistDebug = persistSpeechDebugAudio();
-    const workDir = persistDebug ? DEBUG_AUDIO_DIR : os.tmpdir();
-    await fsp.mkdir(workDir, { recursive: true });
     const id = randomUUID();
     const rawExt = audioExtension(req.file.originalname, req.file.mimetype);
     const rawFilename = `${persistDebug ? 'debug' : 'speech'}-${id}${rawExt}`;
-    rawPath = path.join(workDir, rawFilename);
     const convertedFilename = `${persistDebug ? 'debug' : 'speech'}-${id}.wav`;
-    convertedPath = path.join(workDir, convertedFilename);
-
-    await fsp.writeFile(rawPath, req.file.buffer);
+    rawPath = req.file.path;
+    if (persistDebug) {
+      await fsp.mkdir(DEBUG_AUDIO_DIR, { recursive: true });
+      const debugRawPath = path.join(DEBUG_AUDIO_DIR, rawFilename);
+      try {
+        await fsp.rename(req.file.path, debugRawPath);
+      } catch {
+        await fsp.copyFile(req.file.path, debugRawPath);
+        await unlinkQuiet(req.file.path);
+      }
+      rawPath = debugRawPath;
+      convertedPath = path.join(DEBUG_AUDIO_DIR, convertedFilename);
+    } else {
+      convertedPath = path.join(path.dirname(rawPath), convertedFilename);
+    }
 
     const debug = {
       speechProvider: provider,
