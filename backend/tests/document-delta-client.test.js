@@ -47,6 +47,9 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
   assert.match(todosSource, /تیک امروز این کار حذف شود؟/);
   assert.match(todosSource, /clickedDoneOccurrence \? t : null/);
   assert.match(todosSource, /!\s*_isTeamGuest\(\) && typeof _rewindRecurringTemplateFromSnapshot/);
+  assert.match(todosSource, /if \(template\) void _syncTodoDelta\(template, 'reopen'\)/);
+  assert.match(todosSource, /if \(t\._snapshot \|\| t\._occurrence\) \{/);
+  assert.doesNotMatch(todosSource, /t\._snapshot \|\| t\._occurrence \|\| \(t\.archived && t\.done\)/);
   assert.match(appSource, /never revert the optimistic tick here/);
   assert.doesNotMatch(appSource, /if \(_teamAccessSession\(\) && operation === 'complete' && !res\)/);
   assert.match(todosSource, /_clearTodoDeltaSyncBlock\(t\.id\)/);

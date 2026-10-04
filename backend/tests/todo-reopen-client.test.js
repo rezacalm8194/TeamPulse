@@ -7,7 +7,7 @@ const { applyTodoDeltaMerge } = require('../utils/todoMerge');
 const source = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
 assert.match(source, /function _resolveIncomingTodo\(/);
 assert.match(source, /function _todoServerHydrateIsAuthoritative\(/);
-assert.match(source, /if \(authoritative\) return _cloneData\(remote\)/);
+assert.match(source, /if \(localKey > 0 && remoteKey > localKey && _todoOpenRewindBeatsLaterDate\(local, remote\)\)/);
 assert.match(source, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
 
 // Execute the shipped functions; copied merge implementations hid regressions.
@@ -17,8 +17,8 @@ function resolveIncomingTodo(local, remote, { authoritative = false, pendingOp =
     _readDurableTodoDeltaQueue: () => pendingOp ? [{ todoId: String(remote?.id ?? local?.id), operation: pendingOp }] : [],
     _isTodoRecurring: () => false,
   });
-  const names = ['_cloneData', '_todoMergeTime', '_todoHasReopenAfter', '_pickMergedTodo',
-    '_todoPendingDeltaOp', '_resolveIncomingTodo'];
+  const names = ['_cloneData', '_todoMergeTime', '_todoHasReopenAfter', '_todoOpenRewindBeatsLaterDate',
+    '_pickMergedTodo', '_todoPendingDeltaOp', '_resolveIncomingTodo'];
   for (const name of names) {
     const start = source.indexOf(`function ${name}(`);
     assert.ok(start >= 0, name);

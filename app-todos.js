@@ -3935,7 +3935,7 @@ function _toggleTodo(id) {
 function _undoTodoTick(t) {
   if (!t) return;
   if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
-  if (t._snapshot || t._occurrence || (t.archived && t.done)) {
+  if (t._snapshot || t._occurrence) {
     // Team guests must not rewind the template date: the server refuses
     // scheduled-date regressions on team edits, so rewinding locally would
     // diverge from the owner document (phone shows overdue, manager today).
@@ -3943,13 +3943,16 @@ function _undoTodoTick(t) {
     const template = (!_isTeamGuest() && typeof _rewindRecurringTemplateFromSnapshot === 'function')
       ? _rewindRecurringTemplateFromSnapshot(t)
       : null;
+    if (template) _todoAddHistory(template, 'unchecked', true, false);
     if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos([t.id]);
     _db.todos = (_db.todos || []).filter(row => String(row.id) !== String(t.id));
     renderTodoList();
     try {
       _save(true, { scheduleServerSync: false, quiet: true });
       void _syncTodoDelta(t, 'delete');
-      if (template) void _syncTodoDelta(template, 'edit');
+      // reopen (not edit): a stale complete prefers the later date and would
+      // hide today's row a few seconds later.
+      if (template) void _syncTodoDelta(template, 'reopen');
     } catch (e) {
       console.error('[TeamPulse] todo undo persist failed:', e);
     }
