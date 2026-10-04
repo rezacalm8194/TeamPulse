@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp334') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp335') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp334') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp335') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -2698,6 +2698,21 @@ body.light mark { background: rgba(251,191,36,.5); }
 .role-row-fields {
   display: grid; grid-template-columns: 1fr 0.7fr 1.2fr; gap: 10px;
 }
+.role-rate-row {
+  display: grid; grid-template-columns: minmax(160px, 240px); gap: 10px;
+}
+.role-rate-hint {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text3);
+  line-height: 1.7;
+}
+.staff-items-row[data-role-kind="rate"] .role-row-fields {
+  grid-template-columns: 0.8fr 1.4fr;
+}
+.bonus-item-note {
+  grid-template-columns: minmax(0,1fr) 34px;
+}
 .role-field .form-label { font-size: 10px; }
 .role-field input { margin: 0; }
 .role-total-wrap {
@@ -2745,6 +2760,9 @@ body.light mark { background: rgba(251,191,36,.5); }
     grid-template-columns: minmax(190px,240px) minmax(260px,1fr) 34px;
     align-items: center;
     padding: 7px 9px;
+  }
+  .bonus-item-note {
+    grid-template-columns: minmax(0,1fr) 34px;
   }
   .bonus-item .role-field {
     display: grid;
