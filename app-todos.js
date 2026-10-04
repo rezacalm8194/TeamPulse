@@ -3338,20 +3338,14 @@ function _openTodo135Picker(rank) {
   }).join('');
   openModal('جایگاه ' + slot.slotLabel, `
     <div class="todo-135-picker">
-      <div class="todo-135-pick-composer">
-        <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه" onkeydown="_todo135NewKey(event,${slot.rank})">
-        <button type="button" class="todo-135-pick-add" onclick="_addTodoTo135Slot(${slot.rank})">+ کار جدید در این جایگاه</button>
-      </div>
+      <form class="todo-135-pick-composer" id="todo-135-new-form" onsubmit="event.preventDefault();_addTodoTo135Slot(${slot.rank})">
+        <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه">
+        <button type="submit" class="btn btn-primary todo-135-pick-submit">افزودن</button>
+      </form>
       ${rows || '<div class="todo-135-pick-empty">کار بازی برای امروز نیست. یک کار جدید اضافه کن.</div>'}
     </div>
   `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
   setTimeout(() => document.getElementById('todo-135-new-title')?.focus(), 40);
-}
-
-function _todo135NewKey(event, rank) {
-  if ((event?.key || '') !== 'Enter') return;
-  event.preventDefault();
-  _addTodoTo135Slot(rank);
 }
 
 function _todo135DefaultCreateMeta() {
