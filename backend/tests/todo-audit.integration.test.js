@@ -10,6 +10,19 @@ const webpush = require('web-push');
 
 const backendDir = path.resolve(__dirname, '..');
 const sourceDb = path.join(backendDir, 'database', 'teampulse.db');
+const schemaSql = fs.readFileSync(path.join(backendDir, 'database', 'schema.sql'), 'utf8');
+
+function copySqliteFixture(src, dest) {
+  fs.copyFileSync(src, dest);
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(src + suffix)) fs.copyFileSync(src + suffix, dest + suffix);
+  }
+}
+
+function ensureAccountsTable(db) {
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'").get();
+  if (!row) db.exec(schemaSql);
+}
 
 async function waitForServer(port, child) {
   for (let i = 0; i < 80; i += 1) {
@@ -33,8 +46,9 @@ test('successful regular and chunk syncs emit todo audit once; rejected syncs em
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'teampulse-todo-audit-'));
   const testDb = path.join(tempDir, 'test.db');
   const logDir = path.join(tempDir, 'logs');
-  fs.copyFileSync(sourceDb, testDb);
+  copySqliteFixture(sourceDb, testDb);
   const db = new Database(testDb);
+  ensureAccountsTable(db);
   const userId = 'todo-audit-test-user';
   const email = 'todo-audit@example.test';
   db.prepare('DELETE FROM accounts WHERE id=? OR lower(email)=?').run(userId, email);

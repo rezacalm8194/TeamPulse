@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp331';
+const TP_ASSET_V = 'tp332';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -5108,12 +5108,13 @@ function _todoTabNeedsArchivedPages() {
     || _todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report';
 }
 function _todoPagesStaleForServerEtag(etag) {
-  if (!etag || window._tpHydratingFromServer || !window._tpSessionFetchedParts?.has('todos') || typeof _todoPagingState !== 'function') return false;
+  if (!etag || window._tpHydratingFromServer || typeof _todoPagingState !== 'function') return false;
   const includeArchived = _todoTabNeedsArchivedPages();
   for (const archived of (includeArchived ? [false, true] : [false])) {
     const state = _todoPagingState(archived);
     if (state.loading) continue;
     if (state.failed) return true;
+    if (!window._tpSessionFetchedParts?.has('todos')) continue;
     const fetched = state.fetchedEtag;
     if (fetched && fetched !== etag) return true;
   }
@@ -20410,11 +20411,12 @@ async function _pollServerStatus() {
       window._tpHydratingFromServer = true;
       try {
         if (todoOnPage) {
-          if (_todoActiveTab === 'staff' || _todoActiveTab === 'report') {
-            await _reloadCompleteTodosFromServer({ reset: true });
-          } else {
-            await _loadTodoPage(false, { reset: true });
-            if (_todoTabNeedsArchivedPages()) await _loadTodoPage(true, { reset: true });
+          const todoOk = (_todoActiveTab === 'staff' || _todoActiveTab === 'report' || _todoActiveTab === 'my_report')
+            ? await _reloadCompleteTodosFromServer({ reset: true })
+            : await _loadTodoPage(false, { reset: true });
+          if (!todoOk) return false;
+          if (_todoTabNeedsArchivedPages() && _todoActiveTab !== 'staff' && _todoActiveTab !== 'report' && _todoActiveTab !== 'my_report') {
+            if (!await _loadTodoPage(true, { reset: true })) return false;
           }
         }
         await _reloadBusinessFirstPagesFromServer(laggingOnPage, { reset: true });
@@ -25622,7 +25624,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v331';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v332';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

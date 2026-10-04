@@ -8,16 +8,20 @@ const { ensureTodoStoreSchema, replaceTodos, upsertTodos, loadTodosPage } = requ
 const { applyTodoDeltaMerge } = require('../utils/todoMerge');
 
 const source = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
-function extract(name) {
-  const match = new RegExp(`(?:async )?function ${name}\\(`).exec(source);
+const todosSource = fs.readFileSync(path.join(__dirname, '../../app-todos.js'), 'utf8');
+function extract(name, src = source) {
+  const match = new RegExp(`(?:async )?function ${name}\\(`).exec(src);
   assert.ok(match, name);
-  return source.slice(match.index, source.indexOf('\n}', match.index) + 2);
+  const rest = src.slice(match.index);
+  const next = rest.slice(1).search(/\n(?:async )?function /);
+  return next < 0 ? rest : rest.slice(0, next + 1);
 }
 function client(fetch) {
   const c = vm.createContext({
     window: { _serverHydratedEtag: 'old', _serverDataEtag: 'old', _remoteServerDocumentChanged: true },
     _db: { todos: [] }, _sbUser: { id: 'owner' }, _sbSession: { token: 'test' },
     TODO_SERVER_PAGE_SIZE: 200, DB_KEY: 'test',
+    _todoActiveTab: 'mine',
     _teamAccessSession: () => null, _workspaceQuery: () => '?workspace=default',
     _apiFetch: fetch, _readDurableTodoDeltaQueue: () => [],
     _applyTodoIdHighWater: () => {}, _persistPartLoadState: () => {},
@@ -25,7 +29,8 @@ function client(fetch) {
   });
   vm.runInContext(['_cloneData', '_todoMergeTime', '_todoHasReopenAfter', '_pickMergedTodo',
     '_todoPendingDeltaOp', '_todoServerHydrateIsAuthoritative', '_resolveIncomingTodo',
-    '_todoPagingState', '_todoPagesStaleForServerEtag', '_loadTodoPage', '_reloadCompleteTodosFromServer'].map(extract).join('\n'), c);
+    '_todoPagingState', '_todoTabNeedsArchivedPages', '_todoPagesStaleForServerEtag',
+    '_loadTodoPage', '_reloadCompleteTodosFromServer'].map(name => extract(name)).join('\n'), c);
   return c;
 }
 const done = { id: 201, done: true, archived: false, status: 'completed', done_at: '2026-09-05T08:00:00Z' };
@@ -100,8 +105,11 @@ for (const direction of ['desktop to Android', 'Android to desktop']) {
           sentOperation = op;
           upsertTodos(db, 'owner', [applyTodoDeltaMerge(todo, initial, op)]);
         },
+        _dropStaleTodoTickPersists: () => {},
+        _paintTodoCheckedFast: () => false,
+        _queueTodoTickPersist: () => {},
       });
-      vm.runInContext(['_todoAddHistory', '_completeTodoWithReport'].map(extract).join('\n'), sender);
+      vm.runInContext(['_todoAddHistory', '_completeTodoWithReport'].map(name => extract(name, todosSource)).join('\n'), sender);
       sender._completeTodoWithReport(sender._db.todos[0], '');
       assert.equal(sentOperation, 'reopen');
       assert.equal(await receiver._reloadCompleteTodosFromServer({ reset: true }), true);
@@ -148,18 +156,28 @@ test('a reset waits for an older in-flight page and then fetches again', async (
 test('document polling does not mark a failed todo hydration as synchronized', async () => {
   const c = client(async url => url.includes('/todos') ? { ok: false } : {
     ok: true, headers: { get: () => 'application/json' },
-    json: async () => ({ data: {}, etag: 'new', partial: true }),
+    json: async () => ({ etag: 'new', collections: {} }),
   });
   Object.assign(c, {
-    BUSINESS_PAGINATED_KEYS: [], _isManualRestoreProtected: () => false,
-    _currentAccountId: () => 'default', _loadTodoStats: () => {},
-    _shouldLoadFullDocument: () => true, _documentIncludeQuery: () => '',
-    _reloadCompleteBusinessPartsFromServer: () => assert.fail('must stop on failed todos'),
+    currentPage: 'todolist',
+    BUSINESS_PAGINATED_KEYS: [],
+    FINANCE_NEWEST_FIRST_KEYS: [],
+    _LIVE_SMALL_PART_KEYS: [],
+    _partsForPage: () => ['todos'],
+    _localCollectionsExceedServer: () => false,
+    _localBusinessCollectionsAheadOfServer: () => false,
+    _serverStatusRequiresHydration: () => true,
+    _hasServerSyncPending: () => false,
+    _isTerminalTodoCollisionPending: () => false,
+    _fullSyncConflictPendingMatchesCurrentData: () => false,
+    _todoSafeNumericId: () => 0,
+    _loadTodoPage: async () => false,
+    _reloadCompleteTodosFromServer: async () => false,
+    _reloadBusinessFirstPagesFromServer: async () => {},
+    _refreshLiveSmallPartsFromServer: async () => false,
     _markServerDocumentHydrated: () => assert.fail('must not acknowledge failed load'),
   });
-  vm.runInContext(extract('_loadFromServer'), c);
-  assert.equal(await c._loadFromServer(), false);
+  vm.runInContext(extract('_pollServerStatus'), c);
+  assert.equal(await c._pollServerStatus(), false);
   assert.equal(c.window._serverHydratedEtag, 'old');
-  assert.equal(c.window._remoteServerDocumentChanged, true);
-  assert.equal(c._todoPagesStaleForServerEtag('new'), true);
 });

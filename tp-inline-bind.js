@@ -283,6 +283,36 @@
     return { kind: 'call', name: name, args: args, i: i + 1 };
   }
 
+  function parseIfEnterBlock(s, i) {
+    i = skipWs(s, i);
+    if (s.slice(i, i + 2) !== 'if') return null;
+    i = skipWs(s, i + 2);
+    if (s.charAt(i) !== '(') return null;
+    i = skipWs(s, i + 1);
+    var conds = ["event.key==='Enter'", "event.key === 'Enter'", 'event.key==="Enter"', 'event.key === "Enter"'];
+    var hit = '';
+    for (var c = 0; c < conds.length; c++) {
+      if (s.slice(i, i + conds[c].length) === conds[c]) { hit = conds[c]; break; }
+    }
+    if (!hit) return null;
+    i = skipWs(s, i + hit.length);
+    if (s.charAt(i) !== ')') return null;
+    i = skipWs(s, i + 1);
+    if (s.charAt(i) !== '{') return null;
+    i = skipWs(s, i + 1);
+    var stmts = [];
+    while (i < s.length && s.charAt(i) !== '}') {
+      var inner = parseCall(s, i);
+      if (!inner) return null;
+      stmts.push(inner);
+      i = skipWs(s, inner.i);
+      if (s.charAt(i) === ';') i++;
+      i = skipWs(s, i);
+    }
+    if (s.charAt(i) !== '}' || !stmts.length) return null;
+    return { kind: 'ifenter', stmts: stmts, i: i + 1 };
+  }
+
   function parseIfSelfCall(s, i) {
     i = skipWs(s, i);
     if (s.slice(i, i + 2) !== 'if') return null;
@@ -315,7 +345,7 @@
         stmts.push({ kind: 'retfalse' });
         i += 12;
       } else {
-        var st = parseIfSelfCall(s, i) || parseCall(s, i);
+        var st = parseIfEnterBlock(s, i) || parseIfSelfCall(s, i) || parseCall(s, i);
         if (!st) return null;
         stmts.push(st);
         i = st.i;
@@ -396,6 +426,11 @@
         continue;
       }
       if (st.kind === 'retfalse') { if (event && event.preventDefault) event.preventDefault(); return false; }
+      if (st.kind === 'ifenter') {
+        if (!event || event.key !== 'Enter') continue;
+        last = runProgram(st.stmts, el, event);
+        continue;
+      }
       if (st.kind === 'ifs') {
         if (!event || event.target !== el) continue;
         st = { kind: 'call', name: st.name, args: st.args };
