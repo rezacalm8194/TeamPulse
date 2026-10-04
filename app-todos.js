@@ -3338,15 +3338,92 @@ function _openTodo135Picker(rank) {
   }).join('');
   openModal('جایگاه ' + slot.slotLabel, `
     <div class="todo-135-picker">
-      <button type="button" class="todo-135-pick-add" onclick="_addTodoTo135Slot(${slot.rank})">+ کار جدید در این جایگاه</button>
+      <div class="todo-135-pick-composer">
+        <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه" onkeydown="_todo135NewKey(event,${slot.rank})">
+        <button type="button" class="todo-135-pick-add" onclick="_addTodoTo135Slot(${slot.rank})">+ کار جدید در این جایگاه</button>
+      </div>
       ${rows || '<div class="todo-135-pick-empty">کار بازی برای امروز نیست. یک کار جدید اضافه کن.</div>'}
     </div>
   `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+  setTimeout(() => document.getElementById('todo-135-new-title')?.focus(), 40);
+}
+
+function _todo135NewKey(event, rank) {
+  if ((event?.key || '') !== 'Enter') return;
+  event.preventDefault();
+  _addTodoTo135Slot(rank);
+}
+
+function _todo135DefaultCreateMeta() {
+  const ownStaff = _todoSessionStaff();
+  if (_isTeamGuest() && !ownStaff) {
+    return { error: 'حساب شما به رکورد پرسنلی متصل نشده است. مدیر باید دعوت‌نامه را دوباره ایجاد کند.' };
+  }
+  const assignee = _isTeamGuest() ? ownStaff : null;
+  if (!_todoCanCreateForStaff(assignee?.id || '')) {
+    return { error: 'برای ساخت این کار دسترسی نداری' };
+  }
+  return {
+    repeat: 'none',
+    weekdays: '',
+    remindMin: 0,
+    dateJalali: _todayJalaliStr(),
+    time: '',
+    durationMin: 0,
+    priority: assignee ? 'urgent' : 'high',
+    category: assignee ? 'clients' : 'personal',
+    goalId: '',
+    mainTodayRank: 0,
+    syncGcal: false,
+    assignee,
+    ownStaff,
+    visibility: assignee ? 'assignee' : 'private',
+    note: '',
+    requires_report: 'none',
+    requires_attachment: 'none',
+    requires_approval: false,
+  };
 }
 
 function _addTodoTo135Slot(rank) {
-  closeModal();
-  openAddTodo(_todayJalaliStr(), '', _parseMainTodayRank(rank));
+  const title = document.getElementById('todo-135-new-title')?.value.trim();
+  if (!title) {
+    document.getElementById('todo-135-new-title')?.focus();
+    showToast('عنوان کار را وارد کنید', 'error');
+    return;
+  }
+  void _createTodoIn135Slot(rank, title);
+}
+
+async function _createTodoIn135Slot(rank, title) {
+  const slot = _parseMainTodayRank(rank);
+  const name = String(title || '').trim();
+  if (slot <= 0 || !name) return;
+  if (window._todoSaveInProgress) return;
+  window._todoSaveInProgress = true;
+  _todosInit();
+  const meta = _todo135DefaultCreateMeta();
+  if (meta.error) {
+    window._todoSaveInProgress = false;
+    showToast(meta.error, 'error');
+    return;
+  }
+  const today = _todayJalaliStr();
+  const newTodo = _buildTodoRecord(meta, {
+    title: name,
+    dateJalali: today,
+    time: '',
+    durationMin: 0,
+    mainTodayRank: slot,
+  });
+  if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
+    window._todoSaveInProgress = false;
+    showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
+    return;
+  }
+  const relatedRankChanged = _applyTodoMainTodayRank(newTodo);
+  _db.todos.push(newTodo);
+  await _commitNewTodos([newTodo], relatedRankChanged);
 }
 
 function _assignTodo135Slot(id, rank) {
@@ -3488,7 +3565,7 @@ function renderTodoList(options = {}) {
 
   // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
-  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && t.archived && t._snapshot && _todoIsDoneToday(t, _todayKeyForFilter));
+  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && t.archived && _todoIsDoneToday(t, _todayKeyForFilter));
   const todos = [..._db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && !t.archived), ..._todaySnapshots];
 
   // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
@@ -3911,6 +3988,7 @@ function _toggleTodo(id) {
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
   if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
+  if (typeof _dropStaleTodoTickPersists === 'function') _dropStaleTodoTickPersists([t.id]);
   const clickedDoneOccurrence = !!(t.done && (t._snapshot || t._occurrence || t.archived));
   // Open rows always complete. A leftover snapshot must not turn a tick into
   // «حذف تیک» — that dialog is only for an already-done occurrence row.
@@ -3935,29 +4013,65 @@ function _toggleTodo(id) {
 function _undoTodoTick(t) {
   if (!t) return;
   if (typeof _clearTodoDeltaSyncBlock === 'function') _clearTodoDeltaSyncBlock(t.id);
+  const occDate = (typeof _todoScheduledDate === 'function' ? _todoScheduledDate(t) : '') || (typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '');
   if (t._snapshot || t._occurrence) {
-    // Team guests must not rewind the template date: the server refuses
-    // scheduled-date regressions on team edits, so rewinding locally would
-    // diverge from the owner document (phone shows overdue, manager today).
-    // Dropping the snapshot is enough — the template stays on its next date.
     const template = (!_isTeamGuest() && typeof _rewindRecurringTemplateFromSnapshot === 'function')
       ? _rewindRecurringTemplateFromSnapshot(t)
       : null;
-    if (template) _todoAddHistory(template, 'unchecked', true, false);
-    if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos([t.id]);
-    _db.todos = (_db.todos || []).filter(row => String(row.id) !== String(t.id));
-    renderTodoList();
+    if (template) {
+      if (occDate) {
+        template.date_jalali = occDate;
+        template.scheduled_date = occDate;
+        template.scheduledDate = occDate;
+      }
+      template.done = false;
+      template.archived = false;
+      template._snapshot = false;
+      template.status = 'pending';
+      template.done_at = null;
+      template.completedAt = null;
+      template.completed_at = null;
+      template.updated_at = new Date().toISOString();
+      _todoAddHistory(template, 'unchecked', true, false);
+      if (typeof _dropStaleTodoTickPersists === 'function') _dropStaleTodoTickPersists([t.id, template.id]);
+      if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos([t.id]);
+      _db.todos = (_db.todos || []).filter(row => String(row.id) !== String(t.id));
+      renderTodoList({ skipMaintenance: true });
+      try {
+        _save(true, { scheduleServerSync: false, quiet: true });
+        void _syncTodoDelta(t, 'delete');
+        void _syncTodoDelta(template, 'reopen');
+      } catch (e) {
+        console.error('[TeamPulse] todo undo persist failed:', e);
+      }
+      return;
+    }
+    t.done = false;
+    t.archived = false;
+    t._snapshot = false;
+    t._occurrence = false;
+    t.status = 'pending';
+    t.done_at = null;
+    t.completedAt = null;
+    t.completed_at = null;
+    if (occDate) {
+      t.date_jalali = occDate;
+      t.scheduled_date = occDate;
+      t.scheduledDate = occDate;
+    }
+    t.updated_at = new Date().toISOString();
+    _todoAddHistory(t, 'unchecked', true, false);
+    if (typeof _dropStaleTodoTickPersists === 'function') _dropStaleTodoTickPersists([t.id]);
+    renderTodoList({ skipMaintenance: true });
     try {
       _save(true, { scheduleServerSync: false, quiet: true });
-      void _syncTodoDelta(t, 'delete');
-      // reopen (not edit): a stale complete prefers the later date and would
-      // hide today's row a few seconds later.
-      if (template) void _syncTodoDelta(template, 'reopen');
+      void _syncTodoDelta(t, 'reopen');
     } catch (e) {
       console.error('[TeamPulse] todo undo persist failed:', e);
     }
     return;
   }
+  if (typeof _dropStaleTodoTickPersists === 'function') _dropStaleTodoTickPersists([t.id]);
   _completeTodoWithReport(t, '');
 }
 
@@ -4030,6 +4144,7 @@ function _completeTodoWithReport(t, report) {
     t.completedAt = null;
     t.completed_at = null;
     t.skipped_at = null;
+    if (typeof _dropStaleTodoTickPersists === 'function') _dropStaleTodoTickPersists([t.id]);
   }
   t.updated_at = new Date().toISOString();
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
@@ -4055,7 +4170,7 @@ function _completeTodoWithReport(t, report) {
     _queueTodoTickPersist(t, intendedOp, extraTodos);
     return;
   }
-  renderTodoList();
+  renderTodoList(intendedOp === 'reopen' ? { skipMaintenance: true } : {});
   try {
     _save(true, { scheduleServerSync: false, quiet: true });
     void _syncTodoDelta(t, intendedOp, extraTodos);

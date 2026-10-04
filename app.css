@@ -4231,6 +4231,7 @@ body.instr-select-mode ._ifcard.instr-selected {
 }
 .todo-135-unpin:hover { color:var(--red); }
 .todo-135-picker { display:flex;flex-direction:column;gap:6px; }
+.todo-135-pick-composer { display:flex;flex-direction:column;gap:6px; }
 .todo-135-pick-add {
   width:100%;padding:10px 12px;border-radius:10px;border:1px dashed rgba(124,106,247,.4);
   background:rgba(124,106,247,.08);color:var(--text);font-family:var(--font);
