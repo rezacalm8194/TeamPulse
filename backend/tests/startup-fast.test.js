@@ -63,6 +63,7 @@ test('gzip compression is enabled for static assets', () => {
   assert.match(serverJs, /compression_unavailable/);
   assert.match(serverJs, /utils\/staticServing/);
   assert.match(serverJs, /createServePrecompressedStatic/);
+  assert.match(serverJs, /createBlockSensitiveStatic/);
   assert.match(serverJs, /setStaticCacheHeaders\(res, appHtmlPath/);
   assert.equal(fs.existsSync(path.join(root, 'scripts', 'precompress-assets.js')), true);
   assert.equal(fs.existsSync(path.join(root, 'backend', 'utils', 'staticServing.js')), true);

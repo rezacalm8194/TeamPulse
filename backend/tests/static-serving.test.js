@@ -11,6 +11,9 @@ const {
   VERSIONED_JS_CSS_CACHE,
   UNVERSIONED_JS_CSS_CACHE,
   HTML_CACHE,
+  isAllowedStaticPath,
+  classifyStaticPath,
+  createBlockSensitiveStatic,
 } = require('../utils/staticServing');
 
 function mockRes() {
@@ -98,4 +101,59 @@ test('versioned icon images are immutable while the root ICO remains revalidatab
   const legacyFavicon = mockRes();
   setStaticCacheHeaders(legacyFavicon, '/x/favicon.ico', { url: '/favicon.ico' });
   assert.equal(legacyFavicon.headers['cache-control'], 'public, max-age=604800');
+});
+
+test('static allowlist publishes only client assets and blocks repo internals', () => {
+  assert.equal(classifyStaticPath('/app.js'), 'allow');
+  assert.equal(classifyStaticPath('/app.css'), 'allow');
+  assert.equal(classifyStaticPath('/landing.js'), 'allow');
+  assert.equal(classifyStaticPath('/blog/index.html'), 'allow');
+  assert.equal(classifyStaticPath('/fonts/Vazirmatn-Regular.woff2'), 'allow');
+  assert.equal(classifyStaticPath('/privacy.html'), 'allow');
+
+  assert.equal(classifyStaticPath('/scripts/precompress-assets.js'), 'block');
+  assert.equal(classifyStaticPath('/scripts/pachim-deploy.sh'), 'block');
+  assert.equal(classifyStaticPath('/CURSOR.md'), 'block');
+  assert.equal(classifyStaticPath('/backend/tests/static-serving.test.js'), 'block');
+  assert.equal(classifyStaticPath('/backend/server.js'), 'block');
+  assert.equal(classifyStaticPath('/server.backup-before-speech-fix.js'), 'block');
+  assert.equal(classifyStaticPath('/admin.js'), 'block');
+  assert.equal(classifyStaticPath('/reminders.js'), 'block');
+  assert.equal(classifyStaticPath('/teampulse/backend/package.json'), 'block');
+  assert.equal(classifyStaticPath('/teampulse/scripts/pachim-deploy.sh'), 'block');
+  assert.equal(classifyStaticPath('/fonts/README.md'), 'block');
+  assert.equal(classifyStaticPath('/fonts/OFL.txt'), 'block');
+  assert.equal(classifyStaticPath('/deploy-all.bat'), 'block');
+  assert.equal(isAllowedStaticPath('/app.js'), true);
+  assert.equal(isAllowedStaticPath('/CURSOR.md'), false);
+  assert.equal(classifyStaticPath('/app'), 'passthrough');
+});
+
+test('blockSensitiveStatic returns 404 for nested copies and source files', async () => {
+  const express = require('express');
+  const http = require('http');
+  const app = express();
+  app.use(createBlockSensitiveStatic());
+  app.use((req, res) => res.status(200).send('ok'));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const blocked = [
+      '/scripts/precompress-assets.js',
+      '/CURSOR.md',
+      '/backend/tests/jwt.test.js',
+      '/server.backup-before-speech-fix.js',
+      '/teampulse/backend/server.js',
+    ];
+    for (const url of blocked) {
+      const res = await fetch(`http://127.0.0.1:${port}${url}`);
+      assert.equal(res.status, 404, url);
+    }
+    const allowed = await fetch(`http://127.0.0.1:${port}/app.js`);
+    assert.equal(allowed.status, 200);
+    assert.equal(await allowed.text(), 'ok');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

@@ -17,6 +17,110 @@ const UNVERSIONED_JS_CSS_CACHE = 'public, max-age=300';
 const FONT_IMAGE_CACHE = 'public, max-age=604800';
 const HTML_CACHE = 'no-cache';
 
+const BLOCKED_STATIC_SEGMENTS = new Set([
+  'backend',
+  'scripts',
+  'tests',
+  'teampulse',
+  'node_modules',
+  'win_package',
+  '.git',
+  '.cursor',
+  '.agents',
+  '.codex',
+  '.trash',
+  '.github',
+  '.vscode',
+]);
+
+const PUBLIC_STATIC_ROOT_FILES = new Set([
+  'index.html',
+  'app.html',
+  'privacy.html',
+  'oauth_callback.html',
+  '502.html',
+  'app.js',
+  'app.css',
+  'app-extra.js',
+  'app-todos.js',
+  'app-finance.js',
+  'app-sessions.js',
+  'tp-inline-bind.js',
+  'landing.js',
+  'sw.js',
+  'xlsx.full.min.js',
+  'manifest.json',
+  'robots.txt',
+  'sitemap.xml',
+  'llms.txt',
+  'favicon.ico',
+  'favicon.png',
+  'favicon-32.png',
+  'logo.png',
+  'app-icon-192-v3.png',
+  'app-icon-512-v3.png',
+  'notification-badge.png',
+  'notification-badge.svg',
+]);
+
+function normalizeStaticPath(reqPath) {
+  let raw = String(reqPath || '').split('?')[0];
+  try {
+    raw = decodeURIComponent(raw);
+  } catch (_) {
+    return null;
+  }
+  if (!raw || raw.includes('\0')) return null;
+  raw = raw.replace(/\\/g, '/');
+  if (!raw.startsWith('/')) raw = '/' + raw;
+  const parts = raw.split('/').filter((part) => part && part !== '.');
+  if (parts.some((part) => part === '..')) return null;
+  return '/' + parts.join('/');
+}
+
+function lastSegmentHasDot(pathname) {
+  const name = String(pathname || '').split('/').pop() || '';
+  return name.includes('.');
+}
+
+function isAllowedStaticPath(reqPath) {
+  const pathname = normalizeStaticPath(reqPath);
+  if (!pathname || pathname === '/') return false;
+  const parts = pathname.slice(1).split('/');
+  if (parts.some((part) => BLOCKED_STATIC_SEGMENTS.has(part.toLowerCase()))) return false;
+
+  if (parts.length === 1) {
+    return PUBLIC_STATIC_ROOT_FILES.has(parts[0].toLowerCase());
+  }
+  if (parts.length === 2 && parts[0].toLowerCase() === 'blog') {
+    return /^[a-z0-9][a-z0-9._-]*\.html$/i.test(parts[1]);
+  }
+  if (parts.length === 2 && parts[0].toLowerCase() === 'fonts') {
+    return /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:woff2|css)$/i.test(parts[1]);
+  }
+  return false;
+}
+
+function classifyStaticPath(reqPath) {
+  const pathname = normalizeStaticPath(reqPath);
+  if (!pathname) return 'block';
+  if (pathname === '/') return 'passthrough';
+  const parts = pathname.slice(1).split('/');
+  if (parts.some((part) => BLOCKED_STATIC_SEGMENTS.has(part.toLowerCase()))) return 'block';
+  if (isAllowedStaticPath(pathname)) return 'allow';
+  if (lastSegmentHasDot(pathname)) return 'block';
+  return 'passthrough';
+}
+
+function createBlockSensitiveStatic() {
+  return function blockSensitiveStatic(req, res, next) {
+    if (classifyStaticPath(req.path) === 'block') {
+      return res.status(404).send('Not found');
+    }
+    next();
+  };
+}
+
 /**
  * Parse one encoding's q-value from Accept-Encoding.
  * Missing encoding → 0 (do not invent support). Explicit q=0 → 0.
@@ -127,6 +231,7 @@ function createServePrecompressedStatic({ root, cspValue, io = fs } = {}) {
     if (req.headers.range) return next();
     const rel = decodeURIComponent((req.path || '').split('?')[0] || '');
     if (!rel || rel.includes('\0') || rel.includes('\\')) return next();
+    if (!isAllowedStaticPath(rel)) return next();
     if (!/\.(?:js|mjs|css|html|svg|json)$/i.test(rel)) return next();
     const abs = path.resolve(staticRoot, '.' + rel);
     const rootPrefix = staticRoot.endsWith(path.sep) ? staticRoot : staticRoot + path.sep;
@@ -163,9 +268,14 @@ module.exports = {
   VERSIONED_JS_CSS_CACHE,
   UNVERSIONED_JS_CSS_CACHE,
   HTML_CACHE,
+  BLOCKED_STATIC_SEGMENTS,
+  PUBLIC_STATIC_ROOT_FILES,
   encodingQuality,
   isVersionedAssetRequest,
   setStaticCacheHeaders,
   pickPrecompressedCandidate,
+  isAllowedStaticPath,
+  classifyStaticPath,
+  createBlockSensitiveStatic,
   createServePrecompressedStatic,
 };
