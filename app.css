@@ -5367,6 +5367,23 @@ body { top: 0 !important; }
   margin: 0 0 14px !important;
   box-shadow: 0 10px 24px rgba(0,0,0,.22);
 }
+.goals-page-wrap { max-width: 920px; margin: 0 auto; }
+.goals-page-wrap.is-compact { max-width: 1240px; }
+.goals-compact-layout { display: flex; flex-direction: column; gap: 18px; }
+.goals-compact-other { display: flex; flex-direction: column; gap: 16px; }
+.goals-compact-period { min-width: 0; }
+@media (min-width: 980px) {
+  .goals-compact-layout.has-side {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.7fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .goals-compact-layout.has-side .goals-compact-other {
+    position: sticky;
+    top: 68px;
+  }
+}
 @media (max-width:720px), (pointer:coarse) {
   .goals-sticky-add-box .tp-cta { padding:11px 14px !important; font-size:14px !important; box-shadow: none !important; }
 }

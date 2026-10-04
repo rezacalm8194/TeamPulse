@@ -5487,23 +5487,36 @@ function renderGoals() {
               </div>
             </div>`;
   };
-  const compactByPeriodHTML = GOAL_PERIODS.map(period => {
-    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key).slice().sort(sortCompactGoals);
-    if (!periodGoals.length) return '';
-    return `
-      <section style="margin-bottom:18px">
+  const renderCompactPeriod = (period, periodGoals, minCard) => `
+      <section class="goals-compact-period">
         <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
           <h3 style="font-size:13px;font-weight:900;color:var(--text);margin:0">${escapeHtml(period.icon)} اهداف ${escapeHtml(period.label)}</h3>
           <span style="font-size:11px;color:var(--text3)">${fa(periodGoals.length)} هدف</span>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${minCard},1fr));gap:12px">
           ${periodGoals.map(renderCompactCard).join('')}
         </div>
       </section>`;
-  }).join('');
+  const compactPeriodLists = GOAL_PERIODS.map(period => {
+    const periodGoals = goals.filter(g => _goalPeriod(g) === period.key).slice().sort(sortCompactGoals);
+    return periodGoals.length ? { period, periodGoals } : null;
+  }).filter(Boolean);
+  const compactOtherHTML = compactPeriodLists
+    .filter(x => x.period.key !== 'yearly')
+    .map(x => renderCompactPeriod(x.period, x.periodGoals, '240px'))
+    .join('');
+  const compactYearly = compactPeriodLists.find(x => x.period.key === 'yearly');
+  const compactYearlyHTML = compactYearly
+    ? renderCompactPeriod(compactYearly.period, compactYearly.periodGoals, '280px')
+    : '';
+  const compactByPeriodHTML = `
+        <div class="goals-compact-layout${compactOtherHTML && compactYearlyHTML ? ' has-side' : ''}">
+          ${compactOtherHTML ? `<div class="goals-compact-other">${compactOtherHTML}</div>` : ''}
+          ${compactYearlyHTML ? `<div class="goals-compact-yearly">${compactYearlyHTML}</div>` : ''}
+        </div>`;
 
   setContent(`
-    <div style="max-width:920px;margin:0 auto">
+    <div class="goals-page-wrap${_goalsViewMode === 'compact' ? ' is-compact' : ''}">
       ${_goalsStickyAddHtml()}
       ${statsHTML}
       ${_goalAchievementsHtml()}
@@ -5550,6 +5563,7 @@ function _toggleGoalsView() {
   if (!compact || !full) return;
   compact.style.display = _goalsViewMode === 'compact' ? 'block' : 'none';
   full.style.display = _goalsViewMode === 'compact' ? 'none' : 'block';
+  compact.closest('.goals-page-wrap')?.classList.toggle('is-compact', _goalsViewMode === 'compact');
   if (icon) icon.textContent = _goalsViewMode === 'compact' ? '📋' : '🗂';
   if (label) label.textContent = _goalsViewMode === 'compact' ? 'نمای کامل' : 'یک نگاه';
 }
