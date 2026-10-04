@@ -102,6 +102,30 @@ test('persian jalali complete still advances past the previous scheduled day', (
   assert.equal(merged.date_jalali, '۱۴۰۵/۰۷/۰۲');
 });
 
+test('unchecking a recurring occurrence keeps today over a stale advanced complete', () => {
+  const rewind = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '1405/07/01',
+    scheduled_date: '1405/07/01',
+    updated_at: '2026-09-23T13:05:00.000Z',
+    history: [{ action: 'unchecked', created_at: '2026-09-23T13:05:00.000Z' }],
+  };
+  const staleAdvance = {
+    id: 2,
+    repeat: 'daily',
+    done: false,
+    date_jalali: '1405/07/02',
+    scheduled_date: '1405/07/02',
+    updated_at: '2026-09-23T12:00:00.000Z',
+  };
+  const merged = pickMergedTodo(staleAdvance, rewind);
+  assert.equal(merged.date_jalali, '1405/07/01');
+  const afterComplete = applyTodoDeltaMerge(staleAdvance, rewind, 'complete');
+  assert.equal(afterComplete.date_jalali, '1405/07/01');
+});
+
 test('keeps later recurring date so an overdue tick is not rolled back', () => {
   const incoming = { id: 2, repeat: 'daily', done: false, date_jalali: '1403/05/31', updated_at: '2026-08-23T10:00:00.000Z' };
   const previous = { id: 2, repeat: 'daily', done: false, date_jalali: '1405/06/01', scheduled_date: '1405/06/01', updated_at: '2026-08-22T18:00:00.000Z' };

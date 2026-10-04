@@ -75,7 +75,13 @@ function pickMergedTodo(incoming, previous) {
   if (isRecurringTemplate(incoming) && isRecurringTemplate(previous)) {
     const incomingKey = scheduledKey(incoming);
     const previousKey = scheduledKey(previous);
-    if (incomingKey !== previousKey) return incomingKey > previousKey ? incoming : previous;
+    if (incomingKey !== previousKey) {
+      const later = incomingKey > previousKey ? incoming : previous;
+      const earlier = incomingKey > previousKey ? previous : incoming;
+      const laterMs = todoRecency(later);
+      if (todoHasReopenAfter(earlier, laterMs) || todoHasReopenAfter(later, laterMs)) return earlier;
+      return later;
+    }
   }
   if (!!incoming.done !== !!previous.done) {
     const doneItem = incoming.done ? incoming : previous;

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp326';
+const TP_ASSET_V = 'tp327';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -17983,6 +17983,14 @@ function _todoHasReopenAfter(openItem, doneAtMs) {
   });
 }
 
+function _todoOpenRewindBeatsLaterDate(earlier, later) {
+  if (!earlier || !later) return false;
+  if (earlier.done || later.done) return false;
+  if (earlier._snapshot || earlier._occurrence || later._snapshot || later._occurrence) return false;
+  const laterMs = _todoMergeTime(later);
+  return _todoHasReopenAfter(earlier, laterMs) || _todoHasReopenAfter(later, laterMs);
+}
+
 function _pickMergedTodo(localItem, serverItem) {
   if (!localItem) return _cloneData(serverItem);
   if (!serverItem) return _cloneData(localItem);
@@ -17994,7 +18002,12 @@ function _pickMergedTodo(localItem, serverItem) {
       typeof _isTodoRecurring === 'function' && _isTodoRecurring(localItem) && _isTodoRecurring(serverItem)) {
     const localKey = _jalaliKey(_todoScheduledDate(localItem) || '');
     const serverKey = _jalaliKey(_todoScheduledDate(serverItem) || '');
-    if (localKey !== serverKey) return _cloneData(localKey > serverKey ? localItem : serverItem);
+    if (localKey !== serverKey) {
+      const later = localKey > serverKey ? localItem : serverItem;
+      const earlier = localKey > serverKey ? serverItem : localItem;
+      if (_todoOpenRewindBeatsLaterDate(earlier, later)) return _cloneData(earlier);
+      return _cloneData(later);
+    }
   }
   if (!!localItem.done !== !!serverItem.done) {
     const doneItem = localItem.done ? localItem : serverItem;
@@ -18024,7 +18037,16 @@ function _resolveIncomingTodo(local, remote, { authoritative = false } = {}) {
   const op = _todoPendingDeltaOp(remote.id != null ? remote.id : local.id);
   if (op === 'complete' || op === 'reopen' || op === 'edit' || op === 'create') return _cloneData(local);
   if (op === 'delete') return _cloneData(local);
-  if (authoritative) return _cloneData(remote);
+  if (authoritative) {
+    if (typeof _isTodoRecurring === 'function' && _isTodoRecurring(local) && _isTodoRecurring(remote)) {
+      const localKey = _jalaliKey(_todoScheduledDate(local) || '');
+      const remoteKey = _jalaliKey(_todoScheduledDate(remote) || '');
+      if (localKey > 0 && remoteKey > localKey && _todoOpenRewindBeatsLaterDate(local, remote)) {
+        return _cloneData(local);
+      }
+    }
+    return _cloneData(remote);
+  }
   return _pickMergedTodo(local, remote);
 }
 
@@ -25560,7 +25582,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v326';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v327';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
