@@ -7,6 +7,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..', '..');
 const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
+const extraSource = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
 
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -48,8 +49,10 @@ test('account tables render unique package tags instead of one pill per purchase
   assert.match(appSource, /function pkgTagsHtml\(/);
   assert.match(appSource, /pkgTagsHtml\(s\.packages\)/);
   assert.match(financeSource, /pkgTagsHtml\(m\.packages\)/);
+  assert.match(extraSource, /pkgTagsHtml\(d\.packages\)/);
   assert.doesNotMatch(appSource, /\(s\.packages \|\| \[\]\)\.map\(pkgTag\)/);
   assert.doesNotMatch(appSource + financeSource, /\(m\.packages \|\| \[\]\)\.map\(pkgTag\)/);
+  assert.doesNotMatch(extraSource, /\(d\.packages \|\| \[\]\)\.map\(pkgTag\)/);
 });
 
 test('pkgTagsHtml keeps two chips plus overflow so table rows stay one line', () => {

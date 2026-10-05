@@ -2078,7 +2078,7 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
 .detail-val { font-weight: 500; }
 
 /* ── Dashboard two-col ──────────────────────────────────── */
-.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.dash-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .bar-item { margin-bottom: 12px; }
 .bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
 
@@ -4152,6 +4152,8 @@ body.instr-select-mode ._ifcard.instr-selected {
 @media(min-width:1024px){
   .content{padding:20px 24px;width:100%}
   .stats-row{grid-template-columns:repeat(4,1fr)}
+}
+@media(min-width:1180px){
   .dash-grid{grid-template-columns:repeat(2,1fr)}
 }
 
@@ -5051,9 +5053,13 @@ body.modal-keyboard-open .note-editor-modal .modal-body > .form-grid {
 .stu-pkgs-cell{max-width:240px;width:22%;overflow:hidden}
 .stu-pkgs-cell .pkg-tags{max-width:100%}
 .mstu-card .pkg-tags{max-width:100%}
+.dashboard-debtors-wrap{overflow:hidden}
+.dashboard-debtors-wrap .stu-pkgs-cell{width:28%;max-width:200px}
+.dashboard-debtors-wrap .pkg-tags{max-width:100%}
 @media (max-width:1180px){
   .stu-pkgs-cell{max-width:150px;width:16%}
   .pkg-tags{max-width:100%}
+  .dashboard-debtors-wrap .stu-pkgs-cell{max-width:none;width:auto}
 }
 .mstu-actions{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
 .mstu-actions .btn{flex:1;justify-content:center}
