@@ -605,7 +605,7 @@ async function renderDashboard() {
                         </div>
                       </div>
                     </td>
-                    <td>${(d.packages || []).map(pkgTag).join('') || '<span style="color:var(--text3)">—</span>'}</td>
+                    <td class="stu-pkgs-cell">${pkgTagsHtml(d.packages)}</td>
                     <td><span class="amount amount-neutral">${fmt(d.totalAmount)}</span></td>
                     <td>${balanceHtml(d.debt)}</td>
                   </tr>`).join('')}
