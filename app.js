@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp342';
+const TP_ASSET_V = 'tp343';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -19406,6 +19406,16 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
     }
     if (!accId) return null;
+    // A document/todo delta without base_etag is always 409 on the server.
+    if (!window._serverDataEtag) {
+      try {
+        const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+        if (statusRes.ok) {
+          const status = await statusRes.json();
+          if (status?.etag) window._serverDataEtag = status.etag;
+        }
+      } catch (e) {}
+    }
     const activeWorkspaceId = _currentAccountId();
     if (!teamSession && activeWorkspaceId !== 'default' && window._workspaceDataReady !== true) {
       _markServerSyncPending('workspace-awaiting-authoritative-load');
@@ -19743,7 +19753,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       window._teamSyncForbiddenWarned = true;
       showToast('دسترسی هم‌تیمی برای ذخیره روی حساب اصلی تأیید نشد', 'error');
     }
-    if (res && res.status === 409 && responseData?.error !== 'todo_id_collision' && !window._destructiveSyncBlockedWarned) {
+    if (res && res.status === 409 && responseData?.error === 'destructive_overwrite_blocked' && !window._destructiveSyncBlockedWarned) {
       window._destructiveSyncBlockedWarned = true;
       showToast('سرور جلوی پاک شدن ناگهانی داده‌ها را گرفت؛ صفحه را رفرش کنید', 'error');
     }
@@ -19766,7 +19776,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
       return res;
     }
-    if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429 && !(res.status === 409 && responseData?.error === 'sync_conflict')) {
+    if (res && !res.ok && responseData?.error !== 'todo_id_collision' && res.status !== 429 && res.status !== 409) {
       _markServerSyncPending('http-' + res.status);
       _scheduleServerSyncRetry();
       const quietStatus = res.status === 401 || res.status === 403 || res.status === 409;
@@ -20685,8 +20695,10 @@ function _startKeyEventReminderLoop() {
 function _flushPendingServerSyncKeepalive() {
   if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   if (window._serverSyncInFlight) return;
+  if (!window._serverDataEtag) return;
   const pendingRecord = _readServerSyncPending();
   if (pendingRecord?.reason === 'conflict-merged' || pendingRecord?.reason === 'conflict-merged-stopped') return;
+  if (String(pendingRecord?.reason || '').indexOf('http-409') === 0) return;
   if (!_sbUser?.id || !_sbSession?.token) return;
   const teamSession = _teamAccessSession();
   if (teamSession && !teamSession.ownerUserId) return;
@@ -25718,7 +25730,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v342';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v343';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
