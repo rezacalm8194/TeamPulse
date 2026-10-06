@@ -74,6 +74,9 @@ test('1-3-5 focus board sits before today and uses ranks 1-9', () => {
   assert.match(todos, /Math\.max\(0, Math\.min\(9, n\)\)/);
   assert.match(todos, /function _openTodo135Picker\(/);
   assert.match(todos, /function _assignTodo135Slot\(/);
+  assert.match(todos, /function _assignHabitTo135Slot\(/);
+  assert.match(todos, /_todo135PickSectionHtml\('عقب‌افتاده'/);
+  assert.match(todos, /_todo135PickSectionHtml\('عادت‌ها'/);
   assert.match(todos, /function _addTodoTo135Slot\(/);
   assert.match(todos, /function _createTodoIn135Slot\(/);
   assert.match(todos, /todo-135-new-title/);
