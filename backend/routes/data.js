@@ -319,6 +319,8 @@ function instructionFoldersFromMember(member, storedFolders) {
   if (Array.isArray(member?.instructionFolders)) return member.instructionFolders;
   return Array.isArray(storedFolders) ? storedFolders : parseJsonArray(storedFolders);
 }
+
+function getTeamGrant(req, targetId, workspaceId) {
   if (req.user.id === targetId || req.user.role === 'admin') return null;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return null;
