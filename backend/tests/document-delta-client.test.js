@@ -134,6 +134,7 @@ test('invited teammates keep pending archive student changes until they persist'
   assert.match(appSource, /function _teamCanWriteOwnerStudents\(/);
   assert.match(appSource, /_TEAM_STUDENT_PENDING_KEYS/);
   assert.match(appSource, /allowLocal && localTime === serverTime/);
+  assert.match(appSource, /key === 'instructions' && typeof _teamCan === 'function' && _teamCan\('instructions'\)/);
   assert.match(appSource, /_save\(true,\{urgent:true\}\)/);
 });
 

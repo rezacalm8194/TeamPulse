@@ -38,6 +38,7 @@ const {
   mergeAllowedTeamDocument,
   allowedTeamDocumentPatch,
   canWriteTeamStudents,
+  canWriteTeamInstructions,
   TEAM_STUDENT_RELATED_COLLECTIONS,
   teamTodoWriteApplied,
 } = require('../utils/teamTodoMerge');
@@ -304,6 +305,7 @@ function keysNeededForPatch(patch, grant) {
       keys.add('students');
       TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => keys.add(key));
     }
+    if (canWriteTeamInstructions(grant.permissions)) keys.add('instructions');
   }
   const deletedItems = patch?.scalars?._deletedItems;
   if (deletedItems && typeof deletedItems === 'object' && !Array.isArray(deletedItems)) {
@@ -312,12 +314,16 @@ function keysNeededForPatch(patch, grant) {
   return [...keys];
 }
 
-function getTeamGrant(req, targetId, workspaceId) {
+function instructionFoldersFromMember(member, storedFolders) {
+  if (Array.isArray(member?.instruction_folders)) return member.instruction_folders;
+  if (Array.isArray(member?.instructionFolders)) return member.instructionFolders;
+  return Array.isArray(storedFolders) ? storedFolders : parseJsonArray(storedFolders);
+}
   if (req.user.id === targetId || req.user.role === 'admin') return null;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return null;
   const grant = db.prepare(`
-    SELECT permissions, invite_id, staff_id
+    SELECT permissions, invite_id, staff_id, instruction_folders
     FROM team_access_grants
     WHERE owner_account_id=? AND workspace_id=? AND member_email=? AND status='active'
   `).get(targetId, workspaceId, requesterEmail);
@@ -331,7 +337,8 @@ function getTeamGrant(req, targetId, workspaceId) {
       requesterEmail,
       member?.staff_id || member?.staffId
     );
-    return permissions.length ? { email: requesterEmail, permissions, staffId } : null;
+    const instructionFolders = instructionFoldersFromMember(member, []);
+    return permissions.length ? { email: requesterEmail, permissions, staffId, instructionFolders } : null;
   }
   const storedPermissions = parseJsonArray(grant.permissions);
   const member = memberFromWorkspaceData(targetId, workspaceId, requesterEmail, grant.invite_id);
@@ -343,7 +350,8 @@ function getTeamGrant(req, targetId, workspaceId) {
       requesterEmail,
       grant.staff_id || member?.staff_id || member?.staffId
     );
-  return { email: requesterEmail, permissions, staffId };
+  const instructionFolders = instructionFoldersFromMember(member, grant.instruction_folders);
+  return { email: requesterEmail, permissions, staffId, instructionFolders };
 }
 
 function persistGrantStaffId(targetId, workspaceId, grant) {
