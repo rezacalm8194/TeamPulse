@@ -28,6 +28,7 @@ test('todo completion merge prefers done state and later recurring dates', () =>
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(/);
   assert.match(appSource, /function _flushPendingServerSyncKeepalive\(\) \{\s*if \(Number\(window\._serverSyncConflictBackoffUntil \|\| 0\) > Date\.now\(\)\) return;/);
   assert.match(appSource, /if \(window\._serverSyncInFlight\) return;/);
+  assert.match(appSource, /if \(!window\._serverDataEtag\) return;/);
   assert.match(appSource, /pendingRecord\?\.reason === 'conflict-merged' \|\| pendingRecord\?\.reason === 'conflict-merged-stopped'/);
   assert.match(appSource, /_flushPendingServerSyncKeepalive\(\)/);
   assert.match(appSource, /unstamped-local-merged-with-newer-server/);
@@ -155,6 +156,9 @@ test('pending server sync does not refetch the full document on every poll or re
   assert.match(appSource, /function _ensurePendingServerSync[\s\S]{0,160}_serverSyncConflictBackoffUntil/);
   assert.match(appSource, /_hasServerSyncPending\(\)[\s\S]{0,180}_serverSyncConflictBackoffUntil/);
   assert.match(appSource, /\(res\.status === 409 && responseData\?\.error === 'sync_conflict'\)/);
+  assert.match(appSource, /responseData\?\.error === 'destructive_overwrite_blocked'/);
+  assert.match(appSource, /res\.status !== 429 && res\.status !== 409/);
+  assert.match(appSource, /if \(!window\._serverDataEtag\) \{/);
   assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight\.catch/);
 });
 
