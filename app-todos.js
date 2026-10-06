@@ -3311,38 +3311,75 @@ function _todo135BoardHtml(todayTodos) {
   </section>`;
 }
 
+function _todo135PickRowHtml(title, metaHtml, onclick) {
+  return `<button type="button" class="todo-135-pick-row" onclick="${onclick}">
+      <span class="todo-135-pick-title">${escapeHtml(title || 'بدون عنوان')}</span>
+      <span class="todo-135-pick-meta">${metaHtml || ''}</span>
+    </button>`;
+}
+
+function _todo135PickSectionHtml(label, rowsHtml) {
+  if (!rowsHtml) return '';
+  return `<div class="todo-135-pick-section"><div class="todo-135-pick-section-title">${escapeHtml(label)}</div>${rowsHtml}</div>`;
+}
+
+function _todo135TodoPickMeta(t, extraBadge) {
+  const current = _todo135SlotMeta(t.main_today_rank);
+  const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
+  const when = t.time ? `<span class="todo-135-pick-time">${escapeHtml(t.time)}</span>` : '';
+  return `${when}${extraBadge || ''}${badge}`;
+}
+
 function _openTodo135Picker(rank) {
   _todosInit();
+  if (typeof _habitsInit === 'function') _habitsInit();
   const slot = _todo135SlotMeta(_parseMainTodayRank(rank));
   if (!slot) return;
   const todayKey = _jalaliToday();
-  const candidates = (_db.todos || []).filter(t => {
+  const todayStr = _todayJalaliStr();
+  const visibleTodos = (_db.todos || []).filter(t => {
     if (!_todoCanView(t) || !_todoIsMineScope(t) || t.archived || t.done) return false;
     const scheduled = _todoScheduledDate(t);
-    const key = scheduled ? _jalaliKey(scheduled) : todayKey;
-    return !scheduled || key === todayKey;
+    if (!scheduled) return true;
+    return _jalaliKey(scheduled) <= todayKey;
   }).sort((a, b) => {
     const ak = _jalaliKey(_todoScheduledDate(a)) || todayKey;
     const bk = _jalaliKey(_todoScheduledDate(b)) || todayKey;
     if (ak !== bk) return ak - bk;
     return _sortByTime(a, b);
   });
-  const rows = candidates.map(t => {
-    const current = _todo135SlotMeta(t.main_today_rank);
-    const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
-    const when = t.time ? `<span class="todo-135-pick-time">${escapeHtml(t.time)}</span>` : '';
-    return `<button type="button" class="todo-135-pick-row" onclick="_assignTodo135Slot(${t.id},${slot.rank})">
-      <span class="todo-135-pick-title">${escapeHtml(t.title || 'بدون عنوان')}</span>
-      <span class="todo-135-pick-meta">${when}${badge}</span>
-    </button>`;
+  const todayTodos = visibleTodos.filter(t => !_todoIsOverdue(t, todayKey));
+  const overdueTodos = visibleTodos.filter(t => _todoIsOverdue(t, todayKey));
+  const todayRows = todayTodos.map(t =>
+    _todo135PickRowHtml(t.title, _todo135TodoPickMeta(t), `_assignTodo135Slot(${t.id},${slot.rank})`)
+  ).join('');
+  const overdueRows = overdueTodos.map(t => {
+    const dateLabel = DateService.disp(_todoScheduledDate(t));
+    const overdueBadge = `<span class="todo-135-pick-badge is-overdue">${escapeHtml(dateLabel || 'عقب‌افتاده')}</span>`;
+    return _todo135PickRowHtml(t.title, _todo135TodoPickMeta(t, overdueBadge), `_assignTodo135Slot(${t.id},${slot.rank})`);
   }).join('');
+  const doneHabitIds = new Set((_db.habit_logs || [])
+    .filter(l => l.date === todayStr && l.done)
+    .map(l => String(l.habit_id)));
+  const habits = (_db.habits || []).filter(h => !h.archived && !doneHabitIds.has(String(h.id)));
+  const habitRows = habits.map(h => {
+    const linked = todayTodos.find(t => String(t.habit_id) === String(h.id));
+    const current = linked ? _todo135SlotMeta(linked.main_today_rank) : null;
+    const time = h.time ? `<span class="todo-135-pick-time">${escapeHtml(h.time)}</span>` : '';
+    const kind = `<span class="todo-135-pick-badge is-habit">${escapeHtml(h.icon || '🔥')} عادت</span>`;
+    const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
+    return _todo135PickRowHtml(h.title, `${time}${kind}${badge}`, `_assignHabitTo135Slot(${h.id},${slot.rank})`);
+  }).join('');
+  const lists = _todo135PickSectionHtml('امروز', todayRows)
+    + _todo135PickSectionHtml('عقب‌افتاده', overdueRows)
+    + _todo135PickSectionHtml('عادت‌ها', habitRows);
   openModal('جایگاه ' + slot.slotLabel, `
     <div class="todo-135-picker">
       <form class="todo-135-pick-composer" id="todo-135-new-form" onsubmit="event.preventDefault();_addTodoTo135Slot(${slot.rank})">
         <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه">
         <button type="submit" class="btn btn-primary todo-135-pick-submit">افزودن</button>
       </form>
-      ${rows || '<div class="todo-135-pick-empty">کار بازی برای امروز نیست. یک کار جدید اضافه کن.</div>'}
+      ${lists || '<div class="todo-135-pick-empty">کار بازی برای امروز، عقب‌افتاده یا عادت انجام‌نشده نیست. یک کار جدید اضافه کن.</div>'}
     </div>
   `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
   setTimeout(() => document.getElementById('todo-135-new-title')?.focus(), 40);
@@ -3410,6 +3447,77 @@ async function _createTodoIn135Slot(rank, title) {
     durationMin: 0,
     mainTodayRank: slot,
   });
+  if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
+    window._todoSaveInProgress = false;
+    showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
+    return;
+  }
+  const relatedRankChanged = _applyTodoMainTodayRank(newTodo);
+  _db.todos.push(newTodo);
+  await _commitNewTodos([newTodo], relatedRankChanged);
+}
+
+function _todo135SyncLinkedHabit(habitId, done) {
+  if (habitId == null || habitId === '') return;
+  if (typeof _habitsInit === 'function') _habitsInit();
+  const todayStr = _todayJalaliStr();
+  const logId = String(habitId) + '__' + String(todayStr);
+  const existing = (_db.habit_logs || []).find(l =>
+    String(l.id) === logId || (String(l.habit_id) === String(habitId) && l.date === todayStr)
+  );
+  if (existing) {
+    if (existing.id == null) existing.id = logId;
+    existing.habit_id = habitId;
+    existing.date = todayStr;
+    existing.done = !!done;
+    existing.logged_at = new Date().toISOString();
+    return;
+  }
+  if (!done) return;
+  _db.habit_logs.push({
+    id: logId,
+    habit_id: habitId,
+    date: todayStr,
+    done: true,
+    logged_at: new Date().toISOString(),
+  });
+}
+
+async function _assignHabitTo135Slot(habitId, rank) {
+  _todosInit();
+  if (typeof _habitsInit === 'function') _habitsInit();
+  const slot = _parseMainTodayRank(rank);
+  const habit = (_db.habits || []).find(h => String(h.id) === String(habitId));
+  if (!habit || slot <= 0) return;
+  const todayKey = _jalaliToday();
+  const existing = (_db.todos || []).find(t => {
+    if (!_todoCanView(t) || !_todoIsMineScope(t) || t.archived || t.done) return false;
+    if (String(t.habit_id) !== String(habit.id)) return false;
+    const scheduled = _todoScheduledDate(t);
+    const key = scheduled ? _jalaliKey(scheduled) : todayKey;
+    return !scheduled || key === todayKey;
+  });
+  if (existing) {
+    _assignTodo135Slot(existing.id, slot);
+    return;
+  }
+  if (window._todoSaveInProgress) return;
+  window._todoSaveInProgress = true;
+  const meta = _todo135DefaultCreateMeta();
+  if (meta.error) {
+    window._todoSaveInProgress = false;
+    showToast(meta.error, 'error');
+    return;
+  }
+  const newTodo = _buildTodoRecord(meta, {
+    title: habit.title || 'عادت',
+    dateJalali: _todayJalaliStr(),
+    time: habit.time || '',
+    durationMin: 0,
+    mainTodayRank: slot,
+  });
+  newTodo.habit_id = habit.id;
+  if (habit.goal_id) newTodo.goal_id = +habit.goal_id;
   if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
     window._todoSaveInProgress = false;
     showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
@@ -4142,6 +4250,7 @@ function _completeTodoWithReport(t, report) {
   }
   t.updated_at = new Date().toISOString();
   _todoAddHistory(t, t.done ? 'completed' : 'unchecked', oldDone, t.done);
+  if (t.habit_id != null && t.habit_id !== '') _todo135SyncLinkedHabit(t.habit_id, t.done);
   if (t.goal_id && typeof _syncGoalProgressFromLinkedWork === 'function') {
     _syncGoalProgressFromLinkedWork(t.goal_id);
   }
