@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp343';
+const TP_ASSET_V = 'tp344';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -18225,7 +18225,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
   }
 
   Object.entries(localDeleted).forEach(([key, tombstones]) => {
-    if (options.teamSafe && key !== 'todos' && !( _teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key))) return;
+    if (options.teamSafe && key !== 'todos' &&
+        !(key === 'instructions' && typeof _teamCan === 'function' && _teamCan('instructions')) &&
+        !( _teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key))) return;
     if (!tombstones || typeof tombstones !== 'object') return;
     merged._deletedItems[key] = merged._deletedItems[key] && typeof merged._deletedItems[key] === 'object'
       ? merged._deletedItems[key]
@@ -18260,7 +18262,9 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         if (key === 'todos' && deletedTodoIds.has(idKey)) return false;
         return true;
       });
-    const allowLocal = !options.teamSafe || key === 'todos' || (_teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key));
+    const allowLocal = !options.teamSafe || key === 'todos' ||
+      (_teamCanWriteOwnerStudents() && _TEAM_STUDENT_PENDING_KEYS.includes(key)) ||
+      (key === 'instructions' && typeof _teamCan === 'function' && _teamCan('instructions'));
     if (!allowLocal || !localArr.length) {
       merged[key] = serverArr;
       return;
@@ -25730,7 +25734,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v343';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v344';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -377,3 +377,64 @@ test('archive team delete removes tombstoned students without wiping others', ()
   }, { email: 'mahdi@test', permissions: ['archive'] });
   assert.deepEqual(next.students.map(s => s.id), [1]);
 });
+
+test('team with instructions permission can add a knowledge note', () => {
+  const previous = {
+    instructions: [{ id: 1, parent_id: null, title: 'Owner folder', type: 'kcategory' }],
+    todos: [],
+  };
+  const grant = { email: 'member@test', permissions: ['instructions'] };
+  const next = mergeAllowedTeamDocument(previous, {
+    instructions: [
+      { id: 1, parent_id: null, title: 'Owner folder', type: 'kcategory' },
+      { id: 2, parent_id: 1, title: 'Morning note', type: 'note', content: 'hello' },
+    ],
+    _lastSaved: 9,
+  }, grant);
+  assert.equal(next.instructions.length, 2);
+  assert.equal(next.instructions.find(n => n.id === 2).title, 'Morning note');
+  const patch = allowedTeamDocumentPatch({
+    collections: {
+      instructions: { upsert: [{ id: 2, parent_id: 1, title: 'Morning note' }], delete: [] },
+      wallet_tx: { upsert: [{ id: 1 }], delete: [] },
+    },
+    scalars: { wallet: 1 },
+  }, grant);
+  assert.ok(patch.collections.instructions);
+  assert.equal(patch.collections.wallet_tx, undefined);
+});
+
+test('team without instructions permission cannot persist knowledge edits', () => {
+  const previous = {
+    instructions: [{ id: 1, title: 'Keep', type: 'note' }],
+    todos: [],
+  };
+  const next = mergeAllowedTeamDocument(previous, {
+    instructions: [{ id: 1, title: 'Hacked' }, { id: 2, title: 'New' }],
+  }, { email: 'x@test', permissions: ['todolist'] });
+  assert.equal(next.instructions.length, 1);
+  assert.equal(next.instructions[0].title, 'Keep');
+});
+
+test('folder-restricted team cannot overwrite or delete other knowledge', () => {
+  const previous = {
+    instructions: [
+      { id: 1, parent_id: null, title: 'Allowed', type: 'kcategory' },
+      { id: 2, parent_id: null, title: 'Secret', type: 'kcategory' },
+      { id: 3, parent_id: 2, title: 'Secret note', type: 'note' },
+    ],
+    todos: [],
+  };
+  const grant = { email: 'member@test', permissions: ['instructions'], instructionFolders: [1] };
+  const next = mergeAllowedTeamDocument(previous, {
+    instructions: [
+      { id: 1, parent_id: null, title: 'Allowed', type: 'kcategory' },
+      { id: 4, parent_id: 1, title: 'Member note', type: 'note' },
+      { id: 3, parent_id: 2, title: 'Hacked', type: 'note' },
+    ],
+    _deletedItems: { instructions: { 3: '2026-10-06T00:00:00.000Z' } },
+  }, grant);
+  assert.equal(next.instructions.find(n => n.id === 3).title, 'Secret note');
+  assert.ok(next.instructions.find(n => n.id === 4));
+  assert.equal(next._deletedItems?.instructions?.['3'], undefined);
+});

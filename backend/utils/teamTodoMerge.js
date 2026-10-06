@@ -151,6 +151,84 @@ function canWriteTeamStudents(permissions) {
   return TEAM_STUDENT_WRITE_PERMISSIONS.some(key => list.includes(key));
 }
 
+function canWriteTeamInstructions(permissions) {
+  const list = Array.isArray(permissions) ? permissions : [];
+  return list.includes('instructions');
+}
+
+function instructionFolderIds(grant) {
+  const raw = grant?.instructionFolders || grant?.instruction_folders || [];
+  return Array.isArray(raw) ? raw.map(Number).filter(Boolean) : [];
+}
+
+function instructionById(items) {
+  const map = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (item && item.id != null) map.set(String(item.id), item);
+  });
+  return map;
+}
+
+function instructionAncestorIds(id, byId) {
+  const out = [];
+  let current = byId.get(String(id));
+  let guard = 0;
+  while (current && current.parent_id != null && current.parent_id !== '' && guard++ < 40) {
+    const parent = byId.get(String(current.parent_id));
+    if (!parent) break;
+    out.push(Number(parent.id));
+    current = parent;
+  }
+  return out;
+}
+
+function teamInstructionWritable(item, previousItems, grant) {
+  if (!item || !canWriteTeamInstructions(grant?.permissions)) return false;
+  const allowed = instructionFolderIds(grant);
+  if (!allowed.length) return true;
+  const byId = instructionById(previousItems);
+  const id = item.id != null ? Number(item.id) : NaN;
+  const parentId = item.parent_id == null || item.parent_id === '' ? null : Number(item.parent_id);
+  if (parentId && allowed.includes(parentId)) return true;
+  if (parentId && instructionAncestorIds(parentId, byId).some(a => allowed.includes(a))) return true;
+  if (Number.isFinite(id) && allowed.includes(id)) return true;
+  if (Number.isFinite(id) && instructionAncestorIds(id, byId).some(a => allowed.includes(a))) return true;
+  return false;
+}
+
+function mergeAllowedTeamInstructions(previousData, nextData, grant) {
+  const previousItems = Array.isArray(previousData?.instructions) ? previousData.instructions : [];
+  const incoming = (Array.isArray(nextData?.instructions) ? nextData.instructions : []).filter(item => {
+    const existing = previousItems.find(row => String(row?.id) === String(item?.id));
+    if (existing) {
+      return teamInstructionWritable(existing, previousItems, grant) &&
+        teamInstructionWritable(item, previousItems, grant);
+    }
+    return teamInstructionWritable(item, previousItems, grant);
+  });
+  const deletedIds = deletedIdsFromTombstones(nextData?._deletedItems, 'instructions').filter(id => {
+    const item = previousItems.find(row => String(row?.id) === String(id));
+    return teamInstructionWritable(item, previousItems, grant);
+  });
+  return mergeTeamIdCollection(previousItems, incoming, deletedIds);
+}
+
+function mergeTeamInstructionTombstones(current, incoming, previousItems, grant) {
+  const src = incoming?.instructions;
+  if (!src || typeof src !== 'object' || Array.isArray(src)) return current;
+  const out = current && typeof current === 'object' && !Array.isArray(current) ? { ...current } : {};
+  const prevMap = out.instructions && typeof out.instructions === 'object' && !Array.isArray(out.instructions)
+    ? { ...out.instructions }
+    : {};
+  Object.entries(src).forEach(([id, at]) => {
+    const item = (previousItems || []).find(row => String(row?.id) === String(id));
+    if (!teamInstructionWritable(item, previousItems, grant)) return;
+    prevMap[id] = at || prevMap[id] || new Date().toISOString();
+  });
+  out.instructions = prevMap;
+  return out;
+}
+
 function mergeTeamIdCollection(previousItems, incomingItems, deletedIds) {
   const deleted = new Set((deletedIds || []).map(id => String(id)).filter(Boolean));
   const incoming = Array.isArray(incomingItems) ? incomingItems : [];
@@ -206,6 +284,12 @@ function allowedTeamDocumentPatch(patch, grant) {
     ARCHIVE_SCALAR_KEYS.forEach(key => {
       if (Object.prototype.hasOwnProperty.call(srcScalars, key)) scalars[key] = srcScalars[key];
     });
+  }
+  if (canWriteTeamInstructions(permissions)) {
+    if (srcCollections.instructions) collections.instructions = srcCollections.instructions;
+    if (Object.prototype.hasOwnProperty.call(srcScalars, '_deletedItems')) {
+      scalars._deletedItems = srcScalars._deletedItems;
+    }
   }
   return { collections, scalars };
 }
@@ -390,25 +474,39 @@ function mergeAllowedTeamTodos(previousData, nextData, grant, operation = 'upser
 
 function mergeAllowedTeamDocument(previousData, nextData, grant) {
   const merged = mergeAllowedTeamTodos(previousData, nextData, grant);
-  if (!grant || !previousData || !nextData || !canWriteTeamStudents(grant.permissions)) return merged;
+  if (!grant || !previousData || !nextData) return merged;
+  const canStudents = canWriteTeamStudents(grant.permissions);
+  const canInstructions = canWriteTeamInstructions(grant.permissions);
+  if (!canStudents && !canInstructions) return merged;
   const tombstones = nextData._deletedItems;
-  merged.students = mergeTeamIdCollection(
-    previousData.students,
-    nextData.students,
-    deletedIdsFromTombstones(tombstones, 'students')
-  );
-  TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => {
-    if (!Array.isArray(nextData[key]) && !deletedIdsFromTombstones(tombstones, key).length) return;
-    merged[key] = mergeTeamIdCollection(
-      previousData[key],
-      nextData[key],
-      deletedIdsFromTombstones(tombstones, key)
+  if (canStudents) {
+    merged.students = mergeTeamIdCollection(
+      previousData.students,
+      nextData.students,
+      deletedIdsFromTombstones(tombstones, 'students')
     );
-  });
-  ARCHIVE_SCALAR_KEYS.forEach(key => {
-    if (Object.prototype.hasOwnProperty.call(nextData, key)) merged[key] = nextData[key];
-  });
-  if (tombstones && typeof tombstones === 'object') merged._deletedItems = tombstones;
+    TEAM_STUDENT_RELATED_COLLECTIONS.forEach(key => {
+      if (!Array.isArray(nextData[key]) && !deletedIdsFromTombstones(tombstones, key).length) return;
+      merged[key] = mergeTeamIdCollection(
+        previousData[key],
+        nextData[key],
+        deletedIdsFromTombstones(tombstones, key)
+      );
+    });
+    ARCHIVE_SCALAR_KEYS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(nextData, key)) merged[key] = nextData[key];
+    });
+    if (tombstones && typeof tombstones === 'object') merged._deletedItems = tombstones;
+  }
+  if (canInstructions) {
+    merged.instructions = mergeAllowedTeamInstructions(previousData, nextData, grant);
+    merged._deletedItems = mergeTeamInstructionTombstones(
+      merged._deletedItems || previousData._deletedItems,
+      tombstones,
+      previousData.instructions,
+      grant
+    );
+  }
   merged._lastSaved = nextData._lastSaved || previousData._lastSaved;
   return merged;
 }
@@ -428,6 +526,7 @@ module.exports = {
   mergeAllowedTeamDocument,
   allowedTeamDocumentPatch,
   canWriteTeamStudents,
+  canWriteTeamInstructions,
   TEAM_STUDENT_RELATED_COLLECTIONS,
   isCompletionSnapshot,
   teamTodoWriteApplied,
