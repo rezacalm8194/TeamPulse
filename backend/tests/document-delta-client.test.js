@@ -7,6 +7,13 @@ const appSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app.js'),
 const todosSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app-todos.js'), 'utf8');
 const dataSource = fs.readFileSync(path.resolve(__dirname, '..', 'routes', 'data.js'), 'utf8');
 
+test('data routes file keeps getTeamGrant parseable', () => {
+  assert.match(dataSource, /function getTeamGrant\(req, targetId, workspaceId\) \{/);
+  const { spawnSync } = require('child_process');
+  const checked = spawnSync(process.execPath, ['--check', path.resolve(__dirname, '..', 'routes', 'data.js')], { encoding: 'utf8' });
+  assert.equal(checked.status, 0, checked.stderr || checked.stdout);
+});
+
 test('ordinary workspace syncs send collection deltas instead of the full account document', () => {
   assert.match(appSource, /function _buildServerSyncPatch\(/);
   assert.match(appSource, /function _preferDocumentDelta\(/);
