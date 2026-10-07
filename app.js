@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp344';
+const TP_ASSET_V = 'tp346';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -18406,6 +18406,18 @@ function _serverTimes(data, localData = _db) {
 }
 
 // ── ذخیره داده روی سرور (async) ─────────────────────────────────────────
+async function _refreshServerDataEtag(accId) {
+  if (!accId) return window._serverDataEtag || null;
+  try {
+    const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
+    if (statusRes.ok) {
+      const status = await statusRes.json();
+      if (status?.etag) window._serverDataEtag = status.etag;
+    }
+  } catch (e) {}
+  return window._serverDataEtag || null;
+}
+
 function _scheduleServerSyncRetry() {
   if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return;
   clearTimeout(window._serverSyncRetryTimer);
@@ -19410,16 +19422,6 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       }
     }
     if (!accId) return null;
-    // A document/todo delta without base_etag is always 409 on the server.
-    if (!window._serverDataEtag) {
-      try {
-        const statusRes = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
-        if (statusRes.ok) {
-          const status = await statusRes.json();
-          if (status?.etag) window._serverDataEtag = status.etag;
-        }
-      } catch (e) {}
-    }
     const activeWorkspaceId = _currentAccountId();
     if (!teamSession && activeWorkspaceId !== 'default' && window._workspaceDataReady !== true) {
       _markServerSyncPending('workspace-awaiting-authoritative-load');
@@ -19523,6 +19525,9 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
     };
     let res;
     if (useDocumentDelta) {
+      // Stale cached etag is the usual 409 in DevTools. /status is 200, so
+      // refreshing first avoids a red POST when another tab already saved.
+      await _refreshServerDataEtag(accId);
       res = await _apiFetch('/api/data/' + accId + '/delta' + _workspaceQuery(), {
         method: 'POST',
         body: JSON.stringify({
@@ -22529,15 +22534,16 @@ function _setTodoOccasionCategory(key, enabled) {
   if (currentPage === 'calendar') renderCalendar();
 }
 
-const TODO_LIST_CHUNK = 40;
+const TODO_LIST_CHUNK = 24;
 let _todoListShown = {};
 function _todoRenderedListHtml(items, key, renderFn) {
   if (!items.length || typeof renderFn !== 'function') return '';
   const cap = Math.max(TODO_LIST_CHUNK, Number(_todoListShown[key] || TODO_LIST_CHUNK));
   const slice = items.slice(0, cap);
+  window._todoRenderRowCount = (window._todoRenderRowCount || 0) + slice.length;
   let html = slice.map(renderFn).join('');
   if (items.length > cap) {
-    html += `<button type="button" class="todo-show-more" onclick="_todoShowMore('${key}')">نمایش بیشتر · ${fa(items.length - cap)} کار باقی‌مانده</button>`;
+    html += `<button type="button" class="todo-show-more" data-todo-show-more="${key}" onclick="_todoShowMore('${key}')">نمایش بیشتر · ${fa(items.length - cap)} کار باقی‌مانده</button>`;
   }
   return html;
 }
@@ -25734,7 +25740,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v344';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v346';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

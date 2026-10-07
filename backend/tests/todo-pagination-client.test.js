@@ -61,8 +61,16 @@ test('todo archive and show-more can fetch additional server pages', () => {
 test('todo list virtualization passes the row renderer explicitly', () => {
   const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
   assert.match(app, /function _todoRenderedListHtml\(items, key, renderFn\)/);
+  assert.match(app, /TODO_LIST_CHUNK\s*=\s*24/);
+  assert.match(app, /data-todo-show-more/);
   assert.doesNotMatch(app, /renderFn\s*=\s*renderTodo/);
   assert.match(todos, /_todoRenderedListHtml\([^\n]+renderTodo\)/);
+  assert.match(todos, /tomorrowOpen \? _todoRenderedListHtml/);
+  assert.match(todos, /isOpen \? _todoRenderedListHtml/);
+  assert.match(todos, /const goalById = new Map/);
+  assert.match(todos, /window\._todoListRenderStats/);
+  assert.match(todos, /querySelector\('\.todo-calendar-shell'\)/);
+  assert.doesNotMatch(todos, /document\.querySelectorAll\('\[data-todo-id\]'\)\.forEach/);
 });
 
 test('1-3-5 focus board sits before today and uses ranks 1-9', () => {

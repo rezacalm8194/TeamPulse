@@ -1524,14 +1524,24 @@ function _todoDurationLabel(minutes) {
 
 
 function _setTodoTomorrowExpanded(open) {
-  _todoTomorrowExpanded = !!open;
-  localStorage.setItem('tp_todo_tomorrow_expanded', _todoTomorrowExpanded ? '1' : '0');
+  const next = !!open;
+  const needPaint = next && !_todoTomorrowExpanded;
+  _todoTomorrowExpanded = next;
+  localStorage.setItem('tp_todo_tomorrow_expanded', next ? '1' : '0');
+  if (needPaint && typeof currentPage === 'string' && currentPage === 'todolist') {
+    renderTodoList({ skipMaintenance: true });
+  }
 }
 
 
 function _setTodoFutureExpanded(key, open) {
-  _todoFutureExpanded[key] = !!open;
+  const next = !!open;
+  const needPaint = next && !_todoFutureExpanded[key];
+  _todoFutureExpanded[key] = next;
   localStorage.setItem('tp_todo_future_expanded', JSON.stringify(_todoFutureExpanded));
+  if (needPaint && typeof currentPage === 'string' && currentPage === 'todolist') {
+    renderTodoList({ skipMaintenance: true });
+  }
 }
 
 
@@ -1705,13 +1715,21 @@ function _todoViewSwitcherHtml() {
 
 function _todoStickyAddBoxHtml(stats = {}) {
   _todosInit();
-  const today = _todayJalaliStr();
-  const todayKey = _jalaliKey(today);
-  const todos = (_db.todos || []).filter(t => !t.archived);
-  const todayCount = stats.todayCount ?? todos.filter(t => !t.date_jalali || _jalaliKey(t.date_jalali) === todayKey).length;
-  const doneCnt = stats.doneCnt ?? todos.filter(t => t.done && t.date_jalali && _jalaliKey(t.date_jalali) === todayKey).length;
-  const totalToday = stats.totalToday ?? todayCount;
-  const progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
+  let todayCount, doneCnt, totalToday, progress;
+  if (stats.totalToday != null) {
+    todayCount = stats.todayCount;
+    doneCnt = stats.doneCnt;
+    totalToday = stats.totalToday;
+    progress = stats.progress ?? (totalToday ? Math.round(doneCnt / totalToday * 100) : 0);
+  } else {
+    const today = _todayJalaliStr();
+    const todayKey = _jalaliKey(today);
+    const todos = (_db.todos || []).filter(t => !t.archived);
+    todayCount = todos.filter(t => !t.date_jalali || _jalaliKey(t.date_jalali) === todayKey).length;
+    doneCnt = todos.filter(t => t.done && t.date_jalali && _jalaliKey(t.date_jalali) === todayKey).length;
+    totalToday = todayCount;
+    progress = totalToday ? Math.round(doneCnt / totalToday * 100) : 0;
+  }
   return `<div class="todo-sticky-add-box" style="position:sticky;top:0;z-index:30;background:transparent;border:none;border-radius:0;padding:0;margin-bottom:14px;box-shadow:none">
     <button class="tp-cta" onclick="openAddTodo()"
       style="width:100%;padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
@@ -3562,6 +3580,8 @@ function _clearTodo135Slot(id) {
 }
 
 function renderTodoList(options = {}) {
+  const _renderT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  window._todoRenderRowCount = 0;
   _todosInit();
   if (_isTeamGuest() && !window._teamTodoPushAsked) {
     window._teamTodoPushAsked = true;
@@ -3665,36 +3685,36 @@ function renderTodoList(options = {}) {
   } catch(e) {}
   const tomorrowKey = tomorrowStr ? _jalaliKey(tomorrowStr) : 0;
 
-  // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز
+  // کارهای اصلی + occurrence/snapshot های تکمیل‌شده امروز — یک‌بار پیمایش
   const _todayKeyForFilter = _jalaliKey(_todayJalaliStr());
-  const _todaySnapshots = _db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && t.archived && _todoIsDoneToday(t, _todayKeyForFilter));
-  const todos = [..._db.todos.filter(t => _todoCanView(t) && _todoIsMineScope(t) && !t.archived), ..._todaySnapshots];
-
-  // کار عقب‌افتاده فقط مربوط به روزهای قبل است.
-  // کارهای امروز حتی اگر ساعتشان رد شده باشد باید در بخش «امروز» بمانند.
-  const _doneToday = (t) => _todoIsDoneToday(t, todayKey);
-
-  const overdueTodos = todos.filter(t => _todoIsOverdue(t, todayKey) && !_doneToday(t))
-    .sort((a,b) => {
-      const dk = _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b));
-      if (dk !== 0) return dk;
-      return (a.time||'').localeCompare(b.time||'');
-    });
-
-  const todayTodos = todos.filter(t => {
+  const _afterKey = tomorrowKey || todayKey;
+  const overdueTodos = [];
+  const todayTodos = [];
+  const tomorrowTodos = [];
+  const futureTodos = [];
+  let completedTodayTotal = 0;
+  let activeCount = 0;
+  const _allTodos = _db.todos || [];
+  for (let i = 0; i < _allTodos.length; i++) {
+    const t = _allTodos[i];
+    if (!_todoCanView(t) || !_todoIsMineScope(t)) continue;
+    if (t.archived && !_todoIsDoneToday(t, _todayKeyForFilter)) continue;
+    const doneToday = _todoIsDoneToday(t, todayKey);
+    if (doneToday) completedTodayTotal++;
+    if (!t.done) activeCount++;
     const scheduled = _todoScheduledDate(t);
     const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
-    return !scheduled || scheduledKey === todayKey;
+    if (_todoIsOverdue(t, todayKey) && !doneToday) overdueTodos.push(t);
+    if (!scheduled || scheduledKey === todayKey) todayTodos.push(t);
+    else if (tomorrowKey && scheduledKey === tomorrowKey) tomorrowTodos.push(t);
+    else if (scheduled && scheduledKey > _afterKey) futureTodos.push(t);
+  }
+  overdueTodos.sort((a,b) => {
+    const dk = _jalaliKey(_todoScheduledDate(a)) - _jalaliKey(_todoScheduledDate(b));
+    if (dk !== 0) return dk;
+    return (a.time||'').localeCompare(b.time||'');
   });
-  const tomorrowTodos  = todos.filter(t => {
-    const scheduled = _todoScheduledDate(t);
-    return scheduled && tomorrowKey && _jalaliKey(scheduled) === tomorrowKey;
-  });
-  const _afterKey = tomorrowKey || todayKey;
-  const futureTodos    = todos.filter(t => {
-    const scheduled = _todoScheduledDate(t);
-    return scheduled && _jalaliKey(scheduled) > _afterKey;
-  }).sort((a,b) => _jalaliKey(_todoScheduledDate(a))-_jalaliKey(_todoScheduledDate(b)));
+  futureTodos.sort((a,b) => _jalaliKey(_todoScheduledDate(a))-_jalaliKey(_todoScheduledDate(b)));
 
   // کارهای repeat عقب‌افتاده: پیش‌نمایش نوبت بعدی فقط اگر بعد از امروز باشد.
   // نوبت امروز همان catch-up است و نباید جداگانه به «فردا» برود.
@@ -3718,19 +3738,40 @@ function renderTodoList(options = {}) {
 
   const pending = todayTodos.filter(t=>!t.done).length;
   const doneCnt = todayTodos.filter(t=>t.done).length;
-  const completedTodayTotal = todos.filter(t => _doneToday(t)).length;
   const progress = todayTodos.length > 0 ? Math.round(doneCnt/todayTodos.length*100) : 0;
-  const activeCount = todos.filter(t => !t.done).length;
   const mainTodayTodos = todayTodos
     .filter(t => +t.main_today_rank > 0)
     .sort((a,b) => (+a.main_today_rank || 99) - (+b.main_today_rank || 99) || _sortByTime(a,b));
   const mainTodayIds = new Set(mainTodayTodos.map(t => t.id));
+  const goalById = new Map();
+  (_db.goals || []).forEach(g => {
+    if (!g || g.id == null) return;
+    goalById.set(g.id, g);
+    goalById.set(String(g.id), g);
+  });
+  const staffById = new Map();
+  (_db.staff || []).forEach(s => {
+    if (!s || s.id == null || (typeof staffIsPersonnel === 'function' && !staffIsPersonnel(s))) return;
+    staffById.set(String(s.id), s);
+  });
+  const isGuestList = typeof _isTeamGuest === 'function' && _isTeamGuest();
+  const employerLabel = isGuestList ? (_todoEmployerLabel() || '') : '';
+  const coarsePointer = typeof _todoIsCoarsePointer === 'function' && _todoIsCoarsePointer();
+  const catMap = {clients:['👥','#f472b6'],routine:['🔄','#34d399'],general:['🌐','#60a5fa'],personal:['🧘','#a78bfa']};
+  const repeatIcons = {none:'',daily:'🔄',every2days:'↩️',weekly:'📅',monthly:'🗓',custom_weekdays:'⚙️'};
 
   const renderTodo = (t) => {
     const isOverdue = _todoIsOverdue(t);
     const priority = t.priority || 'none';
-    const repeatIcon = {none:'',daily:'🔄',every2days:'↩️',weekly:'📅',monthly:'🗓',custom_weekdays:'⚙️'}[t.repeat||'none'];
+    const repeatIcon = repeatIcons[t.repeat||'none'];
     const todoMenuId = `todo-menu-${t.id}`;
+    const assigneeLabel = (() => {
+      const staff = staffById.get(String(t.assignee_id || t.staff_id || ''));
+      if (staff) return _todoStaffName(staff);
+      return t.assignee_email || '';
+    })();
+    const goal = t.goal_id ? (goalById.get(t.goal_id) || goalById.get(String(t.goal_id))) : null;
+    const cat = t.category && catMap[t.category] ? catMap[t.category] : null;
 
     // رنگ‌بندی بر اساس اولویت و وضعیت
     let bgColor, borderColor, titleColor, leftBorder, priorityBadge = '';
@@ -3757,7 +3798,7 @@ function renderTodoList(options = {}) {
       titleColor = 'var(--text)'; leftBorder = 'transparent';
     }
 
-    return `<div data-todo-id="${t.id}" draggable="${_todoIsCoarsePointer() ? 'false' : 'true'}"
+    return `<div data-todo-id="${t.id}" draggable="${coarsePointer ? 'false' : 'true'}"
       class="todo-row todo-row-lite"
       style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
         background:${bgColor};
@@ -3780,26 +3821,18 @@ function renderTodoList(options = {}) {
             ${repeatIcon?`<span style="font-size:10px;opacity:.6"> ${repeatIcon}</span>`:''}
           </span>
           ${priorityBadge}
-          ${(()=>{
-            const catMap = {clients:['👥','#f472b6'],routine:['🔄','#34d399'],general:['🌐','#60a5fa'],personal:['🧘','#a78bfa']};
-            const cat = t.category && catMap[t.category] ? catMap[t.category] : null;
-            return cat ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:' + cat[1] + '22;color:' + cat[1] + ';font-weight:600">' + cat[0] + '</span>' : '';
-          })()}
+          ${cat ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:' + cat[1] + '22;color:' + cat[1] + ';font-weight:600">' + cat[0] + '</span>' : ''}
           ${isOverdue?'<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15);color:var(--red);font-weight:700">⚠️ گذشته</span>':''}
-          ${(()=>{
-            if (!t.goal_id) return '';
-            const g = (_db.goals||[]).find(x=>x.id===t.goal_id);
-            return g ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">' + (g.icon||'🎯') + ' ' + escapeHtml(g.title) + '</span>'
+          ${goal ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">' + (goal.icon||'🎯') + ' ' + escapeHtml(goal.title) + '</span>'
               + (t.goal_action_kind === 'micro'
                 ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(251,191,36,.14);color:var(--amber);font-weight:700">اقدامک</span>'
                 : t.goal_action_kind === 'action'
                   ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.14);color:#60a5fa;font-weight:700">اقدام</span>'
                   : '')
-              : '';
-          })()}
+            : ''}
           ${t.remind_min>0&&!t.done?'<span style="font-size:10px;color:var(--amber)">🔔</span>':''}
-          ${_todoAssigneeLabel(t)?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:700">👤 ${escapeHtml(_todoAssigneeLabel(t))}</span>`:''}
-          ${(typeof _isTeamGuest === 'function' && _isTeamGuest() && _todoEmployerLabel())?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(167,139,250,.14);color:#a78bfa;font-weight:700">🏢 ${escapeHtml(_todoEmployerLabel())}</span>`:''}
+          ${assigneeLabel?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:700">👤 ${escapeHtml(assigneeLabel)}</span>`:''}
+          ${employerLabel?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(167,139,250,.14);color:#a78bfa;font-weight:700">🏢 ${escapeHtml(employerLabel)}</span>`:''}
           ${t.requires_report && t.requires_report !== 'none'?`<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(62,207,142,.10);color:var(--green);font-weight:700">گزارش ${t.requires_report==='required'?'الزامی':'اختیاری'}</span>`:''}
         </div>
         ${t.note?`<div style="font-size:11px;color:var(--text3);line-height:1.4">${escapeHtml(t.note.slice(0,60))}${t.note.length>60?'…':''}</div>`:''}
@@ -3862,15 +3895,16 @@ function renderTodoList(options = {}) {
       : (pending > 0 ? `<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;background:var(--bg2);border-radius:10px;margin-bottom:8px">کارهای ۱-۳-۵ امروز در بخش بالا هستند.</div>` : '');
   }
 
-  // ── فردا (کشویی - بسته) ──
+  // ── فردا (کشویی - بدنه فقط وقتی باز است) ──
   if (tomorrowTodos.length > 0) {
-    const _tomorrowSorted = tomorrowTodos.sort(_sortByTime);
-    html += `<details ${_todoTomorrowExpanded || _todoListShown.tomorrow ? 'open' : ''} ontoggle="_setTodoTomorrowExpanded(this.open)" style="margin-top:12px">
+    const tomorrowOpen = !!( _todoTomorrowExpanded || _todoListShown.tomorrow );
+    const _tomorrowSorted = tomorrowOpen ? tomorrowTodos.sort(_sortByTime) : tomorrowTodos;
+    html += `<details ${tomorrowOpen ? 'open' : ''} ontoggle="_setTodoTomorrowExpanded(this.open)" style="margin-top:12px">
       <summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">
         ${sectionHeader('🌙', 'فردا', tomorrowStr + ' · ' + fa(tomorrowTodos.length) + ' کار', 'var(--accent2)')}
       </summary>
       <div style="margin-top:4px">
-        ${_todoRenderedListHtml(_tomorrowSorted, 'tomorrow', renderTodo)}
+        ${tomorrowOpen ? _todoRenderedListHtml(_tomorrowSorted, 'tomorrow', renderTodo) : ''}
       </div>
     </details>`;
   }
@@ -3902,8 +3936,8 @@ function renderTodoList(options = {}) {
   if (futureTodos.length > 0) {
     const _renderCollapsible = (key, icon, title, subtitle, color, items) => {
       if (!items.length) return '';
-      const itemsHTML = _todoRenderedListHtml(items.sort(_sortByTime), 'future-' + key, renderTodo);
       const isOpen = !!_todoFutureExpanded[key];
+      const itemsHTML = isOpen ? _todoRenderedListHtml(items.sort(_sortByTime), 'future-' + key, renderTodo) : '';
       return '<details ' + (isOpen ? 'open ' : '') + 'ontoggle="_setTodoFutureExpanded(\'' + key + '\', this.open)" style="margin-top:10px">' +
         '<summary style="list-style:none;cursor:pointer;user-select:none;margin-bottom:2px">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px">' +
@@ -3941,7 +3975,7 @@ function renderTodoList(options = {}) {
   }
 
   // ── بدون تاریخ (اگه موجود) ──
-  const noDateTodos = todos.filter(t => !t.date_jalali && !t.done && !t.archived);
+  const noDateTodos = todayTodos.filter(t => !t.date_jalali && !t.done && !t.archived);
   if (noDateTodos.length > 0 && todayTodos.length === 0) {
     // اگه بدون تاریخ هستن و امروز نیستن (نباید پیش بیاد ولی safety)
   }
@@ -3953,57 +3987,73 @@ function renderTodoList(options = {}) {
   setContent(`${_todoCalendarResponsiveCss()}<div class="todo-calendar-shell">${html}</div>`);
   if (!skipMaintenance) _checkTodoReminders();
   _initTodoDragDrop();
+  const _renderMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _renderT0;
+  window._todoListRenderStats = {
+    ms: Math.round(_renderMs * 10) / 10,
+    rows: window._todoRenderRowCount || 0,
+    htmlChars: html.length,
+    skipMaintenance,
+  };
+  try {
+    if (localStorage.getItem('tp_todo_perf') === '1') {
+      console.info('[TeamPulse] renderTodoList', window._todoListRenderStats);
+    }
+  } catch (e) {}
 }
 
 
 function _initTodoDragDrop() {
   if (_todoIsCoarsePointer()) return;
+  const shell = document.querySelector('.todo-calendar-shell');
+  if (!shell) return;
   let dragId = null, dragEl = null;
+  const rowOf = (node) => {
+    const el = node && node.closest ? node.closest('.todo-row[data-todo-id]') : null;
+    if (!el || el.getAttribute('draggable') !== 'true') return null;
+    return el;
+  };
 
-  document.querySelectorAll('[data-todo-id]').forEach(el => {
-    el.addEventListener('dragstart', e => {
-      dragId = +el.dataset.todoId;
-      dragEl = el;
-      el.style.opacity = '.3';
-      e.dataTransfer.effectAllowed = 'move';
-    });
+  shell.addEventListener('dragstart', e => {
+    const el = rowOf(e.target);
+    if (!el) return;
+    dragId = +el.dataset.todoId;
+    dragEl = el;
+    el.style.opacity = '.3';
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  });
 
-    el.addEventListener('dragend', () => {
-      el.style.opacity = '';
-      document.querySelectorAll('.todo-drop-indicator').forEach(d => d.remove());
-      dragEl = null; dragId = null;
-    });
+  shell.addEventListener('dragend', () => {
+    if (dragEl) dragEl.style.opacity = '';
+    document.querySelectorAll('.todo-drop-indicator').forEach(d => d.remove());
+    dragEl = null; dragId = null;
+  });
 
-    el.addEventListener('dragover', e => {
-      e.preventDefault();
-      if (!dragEl || el === dragEl) return;
-      e.dataTransfer.dropEffect = 'move';
-      // نشانگر جایگاه
-      document.querySelectorAll('.todo-drop-indicator').forEach(d => d.remove());
-      const indicator = document.createElement('div');
-      indicator.className = 'todo-drop-indicator';
-      indicator.style.cssText = 'height:2px;background:var(--accent);border-radius:2px;margin:2px 0;transition:none';
-      el.parentNode.insertBefore(indicator, el);
-    });
+  shell.addEventListener('dragover', e => {
+    const el = rowOf(e.target);
+    if (!dragEl || !el || el === dragEl) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.todo-drop-indicator').forEach(d => d.remove());
+    const indicator = document.createElement('div');
+    indicator.className = 'todo-drop-indicator';
+    indicator.style.cssText = 'height:2px;background:var(--accent);border-radius:2px;margin:2px 0;transition:none';
+    el.parentNode.insertBefore(indicator, el);
+  });
 
-    el.addEventListener('drop', e => {
-      e.preventDefault();
-      if (!dragId || +el.dataset.todoId === dragId) return;
-      const targetId = +el.dataset.todoId;
-
-      // جابجایی در _db.todos
-      const todos = _db.todos;
-      const fromIdx = todos.findIndex(t => t.id === dragId);
-      const toIdx   = todos.findIndex(t => t.id === targetId);
-      if (fromIdx < 0 || toIdx < 0) return;
-
-      const [moved] = todos.splice(fromIdx, 1);
-      const newToIdx = todos.findIndex(t => t.id === targetId);
-      todos.splice(newToIdx, 0, moved);
-
-      _save(false);
-      renderTodoList();
-    });
+  shell.addEventListener('drop', e => {
+    const el = rowOf(e.target);
+    e.preventDefault();
+    if (!dragId || !el || +el.dataset.todoId === dragId) return;
+    const targetId = +el.dataset.todoId;
+    const todos = _db.todos;
+    const fromIdx = todos.findIndex(t => t.id === dragId);
+    const toIdx = todos.findIndex(t => t.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = todos.splice(fromIdx, 1);
+    const newToIdx = todos.findIndex(t => t.id === targetId);
+    todos.splice(newToIdx, 0, moved);
+    _save(false);
+    renderTodoList();
   });
 }
 
