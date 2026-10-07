@@ -166,7 +166,8 @@ test('pending server sync does not refetch the full document on every poll or re
   assert.match(appSource, /\(res\.status === 409 && responseData\?\.error === 'sync_conflict'\)/);
   assert.match(appSource, /responseData\?\.error === 'destructive_overwrite_blocked'/);
   assert.match(appSource, /res\.status !== 429 && res\.status !== 409/);
-  assert.match(appSource, /if \(!window\._serverDataEtag\) \{/);
+  assert.match(appSource, /function _refreshServerDataEtag\(/);
+  assert.match(appSource, /await _refreshServerDataEtag\(accId\)/);
   assert.match(appSource, /if \(window\._serverSyncInFlight && !teamSession\) await window\._serverSyncInFlight\.catch/);
 });
 
