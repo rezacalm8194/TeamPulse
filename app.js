@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp347';
+const TP_ASSET_V = 'tp350';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -17608,6 +17608,67 @@ let _sbUser = null;
 const TP_AUTH_CREDENTIALS_KEY = 'tp_auth_credentials_v1';
 const TP_SESSION_TTL_SECONDS = 10 * 365 * 24 * 3600;
 
+function _jwtExpSeconds(token) {
+  try {
+    const part = String(token || '').split('.')[1];
+    if (!part) return 0;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '==='.slice((b64.length + 3) % 4);
+    const json = JSON.parse(atob(padded));
+    return Number(json.exp) || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function _authTokenUsable(token, skewSeconds = 20) {
+  const exp = _jwtExpSeconds(token);
+  return !!(token && exp && exp > Math.floor(Date.now() / 1000) + skewSeconds);
+}
+
+function _tpIsPublicAuthPath(path) {
+  return /^\/api\/auth\/(login|register)(?:\?|$)/.test(path);
+}
+
+function _tpUnauthorizedResponse() {
+  return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function _tpStopServerLoops() {
+  clearTimeout(window._pollInterval);
+  clearInterval(window._pollInterval);
+  clearInterval(window._syncInterval);
+  clearTimeout(window._resumeServerSyncTimer);
+}
+
+async function _tpHandleUnauthorized() {
+  if (window._tpHandlingUnauthorized) return window._tpHandlingUnauthorized;
+  const run = (async () => {
+    window._tpAuthInvalid = true;
+    _tpStopServerLoops();
+    const ok = await _authTrySavedCredentialLogin();
+    if (ok) {
+      window._tpAuthInvalid = false;
+      if (!window._initialServerLoadPending && typeof _startServerSyncLoops === 'function') {
+        _startServerSyncLoops();
+      }
+      return true;
+    }
+    _sbSession = null;
+    _sbUser = null;
+    try { localStorage.removeItem('tp_session'); } catch (e) {}
+    try { sessionStorage.removeItem('tp_session'); } catch (e) {}
+    if (typeof _showAuthScreen === 'function') _showAuthScreen('login');
+    return false;
+  })();
+  window._tpHandlingUnauthorized = run;
+  try { return await run; }
+  finally { if (window._tpHandlingUnauthorized === run) window._tpHandlingUnauthorized = null; }
+}
+
 function _authSaveCredentials(email, password) {
   if (!email || !password) return;
   try {
@@ -17640,6 +17701,18 @@ async function _authTrySavedCredentialLogin() {
   }
 }
 
+async function _authEnsureLiveSession(saved) {
+  // Never probe /me or /data with a stored JWT: Chrome logs every 401, and a
+  // locally-unexpired token can still be revoked or version-mismatched.
+  if (await _authTrySavedCredentialLogin()) return true;
+  if (!saved?.token || !_authTokenUsable(saved.token)) return false;
+  _sbSession = { token: saved.token };
+  _sbUser = saved.user;
+  let live = null;
+  try { live = await _auth.refreshSession(); } catch (e) {}
+  return !!(live && !live.offline);
+}
+
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
 async function _apiFetch(path, opts = {}) {
   const url = _tpApiOrigin() + path;
@@ -17648,10 +17721,14 @@ async function _apiFetch(path, opts = {}) {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(opts.headers || {}),
   };
-  if (_sbSession?.token) {
+  if (_authTokenUsable(_sbSession?.token)) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
   const method = String(opts.method || 'GET').toUpperCase();
+  if (!_tpIsPublicAuthPath(path) && (window._tpAuthInvalid || (_sbSession?.token && !_authTokenUsable(_sbSession.token)))) {
+    void _tpHandleUnauthorized();
+    return _tpUnauthorizedResponse();
+  }
   // Browser fetch responses have a one-shot body. Share the network operation,
   // but give every coalesced GET caller its own readable clone.
   const requestKey = method === 'GET' ? method + ' ' + url : '';
@@ -17669,12 +17746,12 @@ async function _apiFetch(path, opts = {}) {
   }
   const run = async () => {
   const isStatusGet = method === 'GET' && (path.includes('/status?') || path.endsWith('/status'));
-  const attempts = isStatusGet ? 1 : (method === 'GET' || /^\/api\/auth\/(login|register|me)$/.test(path) ? 2 : 1);
+  const attempts = isStatusGet ? 1 : (method === 'GET' || /^\/api\/auth\/(login|register)$/.test(path) ? 2 : 1);
   // Bound every request: without a timeout, one hung POST on flaky mobile
   // data stalls the serialized todo chain behind it indefinitely, so later
   // ticks never reach the other device. Abort feeds the normal retry paths.
   const timeoutMs = opts.keepalive ? 0 : (Number(opts.timeoutMs || 0) || (method === 'GET' ? 15000 : 30000));
-  const { timeoutMs: _ignoredTimeout, signal: externalSignal, ...fetchOpts } = opts;
+  const { timeoutMs: _ignoredTimeout, signal: externalSignal, skipAuthRecover, ...fetchOpts } = opts;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const ctrl = timeoutMs > 0 ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : 0;
@@ -17687,7 +17764,12 @@ async function _apiFetch(path, opts = {}) {
           externalSignal.addEventListener('abort', onExternalAbort, { once: true });
         }
       }
-      return await fetch(url, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+      const response = await fetch(url, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+      if (response.status === 401) {
+        if (!skipAuthRecover && !_tpIsPublicAuthPath(path)) void _tpHandleUnauthorized();
+        return response;
+      }
+      return response;
     } catch (error) {
       const publicUrl = _PUBLIC_API_ORIGIN + path;
       if (url !== publicUrl) {
@@ -17850,9 +17932,10 @@ async function _readApiJson(res) {
 }
 
 function _getApiAuthToken() {
-  if (_sbSession?.token) return _sbSession.token;
+  if (_authTokenUsable(_sbSession?.token)) return _sbSession.token;
   const saved = (typeof _authLoadSession === 'function') ? _authLoadSession() : null;
-  return saved?.token || saved?.access_token || null;
+  if (_authTokenUsable(saved?.token)) return saved.token;
+  return _authTokenUsable(saved?.access_token) ? saved.access_token : null;
 }
 
 const _auth = {
@@ -17904,10 +17987,10 @@ const _auth = {
 
   async refreshSession() {
     const saved = _authLoadSession();
-    if (!saved?.token) return null;
+    if (!saved?.token || !_authTokenUsable(saved.token)) return null;
     // بررسی توکن از سرور
     try {
-      const res = await _apiFetch('/api/auth/me');
+      const res = await _apiFetch('/api/auth/me', { skipAuthRecover: true });
       if (!res.ok) return null;
       const user = await res.json();
       _sbUser = user;
@@ -17946,7 +18029,7 @@ function _authLoadSession() {
     const parsed = s ? JSON.parse(s) : null;
     if (!parsed) return null;
     const expiresAt = Number(parsed.expires_at || 0);
-    if (expiresAt && expiresAt <= Math.floor(Date.now() / 1000)) {
+    if ((expiresAt && expiresAt <= Math.floor(Date.now() / 1000)) || !_authTokenUsable(parsed.token || parsed.access_token)) {
       try { localStorage.removeItem('tp_session'); } catch(e) {}
       try { sessionStorage.removeItem('tp_session'); } catch(e) {}
       return null;
@@ -21829,35 +21912,21 @@ async function _initAuth() {
     localStorage.removeItem('tp_impersonating_user');
   }
 
-  if (actionLogin) {
-    // از لندینگ اومده با دکمه ورود — session داره، مستقیم load
-    _sbSession = { token: saved.token };
-    _sbUser = saved.user;
+  if (actionLogin || saved.token) {
+    const ok = await _authEnsureLiveSession(saved);
+    if (!ok) {
+      _sbSession = null;
+      _sbUser = null;
+      try { localStorage.removeItem('tp_session'); } catch(e) {}
+      try { sessionStorage.removeItem('tp_session'); } catch(e) {}
+      document.getElementById('app').style.display = '';
+      const bn = document.querySelector('.bottom-nav');
+      if (bn) bn.style.display = '';
+      _showAuthScreen(actionRegister ? 'register' : 'login');
+      return false;
+    }
     window._activeDBKey = _teamActiveDBKey();
     await _authOnSuccess();
-    return true;
-  }
-
-  // session داره — مستقیم load کن
-  if (saved.token) {
-    _sbSession = { token: saved.token };
-    _sbUser = saved.user;
-    await _authOnSuccess();
-    // verify token در پس‌زمینه
-    _auth.refreshSession().then(r => {
-      if (!r) {
-        _authTrySavedCredentialLogin().then(async ok => {
-          if (ok) {
-            await _authOnSuccess();
-            return;
-          }
-          _sbSession = null; _sbUser = null;
-          localStorage.removeItem('tp_session');
-          try { sessionStorage.removeItem('tp_session'); } catch(e) {}
-          _showAuthScreen('login');
-        });
-      }
-    }).catch(() => {});
     return true;
   }
 
@@ -25748,7 +25817,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v347';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v350';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
