@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp346';
+const TP_ASSET_V = 'tp347';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -17668,7 +17668,8 @@ async function _apiFetch(path, opts = {}) {
     return shared.clone();
   }
   const run = async () => {
-  const attempts = method === 'GET' || /^\/api\/auth\/(login|register|me)$/.test(path) ? 2 : 1;
+  const isStatusGet = method === 'GET' && (path.includes('/status?') || path.endsWith('/status'));
+  const attempts = isStatusGet ? 1 : (method === 'GET' || /^\/api\/auth\/(login|register|me)$/.test(path) ? 2 : 1);
   // Bound every request: without a timeout, one hung POST on flaky mobile
   // data stalls the serialized todo chain behind it indefinitely, so later
   // ticks never reach the other device. Abort feeds the normal retry paths.
@@ -20440,7 +20441,11 @@ async function _pollServerStatus() {
   if (!accId) return false;
   try {
     const res = await _apiFetch('/api/data/' + accId + '/status' + _workspaceQuery());
-    if (!res.ok) return false;
+    if (!res.ok) {
+      window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 1);
+      return false;
+    }
+    window._serverPollFailStreak = 0;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const status = await res.json();
@@ -20546,6 +20551,7 @@ async function _pollServerStatus() {
     }
     return !!(laggingOnPage.length || todoOnPage || liveSmallChanged);
   } catch(e) {
+    window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 1);
     console.warn('[TeamPulse] status poll skipped:', e.message);
     return false;
   }
@@ -20654,6 +20660,8 @@ function _bindAppActivityTracking() {
 }
 
 function _nextServerPollDelay() {
+  const failStreak = Number(window._serverPollFailStreak || 0);
+  if (failStreak > 0) return Math.min(30 * 1000, 4000 * Math.pow(2, failStreak - 1));
   if (!_appLooksInUse()) return 30 * 1000;
   const idleFor = Date.now() - (window._lastAppActivityAt || Date.now());
   if (idleFor > 5 * 60 * 1000) return 45 * 1000;
@@ -25740,7 +25748,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v346';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v347';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
