@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp350';
+const TP_ASSET_V = 'tp351';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -17644,6 +17644,14 @@ function _tpStopServerLoops() {
   clearTimeout(window._resumeServerSyncTimer);
 }
 
+function _tpBrowserOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function _tpMarkNetworkFailure() {
+  window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 2);
+}
+
 async function _tpHandleUnauthorized() {
   if (window._tpHandlingUnauthorized) return window._tpHandlingUnauthorized;
   const run = (async () => {
@@ -17725,6 +17733,16 @@ async function _apiFetch(path, opts = {}) {
     headers['Authorization'] = 'Bearer ' + _sbSession.token;
   }
   const method = String(opts.method || 'GET').toUpperCase();
+  if (_tpBrowserOffline()) {
+    _tpMarkNetworkFailure();
+    return new Response(JSON.stringify({
+      error: 'network_unavailable',
+      message: 'ارتباط با سرور برقرار نشد. اینترنت را بررسی کنید و دوباره تلاش کنید.'
+    }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   if (!_tpIsPublicAuthPath(path) && (window._tpAuthInvalid || (_sbSession?.token && !_authTokenUsable(_sbSession.token)))) {
     void _tpHandleUnauthorized();
     return _tpUnauthorizedResponse();
@@ -17771,8 +17789,10 @@ async function _apiFetch(path, opts = {}) {
       }
       return response;
     } catch (error) {
+      _tpMarkNetworkFailure();
+      const isNetwork = error?.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed|network/i.test(String(error?.message || ''));
       const publicUrl = _PUBLIC_API_ORIGIN + path;
-      if (url !== publicUrl) {
+      if (!isNetwork && url !== publicUrl) {
         try {
           return await fetch(publicUrl, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
         } catch (fallbackError) {
@@ -20519,6 +20539,10 @@ async function _refreshLiveSmallPartsFromServer(keys) {
 async function _pollServerStatus() {
   if (window._tpHydratingFromServer || window._tpLoadFromServerInFlight || window._resumeServerSyncInFlight) return false;
   if (!_sbUser || !_sbSession?.token) return false;
+  if (_tpBrowserOffline()) {
+    _tpMarkNetworkFailure();
+    return false;
+  }
   const teamSession = _teamAccessSession();
   const accId = teamSession?.ownerUserId || _sbUser.id;
   if (!accId) return false;
@@ -20739,6 +20763,11 @@ function _bindAppActivityTracking() {
       window._lastAppActivityAt = Date.now();
       _scheduleServerResumeSync(0);
     }
+  });
+  window.addEventListener('offline', () => { _tpMarkNetworkFailure(); });
+  window.addEventListener('online', () => {
+    window._serverPollFailStreak = 0;
+    _scheduleServerResumeSync(800);
   });
 }
 
@@ -25817,7 +25846,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v350';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v351';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -22,3 +22,14 @@ test('boot refreshes the JWT before workspace GETs so Chrome does not log 401 st
   assert.doesNotMatch(ensure, /_authOnSuccess/);
   assert.match(app, /_apiFetch\('\/api\/auth\/me',\s*\{\s*skipAuthRecover:\s*true/);
 });
+
+test('status polling does not fetch while the browser reports offline', () => {
+  assert.match(app, /function _tpBrowserOffline\(/);
+  assert.match(app, /navigator\.onLine === false/);
+  assert.match(app, /window\.addEventListener\('offline'/);
+  const poll = app.slice(app.indexOf('async function _pollServerStatus()'), app.indexOf('function _refreshUiAfterServerLoad'));
+  assert.match(poll, /if \(_tpBrowserOffline\(\)\)/);
+  const fetchFn = app.slice(app.indexOf('async function _apiFetch('), app.indexOf('async function _compressedJsonRequestBody'));
+  assert.match(fetchFn, /if \(_tpBrowserOffline\(\)\)/);
+  assert.doesNotMatch(fetchFn, /if \(!isNetwork && url !== publicUrl\)[\s\S]{0,40}if \(!isNetwork && url !== publicUrl\)/);
+});
