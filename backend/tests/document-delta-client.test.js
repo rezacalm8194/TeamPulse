@@ -366,6 +366,18 @@ test('server-backed todo id collisions adopt the server copy instead of parking 
   assert.match(appSource, /adopt the server copy/);
 });
 
+test('impersonation treats a partial account document as partial and refetches students', () => {
+  assert.match(appSource, /function _resetClientSyncSessionForImpersonation\(/);
+  assert.match(appSource, /function _applyImpersonatedServerPayload\(/);
+  assert.match(appSource, /function _loadImpersonatedAccountFromServer\(/);
+  assert.match(appSource, /if \(payload\.partial\) \{\s*_rememberServerParts\(payload\);\s*_db = _overlayPartialServerData\(base, payload\);/);
+  assert.match(appSource, /window\._avoidFullDocumentSync = true;/);
+  assert.match(appSource, /if \(!window\._tpSessionFetchedParts\?\.has\(collection\)\) reset = true;/);
+  assert.match(appSource, /await _ensureBusinessPartLoaded\('students'\)/);
+  assert.match(appSource, /A missing probe is not proof of contamination/);
+  assert.doesNotMatch(appSource, /_db = json\.data;\s*_migrate\(_db\);\s*_cacheImpersonatedData\(targetKey, _db\);/);
+});
+
 test('goal vision photos survive hydrate instead of being replaced by a photo-less server row', () => {
   const vm = require('node:vm');
   assert.match(appSource, /'goals','goal_achievements','habits','habit_logs'/);

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp351';
+const TP_ASSET_V = 'tp352';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -5473,6 +5473,7 @@ function _mergeLocalBusinessCollections(localBeforeLoad, collections = []) {
 async function _ensureBusinessPartLoaded(collection, { reset = false, search = '' } = {}) {
   const paging = _businessPagingState(collection);
   const normalizedSearch = collection === 'students' ? String(search || '').trim() : '';
+  if (!window._tpSessionFetchedParts?.has(collection)) reset = true;
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
   if (!window._tpHydratingFromServer && !paging.loading && currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
@@ -18124,10 +18125,9 @@ function _hasAdminCopiesInTarget(data, probe) {
 
 function _removeAdminCopiesFromTargetData(data, probe) {
   if (!probe?.collections) {
-    const removed = _ISOLATION_COLLECTIONS.reduce((sum, key) => sum + (Array.isArray(data?.[key]) ? data[key].length : 0), 0);
-    const fresh = _freshData();
-    fresh._lastSaved = Date.now();
-    return { data: fresh, removed };
+    // A missing probe is not proof of contamination. Wiping here used to
+    // erase a customer's real rows the next time an admin opened the account.
+    return { data, removed: 0 };
   }
   const cleaned = _cloneData(data);
   let removed = 0;
@@ -18448,6 +18448,84 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
   return merged;
 }
 
+function _resetClientSyncSessionForImpersonation() {
+  window._tpBusinessPaging = {};
+  window._tpTodoPaging = {
+    active: { cursor: null, done: false, loading: null },
+    archived: { cursor: null, done: false, loading: null },
+    stats: null,
+  };
+  window._tpLoadedParts = null;
+  window._tpAvailableParts = null;
+  window._tpSessionFetchedParts = new Set();
+  window._lastServerSyncSavedAt = 0;
+  window._lastServerSyncFingerprint = null;
+  window._serverDataEtag = null;
+  window._serverHydratedEtag = null;
+  window._serverSyncHashCache = null;
+  window._forceNextSync = false;
+  window._avoidFullDocumentSync = true;
+  window._remoteServerDocumentChanged = false;
+  try { localStorage.removeItem(_serverSyncBaselineKey()); } catch (e) {}
+}
+
+function _applyImpersonatedServerPayload(payload, { adminDBKey, targetKey } = {}) {
+  const raw = payload?.data;
+  if (!raw || typeof raw !== 'object' || !Object.keys(raw).length) return { loaded: false, cleanupRemoved: 0 };
+  const looksAdmin = _looksLikeAdminDataDuringImpersonation(raw, adminDBKey);
+  const base = _freshData();
+  _migrate(base);
+  if (payload.partial) {
+    _rememberServerParts(payload);
+    _db = _overlayPartialServerData(base, payload);
+  } else {
+    _db = raw;
+    window._tpLoadedParts = null;
+    window._tpAvailableParts = null;
+  }
+  _migrate(_db);
+  if (payload.etag) {
+    window._serverDataEtag = payload.etag;
+    if (typeof _markServerDocumentHydrated === 'function') _markServerDocumentHydrated(payload.etag);
+  }
+  _writeServerSyncBaseline(_db, payload.etag || null);
+  let cleanupRemoved = 0;
+  if (looksAdmin) {
+    const cleanup = _removeAdminCopiesFromTargetData(_db, window._impersonating?.adminIsolationProbe);
+    console.warn('[Impersonate] removed copied admin records from target account:', cleanup.removed);
+    _db = cleanup.data;
+    _migrate(_db);
+    cleanupRemoved = cleanup.removed;
+  }
+  _cacheImpersonatedData(targetKey, _db);
+  window._impersonateServerBlocked = false;
+  window._avoidFullDocumentSync = true;
+  return { loaded: true, cleanupRemoved };
+}
+
+async function _loadImpersonatedAccountFromServer(userId, { adminDBKey, targetKey } = {}) {
+  _resetClientSyncSessionForImpersonation();
+  _db = _freshData();
+  _migrate(_db);
+  try {
+    const dataRes = await _apiFetch('/api/data/' + userId);
+    if (dataRes.ok) {
+      const ct = dataRes.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const json = await dataRes.json();
+        const applied = _applyImpersonatedServerPayload(json, { adminDBKey, targetKey });
+        if (applied.loaded) {
+          try { await _ensureBusinessPartLoaded('students'); } catch (e) {}
+          return applied;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Impersonate] fetch error:', e.message);
+  }
+  return { loaded: false, cleanupRemoved: 0 };
+}
+
 function _useLocalImpersonatedFallback(userName, targetKey) {
   _db = _freshData();
   _db.meta = { ..._db.meta, appTitle: userName || 'TeamPulse' };
@@ -18455,6 +18533,7 @@ function _useLocalImpersonatedFallback(userName, targetKey) {
   _migrate(_db);
   _purgeLegacyImpersonationCaches();
   window._impersonateServerBlocked = true;
+  window._avoidFullDocumentSync = true;
 }
 
 function _cacheImpersonatedData(targetKey, data) {
@@ -21879,36 +21958,12 @@ async function _initAuth() {
         // لود مجدد داده تازه از سرور برای کاربر هدف (نه از کش قدیمی)
         window._impersonateLoadPending = true;
         allStudents = [];
-        _db = _freshData();
-        _migrate(_db);
-        let loadedImpersonatedData = false;
-        try {
-          const dataRes = await _apiFetch('/api/data/' + impersonatingState.userId);
-          if (dataRes.ok) {
-            const ct = dataRes.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
-              const json = await dataRes.json();
-              if (json.data && Object.keys(json.data).length > 0) {
-                if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-                  const cleanup = _removeAdminCopiesFromTargetData(json.data, window._impersonating?.adminIsolationProbe);
-                  console.warn('[Impersonate restore] removed copied admin records from target account:', cleanup.removed);
-                  _db = cleanup.data;
-                  _migrate(_db);
-                  _cacheImpersonatedData(targetKey, _db);
-                  window._impersonateServerBlocked = false;
-                  window._impersonateCleanupPending = cleanup.removed;
-                  loadedImpersonatedData = true;
-                } else {
-                  _db = json.data;
-                  _migrate(_db);
-                  _cacheImpersonatedData(targetKey, _db);
-                  window._impersonateServerBlocked = false;
-                  loadedImpersonatedData = true;
-                }
-              }
-            }
-          }
-        } catch(e) { console.warn('[Impersonate restore] data fetch error:', e.message); }
+        const loadedImpersonation = await _loadImpersonatedAccountFromServer(impersonatingState.userId, {
+          adminDBKey,
+          targetKey,
+        });
+        const loadedImpersonatedData = loadedImpersonation.loaded;
+        if (loadedImpersonation.cleanupRemoved) window._impersonateCleanupPending = loadedImpersonation.cleanupRemoved;
         if (!loadedImpersonatedData) {
           _db = _freshData();
           _migrate(_db);
@@ -24835,39 +24890,12 @@ async function _adminImpersonate(userId, userName) {
     clearInterval(window._pollInterval);
     clearTimeout(window._serverSyncTimer);
 
-    // فوری _db رو خالی کن
-    _db = _freshData();
-    _migrate(_db);
-
-    // لود داده کاربر از سرور
-    let loaded = false;
-    try {
-      const dataRes = await _apiFetch('/api/data/' + userId);
-      if (dataRes.ok) {
-        const ct = dataRes.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const json = await dataRes.json();
-          if (json.data && Object.keys(json.data).length > 0) {
-            if (_looksLikeAdminDataDuringImpersonation(json.data, adminDBKey)) {
-              const cleanup = _removeAdminCopiesFromTargetData(json.data, window._impersonating?.adminIsolationProbe);
-              console.warn('[Impersonate] removed copied admin records from target account:', cleanup.removed);
-              _db = cleanup.data;
-              _migrate(_db);
-              _cacheImpersonatedData(targetKey, _db);
-              window._impersonateServerBlocked = false;
-              window._impersonateCleanupPending = cleanup.removed;
-              loaded = true;
-            } else {
-              _db = json.data;
-              _migrate(_db);
-              _cacheImpersonatedData(targetKey, _db);
-              window._impersonateServerBlocked = false;
-              loaded = true;
-            }
-          }
-        }
-      }
-    } catch(e) { console.warn('[Impersonate] fetch error:', e.message); }
+    const loadedImpersonation = await _loadImpersonatedAccountFromServer(userId, {
+      adminDBKey,
+      targetKey,
+    });
+    const loaded = loadedImpersonation.loaded;
+    if (loadedImpersonation.cleanupRemoved) window._impersonateCleanupPending = loadedImpersonation.cleanupRemoved;
 
     // اگه سرور داده نداد، DB خالی (نه داده ادمین)
     if (!loaded) {
@@ -25846,7 +25874,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v351';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v352';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
