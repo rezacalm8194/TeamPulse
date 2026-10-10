@@ -2753,6 +2753,7 @@ const INSTR_DEFAULT_CATEGORIES = [
   { key:'public', icon:'🌍', title:'عمومی', folders:[] },
 ];
 function _instrNextLocalId() {
+  if (typeof _nextId === 'function') return _nextId('instructions');
   if (!_db._nextId) _db._nextId = {};
   if (!_db._nextId.instructions) {
     _db._nextId.instructions = ((_db.instructions||[]).reduce((m,n)=>Math.max(m,+n.id||0),0) || 0) + 1;
@@ -2855,11 +2856,7 @@ function _restoreInstrNavFromHash() {
   const parsed = _parseAppHash();
   if (parsed.page !== 'instructions') return;
   const targetId = parsed.ids.length ? parsed.ids[parsed.ids.length - 1] : null;
-  if (!targetId) {
-    _instrParentId = null;
-    _instrPath = [];
-    return;
-  }
+  if (!targetId) return;
   const node = (_db.instructions || []).find(n => +n.id === +targetId);
   if (!node) return;
   const path = [];
