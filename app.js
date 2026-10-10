@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp352';
+const TP_ASSET_V = 'tp353';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2232,7 +2232,16 @@ if (!window._manualRestoreStorageListenerReady) {
   });
 }
 
-function _nextId(t) { const id=_db._nextId[t]||1; _db._nextId[t]=id+1; return id; }
+function _nextId(t) {
+  let id = _db._nextId[t] || 1;
+  if (t === 'instructions') {
+    const tombs = _db._deletedItems?.instructions;
+    const used = new Set((_db.instructions || []).map(x => String(x?.id)));
+    while ((tombs && Object.prototype.hasOwnProperty.call(tombs, String(id))) || used.has(String(id))) id += 1;
+  }
+  _db._nextId[t] = id + 1;
+  return id;
+}
 
 function _P(v) { return Promise.resolve(v); }
 
@@ -3761,6 +3770,10 @@ window.api = {
       };
       if (!_db.instructions) _db.instructions = [];
       _db.instructions.push(item);
+      if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('instructions', item, 'upsert');
+      if (window._tpLoadedParts) window._tpLoadedParts.add('instructions');
+      window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+      window._tpSessionFetchedParts.add('instructions');
       // Knowledge-center changes are commonly created on one device and opened
       // immediately on another. Queue these writes without the normal debounce
       // so the server, rather than this device's cache, becomes authoritative as
@@ -3787,6 +3800,7 @@ window.api = {
         if (p.author !== undefined) item.author = p.author;
         if (p.stickers !== undefined) item.stickers = p.stickers;
         item.updated_at = new Date().toISOString();
+        if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('instructions', item, 'upsert');
       }
       _save(); return _P({ok:true});
     },
@@ -3814,6 +3828,9 @@ window.api = {
         const now = new Date().toISOString();
         toDelete.forEach(id => { if (id != null && id !== '') col[String(id)] = col[String(id)] || now; });
       } catch (e) {}
+      toDelete.forEach(delId => {
+        if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('instructions', { id: delId }, 'delete');
+      });
       _forceNextServerSync();
       _save(); return _P({ok:true});
     },
@@ -18122,6 +18139,11 @@ function _hasAdminCopiesInTarget(data, probe) {
   const broadMatch = stats.shared >= 8 && stats.shared >= Math.min(stats.target, stats.admin) * 0.5;
   return strongStudentMatch || strongInstructionMatch || broadMatch;
 }
+function _hasAdminCrmCopiesInTarget(data, probe) {
+  const stats = _adminCopyStats(data, probe);
+  const strong = col => col.matched >= 3 && col.matched >= Math.min(col.target, col.admin) * 0.5;
+  return ['students', 'packages', 'payments', 'sessions'].some(key => strong(stats.byKey[key] || {}));
+}
 
 function _removeAdminCopiesFromTargetData(data, probe) {
   if (!probe?.collections) {
@@ -18148,7 +18170,10 @@ function _looksLikeAdminDataDuringImpersonation(data, adminDBKey) {
     const incomingSignature = _dataSignatureForIsolation(data);
     const expectedAdminSignature = window._impersonating?.adminDataSignature || '';
     if (expectedAdminSignature && incomingSignature === expectedAdminSignature) return true;
-    if (_hasAdminCopiesInTarget(data, window._impersonating?.adminIsolationProbe)) return true;
+    // Matching knowledge folders alone must not freeze sync. That left files
+    // created while viewing a customer account in memory only; they vanished
+    // as soon as the admin left the note.
+    if (_hasAdminCrmCopiesInTarget(data, window._impersonating?.adminIsolationProbe)) return true;
     const adminRaw = localStorage.getItem(adminDBKey);
     if (!adminRaw) return false;
     const adminData = JSON.parse(adminRaw);
@@ -19566,8 +19591,15 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       return null;
     }
     if (window._impersonating && _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey)) {
-      console.warn('[Impersonate] blocked admin-like data sync for target account');
-      return null;
+      const knowledgePatch = _buildServerSyncPatch(_serverSafeData(_db));
+      const knowledgeKeys = Object.keys(knowledgePatch?.collections || {});
+      const onlyKnowledge = !!knowledgePatch && knowledgeKeys.length
+        && knowledgeKeys.every(key => _KNOWLEDGE_SESSION_REFRESH_KEYS.has(key))
+        && !Object.keys(knowledgePatch.scalars || {}).length;
+      if (!onlyKnowledge) {
+        console.warn('[Impersonate] blocked admin-like data sync for target account');
+        return null;
+      }
     }
     if (teamSession && !teamSession.ownerUserId) {
       if (!window._teamMissingOwnerWarned) {
@@ -25874,7 +25906,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v352';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v353';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -366,6 +366,17 @@ test('server-backed todo id collisions adopt the server copy instead of parking 
   assert.match(appSource, /adopt the server copy/);
 });
 
+test('knowledge files created while impersonating still sync and stay in the current folder', () => {
+  assert.match(appSource, /function _hasAdminCrmCopiesInTarget\(/);
+  assert.match(appSource, /Matching knowledge folders alone must not freeze sync/);
+  assert.match(appSource, /_enqueueDurableBusinessDelta\('instructions', item, 'upsert'\)/);
+  assert.match(appSource, /const onlyKnowledge = !!knowledgePatch && knowledgeKeys.length/);
+  assert.match(appSource, /t === 'instructions'/);
+  const extraSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app-extra.js'), 'utf8');
+  assert.match(extraSource, /if \(!targetId\) return;/);
+  assert.doesNotMatch(extraSource, /if \(!targetId\) \{\s*_instrParentId = null;/);
+});
+
 test('impersonation treats a partial account document as partial and refetches students', () => {
   assert.match(appSource, /function _resetClientSyncSessionForImpersonation\(/);
   assert.match(appSource, /function _applyImpersonatedServerPayload\(/);
