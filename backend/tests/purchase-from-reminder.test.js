@@ -23,12 +23,14 @@ function loadEnsure(ctx) {
   vm.runInContext(fn(app, '_serviceMergeKey'), ctx);
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
+  vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
 }
 
 test('reminder menu posts the same item as a sale without opening the purchase form', () => {
   assert.match(finance, /onclick="savePurchaseFromReminder\(\$\{r\.id\}\)"/);
+  assert.match(finance, /onclick="savePurchaseFromSale\(\$\{p\.id\}\)"/);
   assert.doesNotMatch(finance, /openPurchaseFromReminder/);
-  const body = fn(finance, 'savePurchaseFromReminder');
+  const body = fn(finance, '_saveCyclePurchase');
   assert.doesNotMatch(body, /openNewPurchase|openModal/);
   assert.match(body, /packages\.add/);
   assert.match(body, /completePurchase/);
@@ -120,5 +122,74 @@ test('savePurchaseFromReminder registers sale from reminder fields then opens sa
   assert.equal(completed[0].package_id, 91);
   assert.equal(completed[0].repeat_months, 1);
   assert.equal(completed[0].payment_due_date, '1404/08/12');
+  assert.equal(tabs.join(','), 'purchases');
+});
+
+test('savePurchaseFromSale clones a repeating sale for the current cycle', async () => {
+  const added = [];
+  const completed = [];
+  const tabs = [];
+  const ctx = vm.createContext({
+    window: { api: {} },
+    PKG_TYPES: [],
+    allStudents: [{ id: 9, name: 'مریم', lname: 'اصغریانیان' }],
+    currentPage: 'payments',
+    _paymentsTab: 'purchases',
+    showToast() {},
+    formatJalali() { return '1405/07/20'; },
+    todayJalali() { return [1405, 7, 20]; },
+    jalaliKey(s) { return String(s || '').replace(/\D/g, ''); },
+    _nextFuturePaymentReminderDate() { return '1405/08/20'; },
+    _isPaymentReminder() { return true; },
+    _tpPaymentsTab(tab) { tabs.push(tab); },
+    async renderPayments() {},
+    async renderReminders() {},
+  });
+  ctx.window = ctx;
+  vm.runInContext('var PKG_TYPES = []', ctx);
+  ctx.window.api = {
+    packages: {
+      getAll: async () => [{
+        id: 55,
+        student_id: 9,
+        type_id: 8,
+        staff_id: 3,
+        total_amount: 9000000,
+        repeat_months: 1,
+        start_date: '1405/06/20',
+        payment_due_date: '1405/07/20',
+        note: 'استوری نویسی',
+      }],
+      add: async (p) => {
+        added.push(p);
+        return { ok: true, id: 101 };
+      },
+    },
+    reminders: {
+      getAll: async () => [{
+        id: 12,
+        package_id: 55,
+        student_id: 9,
+        due_date_jalali: '1405/07/20',
+        done: false,
+      }],
+      completePurchase: async (p) => {
+        completed.push(p);
+        return { ok: true };
+      },
+    },
+  };
+  loadEnsure(ctx);
+  vm.runInContext(fn(finance, 'savePurchaseFromSale'), ctx);
+  await ctx.savePurchaseFromSale(55);
+  assert.equal(added.length, 1);
+  assert.equal(added[0].student_id, 9);
+  assert.equal(added[0].type_id, 8);
+  assert.equal(added[0].staff_id, 3);
+  assert.equal(added[0].total_amount, 9000000);
+  assert.equal(added[0].date, '1405/07/20');
+  assert.equal(added[0].payment_due_date, '1405/07/20');
+  assert.equal(completed[0].id, 12);
+  assert.equal(completed[0].package_id, 101);
   assert.equal(tabs.join(','), 'purchases');
 });

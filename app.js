@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp361';
+const TP_ASSET_V = 'tp362';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -54,7 +54,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openGeneralPurchaseModal', 'openGeneralPaymentModal',
   'openServiceProductsCatalog', 'saveServiceProductPrice', 'saveServiceProductLabel',
   'saveServiceProductUnit', 'saveServiceProductColor', 'addServiceProductFromCatalog',
-  'openAddReminder', 'savePurchaseFromReminder', 'openNewFamily', 'openStudentTransactions',
+  'openAddReminder', 'savePurchaseFromReminder', 'savePurchaseFromSale', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
 [
