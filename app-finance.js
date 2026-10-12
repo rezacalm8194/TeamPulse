@@ -986,6 +986,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
     ? reminders.filter(r => (r.name + r.lname + r.title + (r.note || '')).toLowerCase().includes(search.toLowerCase()))
     : reminders).filter(r => {
       if (r.done) return true;
+      if (Number(r.repeat_months || 0) > 0) return true;
       const student = allStudents.find(s => String(s.id) === String(r.student_id));
       if (!student) return true;
       const due = jalaliKey(r.due_date_jalali);

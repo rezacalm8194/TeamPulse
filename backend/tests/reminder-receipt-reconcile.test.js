@@ -104,6 +104,7 @@ test('receipt save and reminder list keep settled customers off overdue reminder
   assert.match(appSource, /_enqueueDurableBusinessDelta\('payments', row, 'upsert'\); _reconcileStudentPaymentReminders\(p\.student_id, row\)/);
   assert.match(appSource, /_reconcileStudentPaymentReminders\(pay\.student_id, pay\)/);
   assert.match(appSource, /_reconcileOverdueRemindersForSettledCustomers\(\);/);
+  assert.match(financeSource, /Number\(r\.repeat_months \|\| 0\) > 0\) return true/);
   assert.match(financeSource, /Number\(student\.balance \|\| 0\) <= 0 && due && due <= today/);
 });
 
@@ -117,12 +118,47 @@ test('settled previous-balance receipt consumes overdue package-renewal reminder
   assert.equal(sandbox._db.packages[0].payment_due_date, reminder.due_date_jalali);
 });
 
-test('opening reminders still repairs leftover overdue rows for settled customers', () => {
+test('opening reminders does not skip a recurring renewal just because the customer is settled', () => {
+  sandbox._studentSummaryCache = null;
+  sandbox._studentRelIndex = null;
+  sandbox._studentListSummaryCache = null;
   sandbox._db = shabnamWorkspace();
+  const reminder = sandbox._db.reminders[0];
+  const due = reminder.due_date_jalali;
+  const changed = sandbox._reconcileOverdueRemindersForSettledCustomers();
+  assert.equal(changed, false);
+  assert.equal(reminder.due_date_jalali, due);
+  assert.equal(reminder.done, false);
+});
+
+test('opening reminders still closes leftover one-shot rows for settled customers', () => {
+  sandbox._studentSummaryCache = null;
+  sandbox._studentRelIndex = null;
+  sandbox._studentListSummaryCache = null;
+  sandbox._db = shabnamWorkspace();
+  sandbox._db.reminders[0].repeat_months = 0;
   const reminder = sandbox._db.reminders[0];
   const changed = sandbox._reconcileOverdueRemindersForSettledCustomers();
   assert.equal(changed, true);
-  assert.ok(sandbox._jalaliKey(reminder.due_date_jalali) > sandbox._jalaliKey('۱۴۰۵/۰۶/۱۵'));
+  assert.equal(reminder.done, true);
+});
+
+test('recurring reminder due today stays until purchase even if balance is zero', () => {
+  sandbox._studentSummaryCache = null;
+  sandbox._studentRelIndex = null;
+  sandbox._studentListSummaryCache = null;
+  sandbox._todayJalali = () => [1405, 7, 20];
+  sandbox._db = shabnamWorkspace();
+  sandbox._db.reminders[0].due_date_jalali = '1405/07/20';
+  sandbox._db.reminders[0].repeat_months = 1;
+  sandbox._db.packages[0].payment_due_date = '1405/07/20';
+  sandbox._db.packages[0].repeat_months = 1;
+  const reminder = sandbox._db.reminders[0];
+  const changed = sandbox._reconcileOverdueRemindersForSettledCustomers();
+  assert.equal(changed, false);
+  assert.equal(reminder.due_date_jalali, '1405/07/20');
+  assert.equal(reminder.done, false);
+  sandbox._todayJalali = () => [1405, 6, 15];
 });
 
 test('session followup reminders are not consumed as payment reminders', () => {
