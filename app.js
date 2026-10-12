@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp364';
+const TP_ASSET_V = 'tp365';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2827,6 +2827,39 @@ function _reconcileOverdueRemindersForSettledCustomers() {
 }
 
 // ── Staff summary ───────────────────────────────────────────────────────────
+function _staffReminderSettlement(reminder) {
+  if (!reminder || reminder.done) {
+    return { settled: true, remaining: 0, paidForDueMonth: false, paidThisMonth: false, settledByPayments: false };
+  }
+  const staff = (_db.staff || []).find(s => String(s.id) === String(reminder.staff_id));
+  const expectedAmount = Number(staff ? _staffSummary(staff).expectedMonthly : reminder.amount || 0);
+  const paidAmount = _staffReminderPaidAmount(reminder);
+  const [jy, jm] = _jalaliParse(reminder.due_date_jalali || '');
+  const [tjy, tjm] = _todayJalali();
+  const monthly = _db.staff_monthly || [];
+  const paidForDueMonth = !!(jy && monthly.some(month =>
+    String(month.staff_id) === String(reminder.staff_id) &&
+    Number(month.jy) === Number(jy) &&
+    Number(month.jm) === Number(jm) &&
+    month.paid
+  ));
+  const paidThisMonth = monthly.some(month =>
+    String(month.staff_id) === String(reminder.staff_id) &&
+    Number(month.jy) === Number(tjy) &&
+    Number(month.jm) === Number(tjm) &&
+    month.paid
+  );
+  const settledByPayments = expectedAmount > 0 && paidAmount >= expectedAmount;
+  const settled = !!(paidForDueMonth || paidThisMonth || settledByPayments);
+  return {
+    settled,
+    remaining: settled ? 0 : Math.max(0, expectedAmount - paidAmount),
+    paidForDueMonth,
+    paidThisMonth,
+    settledByPayments
+  };
+}
+
 function _staffReminderPaidAmount(reminder) {
   const reminderDueDate=String(reminder.due_date_jalali||'');
   const reminderDueKey=_jalaliKey(reminderDueDate);
@@ -3311,11 +3344,10 @@ window.api = {
       const staffPaymentAlerts=[...latestStaffReminderByStaff.values()]
         .map(r=>{
           const staff=_db.staff.find(s=>String(s.id)===String(r.staff_id));
-          const [jy,jm]=_jalaliParse(r.due_date_jalali||'');
-          const paidForDueMonth=(_db.staff_monthly||[]).some(m=>String(m.staff_id)===String(r.staff_id)&&Number(m.jy)===Number(jy)&&Number(m.jm)===Number(jm)&&m.paid);
-          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:Number(r.amount||0),date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),paidForDueMonth,staffExists:!!staff};
+          const settlement=_staffReminderSettlement(r);
+          return {staffId:r.staff_id,name:staff?.name||'پرسنل',lname:staff?.lname||'',amount:settlement.remaining,date:r.due_date_jalali||'',dueIn:_daysUntil(r.due_date_jalali||''),settled:settlement.settled,staffExists:!!staff};
         })
-        .filter(item=>item.staffExists&&!item.paidForDueMonth&&item.dueIn!=null&&item.dueIn<=7)
+        .filter(item=>item.staffExists&&!item.settled&&item.amount>0&&item.dueIn!=null&&item.dueIn<=7)
         .sort((a,b)=>a.dueIn-b.dueIn);
       const summaryByStudentId=new Map(summaries.map(s=>[String(s.id),s]));
       const customerDueAlerts=(_db.reminders||[])
@@ -4920,7 +4952,7 @@ const _PAGE_DOCUMENT_PARTS = {
   calendar: ['todos', 'todo_calendar_events', 'sessions', 'habits', 'habit_logs', 'reminders', 'staff_reminders', 'key_events', 'students'],
   goals: ['goals', 'goal_achievements', 'todos', 'habits', 'habit_logs'],
   habits: ['habits', 'habit_logs', 'goals'],
-  dashboard: ['payments', 'packages', 'students', 'sessions', 'reminders', 'expenses', 'financial_accounts', 'financial_budgets', 'fiscal_year_closings', 'wallet_tx'],
+  dashboard: ['payments', 'packages', 'students', 'sessions', 'reminders', 'expenses', 'financial_accounts', 'financial_budgets', 'fiscal_year_closings', 'wallet_tx', 'staff', 'staff_payments', 'staff_reminders', 'staff_adjustments', 'staff_monthly'],
   transactions: ['payments', 'expenses', 'wallet_tx', 'financial_accounts', 'students', 'packages'],
   settings: ['team_members', 'team_invites', 'staff'],
   tutorial: [],
@@ -25914,7 +25946,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v364';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v365';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
