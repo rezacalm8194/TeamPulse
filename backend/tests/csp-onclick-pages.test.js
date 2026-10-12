@@ -155,7 +155,7 @@ test('binder click-dispatches representative controls from every nav page', () =
     staff: ['openStaffDetail(1)', 'window.print()'],
     dashboard: ['openExpenseManager()', 'toggleTopEarners(this)'],
     transactions: ['openFiscalYearClosing()'],
-    reminders: ['openAddReminder()', 'markReminderPaid(1)'],
+    reminders: ['openAddReminder()', 'markReminderPaid(1)', 'savePurchaseFromReminder(1)'],
     settings: ["switchSettingsTab('backup')"],
     tutorial: ['_tpToggleTut(this)'],
     admin_panel: ["_adminChangePlan(['u1'])", '_adminChangePlanSelected()', '_adminToggleStatus(this.dataset.uid,+this.dataset.status)'],
