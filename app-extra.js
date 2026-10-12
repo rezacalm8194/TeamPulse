@@ -7445,16 +7445,27 @@ function _jalaliOrdinal(dateStr) {
   return Math.floor(new Date(gy,gm-1,gd).getTime() / 86400000);
 }
 
+function _habitLogDone(logs, habitId, dateStr) {
+  const canon = _habitCanonDate(dateStr);
+  if (!canon) return false;
+  const key = _jalaliKey(canon);
+  return (logs || []).some(l => String(l.habit_id) === String(habitId) && l.done && (_habitCanonDate(l.date) === canon || _jalaliKey(l.date) === key));
+}
+
 function _habitStreak(habitId) {
   _habitsInit();
   const logs = _db.habit_logs || [];
+  const habit = (_db.habits || []).find(h => String(h.id) === String(habitId));
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const habitLogs = logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date).sort().reverse();
-  if (!habitLogs.length) return 0;
+  const startKey = _jalaliKey(_habitStartDate(habit));
+  const doneKeys = new Set(logs.filter(l => String(l.habit_id) === String(habitId) && l.done).map(l => _jalaliKey(l.date)).filter(Boolean));
+  if (!doneKeys.size) return 0;
   let streak = 0;
   let checkDate = todayStr;
   for (let i = 0; i < 365; i++) {
-    if (habitLogs.includes(checkDate)) { streak++; }
+    const checkKey = _jalaliKey(checkDate);
+    if (startKey && checkKey < startKey) break;
+    if (doneKeys.has(checkKey)) { streak++; }
     else if (i === 0) { /* امروز هنوز نزده */ }
     else break;
     try {
@@ -7472,7 +7483,9 @@ function _habitBestStreak(habitId) {
   _habitsInit();
   const logs = _db.habit_logs || [];
   try {
-    const ordinals = [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => _jalaliOrdinal(l.date)))].sort((a,b)=>a-b);
+    const habit = (_db.habits || []).find(h => String(h.id) === String(habitId));
+    const startOrd = _jalaliOrdinal(_habitStartDate(habit));
+    const ordinals = [...new Set(logs.filter(l => String(l.habit_id) === String(habitId) && l.done).map(l => _jalaliOrdinal(l.date)).filter(o => !startOrd || o >= startOrd))].sort((a,b)=>a-b);
     let best = 0, cur = 0, prev = null;
     for (const o of ordinals) {
       cur = (prev !== null && o === prev + 1) ? cur + 1 : 1;
@@ -7486,15 +7499,30 @@ function _habitBestStreak(habitId) {
 function _habitMonthSuccess(habitId) {
   _habitsInit();
   const logs = _db.habit_logs || [];
+  const habit = (_db.habits || []).find(h => String(h.id) === String(habitId));
   const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
   try {
     const [ty, tm, td] = parseJalali(todayStr);
-    const doneThisMonth = new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))
-      .size ? [...new Set(logs.filter(l => l.habit_id === habitId && l.done).map(l => l.date))].filter(d => {
-        const [jy, jm] = parseJalali(d);
-        return jy === ty && jm === tm;
-      }).length : 0;
-    return td > 0 ? Math.round(doneThisMonth / td * 100) : 0;
+    const startKey = _jalaliKey(_habitStartDate(habit));
+    const todayKey = _jalaliKey(todayStr);
+    const monthStartKey = _jalaliKey(_formatJalali(ty, tm, 1));
+    const fromKey = Math.max(startKey, monthStartKey);
+    const toKey = todayKey;
+    if (!fromKey || toKey < fromKey) return 0;
+    let eligible = 0;
+    for (let d = 1; d <= td; d++) {
+      const key = _jalaliKey(_formatJalali(ty, tm, d));
+      if (key >= fromKey && key <= toKey) eligible++;
+    }
+    if (!eligible) return 0;
+    const doneThisMonth = [...new Set(logs.filter(l => String(l.habit_id) === String(habitId) && l.done).map(l => _habitCanonDate(l.date)).filter(Boolean))]
+      .filter(d => {
+        const p = parseJalali(d);
+        if (!p) return false;
+        const key = _jalaliKey(d);
+        return p[0] === ty && p[1] === tm && key >= fromKey && key <= toKey;
+      }).length;
+    return Math.round(doneThisMonth / eligible * 100);
   } catch(e) { return 0; }
 }
 
@@ -7639,6 +7667,8 @@ function renderHabits() {
     const color = h.color || 'var(--amber)';
     const justToggled = h.id === justToggledId;
 
+    const startDate = _habitStartDate(h);
+    const startKey = _jalaliKey(startDate);
     const last7 = Array.from({length: 7}, (_, i) => {
       try {
         const [jy,jm,jd] = parseJalali(todayStr);
@@ -7646,14 +7676,20 @@ function renderHabits() {
         const d = new Date(gy,gm-1,gd - (6-i));
         const dj = gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
         const dateStr = formatJalali(...dj);
-        const done = logs.some(l => String(l.habit_id) === String(h.id) && l.date === dateStr && l.done);
-        const isToday = dateStr === todayStr;
+        const done = _habitLogDone(logs, h.id, dateStr);
+        const isToday = _jalaliKey(dateStr) === _jalaliKey(todayStr);
+        const canTick = _habitDateAllowed(h, dateStr);
+        const beforeStart = _jalaliKey(dateStr) < startKey;
         const wLabel = weekdayLabels[d.getDay() === 6 ? 0 : d.getDay() + 1] || '';
+        const enDate = _habitEnDate(dateStr);
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">
           <span style="font-size:9px;color:${isToday ? 'var(--amber)' : 'var(--text3)'};font-weight:${isToday?'800':'400'}">${wLabel}</span>
-          <div class="habit-day-dot" title="${dateStr}${isToday?' (امروز)':''}" style="width:13px;height:13px;border-radius:50%;
-            background:${done ? 'var(--green)' : 'var(--bg4)'};
-            box-shadow:${isToday ? '0 0 0 3px rgba(251,191,36,.35)' : 'none'}"></div>
+          <button type="button" class="habit-day-dot" ${canTick ? `data-habit-check="1" data-habit-date="${enDate}"` : 'disabled'}
+            title="${DateService.disp(dateStr)}${isToday?' (امروز)':''}${canTick?' — برای ثبت یا لغو بزن':beforeStart?' — قبل از تاریخ شروع':''}"
+            style="width:22px;height:22px;border-radius:50%;padding:0;cursor:${canTick?'pointer':'default'};
+            background:${done ? 'var(--green)' : 'var(--bg4)'};color:white;font-size:11px;font-weight:800;
+            border:${isToday ? '2px solid var(--amber)' : '2px solid transparent'};
+            opacity:${beforeStart ? 0.28 : 1};font-family:var(--font)">${done ? '✓' : ''}</button>
         </div>`;
       } catch(e) { return '<div style="flex:1"></div>'; }
     }).join('');
@@ -7714,6 +7750,7 @@ function renderHabits() {
       <!-- ردیف دوم: زمان، آخرین انجام، هدف مرتبط -->
       <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 38px">
         ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
+        ${startDate ? `<span>📅 شروع: ${DateService.disp(startDate)}</span>` : ''}
         ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
         ${linkedGoal ? `<span data-habit-skip="1" onclick="openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
       </div>
@@ -7739,7 +7776,8 @@ function renderHabits() {
         </div>
       </div>
 
-      <div style="display:flex;gap:4px;margin-bottom:10px">${last7}</div>
+      <div style="display:flex;gap:4px;margin-bottom:6px">${last7}</div>
+      <div style="font-size:10px;color:var(--text3);margin:0 0 10px 38px">از تاریخ شروع تا امروز را بزن تا انجام عادت ثبت شود</div>
 
       <div style="font-size:11px;color:var(--text2);background:rgba(251,191,36,.08);border-radius:8px;padding:7px 10px;text-align:left">
         ${motivation}
@@ -7831,7 +7869,10 @@ function _onHabitCardClick(event, habitId) {
   if (t && typeof t.closest === 'function') {
     if (t.closest('[data-habit-skip]')) return;
     if (t.closest('[data-habit-check]')) {
-      toggleHabitToday(habitId);
+      const dateEl = t.closest('[data-habit-date]') || t.closest('[data-habit-check]');
+      const dateStr = dateEl && dateEl.getAttribute('data-habit-date');
+      if (dateStr) toggleHabitDate(habitId, dateStr);
+      else toggleHabitToday(habitId);
       return;
     }
   }
@@ -7839,20 +7880,31 @@ function _onHabitCardClick(event, habitId) {
 }
 
 function toggleHabitToday(habitId) {
+  return toggleHabitDate(habitId, _todayJalaliStr ? _todayJalaliStr() : '');
+}
+
+function toggleHabitDate(habitId, dateStr) {
   _habitsInit();
-  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
-  const logId = String(habitId) + '__' + String(todayStr);
-  const existing = (_db.habit_logs || []).find(l => String(l.id) === logId || (String(l.habit_id) === String(habitId) && l.date === todayStr));
+  const habit = (_db.habits || []).find(h => String(h.id) === String(habitId));
+  if (!habit) return;
+  const date = _habitCanonDate(dateStr || (_todayJalaliStr ? _todayJalaliStr() : ''));
+  if (!date) { showToast('تاریخ نامعتبر است', 'error'); return; }
+  if (!_habitDateAllowed(habit, date)) {
+    showToast('فقط روزهای از تاریخ شروع تا امروز را می‌توان ثبت کرد', 'error');
+    return;
+  }
+  const logId = String(habitId) + '__' + String(date);
+  const existing = (_db.habit_logs || []).find(l => String(l.id) === logId || (String(l.habit_id) === String(habitId) && (_habitCanonDate(l.date) === date || l.date === dateStr)));
   let nowDone;
   if (existing) {
     if (existing.id == null) existing.id = logId;
     existing.habit_id = habitId;
-    existing.date = todayStr;
+    existing.date = date;
     existing.done = !existing.done;
     existing.logged_at = new Date().toISOString();
     nowDone = existing.done;
   }
-  else { _db.habit_logs.push({ id: logId, habit_id: habitId, date: todayStr, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
+  else { _db.habit_logs.push({ id: logId, habit_id: habitId, date, done: true, logged_at: new Date().toISOString() }); nowDone = true; }
   _justToggledHabitId = nowDone ? habitId : null;
   _save();
   // Called from the dashboard too — renderHabits() would replace the home
@@ -7886,6 +7938,9 @@ function openAddHabit() {
       <div class="form-group">
         <label class="form-label">⏰ زمان انجام</label>
         <input class="form-input" id="hab-time" type="time" style="direction:ltr">
+      </div>
+      <div class="form-group">
+        ${calendarDateFieldHtml('hab-start', _todayJalaliStr ? _todayJalaliStr() : '', '📅 تاریخ شروع')}
       </div>
       <div class="form-group full">
         <label class="form-label">🎯 مرتبط با هدف (اختیاری)</label>
@@ -7922,6 +7977,7 @@ function openAddHabit() {
     { label: '+ ذخیره', cls: 'btn-primary', action: 'saveNewHabit()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+  initDatePickers();
 }
 
 async function saveNewHabit() {
@@ -7930,6 +7986,7 @@ async function saveNewHabit() {
   if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
   const goalId = document.getElementById('hab-goal')?.value || '';
   const habitTime = document.getElementById('hab-time')?.value || '';
+  const startDate = _habitCanonDate(readCalendarDateField('hab-start')) || (_todayJalaliStr ? _todayJalaliStr() : '');
   const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
   if (remindMin > 0 && !habitTime) {
     showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
@@ -7944,6 +8001,7 @@ async function saveNewHabit() {
     color: document.getElementById('hab-color')?.value || '#fbbf24',
     time: habitTime,
     remind_min: remindMin,
+    start_date: startDate,
     goal_id: goalId ? +goalId : null,
     desc: document.getElementById('hab-desc')?.value || '',
     created_at: new Date().toISOString(),
@@ -7979,6 +8037,9 @@ function openEditHabit(id) {
       <div class="form-group">
         <label class="form-label">⏰ زمان انجام</label>
         <input class="form-input" id="hab-time" type="time" value="${h.time||''}" style="direction:ltr">
+      </div>
+      <div class="form-group">
+        ${calendarDateFieldHtml('hab-start', _habitStartDate(h), '📅 تاریخ شروع')}
       </div>
       <div class="form-group full">
         <label class="form-label">🎯 مرتبط با هدف (اختیاری)</label>
@@ -8016,6 +8077,7 @@ function openEditHabit(id) {
     { label: '🗑 حذف', cls: 'btn-danger', action: `closeModal();deleteHabit(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+  initDatePickers();
 }
 
 async function saveEditHabit(id) {
@@ -8025,6 +8087,7 @@ async function saveEditHabit(id) {
   if (!title) { showToast('نام عادت را وارد کنید', 'error'); return; }
   const goalId = document.getElementById('hab-goal')?.value || '';
   const habitTime = document.getElementById('hab-time')?.value || '';
+  const startDate = _habitCanonDate(readCalendarDateField('hab-start')) || _habitStartDate(h);
   const remindMin = parseInt(document.getElementById('hab-remind')?.value || '0');
   if (remindMin > 0 && !habitTime) {
     showToast('برای ارسال نوتیفیکیشن، زمان انجام عادت را مشخص کن', 'error');
@@ -8037,6 +8100,7 @@ async function saveEditHabit(id) {
     color: document.getElementById('hab-color')?.value || '#fbbf24',
     time: habitTime,
     remind_min: remindMin,
+    start_date: startDate,
     goal_id: goalId ? +goalId : null,
     desc: document.getElementById('hab-desc')?.value || '',
   });
@@ -8116,6 +8180,7 @@ function openHabitDetail(id) {
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         ${h.time ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">⏰ ${h.time}</span>` : ''}
+        <span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">📅 شروع: ${DateService.disp(_habitStartDate(h))}</span>
         ${linkedGoal ? `<span onclick="closeModal();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;font-size:12px;border-radius:20px;padding:5px 12px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
         ${h.pinned ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">📌 پین شده</span>` : ''}
         ${h.archived ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">🗃 آرشیو شده</span>` : ''}
@@ -8181,6 +8246,7 @@ function duplicateHabit(id) {
     title: h.title + ' (کپی)',
     pinned: false,
     archived: false,
+    start_date: _todayJalaliStr ? _todayJalaliStr() : h.start_date,
     created_at: new Date().toISOString(),
   });
   _save(); showToast('عادت کپی شد ✓', 'success');
@@ -8205,18 +8271,82 @@ function toggleArchiveHabit(id) {
   if (currentPage === 'habits') renderHabits();
 }
 
+let _habitHistoryCursor = '';
+let _habitHistoryKeep = false;
+
+function _habitHistShift(id, delta) {
+  const cur = parseJalali(_habitHistoryCursor || (_todayJalaliStr ? _todayJalaliStr() : ''));
+  if (!cur) return;
+  const next = addJalaliMonths(cur[0], cur[1], 1, delta);
+  _habitHistoryCursor = _formatJalali(next[0], next[1], 1);
+  _habitHistoryKeep = true;
+  openHabitHistory(id);
+}
+
 function openHabitHistory(id) {
   _habitsInit();
   const h = _db.habits.find(x => x.id === id);
   if (!h) return;
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
-  const doneDates = (_db.habit_logs||[]).filter(l => l.habit_id === id && l.done).map(l => l.date).sort().reverse();
-  const rows = doneDates.slice(0, 60).map(d => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);font-size:12px">
-      <span style="color:var(--text)">${d}</span><span style="color:var(--green);font-weight:600">✓ انجام شد</span>
-    </div>`).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:24px">هنوز سابقه‌ای ثبت نشده</div>';
+  const logs = _db.habit_logs || [];
+  const todayStr = _todayJalaliStr ? _todayJalaliStr() : '';
+  const startDate = _habitStartDate(h);
+  const startKey = _jalaliKey(startDate);
+  const todayKey = _jalaliKey(todayStr);
+  if (!_habitHistoryKeep || !_habitHistoryCursor) _habitHistoryCursor = todayStr;
+  _habitHistoryKeep = false;
+  let cursor = parseJalali(_habitHistoryCursor);
+  const startP = parseJalali(startDate);
+  const todayP = parseJalali(todayStr);
+  if (cursor && startP && (cursor[0] < startP[0] || (cursor[0] === startP[0] && cursor[1] < startP[1]))) {
+    cursor = startP;
+    _habitHistoryCursor = _formatJalali(startP[0], startP[1], 1);
+  }
+  if (cursor && todayP && (cursor[0] > todayP[0] || (cursor[0] === todayP[0] && cursor[1] > todayP[1]))) {
+    cursor = todayP;
+    _habitHistoryCursor = _formatJalali(todayP[0], todayP[1], 1);
+  }
+  const [jy, jm] = cursor || todayP || [0, 1];
+  const canPrev = startP && (jy > startP[0] || (jy === startP[0] && jm > startP[1]));
+  const canNext = todayP && (jy < todayP[0] || (jy === todayP[0] && jm < todayP[1]));
+  const dim = jMonthLength(jy, jm);
+  const firstG = jalaliToGregorian(jy, jm, 1);
+  const firstD = new Date(firstG[0], firstG[1] - 1, firstG[2]);
+  const lead = firstD.getDay() === 6 ? 0 : firstD.getDay() + 1;
+  const weekdayLabels = (typeof JWEEKDAYS !== 'undefined' ? JWEEKDAYS : ['ش','ی','د','س','چ','پ','ج']);
+  const monthNames = (typeof JMONTHS !== 'undefined' ? JMONTHS : ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند']);
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div></div>';
+  for (let day = 1; day <= dim; day++) {
+    const dateStr = _formatJalali(jy, jm, day);
+    const key = _jalaliKey(dateStr);
+    const done = _habitLogDone(logs, id, dateStr);
+    const canTick = _habitDateAllowed(h, dateStr);
+    const isToday = key === todayKey;
+    const enDate = _habitEnDate(dateStr);
+    cells += `<button type="button" ${canTick ? `onclick="toggleHabitDate(${id},'${enDate}');openHabitHistory(${id})"` : 'disabled'}
+      title="${DateService.disp(dateStr)}${canTick ? ' — برای ثبت یا لغو بزن' : ''}"
+      style="min-height:36px;border-radius:10px;padding:4px 0;border:1px solid ${isToday ? 'var(--amber)' : 'var(--border)'};
+      background:${done ? 'var(--green)' : 'var(--bg3)'};color:${done ? 'white' : (canTick ? 'var(--text)' : 'var(--text3)')};
+      font-family:var(--font);font-size:12px;font-weight:${done || isToday ? 800 : 500};cursor:${canTick ? 'pointer' : 'default'};
+      opacity:${canTick ? 1 : 0.35}">${fa(day)}${done ? ' ✓' : ''}</button>`;
+  }
+  const doneCount = logs.filter(l => String(l.habit_id) === String(id) && l.done && _jalaliKey(l.date) >= startKey && (!todayKey || _jalaliKey(l.date) <= todayKey)).length;
   openModal(`📊 تاریخچه: ${escapeHtml(h.title)}`, `
-    <div style="margin-bottom:10px;font-size:12px;color:var(--text2)">مجموع ${fa(doneDates.length)} بار انجام شده</div>
-    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px">${rows}</div>
+    <div style="margin-bottom:10px;font-size:12px;color:var(--text2);line-height:1.8">
+      شروع از ${DateService.disp(startDate)} · مجموع ${fa(doneCount)} روز انجام‌شده
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <button type="button" ${canPrev ? `onclick="_habitHistShift(${id},-1)"` : 'disabled'}
+        style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:var(--font);cursor:${canPrev?'pointer':'default'};opacity:${canPrev?1:0.35}">‹</button>
+      <div style="font-size:13px;font-weight:700">${escapeHtml(monthNames[jm - 1] || '')} ${fa(jy)}</div>
+      <button type="button" ${canNext ? `onclick="_habitHistShift(${id},1)"` : 'disabled'}
+        style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:var(--font);cursor:${canNext?'pointer':'default'};opacity:${canNext?1:0.35}">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:8px;text-align:center;font-size:10px;color:var(--text3);font-weight:700">
+      ${weekdayLabels.map(w => `<div>${w}</div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">روزهای از تاریخ شروع تا امروز را بزن تا ثبت یا لغو شوند.</div>
   `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
 }

@@ -144,7 +144,7 @@ test('binder click-dispatches representative controls from every nav page', () =
   const byPage = {
     home: ['bnNav(this)', '_homeToggleHabit(3)', '_homeToggleTodo(4)'],
     goals: ['_tpGo("goals")', 'openAddGoal()'],
-    habits: ['_onHabitCardClick(event, 12)', 'event.stopPropagation();toggleHabitToday(12)', '_tpHabitFilter("all")'],
+    habits: ['_onHabitCardClick(event, 12)', 'event.stopPropagation();toggleHabitToday(12)', '_tpHabitFilter("all")', "toggleHabitDate(12,'1404/07/20')", '_habitHistShift(12,-1)'],
     todolist: ['openAddTodo()', '_setTodoTab("mine")'],
     calendar: ['_tpOpenCalendarCreate("task")', 'event.stopPropagation()'],
     instructions: ["openAddInstruction(null,'kcategory')", "_tpInstrFilter('all')", "_instrOpenTransferModal([9],'move')"],
