@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp354';
+const TP_ASSET_V = 'tp358';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -41,7 +41,9 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'renderInstructions', 'openNoteDetail', 'openAddInstruction', 'openEditInstruction',
   'renderTutorial',
   'renderGoals', 'renderHabits', 'openHabitDetail', 'toggleHabitToday',
-  'toggleHabitDate', 'openHabitHistory', '_habitHistShift'
+  'toggleHabitDate', 'openHabitHistory', '_habitHistShift',
+  'openHabitCustomReminders', 'openHabitCustomReminderForm',
+  'saveHabitCustomReminder', 'deleteHabitCustomReminder'
 ].forEach(_tpLazy);
 [
   'renderSessions'
@@ -25907,7 +25909,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v354';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v358';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -26238,6 +26240,11 @@ function _habitStartDate(h) {
   }
   return typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '';
 }
+function _touchHabit(h) {
+  if (!h) return h;
+  h.updated_at = new Date().toISOString();
+  return h;
+}
 function _habitDateAllowed(h, dateStr) {
   const date = _habitCanonDate(dateStr);
   if (!date) return false;
@@ -26245,6 +26252,29 @@ function _habitDateAllowed(h, dateStr) {
   const start = _habitStartDate(h);
   const key = _jalaliKey(date);
   return key >= _jalaliKey(start) && (!today || key <= _jalaliKey(today));
+}
+function _habitWeekdayJs(dateStr) {
+  const p = parseJalali(dateStr);
+  if (!p) return -1;
+  const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+  return new Date(gy, gm - 1, gd).getDay();
+}
+function _habitCustomList(h) {
+  return Array.isArray(h?.custom_reminders) ? h.custom_reminders : [];
+}
+function _habitCustomMatchesDate(r, dateStr) {
+  if (!r || r.done) return false;
+  if ((r.repeat || 'once') === 'weekly') return _habitWeekdayJs(r.date) === _habitWeekdayJs(dateStr);
+  return _jalaliKey(r.date) === _jalaliKey(dateStr);
+}
+function _habitCustomOnDate(h, dateStr) {
+  return _habitCustomList(h).filter(r => _habitCustomMatchesDate(r, dateStr));
+}
+function _habitNextCustomReminder(h) {
+  const todayKey = _jalaliKey(_todayJalaliStr ? _todayJalaliStr() : '');
+  const upcoming = _habitCustomList(h).filter(r => !r.done && r.date && ((r.repeat || 'once') === 'weekly' || _jalaliKey(r.date) >= todayKey));
+  upcoming.sort((a, b) => _jalaliKey(a.date) - _jalaliKey(b.date));
+  return upcoming[0] || null;
 }
 function _habitsInit() {
   if (!_db.habits) _db.habits = [];
@@ -26272,7 +26302,7 @@ function _habitsInit() {
   } catch (e) {}
   _db.habits.forEach(h => {
     if ((h.remind_min === undefined || h.remind_min === null) && h.time) h.remind_min = 15;
-    if (!h.start_date || !_jalaliKey(h.start_date)) h.start_date = _habitStartDate(h);
+    if (!Array.isArray(h.custom_reminders)) h.custom_reminders = [];
   });
 }
 

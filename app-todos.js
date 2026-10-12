@@ -2239,7 +2239,14 @@ function _todoCalendarHabits(date, force = false) {
     if (Number.isNaN(created.getTime())) return true;
     const j = gregorianToJalali(created.getFullYear(),created.getMonth()+1,created.getDate());
     return _jalaliKey(_formatJalali(...j)) <= dateKey;
-  }).map(h => ({ ...h, _doneOnDate:(_db.habit_logs || []).some(l => String(l.habit_id) === String(h.id) && _jalaliKey(l.date) === dateKey && l.done) }));
+  }).map(h => {
+    const customs = typeof _habitCustomOnDate === 'function' ? _habitCustomOnDate(h, date) : [];
+    return {
+      ...h,
+      _doneOnDate: (_db.habit_logs || []).some(l => String(l.habit_id) === String(h.id) && _jalaliKey(l.date) === dateKey && l.done),
+      _customAction: customs.map(r => r.action).filter(Boolean).join(' · '),
+    };
+  });
 }
 
 
@@ -2289,7 +2296,7 @@ function _todoMiniSessionHtml(s) {
 
 function _todoMiniHabitHtml(h) {
   return `<div class="todo-mini-habit" onclick="event.stopPropagation();openHabitDetail(${h.id})" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:${h.color || '#34d399'}18;border-right:3px solid ${h.color || '#34d399'};cursor:pointer">
-    <span>${escapeHtml(h.icon || '🔥')}</span><span style="font-size:10px;color:${h.color || '#34d399'};font-weight:800">${h._doneOnDate?'✓':'عادت'}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.title || '')}</span>
+    <span>${escapeHtml(h.icon || '🔥')}</span><span style="font-size:10px;color:${h.color || '#34d399'};font-weight:800">${h._doneOnDate?'✓':(h._customAction?'🔔':'عادت')}</span><span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h._customAction ? (h.title + ' — ' + h._customAction) : (h.title || ''))}</span>
   </div>`;
 }
 

@@ -92,6 +92,10 @@ test('inline parser keeps habit card toggle handlers', () => {
   assert.ok(ctx._tpParseInline("toggleHabitDate(12,'1404/07/20')"));
   assert.ok(ctx._tpParseInline("toggleHabitDate(12,'1404/07/20');openHabitHistory(12)"));
   assert.ok(ctx._tpParseInline('_habitHistShift(12,-1)'));
+  assert.ok(ctx._tpParseInline('openHabitCustomReminders(12)'));
+  assert.ok(ctx._tpParseInline('openHabitCustomReminderForm(12,null)'));
+  assert.ok(ctx._tpParseInline('saveHabitCustomReminder(12,null)'));
+  assert.ok(ctx._tpParseInline('deleteHabitCustomReminder(12,3)'));
 });
 
 test('inline parser accepts Enter-key if blocks used by goal path inputs', () => {

@@ -109,6 +109,31 @@ test('daily reminders wait until 09:00 Iran and then become due', () => {
   assert.ok(schedule.nextDailyMs <= nowAfterNine.getTime());
 });
 
+test('custom habit reminders are indexed on their date and time', () => {
+  const now = new Date('2026-08-23T12:00:00.000Z');
+  const scheduled = '1405/06/01';
+  const time = '16:00';
+  const notifAt = jalaliToUTC(scheduled, time).getTime();
+  const open = computePushDueIndex('acc', {
+    habits: [{
+      id: 4,
+      title: 'ورزش',
+      custom_reminders: [{ id: 1, date: scheduled, time, action: 'اسکوات', repeat: 'once' }],
+    }],
+  }, now, new Set());
+  assert.equal(open.nextTimedMs, notifAt);
+  assert.ok(open.items.some(item => item.kind === 'habit' && item.payload.custom && item.payload.action === 'اسکوات'));
+
+  const delivered = computePushDueIndex('acc', {
+    habits: [{
+      id: 4,
+      title: 'ورزش',
+      custom_reminders: [{ id: 1, date: scheduled, time, action: 'اسکوات', repeat: 'once' }],
+    }],
+  }, now, new Set(['habit-custom:acc:4:1:1405/06/01:16:00']));
+  assert.equal(delivered.nextTimedMs, null);
+});
+
 test('timed todo index uses remind_min and skips already delivered keys', () => {
   const now = new Date('2026-08-23T12:00:00.000Z');
   const scheduled = '1405/06/01';
