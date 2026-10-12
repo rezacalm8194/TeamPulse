@@ -643,6 +643,7 @@ async function renderPayments(search = '') {
             <div class="row-menu">
               <button class="row-menu-btn" type="button" aria-label="عملیات فروش ${escapeHtml(`${p.name} ${p.lname}`.trim())}" aria-haspopup="menu" onclick="toggleRowMenu(event,'${saleMenuId}')">⋮</button>
               <div class="row-menu-panel" id="${saleMenuId}" role="menu">
+                ${p.repeat_months > 0 ? `<div class="row-menu-item" role="menuitem" onclick="savePurchaseFromSale(${p.id})">🛒 ثبت فروش این دوره</div>` : ''}
                 <div class="row-menu-item" role="menuitem" onclick="openEditPackage(${p.id})">✏️ ویرایش فروش</div>
                 <div class="row-menu-divider"></div>
                 <div class="row-menu-item danger" role="menuitem" onclick="deletePackage(${p.id})">🗑 حذف فروش</div>
@@ -1188,6 +1189,49 @@ async function _ensurePackageTypeByLabel(label) {
 }
 
 
+async function _saveCyclePurchase(spec) {
+  const date = spec.date || formatJalali(...todayJalali());
+  const paymentDueDate = spec.payment_due_date;
+  const repeat_months = Number(spec.repeat_months || 0);
+  if (repeat_months > 0 && !_nextFuturePaymentReminderDate(paymentDueDate, repeat_months)) {
+    showToast('تاریخ سررسید معتبر نیست؛ تاریخ را اصلاح کنید', 'error');
+    return false;
+  }
+  const res = await window.api.packages.add({
+    student_id: spec.student_id,
+    type_id: spec.type_id,
+    staff_id: spec.staff_id || null,
+    total_amount: spec.amount || 0,
+    initial_cost: 0,
+    current_payment: 0,
+    repeat_months,
+    note: spec.note || '',
+    date,
+    payment_due_date: paymentDueDate,
+    skip_reminder: !!spec.reminder_id,
+  });
+  if (spec.reminder_id) {
+    const completed = await window.api.reminders.completePurchase({
+      id: spec.reminder_id,
+      package_id: res?.id,
+      repeat_months,
+      payment_due_date: paymentDueDate,
+    });
+    if (!completed?.ok) {
+      showToast(completed?.error || 'فروش ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
+      return false;
+    }
+  }
+  showToast('فروش این دوره ثبت شد ✓', 'success');
+  if (typeof _tpPaymentsTab === 'function') _tpPaymentsTab('purchases');
+  else {
+    _paymentsTab = 'purchases';
+    if (currentPage === 'payments') await renderPayments();
+    else if (currentPage === 'reminders') await renderReminders();
+  }
+  return true;
+}
+
 async function savePurchaseFromReminder(id) {
   if (window._savingNewPurchase) return;
   window._savingNewPurchase = true;
@@ -1214,43 +1258,63 @@ async function savePurchaseFromReminder(id) {
       showToast('خدمت این یادآوری پیدا نشد', 'error');
       return;
     }
-    const date = formatJalali(...todayJalali());
-    const paymentDueDate = r.due_date_jalali;
-    const repeat_months = Number(r.repeat_months || 0);
-    if (repeat_months > 0 && !_nextFuturePaymentReminderDate(paymentDueDate, repeat_months)) {
-      showToast('تاریخ سررسید معتبر نیست؛ یادآوری را ویرایش کنید', 'error');
-      return;
-    }
-    const res = await window.api.packages.add({
+    await _saveCyclePurchase({
       student_id: r.student_id,
       type_id: pt.id,
       staff_id: staffId,
-      total_amount: r.amount || 0,
-      initial_cost: 0,
-      current_payment: 0,
-      repeat_months,
+      amount: r.amount || 0,
+      repeat_months: r.repeat_months || 0,
       note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
+      date: formatJalali(...todayJalali()),
+      payment_due_date: r.due_date_jalali,
+      reminder_id: r.id,
+    });
+  } finally {
+    window._savingNewPurchase = false;
+  }
+}
+
+async function savePurchaseFromSale(packageId) {
+  if (window._savingNewPurchase) return;
+  window._savingNewPurchase = true;
+  try {
+    const packages = await window.api.packages.getAll();
+    const pkg = packages.find(x => String(x.id) === String(packageId));
+    if (!pkg) {
+      showToast('فروش پیدا نشد', 'error');
+      return;
+    }
+    if (!pkg.type_id) {
+      showToast('خدمت این فروش پیدا نشد', 'error');
+      return;
+    }
+    const date = formatJalali(...todayJalali());
+    const todayKey = jalaliKey(date);
+    const already = packages.some(p =>
+      String(p.id) !== String(pkg.id)
+      && String(p.student_id) === String(pkg.student_id)
+      && String(p.type_id) === String(pkg.type_id)
+      && jalaliKey(p.start_date) === todayKey
+    );
+    if (already) {
+      showToast('فروش این دوره قبلاً ثبت شده', 'error');
+      return;
+    }
+    const reminders = await window.api.reminders.getAll();
+    const rem = reminders.find(r =>
+      String(r.package_id) === String(pkg.id) && !r.done && (typeof _isPaymentReminder !== 'function' || _isPaymentReminder(r))
+    );
+    await _saveCyclePurchase({
+      student_id: pkg.student_id,
+      type_id: pkg.type_id,
+      staff_id: pkg.staff_id || null,
+      amount: pkg.total_amount || 0,
+      repeat_months: pkg.repeat_months || 0,
+      note: pkg.note || '',
       date,
-      payment_due_date: paymentDueDate,
-      skip_reminder: true,
+      payment_due_date: pkg.payment_due_date || rem?.due_date_jalali || date,
+      reminder_id: rem?.id || 0,
     });
-    const completed = await window.api.reminders.completePurchase({
-      id: r.id,
-      package_id: res?.id,
-      repeat_months,
-      payment_due_date: paymentDueDate,
-    });
-    if (!completed?.ok) {
-      showToast(completed?.error || 'فروش ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
-    } else {
-      showToast('فروش جدید از این یادآوری ثبت شد ✓', 'success');
-    }
-    if (typeof _tpPaymentsTab === 'function') _tpPaymentsTab('purchases');
-    else {
-      _paymentsTab = 'purchases';
-      if (currentPage === 'payments') await renderPayments();
-      else if (currentPage === 'reminders') await renderReminders();
-    }
   } finally {
     window._savingNewPurchase = false;
   }

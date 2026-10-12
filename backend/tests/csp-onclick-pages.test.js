@@ -151,7 +151,7 @@ test('binder click-dispatches representative controls from every nav page', () =
     students: ['openStudentDetail(1)', 'toggleRowMenu(event,"m1")'],
     sessions: ['openSessionDetail(2)', "_openAttachment(decodeURIComponent('a'),decodeURIComponent('b'),decodeURIComponent('c'))"],
     families: ['openNewFamily()', 'this.classList.toggle("checked")'],
-    payments: ["_tpPaymentsTab('purchases')", "openBalePaymentRequest({student_id:1,reminder_id:2,package_id:null,amount:3,title:'x'})"],
+    payments: ["_tpPaymentsTab('purchases')", "openBalePaymentRequest({student_id:1,reminder_id:2,package_id:null,amount:3,title:'x'})", 'savePurchaseFromSale(1)'],
     staff: ['openStaffDetail(1)', 'window.print()'],
     dashboard: ['openExpenseManager()', 'toggleTopEarners(this)'],
     transactions: ['openFiscalYearClosing()'],
