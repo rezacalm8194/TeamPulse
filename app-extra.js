@@ -78,7 +78,7 @@ function runDashboardAlertAction(index) {
 }
 
 function _dashboardAlertRowHtml(item, index) {
-  return `<div class="finance-alert-row"><div class="finance-alert-copy"><b>${escapeHtml(item.title)}</b><small style="color:${item.urgent?'var(--red)':'var(--text3)'}">${escapeHtml(item.detail)}</small></div><button type="button" class="btn btn-primary btn-sm" onclick="runDashboardAlertAction(${Number(index)})">${_dashboardAlertActionLabel(item)}</button></div>`;
+  return `<div class="finance-alert-row ${item.urgent?'is-urgent':''}"><div class="finance-alert-copy"><b>${escapeHtml(item.title)}</b><small style="color:${item.urgent?'var(--red)':'var(--text3)'}">${escapeHtml(item.detail)}</small></div><button type="button" class="btn btn-primary btn-sm" onclick="runDashboardAlertAction(${Number(index)})">${_dashboardAlertActionLabel(item)}</button></div>`;
 }
 
 function openDashboardAllAlerts() {
@@ -566,9 +566,10 @@ async function renderDashboard() {
   const selectedTrendMonth = financialTrend[selectedTrendIndex];
   const trendMax = Math.max(1,...financialTrend.flatMap(m=>[m.income,m.expense,Math.abs(m.profit)]));
   const financialTrendHtml = financialTrend.map((m, index) => {
-    const incomeHeight=Math.max(m.income?6:0,Math.round(m.income/trendMax*46));
-    const expenseHeight=Math.max(m.expense?6:0,Math.round(m.expense/trendMax*46));
-    return `<button type="button" class="finance-trend-col ${index===selectedTrendIndex?'is-active':''}" onclick="selectDashboardTrendMonth(${index})" aria-pressed="${index===selectedTrendIndex?'true':'false'}" aria-label="${escapeHtml(m.label)}"><span class="finance-trend-bars"><span class="finance-trend-bar is-income" style="height:${incomeHeight}px"></span><span class="finance-trend-bar is-expense" style="height:${expenseHeight}px"></span></span><span class="finance-trend-label">${escapeHtml(incomeMonthNames[m.jm-1])}</span></button>`;
+    const incomeHeight=Math.max(m.income?8:0,Math.round(m.income/trendMax*68));
+    const expenseHeight=Math.max(m.expense?8:0,Math.round(m.expense/trendMax*68));
+    const profitColor=m.profit>=0?'var(--green)':'var(--red)';
+    return `<button type="button" class="finance-trend-col ${index===selectedTrendIndex?'is-active':''}" onclick="selectDashboardTrendMonth(${index})" aria-pressed="${index===selectedTrendIndex?'true':'false'}" aria-label="${escapeHtml(m.label)}"><span class="finance-trend-bars"><span class="finance-trend-bar is-income" style="height:${incomeHeight}px"></span><span class="finance-trend-bar is-expense" style="height:${expenseHeight}px"></span></span><span class="finance-trend-label">${escapeHtml(incomeMonthNames[m.jm-1])}</span><span class="finance-trend-profit" style="color:${profitColor}">${m.profit>=0?'+':''}${fmt(m.profit)}</span></button>`;
   }).join('');
   const dueLabel = days => days < 0 ? `${fa(Math.abs(days))} روز تأخیر` : days === 0 ? 'سررسید امروز' : `${fa(days)} روز مانده`;
   const financialAlerts = [
@@ -578,7 +579,8 @@ async function renderDashboard() {
     ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
   ];
   window._dashboardFinanceAlerts = financialAlerts;
-  const urgentAlerts = financialAlerts.filter(item => item.urgent).slice(0, 3);
+  const urgentAlerts = financialAlerts.filter(item => item.urgent);
+  const visibleAlerts = [...urgentAlerts, ...financialAlerts.filter(item => !item.urgent)].slice(0, 3);
   const expenseBreakdown = Object.entries((() => {
     const totals = {};
     (_db.expenses || []).forEach(expense => {
@@ -596,6 +598,7 @@ async function renderDashboard() {
     : '');
 
   const html = `<div class="finance-dashboard">
+  <section class="finance-panel">
   <div class="finance-dash-head">
     <div>
       <h3 class="finance-dash-title">وضعیت مالی</h3>
@@ -606,31 +609,32 @@ async function renderDashboard() {
     <div class="stat-card s-green">
       <div class="stat-label">درآمد</div>
       <div class="stat-value">${fmt(currentMonthIncome||0)}</div>
-      <div class="stat-sub">دریافت مشتریان</div>
+      <div class="stat-sub">${escapeHtml(currentMonthLabel||'ماه جاری')} · دریافت مشتریان</div>
     </div>
     <div class="stat-card s-red">
       <div class="stat-label">هزینه</div>
       <div class="stat-value">${fmt(currentMonthExpenses||0)}</div>
-      <div class="stat-sub">${topExpenseCategory?escapeHtml(topExpenseCategory[0]):'بدون هزینه ثبت‌شده'}</div>
+      <div class="stat-sub">${topExpenseCategory?`بیشترین: ${escapeHtml(topExpenseCategory[0])}`:'بدون هزینه ثبت‌شده'}</div>
     </div>
     <div class="stat-card ${monthlyCashProfit>=0?'s-accent':'s-red'}">
       <div class="stat-label">مانده خالص</div>
       <div class="stat-value">${fmt(monthlyCashProfit)}</div>
-      <div class="stat-sub">درآمد − هزینه</div>
+      <div class="stat-sub">درآمد دریافت‌شده − هزینه پرداخت‌شده</div>
     </div>
   </div>
-
-  <section class="finance-alerts" aria-label="هشدارهای فوری">
-    <div class="finance-section-head">
-      <h3>هشدارهای فوری</h3>
-      ${financialAlerts.length ? `<button type="button" class="btn btn-ghost btn-sm" onclick="openDashboardAllAlerts()">مشاهده همه${financialAlerts.length>urgentAlerts.length?` (${fa(financialAlerts.length)})`:''}</button>` : ''}
-    </div>
-    ${urgentAlerts.length
-      ? urgentAlerts.map(item => _dashboardAlertRowHtml(item, financialAlerts.indexOf(item))).join('')
-      : `<div class="finance-alerts-empty">${financialAlerts.length ? `مورد فوری نیست · ${fa(financialAlerts.length)} مورد در روزهای آینده` : '✓ مورد مالی فوری برای پیگیری نیست'}</div>`}
   </section>
 
-  <section class="finance-trend" aria-label="روند مالی">
+  <section class="finance-panel finance-alerts" aria-label="پیگیری‌های مالی">
+    <div class="finance-section-head">
+      <h3>پیگیری‌های مالی</h3>
+      ${financialAlerts.length ? `<button type="button" class="btn btn-ghost btn-sm" onclick="openDashboardAllAlerts()">مشاهده همه${financialAlerts.length>visibleAlerts.length?` (${fa(financialAlerts.length)})`:''}</button>` : ''}
+    </div>
+    ${visibleAlerts.length
+      ? visibleAlerts.map(item => _dashboardAlertRowHtml(item, financialAlerts.indexOf(item))).join('')
+      : '<div class="finance-alerts-empty">✓ مورد مالی فوری برای پیگیری نیست</div>'}
+  </section>
+
+  <section class="finance-panel finance-trend" aria-label="روند مالی">
     <div class="finance-section-head">
       <div>
         <h3>روند مالی</h3>
@@ -647,7 +651,7 @@ async function renderDashboard() {
     </div>
   </section>
 
-  <details class="finance-fold">
+  <details class="finance-fold" open>
     <summary>
       <span>
         <b>خلاصه هزینه‌ها</b>
