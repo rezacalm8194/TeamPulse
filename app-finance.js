@@ -1042,7 +1042,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
           <div class="row-menu-panel" id="${reminderMenuId}">
             ${!r.done ? `<div class="row-menu-item" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</div>` : ''}
             ${!r.done && r.amount ? `<div class="row-menu-item" onclick="openBalePaymentRequest({student_id:${r.student_id},reminder_id:${r.id},package_id:${r.package_id==null?'null':JSON.stringify(r.package_id)},amount:${Math.round(Number(r.amount)||0)},title:${JSON.stringify(String(r.title||'سررسید پرداخت').slice(0,32))}})">بله‌پی</div>` : ''}
-            ${!r.done ? `<div class="row-menu-item" onclick="openPurchaseFromReminder(${r.id})">🛒 خرید جدید</div>` : ''}
+            ${!r.done ? `<div class="row-menu-item" onclick="savePurchaseFromReminder(${r.id})">🛒 خرید جدید</div>` : ''}
             <div class="row-menu-item" onclick="openEditReminder(${r.id})">✏️ ویرایش</div>
             <div class="row-menu-divider"></div>
             <div class="row-menu-item danger" onclick="deleteReminder(${r.id})">🗑 حذف</div>
@@ -1174,21 +1174,62 @@ async function _ensurePackageTypeByLabel(label) {
 }
 
 
-async function openPurchaseFromReminder(id) {
-  const reminders = await window.api.reminders.getAll();
-  const r = reminders.find(x => x.id === id);
-  if (!r) return;
-  allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
-  const pt = await _ensurePackageTypeByLabel(r.title);
-  openNewPurchase(r.student_id, {
-    reminder_id: r.id,
-    type_id: pt?.id,
-    amount: r.amount || 0,
-    repeat_months: r.repeat_months || 0,
-    date: formatJalali(...todayJalali()),
-    payment_due_date: r.due_date_jalali,
-    note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
-  });
+async function savePurchaseFromReminder(id) {
+  if (window._savingNewPurchase) return;
+  window._savingNewPurchase = true;
+  try {
+    const reminders = await window.api.reminders.getAll();
+    const r = reminders.find(x => String(x.id) === String(id));
+    if (!r) {
+      showToast('یادآوری پیدا نشد', 'error');
+      return;
+    }
+    allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
+    const pt = await _ensurePackageTypeByLabel(r.title);
+    if (!pt?.id) {
+      showToast('خدمت این یادآوری ساخته نشد', 'error');
+      return;
+    }
+    const date = formatJalali(...todayJalali());
+    const paymentDueDate = r.due_date_jalali;
+    const repeat_months = Number(r.repeat_months || 0);
+    if (repeat_months > 0 && !_nextFuturePaymentReminderDate(paymentDueDate, repeat_months)) {
+      showToast('تاریخ سررسید معتبر نیست؛ یادآوری را ویرایش کنید', 'error');
+      return;
+    }
+    const res = await window.api.packages.add({
+      student_id: r.student_id,
+      type_id: pt.id,
+      staff_id: null,
+      total_amount: r.amount || 0,
+      initial_cost: 0,
+      current_payment: 0,
+      repeat_months,
+      note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
+      date,
+      payment_due_date: paymentDueDate,
+      skip_reminder: true,
+    });
+    const completed = await window.api.reminders.completePurchase({
+      id: r.id,
+      package_id: res?.id,
+      repeat_months,
+      payment_due_date: paymentDueDate,
+    });
+    if (!completed?.ok) {
+      showToast(completed?.error || 'فروش ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
+    } else {
+      showToast('فروش جدید از این یادآوری ثبت شد ✓', 'success');
+    }
+    if (typeof _tpPaymentsTab === 'function') _tpPaymentsTab('purchases');
+    else {
+      _paymentsTab = 'purchases';
+      if (currentPage === 'payments') await renderPayments();
+      else if (currentPage === 'reminders') await renderReminders();
+    }
+  } finally {
+    window._savingNewPurchase = false;
+  }
 }
 
 
