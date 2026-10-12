@@ -1161,16 +1161,29 @@ async function confirmReminderPaid(id) {
 }
 
 
+function _packageTypeMatchesLabel(pt, label) {
+  const clean = String(label || '').trim();
+  if (String(pt?.label || '').trim() === clean) return true;
+  if (typeof _serviceMergeKey === 'function') {
+    return _serviceMergeKey(pt?.label) === _serviceMergeKey(clean);
+  }
+  return false;
+}
+
 async function _ensurePackageTypeByLabel(label) {
   const clean = (label || '').trim() || 'خرید جدید';
-  PKG_TYPES = PKG_TYPES.length ? PKG_TYPES : await window.api.packageTypes.getAll();
-  let pt = PKG_TYPES.find(x => String(x.label || '').trim() === clean);
-  if (!pt) {
-    await window.api.packageTypes.add({ label: clean, color: '#7c6af7' });
-    PKG_TYPES = await window.api.packageTypes.getAll();
-    pt = PKG_TYPES.find(x => String(x.label || '').trim() === clean);
+  const find = (list) => (list || []).find(x => _packageTypeMatchesLabel(x, clean));
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  let pt = find(PKG_TYPES);
+  if (pt) return pt;
+  const item = await window.api.packageTypes.add({ label: clean, color: '#7c6af7' });
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  pt = find(PKG_TYPES);
+  if (pt) return pt;
+  if (item?.id != null) {
+    return PKG_TYPES.find(x => String(x.id) === String(item.id)) || item;
   }
-  return pt;
+  return null;
 }
 
 
@@ -1185,9 +1198,19 @@ async function savePurchaseFromReminder(id) {
       return;
     }
     allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
-    const pt = await _ensurePackageTypeByLabel(r.title);
+    let pt = null;
+    let staffId = null;
+    if (r.package_id) {
+      const pkgs = await window.api.packages.getByStudent(r.student_id);
+      const pkg = (pkgs || []).find(p => String(p.id) === String(r.package_id));
+      if (pkg?.type_id) {
+        pt = { id: pkg.type_id };
+        staffId = pkg.staff_id || null;
+      }
+    }
+    if (!pt?.id) pt = await _ensurePackageTypeByLabel(r.title);
     if (!pt?.id) {
-      showToast('خدمت این یادآوری ساخته نشد', 'error');
+      showToast('خدمت این یادآوری پیدا نشد', 'error');
       return;
     }
     const date = formatJalali(...todayJalali());
@@ -1200,7 +1223,7 @@ async function savePurchaseFromReminder(id) {
     const res = await window.api.packages.add({
       student_id: r.student_id,
       type_id: pt.id,
-      staff_id: null,
+      staff_id: staffId,
       total_amount: r.amount || 0,
       initial_cost: 0,
       current_payment: 0,
