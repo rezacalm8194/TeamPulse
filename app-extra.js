@@ -30,6 +30,65 @@ function changeDashboardIncomeYear(value) {
   renderDashboard();
 }
 
+function changeDashboardTrendRange(months) {
+  window._dashboardTrendMonths = Number(months) || 6;
+  renderDashboard();
+}
+
+function _dashboardTrendDetailHtml(month) {
+  if (!month) return '';
+  const profitColor = month.profit >= 0 ? 'var(--green)' : 'var(--red)';
+  return `<div class="finance-trend-metric">درآمد <b style="color:var(--green)">${fmt(month.income)}</b></div><div class="finance-trend-metric">هزینه <b style="color:var(--red)">${fmt(month.expense)}</b></div><div class="finance-trend-metric">مانده <b style="color:${profitColor}">${month.profit>=0?'+':''}${fmt(month.profit)}</b></div>`;
+}
+
+function selectDashboardTrendMonth(index) {
+  const data = window._dashboardTrend || [];
+  const month = data[index];
+  if (!month) return;
+  document.querySelectorAll('.finance-trend-col').forEach((el, i) => {
+    el.classList.toggle('is-active', i === index);
+    el.setAttribute('aria-pressed', i === index ? 'true' : 'false');
+  });
+  const panel = document.getElementById('finance-trend-detail');
+  const label = document.getElementById('finance-trend-detail-label');
+  if (label) label.textContent = month.label;
+  if (panel) panel.innerHTML = _dashboardTrendDetailHtml(month);
+}
+
+function openDashboardCommitments() {
+  const data = window._dashboardCommitments || { netDebt: 0, unpaidStaffSalary: 0, openCommitments: 0 };
+  const content = `<div class="finance-commit-modal"><div class="detail-row"><span class="detail-key">مطالبات مشتریان</span><span class="detail-val" style="color:var(--amber)">${fmt(data.netDebt)} تومان</span></div><div class="detail-row"><span class="detail-key">حقوق پرداخت‌نشده</span><span class="detail-val" style="color:var(--amber)">${fmt(data.unpaidStaffSalary)} تومان</span></div><div class="detail-row"><span class="detail-key">جمع تعهدات باز</span><span class="detail-val">${fmt(data.openCommitments)} تومان</span></div></div>`;
+  openModal('تعهدات باز', content, [
+    { label: 'حساب مشتریان', cls: 'btn-ghost', action: "closeModal();openFinanceDestination('income')" },
+    { label: 'حساب پرسنل', cls: 'btn-ghost', action: "closeModal();openFinanceDestination('staff')" },
+    { label: 'بستن', cls: 'btn-primary', action: 'closeModal()' }
+  ]);
+}
+
+function _dashboardAlertActionLabel(item) {
+  return item?.kind === 'expense' ? 'جزئیات' : 'پرداخت';
+}
+
+function runDashboardAlertAction(index) {
+  const item = (window._dashboardFinanceAlerts || [])[index];
+  if (!item) return;
+  if (item.kind === 'customer') return openDashboardCustomerAccount(item.id);
+  if (item.kind === 'staff') return openStaffPayment(item.id, item.name || '');
+  return openExpenseManager();
+}
+
+function _dashboardAlertRowHtml(item, index) {
+  return `<div class="finance-alert-row"><div class="finance-alert-copy"><b>${escapeHtml(item.title)}</b><small style="color:${item.urgent?'var(--red)':'var(--text3)'}">${escapeHtml(item.detail)}</small></div><button type="button" class="btn btn-primary btn-sm" onclick="runDashboardAlertAction(${Number(index)})">${_dashboardAlertActionLabel(item)}</button></div>`;
+}
+
+function openDashboardAllAlerts() {
+  const alerts = window._dashboardFinanceAlerts || [];
+  const body = alerts.length
+    ? `<div class="finance-alerts-all">${alerts.map((item, index) => _dashboardAlertRowHtml(item, index)).join('')}</div>`
+    : '<div style="padding:12px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>';
+  openModal('پیگیری‌های مالی', body, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+}
+
 function openDashboardIncomeReport() {
   const section = document.getElementById('dashboard-income-report');
   if (!section) return;
@@ -470,7 +529,7 @@ async function renderDashboard() {
     'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'
   ]);
   const stats = await window.api.dashboard.stats();
-  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffDueCount, staffPaymentAlerts, customerDueAlerts, expenseDueAlerts } = stats;
+  const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffPaymentAlerts, customerDueAlerts, expenseDueAlerts } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
   const openCommitments = netDebt + Number(unpaidStaffSalary || 0);
   const monthlyCashProfit = Number(currentMonthIncome || 0) - Number(currentMonthExpenses || 0);
@@ -492,79 +551,128 @@ async function renderDashboard() {
   const incomeTrendMap = new Map(monthlyIncome.map(m => [`${m.jy}-${m.jm}`, Number(m.total||0)]));
   const expenseTrendMap = new Map((monthlyExpenses||[]).map(m => [`${m.jy}-${m.jm}`, Number(m.total||0)]));
   const [trendYear, trendMonth] = _todayJalali();
-  const financialTrend = Array.from({length:6}, (_,index) => {
-    const offset = 5-index;
+  const trendMonths = [3, 6, 12].includes(Number(window._dashboardTrendMonths)) ? Number(window._dashboardTrendMonths) : 6;
+  window._dashboardTrendMonths = trendMonths;
+  const financialTrend = Array.from({length:trendMonths}, (_,index) => {
+    const offset = trendMonths-1-index;
     const totalMonths = trendYear * 12 + (trendMonth - 1) - offset;
     const jy = Math.floor(totalMonths / 12), jm = totalMonths % 12 + 1;
     const income = incomeTrendMap.get(`${jy}-${jm}`) || 0;
     const expense = expenseTrendMap.get(`${jy}-${jm}`) || 0;
-    return { jy, jm, label: incomeMonthNames[jm-1], income, expense, profit:income-expense };
+    return { jy, jm, label: `${incomeMonthNames[jm-1]} ${fa(jy)}`, income, expense, profit:income-expense };
   });
+  window._dashboardTrend = financialTrend;
+  const selectedTrendIndex = financialTrend.length - 1;
+  const selectedTrendMonth = financialTrend[selectedTrendIndex];
   const trendMax = Math.max(1,...financialTrend.flatMap(m=>[m.income,m.expense,Math.abs(m.profit)]));
-  const financialTrendHtml = financialTrend.map(m => {
-    const incomeHeight=Math.max(m.income?8:0,Math.round(m.income/trendMax*86));
-    const expenseHeight=Math.max(m.expense?8:0,Math.round(m.expense/trendMax*86));
-    const profitColor=m.profit>=0?'var(--green)':'var(--red)';
-    return `<div style="flex:1;min-width:54px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:4px;border-bottom:1px solid var(--border2)"><span title="درآمد: ${fmt(m.income)} تومان" style="display:block;width:12px;height:${incomeHeight}px;min-height:${m.income?8:1}px;border-radius:5px 5px 1px 1px;background:var(--green)"></span><span title="هزینه: ${fmt(m.expense)} تومان" style="display:block;width:12px;height:${expenseHeight}px;min-height:${m.expense?8:1}px;border-radius:5px 5px 1px 1px;background:var(--red)"></span></div><div style="font-size:10px;color:var(--text2)">${escapeHtml(m.label)}</div><div style="font-size:9px;font-weight:700;color:${profitColor};white-space:nowrap">${m.profit>=0?'+':''}${fmt(m.profit)}</div></div>`;
+  const financialTrendHtml = financialTrend.map((m, index) => {
+    const incomeHeight=Math.max(m.income?6:0,Math.round(m.income/trendMax*46));
+    const expenseHeight=Math.max(m.expense?6:0,Math.round(m.expense/trendMax*46));
+    return `<button type="button" class="finance-trend-col ${index===selectedTrendIndex?'is-active':''}" onclick="selectDashboardTrendMonth(${index})" aria-pressed="${index===selectedTrendIndex?'true':'false'}" aria-label="${escapeHtml(m.label)}"><span class="finance-trend-bars"><span class="finance-trend-bar is-income" style="height:${incomeHeight}px"></span><span class="finance-trend-bar is-expense" style="height:${expenseHeight}px"></span></span><span class="finance-trend-label">${escapeHtml(incomeMonthNames[m.jm-1])}</span></button>`;
   }).join('');
   const dueLabel = days => days < 0 ? `${fa(Math.abs(days))} روز تأخیر` : days === 0 ? 'سررسید امروز' : `${fa(days)} روز مانده`;
   const financialAlerts = [
-    ...(customerDueAlerts||[]).slice(0,3).map(item=>({kind:'customer',icon:'👤',title:`پرداخت ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.studentId,urgent:item.dueIn<=0})),
-    ...(staffPaymentAlerts||[]).slice(0,3).map(item=>({kind:'staff',icon:'💼',title:`حقوق ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.staffId,urgent:item.dueIn<=0})),
-    ...(expenseDueAlerts||[]).slice(0,3).map(item=>({kind:'expense-reminder',icon:'🧾',title:`هزینه ${item.category}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان${item.description?` · ${item.description}`:''}`,id:item.expenseId,urgent:item.dueIn<=0})),
-    ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',icon:'📈',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
+    ...(customerDueAlerts||[]).map(item=>({kind:'customer',title:`پرداخت ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.studentId,name:`${item.name||''} ${item.lname||''}`.trim(),urgent:item.dueIn<=0})),
+    ...(staffPaymentAlerts||[]).map(item=>({kind:'staff',title:`حقوق ${item.name} ${item.lname}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان`,id:item.staffId,name:`${item.name||''} ${item.lname||''}`.trim(),urgent:item.dueIn<=0})),
+    ...(expenseDueAlerts||[]).map(item=>({kind:'expense-reminder',title:`هزینه ${item.category}`,detail:`${dueLabel(item.dueIn)} · ${fmt(item.amount)} تومان${item.description?` · ${item.description}`:''}`,id:item.expenseId,urgent:item.dueIn<=0})),
+    ...(previousMonthExpenses>0&&expenseChangePercent>=20?[{kind:'expense',title:'افزایش هزینه ماهانه',detail:`هزینه‌ها ${fa(expenseChangePercent)}٪ بیشتر از ماه قبل شده‌اند`,urgent:true}]:[])
   ];
+  window._dashboardFinanceAlerts = financialAlerts;
+  const urgentAlerts = financialAlerts.filter(item => item.urgent).slice(0, 3);
+  const expenseBreakdown = Object.entries((() => {
+    const totals = {};
+    (_db.expenses || []).forEach(expense => {
+      const [year, month] = _jalaliParse(expense.date_jalali);
+      if (year === trendYear && month === trendMonth) {
+        const category = expense.category || 'سایر';
+        totals[category] = (totals[category] || 0) + Number(expense.amount || 0);
+      }
+    });
+    return totals;
+  })()).sort((a, b) => b[1] - a[1]);
+  window._dashboardCommitments = { netDebt, unpaidStaffSalary, openCommitments };
+  updateTopbarActions(openCommitments > 0
+    ? `<button type="button" class="finance-commit-badge" onclick="openDashboardCommitments()">تعهدات ${fmt(openCommitments)}</button>`
+    : '');
 
-  const html = `<div class="stats-row finance-dashboard-stats" aria-label="خلاصه مالی ماه جاری">
+  const html = `<div class="finance-dashboard">
+  <div class="finance-dash-head">
+    <div>
+      <h3 class="finance-dash-title">وضعیت مالی</h3>
+      <div class="finance-dash-period">${escapeHtml(currentMonthLabel||'ماه جاری')}</div>
+    </div>
+  </div>
+  <div class="stats-row finance-dashboard-stats" aria-label="خلاصه مالی ماه جاری">
     <div class="stat-card s-green">
-      <div class="stat-label">درآمد دریافت‌شده</div>
+      <div class="stat-label">درآمد</div>
       <div class="stat-value">${fmt(currentMonthIncome||0)}</div>
-      <div class="stat-sub">${escapeHtml(currentMonthLabel||'ماه جاری')} · پرداخت‌های مشتریان</div>
+      <div class="stat-sub">دریافت مشتریان</div>
     </div>
     <div class="stat-card s-red">
-      <div class="stat-label">هزینه پرداخت‌شده</div>
+      <div class="stat-label">هزینه</div>
       <div class="stat-value">${fmt(currentMonthExpenses||0)}</div>
-      <div class="stat-sub">${topExpenseCategory?`بیشترین: ${escapeHtml(topExpenseCategory[0])}`:'هزینه‌های ثبت‌شده این ماه'}</div>
+      <div class="stat-sub">${topExpenseCategory?escapeHtml(topExpenseCategory[0]):'بدون هزینه ثبت‌شده'}</div>
     </div>
     <div class="stat-card ${monthlyCashProfit>=0?'s-accent':'s-red'}">
-      <div class="stat-label">سود نقدی</div>
-      <div class="stat-value" style="color:${monthlyCashProfit>=0?'var(--accent2)':'var(--red)'}">${fmt(monthlyCashProfit)}</div>
-      <div class="stat-sub">درآمد دریافت‌شده − هزینه پرداخت‌شده</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">تعهدات باز</div>
-      <div class="stat-value" style="color:${openCommitments>0?'var(--amber)':'var(--green)'}">${fmt(openCommitments)}</div>
-      <div class="stat-sub">مطالبات مشتریان: ${fmt(netDebt)}${staffDueCount?` · حقوق پرداخت‌نشده: ${fmt(unpaidStaffSalary)}`:''}</div>
+      <div class="stat-label">مانده خالص</div>
+      <div class="stat-value">${fmt(monthlyCashProfit)}</div>
+      <div class="stat-sub">درآمد − هزینه</div>
     </div>
   </div>
 
-  <div class="detail-section finance-alerts">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">⚠️ پیگیری‌های مالی</h3><span style="font-size:10px;color:var(--text3)">${fa(financialAlerts.length)} مورد</span></div>
-    ${financialAlerts.length ? financialAlerts.map(item=>`<button type="button" onclick="${item.kind==='customer'?`openDashboardCustomerAccount(${Number(item.id)})`:item.kind==='staff'?`openDashboardStaffAccount(${Number(item.id)})`:'openExpenseManager()'}" style="width:100%;display:flex;align-items:center;gap:9px;text-align:right;border:0;border-bottom:1px solid var(--border2);background:transparent;color:inherit;padding:10px 2px;cursor:pointer"><span style="font-size:16px">${escapeHtml(item.icon)}</span><span style="min-width:0;flex:1"><b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(item.title)}</b><small style="display:block;margin-top:3px;color:${item.urgent?'var(--red)':'var(--text3)'};font-size:10px">${escapeHtml(item.detail)}</small></span><span style="color:var(--text3)">←</span></button>`).join(''):'<div style="padding:12px 0;color:var(--green);font-size:12px">✓ مورد مالی فوری برای پیگیری نیست</div>'}
-  </div>
+  <section class="finance-alerts" aria-label="هشدارهای فوری">
+    <div class="finance-section-head">
+      <h3>هشدارهای فوری</h3>
+      ${financialAlerts.length ? `<button type="button" class="btn btn-ghost btn-sm" onclick="openDashboardAllAlerts()">مشاهده همه${financialAlerts.length>urgentAlerts.length?` (${fa(financialAlerts.length)})`:''}</button>` : ''}
+    </div>
+    ${urgentAlerts.length
+      ? urgentAlerts.map(item => _dashboardAlertRowHtml(item, financialAlerts.indexOf(item))).join('')
+      : `<div class="finance-alerts-empty">${financialAlerts.length ? `مورد فوری نیست · ${fa(financialAlerts.length)} مورد در روزهای آینده` : '✓ مورد مالی فوری برای پیگیری نیست'}</div>`}
+  </section>
 
-  <div class="detail-section" style="margin-top:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div><h3 style="margin:0">📊 روند مالی ۶ ماه اخیر</h3><div style="font-size:10px;color:var(--text3);margin-top:4px">مقایسه درآمد و هزینه؛ عدد زیر هر ماه سود نقدی است</div></div><div style="display:flex;gap:10px;font-size:10px;color:var(--text2)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-left:4px"></i>درآمد</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-left:4px"></i>هزینه</span></div></div>
-    <div style="display:flex;align-items:stretch;gap:8px;overflow-x:auto;padding:4px 2px 2px">${financialTrendHtml}</div>
-  </div>
+  <section class="finance-trend" aria-label="روند مالی">
+    <div class="finance-section-head">
+      <div>
+        <h3>روند مالی</h3>
+        <div class="finance-trend-legend"><span class="is-income">درآمد</span><span class="is-expense">هزینه</span></div>
+      </div>
+      <div class="finance-range" role="group" aria-label="بازه نمودار">
+        ${[3,6,12].map(n => `<button type="button" class="finance-range-btn ${trendMonths===n?'is-active':''}" onclick="changeDashboardTrendRange(${n})">${fa(n)} ماه</button>`).join('')}
+      </div>
+    </div>
+    <div class="finance-trend-chart">${financialTrendHtml}</div>
+    <div class="finance-trend-detail">
+      <div id="finance-trend-detail-label">${escapeHtml(selectedTrendMonth?.label || '')}</div>
+      <div id="finance-trend-detail" class="finance-trend-detail-grid">${_dashboardTrendDetailHtml(selectedTrendMonth)}</div>
+    </div>
+  </section>
 
-  <details class="finance-advanced">
-    <summary><span>گزارش‌ها و برنامه‌ریزی پیشرفته <small style="display:block;margin-top:3px;color:var(--text3);font-size:10px;font-weight:500">بودجه ماه و پیش‌بینی جریان نقدی</small></span></summary>
-    <div class="finance-advanced-body">
-      ${budgetDashboardHtml(currentJalaliYear,currentJalaliMonth)}
-      ${cashForecastDashboardHtml()}
+  <details class="finance-fold">
+    <summary>
+      <span>
+        <b>خلاصه هزینه‌ها</b>
+        <small>${topExpenseCategory ? `دسته اصلی: ${escapeHtml(topExpenseCategory[0])}` : 'هنوز هزینه‌ای ثبت نشده'}</small>
+      </span>
+      <strong style="color:var(--red)">${fmt(currentMonthExpenses||0)}</strong>
+    </summary>
+    <div class="finance-fold-body">
+      <div class="detail-row"><span class="detail-key">هزینه ${escapeHtml(currentMonthLabel||'ماه جاری')}</span><span class="detail-val" style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</span></div>
+      <div class="detail-row"><span class="detail-key">تغییر نسبت به ماه قبل</span><span class="detail-val" style="color:${expenseChangePercent>0?'var(--red)':'var(--green)'}">${previousMonthExpenses?`${expenseChangePercent>=0?'▲':'▼'} ${fa(Math.abs(expenseChangePercent))}٪`:'—'}</span></div>
+      ${expenseBreakdown.map(([category, amount]) => `<div class="detail-row"><span class="detail-key">${escapeHtml(category)}</span><span class="detail-val">${fmt(amount)} تومان</span></div>`).join('')}
+      <div class="finance-fold-actions"><button class="btn btn-ghost btn-sm" onclick="openExpenseManager()">مدیریت هزینه‌ها</button></div>
     </div>
   </details>
 
-  <div class="dash-grid" style="margin-top:14px;grid-template-columns:1fr">
-    <div class="detail-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px"><h3 style="margin:0">🧾 خلاصه هزینه‌ها</h3><button class="btn btn-ghost btn-sm" onclick="openExpenseManager()">مدیریت</button></div>
-      <div class="detail-row"><span class="detail-key">هزینه ${escapeHtml(currentMonthLabel||'ماه جاری')}</span><span class="detail-val" style="color:var(--red)">${fmt(currentMonthExpenses||0)} تومان</span></div>
-      <div class="detail-row"><span class="detail-key">دسته پرهزینه</span><span class="detail-val">${topExpenseCategory?`${escapeHtml(topExpenseCategory[0])} · ${fmt(topExpenseCategory[1])} تومان`:'هنوز هزینه‌ای ثبت نشده'}</span></div>
-      <div class="detail-row"><span class="detail-key">تغییر نسبت به ماه قبل</span><span class="detail-val" style="color:${expenseChangePercent>0?'var(--red)':'var(--green)'}">${previousMonthExpenses?`${expenseChangePercent>=0?'▲':'▼'} ${fa(Math.abs(expenseChangePercent))}٪`:'—'}</span></div>
-    </div>
-  </div>
-
+  <details class="finance-fold">
+    <summary>
+      <span>
+        <b>گزارش‌ها</b>
+        <small>بدهکاران، درآمد ماهانه، بودجه و پیش‌بینی</small>
+      </span>
+    </summary>
+    <div class="finance-fold-body">
+      ${budgetDashboardHtml(currentJalaliYear,currentJalaliMonth)}
+      ${cashForecastDashboardHtml()}
   <div class="dash-grid">
     <div class="detail-section">
       <h3>توزیع پکیج‌ها / خدمات</h3>
@@ -670,6 +778,9 @@ async function renderDashboard() {
       <div style="display:flex;justify-content:center;padding-top:12px">
         <button type="button" class="btn btn-ghost btn-sm" aria-expanded="false" onclick="toggleMonthlyIncome(this)">مشاهده ادامه</button>
       </div>` : ''}
+  </div>
+    </div>
+  </details>
   </div>
   `;
   setContent(html);
