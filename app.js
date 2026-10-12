@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp360';
+const TP_ASSET_V = 'tp361';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2785,6 +2785,9 @@ function _reconcileStudentPaymentReminders(studentId, payment = null) {
   let changed = false;
   if (balance <= 0) {
     overdue.forEach(reminder => {
+      // Recurring renewals stay until خرید جدید / پرداخت شد.
+      // Only a recorded receipt may consume them; opening the list must not.
+      if (!payment && Number(reminder.repeat_months || 0) > 0) return;
       if (_consumePaymentReminder(reminder)) changed = true;
     });
     return changed;
