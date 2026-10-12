@@ -228,7 +228,49 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
   }
 
   for (const h of (userData?.habits || [])) {
-    if (h.archived || !h.time || !(h.remind_min > 0)) continue;
+    if (h.archived) continue;
+    for (const rem of (h.custom_reminders || [])) {
+      if (!rem || rem.done || !rem.time) continue;
+      const action = String(rem.action || '').trim();
+      const occurrences = [];
+      if ((rem.repeat || 'once') === 'weekly' && rem.date) {
+        const remParts = parseJalali(rem.date);
+        let remDow = null;
+        if (remParts) {
+          const [rgy, rgm, rgd] = jalaliToGregorian(remParts[0], remParts[1], remParts[2]);
+          remDow = new Date(Date.UTC(rgy, rgm - 1, rgd)).getUTCDay();
+        }
+        if (remDow != null) {
+          for (let i = 0; i < 8; i++) {
+            const d = new Date(Date.UTC(today.gy, today.gm - 1, today.gd + i));
+            if (d.getUTCDay() !== remDow) continue;
+            const gy = d.getUTCFullYear();
+            const gm = d.getUTCMonth() + 1;
+            const gd = d.getUTCDate();
+            const utc = iranWallTimeToUTC(gy, gm, gd, rem.time);
+            if (utc) occurrences.push({ dateKey: `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`, utc });
+          }
+        }
+      } else if (rem.date) {
+        const utc = jalaliToUTC(rem.date, rem.time);
+        if (utc) occurrences.push({ dateKey: rem.date, utc });
+      }
+      for (const occ of occurrences) {
+        const notifMs = occ.utc.getTime();
+        const key = `habit-custom:${accountId}:${h.id}:${rem.id}:${occ.dateKey}:${rem.time}`;
+        if (delivered.has(key) || !isCatchableOrFuture(notifMs, nowMs, catchUpMs)) continue;
+        nextTimedMs = takeMin(nextTimedMs, notifMs);
+        pushItem(items, key, 'habit', notifMs, {
+          title: h.title,
+          time: rem.time,
+          desc: action,
+          action,
+          habitId: h.id,
+          custom: true,
+        });
+      }
+    }
+    if (!h.time || !(h.remind_min > 0)) continue;
     const habitUTC = iranWallTimeToUTC(today.gy, today.gm, today.gd, h.time);
     if (!habitUTC) continue;
     const notifMs = habitUTC.getTime() - h.remind_min * 60000;

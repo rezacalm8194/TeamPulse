@@ -352,10 +352,14 @@ async function deliverIndexedItem(item) {
 
   if (kind === 'habit') {
     const title = payload.title || '';
+    const action = String(payload.action || '').trim();
+    const body = action
+      ? `${action}${payload.time ? ' — ساعت ' + payload.time : ''}`
+      : `وقت انجام عادت: ساعت ${payload.time || ''}${payload.desc ? ' — ' + String(payload.desc).slice(0, 50) : ''}`;
     console.log(`[Push] → habit "${title}" (account: ${accountId})`);
     return deliverOnce(key, accountId, 'habit', () =>
-      pushToOwner(accountId, 'default', '🔥 ' + title, `وقت انجام عادت: ساعت ${payload.time || ''}${payload.desc ? ' — ' + String(payload.desc).slice(0, 50) : ''}`, {
-        kind: 'habit', tag: `habit-${payload.habitId}`, url: '/app#habits',
+      pushToOwner(accountId, 'default', '🔥 ' + title, body, {
+        kind: 'habit', tag: payload.custom ? `habit-custom-${payload.habitId}` : `habit-${payload.habitId}`, url: '/app#habits',
       })
     );
   }

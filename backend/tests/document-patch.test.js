@@ -48,6 +48,47 @@ test('older package upserts do not replace a newer stored sale', () => {
   assert.equal(next.packages[0].note, 'desktop');
 });
 
+test('habit start_date upsert applies when updated_at is newer', () => {
+  const previous = {
+    habits: [{
+      id: 4,
+      title: 'مراقبت از جوجه ها',
+      created_at: '2026-10-12T06:00:00.000Z',
+      start_date: '۱۴۰۵/۰۷/۲۰',
+    }],
+  };
+  const skipped = applyDocumentPatch(previous, {
+    collections: {
+      habits: {
+        upsert: [{
+          id: 4,
+          title: 'مراقبت از جوجه ها',
+          created_at: '2026-10-12T06:00:00.000Z',
+          start_date: '۱۴۰۵/۰۷/۱۰',
+        }],
+        delete: [],
+      },
+    },
+  });
+  assert.equal(skipped.habits[0].start_date, '۱۴۰۵/۰۷/۲۰');
+
+  const next = applyDocumentPatch(previous, {
+    collections: {
+      habits: {
+        upsert: [{
+          id: 4,
+          title: 'مراقبت از جوجه ها',
+          created_at: '2026-10-12T06:00:00.000Z',
+          updated_at: '2026-10-12T07:00:00.000Z',
+          start_date: '۱۴۰۵/۰۷/۱۰',
+        }],
+        delete: [],
+      },
+    },
+  });
+  assert.equal(next.habits[0].start_date, '۱۴۰۵/۰۷/۱۰');
+});
+
 test('todo candidate list from a delta keeps untouched rows', () => {
   const previous = { todos: [{ id: 1, title: 'keep' }, { id: 2, title: 'edit' }] };
   const todos = candidateTodosFromPatch(previous, {

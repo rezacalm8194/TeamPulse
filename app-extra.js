@@ -7751,6 +7751,7 @@ function renderHabits() {
       <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 38px">
         ${h.time ? `<span>⏰ ${h.time}</span>` : ''}
         ${startDate ? `<span>📅 شروع: ${DateService.disp(startDate)}</span>` : ''}
+        ${(() => { const nextR = _habitNextCustomReminder(h); return nextR ? `<span data-habit-skip="1" onclick="openHabitCustomReminders(${h.id})" style="cursor:pointer">🔔 ${DateService.disp(nextR.date)}${nextR.time ? ' ' + nextR.time : ''}${nextR.action ? ' — ' + escapeHtml(nextR.action) : ''}${(nextR.repeat||'once')==='weekly'?' · هفتگی':''}</span>` : ''; })()}
         ${lastDone ? `<span>· آخرین انجام: ${lastDone}</span>` : ''}
         ${linkedGoal ? `<span data-habit-skip="1" onclick="openGoalDetail(${linkedGoal.id})" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
       </div>
@@ -7825,6 +7826,7 @@ function renderHabits() {
             if (doneToday) { statusIcon = '✅'; statusColor = 'var(--green)'; }
             else if (timeNotYetDue) { statusIcon = '⏳'; statusColor = 'var(--text3)'; }
             else { statusIcon = '⭕'; statusColor = 'var(--text3)'; }
+            const startDate2 = _habitStartDate(h);
             const borderColor2 = doneToday ? 'var(--green)' : 'var(--border)';
             const cardGlow2 = doneToday ? '0 0 0 1px var(--green),0 4px 18px rgba(62,207,142,.15)' : 'none';
             return `<div onclick="_onHabitCardClick(event,${h.id})" style="background:var(--bg2);border:1px solid ${borderColor2};box-shadow:${cardGlow2};border-radius:14px;padding:14px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
@@ -7849,9 +7851,9 @@ function renderHabits() {
               <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
                 <div style="height:100%;width:${monthSuccess}%;background:var(--green);border-radius:3px;transition:width .3s"></div>
               </div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:10px;color:var(--text3)">موفقیت این ماه</span>
-                <span style="font-size:12px;font-weight:700;color:var(--green)">${fa(monthSuccess)}٪</span>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <span style="font-size:10px;color:var(--text3)">موفقیت این ماه ${fa(monthSuccess)}٪</span>
+                ${startDate2 ? `<span style="font-size:10px;color:var(--text3);white-space:nowrap">شروع ${DateService.disp(startDate2)}</span>` : ''}
               </div>
             </div>`;
           }).join('')}
@@ -7861,6 +7863,7 @@ function renderHabits() {
       ${html}
       </div>
     </div>`);
+  _scheduleAllHabitCustomReminders();
 }
 
 function _onHabitCardClick(event, habitId) {
@@ -7961,6 +7964,7 @@ function openAddHabit() {
           <option value="60">۱ ساعت قبل</option>
           <option value="120">۲ ساعت قبل</option>
         </select>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">یادآوری روزانه نسبت به زمان انجام است. برای یک روز مشخص و اقدام خاص، بعد از ذخیره از منوی عادت «یادآوری سفارشی» را بزن.</div>
       </div>
       <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
         background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
@@ -8005,6 +8009,7 @@ async function saveNewHabit() {
     goal_id: goalId ? +goalId : null,
     desc: document.getElementById('hab-desc')?.value || '',
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
   _save();
   if (remindMin > 0 && habitTime) _scheduleHabitNotification(newId, title, habitTime, remindMin);
@@ -8060,6 +8065,7 @@ function openEditHabit(id) {
           <option value="60" ${(h.remind_min||0)===60?'selected':''}>۱ ساعت قبل</option>
           <option value="120" ${(h.remind_min||0)===120?'selected':''}>۲ ساعت قبل</option>
         </select>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">یادآوری روزانه نسبت به زمان انجام است. برای یک روز مشخص و اقدام خاص از منوی عادت «یادآوری سفارشی» را باز کن.</div>
       </div>
       <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
         background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
@@ -8103,6 +8109,7 @@ async function saveEditHabit(id) {
     start_date: startDate,
     goal_id: goalId ? +goalId : null,
     desc: document.getElementById('hab-desc')?.value || '',
+    updated_at: new Date().toISOString(),
   });
   _save();
   if (remindMin > 0 && habitTime) _scheduleHabitNotification(id, title, habitTime, remindMin);
@@ -8142,6 +8149,177 @@ function _scheduleHabitNotification(id, title, habitTime, remindMinutes) {
       }, delay);
     }
   } catch(e) { console.warn('Habit notification schedule failed:', e); }
+}
+
+const _habitCustomTimerKeys = new Set();
+
+function _habitCustomNextFire(rem) {
+  if (!rem || rem.done || !rem.time) return null;
+  const [hh, mm] = String(rem.time).split(':').map(Number);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  const toWhen = (dateStr) => {
+    const p = parseJalali(dateStr);
+    if (!p) return null;
+    const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+    return { when: _zonedWallTimeToLocalDate(gy, gm, gd, hh, mm, 0), date: dateStr };
+  };
+  if ((rem.repeat || 'once') === 'weekly') {
+    let cur = _todayJalaliStr ? _todayJalaliStr() : '';
+    const target = _habitWeekdayJs(rem.date);
+    for (let i = 0; i < 8; i++) {
+      if (_habitWeekdayJs(cur) === target) {
+        const hit = toWhen(cur);
+        if (hit && hit.when > new Date()) return hit;
+      }
+      const p = parseJalali(cur);
+      if (!p) break;
+      cur = _formatJalali(..._addDays(p[0], p[1], p[2], 1));
+    }
+    return null;
+  }
+  return toWhen(rem.date);
+}
+
+function _scheduleHabitCustomReminder(habit, rem) {
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const fire = _habitCustomNextFire(rem);
+  if (!fire) return;
+  const delay = fire.when.getTime() - Date.now();
+  if (delay <= 0 || delay >= 48 * 3600 * 1000) return;
+  const key = String(habit.id) + ':' + String(rem.id) + ':' + fire.date + ':' + rem.time;
+  if (_habitCustomTimerKeys.has(key)) return;
+  _habitCustomTimerKeys.add(key);
+  setTimeout(() => {
+    _notify('🔥 ' + (habit.title || 'عادت'), {
+      body: (rem.action ? rem.action + ' — ' : '') + 'ساعت ' + rem.time,
+      icon: '/favicon.png',
+      tag: 'habit-custom-' + habit.id + '-' + rem.id,
+    });
+  }, delay);
+}
+
+function _scheduleAllHabitCustomReminders() {
+  (_db.habits || []).forEach(h => {
+    if (h.archived) return;
+    _habitCustomList(h).forEach(r => _scheduleHabitCustomReminder(h, r));
+  });
+}
+
+function openHabitCustomReminders(id) {
+  _habitsInit();
+  const h = (_db.habits || []).find(x => String(x.id) === String(id));
+  if (!h) return;
+  const todayKey = _jalaliKey(_todayJalaliStr ? _todayJalaliStr() : '');
+  const rows = [..._habitCustomList(h)].sort((a, b) => _jalaliKey(a.date) - _jalaliKey(b.date));
+  const itemHtml = rows.map(r => {
+    const past = (r.repeat || 'once') !== 'weekly' && _jalaliKey(r.date) < todayKey;
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--bg2);opacity:${past || r.done ? 0.55 : 1}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtml(r.action || 'اقدام سفارشی')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">
+          📅 ${DateService.disp(r.date)} · ⏰ ${escapeHtml(r.time || '—')}
+          ${(r.repeat || 'once') === 'weekly' ? ' · هر هفته' : ''}
+          ${r.done ? ' · انجام شد' : ''}
+        </div>
+      </div>
+      <button type="button" onclick="openHabitCustomReminderForm(${id},${Number(r.id)})" style="padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:var(--font);font-size:11px;cursor:pointer">ویرایش</button>
+      <button type="button" onclick="deleteHabitCustomReminder(${id},${Number(r.id)})" style="padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--red);font-family:var(--font);font-size:11px;cursor:pointer">حذف</button>
+    </div>`;
+  }).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:20px 8px">هنوز یادآوری سفارشی نداری. یک تاریخ و اقدام مشخص کن.</div>';
+  openModal(`🔔 یادآوری سفارشی: ${escapeHtml(h.title)}`, `
+    <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:12px">
+      در یک روز مشخص بهت یادآوری می‌کنیم که برای این عادت، اقدام خاصی انجام بدهی.
+    </div>
+    ${itemHtml}
+  `, [
+    { label: '+ یادآوری جدید', cls: 'btn-primary', action: `openHabitCustomReminderForm(${id},null)` },
+    { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+function openHabitCustomReminderForm(habitId, remId) {
+  _habitsInit();
+  const h = (_db.habits || []).find(x => String(x.id) === String(habitId));
+  if (!h) return;
+  const rem = remId != null ? _habitCustomList(h).find(r => String(r.id) === String(remId)) : null;
+  const today = _todayJalaliStr ? _todayJalaliStr() : '';
+  openModal(rem ? '✏️ ویرایش یادآوری سفارشی' : '🔔 یادآوری سفارشی جدید', `
+    <div class="form-grid">
+      <div class="form-group">
+        ${calendarDateFieldHtml('hab-cr-date', rem?.date || today, '📅 روز یادآوری')}
+      </div>
+      <div class="form-group">
+        <label class="form-label">⏰ ساعت</label>
+        <input class="form-input" id="hab-cr-time" type="time" value="${escapeHtml(rem?.time || h.time || '09:00')}" style="direction:ltr">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">اقدام خاص *</label>
+        <input class="form-input" id="hab-cr-action" value="${escapeHtml(rem?.action || '')}" placeholder="مثلاً: اسکوات، تماس با مربی، خرید مکمل">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">تکرار</label>
+        <select class="form-input" id="hab-cr-repeat">
+          <option value="once" ${(rem?.repeat || 'once') === 'once' ? 'selected' : ''}>فقط همین روز</option>
+          <option value="weekly" ${rem?.repeat === 'weekly' ? 'selected' : ''}>هر هفته همین روز هفته</option>
+        </select>
+      </div>
+      <div id="hab-notif-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-top:4px;
+        background:${('Notification' in window && Notification.permission==='granted')?'rgba(62,207,142,.1)':'rgba(251,191,36,.1)'};
+        color:${('Notification' in window && Notification.permission==='granted')?'var(--green)':'var(--amber)'}">
+        ${('Notification' in window && Notification.permission==='granted')
+          ? '🔔 نوتیفیکیشن فعال است — در زمان مقرر یادآوری دریافت می‌کنید'
+          : '⚠️ نوتیفیکیشن غیرفعال است — برای فعال‌سازی روی دکمه زیر کلیک کنید'}
+        ${!('Notification' in window && Notification.permission==='granted')
+          ? '<button onclick="_requestHabitNotifPermission()" style="margin-right:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;font-family:var(--font)">فعال‌سازی</button>'
+          : ''}
+      </div>
+    </div>
+  `, [
+    { label: '💾 ذخیره', cls: 'btn-primary', action: `saveHabitCustomReminder(${habitId},${remId == null ? 'null' : Number(remId)})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: `openHabitCustomReminders(${habitId})` },
+  ]);
+  initDatePickers();
+}
+
+async function saveHabitCustomReminder(habitId, remId) {
+  _habitsInit();
+  const h = (_db.habits || []).find(x => String(x.id) === String(habitId));
+  if (!h) return;
+  const action = document.getElementById('hab-cr-action')?.value.trim();
+  const time = document.getElementById('hab-cr-time')?.value || '';
+  const date = _habitCanonDate(readCalendarDateField('hab-cr-date'));
+  const repeat = document.getElementById('hab-cr-repeat')?.value === 'weekly' ? 'weekly' : 'once';
+  if (!action) { showToast('اقدام خاص را بنویس', 'error'); return; }
+  if (!date) { showToast('روز یادآوری را انتخاب کن', 'error'); return; }
+  if (!time) { showToast('ساعت یادآوری را مشخص کن', 'error'); return; }
+  if (!(await _ensureReminderPushEnabled('hab-notif-status'))) return;
+  if (!Array.isArray(h.custom_reminders)) h.custom_reminders = [];
+  const existing = remId != null ? h.custom_reminders.find(r => String(r.id) === String(remId)) : null;
+  if (existing) {
+    Object.assign(existing, { date, time, action, repeat, done: false });
+  } else {
+    const nextId = h.custom_reminders.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+    h.custom_reminders.push({ id: nextId, date, time, action, repeat, done: false, created_at: new Date().toISOString() });
+  }
+  _touchHabit(h);
+  _save();
+  _scheduleAllHabitCustomReminders();
+  showToast('یادآوری سفارشی ذخیره شد ✓', 'success');
+  openHabitCustomReminders(habitId);
+  if (currentPage === 'habits') renderHabits();
+}
+
+function deleteHabitCustomReminder(habitId, remId) {
+  const h = (_db.habits || []).find(x => String(x.id) === String(habitId));
+  if (!h) return;
+  if (!confirm('این یادآوری سفارشی حذف شود؟')) return;
+  h.custom_reminders = _habitCustomList(h).filter(r => String(r.id) !== String(remId));
+  _touchHabit(h);
+  _save();
+  showToast('یادآوری حذف شد', 'error');
+  openHabitCustomReminders(habitId);
+  if (currentPage === 'habits') renderHabits();
 }
 
 function deleteHabit(id) {
@@ -8184,6 +8362,7 @@ function openHabitDetail(id) {
         ${linkedGoal ? `<span onclick="closeModal();openGoalDetail(${linkedGoal.id})" style="cursor:pointer;font-size:12px;border-radius:20px;padding:5px 12px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">🎯 ${escapeHtml(linkedGoal.title)}</span>` : ''}
         ${h.pinned ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">📌 پین شده</span>` : ''}
         ${h.archived ? `<span style="font-size:12px;background:var(--bg3);border-radius:20px;padding:5px 12px;color:var(--text2)">🗃 آرشیو شده</span>` : ''}
+        ${_habitCustomList(h).some(r => !r.done) ? `<span onclick="closeModal();openHabitCustomReminders(${id})" style="cursor:pointer;font-size:12px;background:rgba(251,191,36,.12);border-radius:20px;padding:5px 12px;color:var(--amber);font-weight:600">🔔 ${_habitCustomList(h).filter(r=>!r.done).length} یادآوری سفارشی</span>` : ''}
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -8202,10 +8381,11 @@ function openHabitDetail(id) {
         ${doneToday ? '↩️ لغو ثبت امروز' : '✅ ثبت انجام امروز'}
       </button>
 
-      <div style="display:flex;gap:8px">
-        <button onclick="closeModal();openHabitHistory(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">📊 تاریخچه</button>
-        <button onclick="closeModal();openEditHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ ویرایش</button>
-        <button onclick="closeModal();toggleArchiveHabit(${id})" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${h.archived?'↩️ بازگرداندن':'🗃 آرشیو'}</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="closeModal();openHabitCustomReminders(${id})" style="flex:1;min-width:120px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">🔔 یادآوری سفارشی</button>
+        <button onclick="closeModal();openHabitHistory(${id})" style="flex:1;min-width:90px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">📊 تاریخچه</button>
+        <button onclick="closeModal();openEditHabit(${id})" style="flex:1;min-width:90px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ ویرایش</button>
+        <button onclick="closeModal();toggleArchiveHabit(${id})" style="flex:1;min-width:90px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${h.archived?'↩️ بازگرداندن':'🗃 آرشیو'}</button>
       </div>
     </div>
   `, [
@@ -8228,6 +8408,7 @@ function openHabitMenu(id) {
     <div>
       ${rowBtn('✏️', 'ویرایش', `closeModal();openEditHabit(${id})`)}
       ${rowBtn('📊', 'آمار و تاریخچه', `closeModal();openHabitHistory(${id})`)}
+      ${rowBtn('🔔', 'یادآوری سفارشی', `closeModal();openHabitCustomReminders(${id})`)}
       ${rowBtn(h.pinned ? '📌' : '📍', h.pinned ? 'حذف پین' : 'پین کردن بالای لیست', `closeModal();togglePinHabit(${id})`)}
       ${rowBtn('📋', 'کپی کردن این عادت', `closeModal();duplicateHabit(${id})`)}
       ${rowBtn(h.archived ? '↩️' : '🗃', h.archived ? 'بازگرداندن از آرشیو' : 'آرشیو کردن', `closeModal();toggleArchiveHabit(${id})`)}
@@ -8247,7 +8428,9 @@ function duplicateHabit(id) {
     pinned: false,
     archived: false,
     start_date: _todayJalaliStr ? _todayJalaliStr() : h.start_date,
+    custom_reminders: _habitCustomList(h).map((r, i) => ({ ...r, id: i + 1 })),
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
   _save(); showToast('عادت کپی شد ✓', 'success');
   if (currentPage === 'habits') renderHabits();
@@ -8258,6 +8441,7 @@ function togglePinHabit(id) {
   const h = _db.habits.find(x => x.id === id);
   if (!h) return;
   h.pinned = !h.pinned;
+  _touchHabit(h);
   _save(); showToast(h.pinned ? 'به بالای لیست پین شد 📌' : 'پین برداشته شد', 'success');
   if (currentPage === 'habits') renderHabits();
 }
@@ -8267,6 +8451,7 @@ function toggleArchiveHabit(id) {
   const h = _db.habits.find(x => x.id === id);
   if (!h) return;
   h.archived = !h.archived;
+  _touchHabit(h);
   _save(); showToast(h.archived ? 'آرشیو شد 🗃' : 'از آرشیو خارج شد ↩️', 'success');
   if (currentPage === 'habits') renderHabits();
 }
