@@ -153,7 +153,7 @@ test('binder click-dispatches representative controls from every nav page', () =
     families: ['openNewFamily()', 'this.classList.toggle("checked")'],
     payments: ["_tpPaymentsTab('purchases')", "openBalePaymentRequest({student_id:1,reminder_id:2,package_id:null,amount:3,title:'x'})", 'savePurchaseFromSale(1)'],
     staff: ['openStaffDetail(1)', 'window.print()'],
-    dashboard: ['openExpenseManager()', 'toggleTopEarners(this)'],
+    dashboard: ['openExpenseManager()', 'toggleTopEarners(this)', 'changeDashboardTrendRange(6)', 'selectDashboardTrendMonth(1)', 'openDashboardAllAlerts()', 'runDashboardAlertAction(0)', 'openDashboardCommitments()'],
     transactions: ['openFiscalYearClosing()'],
     reminders: ['openAddReminder()', 'markReminderPaid(1)', 'savePurchaseFromReminder(1)'],
     settings: ["switchSettingsTab('backup')"],

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp362';
+const TP_ASSET_V = 'tp363';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -36,6 +36,8 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openDashboardStaffAccount', 'openDashboardCustomerAccount', 'openCashForecast', 'openBudgetForm',
   'saveFinancialBudget', 'deleteFinancialBudget', 'openFinancialAccounts', 'openFiscalYearClosing',
   'openExpenseManager', 'openExpenseForm',
+  'changeDashboardTrendRange', 'selectDashboardTrendMonth', 'openDashboardCommitments',
+  'runDashboardAlertAction', 'openDashboardAllAlerts',
   'renderStaff', 'openStaffDetail', 'openStaffModal', 'openAddStaffChoice', 'openAddStaffReminder',
   'openStaffPayment', 'openStaffAdjustment', 'openStaffMonthly', 'openAddPersonnelFromTodo',
   'renderInstructions', 'openNoteDetail', 'openAddInstruction', 'openEditInstruction',
@@ -16620,7 +16622,7 @@ function _financeNavHtml() {
   const incomeIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m6 9V5m6 13v-7m4-5-5 5-4-3-6 6"/></svg>';
   const expenseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/></svg>';
   const staffIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.5-4 2.5-6 5.5-6s5 2 5.5 6M16 8h5m-2.5-2.5v5"/></svg>';
-  return `<nav class="finance-nav" aria-label="بخش‌های اصلی مدیریت مالی"><span class="finance-nav-label">مدیریت مالی</span><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">${incomeIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">درآمد</span><span class="finance-nav-desc">فروش و دریافت مشتریان</span></span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">${expenseIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">هزینه</span><span class="finance-nav-desc">ثبت و مدیریت پرداخت‌ها</span></span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">${staffIcon}</span><span class="finance-nav-copy"><span class="finance-nav-title">پرسنل</span><span class="finance-nav-desc">حقوق و حساب پرسنل</span></span></button></div><button class="finance-nav-btn finance-nav-more" onclick="openFinanceTools()" aria-label="ابزارهای مالی بیشتر"><span class="finance-icon">•••</span><span class="finance-nav-title">بیشتر</span></button></nav>`;
+  return `<nav class="finance-nav" aria-label="میانبرهای مالی"><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">${incomeIcon}</span><span class="finance-nav-title">درآمد</span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">${expenseIcon}</span><span class="finance-nav-title">هزینه</span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">${staffIcon}</span><span class="finance-nav-title">پرسنل</span></button><button class="finance-nav-btn" onclick="openFinanceTools()" aria-label="ابزارهای مالی بیشتر"><span class="finance-icon">•••</span><span class="finance-nav-title">بیشتر</span></button></div></nav>`;
 }
 function openFinanceDestination(destination) {
   if(destination==='expense'){openExpenseManager();return;}
@@ -25912,7 +25914,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v358';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v363';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
