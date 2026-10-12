@@ -89,6 +89,9 @@ test('inline parser keeps habit card toggle handlers', () => {
   const ctx = loadBinder();
   assert.ok(ctx._tpParseInline('_onHabitCardClick(event, 12)'));
   assert.ok(ctx._tpParseInline('event.stopPropagation();toggleHabitToday(12)'));
+  assert.ok(ctx._tpParseInline("toggleHabitDate(12,'1404/07/20')"));
+  assert.ok(ctx._tpParseInline("toggleHabitDate(12,'1404/07/20');openHabitHistory(12)"));
+  assert.ok(ctx._tpParseInline('_habitHistShift(12,-1)'));
 });
 
 test('inline parser accepts Enter-key if blocks used by goal path inputs', () => {

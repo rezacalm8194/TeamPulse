@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp353';
+const TP_ASSET_V = 'tp354';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -40,7 +40,8 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openStaffPayment', 'openStaffAdjustment', 'openStaffMonthly', 'openAddPersonnelFromTodo',
   'renderInstructions', 'openNoteDetail', 'openAddInstruction', 'openEditInstruction',
   'renderTutorial',
-  'renderGoals', 'renderHabits', 'openHabitDetail', 'toggleHabitToday'
+  'renderGoals', 'renderHabits', 'openHabitDetail', 'toggleHabitToday',
+  'toggleHabitDate', 'openHabitHistory', '_habitHistShift'
 ].forEach(_tpLazy);
 [
   'renderSessions'
@@ -25906,7 +25907,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v353';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v354';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -26208,6 +26209,43 @@ function _goalsInit() {
     if (g && g.pinned == null) g.pinned = false;
   });
 }
+function _habitCanonDate(str) {
+  const p = parseJalali(str);
+  if (!p) return '';
+  return _formatJalali(p[0], p[1], p[2]);
+}
+function _habitEnDate(str) {
+  const p = parseJalali(str);
+  if (!p) return '';
+  return p[0] + '/' + String(p[1]).padStart(2, '0') + '/' + String(p[2]).padStart(2, '0');
+}
+function _habitJalaliFromIso(iso) {
+  try {
+    const dt = new Date(iso);
+    if (isNaN(dt.getTime())) return '';
+    const p = typeof _timeZoneParts === 'function' ? _timeZoneParts(dt) : null;
+    const y = p?.year ?? dt.getFullYear();
+    const m = p?.month ?? (dt.getMonth() + 1);
+    const d = p?.day ?? dt.getDate();
+    return _formatJalali(...gregorianToJalali(y, m, d));
+  } catch (e) { return ''; }
+}
+function _habitStartDate(h) {
+  if (h && h.start_date && _jalaliKey(h.start_date)) return h.start_date;
+  if (h && h.created_at) {
+    const fromCreated = _habitJalaliFromIso(h.created_at);
+    if (fromCreated) return fromCreated;
+  }
+  return typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '';
+}
+function _habitDateAllowed(h, dateStr) {
+  const date = _habitCanonDate(dateStr);
+  if (!date) return false;
+  const today = typeof _todayJalaliStr === 'function' ? _todayJalaliStr() : '';
+  const start = _habitStartDate(h);
+  const key = _jalaliKey(date);
+  return key >= _jalaliKey(start) && (!today || key <= _jalaliKey(today));
+}
 function _habitsInit() {
   if (!_db.habits) _db.habits = [];
   if (!_db.habit_logs) _db.habit_logs = [];
@@ -26234,6 +26272,7 @@ function _habitsInit() {
   } catch (e) {}
   _db.habits.forEach(h => {
     if ((h.remind_min === undefined || h.remind_min === null) && h.time) h.remind_min = 15;
+    if (!h.start_date || !_jalaliKey(h.start_date)) h.start_date = _habitStartDate(h);
   });
 }
 
