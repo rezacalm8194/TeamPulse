@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp365';
+const TP_ASSET_V = 'tp366';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -25946,7 +25946,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v365';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v366';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
@@ -26358,7 +26358,7 @@ function _habitsInit() {
 // و بدون هیچ تغییری در UI/دکمه‌ها، جایگزین می‌شود (Feature Flag: VOICE_CONFIG.engine)
 // ════════════════════════════════════════════════════════════════════════════
 
-const VOICE_VERSION = '2026-07-voice-debug-v4';
+const VOICE_VERSION = '2026-10-android-dedupe-v5';
 console.log('[voice-version]', VOICE_VERSION);
 
 const VOICE_CONFIG = {
@@ -26488,6 +26488,7 @@ class WebSpeechVoiceEngine {
         onStatus && onStatus('در حال ضبط... صحبت کنید');
       };
       rec.onresult = (e) => {
+        if (this._recognition !== rec || !this._userListening) return;
         const finalParts = [];
         const interimParts = [];
         for (let i = 0; i < e.results.length; i++) {
@@ -26518,7 +26519,10 @@ class WebSpeechVoiceEngine {
       rec.onend = () => {
         if (this._recognition === rec) this._recognition = null;
         if (this._userListening) {
-          emitReplace(true);
+          // Android Chrome معمولاً جلسه را وسط حرف قطع می‌کند. اگر همین‌جا
+          // متن را commit کنیم، جلسهٔ بعدی همان جمله را دوباره بعد از مکان‌نما
+          // می‌نویسد. تا توقف کاربر فقط overlay را نگه می‌داریم.
+          emitReplace(false);
           clearTimeout(this._restartTimer);
           this._restartTimer = setTimeout(() => {
             if (this._userListening) beginRecognition();
