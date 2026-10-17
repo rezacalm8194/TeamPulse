@@ -46,6 +46,12 @@ test('new purchase form uses a multi-service cart instead of a single select', (
   assert.match(app, /np-svc-qty/);
   assert.match(app, /np-svc-currency/);
   assert.match(app, /id="np-pay-currency"/);
+  assert.match(app, /function onNewPurchaseServiceField\(/);
+  assert.doesNotMatch(fn(app, 'newPurchaseServicePickerHtml'), /disabled/);
+  assert.match(app, /gInput\.setAttribute\('dir', 'ltr'\)/);
+  const css = fs.readFileSync(path.resolve(__dirname, '../../app.css'), 'utf8');
+  assert.match(css, /\.form-input\.cal-gregorian/);
+  assert.match(css, /touch-action:\s*manipulation/);
 });
 
 test('quick purchase parser matches catalog names and optional amounts', () => {
