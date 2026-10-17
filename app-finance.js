@@ -21,7 +21,7 @@ async function renderPurchases(search = '') {
         <td style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
         <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span></td>
         <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
-        <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
+        <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
         <td style="color:var(--text2)">
           <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
           <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
@@ -66,11 +66,19 @@ async function openEditPackage(id) {
         <select class="form-select" id="ep-staff">${purchaseStaffOptionsHtml(p.type_id, p.staff_id || '')}</select>
       </div>
       <div class="form-group">
-        <label class="form-label">مبلغ کل (تومان)</label>
+        <label class="form-label">تعداد</label>
+        <input class="form-input" id="ep-qty" type="number" min="1" step="1" value="${p.quantity || 1}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">واحد پول</label>
+        <select class="form-select" id="ep-currency">${currencyOptions(p.currency || 'تومان')}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">مبلغ کل</label>
         <input class="form-input amount-input" id="ep-total" type="number" value="${p.total_amount}">
       </div>
       <div class="form-group">
-        <label class="form-label">بدهی قبلی (تومان)</label>
+        <label class="form-label">بدهی قبلی</label>
         <input class="form-input amount-input" id="ep-initial" type="number" value="${p.initial_cost||0}">
       </div>
       <div class="form-group">
@@ -119,10 +127,15 @@ async function saveEditPackage(id, studentId) {
     showToast('برای تکرار، سررسید پرداخت را وارد کنید یا تکرار را روی «بدون تکرار» بگذارید', 'error');
     return;
   }
+  const quantity = _packageQuantity({ quantity: document.getElementById('ep-qty')?.value });
+  const total_amount = +(document.getElementById('ep-total')?.value||0);
   await window.api.packages.update({
     id, type_id: +(document.getElementById('ep-type')?.value||0),
     staff_id: document.getElementById('ep-staff')?.value || null,
-    total_amount: +(document.getElementById('ep-total')?.value||0),
+    quantity,
+    unit_price: quantity ? total_amount / quantity : total_amount,
+    currency: document.getElementById('ep-currency')?.value,
+    total_amount,
     initial_cost: +(document.getElementById('ep-initial')?.value||0),
     start_date: startDate,
     payment_due_date: paymentDueDate,
@@ -549,7 +562,7 @@ async function openStudentIncomeHistory(studentId, kind) {
       <td>${DateService.disp(p.start_date) || '—'}</td>
       <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label || '—')}</span></td>
       <td>${escapeHtml(p.staff_name || '—')}</td>
-      <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
+      <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
       <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '—')}</td>
     </tr>`).join('') || '<tr><td colspan="5"><div class="empty">فروشی برای این شاگرد ثبت نشده</div></td></tr>';
     openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>نوع خرید</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
@@ -632,7 +645,7 @@ async function renderPayments(search = '') {
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</td>
           <td>${incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag')}</td>
           <td style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
-          <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
+          <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
           <td style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
             <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
@@ -820,8 +833,8 @@ function familyGroupsSectionHtml(families, search = '') {
               <tr>
                 <td style="font-weight:500">${escapeHtml(m.name)} ${escapeHtml(m.lname)}</td>
                 <td>${pkgTagsHtml(m.packages)}</td>
-                <td><span class="amount amount-neutral">${fmt(m.totalAmount)}</span></td>
-                <td><span class="amount amount-paid">${fmt(m.totalPaid)}</span></td>
+                <td><span class="amount amount-neutral">${fmt(m.totalAmount)}</span>${fxBooksHtml(m.fxBooks, 'contract')}</td>
+                <td><span class="amount amount-paid">${fmt(m.totalPaid)}</span>${fxBooksHtml(m.fxBooks, 'paid')}</td>
                 <td>${m.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(m.wallet)}</span>` : '<span class="wallet-badge empty">—</span>'}</td>
                 <td>${balanceHtml(m.balance)}</td>
                 <td>${statusHtml(m.balance)}</td>
@@ -1668,16 +1681,18 @@ async function openFamilySalesHistory(familyId) {
   closeFamilyActions();
   const data = await getFamilyFinancialHistory(familyId);
   if (!data) return showToast('گروه پیدا نشد', 'error');
-  const total = data.sales.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
+  const totals = new Map();
+  data.sales.forEach(p => totals.set(_moneyCurrency(p.currency), (totals.get(_moneyCurrency(p.currency)) || 0) + Number(p.total_amount || 0)));
+  const totalLabel = [...totals].map(([currency, amount]) => `${fmt(amount)} ${escapeHtml(currency)}`).join(' + ') || '۰ تومان';
   const rows = data.sales.length ? data.sales.map(p => `<tr>
     <td>${escapeHtml(`${p.member?.name || ''} ${p.member?.lname || ''}`.trim())}</td>
     <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label || '—')}</span></td>
-    <td><span class="amount amount-paid">${fmt(p.total_amount)} تومان</span></td>
+    <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
     <td>${DateService.disp(p.start_date) || '—'}</td>
     <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '')}</td>
   </tr>`).join('') : `<tr><td colspan="5"><div class="empty">فروشی برای اعضای این گروه ثبت نشده</div></td></tr>`;
   openModal(`🛒 تاریخچه فروش به گروه «${escapeHtml(data.family.name)}»`, `
-    <div class="family-history-summary">${fa(data.sales.length)} فروش · جمع کل: <strong>${fmt(total)} تومان</strong></div>
+    <div class="family-history-summary">${fa(data.sales.length)} فروش · جمع کل: <strong>${totalLabel}</strong></div>
     <div class="family-history-table"><table><thead><tr><th>عضو</th><th>نوع فروش</th><th>مبلغ</th><th>تاریخ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>
   `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
 }

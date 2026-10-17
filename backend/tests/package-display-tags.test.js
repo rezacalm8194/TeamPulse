@@ -40,7 +40,7 @@ const sandbox = {};
 vm.createContext(sandbox);
 sandbox.fa = n => String(n);
 sandbox.escapeHtml = s => String(s == null ? '' : s);
-for (const name of ['_serviceLabelKey', '_serviceMergeKey', '_isPlaceholderPackageLabel', 'uniqueDisplayPackages', 'pkgTag', '_pkgTitleLabel', '_pkgDisplayCompact', 'pkgTagsHtml']) {
+for (const name of ['_serviceLabelKey', '_serviceMergeKey', '_isPlaceholderPackageLabel', '_packageQuantity', 'uniqueDisplayPackages', 'pkgTag', '_pkgTitleLabel', '_pkgDisplayCompact', 'pkgTagsHtml']) {
   vm.runInContext(extractFunction(appSource, name), sandbox);
 }
 

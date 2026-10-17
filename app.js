@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp367';
+const TP_ASSET_V = 'tp368';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -716,7 +716,68 @@ function _pkgTypeUnitLabel(pt) {
 
 function _pkgTypeUnitHint(pt) {
   const label = _pkgTypeUnitLabel(pt);
-  return label ? `تومان / ${label}` : 'تومان';
+  return label ? `قیمت واحد / ${label}` : 'قیمت واحد';
+}
+
+function _moneyCurrency(v) {
+  const s = String(v || '').trim();
+  return _ALL_CURRENCIES.includes(s) ? s : 'تومان';
+}
+function _isTomanCurrency(v) {
+  return _moneyCurrency(v) === 'تومان';
+}
+function _packageQuantity(p) {
+  const n = Math.round(Number(p?.quantity));
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+function _packageQtyPersist(p, prev) {
+  const quantity = _packageQuantity({ quantity: p?.quantity ?? prev?.quantity });
+  const currency = _moneyCurrency(p?.currency ?? prev?.currency);
+  const givenUnit = Number(p?.unit_price);
+  const givenTotal = Number(p?.total_amount);
+  const prevUnit = Number(prev?.unit_price);
+  const unit_price = Number.isFinite(givenUnit) && givenUnit >= 0
+    ? givenUnit
+    : (Number.isFinite(givenTotal) ? givenTotal / quantity
+      : (Number.isFinite(prevUnit) && prevUnit >= 0 ? prevUnit : Number(prev?.total_amount || 0) / _packageQuantity(prev)));
+  const total_amount = Number.isFinite(givenTotal) ? givenTotal : (Number(unit_price) || 0) * quantity;
+  return { quantity, currency, unit_price: Number(unit_price) || 0, total_amount: Number(total_amount) || 0 };
+}
+function _fxBooksFrom(packages, payments) {
+  const books = new Map();
+  const bump = (currency, field, amount) => {
+    const cur = _moneyCurrency(currency);
+    if (cur === 'تومان') return;
+    const n = Number(amount) || 0;
+    if (!n && field !== 'contract') return;
+    const row = books.get(cur) || { currency: cur, contract: 0, paid: 0 };
+    row[field] += n;
+    books.set(cur, row);
+  };
+  (packages || []).forEach(p => {
+    if (!_isPackageChargeable(p)) return;
+    bump(p.currency, 'contract', (Number(p.total_amount) || 0) + (Number(p.initial_cost) || 0));
+  });
+  (payments || []).forEach(p => bump(p.currency, 'paid', p.amount));
+  return [...books.values()]
+    .map(b => ({ ...b, balance: b.contract - b.paid }))
+    .filter(b => b.contract || b.paid);
+}
+function fxBooksHtml(books, field = 'contract') {
+  if (!Array.isArray(books) || !books.length) return '';
+  return `<div class="fx-books">${books.map(b => {
+    if (field === 'balance') {
+      if (b.balance > 0) return `<span class="fx-chip is-debt">${fmt(b.balance)} ${escapeHtml(b.currency)}</span>`;
+      if (b.balance < 0) return `<span class="fx-chip is-credit">${fmt(-b.balance)} ${escapeHtml(b.currency)} طلب</span>`;
+      return `<span class="fx-chip is-paid">${escapeHtml(b.currency)} تسویه</span>`;
+    }
+    return `<span class="fx-chip">${fmt(b[field] || 0)} ${escapeHtml(b.currency)}</span>`;
+  }).join('')}</div>`;
+}
+function _moneyLabel(amount, currency, quantity) {
+  const qty = Math.max(1, Math.round(Number(quantity) || 1));
+  const prefix = qty > 1 ? `${fa(qty)} × ` : '';
+  return `${prefix}${fmt(amount)} ${_moneyCurrency(currency)}`;
 }
 
 function _pkgTypeUnitPatch(p) {
@@ -1115,7 +1176,8 @@ function _packageExactKey(p) {
     Number(p?.initial_cost || 0), Number(p?.repeat_months || 0),
     String(p?.start_date || ''), String(p?.payment_due_date || ''),
     p?.defer_until_due ? '1' : '0', String(p?.charge_date || ''),
-    String(p?.note || '').trim()
+    String(p?.note || '').trim(),
+    _packageQuantity(p), _moneyCurrency(p?.currency)
   ].map(value => String(value ?? '')).join('\u001f');
 }
 
@@ -2613,8 +2675,11 @@ function _studentSummary(s) {
     const paymentDueDate = _packagePaymentDueDate(p);
     const chargeable = _isPackageChargeable(p);
     const grandTotal = (p.total_amount || 0) + (p.initial_cost || 0);
+    const toman = _isTomanCurrency(p.currency);
     return {
       ...p,
+      quantity: _packageQuantity(p),
+      currency: _moneyCurrency(p.currency),
       type_label: pt ? pt.label : '—',
       type_color: pt ? pt.color : '#888',
       type_key: pt ? pt.key : '',
@@ -2622,17 +2687,18 @@ function _studentSummary(s) {
       payment_due_date: paymentDueDate,
       is_chargeable: chargeable,
       grand_total: grandTotal,
-      due_total: chargeable ? grandTotal : 0,
+      due_total: chargeable && toman ? grandTotal : 0,
     };
   });
   const payments = _rowsForStudent('payments', s.id);
   const totalAmount = packages.reduce((a, p) => a + p.due_total, 0);
-  const totalPaid = payments.filter(p => (p.currency || 'تومان') === 'تومان').reduce((a, p) => a + (p.amount || 0), 0);
-  const otherPayments = payments.filter(p => (p.currency || 'تومان') !== 'تومان');
+  const totalPaid = payments.filter(p => _isTomanCurrency(p.currency)).reduce((a, p) => a + (p.amount || 0), 0);
+  const otherPayments = payments.filter(p => !_isTomanCurrency(p.currency));
+  const fxBooks = _fxBooksFrom(packages, payments);
   const wallet = s.wallet || 0;
   const balance = totalAmount - totalPaid - wallet;
   const sessionCount = _rowsForStudent('sessions', s.id).length;
-  const summary = { ...s, packages, totalAmount, totalPaid, wallet, balance, sessionCount, otherPayments };
+  const summary = { ...s, packages, totalAmount, totalPaid, wallet, balance, sessionCount, otherPayments, fxBooks };
   _studentSummaryCache.set(cacheKey, summary);
   return summary;
 }
@@ -2646,22 +2712,27 @@ function _studentListSummary(s) {
   const packages = _rowsForStudent('packages', s.id).map(p => {
     const pt = _resolvePackageType(p.type_id);
     const grandTotal = (p.total_amount || 0) + (p.initial_cost || 0);
+    const chargeable = _isPackageChargeable(p);
     return {
       id: p.id,
       type_id: p.type_id,
       type_label: pt ? pt.label : '—',
       type_color: pt ? pt.color : '#888',
       type_key: pt ? pt.key : '',
+      quantity: _packageQuantity(p),
+      currency: _moneyCurrency(p.currency),
+      total_amount: p.total_amount || 0,
+      initial_cost: p.initial_cost || 0,
       grand_total: grandTotal,
-      due_total: _isPackageChargeable(p) ? grandTotal : 0,
-      is_chargeable: _isPackageChargeable(p),
+      due_total: chargeable && _isTomanCurrency(p.currency) ? grandTotal : 0,
+      is_chargeable: chargeable,
     };
   });
   const payments = _rowsForStudent('payments', s.id);
   let totalPaid = 0;
   for (let i = 0; i < payments.length; i++) {
     const p = payments[i];
-    if ((p.currency || 'تومان') === 'تومان') totalPaid += (p.amount || 0);
+    if (_isTomanCurrency(p.currency)) totalPaid += (p.amount || 0);
   }
   const totalAmount = packages.reduce((a, p) => a + p.due_total, 0);
   const wallet = s.wallet || 0;
@@ -2674,6 +2745,7 @@ function _studentListSummary(s) {
     balance: totalAmount - totalPaid - wallet,
     sessionCount: _rowsForStudent('sessions', s.id).length,
     otherPayments: null,
+    fxBooks: _fxBooksFrom(packages, payments),
   };
   _studentListSummaryCache.set(cacheKey, summary);
   return summary;
@@ -3169,7 +3241,8 @@ window.api = {
     add: (p)=>{
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
-      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:p.total_amount||0,initial_cost:p.initial_cost||0,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString(),..._packageDeferPersist(p)};
+      const qty=_packageQtyPersist(p);
+      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:qty.total_amount,initial_cost:p.initial_cost||0,quantity:qty.quantity,unit_price:qty.unit_price,currency:qty.currency,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString(),..._packageDeferPersist(p)};
       const duplicate=_db.packages.find(existing=>{
         const age=Date.now()-(Date.parse(existing.created_at||'')||0);
         return age>=0&&age<=15000&&_packageExactKey(existing)===_packageExactKey(newPackage);
@@ -3177,12 +3250,16 @@ window.api = {
       if(duplicate)return _P({ok:true,id:duplicate.id,deduplicated:true});
       _db.packages.push(newPackage);
       _enqueueDurableBusinessDelta('packages', newPackage, 'upsert');
-      if(p.current_payment>0){_db.payments.push({id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:'تومان',date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString()});}
+      if(p.current_payment>0){
+        const payRow={id:_nextId('payments'),package_id:pkgId,student_id:p.student_id,amount:p.current_payment,currency:qty.currency,date_jalali:p.date||'',method:'کارت',note:'پرداخت هنگام ثبت',created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+        _db.payments.push(payRow);
+        _enqueueDurableBusinessDelta('payments', payRow, 'upsert');
+      }
       if(!p.skip_reminder)_syncPackageReminder(p.student_id,pkgId,p,startDate);
       if(p.current_payment>0)_reconcileStudentPaymentReminders(p.student_id);
       _save(true,{urgent:true}); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:p.total_amount??pkg.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString(),..._packageDeferPersist(p,pkg)});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
+    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){const qty=_packageQtyPersist(p,pkg);Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:qty.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,quantity:qty.quantity,unit_price:qty.unit_price,currency:qty.currency,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString(),..._packageDeferPersist(p,pkg)});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{
       const row=(_db.packages||[]).find(x=>x.id===id);
       const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
@@ -6801,10 +6878,10 @@ function uniqueDisplayPackages(packages = []) {
     const key = _serviceMergeKey(label) || String(pkg.type_id || pkg.id || label);
     const existing = seen.get(key);
     if (!existing) {
-      seen.set(key, { ...pkg, type_label: label, _count: 1 });
+      seen.set(key, { ...pkg, type_label: label, _count: _packageQuantity(pkg) });
       return;
     }
-    existing._count += 1;
+    existing._count += _packageQuantity(pkg);
     if (_serviceLabelKey(label) === key && _serviceLabelKey(existing.type_label) !== key) {
       existing.type_label = label;
       if (pkg.type_color) existing.type_color = pkg.type_color;
@@ -8023,10 +8100,10 @@ function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) 
     return `<tr>
         <td>${studentAccountNameCellHtml(s, i)}</td>
         <td class="stu-pkgs-cell">${financeReady ? pkgTagsHtml(s.packages) : '—'}</td>
-        <td>${financeReady ? `<span class="amount amount-neutral">${fmt(s.totalAmount)}</span>` : '—'}</td>
-        <td>${financeReady ? `<span class="amount amount-paid">${fmt(s.totalPaid)}</span>` : '—'}</td>
+        <td>${financeReady ? `<span class="amount amount-neutral">${fmt(s.totalAmount)}</span>${fxBooksHtml(s.fxBooks, 'contract')}` : '—'}</td>
+        <td>${financeReady ? `<span class="amount amount-paid">${fmt(s.totalPaid)}</span>${fxBooksHtml(s.fxBooks, 'paid')}` : '—'}</td>
         <td>${financeReady ? (s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>') : '—'}</td>
-        <td>${financeReady ? balanceHtml(s.balance) : '—'}</td>
+        <td>${financeReady ? `${balanceHtml(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}` : '—'}</td>
         <td>${financeReady ? statusHtml(s.balance) : '—'}</td>
         <td>${studentAccountRowMenuHtml(s, tableMenuId)}</td>
       </tr>`;
@@ -8060,7 +8137,7 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
             </div>
           </div>
         </div>
-        ${financeReady ? mstuStatusLine(s.balance) : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
+        ${financeReady ? `${mstuStatusLine(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}` : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
         <div class="mstu-pkgs">
           ${financeReady ? pkgTagsHtml(s.packages, { variant: 'line', emptyHtml: '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' }) : '<span style="color:var(--text3);font-size:11px">—</span>'}
         </div>
@@ -8514,7 +8591,7 @@ async function openStudentDetail(id) {
           ${p.note ? ` <small style="color:var(--text3)">— ${escapeHtml(p.note)}</small>` : ''}
         </span>
         <span class="detail-val" style="display:flex;align-items:center;gap:6px">
-          ${fmt(p.total_amount)} تومان
+          ${_moneyLabel(p.total_amount, p.currency, p.quantity)}
           <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
         </span>
@@ -8524,7 +8601,7 @@ async function openStudentDetail(id) {
   const pkgRows = (s.packages || []).map(p => `
     <div class="detail-row">
       <span class="detail-key">${escapeHtml(p.type_label)}${p.initial_cost ? ` <small style="color:var(--text3)">(+${fmt(p.initial_cost)} بدهی قبلی)</small>` : ''}</span>
-      <span class="detail-val">${fmt(p.grand_total)} تومان${!p.is_chargeable?' · آینده':''}</span>
+      <span class="detail-val">${_moneyLabel(p.grand_total, p.currency, p.quantity)}${!p.is_chargeable?' · آینده':''}</span>
     </div>`).join('');
 
   const payRows = payments.length
@@ -8830,9 +8907,11 @@ function newPurchaseServicePickerHtml(preset = {}) {
           <span class="np-svc-name">${escapeHtml(pt.label || '')}</span>
           ${unitLabel ? `<span class="np-svc-unit">/ ${escapeHtml(unitLabel)}</span>` : ''}
         </label>
+        <input class="form-input np-svc-qty" type="number" min="1" step="1" inputmode="numeric" value="${on && Number(preset.quantity) > 0 ? Number(preset.quantity) : 1}" title="تعداد" aria-label="تعداد" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
         <div class="np-svc-amount-wrap">
           <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
         </div>
+        <select class="form-select np-svc-currency" title="واحد پول" aria-label="واحد پول" onchange="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>${currencyOptions(on && preset.currency ? preset.currency : 'تومان')}</select>
       </div>`;
   }).join('');
   return `
@@ -8856,7 +8935,9 @@ function newPurchaseServicePickerHtml(preset = {}) {
           <input class="form-input" id="np-new-service-label" placeholder="نام خدمت جدید">
           ${_pkgUnitSelectHtml({}, { id: 'np-new-service-unit', customId: 'np-new-service-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
           <input type="color" class="color-input" id="np-new-service-color" value="#7c6af7">
-          <input class="form-input amount-input" id="np-new-service-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت" oninput="updateNewPurchaseSummary()">
+          <input class="form-input np-svc-qty" id="np-new-service-qty" type="number" min="1" step="1" value="1" title="تعداد" aria-label="تعداد" oninput="updateNewPurchaseSummary()">
+          <input class="form-input amount-input" id="np-new-service-amount" type="number" min="0" inputmode="numeric" placeholder="قیمت واحد" oninput="updateNewPurchaseSummary()">
+          <select class="form-select np-svc-currency" id="np-new-service-currency" title="واحد پول" onchange="updateNewPurchaseSummary()">${currencyOptions()}</select>
         </div>
       </div>
     </div>
@@ -8866,11 +8947,19 @@ function newPurchaseServicePickerHtml(preset = {}) {
 function collectNewPurchaseServices() {
   return [...document.querySelectorAll('#np-svc-list .np-svc-row')]
     .filter(row => row.querySelector('.np-svc-cb')?.checked)
-    .map(row => ({
-      type_id: +row.dataset.typeId,
-      total_amount: +(row.querySelector('.np-svc-amount')?.value || 0),
-      label: row.dataset.label || '',
-    }));
+    .map(row => {
+      const quantity = _packageQuantity({ quantity: row.querySelector('.np-svc-qty')?.value });
+      const unit_price = +(row.querySelector('.np-svc-amount')?.value || 0);
+      const currency = _moneyCurrency(row.querySelector('.np-svc-currency')?.value);
+      return {
+        type_id: +row.dataset.typeId,
+        quantity,
+        unit_price,
+        currency,
+        total_amount: quantity * unit_price,
+        label: row.dataset.label || '',
+      };
+    });
 }
 
 function setNewPurchaseServiceChecked(typeId, checked, amount) {
@@ -8878,10 +8967,14 @@ function setNewPurchaseServiceChecked(typeId, checked, amount) {
   if (!row) return;
   const cb = row.querySelector('.np-svc-cb');
   const amt = row.querySelector('.np-svc-amount');
+  const qty = row.querySelector('.np-svc-qty');
+  const cur = row.querySelector('.np-svc-currency');
   const label = row.querySelector('.pkg-check');
   if (cb) cb.checked = !!checked;
   row.classList.toggle('is-on', !!checked);
   label?.classList.toggle('checked', !!checked);
+  if (qty) qty.disabled = !checked;
+  if (cur) cur.disabled = !checked;
   if (amt) {
     amt.disabled = !checked;
     if (checked) {
@@ -8934,14 +9027,28 @@ function newPurchaseCartState() {
   const services = collectNewPurchaseServices();
   const extraOn = !!document.getElementById('np-new-toggle')?.checked;
   const extraLabel = document.getElementById('np-new-service-label')?.value.trim() || '';
-  const extraAmount = +(document.getElementById('np-new-service-amount')?.value || 0);
-  const totals = services.map(x => x.total_amount);
-  if (extraOn) totals.push(extraAmount);
-  const count = services.length + (extraOn ? 1 : 0);
-  const total = totals.reduce((s, n) => s + n, 0);
+  const extraQty = _packageQuantity({ quantity: document.getElementById('np-new-service-qty')?.value });
+  const extraUnit = +(document.getElementById('np-new-service-amount')?.value || 0);
+  const extraCurrency = _moneyCurrency(document.getElementById('np-new-service-currency')?.value);
+  const extraAmount = extraQty * extraUnit;
+  const lines = extraOn
+    ? services.concat([{ quantity: extraQty, unit_price: extraUnit, currency: extraCurrency, total_amount: extraAmount, label: extraLabel }])
+    : services;
+  const byCur = new Map();
+  lines.forEach(line => {
+    const cur = _moneyCurrency(line.currency);
+    byCur.set(cur, (byCur.get(cur) || 0) + Number(line.total_amount || 0));
+  });
+  const payCurrency = _moneyCurrency(document.getElementById('np-pay-currency')?.value);
   const paid = +(document.getElementById('np-current')?.value || 0);
   const initial = +(document.getElementById('np-initial')?.value || 0);
-  return { services, extraOn, extraLabel, extraAmount, count, total, paid, remain: Math.max(0, total + initial - paid) };
+  const matchedTotal = byCur.get(payCurrency) || 0;
+  const remain = Math.max(0, matchedTotal + (_isTomanCurrency(payCurrency) ? initial : 0) - paid);
+  const units = lines.reduce((s, line) => s + _packageQuantity(line), 0);
+  return {
+    services, extraOn, extraLabel, extraAmount, extraQty, extraCurrency, extraUnit,
+    lines, byCur, count: lines.length, units, paid, payCurrency, remain, initial,
+  };
 }
 
 function updateNewPurchaseSummary() {
@@ -8951,10 +9058,11 @@ function updateNewPurchaseSummary() {
   if (!state.count) {
     el.innerHTML = '<span style="color:var(--text3)">هنوز خدمتی انتخاب نشده</span>';
   } else {
-    el.innerHTML = `<span>${fa(state.count)} خدمت</span><span>جمع ${fmt(state.total)} ت</span><span>پرداخت ${fmt(state.paid)} ت</span><span>مانده ${fmt(state.remain)} ت</span>`;
+    const totals = [...state.byCur].map(([cur, amount]) => `${fmt(amount)} ${escapeHtml(cur)}`).join(' + ');
+    el.innerHTML = `<span>${fa(state.count)} خدمت · ${fa(state.units)} عدد</span><span>جمع ${totals}</span><span>پرداخت ${fmt(state.paid)} ${escapeHtml(state.payCurrency)}</span><span>مانده ${fmt(state.remain)} ${escapeHtml(state.payCurrency)}</span>`;
   }
   const btn = document.querySelector('#modal-overlay .modal-actions .btn-primary');
-  if (btn) btn.textContent = state.count > 1 ? `ثبت ${fa(state.count)} فروش` : 'ثبت خرید';
+  if (btn) btn.textContent = state.units > 1 ? `ثبت ${fa(state.units)} فروش` : 'ثبت خرید';
   refreshNewPurchaseStaffOptions();
 }
 
@@ -9030,7 +9138,10 @@ async function resolveNewPurchaseExtraService() {
     showToast('خدمت جدید ساخته نشد', 'error');
     return false;
   }
-  return { type_id: typeId, total_amount: amount || packageTypeDefaultPrice(typeId), label };
+  const quantity = _packageQuantity({ quantity: document.getElementById('np-new-service-qty')?.value });
+  const unit_price = amount || packageTypeDefaultPrice(typeId);
+  const currency = _moneyCurrency(document.getElementById('np-new-service-currency')?.value);
+  return { type_id: typeId, quantity, unit_price, currency, total_amount: quantity * unit_price, label };
 }
 
 function openNewPurchase(studentId, preset = {}) {
@@ -9065,12 +9176,15 @@ function openNewPurchase(studentId, preset = {}) {
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label" title="اگر چند خدمت انتخاب شود، فقط روی اولین خدمت می‌نشیند.">بدهی قبلی</label>
+        <label class="form-label" title="فقط روی اولین خدمت تومانی می‌نشیند.">بدهی قبلی (تومان)</label>
         <input class="form-input amount-input" id="np-initial" type="number" placeholder="0" value="${initial || ''}" oninput="updateNewPurchaseSummary()">
       </div>
-      <div class="form-group">
-        <label class="form-label" title="بین خدمت‌ها به‌ترتیب تقسیم می‌شود.">پرداخت الآن</label>
-        <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}" oninput="updateNewPurchaseSummary()">
+      <div class="form-group np-pay-now">
+        <label class="form-label" title="بین خدمت‌های همان واحد پول تقسیم می‌شود.">پرداخت الآن</label>
+        <div class="np-pay-now-row">
+          <input class="form-input amount-input" id="np-current" type="number" placeholder="0" value="${current || ''}" oninput="updateNewPurchaseSummary()">
+          <select class="form-select" id="np-pay-currency" onchange="updateNewPurchaseSummary()">${currencyOptions(preset.currency || 'تومان')}</select>
+        </div>
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('np-date', date, 'شروع خدمت')}
@@ -9123,7 +9237,9 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     showToast('تاریخ سررسید معتبر نیست؛ تاریخ را اصلاح کنید', 'error');
     return;
   }
-  const payments = _splitPurchasePayments(services.map(x => x.total_amount), document.getElementById('np-current')?.value);
+  const payCurrency = _moneyCurrency(document.getElementById('np-pay-currency')?.value);
+  const lineTotals = services.map(x => _moneyCurrency(x.currency) === payCurrency ? x.total_amount : 0);
+  const payments = _splitPurchasePayments(lineTotals, document.getElementById('np-current')?.value);
   const initial = +(document.getElementById('np-initial')?.value || 0);
   const staffId = document.getElementById('np-staff')?.value || null;
   const note = document.getElementById('np-note')?.value || '';
@@ -9133,6 +9249,8 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     const idx = services.findIndex(x => String(x.type_id) === reminderType);
     if (idx >= 0) reminderIndex = idx;
   }
+  const tomanIdx = services.findIndex(x => _isTomanCurrency(x.currency));
+  const initialIdx = tomanIdx >= 0 ? tomanIdx : 0;
   let reminderPkgId = 0;
   for (let i = 0; i < services.length; i++) {
     const svc = services[i];
@@ -9141,8 +9259,11 @@ async function saveNewPurchase(studentId, reminderId = 0) {
       student_id: studentId,
       type_id: svc.type_id,
       staff_id: staffId,
+      quantity: svc.quantity || 1,
+      unit_price: svc.unit_price,
+      currency: svc.currency,
       total_amount: svc.total_amount,
-      initial_cost: i === 0 ? initial : 0,
+      initial_cost: i === initialIdx ? initial : 0,
       current_payment: payments[i] || 0,
       repeat_months,
       note,
@@ -9163,10 +9284,10 @@ async function saveNewPurchase(studentId, reminderId = 0) {
     }
   }
   closeModal();
-  const count = services.length;
+  const units = services.reduce((sum, svc) => sum + _packageQuantity(svc), 0);
   showToast(
-    count > 1
-      ? `${fa(count)} فروش ثبت شد ✓`
+    units > 1
+      ? `${fa(units)} فروش ثبت شد ✓`
       : (paymentDueDate ? (repeat_months > 0 ? 'خرید ثبت شد و یادآوری دوره بعد ساخته شد ✓' : 'خرید ثبت شد و یادآوری سررسید ساخته شد ✓') : 'خرید جدید ثبت شد ✓'),
     'success'
   );
@@ -9554,7 +9675,9 @@ async function deleteStudent(id) {
 
 // ── Add Payment Modal ─────────────────────────────────────────────────────────
 function currencyOptions(selected='تومان') {
-  return CURRENCIES.map(c => `<option ${c===selected?'selected':''}>${c}</option>`).join('');
+  const list = [...new Set([...(Array.isArray(CURRENCIES) && CURRENCIES.length ? CURRENCIES : []), ..._ALL_CURRENCIES])];
+  const cur = _moneyCurrency(selected);
+  return list.map(c => `<option ${c===cur?'selected':''}>${c}</option>`).join('');
 }
 
 function uniquePaymentPackageOptions(packages = []) {
@@ -25957,7 +26080,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v367';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v368';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -1969,6 +1969,27 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   flex: 0 0 96px; width: 96px;
   display: flex; flex-direction: column;
 }
+.np-svc-qty {
+  flex: 0 0 48px; width: 48px;
+  height: 28px; min-height: 28px; padding: 2px 4px; font-size: 12px; text-align: center;
+}
+.np-svc-currency {
+  flex: 0 0 76px; width: 76px;
+  height: 28px; min-height: 28px; padding: 2px 4px; font-size: 11px;
+}
+.np-svc-qty:disabled, .np-svc-currency:disabled { opacity: .45; }
+.np-pay-now-row { display: flex; gap: 6px; align-items: center; }
+.np-pay-now-row .amount-input { flex: 1; min-width: 0; }
+.np-pay-now-row .form-select { flex: 0 0 88px; width: 88px; }
+.fx-books { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.fx-chip {
+  font-size: 10px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px;
+  background: rgba(124,106,247,.14); color: var(--accent2);
+}
+.fx-chip.is-debt { background: rgba(239,68,68,.14); color: var(--red); }
+.fx-chip.is-credit { background: rgba(59,130,246,.14); color: var(--blue); }
+.fx-chip.is-paid { background: rgba(34,197,94,.14); color: var(--green); }
 .np-svc-row .np-svc-amount {
   height: 28px; min-height: 28px; padding: 2px 8px; font-size: 12px;
 }
@@ -3399,7 +3420,10 @@ body.light mark { background: rgba(251,191,36,.5); }
     min-height: 28px;
   }
   .np-svc-row .pkg-check { padding: 2px 4px; }
+  .np-svc-row{ flex-wrap: wrap; }
   .np-svc-amount-wrap { flex-basis: 88px; width: 88px; }
+  .np-svc-qty { flex-basis: 44px; width: 44px; }
+  .np-svc-currency { flex-basis: 72px; width: 72px; }
   .np-svc-row .np-svc-amount{
     width:100%;
     height: 26px;
