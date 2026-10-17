@@ -43,6 +43,9 @@ test('new purchase form uses a multi-service cart instead of a single select', (
   assert.match(app, /_splitPurchasePayments/);
   assert.match(app, /حداقل یک خدمت را تیک بزنید/);
   assert.doesNotMatch(fn(app, 'openNewPurchase'), /id="np-type"/);
+  assert.match(app, /np-svc-qty/);
+  assert.match(app, /np-svc-currency/);
+  assert.match(app, /id="np-pay-currency"/);
 });
 
 test('quick purchase parser matches catalog names and optional amounts', () => {
