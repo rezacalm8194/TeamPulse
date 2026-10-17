@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp366';
+const TP_ASSET_V = 'tp367';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1100,7 +1100,8 @@ function _migrate(d) {
   ['students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
-    if(!d._nextId[k]){const m=Math.max(0,...(d[k]||[]).map(x=>x.id||0));d._nextId[k]=m+1;}
+    const maxId=(d[k]||[]).reduce((m,x)=>Math.max(m, Number(x?.id)||0), 0);
+    d._nextId[k]=Math.max(Number(d._nextId[k])||1, maxId+1);
   });
   _syncTodoIdAllocator(d);
   _syncServiceCatalogs(d);
@@ -2237,13 +2238,22 @@ if (!window._manualRestoreStorageListenerReady) {
   });
 }
 
+function _collectionIdHighWater(rows) {
+  return (Array.isArray(rows) ? rows : []).reduce((max, row) => Math.max(max, Number(row?.id) || 0), 0);
+}
+function _bumpCollectionNextId(collection, extraRows) {
+  if (!_db || !collection) return 1;
+  _db._nextId = _db._nextId || {};
+  const maxId = Math.max(_collectionIdHighWater(_db[collection]), _collectionIdHighWater(extraRows));
+  const next = Math.max(Number(_db._nextId[collection]) || 1, maxId + 1);
+  _db._nextId[collection] = next;
+  return next;
+}
 function _nextId(t) {
-  let id = _db._nextId[t] || 1;
-  if (t === 'instructions') {
-    const tombs = _db._deletedItems?.instructions;
-    const used = new Set((_db.instructions || []).map(x => String(x?.id)));
-    while ((tombs && Object.prototype.hasOwnProperty.call(tombs, String(id))) || used.has(String(id))) id += 1;
-  }
+  let id = _bumpCollectionNextId(t);
+  const used = new Set((_db[t] || []).map(x => String(x?.id)));
+  const tombs = t === 'instructions' ? _db._deletedItems?.instructions : null;
+  while (used.has(String(id)) || (tombs && Object.prototype.hasOwnProperty.call(tombs, String(id)))) id += 1;
   _db._nextId[t] = id + 1;
   return id;
 }
@@ -5717,6 +5727,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     _db[collection] = [...existing.values()].filter(row =>
       !deleted || !Object.prototype.hasOwnProperty.call(deleted, String(row.id))
     );
+    _bumpCollectionNextId(collection);
     if (reset) state.seenIds = new Set();
     state.seenIds = state.seenIds || new Set();
     incoming.forEach(row => {
@@ -25946,7 +25957,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v366';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v367';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
