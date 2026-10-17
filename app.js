@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp368';
+const TP_ASSET_V = 'tp370';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -262,7 +262,7 @@ function calendarDateFieldHtml(fieldId, jalaliValue, label, defaultToday = true)
     const iso = jalaliValue ? jalaliStrToISO(jalaliValue) : (defaultToday ? todayIso : '');
     return `
       <label class="form-label">${lbl} (میلادی)</label>
-      <input class="form-input" type="date" id="${fieldId}" data-cal="gregorian" value="${iso}">`;
+      <input class="form-input cal-gregorian" type="date" id="${fieldId}" data-cal="gregorian" dir="ltr" value="${iso}">`;
   }
   return `
     <label class="form-label">${lbl} (شمسی)</label>
@@ -376,7 +376,10 @@ function _attachGregorianDatePicker(input, wrap) {
 
   const gInput = document.createElement('input');
   gInput.type = 'date';
-  gInput.className = 'form-input';
+  gInput.className = 'form-input cal-gregorian';
+  gInput.setAttribute('dir', 'ltr');
+  wrap.setAttribute('dir', 'ltr');
+  wrap.style.direction = 'ltr';
 
   const p = parseJalali(input.value);
   if (p) {
@@ -8907,11 +8910,11 @@ function newPurchaseServicePickerHtml(preset = {}) {
           <span class="np-svc-name">${escapeHtml(pt.label || '')}</span>
           ${unitLabel ? `<span class="np-svc-unit">/ ${escapeHtml(unitLabel)}</span>` : ''}
         </label>
-        <input class="form-input np-svc-qty" type="number" min="1" step="1" inputmode="numeric" value="${on && Number(preset.quantity) > 0 ? Number(preset.quantity) : 1}" title="تعداد" aria-label="تعداد" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+        <input class="form-input np-svc-qty" type="number" min="1" step="1" inputmode="numeric" value="${on && Number(preset.quantity) > 0 ? Number(preset.quantity) : 1}" title="تعداد" aria-label="تعداد" onfocus="onNewPurchaseServiceField(this)" oninput="onNewPurchaseServiceField(this)">
         <div class="np-svc-amount-wrap">
-          <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" oninput="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>
+          <input class="form-input amount-input np-svc-amount" type="number" min="0" inputmode="numeric" placeholder="${escapeHtml(hint)}" title="${escapeHtml(hint)}" value="${on ? (price || '') : (catalogPrice || '')}" data-auto-price="${catalogPrice || 0}" onfocus="onNewPurchaseServiceField(this)" oninput="onNewPurchaseServiceField(this)">
         </div>
-        <select class="form-select np-svc-currency" title="واحد پول" aria-label="واحد پول" onchange="updateNewPurchaseSummary()" ${on ? '' : 'disabled'}>${currencyOptions(on && preset.currency ? preset.currency : 'تومان')}</select>
+        <select class="form-select np-svc-currency" title="واحد پول" aria-label="واحد پول" onfocus="onNewPurchaseServiceField(this)" onchange="onNewPurchaseServiceField(this)">${currencyOptions(on && preset.currency ? preset.currency : 'تومان')}</select>
       </div>`;
   }).join('');
   return `
@@ -8967,16 +8970,11 @@ function setNewPurchaseServiceChecked(typeId, checked, amount) {
   if (!row) return;
   const cb = row.querySelector('.np-svc-cb');
   const amt = row.querySelector('.np-svc-amount');
-  const qty = row.querySelector('.np-svc-qty');
-  const cur = row.querySelector('.np-svc-currency');
   const label = row.querySelector('.pkg-check');
   if (cb) cb.checked = !!checked;
   row.classList.toggle('is-on', !!checked);
   label?.classList.toggle('checked', !!checked);
-  if (qty) qty.disabled = !checked;
-  if (cur) cur.disabled = !checked;
   if (amt) {
-    amt.disabled = !checked;
     if (checked) {
       const catalogPrice = packageTypeDefaultPrice(typeId);
       const next = Number(amount) > 0 ? Number(amount) : catalogPrice;
@@ -8994,6 +8992,14 @@ function onNewPurchaseServiceToggle(checkbox) {
   const row = checkbox?.closest('.np-svc-row');
   if (!row) return;
   setNewPurchaseServiceChecked(row.dataset.typeId, checkbox.checked);
+  updateNewPurchaseSummary();
+}
+
+function onNewPurchaseServiceField(el) {
+  const row = el?.closest('.np-svc-row');
+  if (!row) return;
+  const cb = row.querySelector('.np-svc-cb');
+  if (cb && !cb.checked) setNewPurchaseServiceChecked(row.dataset.typeId, true);
   updateNewPurchaseSummary();
 }
 
@@ -26080,7 +26086,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v368';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v370';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

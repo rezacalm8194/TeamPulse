@@ -1377,7 +1377,15 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   min-height: 0; /* رفع باگ معروف Flexbox: بدون این خط، وقتی محتوای فرم بلند باشد، این باکس به‌جای اسکرول‌شدن داخلی، کل Modal (و در نتیجه فوتر/دکمه ذخیره) را از دید خارج می‌کرد */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  touch-action: pan-y;
+  touch-action: manipulation;
+}
+.modal-body input,
+.modal-body textarea,
+.modal-body select {
+  touch-action: manipulation;
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .modal-title {
@@ -1585,6 +1593,14 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   direction: rtl; outline: none;
   transition: border-color .15s;
   width: 100%;
+}
+.form-input.cal-gregorian,
+.form-input[type="date"],
+.form-input.np-svc-qty,
+.form-input.np-svc-amount,
+.form-input.amount-input {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 .form-input:focus,
 .form-select:focus,
@@ -1977,7 +1993,16 @@ tbody tr:hover td { background: var(--bg3); transition: background .1s; }
   flex: 0 0 76px; width: 76px;
   height: 28px; min-height: 28px; padding: 2px 4px; font-size: 11px;
 }
-.np-svc-qty:disabled, .np-svc-currency:disabled { opacity: .45; }
+input[type="date"],
+.cal-gregorian,
+.jdate-wrap:has(input[type="date"]) {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+input[type="date"]::-webkit-datetime-edit {
+  direction: ltr;
+  padding: 0 4px;
+}
 .np-pay-now-row { display: flex; gap: 6px; align-items: center; }
 .np-pay-now-row .amount-input { flex: 1; min-width: 0; }
 .np-pay-now-row .form-select { flex: 0 0 88px; width: 88px; }
