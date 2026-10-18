@@ -3316,9 +3316,15 @@ function _todo135BoardHtml(todayTodos) {
           <span class="todo-135-plus">+</span><span>انتخاب</span>
         </button>`;
       }
-      return `<div class="todo-135-item${t.done ? ' is-done' : ''}" data-todo-id="${t.id}" draggable="false">
+      const repeating = t.repeat && t.repeat !== 'none';
+      const canEdit = _todoCanEdit(t);
+      const repeatBtn = canEdit
+        ? `<button type="button" class="todo-135-repeat${repeating ? ' is-on' : ''}" onclick="event.stopPropagation();_openTodo135RepeatSheet(${t.id})" title="${repeating ? 'تغییر تکرار' : 'تکرار این کار'}" aria-label="${repeating ? 'تغییر تکرار' : 'تکرار این کار'}">🔁</button>`
+        : '';
+      return `<div class="todo-135-item${t.done ? ' is-done' : ''}${repeating ? ' is-repeat' : ''}" data-todo-id="${t.id}" draggable="false">
         <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" aria-label="تکمیل">${t.done ? '✓' : ''}</button>
-        <span class="todo-135-item-title" onclick="${_todoCanEdit(t) ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        <span class="todo-135-item-title" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        ${repeatBtn}
         <button type="button" class="todo-135-unpin" onclick="event.stopPropagation();_clearTodo135Slot(${t.id})" title="خارج از ۱-۳-۵" aria-label="خارج از ۱-۳-۵">×</button>
       </div>`;
     }).join('');
@@ -3584,6 +3590,87 @@ function _clearTodo135Slot(id) {
   _save(true, { scheduleServerSync: false });
   renderTodoList();
   void _syncTodoDelta(t, 'edit');
+}
+
+function _todo135RepeatOptions() {
+  return [
+    { value: 'none', label: 'بدون تکرار' },
+    { value: 'daily', label: 'روزانه' },
+    { value: 'every2days', label: 'یک روز در میان' },
+    { value: 'weekly', label: 'هفتگی' },
+    { value: 'custom_weekdays', label: 'روزهای خاص هفته' },
+    { value: 'monthly', label: 'ماهانه' },
+  ];
+}
+
+function _todo135RepeatLabel(val) {
+  return (_todo135RepeatOptions().find(o => o.value === (val || 'none')) || { label: 'بدون تکرار' }).label;
+}
+
+function _openTodo135RepeatSheet(id) {
+  _todosInit();
+  const t = (_db.todos || []).find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای این کار دسترسی نداری', 'error'); return; }
+  const current = t.repeat || 'none';
+  _openQuickPickSheet('تکرار این کار', _todo135RepeatOptions(), current, (val) => {
+    if (val === 'custom_weekdays') _openTodo135WeekdaysSheet(id);
+    else _setTodo135Repeat(id, val, '');
+  });
+}
+
+function _openTodo135WeekdaysSheet(id) {
+  _todosInit();
+  const t = (_db.todos || []).find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای این کار دسترسی نداری', 'error'); return; }
+  document.getElementById('todo-135-wd-sheet')?.remove();
+  const selected = new Set(String(t.weekdays || '').split(',').map(s => s.trim()).filter(Boolean));
+  const days = [
+    { key: 'sat', label: 'ش' }, { key: 'sun', label: 'ی' }, { key: 'mon', label: 'د' },
+    { key: 'tue', label: 'س' }, { key: 'wed', label: 'چ' }, { key: 'thu', label: 'پ' }, { key: 'fri', label: 'ج' },
+  ];
+  const overlay = document.createElement('div');
+  overlay.id = 'todo-135-wd-sheet';
+  overlay.className = 'bottom-sheet-overlay open qss-sheet-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div class="bottom-sheet" role="dialog" aria-modal="true" aria-label="روزهای هفته">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bs-title">روزهای تکرار</div>
+    <div class="todo-135-wd-row">${days.map(d =>
+      `<button type="button" class="todo-135-wd-btn${selected.has(d.key) ? ' is-on' : ''}" data-wd="${d.key}">${d.label}</button>`
+    ).join('')}</div>
+    <button type="button" class="btn btn-primary" id="todo-135-wd-apply" style="width:100%;margin-top:12px">ثبت تکرار</button>
+  </div>`;
+  overlay.querySelectorAll('[data-wd]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      btn.classList.toggle('is-on');
+    };
+  });
+  overlay.querySelector('#todo-135-wd-apply')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const weekdays = [...overlay.querySelectorAll('[data-wd].is-on')].map(b => b.getAttribute('data-wd')).filter(Boolean).join(',');
+    if (!weekdays) { showToast('حداقل یک روز هفته را انتخاب کن', 'error'); return; }
+    overlay.remove();
+    _setTodo135Repeat(id, 'custom_weekdays', weekdays);
+  });
+  document.body.appendChild(overlay);
+}
+
+function _setTodo135Repeat(id, repeat, weekdays) {
+  _todosInit();
+  const t = (_db.todos || []).find(x => x.id == id);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای این کار دسترسی نداری', 'error'); return; }
+  const next = ['none', 'daily', 'every2days', 'weekly', 'custom_weekdays', 'monthly'].includes(repeat) ? repeat : 'none';
+  t.repeat = next;
+  t.weekdays = next === 'custom_weekdays' ? String(weekdays || '') : '';
+  t.updated_at = new Date().toISOString();
+  _save(true, { scheduleServerSync: false });
+  renderTodoList();
+  void _syncTodoDelta(t, 'edit');
+  showToast(next === 'none' ? 'تکرار این کار برداشته شد' : ('تکرار: ' + _todo135RepeatLabel(next)), 'success');
 }
 
 function renderTodoList(options = {}) {

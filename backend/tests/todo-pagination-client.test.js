@@ -87,6 +87,9 @@ test('1-3-5 focus board sits before today and uses ranks 1-9', () => {
   assert.match(todos, /_todo135PickSectionHtml\('عادت‌ها'/);
   assert.match(todos, /function _addTodoTo135Slot\(/);
   assert.match(todos, /function _createTodoIn135Slot\(/);
+  assert.match(todos, /function _openTodo135RepeatSheet\(/);
+  assert.match(todos, /function _setTodo135Repeat\(/);
+  assert.match(todos, /todo-135-repeat/);
   assert.match(todos, /todo-135-new-title/);
   assert.match(todos, /افزودن/);
   assert.match(todos, /event\.preventDefault\(\);_addTodoTo135Slot/);
