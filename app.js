@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp371';
+const TP_ASSET_V = 'tp372';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -11302,6 +11302,48 @@ function _teamOnStaffPicked(staffId) {
   }
 }
 
+function _teamStaffNameFromEmail(email) {
+  const local = String(email || '').split('@')[0].trim();
+  const cleaned = local.replace(/[._+-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned || 'هم‌تیمی';
+}
+
+function _teamFindStaffByEmail(email) {
+  const needle = String(email || '').trim().toLowerCase();
+  if (!needle) return null;
+  return (_db.staff || []).find(s => _teamStaffInviteEmail(s) === needle) || null;
+}
+
+function _teamEnsureStaffForInvite(email, selectedStaffId, displayName) {
+  if (selectedStaffId) {
+    const selected = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(selectedStaffId));
+    return selected || null;
+  }
+  const existing = _teamFindStaffByEmail(email);
+  if (existing) return existing;
+  const name = String(displayName || '').trim() || _teamStaffNameFromEmail(email);
+  const id = _nextId('staff');
+  const staff = {
+    id,
+    name,
+    lname: '',
+    phone: '',
+    email,
+    card_number: '',
+    person_type: 'personnel',
+    role_id: (_db.staff_roles || [])[0]?.id,
+    roles: [],
+    salary: 0,
+    start_date: '',
+    payment_timing: 'end',
+    note: 'ساخته‌شده از دعوت هم‌تیمی',
+    created_at: new Date().toISOString()
+  };
+  _db.staff = _db.staff || [];
+  _db.staff.push(staff);
+  return staff;
+}
+
 async function _saveTeamGrant(member) {
   if (!member || !_sbSession?.token) return null;
   return _apiFetch('/api/auth/team-invite/grant', {
@@ -11348,20 +11390,21 @@ async function _verifyTeamGrantStored(member) {
 
 async function _createTeamInvite() {
   if (_isTeamGuest()) { showToast('در حالت هم‌تیمی امکان ساخت دعوت وجود ندارد', 'error'); return; }
-  const staffId = (document.getElementById('team-staff-id')?.value || '').trim();
-  if (!staffId) { showToast('یک رکورد پرسنل را برای این دعوت انتخاب کن', 'error'); return; }
-  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
-  if (!staff) { showToast('رکورد پرسنل معتبر نیست', 'error'); return; }
-  const email = (document.getElementById('team-email')?.value || _teamStaffInviteEmail(staff)).trim().toLowerCase();
+  const selectedStaffId = (document.getElementById('team-staff-id')?.value || '').trim();
+  const email = (document.getElementById('team-email')?.value || '').trim().toLowerCase();
+  const displayName = (document.getElementById('team-staff-name')?.value || '').trim();
+  if (!email || !email.includes('@')) { showToast('ایمیل معتبر وارد کن', 'error'); return; }
   const roleKey = document.getElementById('new-team-role')?.value || 'staff_basic';
   const permissions = _teamSelectedPerms('new');
+  if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
   if (permissions.includes('instructions') && _teamInstructionFolderNeedsSelection('new')) {
     showToast('برای مرکز دانش یا «تمام مرکز دانش» را انتخاب کن یا حداقل یک پوشه را مشخص کن', 'error');
     return;
   }
   const instructionFolders = permissions.includes('instructions') ? _teamSelectedInstructionFolders('new') : [];
-  if (!email || !email.includes('@')) { showToast('ایمیل معتبر وارد کن', 'error'); return; }
-  if (!permissions.length) { showToast('حداقل یک بخش را انتخاب کن', 'error'); return; }
+  const staff = _teamEnsureStaffForInvite(email, selectedStaffId, displayName);
+  if (!staff) { showToast('رکورد پرسنل معتبر نیست', 'error'); return; }
+  const staffId = String(staff.id);
   const existing = (_db.team_members || []).find(m => (m.email || '').toLowerCase() === email || String(m.staff_id || '') === String(staffId));
   const member = existing || { id:'tm_' + Date.now(), created_at:new Date().toISOString(), status:'دعوت‌شده' };
   member.email = email;
@@ -11546,15 +11589,19 @@ function _teamSettingsHtml() {
         <button class="btn btn-ghost btn-sm" onclick="_teamSelectAll('new', true)">انتخاب همه بخش‌ها</button>
       </div>
       <div class="form-group">
-        <label class="form-label">رکورد پرسنل *</label>
+        <label class="form-label">رکورد پرسنل</label>
         <select class="form-input" id="team-staff-id" onchange="_teamOnStaffPicked(this.value)">
-          <option value="">— انتخاب پرسنل —</option>
+          <option value="">— پرسنل جدید —</option>
           ${(_db.staff || []).filter(staffIsPersonnel).map(s => {
             const email = _teamStaffInviteEmail(s);
             return `<option value="${s.id}">${escapeHtml(_todoStaffName(s))}${email ? ' — ' + escapeHtml(email) : ''}</option>`;
           }).join('')}
         </select>
-        <small style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">لینک دعوت به همین رکورد پرسنل متصل می‌شود؛ اتصال کارها دیگر فقط به ایمیل وابسته نیست.</small>
+        <small style="display:block;font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7">اگر فرد در لیست نیست، خالی بگذار؛ با ایمیل یک پرسنل جدید ساخته می‌شود. اگر انتخاب شود، دعوت به همان رکورد وصل می‌گردد.</small>
+      </div>
+      <div class="form-group">
+        <label class="form-label">نام پرسنل جدید</label>
+        <input class="form-input" id="team-staff-name" placeholder="اختیاری — اگر خالی باشد از ایمیل گرفته می‌شود">
       </div>
       <div class="form-group">
         <label class="form-label">ایمیل هم‌تیمی</label>
@@ -26086,7 +26133,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v371';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v372';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
