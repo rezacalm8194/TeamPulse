@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp372';
+const TP_ASSET_V = 'tp374';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -5395,7 +5395,12 @@ async function _ensureDocumentParts(keys) {
     _mergeLoadedPartHashes(needed);
     _applyDeletedItemTombstones(_db);
     _migrate(_db);
+    const strippedKnowledge = _stripCopiedAdminKnowledgeIfImpersonating();
     try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+    if (strippedKnowledge) {
+      _forceNextServerSync();
+      _ensurePendingServerSync(50);
+    }
     return true;
   } catch (e) {
     console.warn('[TeamPulse] part load failed:', e.message);
@@ -11712,7 +11717,7 @@ async function renderSettings() {
             <div class="form-group"><label class="form-label" for="security-phone-password">رمز فعلی برای تأیید</label><input class="form-input" id="security-phone-password" type="password" autocomplete="current-password"></div>
           </div>
           <div class="modal-actions" style="justify-content:flex-start;margin-top:12px"><button class="btn btn-ghost" onclick="_saveRecoveryPhone()">ذخیره شماره تماس</button></div>
-          <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-top:10px">بازیابی با شماره پس از راه‌اندازی و تأیید کد یک‌بارمصرف پیامکی فعال می‌شود.</p>
+          <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-top:10px">اگر رمز را فراموش کردی، در صفحه ورود همین شماره را بزن و رمز جدید بگذار.</p>
         </div>
       </div>
     `);
@@ -11844,7 +11849,7 @@ async function renderSettings() {
         <button class="btn btn-ghost" onclick="_saveRecoveryPhone()">ذخیره شماره تماس</button>
       </div>
       <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:11px;color:var(--text2);line-height:1.8">
-        بازیابی رمز با شماره تنها پس از تأیید کد یک‌بارمصرف پیامکی فعال می‌شود. صرف دانستن شماره برای تغییر رمز کافی نیست.
+        اگر رمز را فراموش کردی، در صفحه ورود همین شماره تماس را وارد کن و رمز جدید بگذار.
       </div>
     </div>
 
@@ -17887,6 +17892,7 @@ function _tpStopServerLoops() {
   clearInterval(window._pollInterval);
   clearInterval(window._syncInterval);
   clearTimeout(window._resumeServerSyncTimer);
+  if (typeof _cancelScheduledServerPush === 'function') _cancelScheduledServerPush();
 }
 
 function _tpBrowserOffline() {
@@ -18241,13 +18247,18 @@ const _auth = {
     _sbSession = null;
     _sbUser = null;
     localStorage.removeItem('tp_session');
+    _resetWorkspaceAfterIdentityChange();
     _showAuthScreen('login');
   },
 
-  async resetPassword(email) {
-    // در این نسخه: تغییر رمز از پنل کاربری
-    showToast('برای تغییر رمز با پشتیبانی تماس بگیرید', 'error');
-    return false;
+  async resetPassword(phone, newPassword) {
+    const res = await _apiFetch('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ phone, new_password: newPassword }),
+    });
+    const data = await _readApiJson(res);
+    if (!res.ok) throw new Error(_apiErrorMessage(data, 'بازیابی رمز انجام نشد'));
+    return data;
   },
 
   async refreshSession() {
@@ -18306,6 +18317,30 @@ function _authLoadSession() {
 function _userDBKey() {
   if (!_sbUser) return 'coaching_reza_v3';
   return _localWorkspaceDBKey();
+}
+
+function _cancelScheduledServerPush() {
+  clearTimeout(window._serverSyncTimer);
+  window._serverSyncTimer = null;
+  clearTimeout(window._serverSyncRetryTimer);
+  window._serverSyncRetryTimer = null;
+}
+
+function _resetWorkspaceAfterIdentityChange() {
+  _cancelScheduledServerPush();
+  _clearServerSyncPending();
+  _db = _freshData();
+  _migrate(_db);
+  window._activeDBKey = typeof _teamActiveDBKey === 'function' ? _teamActiveDBKey() : _userDBKey();
+  window._lastServerSyncSavedAt = 0;
+  window._lastServerSyncFingerprint = null;
+  window._serverDataEtag = null;
+  window._serverHydratedEtag = null;
+  window._serverSyncHashCache = null;
+  window._forceNextSync = false;
+  window._tpLoadedParts = null;
+  window._tpAvailableParts = null;
+  try { localStorage.removeItem(_serverSyncBaselineKey()); } catch (e) {}
 }
 
 function _dataSignatureForIsolation(data) {
@@ -18372,7 +18407,21 @@ function _hasAdminCrmCopiesInTarget(data, probe) {
   return ['students', 'packages', 'payments', 'sessions'].some(key => strong(stats.byKey[key] || {}));
 }
 
-function _removeAdminCopiesFromTargetData(data, probe) {
+function _stripCopiedAdminKnowledgeIfImpersonating() {
+  if (!window._impersonating?.adminIsolationProbe || !_db) return 0;
+  const looksAdmin = _looksLikeAdminDataDuringImpersonation(_db, window._impersonating.adminDBKey);
+  const cleanup = _removeAdminCopiesFromTargetData(
+    _db,
+    window._impersonating.adminIsolationProbe,
+    looksAdmin ? {} : { keys: ['instructions'] }
+  );
+  if (!cleanup.removed) return 0;
+  _db = cleanup.data;
+  _migrate(_db);
+  return cleanup.removed;
+}
+
+function _removeAdminCopiesFromTargetData(data, probe, options = {}) {
   if (!probe?.collections) {
     // A missing probe is not proof of contamination. Wiping here used to
     // erase a customer's real rows the next time an admin opened the account.
@@ -18380,7 +18429,10 @@ function _removeAdminCopiesFromTargetData(data, probe) {
   }
   const cleaned = _cloneData(data);
   let removed = 0;
-  _ISOLATION_COLLECTIONS.forEach(key => {
+  const keys = Array.isArray(options.keys) && options.keys.length
+    ? options.keys.filter(key => _ISOLATION_COLLECTIONS.includes(key))
+    : _ISOLATION_COLLECTIONS;
+  keys.forEach(key => {
     const adminHashes = new Set(probe?.collections?.[key] || []);
     if (!adminHashes.size || !Array.isArray(cleaned[key])) return;
     const before = cleaned[key].length;
@@ -18633,6 +18685,10 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
 
     localArr.forEach(localItem => {
       if (!localItem || localItem.id == null) return;
+      if (key === 'instructions' && window._impersonating?.adminIsolationProbe?.collections?.instructions) {
+        const adminHashes = new Set(window._impersonating.adminIsolationProbe.collections.instructions);
+        if (adminHashes.has(_isolationItemHash(localItem))) return;
+      }
       const idKey = String(localItem.id);
       if (Object.prototype.hasOwnProperty.call(tombstones, idKey)) {
         if (!resurrectLocal) return;
@@ -18724,7 +18780,6 @@ function _resetClientSyncSessionForImpersonation() {
 function _applyImpersonatedServerPayload(payload, { adminDBKey, targetKey } = {}) {
   const raw = payload?.data;
   if (!raw || typeof raw !== 'object' || !Object.keys(raw).length) return { loaded: false, cleanupRemoved: 0 };
-  const looksAdmin = _looksLikeAdminDataDuringImpersonation(raw, adminDBKey);
   const base = _freshData();
   _migrate(base);
   if (payload.partial) {
@@ -18742,12 +18797,10 @@ function _applyImpersonatedServerPayload(payload, { adminDBKey, targetKey } = {}
   }
   _writeServerSyncBaseline(_db, payload.etag || null);
   let cleanupRemoved = 0;
-  if (looksAdmin) {
-    const cleanup = _removeAdminCopiesFromTargetData(_db, window._impersonating?.adminIsolationProbe);
-    console.warn('[Impersonate] removed copied admin records from target account:', cleanup.removed);
-    _db = cleanup.data;
-    _migrate(_db);
-    cleanupRemoved = cleanup.removed;
+  const stripped = _stripCopiedAdminKnowledgeIfImpersonating();
+  if (stripped) {
+    console.warn('[Impersonate] removed copied admin records from target account:', stripped);
+    cleanupRemoved = stripped;
   }
   _cacheImpersonatedData(targetKey, _db);
   window._impersonateServerBlocked = false;
@@ -20820,7 +20873,16 @@ async function _loadFromServer(options = {}) {
   const wasHydrating = !!window._tpHydratingFromServer;
   const run = (async () => {
     window._tpHydratingFromServer = true;
-    try { return await _loadFromServerImpl(options); }
+    try {
+      const loaded = await _loadFromServerImpl(options);
+      const strippedKnowledge = loaded ? _stripCopiedAdminKnowledgeIfImpersonating() : 0;
+      if (strippedKnowledge) {
+        try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch(e) {}
+        _forceNextServerSync();
+        _ensurePendingServerSync(50);
+      }
+      return loaded;
+    }
     finally { window._tpHydratingFromServer = wasHydrating; }
   })();
   window._tpLoadFromServerInFlight = run;
@@ -21369,9 +21431,14 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
 
   const resetForm =
     '<form id="auth-form" method="post" action="#" autocomplete="on" autocapitalize="off" spellcheck="false" onsubmit="event.preventDefault();_doReset()" style="display:flex;flex-direction:column;gap:14px">' +
-    '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">ایمیل</label>' +
-    '<input class="form-input" id="auth-email" name="username" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" type="email" placeholder="example@gmail.com" value="' + savedEmail + '" style="direction:ltr;width:100%"></div>' +
-    '<button type="submit" class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;border-radius:12px">📧 ارسال لینک بازیابی</button>' +
+    '<p style="font-size:12px;color:var(--text3);margin:0;line-height:1.8">شماره تماسی که هنگام ثبت‌نام ذخیره شده را وارد کن و رمز جدید بگذار.</p>' +
+    '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">شماره تماس</label>' +
+    '<input class="form-input" id="auth-phone" name="tel" autocomplete="tel" inputmode="tel" type="tel" placeholder="09123456789" style="direction:ltr;width:100%"></div>' +
+    '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">رمز عبور جدید</label>' +
+    '<input class="form-input" id="auth-pass" name="new-password" autocomplete="new-password" type="password" placeholder="حداقل ۸ کاراکتر" style="width:100%"></div>' +
+    '<div><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px">تکرار رمز عبور جدید</label>' +
+    '<input class="form-input" id="auth-pass2" name="new-password-confirm" autocomplete="new-password" type="password" placeholder="رمز عبور را تکرار کنید" style="width:100%"></div>' +
+    '<button type="submit" class="btn btn-primary" id="auth-submit-btn" style="width:100%;padding:13px;font-size:15px;border-radius:12px">ذخیره رمز جدید</button>' +
     '<button type="button" class="btn btn-ghost" style="width:100%;text-align:center" onclick="_showAuthScreen(&#39;login&#39;)">← بازگشت به ورود</button>' +
     '<div id="auth-msg" style="display:none;padding:10px 14px;border-radius:10px;font-size:13px;text-align:center"></div>' +
     '</form>';
@@ -21494,7 +21561,7 @@ function _authLoading(on, mode) {
   if (on) {
     btn.textContent = '⏳ در حال پردازش...';
   } else {
-    btn.textContent = mode === 'login' ? '🔐 ورود' : '✅ ایجاد حساب';
+    btn.textContent = mode === 'login' ? '🔐 ورود' : mode === 'reset' ? '💾 ذخیره رمز جدید' : '✅ ایجاد حساب';
   }
 }
 
@@ -21532,13 +21599,17 @@ async function _doAuth(mode) {
     } else {
       const data = await _auth.signUp(email, pass, name, phone);
       if (data.token) {
-        // ذخیره خودکار منطقه زمانی در اولین ثبت‌نام
+        // حساب جدید باید سند خالی خودش را بگیرد، نه مرکز دانش / CRM
+        // باقی‌مانده از نشست قبلی همین مرورگر.
+        _resetWorkspaceAfterIdentityChange();
         const loc = _detectUserLocale();
-        if (!_db.meta) _db.meta = {...DEFAULT_META};
-        _db.meta.timezone = _db.meta.timezone || loc.timezone;
-        _db.meta.calendarType = _db.meta.calendarType || loc.calendarType;
-        _db.meta.language = _db.meta.language || loc.language;
-        _save();
+        _db.meta = {
+          ...(_db.meta || DEFAULT_META),
+          timezone: loc.timezone,
+          calendarType: loc.calendarType,
+          language: loc.language,
+        };
+        _save(false);
         await _authOnSuccess();
       }
     }
@@ -21562,18 +21633,38 @@ async function _doAuth(mode) {
   }
 }
 
+function _normalizeAuthPhone(value) {
+  let phone = enDigits(value || '').replace(/[^0-9+]/g, '');
+  if (phone.startsWith('+98')) phone = '0' + phone.slice(3);
+  else if (phone.startsWith('0098')) phone = '0' + phone.slice(4);
+  else if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
+  return /^09\d{9}$/.test(phone) ? phone : '';
+}
+
 async function _doReset() {
-  const email = (document.getElementById('auth-email')?.value || '').trim();
-  if (!email || !email.includes('@')) { _authMsg('ایمیل معتبر وارد کن'); return; }
+  const phone = _normalizeAuthPhone(document.getElementById('auth-phone')?.value || '');
+  const pass = document.getElementById('auth-pass')?.value || '';
+  const pass2 = document.getElementById('auth-pass2')?.value || '';
+  if (!phone) { _authMsg('شماره تماس باید ۱۱ رقم و با ۰۹ شروع شود'); return; }
+  if (pass.length < 8) { _authMsg('رمز عبور باید حداقل ۸ کاراکتر باشد'); return; }
+  if (pass !== pass2) { _authMsg('رمزهای عبور یکسان نیستند'); return; }
+  _authLoading(true, 'reset');
   try {
-    await _auth.resetPassword(email);
-    _authMsg('لینک بازیابی به ایمیلت فرستادیم ✓', 'success');
+    await _auth.resetPassword(phone, pass);
+    _authMsg('رمز عبور تغییر کرد. حالا با رمز جدید وارد شو ✓', 'success');
+    setTimeout(() => _showAuthScreen('login'), 1200);
   } catch(e) {
-    _authMsg('خطا: ' + e.message);
+    const msg = e.message || '';
+    if (msg.includes('phone not found')) _authMsg('این شماره روی هیچ حسابی ثبت نشده');
+    else if (msg.includes('too many') || msg.includes('too_many')) _authMsg('خیلی زیاد تلاش کردی — چند دقیقه صبر کن');
+    else _authMsg('خطا: ' + msg);
+  } finally {
+    _authLoading(false, 'reset');
   }
 }
 
 async function _authOnSuccess() {
+  if (typeof _cancelScheduledServerPush === 'function') _cancelScheduledServerPush();
   const pendingInvite = localStorage.getItem(TEAM_PENDING_INVITE_KEY);
   if (pendingInvite) {
     try { _acceptTeamInviteToken(pendingInvite); }
@@ -21598,7 +21689,14 @@ async function _authOnSuccess() {
   if (isNewUser) {
     // واقعاً اولین بار — setup wizard نشون بده
     const emailName = _sbUser.email.split('@')[0];
-    _db.meta = { ..._db.meta, appTitle: emailName };
+    const loc = typeof _detectUserLocale === 'function' ? _detectUserLocale() : {};
+    _db.meta = {
+      ..._db.meta,
+      appTitle: emailName,
+      timezone: _db.meta.timezone || loc.timezone,
+      calendarType: _db.meta.calendarType || loc.calendarType,
+      language: _db.meta.language || loc.language,
+    };
     _setDefaultAccountName(emailName);
     _save(false);
   } else {
@@ -26133,7 +26231,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v372';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v374';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

@@ -290,6 +290,27 @@ router.post('/team-invite/resolve', auth, (req, res) => {
   }
 });
 
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const phone = normalizeIranPhone(req.body.phone);
+    const newPassword = String(req.body.new_password || '');
+    if (!phone) return res.status(400).json({ error: 'invalid phone' });
+    if (newPassword.length < 8) return res.status(400).json({ error: 'password too short' });
+    const user = db.prepare('SELECT id FROM accounts WHERE phone=? AND is_active=1').get(phone);
+    if (!user) return res.status(404).json({ error: 'phone not found' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    db.transaction(() => {
+      db.prepare("UPDATE accounts SET password=?, updated_at=datetime('now') WHERE id=?").run(hash, user.id);
+      bumpTokenVersion(db, user.id);
+    })();
+    logger.info('password_reset_by_phone', { requestId: req.requestId, userId: user.id });
+    res.json({ success: true });
+  } catch (e) {
+    logger.error('password_reset_failed', { requestId: req.requestId, error: e });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.put('/password', auth, async (req, res) => {
   try {
     const { current_password, new_password } = req.body;

@@ -377,6 +377,24 @@ test('knowledge files created while impersonating still sync and stay in the cur
   assert.doesNotMatch(extraSource, /if \(!targetId\) \{\s*_instrParentId = null;/);
 });
 
+test('new registration starts from an empty workspace instead of leftover knowledge folders', () => {
+  assert.match(appSource, /function _resetWorkspaceAfterIdentityChange\(/);
+  assert.match(appSource, /_resetWorkspaceAfterIdentityChange\(\);\s*const loc = _detectUserLocale\(\);/);
+  assert.match(appSource, /_save\(false\);\s*await _authOnSuccess\(\);/);
+  assert.doesNotMatch(appSource, /_db\.meta\.timezone = _db\.meta\.timezone \|\| loc\.timezone;[\s\S]{0,180}_save\(\);\s*await _authOnSuccess\(\);/);
+  assert.match(appSource, /async signOut\(\) \{[\s\S]*?_resetWorkspaceAfterIdentityChange\(\);/);
+});
+
+test('impersonation strips copied admin knowledge folders without freezing sync', () => {
+  assert.match(appSource, /function _stripCopiedAdminKnowledgeIfImpersonating\(/);
+  assert.match(appSource, /looksAdmin \? \{\} : \{ keys: \['instructions'\] \}/);
+  assert.match(appSource, /if \(key === 'instructions' && window\._impersonating\?\.adminIsolationProbe\?\.collections\?\.instructions\)/);
+  assert.match(appSource, /Matching knowledge folders alone must not freeze sync/);
+  assert.match(appSource, /const strippedKnowledge = loaded \? _stripCopiedAdminKnowledgeIfImpersonating\(\) : 0/);
+  assert.match(appSource, /const strippedKnowledge = _stripCopiedAdminKnowledgeIfImpersonating\(\);/);
+  assert.match(appSource, /function _cancelScheduledServerPush\(/);
+});
+
 test('impersonation treats a partial account document as partial and refetches students', () => {
   assert.match(appSource, /function _resetClientSyncSessionForImpersonation\(/);
   assert.match(appSource, /function _applyImpersonatedServerPayload\(/);
