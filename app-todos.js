@@ -3391,7 +3391,7 @@ function _todo135BoardHtml(todayTodos, opts = {}) {
   return `<section class="todo-135" aria-label="قانون ۱-۳-۵${opts.titleSuffix ? ' ' + escapeHtml(opts.titleSuffix) : ''}">
     <div class="todo-135-head">
       <h3 class="todo-135-title">قانون ۱-۳-۵${titleSuffix}</h3>
-      <span class="todo-135-count">${fa(doneCnt)} / ${fa(filled)} از ۹</span>
+      <span class="todo-135-count">${fa(doneCnt)} / ${fa(filled)} از ۹${canAssign ? ' · تکرار با 🔁' : ''}</span>
     </div>
     ${bands}
   </section>`;
@@ -3437,7 +3437,10 @@ function _todo135TodoPickMeta(t, extraBadge) {
   const current = _todo135SlotMeta(t.main_today_rank);
   const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
   const when = t.time ? `<span class="todo-135-pick-time">${escapeHtml(t.time)}</span>` : '';
-  return `${when}${extraBadge || ''}${badge}`;
+  const repeating = t.repeat && t.repeat !== 'none'
+    ? `<span class="todo-135-pick-badge is-repeat">🔁 ${escapeHtml(_todo135RepeatLabel(t.repeat))}</span>`
+    : '';
+  return `${when}${extraBadge || ''}${repeating}${badge}`;
 }
 
 function _openTodo135Picker(rank, staffId) {
@@ -3502,8 +3505,10 @@ function _openTodo135Picker(rank, staffId) {
     <div class="todo-135-picker">
       <form class="todo-135-pick-composer" id="todo-135-new-form" onsubmit="event.preventDefault();_addTodoTo135Slot(${slot.rank}${createArg})">
         <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه">
+        <select class="form-input todo-135-pick-repeat" id="todo-135-new-repeat" aria-label="تکرار کار">${_todo135RepeatSelectHtml('none')}</select>
         <button type="submit" class="btn btn-primary todo-135-pick-submit">افزودن</button>
       </form>
+      <div class="todo-135-pick-hint">اگر این کار باید هر روز یا طبق برنامه در همین جایگاه بماند، تکرار را همین‌جا مشخص کن. برای کارهای موجود بعد از انتخاب، 🔁 روی کارت را بزن.</div>
       ${lists || '<div class="todo-135-pick-empty">کار بازی برای امروز، عقب‌افتاده یا عادت انجام‌نشده نیست. یک کار جدید اضافه کن.</div>'}
     </div>
   `, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
@@ -3555,10 +3560,11 @@ function _addTodoTo135Slot(rank, staffId) {
     showToast('عنوان کار را وارد کنید', 'error');
     return;
   }
-  void _createTodoIn135Slot(rank, title, staffId);
+  const repeat = _todo135NormalizeRepeat(document.getElementById('todo-135-new-repeat')?.value);
+  void _createTodoIn135Slot(rank, title, staffId, repeat);
 }
 
-async function _createTodoIn135Slot(rank, title, staffId) {
+async function _createTodoIn135Slot(rank, title, staffId, repeat) {
   const slot = _parseMainTodayRank(rank);
   const name = String(title || '').trim();
   if (slot <= 0 || !name) return;
@@ -3571,6 +3577,7 @@ async function _createTodoIn135Slot(rank, title, staffId) {
     showToast(meta.error, 'error');
     return;
   }
+  meta.repeat = _todo135NormalizeRepeat(repeat);
   const today = _todayJalaliStr();
   const newTodo = _buildTodoRecord(meta, {
     title: name,
@@ -3587,6 +3594,7 @@ async function _createTodoIn135Slot(rank, title, staffId) {
   const relatedRankChanged = _applyTodoMainTodayRank(newTodo);
   _db.todos.push(newTodo);
   await _commitNewTodos([newTodo], relatedRankChanged);
+  if (newTodo.repeat === 'custom_weekdays') _openTodo135WeekdaysSheet(newTodo.id);
 }
 
 function _todo135SyncLinkedHabit(habitId, done) {
@@ -3702,6 +3710,17 @@ function _todo135RepeatOptions() {
     { value: 'custom_weekdays', label: 'روزهای خاص هفته' },
     { value: 'monthly', label: 'ماهانه' },
   ];
+}
+
+function _todo135NormalizeRepeat(value) {
+  return _todo135RepeatOptions().some(o => o.value === value) ? value : 'none';
+}
+
+function _todo135RepeatSelectHtml(selected) {
+  const current = _todo135NormalizeRepeat(selected);
+  return _todo135RepeatOptions().map(o =>
+    '<option value="' + o.value + '"' + (o.value === current ? ' selected' : '') + '>' + o.label + '</option>'
+  ).join('');
 }
 
 function _todo135RepeatLabel(val) {

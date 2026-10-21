@@ -4396,9 +4396,12 @@ body.instr-select-mode ._ifcard.instr-selected {
 }
 .todo-135-wd-btn.is-on { background:var(--accent);color:#fff;border-color:var(--accent); }
 .todo-135-picker { display:flex;flex-direction:column;gap:6px; }
-.todo-135-pick-composer { display:flex;align-items:center;gap:8px; }
+.todo-135-pick-composer { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
 .todo-135-pick-composer .form-input { flex:1;min-width:0; }
+.todo-135-pick-repeat { flex:0 1 170px;height:40px; }
 .todo-135-pick-submit { flex-shrink:0;height:40px;padding:0 16px;font-weight:800; }
+.todo-135-pick-hint { font-size:11px;color:var(--text3);line-height:1.7;padding:0 2px 4px; }
+.todo-135-pick-badge.is-repeat { background:rgba(96,165,250,.14);color:#60a5fa; }
 .todo-135-pick-row {
   width:100%;text-align:right;padding:9px 11px;border-radius:10px;border:1px solid var(--border);
   background:var(--bg2);color:var(--text);font-family:var(--font);cursor:pointer;
