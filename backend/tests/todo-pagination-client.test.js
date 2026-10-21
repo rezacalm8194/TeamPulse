@@ -75,12 +75,16 @@ test('todo list virtualization passes the row renderer explicitly', () => {
 
 test('1-3-5 focus board sits before today and uses ranks 1-9', () => {
   const todos = fs.readFileSync(path.join(root, 'app-todos.js'), 'utf8');
-  const boardIdx = todos.indexOf('_todo135BoardHtml(todayTodos)');
+  const boardIdx = todos.indexOf('_todo135BoardHtml(boardTodos');
   const todayIdx = todos.indexOf("sectionHeader('☀️', 'امروز'");
   assert.ok(boardIdx > 0 && todayIdx > boardIdx);
   assert.match(todos, /function _parseMainTodayRank\(/);
   assert.match(todos, /Math\.max\(0, Math\.min\(9, n\)\)/);
   assert.match(todos, /function _openTodo135Picker\(/);
+  assert.match(todos, /function _todo135PersonKey\(/);
+  assert.match(todos, /function _todoStaff135SectionHtml\(/);
+  assert.match(todos, /_todo135PersonKey\(t\) !== key/);
+  assert.match(todos, /_todoStaff135SectionHtml\(\)/);
   assert.match(todos, /function _assignTodo135Slot\(/);
   assert.match(todos, /function _assignHabitTo135Slot\(/);
   assert.match(todos, /_todo135PickSectionHtml\('عقب‌افتاده'/);

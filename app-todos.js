@@ -714,7 +714,7 @@ function _todoStaffLiveSig() {
     status: _todoStaffFilter.status,
     todos: (_db.todos || []).map(t => [
       t.id, t.done ? 1 : 0, t.archived ? 1 : 0, t.title || '', t.date_jalali || '',
-      t.assignee_id || t.staff_id || '', t.updated_at || '', t.done_at || ''
+      t.assignee_id || t.staff_id || '', t.main_today_rank || 0, t.updated_at || '', t.done_at || ''
     ])
   });
 }
@@ -826,13 +826,14 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const timeLabel = _todoTimeRangeLabel(t);
   const showPerson = String(_todoStaffFilter.staffId || 'all') === 'all';
   const person = showPerson ? escapeHtml(_todoAssigneeLabel(t) || 'پرسنل') : '';
+  const rankBadge = _todo135SlotBadgeHtml(t);
   const meta = [person, dateLabel, timeLabel].filter(Boolean).join(' · ');
   return `<div data-todo-id="${t.id}" class="todo-row todo-row-lite${t.done ? ' is-done' : ''}${isOverdue ? ' is-overdue' : ''}">
     <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" title="${t.done?'برداشتن تیک':'تیک انجام'}">
       ${t.done?'✓':''}
     </button>
     <div class="todo-row-body" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">
-      <span data-todo-title class="todo-row-title">${escapeHtml(t.title || 'بدون عنوان')}</span>
+      <span data-todo-title class="todo-row-title">${escapeHtml(t.title || 'بدون عنوان')}${rankBadge ? ` ${rankBadge}` : ''}</span>
       <span class="todo-row-sub">${meta}</span>
     </div>
     <div class="row-menu" onclick="event.stopPropagation()">
@@ -884,7 +885,10 @@ function _todoStaffFilteredListHtml() {
     const key = scheduled ? _jalaliKey(scheduled) : 0;
     return !scheduled || key === todayKey;
   }).sort(_sortByTime);
-  const todayOpenItems = todayItems.filter(t => !t.done);
+  const staff135Html = _todoStaff135SectionHtml();
+  const boardStaffId = _todoStaff135TargetId();
+  const hideRankedToday = todayMode && boardStaffId && String(_todoStaffFilter.staffId) === String(boardStaffId);
+  const todayOpenItems = todayItems.filter(t => !t.done && !(hideRankedToday && _parseMainTodayRank(t.main_today_rank) > 0));
   const doneTodayItems = _uniqueTodoStaffDoneItems(list.filter(t => _todoStaffDoneToday(t, todayKey)))
     .sort((a,b) => new Date(b.done_at || b.completed_at || 0) - new Date(a.done_at || a.completed_at || 0));
   const tomorrowItems = list.filter(t => !t.done && t.date_jalali && tomorrowKey && _jalaliKey(t.date_jalali) === tomorrowKey).sort(_sortByTime);
@@ -904,11 +908,11 @@ function _todoStaffFilteredListHtml() {
     : '';
   const rangeTitle = ({today:'امروز', week:'این هفته', month:'این ماه', year:'امسال', custom:'بازه دلخواه'})[_todoStaffFilter.range] || 'این بازه';
   const summary = `<div class="todo-staff-summary"><span>${escapeHtml(staffName)}</span><span>${fa(todayOpenItems.length)} مانده · ${fa(doneTodayItems.length)} انجام</span></div>`;
-  const rangeList = `${summary}
+  const rangeList = `${staff135Html}${summary}
     ${block('مانده', openItems.length, openItems.map(t => _todoStaffTaskRow(t, todayKey)).join('') || empty)}
     ${fold('انجام‌شده امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''))}
     ${oldDoneItems.length && _todoStaffFilter.status === 'done' ? fold('قدیمی‌تر', oldDoneItems.length, oldDoneItems.map(t => _todoStaffTaskRow(t, todayKey)).join('')) : ''}`;
-  const todayLayout = `${summary}
+  const todayLayout = `${staff135Html}${summary}
     ${block('عقب‌افتاده', overdueItems.length, overdueItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), 'is-overdue')}
     ${block('امروز', todayOpenItems.length, todayOpenItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''), '', true)}
     ${fold('انجام‌شده امروز', doneTodayItems.length, doneTodayItems.map(t => _todoStaffTaskRow(t, todayKey)).join(''))}
@@ -3277,6 +3281,30 @@ function _todo135RankSelectHtml(selectedRank) {
   return opts.join('');
 }
 
+function _todo135StaffIdArg(staffId) {
+  if (staffId == null || staffId === '' || staffId === 'all' || staffId === 'false') return '';
+  return String(staffId);
+}
+
+function _todo135PersonKey(t) {
+  const id = String(t?.assignee_id || t?.staff_id || '').trim();
+  if (id) return 'staff:' + id;
+  const email = String(t?.assignee_email || '').trim().toLowerCase();
+  if (email) return 'email:' + email;
+  return 'owner';
+}
+
+function _todo135PersonKeyFromStaffId(staffId) {
+  const id = _todo135StaffIdArg(staffId);
+  return id ? ('staff:' + id) : 'owner';
+}
+
+function _todo135SlotBadgeHtml(t) {
+  const meta = _todo135SlotMeta(t?.main_today_rank);
+  if (!meta) return '';
+  return `<span class="todo-135-pick-badge">${escapeHtml(meta.slotLabel)}</span>`;
+}
+
 function _todo135ByRank(todayTodos) {
   const map = {};
   (todayTodos || []).forEach(t => {
@@ -3286,15 +3314,32 @@ function _todo135ByRank(todayTodos) {
   return map;
 }
 
-function _clearConflictingTodo135Ranks(rank, exceptId) {
+function _todo135IsTodayItem(t, todayKey = _jalaliToday()) {
+  const scheduled = typeof _todoScheduledDate === 'function' ? _todoScheduledDate(t) : (t?.date_jalali || t?.scheduled_date || t?.scheduledDate || '');
+  const scheduledKey = scheduled ? _jalaliKey(scheduled) : 0;
+  return !scheduledKey || scheduledKey === todayKey;
+}
+
+function _todo135TodosForPerson(personKey, todayKey = _jalaliToday()) {
+  return (_db.todos || []).filter(t => {
+    if (!_todoCanView(t) || t.archived) return false;
+    if (_todo135PersonKey(t) !== personKey) return false;
+    return _todo135IsTodayItem(t, todayKey);
+  });
+}
+
+function _clearConflictingTodo135Ranks(rank, exceptId, personKey) {
   const extras = [];
   const slot = _parseMainTodayRank(rank);
   if (slot <= 0) return extras;
   const todayKey = _jalaliToday();
+  const except = (_db.todos || []).find(t => String(t.id) === String(exceptId));
+  const key = personKey || _todo135PersonKey(except || {});
   (_db.todos || []).forEach(t => {
     if (String(t.id) === String(exceptId)) return;
     if (t.archived) return;
-    if (_jalaliKey(t.date_jalali || t.scheduled_date || t.scheduledDate || '') !== todayKey) return;
+    if (_todo135PersonKey(t) !== key) return;
+    if (!_todo135IsTodayItem(t, todayKey)) return;
     if (_parseMainTodayRank(t.main_today_rank) !== slot) return;
     t.main_today_rank = 0;
     t.updated_at = new Date().toISOString();
@@ -3303,7 +3348,11 @@ function _clearConflictingTodo135Ranks(rank, exceptId) {
   return extras;
 }
 
-function _todo135BoardHtml(todayTodos) {
+function _todo135BoardHtml(todayTodos, opts = {}) {
+  const staffId = _todo135StaffIdArg(opts.staffId);
+  const canAssign = opts.canAssign !== false;
+  const titleSuffix = opts.titleSuffix ? ` · ${escapeHtml(opts.titleSuffix)}` : '';
+  const pickerArg = staffId ? `,${JSON.stringify(staffId)}` : '';
   const byRank = _todo135ByRank(todayTodos);
   const filled = _TODO_135_SLOTS.filter(s => byRank[s.rank]).length;
   const doneCnt = _TODO_135_SLOTS.filter(s => byRank[s.rank]?.done).length;
@@ -3312,7 +3361,10 @@ function _todo135BoardHtml(todayTodos) {
       const t = byRank[rank];
       const meta = _todo135SlotMeta(rank);
       if (!t) {
-        return `<button type="button" class="todo-135-empty" onclick="_openTodo135Picker(${rank})" aria-label="انتخاب ${escapeHtml(meta?.slotLabel || '')}">
+        if (!canAssign) {
+          return `<div class="todo-135-empty is-locked" aria-label="${escapeHtml(meta?.slotLabel || '')} خالی"><span>خالی</span></div>`;
+        }
+        return `<button type="button" class="todo-135-empty" onclick="_openTodo135Picker(${rank}${pickerArg})" aria-label="انتخاب ${escapeHtml(meta?.slotLabel || '')}">
           <span class="todo-135-plus">+</span><span>انتخاب</span>
         </button>`;
       }
@@ -3321,11 +3373,14 @@ function _todo135BoardHtml(todayTodos) {
       const repeatBtn = canEdit
         ? `<button type="button" class="todo-135-repeat${repeating ? ' is-on' : ''}" onclick="event.stopPropagation();_openTodo135RepeatSheet(${t.id})" title="${repeating ? 'تغییر تکرار' : 'تکرار این کار'}" aria-label="${repeating ? 'تغییر تکرار' : 'تکرار این کار'}">🔁</button>`
         : '';
+      const unpinBtn = (canAssign && canEdit)
+        ? `<button type="button" class="todo-135-unpin" onclick="event.stopPropagation();_clearTodo135Slot(${t.id})" title="خارج از ۱-۳-۵" aria-label="خارج از ۱-۳-۵">×</button>`
+        : '';
       return `<div class="todo-135-item${t.done ? ' is-done' : ''}${repeating ? ' is-repeat' : ''}" data-todo-id="${t.id}" draggable="false">
         <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" aria-label="تکمیل">${t.done ? '✓' : ''}</button>
         <span class="todo-135-item-title" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}</span>
         ${repeatBtn}
-        <button type="button" class="todo-135-unpin" onclick="event.stopPropagation();_clearTodo135Slot(${t.id})" title="خارج از ۱-۳-۵" aria-label="خارج از ۱-۳-۵">×</button>
+        ${unpinBtn}
       </div>`;
     }).join('');
     return `<div class="todo-135-band">
@@ -3333,13 +3388,37 @@ function _todo135BoardHtml(todayTodos) {
       <div class="todo-135-slots is-${band.kind}">${slots}</div>
     </div>`;
   }).join('');
-  return `<section class="todo-135" aria-label="قانون ۱-۳-۵">
+  return `<section class="todo-135" aria-label="قانون ۱-۳-۵${opts.titleSuffix ? ' ' + escapeHtml(opts.titleSuffix) : ''}">
     <div class="todo-135-head">
-      <h3 class="todo-135-title">قانون ۱-۳-۵</h3>
+      <h3 class="todo-135-title">قانون ۱-۳-۵${titleSuffix}</h3>
       <span class="todo-135-count">${fa(doneCnt)} / ${fa(filled)} از ۹</span>
     </div>
     ${bands}
   </section>`;
+}
+
+function _todoStaff135TargetId() {
+  const selected = String(_todoStaffFilter.staffId || 'all');
+  if (selected && selected !== 'all') return selected;
+  if (typeof _isTeamGuest === 'function' && _isTeamGuest()) {
+    const own = typeof _todoSessionStaff === 'function' ? _todoSessionStaff() : null;
+    if (own?.id) return String(own.id);
+  }
+  return '';
+}
+
+function _todoStaff135SectionHtml() {
+  const staffId = _todoStaff135TargetId();
+  if (!staffId) {
+    return `<div class="todo-135-staff-hint">برای دیدن و چیدن قانون ۱-۳-۵ هر پرسنل، نام او را از بالا انتخاب کنید.</div>`;
+  }
+  const staff = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === String(staffId));
+  const name = staff ? _todoStaffName(staff) : '';
+  return _todo135BoardHtml(_todo135TodosForPerson(_todo135PersonKeyFromStaffId(staffId)), {
+    staffId,
+    titleSuffix: name,
+    canAssign: _todoCanCreateForStaff(staffId),
+  });
 }
 
 function _todo135PickRowHtml(title, metaHtml, onclick) {
@@ -3361,15 +3440,26 @@ function _todo135TodoPickMeta(t, extraBadge) {
   return `${when}${extraBadge || ''}${badge}`;
 }
 
-function _openTodo135Picker(rank) {
+function _openTodo135Picker(rank, staffId) {
   _todosInit();
   if (typeof _habitsInit === 'function') _habitsInit();
   const slot = _todo135SlotMeta(_parseMainTodayRank(rank));
   if (!slot) return;
+  const staffArg = _todo135StaffIdArg(staffId);
+  if (staffArg && !_todoCanCreateForStaff(staffArg)) {
+    showToast('برای چیدن قانون ۱-۳-۵ این پرسنل دسترسی نداری', 'error');
+    return;
+  }
   const todayKey = _jalaliToday();
   const todayStr = _todayJalaliStr();
+  const personKey = staffArg ? _todo135PersonKeyFromStaffId(staffArg) : null;
   const visibleTodos = (_db.todos || []).filter(t => {
-    if (!_todoCanView(t) || !_todoIsMineScope(t) || t.archived || t.done) return false;
+    if (!_todoCanView(t) || t.archived || t.done) return false;
+    if (staffArg) {
+      if (_todo135PersonKey(t) !== personKey) return false;
+    } else if (!_todoIsMineScope(t)) {
+      return false;
+    }
     const scheduled = _todoScheduledDate(t);
     if (!scheduled) return true;
     return _jalaliKey(scheduled) <= todayKey;
@@ -3389,24 +3479,28 @@ function _openTodo135Picker(rank) {
     const overdueBadge = `<span class="todo-135-pick-badge is-overdue">${escapeHtml(dateLabel || 'عقب‌افتاده')}</span>`;
     return _todo135PickRowHtml(t.title, _todo135TodoPickMeta(t, overdueBadge), `_assignTodo135Slot(${t.id},${slot.rank})`);
   }).join('');
-  const doneHabitIds = new Set((_db.habit_logs || [])
-    .filter(l => l.date === todayStr && l.done)
-    .map(l => String(l.habit_id)));
-  const habits = (_db.habits || []).filter(h => !h.archived && !doneHabitIds.has(String(h.id)));
-  const habitRows = habits.map(h => {
-    const linked = todayTodos.find(t => String(t.habit_id) === String(h.id));
-    const current = linked ? _todo135SlotMeta(linked.main_today_rank) : null;
-    const time = h.time ? `<span class="todo-135-pick-time">${escapeHtml(h.time)}</span>` : '';
-    const kind = `<span class="todo-135-pick-badge is-habit">${escapeHtml(h.icon || '🔥')} عادت</span>`;
-    const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
-    return _todo135PickRowHtml(h.title, `${time}${kind}${badge}`, `_assignHabitTo135Slot(${h.id},${slot.rank})`);
-  }).join('');
+  let habitRows = '';
+  if (!staffArg) {
+    const doneHabitIds = new Set((_db.habit_logs || [])
+      .filter(l => l.date === todayStr && l.done)
+      .map(l => String(l.habit_id)));
+    const habits = (_db.habits || []).filter(h => !h.archived && !doneHabitIds.has(String(h.id)));
+    habitRows = habits.map(h => {
+      const linked = todayTodos.find(t => String(t.habit_id) === String(h.id));
+      const current = linked ? _todo135SlotMeta(linked.main_today_rank) : null;
+      const time = h.time ? `<span class="todo-135-pick-time">${escapeHtml(h.time)}</span>` : '';
+      const kind = `<span class="todo-135-pick-badge is-habit">${escapeHtml(h.icon || '🔥')} عادت</span>`;
+      const badge = current ? `<span class="todo-135-pick-badge">${escapeHtml(current.slotLabel)}</span>` : '';
+      return _todo135PickRowHtml(h.title, `${time}${kind}${badge}`, `_assignHabitTo135Slot(${h.id},${slot.rank})`);
+    }).join('');
+  }
   const lists = _todo135PickSectionHtml('امروز', todayRows)
     + _todo135PickSectionHtml('عقب‌افتاده', overdueRows)
     + _todo135PickSectionHtml('عادت‌ها', habitRows);
+  const createArg = staffArg ? `,${JSON.stringify(staffArg)}` : '';
   openModal('جایگاه ' + slot.slotLabel, `
     <div class="todo-135-picker">
-      <form class="todo-135-pick-composer" id="todo-135-new-form" onsubmit="event.preventDefault();_addTodoTo135Slot(${slot.rank})">
+      <form class="todo-135-pick-composer" id="todo-135-new-form" onsubmit="event.preventDefault();_addTodoTo135Slot(${slot.rank}${createArg})">
         <input class="form-input" id="todo-135-new-title" maxlength="200" autocomplete="off" placeholder="عنوان کار جدید در این جایگاه">
         <button type="submit" class="btn btn-primary todo-135-pick-submit">افزودن</button>
       </form>
@@ -3416,12 +3510,19 @@ function _openTodo135Picker(rank) {
   setTimeout(() => document.getElementById('todo-135-new-title')?.focus(), 40);
 }
 
-function _todo135DefaultCreateMeta() {
+function _todo135DefaultCreateMeta(staffId) {
   const ownStaff = _todoSessionStaff();
-  if (_isTeamGuest() && !ownStaff) {
+  const staffArg = _todo135StaffIdArg(staffId);
+  if (_isTeamGuest() && !ownStaff && !staffArg) {
     return { error: 'حساب شما به رکورد پرسنلی متصل نشده است. مدیر باید دعوت‌نامه را دوباره ایجاد کند.' };
   }
-  const assignee = _isTeamGuest() ? ownStaff : null;
+  let assignee = null;
+  if (staffArg) {
+    assignee = (_db.staff || []).find(s => staffIsPersonnel(s) && String(s.id) === staffArg) || null;
+    if (!assignee) return { error: 'پرسنل پیدا نشد' };
+  } else if (_isTeamGuest()) {
+    assignee = ownStaff;
+  }
   if (!_todoCanCreateForStaff(assignee?.id || '')) {
     return { error: 'برای ساخت این کار دسترسی نداری' };
   }
@@ -3447,24 +3548,24 @@ function _todo135DefaultCreateMeta() {
   };
 }
 
-function _addTodoTo135Slot(rank) {
+function _addTodoTo135Slot(rank, staffId) {
   const title = document.getElementById('todo-135-new-title')?.value.trim();
   if (!title) {
     document.getElementById('todo-135-new-title')?.focus();
     showToast('عنوان کار را وارد کنید', 'error');
     return;
   }
-  void _createTodoIn135Slot(rank, title);
+  void _createTodoIn135Slot(rank, title, staffId);
 }
 
-async function _createTodoIn135Slot(rank, title) {
+async function _createTodoIn135Slot(rank, title, staffId) {
   const slot = _parseMainTodayRank(rank);
   const name = String(title || '').trim();
   if (slot <= 0 || !name) return;
   if (window._todoSaveInProgress) return;
   window._todoSaveInProgress = true;
   _todosInit();
-  const meta = _todo135DefaultCreateMeta();
+  const meta = _todo135DefaultCreateMeta(staffId);
   if (meta.error) {
     window._todoSaveInProgress = false;
     showToast(meta.error, 'error');
@@ -3567,7 +3668,7 @@ function _assignTodo135Slot(id, rank) {
   const slot = _parseMainTodayRank(rank);
   if (slot <= 0) return;
   const today = _todayJalaliStr();
-  const extras = _clearConflictingTodo135Ranks(slot, t.id);
+  const extras = _clearConflictingTodo135Ranks(slot, t.id, _todo135PersonKey(t));
   t.date_jalali = today;
   t.scheduled_date = today;
   t.scheduledDate = today;
@@ -3915,6 +4016,7 @@ function renderTodoList(options = {}) {
             ${repeatIcon?`<span style="font-size:10px;opacity:.6"> ${repeatIcon}</span>`:''}
           </span>
           ${priorityBadge}
+          ${_todo135SlotBadgeHtml(t)}
           ${cat ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:' + cat[1] + '22;color:' + cat[1] + ';font-weight:600">' + cat[0] + '</span>' : ''}
           ${isOverdue?'<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.15);color:var(--red);font-weight:700">⚠️ گذشته</span>':''}
           ${goal ? '<span style="font-size:9px;padding:1px 7px;border-radius:4px;background:rgba(124,106,247,.13);color:var(--accent2);font-weight:600">' + (goal.icon||'🎯') + ' ' + escapeHtml(goal.title) + '</span>'
@@ -3973,7 +4075,18 @@ function renderTodoList(options = {}) {
     html += `</div>`;
   }
 
-  html += _todo135BoardHtml(todayTodos);
+  const guestStaff = isGuestList && typeof _todoSessionStaff === 'function' ? _todoSessionStaff() : null;
+  const boardTodos = guestStaff
+    ? _todo135TodosForPerson(_todo135PersonKeyFromStaffId(guestStaff.id))
+    : todayTodos;
+  boardTodos.forEach(t => {
+    if (_parseMainTodayRank(t.main_today_rank) > 0) mainTodayIds.add(t.id);
+  });
+  html += _todo135BoardHtml(boardTodos, {
+    staffId: guestStaff ? guestStaff.id : '',
+    titleSuffix: isGuestList ? 'شما' : '',
+    canAssign: _todoCanCreateForStaff(guestStaff?.id || ''),
+  });
 
   // ── امروز ──
   html += sectionHeader('☀️', 'امروز', `${today} · ${fa(pending)} باقیمانده`, 'var(--text)');
@@ -5598,7 +5711,7 @@ function _buildTodoRecord(meta, fields) {
 }
 
 function _applyTodoMainTodayRank(newTodo) {
-  const extras = _clearConflictingTodo135Ranks(newTodo.main_today_rank, newTodo.id);
+  const extras = _clearConflictingTodo135Ranks(newTodo.main_today_rank, newTodo.id, _todo135PersonKey(newTodo));
   return extras.length > 0;
 }
 
@@ -6068,7 +6181,12 @@ async function updateTodo(id) {
   const prevCalendarId = t.gcal_calendar_id || _gcal.calendarId();
   const originalScheduledDate = _todoScheduledDate(t);
   if (normalizedMainTodayRank > 0) {
-    _clearConflictingTodo135Ranks(normalizedMainTodayRank, t.id);
+    _clearConflictingTodo135Ranks(normalizedMainTodayRank, t.id, _todo135PersonKey({
+      ...t,
+      assignee_id: assignee ? assignee.id : null,
+      staff_id: assignee ? assignee.id : t.staff_id,
+      assignee_email: assignee?.email || '',
+    }));
   }
   const isPastRecurringOccurrence = _isTodoRecurring(t) && originalScheduledDate && _jalaliKey(originalScheduledDate) < _jalaliToday();
   if (isPastRecurringOccurrence) {
