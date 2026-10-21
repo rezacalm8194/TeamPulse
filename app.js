@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp375';
+const TP_ASSET_V = 'tp376';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -62,7 +62,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
 [
   'renderTodoList', 'renderCalendar', 'openAddTodo',
   '_openTodo135Picker', '_assignTodo135Slot', '_assignHabitTo135Slot', '_clearTodo135Slot', '_addTodoTo135Slot',
-  '_createTodoIn135Slot',
+  '_createTodoIn135Slot', '_openTodo135RepeatSheet', '_setTodo135Repeat',
   '_renderTodoStaffFilteredList', '_setTodoViewMode', '_patchTodoStaffLive',
   '_selectTodoStaffChip', '_openTodoStaffPersonMenu',
   '_toggleTodo', '_todoShowMore', '_completeTodoWithReport',
@@ -26231,7 +26231,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v375';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v376';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

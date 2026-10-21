@@ -50,6 +50,8 @@ test('staff 1-3-5 board is rendered on the personnel tab', () => {
   assert.match(todos, /titleSuffix: isGuestList \? 'شما' : ''/);
   assert.match(todos, /_todo135TodosForPerson\(_todo135PersonKeyFromStaffId\(guestStaff\.id\)\)/);
   assert.match(todos, /onclick="_openTodo135Picker\(\$\{rank\}\$\{pickerArg\}\)"/);
+  assert.match(todos, /id="todo-135-new-repeat"/);
+  assert.match(todos, /_todo135NormalizeRepeat\(document\.getElementById\('todo-135-new-repeat'\)\?\.value\)/);
 });
 
 test('linked staff HTML shows the manager-assigned 1-3-5 task for that person only', () => {
