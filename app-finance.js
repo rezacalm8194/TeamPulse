@@ -1370,6 +1370,123 @@ function _partyTxSortKey(date, createdAt, id) {
 }
 
 
+function _partyTxShiftJalali(str, months, days) {
+  const p = parseJalali(str) || todayJalali();
+  if (months) return formatJalali(...addJalaliMonths(p[0], p[1], p[2], months));
+  const [gy, gm, gd] = jalaliToGregorian(p[0], p[1], p[2]);
+  const d = new Date(Date.UTC(gy, gm - 1, gd + (days || 0)));
+  return formatJalali(...gregorianToJalali(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+}
+
+
+function _partyTxPeriodRange(period, fromStr, toStr) {
+  const today = formatJalali(...todayJalali());
+  if (period === 'week') {
+    const from = _partyTxShiftJalali(today, 0, -6);
+    return { fromKey: jalaliKey(from), toKey: jalaliKey(today), fromStr: from, toStr: today, label: `یک هفته اخیر (${DateService.disp(from)} تا ${DateService.disp(today)})` };
+  }
+  if (period === 'month') {
+    const from = _partyTxShiftJalali(today, -1, 0);
+    return { fromKey: jalaliKey(from), toKey: jalaliKey(today), fromStr: from, toStr: today, label: `یک ماه اخیر (${DateService.disp(from)} تا ${DateService.disp(today)})` };
+  }
+  if (period === 'custom') {
+    const from = fromStr || '';
+    const to = toStr || today;
+    return {
+      fromKey: jalaliKey(from) || 0,
+      toKey: jalaliKey(to) || 99999999,
+      fromStr: from,
+      toStr: to,
+      label: `از ${DateService.disp(from) || from || '—'} تا ${DateService.disp(to) || to || '—'}`,
+    };
+  }
+  return { fromKey: 0, toKey: 0, fromStr: '', toStr: '', label: 'همه تراکنش‌ها' };
+}
+
+
+function _refreshPartyTxView(view) {
+  const range = _partyTxPeriodRange(view.period, view.periodFrom, view.periodTo);
+  view.periodLabel = range.label;
+  const filtered = (view.allItems || []).filter(it => {
+    if (view.period === 'all') return true;
+    const key = jalaliKey(it.date);
+    if (!key) return false;
+    if (range.fromKey && key < range.fromKey) return false;
+    if (range.toKey && key > range.toKey) return false;
+    return true;
+  });
+  view.items = filtered.slice().reverse();
+  view.periodPurchases = view.items.reduce((sum, it) => sum + (it.kind === 'purchase' ? Number(it.debit || 0) : 0), 0);
+  view.periodPaid = view.items.reduce((sum, it) => sum + (it.kind === 'payment' && it.currency === 'تومان' ? Number(it.credit || 0) : 0), 0);
+  view.statPurchases = view.period === 'all' ? view.totalAmount : view.periodPurchases;
+  view.statPaid = view.period === 'all' ? view.totalPaid : view.periodPaid;
+}
+
+
+function _bindPartyTxPeriodFields() {
+  ['tx-period-from', 'tx-period-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el._partyTxBound) return;
+    el._partyTxBound = true;
+    el.addEventListener('change', applyPartyTxCustomPeriod);
+  });
+}
+
+
+function _rerenderPartyTxModal() {
+  const view = window._partyTxPrintPayload;
+  if (!view) return;
+  _refreshPartyTxView(view);
+  const body = document.querySelector('#modal-overlay.tx-invoice-overlay .modal-body');
+  if (!body) return;
+  body.innerHTML = _partyTxModalHtml(view);
+  if (typeof initDatePickers === 'function') initDatePickers();
+  _bindPartyTxPeriodFields();
+}
+
+
+function setPartyTxPeriod(period) {
+  const view = window._partyTxPrintPayload;
+  if (!view) return;
+  view.period = period;
+  if (period === 'week' || period === 'month') {
+    const range = _partyTxPeriodRange(period);
+    view.periodFrom = range.fromStr;
+    view.periodTo = range.toStr;
+  }
+  if (period === 'custom' && !view.periodFrom && !view.periodTo) {
+    const range = _partyTxPeriodRange('month');
+    view.periodFrom = range.fromStr;
+    view.periodTo = range.toStr;
+  }
+  _rerenderPartyTxModal();
+}
+
+
+function applyPartyTxCustomPeriod() {
+  const view = window._partyTxPrintPayload;
+  if (!view) return;
+  const from = readCalendarDateField('tx-period-from') || '';
+  const to = readCalendarDateField('tx-period-to') || '';
+  if (jalaliKey(from) && jalaliKey(to) && jalaliKey(from) > jalaliKey(to)) {
+    showToast('تاریخ شروع نباید بعد از تاریخ پایان باشد', 'error');
+    return;
+  }
+  view.period = 'custom';
+  view.periodFrom = from;
+  view.periodTo = to;
+  _refreshPartyTxView(view);
+  const periodNote = document.getElementById('tx-invoice-period');
+  const purch = document.getElementById('tx-stat-purchases');
+  const paid = document.getElementById('tx-stat-paid');
+  const tbody = document.querySelector('#tx-invoice-sheet tbody');
+  if (periodNote) periodNote.textContent = view.periodLabel || '';
+  if (purch) purch.textContent = `${fmt(view.statPurchases)} ت`;
+  if (paid) paid.textContent = `${fmt(view.statPaid)} ت`;
+  if (tbody) tbody.innerHTML = _partyTxRowsHtml(view);
+}
+
+
 function _buildPartyTxItems(payload) {
   const items = [];
   (payload.sales || []).forEach(p => {
@@ -1426,7 +1543,8 @@ function _partyTxRowsHtml(view) {
   const showMember = !!view.isGroup;
   const cols = showMember ? 7 : 6;
   if (!(view.items || []).length) {
-    return `<tr><td colspan="${cols}" class="tx-invoice-empty">خرید یا پرداختی ثبت نشده</td></tr>`;
+    const empty = view.period && view.period !== 'all' ? 'در این بازه خرید یا پرداختی ثبت نشده' : 'خرید یا پرداختی ثبت نشده';
+    return `<tr><td colspan="${cols}" class="tx-invoice-empty">${empty}</td></tr>`;
   }
   return view.items.map(it => {
     const kind = it.kind === 'purchase' ? 'خرید' : 'دریافت';
@@ -1468,9 +1586,22 @@ function _partyTxModalHtml(view) {
         ${view.partySub ? `<div class="tx-invoice-party-sub">${escapeHtml(view.partySub)}</div>` : ''}
         ${groupLink}
       </div>
+      <div class="tx-invoice-period">
+        <div class="tx-invoice-period-chips" role="group" aria-label="بازه فاکتور">
+          <button type="button" class="tx-period-chip ${view.period === 'all' ? 'active' : ''}" onclick="setPartyTxPeriod('all')">همه</button>
+          <button type="button" class="tx-period-chip ${view.period === 'week' ? 'active' : ''}" onclick="setPartyTxPeriod('week')">یک هفته اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'month' ? 'active' : ''}" onclick="setPartyTxPeriod('month')">یک ماه اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'custom' ? 'active' : ''}" onclick="setPartyTxPeriod('custom')">سفارشی</button>
+        </div>
+        ${view.period === 'custom' ? `<div class="tx-invoice-period-custom">
+          <div>${calendarDateFieldHtml('tx-period-from', view.periodFrom, 'از تاریخ', false)}</div>
+          <div>${calendarDateFieldHtml('tx-period-to', view.periodTo, 'تا تاریخ', false)}</div>
+        </div>` : ''}
+        <div class="tx-invoice-period-label" id="tx-invoice-period">${escapeHtml(view.periodLabel || '')}</div>
+      </div>
       <div class="tx-invoice-stats">
-        <div class="tx-invoice-stat"><div class="k">جمع خرید</div><div class="v">${fmt(view.totalAmount)} ت</div></div>
-        <div class="tx-invoice-stat"><div class="k">جمع دریافت</div><div class="v" style="color:var(--green)">${fmt(view.totalPaid)} ت</div></div>
+        <div class="tx-invoice-stat"><div class="k">جمع خرید</div><div class="v" id="tx-stat-purchases">${fmt(view.statPurchases)} ت</div></div>
+        <div class="tx-invoice-stat"><div class="k">جمع دریافت</div><div class="v" id="tx-stat-paid" style="color:var(--green)">${fmt(view.statPaid)} ت</div></div>
         <div class="tx-invoice-stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} ت</div></div>
         <div class="tx-invoice-stat"><div class="k">${balanceLabel}</div><div class="v">${view.isGroup ? familyBalanceHtml(view.balance) : balanceHtml(view.balance)}</div></div>
       </div>
@@ -1529,9 +1660,11 @@ th{background:#f3f4f6;font-size:11px;color:#4b5563;border-bottom:1px solid #d1d5
 @page{size:A4;margin:14mm}
 @media print{body{max-width:none;padding:0}}
 </style></head><body>
-<div class="head"><div><div class="brand">${escapeHtml(view.brand)}</div><div class="kicker">صورتحساب خرید و دریافت</div></div><div class="issued">تاریخ صدور: ${DateService.disp(view.issued) || escapeHtml(view.issued || '')}</div></div>
+<div class="head"><div><div class="brand">${escapeHtml(view.brand)}</div><div class="kicker">صورتحساب خرید و دریافت</div></div><div class="issued">تاریخ صدور: ${DateService.disp(view.issued) || escapeHtml(view.issued || '')}${view.periodLabel ? `<div>دوره: ${escapeHtml(view.periodLabel)}</div>` : ''}</div></div>
 <div class="party"><div class="party-name">${escapeHtml(view.partyName)}</div>${view.partySub ? `<div class="party-sub">${escapeHtml(view.partySub)}</div>` : ''}</div>
 <div class="stats">
+  <div class="stat"><div class="k">جمع خرید دوره</div><div class="v">${fmt(view.statPurchases)} تومان</div></div>
+  <div class="stat"><div class="k">جمع دریافت دوره</div><div class="v">${fmt(view.statPaid)} تومان</div></div>
   ${Number(view.wallet || 0) ? `<div class="stat"><div class="k">کیف پول</div><div class="v">${fmt(view.wallet)} تومان</div></div>` : ''}
   <div class="stat"><div class="k">${balanceLabel}</div><div class="v">${balanceText}</div></div>
 </div>
@@ -1543,13 +1676,16 @@ ${printScript}</body></html>`;
 
 
 function _openPartyTransactions(payload) {
-  const items = _buildPartyTxItems(payload);
   const view = {
     ...payload,
-    items,
+    allItems: _buildPartyTxItems(payload),
+    period: payload.period || 'all',
+    periodFrom: payload.periodFrom || '',
+    periodTo: payload.periodTo || '',
     issued: formatJalali(...todayJalali()),
     brand: (META && META.appTitle) || 'TeamPulse',
   };
+  _refreshPartyTxView(view);
   window._partyTxPrintPayload = view;
   openModal('📑 تراکنش‌ها', _partyTxModalHtml(view), [
     { label: '🖨 چاپ فاکتور', cls: 'btn-primary', action: 'printPartyTransactions()' },
@@ -1558,6 +1694,8 @@ function _openPartyTransactions(payload) {
     { label: '📋 کپی', cls: 'btn-ghost', action: 'copyPartyTransactions()' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ], { overlayClass: 'tx-invoice-overlay' });
+  if (typeof initDatePickers === 'function') initDatePickers();
+  _bindPartyTxPeriodFields();
 }
 
 
@@ -1576,6 +1714,7 @@ function _partyTxPlainText(view) {
     view.partyName,
     view.partySub,
     `تاریخ صدور: ${DateService.disp(view.issued) || view.issued || ''}`,
+    view.periodLabel ? `دوره: ${view.periodLabel}` : '',
     '',
   ];
   (view.items || []).forEach(it => {
