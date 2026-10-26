@@ -228,8 +228,9 @@ function deleteFinancialBudget(id) { if(!confirm('این بودجه حذف شو�
 function budgetDashboardHtml(year,month) { const b=_budgetFor(year,month);if(!b)return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h3 style="margin:0">🎯 بودجه ماه</h3><p style="font-size:11px;color:var(--text3);margin:5px 0 0">برای این ماه هنوز بودجه‌ای ثبت نشده است.</p></div><button class="btn btn-ghost btn-sm" onclick="openBudgetForm()">تعریف بودجه</button></div></div>`;const a=_budgetActual(year,month);const alerts=[];if(b.expense_limit&&a.expenses>=b.expense_limit)alerts.push('سقف هزینه کل رد شده');else if(b.expense_limit&&a.expenses/b.expense_limit>=.8)alerts.push('هزینه به ۸۰٪ سقف رسیده');Object.entries(b.category_limits||{}).forEach(([c,l])=>{if((a.categories[c]||0)>=l)alerts.push(`سقف ${c} رد شده`);});return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">🎯 بودجه ${fa(year)}/${fa(month)}</h3><button class="btn btn-ghost btn-sm" onclick="openBudgetManager()">مدیریت</button></div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px;font-size:11px"><div>درآمد ${fmt(a.income)} / ${fmt(b.income_target)}${_budgetBar(a.income,b.income_target,'var(--green)')}</div><div>هزینه ${fmt(a.expenses)} / ${fmt(b.expense_limit)}${_budgetBar(a.expenses,b.expense_limit,'var(--red)')}</div><div>سود ${fmt(a.profit)} / ${fmt(b.profit_target)}${_budgetBar(a.profit,b.profit_target,'var(--accent)')}</div></div>${alerts.length?`<div style="font-size:11px;color:var(--amber);margin-top:10px">⚠️ ${alerts.join(' · ')}</div>`:''}</div>`; }
 
 function _cashForecast(days=30) {
+  if (typeof _reconcileStaffRemindersForPaidMonths === 'function') _reconcileStaffRemindersForPaidMonths();
   const incoming=(_db.reminders||[]).filter(r=>!r.done&&_isPaymentReminder(r)).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.students||[]).find(x=>String(x.id)===String(r.student_id));return {kind:'in',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'مشتری'} ${s?.lname||''}`.trim(),title:r.title||'دریافت مشتری'};}).filter(x=>x.dueIn<=days);
-  const outgoing=(_db.staff_reminders||[]).filter(r=>!r.done).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.staff||[]).find(x=>String(x.id)===String(r.staff_id));return {kind:'out',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'پرسنل'} ${s?.lname||''}`.trim(),title:r.title||'پرداخت پرسنل'};}).filter(x=>x.dueIn<=days);
+  const outgoing=(_db.staff_reminders||[]).filter(r=>!r.done&&!(typeof _staffReminderSettlement==='function'&&_staffReminderSettlement(r).settled)).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.staff||[]).find(x=>String(x.id)===String(r.staff_id));return {kind:'out',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'پرسنل'} ${s?.lname||''}`.trim(),title:r.title||'پرداخت پرسنل'};}).filter(x=>x.dueIn<=days);
   const sort=(a,b)=>a.dueIn-b.dueIn;incoming.sort(sort);outgoing.sort(sort);
   const totalIn=incoming.reduce((s,x)=>s+x.amount,0),totalOut=outgoing.reduce((s,x)=>s+x.amount,0);
   const cash=(_db.financial_accounts||[]).reduce((s,a)=>s+Number(_financialAccountBalance(a)||0),0);
@@ -919,7 +920,7 @@ async function renderStaff() {
       let statusBadge;
       if (r.settled_by_payments) {
         statusBadge = `<span class="status status-ok">تسویه کامل شد ✓</span>`;
-      } else if (r.paid_this_month) {
+      } else if (r.paid_this_month || r.paid_for_due_month) {
         const months = Math.floor(Math.abs(du)/30), remDays = Math.abs(du)%30;
         const remainText = months>0 ? `${fa(months)} ماه و ${fa(remDays)} روز` : `${fa(remDays)} روز`;
         statusBadge = `<span class="status status-ok">پرداخت شد ✓ — ${fa(Math.abs(du))} روز تا سررسید آینده</span>`;
@@ -936,7 +937,7 @@ async function renderStaff() {
       html += `<tr>
         <td style="font-weight:500">${escapeHtml(r.name)} ${escapeHtml(r.lname)}</td>
         <td style="font-size:12px">${DateService.disp(r.due_date_jalali)}</td>
-        <td><span class="amount" style="${du<0&&!r.paid_this_month&&!r.settled_by_payments?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
+        <td><span class="amount" style="${du<0&&!r.paid_this_month&&!r.paid_for_due_month&&!r.settled_by_payments?'color:var(--red);font-weight:700':''}">${fmt(r.live_amount)} ت</span></td>
         <td style="font-size:11px;color:var(--text2)">${r.repeat_months>0?`هر ${fa(r.repeat_months)} ماه`:'یک‌بار'}</td>
         <td>${statusBadge}</td>
         <td>
