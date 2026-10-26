@@ -5123,6 +5123,77 @@ function _isGoalAchieved(g) {
   return !!g && ((g.status || 'active') === 'done' || +(g.progress || 0) >= 100);
 }
 
+function _goalTodayStr() {
+  return (typeof _todayJalaliStr === 'function' && _todayJalaliStr()) || '';
+}
+function _goalStepLog(g) {
+  if (!g) return [];
+  if (!Array.isArray(g.step_log)) g.step_log = [];
+  return g.step_log;
+}
+function _goalHasStepToday(g) {
+  const today = _goalTodayStr();
+  if (!g || !today) return false;
+  return _goalStepLog(g).some(s => s && s.date_jalali === today);
+}
+function _applyGoalPartProgress(g) {
+  if (!g || _isGoalAchieved(g)) return;
+  const parts = g.milestones || [];
+  if (!parts.length) return;
+  const done = parts.filter(m => m && m.done).length;
+  const pct = Math.round((done / parts.length) * 99);
+  if (pct > +(g.progress || 0)) g.progress = pct;
+}
+function _recordGoalStep(g, partIdx) {
+  if (!g) return { dup: true };
+  const today = _goalTodayStr();
+  const parts = g.milestones || [];
+  const hasPart = partIdx != null && Number.isFinite(+partIdx) && parts[+partIdx];
+  const idx = hasPart ? +partIdx : null;
+  let partTitle = '';
+  if (hasPart) {
+    parts[idx].done = true;
+    partTitle = parts[idx].title || '';
+  }
+  const log = _goalStepLog(g);
+  const dup = log.some(s => s && s.date_jalali === today && (s.part_idx == null ? null : +s.part_idx) === idx);
+  if (!dup) {
+    log.push({
+      date_jalali: today,
+      at: new Date().toISOString(),
+      part_idx: idx,
+      title: partTitle || 'گام امروز',
+    });
+  }
+  _applyGoalPartProgress(g);
+  _touchGoal(g);
+  return { dup, partTitle, allDone: parts.length > 0 && parts.every(m => m && m.done) };
+}
+function _markGoalAchieved(g) {
+  if (!g) return;
+  g.progress_before_done = +(g.progress || 0);
+  g.progress = 100;
+  g.status = 'done';
+  g.completed_at = new Date().toISOString();
+  g.completed_date_jalali = _goalAchievementDate(g);
+  _ensureGoalAchievement(g);
+}
+function _goalTickCheckboxHtml(g, size) {
+  const achieved = _isGoalAchieved(g);
+  const stepped = !achieved && _goalHasStepToday(g);
+  const px = size || 28;
+  const title = achieved ? 'برگرداندن به اهداف فعال' : 'ثبت گام امروز یا دستاورد';
+  const border = achieved ? 'var(--green)' : stepped ? 'var(--accent)' : 'var(--border2)';
+  const bg = achieved ? 'var(--green)' : stepped ? 'rgba(124,106,247,.22)' : 'transparent';
+  const color = achieved ? 'white' : 'var(--accent2)';
+  return `<button type="button" onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${title}"
+    aria-label="${title}" aria-pressed="${achieved || stepped ? 'true' : 'false'}"
+    style="width:${px}px;height:${px}px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
+      border:2px solid ${border};background:${bg};color:${color};font-size:${px > 26 ? 15 : 14}px;font-weight:900">
+    ${achieved || stepped ? '✓' : ''}
+  </button>`;
+}
+
 function _ensureGoalAchievement(g) {
   _goalsInit();
   if (!g || !g.id) return null;
@@ -5474,7 +5545,7 @@ function renderGoals() {
           <div style="font-size:56px;margin-bottom:16px">🎯</div>
           <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;color:var(--text)">هنوز هدفی تعریف نکرده‌ای</h2>
           <p style="color:var(--text2);font-size:13px;margin-bottom:8px;line-height:1.8">
-            اهداف بزرگ‌ات را از دکمه بالای صفحه ثبت کن. هر هدف می‌تواند مراحل، یادداشت و deadline داشته باشد.
+            اهداف بزرگ‌ات را از دکمه بالای صفحه ثبت کن. هر هدف می‌تواند چند بخش، گام روزانه، یادداشت و deadline داشته باشد.
           </p>
         </div>
       </div>`);
@@ -5517,13 +5588,17 @@ function renderGoals() {
     </div>`;
 
   const todayGoal = goals.filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
-    .sort((a,b) => (a.progress || 0) - (b.progress || 0))[0];
+    .sort((a,b) => {
+      const stepDiff = (_goalHasStepToday(a) ? 1 : 0) - (_goalHasStepToday(b) ? 1 : 0);
+      if (stepDiff) return stepDiff;
+      return (a.progress || 0) - (b.progress || 0);
+    })[0];
   const todayMotivation = todayGoal ? _goalMotivationToday(todayGoal) : '';
   const todayWidgetHTML = todayGoal ? `
     <div onclick="openGoalDetail(${todayGoal.id})" style="cursor:pointer;background:linear-gradient(135deg,rgba(124,106,247,.16),rgba(62,207,142,.10));border:1px solid rgba(124,106,247,.28);border-radius:14px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div style="min-width:0">
-          <div style="font-size:11px;color:var(--accent2);font-weight:800;margin-bottom:4px">امروز فقط برای این هدف یک قدم بردار</div>
+          <div style="font-size:11px;color:var(--accent2);font-weight:800;margin-bottom:4px">${_goalHasStepToday(todayGoal) ? 'گام امروز این هدف ثبت شد' : 'امروز فقط برای این هدف یک قدم بردار'}</div>
           <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.5">${escapeHtml(todayGoal.icon || '🎯')} ${escapeHtml(todayGoal.title)}</div>
           ${todayMotivation ? `<div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:5px">چون: «${escapeHtml(todayMotivation)}»</div>` : ''}
         </div>
@@ -5568,11 +5643,7 @@ function renderGoals() {
       onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.6)')"
       onmouseleave="_tpStyle(this,'borderColor','${urgencyColor}')">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
-        <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
-          style="width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
-            border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:15px;font-weight:900">
-          ${_isGoalAchieved(g) ? '✓' : ''}
-        </button>
+        ${_goalTickCheckboxHtml(g, 28)}
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700;color:var(--text)">${escapeHtml(g.title)}</span>
@@ -5599,7 +5670,8 @@ function renderGoals() {
         ${g.deadline ? `<span style="font-size:11px;font-weight:600;color:${daysLeft !== null && daysLeft < 0 ? 'var(--red)' : daysLeft !== null && daysLeft <= 7 ? 'var(--amber)' : 'var(--text3)'}">
           ⏳ ${_formatDaysLeft(daysLeft, fa)}
         </span>` : ''}
-        ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} مرحله</span>` : ''}
+        ${_goalHasStepToday(g) && !_isGoalAchieved(g) ? `<span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(124,106,247,.12);color:var(--accent2);font-weight:700">گام امروز ✓</span>` : ''}
+        ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)} بخش</span>` : ''}
         <span style="font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(255,255,255,.05);color:${health.color};font-weight:700">${escapeHtml(health.icon)} سلامت ${escapeHtml(health.label)}</span>
         ${linkedTaskCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(96,165,250,.12);color:#60a5fa;font-weight:600">✅ ${fa(linkedTaskCount)} کار مرتبط</span>` : ''}
         ${linkedHabitCount > 0 ? `<span onclick="event.stopPropagation();openGoalLinkedItems(${g.id})" style="cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(251,191,36,.12);color:var(--amber);font-weight:600">🔥 ${fa(linkedHabitCount)} عادت مرتبط</span>` : ''}
@@ -5662,11 +5734,7 @@ function renderGoals() {
             return `<div onclick="openGoalDetail(${g.id})" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s;display:flex;flex-direction:column;gap:10px"
               onmouseenter="_tpStyle(this,'borderColor','rgba(62,207,142,.5)')" onmouseleave="_tpStyle(this,'borderColor','var(--border)')">
               <div style="display:flex;align-items:flex-start;gap:10px">
-                <button onclick="event.stopPropagation();toggleGoalAchievement(${g.id})" title="${_isGoalAchieved(g) ? 'برگرداندن به اهداف فعال' : 'ثبت به عنوان دستاورد'}"
-                  style="width:26px;height:26px;border-radius:8px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;
-                    border:2px solid ${_isGoalAchieved(g) ? 'var(--green)' : 'var(--border2)'};background:${_isGoalAchieved(g) ? 'var(--green)' : 'transparent'};color:white;font-size:14px;font-weight:900">
-                  ${_isGoalAchieved(g) ? '✓' : ''}
-                </button>
+                ${_goalTickCheckboxHtml(g, 26)}
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.5">${escapeHtml(g.title)}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
@@ -5686,6 +5754,7 @@ function renderGoals() {
               </div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 ${g.deadline ? `<span style="font-size:11px;color:${daysLeft!==null&&daysLeft<0?'var(--red)':daysLeft!==null&&daysLeft<=7?'var(--amber)':'var(--text3)'}">⏳ ${_formatDaysLeft(daysLeft, fa)}</span>` : ''}
+                ${_goalHasStepToday(g) && !_isGoalAchieved(g) ? `<span style="font-size:11px;color:var(--accent2)">گام امروز ✓</span>` : ''}
                 ${milestones.length > 0 ? `<span style="font-size:11px;color:var(--text3)">🏁 ${fa(doneMilestones)}/${fa(milestones.length)}</span>` : ''}
                 ${linkedTaskCount > 0 ? `<span style="font-size:11px;color:#60a5fa">✅ ${fa(linkedTaskCount)}</span>` : ''}
                 ${linkedHabitCount > 0 ? `<span style="font-size:11px;color:var(--amber)">🔥 ${fa(linkedHabitCount)}</span>` : ''}
@@ -5976,16 +6045,89 @@ function _goalPathComposerHtml(prefix, g) {
     </details>`;
 }
 
+function _goalPartsDraft(prefix) {
+  window._goalFormParts = window._goalFormParts || {};
+  if (!window._goalFormParts[prefix]) window._goalFormParts[prefix] = [];
+  return window._goalFormParts[prefix];
+}
+function _resetGoalPartsDraft(prefix, milestones) {
+  window._goalFormParts = window._goalFormParts || {};
+  window._goalFormParts[prefix] = (milestones || []).map(m => ({ title: String(m.title || '').trim(), done: !!m.done })).filter(m => m.title);
+}
+function _renderGoalPartsDraft(prefix) {
+  const list = document.getElementById(prefix + '-parts-list');
+  if (!list) return;
+  const draft = _goalPartsDraft(prefix);
+  list.innerHTML = draft.map((m, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-bottom:6px">
+      <span style="font-size:10px;font-weight:800;color:var(--green);background:rgba(62,207,142,.12);padding:2px 7px;border-radius:999px;flex-shrink:0">بخش</span>
+      <span style="flex:1;font-size:13px;color:var(--text);line-height:1.6">${m.done ? '✓ ' : ''}${escapeHtml(m.title)}</span>
+      <button type="button" onclick="_removeGoalPartItem('${prefix}',${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1">×</button>
+    </div>`).join('');
+  _refreshGoalFormCompletion(prefix);
+}
+function _addGoalPartItem(prefix) {
+  const input = document.getElementById(prefix + '-part');
+  const title = (input?.value || '').trim();
+  if (!title) { showToast('عنوان بخش را بنویس', 'error'); return; }
+  const draft = _goalPartsDraft(prefix);
+  if (draft.length >= 12) { showToast('حداکثر ۱۲ بخش برای هر هدف', 'warning'); return; }
+  const key = _goalPathTitleKey(title);
+  if (draft.some(x => _goalPathTitleKey(x.title) === key)) {
+    showToast('این بخش را همین الان اضافه کردی', 'warning');
+    return;
+  }
+  draft.push({ title, done: false });
+  if (input) input.value = '';
+  _renderGoalPartsDraft(prefix);
+}
+function _removeGoalPartItem(prefix, idx) {
+  const draft = _goalPartsDraft(prefix);
+  draft.splice(idx, 1);
+  _renderGoalPartsDraft(prefix);
+}
+function _flushGoalPartInput(prefix) {
+  const input = document.getElementById(prefix + '-part');
+  const title = (input?.value || '').trim();
+  if (!title) return;
+  const draft = _goalPartsDraft(prefix);
+  if (draft.length >= 12) return;
+  const key = _goalPathTitleKey(title);
+  if (draft.some(x => _goalPathTitleKey(x.title) === key)) return;
+  draft.push({ title, done: false });
+  input.value = '';
+}
+function _readGoalParts(prefix) {
+  _flushGoalPartInput(prefix);
+  return _goalPartsDraft(prefix).map(m => ({ title: String(m.title || '').trim(), done: !!m.done })).filter(m => m.title);
+}
+function _goalPartsComposerHtml(prefix, g) {
+  if (prefix === 'ach') return '';
+  return `
+    <details open style="background:rgba(62,207,142,.07);border:1px solid rgba(62,207,142,.22);border-radius:12px;padding:12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--green)">🧩 بخش‌های هدف</summary>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 12px">هدف را به چند بخش تقسیم کن. تیک زدن یعنی گام امروز در مسیر این هدف — نه لزوماً ثبت دستاورد.</div>
+      <div id="${prefix}-parts-list"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="${prefix}-part" placeholder="مثلاً: فروش این ماه · پیگیری لیدها · بستن قرارداد" onkeydown="if(event.key==='Enter'){event.preventDefault();_addGoalPartItem('${prefix}')}">
+        <button type="button" onclick="_addGoalPartItem('${prefix}')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(62,207,142,.35);background:rgba(62,207,142,.14);color:var(--green);cursor:pointer;font-size:18px;font-weight:800">+</button>
+      </div>
+    </details>`;
+}
+
 function _goalFormCompletion(prefix) {
   const draft = window._goalFormPath && window._goalFormPath[prefix];
   const hasPath = !!(draft && ((draft.actions && draft.actions.length) || (draft.micros && draft.micros.length)
     || document.getElementById(prefix + '-path-action')?.value.trim()
     || document.getElementById(prefix + '-path-micro')?.value.trim()));
+  const partsDraft = window._goalFormParts && window._goalFormParts[prefix];
+  const hasParts = !!(partsDraft && partsDraft.length) || !!document.getElementById(prefix + '-part')?.value.trim();
   const checks = [
     !!document.getElementById(prefix + '-title')?.value.trim(),
     !!document.getElementById(prefix + '-category')?.value.trim(),
     !!document.getElementById(prefix + '-icon')?.value.trim(),
     !!document.getElementById(prefix + '-why')?.value.trim(),
+    hasParts,
     hasPath,
     !!document.getElementById(prefix + '-vision')?.value.trim(),
     !!readCalendarDateField(prefix + '-deadline'),
@@ -6139,6 +6281,7 @@ function _goalFormHtml(prefix, g) {
       <textarea class="form-textarea" id="${prefix}-why" rows="3" placeholder="دلیل واقعی‌ات را بنویس؛ همان چیزی که روزهای سخت نگهت می‌دارد..." style="margin-top:10px">${escapeHtml(g.why||'')}</textarea>
     </details>
 
+    ${_goalPartsComposerHtml(prefix, g)}
     ${_goalPathComposerHtml(prefix, g)}
 
     <details ${visionOpen ? 'open' : ''} style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px">
@@ -6210,6 +6353,9 @@ function _initGoalFormUX(prefix) {
     if (el) el.addEventListener('input', refresh);
   });
   _renderGoalPathDraft(prefix);
+  _renderGoalPartsDraft(prefix);
+  const partInput = document.getElementById(prefix + '-part');
+  if (partInput) partInput.addEventListener('input', refresh);
   refresh();
 }
 
@@ -6562,6 +6708,7 @@ function openAddGoal() {
   window._goalFormVisionAssets.goal = [];
   window._goalFormVisionMusic.goal = '';
   _resetGoalPathDraft('goal');
+  _resetGoalPartsDraft('goal', []);
   openModal('🎯 هدف جدید', _goalFormHtml('goal', {}), [
     { label: 'ثبت و شروع مسیر', cls: 'btn-primary', action: 'saveNewGoal()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -6601,7 +6748,8 @@ function saveNewGoal() {
     difficulty: document.getElementById('goal-difficulty')?.value || 'medium',
     status: 'active',
     progress: 0,
-    milestones: [],
+    milestones: _readGoalParts('goal'),
+    step_log: [],
     notes: '',
     created_at: now,
     updated_at: now,
@@ -6836,11 +6984,13 @@ function openGoalDetail(id) {
 
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:12px;font-weight:600;color:var(--text2)">🏁 مراحل (Milestones)</span>
-          <button onclick="addMilestone(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer">+ مرحله</button>
+          <span style="font-size:12px;font-weight:600;color:var(--text2)">🧩 بخش‌های هدف</span>
+          <button onclick="addMilestone(${id})" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer">+ بخش</button>
         </div>
-        <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز مرحله‌ای اضافه نشده</div>'}</div>
+        <div id="milestones-list-${id}">${msHTML || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:10px">هنوز بخشی اضافه نشده. هدف را به چند بخش تقسیم کن.</div>'}</div>
       </div>
+
+      ${_goalStepsHtml(g)}
 
       ${g.deadline ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">📅 ددلاین: <strong>${DateService.disp(g.deadline)}</strong></div>` : ''}
 
@@ -6951,8 +7101,13 @@ function _goalJourneyText(id) {
     ...(doneMicros.length ? doneMicros.map(_goalTaskReportLine) : ['— هنوز اقدامکی انجام نشده']),
   ];
   if (milestones.length) {
-    lines.push('', `مراحل (${fa(milestones.filter(m => m.done).length)}/${fa(milestones.length)})`);
+    lines.push('', `بخش‌ها (${fa(milestones.filter(m => m.done).length)}/${fa(milestones.length)})`);
     milestones.forEach(m => lines.push(`${m.done ? '✓' : '○'} ${m.title}`));
+  }
+  const steps = g.step_log || [];
+  if (steps.length) {
+    lines.push('', `گام‌های روز (${fa(steps.length)})`);
+    steps.slice().reverse().forEach(s => lines.push(`✓ ${s.title || 'گام امروز'}${s.date_jalali ? ' — ' + DateService.disp(s.date_jalali) : ''}`));
   }
   lines.push('', `TeamPulse · ${DateService.disp((_todayJalaliStr && _todayJalaliStr()) || '')}`);
   return lines.filter((x, i, arr) => x !== '' || arr[i - 1] !== '').join('\n');
@@ -6994,10 +7149,16 @@ function _goalJourneyBodyHtml(data, print) {
       doneActions.length ? doneActions.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامی انجام نشده'))}
     ${section(`اقدامک‌های انجام‌شده (${fa(doneMicros.length)})`,
       doneMicros.length ? doneMicros.map(t => _goalTaskRowHtml(t, print)).join('') : empty('هنوز اقدامکی انجام نشده'))}
-    ${milestones.length ? section(`مراحل (${fa(milestones.filter(m => m.done).length)} از ${fa(milestones.length)})`,
+    ${milestones.length ? section(`بخش‌ها (${fa(milestones.filter(m => m.done).length)} از ${fa(milestones.length)})`,
       milestones.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:${print ? '#fff' : 'var(--bg3)'};border-radius:8px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
         ${m.done ? _goalDoneCheckHtml(print) : `<span style="width:20px;height:20px;border-radius:50%;border:2px solid ${print ? '#d1d5db' : 'var(--border2)'};flex-shrink:0"></span>`}
         <span style="font-size:13px;color:${text};line-height:1.7">${escapeHtml(m.title)}</span>
+      </div>`).join('')) : ''}
+    ${(g.step_log || []).length ? section(`گام‌های روز (${fa((g.step_log || []).length)})`,
+      (g.step_log || []).slice().reverse().map(s => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;background:${print ? '#fff' : 'var(--bg3)'};border-radius:8px;border:1px solid ${print ? '#e5e7eb' : 'transparent'}">
+        ${_goalDoneCheckHtml(print)}
+        <span style="flex:1;font-size:13px;color:${text};line-height:1.7">${escapeHtml(s.title || 'گام امروز')}</span>
+        <span style="font-size:10px;color:${print ? '#9ca3af' : 'var(--text3)'}">${DateService.disp(s.date_jalali || '')}</span>
       </div>`).join('')) : ''}
   `;
 }
@@ -7274,6 +7435,20 @@ function updateGoalProgress(id, val) {
   if (currentPage === 'goals') renderGoals();
 }
 
+function _goalStepsHtml(g) {
+  const log = (g.step_log || []).slice().reverse().slice(0, 8);
+  if (!log.length) return '';
+  const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  return `<div style="margin-bottom:14px">
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">👣 گام‌های ثبت‌شده (${fa((g.step_log || []).length)})</div>
+    ${log.map(s => `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
+      <span style="color:var(--accent2);font-size:12px">✓</span>
+      <span style="flex:1;font-size:12px;color:var(--text);line-height:1.6">${escapeHtml(s.title || 'گام امروز')}</span>
+      <span style="font-size:10px;color:var(--text3)">${DateService.disp(s.date_jalali || '')}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
 function toggleGoalAchievement(id) {
   _goalsInit();
   const g = (_db.goals || []).find(x => x.id === id);
@@ -7284,25 +7459,81 @@ function toggleGoalAchievement(id) {
     g.completed_at = '';
     g.completed_date_jalali = '';
     _removeGoalAchievement(g.id);
+    _touchGoal(g);
+    _save();
+    if (currentPage === 'goals') renderGoals();
     showToast('هدف به لیست اهداف برگشت', 'success');
-  } else {
-    g.progress_before_done = +(g.progress || 0);
-    g.progress = 100;
-    g.status = 'done';
-    g.completed_at = new Date().toISOString();
-    g.completed_date_jalali = _goalAchievementDate(g);
-    _ensureGoalAchievement(g);
-    showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
+    return;
   }
+  openGoalTickChooser(id);
+}
+
+function openGoalTickChooser(id) {
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g) return;
+  const parts = g.milestones || [];
+  const openParts = parts.map((m, i) => ({ m, i })).filter(x => x.m && !x.m.done);
+  const partsHtml = parts.length ? `
+    <div style="font-size:12px;font-weight:800;color:var(--text);margin:14px 0 8px">کدام بخش را امروز برداشتی؟</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer">
+        <input type="radio" name="goal-tick-part" value="" checked style="margin-top:3px">
+        <span style="font-size:13px;line-height:1.7;color:var(--text)">گام کلی امروز <span style="color:var(--text3);font-size:11px">(بدون بستن یک بخش)</span></span>
+      </label>
+      ${openParts.map(x => `
+        <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer">
+          <input type="radio" name="goal-tick-part" value="${x.i}" style="margin-top:3px">
+          <span style="font-size:13px;line-height:1.7;color:var(--text)">${escapeHtml(x.m.title)}</span>
+        </label>`).join('')}
+    </div>` : '';
+  openModal('این تیک دستاورد است؟', `
+    <div style="font-size:14px;font-weight:800;color:var(--text);line-height:1.8;margin-bottom:8px">${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.title)}</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.9">
+      تیک زدن معمولاً یعنی امروز یک گام در مسیر این هدف برداشتی — نه اینکه هدف تمام شده و باید به دستاوردها برود.
+      می‌خواهی این اقدام را به‌عنوان دستاورد ثبت کنم، یا فقط گام امروز؟
+    </div>
+    ${partsHtml}
+  `, [
+    { label: 'گام امروز', cls: 'btn-primary', action: `confirmGoalTickAsStep(${id})` },
+    { label: 'ثبت دستاورد', cls: 'btn-ghost', action: `confirmGoalTickAsAchievement(${id})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+function confirmGoalTickAsStep(id) {
+  const picked = document.querySelector('input[name="goal-tick-part"]:checked');
+  const raw = picked ? picked.value : '';
+  const partIdx = raw === '' ? null : +raw;
+  closeModal();
+  _goalsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g || _isGoalAchieved(g)) return;
+  const result = _recordGoalStep(g, Number.isFinite(partIdx) ? partIdx : null);
+  _save();
+  if (currentPage === 'goals') renderGoals();
+  if (result.allDone) showToast('گام امروز ثبت شد. همه بخش‌ها انجام شده؛ اگر هدف تمام است دوباره تیک بزن و دستاورد را ثبت کن', 'success');
+  else if (result.partTitle) showToast('گام امروز برای بخش «' + result.partTitle + '» ثبت شد ✓', 'success');
+  else showToast('گام امروز در مسیر این هدف ثبت شد ✓', 'success');
+}
+
+function confirmGoalTickAsAchievement(id) {
+  closeModal();
+  _goalsInit();
+  const g = (_db.goals || []).find(x => x.id === id);
+  if (!g || _isGoalAchieved(g)) return;
+  _markGoalAchieved(g);
   _touchGoal(g);
   _save();
   if (currentPage === 'goals') renderGoals();
+  showToast('هدف به دستاوردها اضافه شد 🏆', 'success');
 }
 
 function toggleMilestone(goalId, idx) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g || !g.milestones[idx]) return;
   g.milestones[idx].done = !g.milestones[idx].done;
+  if (g.milestones[idx].done) _recordGoalStep(g, idx);
+  else _applyGoalPartProgress(g);
   _touchGoal(g);
   _save();
   _syncGoalProgressFromLinkedWork(goalId);
@@ -7321,7 +7552,7 @@ function deleteMilestone(goalId, idx) {
 function addMilestone(goalId) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g) return;
-  const title = prompt('عنوان مرحله:');
+  const title = prompt('عنوان بخش:');
   if (!title) return;
   if (!g.milestones) g.milestones = [];
   g.milestones.push({ title, done: false });
@@ -7370,7 +7601,7 @@ function _openGoalExperience(id, mode) {
 
   const milestoneHtml = milestones.length
     ? milestones.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08)"><span>${m.done?'✅':'⭕'}</span><span style="${m.done?'opacity:.65;text-decoration:line-through':''}">${escapeHtml(m.title)}</span></div>`).join('')
-    : '<div style="opacity:.65;font-size:13px">هنوز مرحله‌ای تعریف نشده.</div>';
+    : '<div style="opacity:.65;font-size:13px">هنوز بخشی تعریف نشده.</div>';
 
   overlay.innerHTML = `
     <div style="position:absolute;inset:0">${slideHtml}</div>
@@ -7394,7 +7625,7 @@ function _openGoalExperience(id, mode) {
           <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:14px"><b style="color:#b8adff">${prediction.value}</b><div style="font-size:11px;opacity:.7;margin-top:4px">${escapeHtml(prediction.text)}</div></div>
         </div>
         <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:16px">
-          <div style="font-size:13px;font-weight:800;margin-bottom:8px">مراحل</div>${milestoneHtml}
+          <div style="font-size:13px;font-weight:800;margin-bottom:8px">بخش‌های هدف</div>${milestoneHtml}
         </div>` : ''}
       </div>
     </div>
@@ -7497,6 +7728,7 @@ function openEditGoal(id) {
   window._goalFormVisionAssets.eg = _goalVisionItems(g).map(x => ({...x}));
   window._goalFormVisionMusic.eg = g.music_url || '';
   _resetGoalPathDraft('eg');
+  _resetGoalPartsDraft('eg', g.milestones || []);
   openModal('✏️ ویرایش هدف', _goalFormHtml('eg', g), [
     { label: '💾 ذخیره هدف', cls: 'btn-primary', action: `saveEditGoal(${id})` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
@@ -7518,6 +7750,7 @@ function saveEditGoal(id) {
   g.vision_images = '';
   g.music_url = _readGoalMusic('eg');
   g.difficulty = document.getElementById('eg-difficulty')?.value || g.difficulty || 'medium';
+  g.milestones = _readGoalParts('eg');
   if (_isGoalAchieved(g)) {
     if (g.progress < 100 && g.status === 'done') g.progress = 100;
     if (!g.completed_at) g.completed_at = new Date().toISOString();

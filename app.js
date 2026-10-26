@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp377';
+const TP_ASSET_V = 'tp379';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8925,7 +8925,7 @@ function newPurchaseServicePickerHtml(preset = {}) {
   return `
     <div class="form-group full np-quick-box">
       <label class="form-label">⚡ ثبت سریع چند خدمت (اختیاری)</label>
-      <textarea class="form-textarea" id="np-quick" rows="3" oninput="onNewPurchaseQuickInput()" placeholder="هر خط یک خدمت — مثلاً:&#10;پخت و ریز کردن پگ گوسفندی&#10;خورش قیمه ۸۰۰ هزار"></textarea>
+      <textarea class="form-textarea" id="np-quick" rows="3" oninput="onNewPurchaseQuickInput()" placeholder="هر خط یک خدمت — مثلاً:&#10;طراحی سایت&#10;ادیت ویدیو ۹۹۰ هزار تومان"></textarea>
       <div id="np-quick-preview" class="np-quick-preview"><div style="font-size:11px;color:var(--text3)">نام خدمت را بنویس یا بگو؛ قیمت از کاتالوگ می‌آید مگر مبلغ را بنویسی.</div></div>
     </div>
     <div class="form-group full">
@@ -26231,7 +26231,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v377';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v379';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
