@@ -30,6 +30,11 @@ const sandbox = {
   _studentListSummaryCache: null,
   _enqueueDurableBusinessDelta() {},
   _save() {},
+  _ALL_CURRENCIES: ['تومان'],
+  _isTomanCurrency(v) { return !v || String(v) === 'تومان'; },
+  _moneyCurrency(v) { return v || 'تومان'; },
+  _packageQuantity(p) { return Number(p?.quantity) || 1; },
+  _fxBooksFrom() { return []; },
 };
 vm.createContext(sandbox);
 for (const name of [
@@ -48,14 +53,22 @@ for (const name of [
   '_packageDeferPersist',
   '_isPackageChargeable',
   '_resolvePackageType',
+  '_serviceLabelKey',
+  '_serviceMergeKey',
   '_groupRowsByStudentId',
   '_studentRelMaps',
   '_rowsForStudent',
   '_studentSummary',
   '_isPaymentReminder',
   '_pendingPaymentReminderCount',
+  '_reminderMatchesPackageService',
+  '_packageCoversReminderCycle',
+  '_persistReminderCycleAdvance',
+  '_advanceReminderPastRecordedCycleSales',
+  '_reconcileRemindersForRecordedCycleSales',
   '_reconcileStudentPaymentReminders',
   '_reconcileOverdueRemindersForSettledCustomers',
+  '_syncPackageReminder',
 ]) {
   vm.runInContext(extractFunction(appSource, name), sandbox);
 }
@@ -190,4 +203,89 @@ test('session followup reminders are not consumed as payment reminders', () => {
   const changed = sandbox._reconcileStudentPaymentReminders(7, sandbox._db.payments[0]);
   assert.equal(changed, false);
   assert.equal(reminder.done, false);
+});
+
+test('cycle sale from reminder rolls coaching renewal to the next repeat date', () => {
+  sandbox._todayJalali = () => [1405, 8, 6];
+  sandbox._db = {
+    package_types: [{ id: 3, label: 'تجدید کوچینگ شش ماهه' }],
+    students: [{ id: 1, name: 'فاطمه', lname: 'حسن تبار', wallet: 0 }],
+    packages: [{
+      id: 91,
+      student_id: 1,
+      type_id: 3,
+      total_amount: 19000000,
+      repeat_months: 6,
+      start_date: '1405/08/04',
+      payment_due_date: '1405/08/06',
+      note: 'از یادآوری پرداخت: تجدید کوچینگ شش ماهه',
+    }],
+    payments: [],
+    reminders: [{
+      id: 5,
+      student_id: 1,
+      package_id: 91,
+      title: 'تجدید کوچینگ شش ماهه',
+      due_date_jalali: '1405/08/06',
+      repeat_months: 6,
+      amount: 19000000,
+      done: false,
+      notified_levels: ['soon'],
+    }],
+    sessions: [],
+    staff: [],
+  };
+  const reminder = sandbox._db.reminders[0];
+  assert.equal(sandbox._packageCoversReminderCycle(sandbox._db.packages[0], reminder), true);
+  const changed = sandbox._reconcileOverdueRemindersForSettledCustomers();
+  assert.equal(changed, true);
+  assert.equal(sandbox._jalaliKey(reminder.due_date_jalali), sandbox._jalaliKey('1406/02/06'));
+  assert.equal(reminder.done, false);
+  assert.equal(reminder.notified_levels.length, 0);
+  sandbox._todayJalali = () => [1405, 6, 15];
+});
+
+test('package sync after a cycle sale does not pull the reminder back to this period', () => {
+  sandbox._todayJalali = () => [1405, 8, 6];
+  sandbox._db = {
+    package_types: [{ id: 3, label: 'تجدید کوچینگ شش ماهه' }],
+    reminders: [{
+      id: 5,
+      student_id: 2,
+      package_id: 91,
+      title: 'سررسید پرداخت: تجدید کوچینگ شش ماهه',
+      due_date_jalali: '1406/02/06',
+      repeat_months: 6,
+      amount: 19000000,
+      done: false,
+      notified_levels: [],
+    }],
+  };
+  sandbox._nextId = () => 9;
+  sandbox._syncPackageReminder(2, 91, {
+    type_id: 3,
+    total_amount: 19000000,
+    repeat_months: 6,
+    payment_due_date: '1405/08/06',
+    note: 'از یادآوری پرداخت: تجدید کوچینگ شش ماهه',
+  }, '1405/08/04');
+  assert.equal(sandbox._jalaliKey(sandbox._db.reminders[0].due_date_jalali), sandbox._jalaliKey('1406/02/06'));
+  sandbox._todayJalali = () => [1405, 6, 15];
+});
+
+test('first sale that owns the reminder is not treated as an already-renewed cycle', () => {
+  sandbox._todayJalali = () => [1405, 8, 4];
+  sandbox._db = shabnamWorkspace();
+  sandbox._db.reminders[0].due_date_jalali = '1405/08/06';
+  sandbox._db.reminders[0].repeat_months = 6;
+  sandbox._db.packages[0].payment_due_date = '1405/08/06';
+  sandbox._db.packages[0].repeat_months = 6;
+  sandbox._db.packages[0].note = '';
+  const reminder = sandbox._db.reminders[0];
+  const due = reminder.due_date_jalali;
+  assert.equal(sandbox._packageCoversReminderCycle(sandbox._db.packages[0], reminder), false);
+  const changed = sandbox._reconcileRemindersForRecordedCycleSales();
+  assert.equal(changed, false);
+  assert.equal(reminder.due_date_jalali, due);
+  sandbox._todayJalali = () => [1405, 6, 15];
 });
