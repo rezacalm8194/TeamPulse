@@ -4299,7 +4299,8 @@ function _normalizeTodoSubtasks(list) {
     if (!Number.isFinite(id) || id <= 0 || seen.has(id)) id = index + 1;
     while (seen.has(id)) id += 1;
     seen.add(id);
-    out.push({ id, text, done: !!(item && item.done) });
+    const done = !!(item && item.done);
+    out.push({ id, text, done, deferred: !done && !!(item && item.deferred) });
   });
   return out.slice(0, 40);
 }
@@ -4319,6 +4320,41 @@ function _todoSubtaskBadgeHtml(t) {
   return `<span class="todo-subtask-badge" data-todo-sub-progress="${t.id}">${fa(progress.done)}/${fa(progress.total)} ریزکار</span>`;
 }
 
+function _todoSubtaskTickColors(t, item) {
+  if (item.done || t.done) return { border: 'var(--green)', background: 'var(--green)' };
+  if (_todoIsOverdue(t) || t.priority === 'urgent') return { border: 'var(--red)', background: 'transparent' };
+  if (t.priority === 'high') return { border: 'var(--amber)', background: 'transparent' };
+  return { border: 'var(--border2)', background: 'transparent' };
+}
+
+function _applyParentTickToSubtasks(list) {
+  let leftover = 0;
+  const subtasks = _normalizeTodoSubtasks(list).map(item => {
+    if (item.deferred && !item.done) {
+      leftover += 1;
+      return { ...item, done: false, deferred: false };
+    }
+    return { ...item, done: true, deferred: false };
+  });
+  return { subtasks, leftover };
+}
+
+function _carryDeferredSubtasksToTomorrow(t) {
+  const applied = _applyParentTickToSubtasks(t.subtasks);
+  t.subtasks = applied.subtasks;
+  if (!applied.leftover) return false;
+  const tomorrow = typeof _tomorrowJalaliStr === 'function' ? _tomorrowJalaliStr() : '';
+  const currentKey = _jalaliKey(_todoScheduledDate(t) || '');
+  if (tomorrow && (!currentKey || currentKey <= _jalaliToday())) {
+    t.date_jalali = tomorrow;
+    t.scheduled_date = tomorrow;
+    t.scheduledDate = tomorrow;
+    t.main_today_rank = 0;
+  }
+  t.updated_at = new Date().toISOString();
+  return true;
+}
+
 function _todoSubtaskAddRowHtml(todoId) {
   return `<div class="todo-subtask-add">
     <input class="form-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})">
@@ -4331,13 +4367,19 @@ function _todoSubtasksBlockHtml(t) {
   const canEdit = _todoCanEdit(t);
   const canComplete = _todoCanComplete(t);
   if (!list.length && !canEdit) return '';
-  const items = list.map(item => `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}">
-    <label>
-      <input type="checkbox" ${item.done ? 'checked' : ''} ${canComplete ? '' : 'disabled'} onchange="_toggleTodoSubtask(${t.id},${item.id},this.checked)">
-      <span>${escapeHtml(item.text)}</span>
-    </label>
+  const items = list.map(item => {
+    const colors = _todoSubtaskTickColors(t, item);
+    const deferBtn = (canComplete || canEdit) && !item.done
+      ? `<button type="button" class="todo-subtask-defer${item.deferred ? ' is-on' : ''}" onclick="_deferTodoSubtaskTomorrow(${t.id},${item.id})" title="${item.deferred ? 'برگرد به امروز' : 'انتقال این ریزکار به فردا'}">${item.deferred ? 'فردا' : '↪ فردا'}</button>`
+      : '';
+    return `<div class="todo-subtask${item.done ? ' is-done' : ''}${item.deferred ? ' is-deferred' : ''}" data-subtask-id="${item.id}">
+    <button type="button" class="todo-subtask-tick" ${canComplete ? '' : 'disabled'} aria-pressed="${item.done ? 'true' : 'false'}" onclick="_toggleTodoSubtask(${t.id},${item.id})"
+      style="border-color:${colors.border};background:${colors.background}">${item.done ? '✓' : ''}</button>
+    <span>${escapeHtml(item.text)}</span>
+    ${deferBtn}
     ${canEdit ? `<button type="button" class="todo-subtask-del" onclick="_deleteTodoSubtask(${t.id},${item.id})" aria-label="حذف ریزکار">×</button>` : ''}
-  </div>`).join('');
+  </div>`;
+  }).join('');
   return `<div class="todo-subtasks">
     ${items}
     ${canEdit ? _todoSubtaskAddRowHtml(t.id) : ''}
@@ -4357,11 +4399,11 @@ function _todoSubtaskEditorHtml() {
 }
 
 function _todoSubtaskDraftRowHtml(item) {
-  return `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}">
-    <label>
-      <input type="checkbox" ${item.done ? 'checked' : ''} onchange="_toggleTodoSubtaskDraft(${item.id},this.checked)">
-      <span>${escapeHtml(item.text)}</span>
-    </label>
+  return `<div class="todo-subtask${item.done ? ' is-done' : ''}${item.deferred ? ' is-deferred' : ''}" data-subtask-id="${item.id}">
+    <button type="button" class="todo-subtask-tick" aria-pressed="${item.done ? 'true' : 'false'}" onclick="_toggleTodoSubtaskDraft(${item.id})"
+      style="border-color:${item.done ? 'var(--green)' : 'var(--border2)'};background:${item.done ? 'var(--green)' : 'transparent'}">${item.done ? '✓' : ''}</button>
+    <span>${escapeHtml(item.text)}</span>
+    ${item.done ? '' : `<button type="button" class="todo-subtask-defer${item.deferred ? ' is-on' : ''}" onclick="_deferTodoSubtaskDraft(${item.id})">${item.deferred ? 'فردا' : '↪ فردا'}</button>`}
     <button type="button" class="todo-subtask-del" onclick="_removeTodoSubtaskDraft(${item.id})" aria-label="حذف ریزکار">×</button>
   </div>`;
 }
@@ -4390,7 +4432,16 @@ function _toggleTodoSubtaskDraft(id, checked) {
   const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
   const item = draft.find(row => Number(row.id) === Number(id));
   if (!item) return;
-  item.done = !!checked;
+  item.done = arguments.length > 1 ? !!checked : !item.done;
+  if (item.done) item.deferred = false;
+  _refreshTodoSubtaskDraftList();
+}
+
+function _deferTodoSubtaskDraft(id) {
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  const item = draft.find(row => Number(row.id) === Number(id));
+  if (!item || item.done) return;
+  item.deferred = !item.deferred;
   _refreshTodoSubtaskDraftList();
 }
 
@@ -4443,9 +4494,27 @@ function _toggleTodoSubtask(todoId, subId, checked) {
   t.subtasks = _todoSubtasks(t);
   const item = t.subtasks.find(row => Number(row.id) === Number(subId));
   if (!item) return;
-  item.done = !!checked;
+  item.done = arguments.length > 2 ? !!checked : !item.done;
+  if (item.done) item.deferred = false;
   _persistTodoSubtasks(t);
   _paintTodoSubtasks(t);
+}
+
+function _deferTodoSubtaskTomorrow(todoId, subId) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t) return;
+  if (!_todoCanComplete(t) && !_todoCanEdit(t)) {
+    showToast('برای انتقال این ریزکار دسترسی نداری', 'error');
+    return;
+  }
+  t.subtasks = _todoSubtasks(t);
+  const item = t.subtasks.find(row => Number(row.id) === Number(subId));
+  if (!item || item.done) return;
+  item.deferred = !item.deferred;
+  _persistTodoSubtasks(t);
+  _paintTodoSubtasks(t);
+  showToast(item.deferred ? 'این ریزکار برای فردای همین کار ماند' : 'ریزکار به امروز برگشت', 'success');
 }
 
 function _addTodoSubtaskFromList(todoId) {
@@ -4692,6 +4761,24 @@ function _completeTodoWithReport(t, report) {
   const oldDone = !!t.done;
   const intendedOp = oldDone ? 'reopen' : 'complete';
   let extraTodos = [];
+  if (!oldDone && _carryDeferredSubtasksToTomorrow(t)) {
+    if (report) {
+      t.staff_report = report;
+      t.report_updated_at = new Date().toISOString();
+    }
+    renderTodoList();
+    try {
+      _save(true, { scheduleServerSync: false, quiet: true });
+      void _syncTodoDelta(t, 'edit');
+    } catch (e) {
+      console.error('[TeamPulse] todo subtask carry persist failed:', e);
+    }
+    showToast('ریزکارهای امروز تیک شد؛ بقیه برای فردای همین کار ماند', 'success');
+    return;
+  }
+  if (!oldDone) {
+    t.subtasks = _applyParentTickToSubtasks(t.subtasks).subtasks;
+  }
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
   t.completedAt = t.done_at;
@@ -4761,6 +4848,18 @@ function _resolveOverdueTodo(id, action) {
 
   if (action === 'done') {
     if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این کار دسترسی نداری', 'error'); return; }
+    if (_carryDeferredSubtasksToTomorrow(t)) {
+      renderTodoList();
+      try {
+        _save(true, { scheduleServerSync: false, quiet: true });
+        void _syncTodoDelta(t, 'edit');
+      } catch (e) {
+        console.error('[TeamPulse] todo subtask carry persist failed:', e);
+      }
+      showToast('ریزکارهای امروز تیک شد؛ بقیه برای فردای همین کار ماند', 'success');
+      return;
+    }
+    t.subtasks = _applyParentTickToSubtasks(t.subtasks).subtasks;
     if (_isTodoRecurring(t)) {
       const completedAt = new Date().toISOString();
       const snapshot = _createTodoOccurrenceRecord(t, 'late_completed', completedAt);
