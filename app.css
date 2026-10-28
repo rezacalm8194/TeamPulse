@@ -4341,12 +4341,26 @@ body.instr-select-mode ._ifcard.instr-selected {
   min-height:36px; padding:4px 8px;
   border-radius:8px; background:rgba(255,255,255,.04);
 }
-.todo-subtask label { display:flex; align-items:center; gap:8px; flex:1; min-width:0; cursor:pointer; }
-.todo-subtask input[type=checkbox] {
-  width:16px; height:16px; accent-color: var(--green); flex-shrink:0; cursor:pointer;
+.todo-subtask-tick {
+  width:16px; height:16px; border-radius:50%; flex-shrink:0; cursor:pointer;
+  border:2px solid var(--border2); background:transparent; color:#fff;
+  font-size:9px; font-weight:900; line-height:1; padding:0;
 }
-.todo-subtask span { flex:1; font-size:12px; color:var(--text2); line-height:1.5; }
+.todo-subtask-tick:disabled { cursor:default; opacity:.7; }
+.todo-subtask.is-done .todo-subtask-tick { background:var(--green); border-color:var(--green); }
+.todo-row-lite.is-overdue .todo-subtask-tick { border-color:var(--red); }
+.todo-row-lite.is-done .todo-subtask-tick { background:var(--green); border-color:var(--green); }
+.todo-subtask span { flex:1; font-size:12px; color:var(--text2); line-height:1.5; min-width:0; }
 .todo-subtask.is-done span { text-decoration:line-through; color:var(--text3); }
+.todo-subtask-defer {
+  flex-shrink:0; background:transparent; border:1px solid var(--border2);
+  color:var(--text3); font-size:10px; font-weight:700; font-family:var(--font);
+  border-radius:6px; padding:3px 7px; cursor:pointer; min-height:28px;
+}
+.todo-subtask-defer:hover, .todo-subtask-defer.is-on {
+  color:var(--amber); border-color:var(--amber); background:rgba(251,191,36,.1);
+}
+.todo-subtask.is-deferred span { color:var(--amber); }
 .todo-subtask-del {
   background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer;
   padding:4px 8px; line-height:1; min-height:32px;
