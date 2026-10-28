@@ -57,6 +57,8 @@ test('list, editor, and tick persist through todo delta', () => {
   assert.match(todos, /_persistTodoSubtasks\(t\)/);
   assert.match(todos, /void _syncTodoDelta\(t, 'edit'\)/);
   assert.match(todos, /class="todo-subtasks"/);
+  assert.match(todos, /function _addTodoSubtaskFromList\(/);
+  assert.doesNotMatch(todos, /function _revealTodoSubtaskAdd\(/);
   assert.match(todos, /ریزکارها/);
   assert.match(todos, /subtasks: _normalizeTodoSubtasks\(fields\.subtasks\)/);
   assert.match(todos, /const newTodo = _buildTodoRecord\(meta, \{ title, subtasks: window\._todoSubtaskDraft \}\)/);

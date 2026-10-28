@@ -836,7 +836,6 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
     <div class="todo-row-body" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">
       <span data-todo-title class="todo-row-title">${escapeHtml(t.title || 'بدون عنوان')}${rankBadge ? ` ${rankBadge}` : ''}</span>${subBadge}
       <span class="todo-row-sub">${meta}</span>
-      ${_todoSubtasksBlockHtml(t)}
     </div>
     <div class="row-menu" onclick="event.stopPropagation()">
       <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
@@ -847,6 +846,7 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
         ${deleteMenuItem}
       </div>
     </div>
+    ${_todoSubtasksBlockHtml(t)}
   </div>`;
 }
 
@@ -4016,7 +4016,7 @@ function renderTodoList(options = {}) {
 
     return `<div data-todo-id="${t.id}" draggable="${coarsePointer ? 'false' : 'true'}"
       class="todo-row todo-row-lite"
-      style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+      style="display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px;padding:10px 12px;
         background:${bgColor};
         border:1px solid ${borderColor};
         border-right:3px solid ${leftBorder};
@@ -4057,7 +4057,6 @@ function renderTodoList(options = {}) {
         <div style="font-size:11px;margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           ${_todoDateBadge(t, todayKey, tomorrowKey, isOverdue)}
         </div>
-        ${_todoSubtasksBlockHtml(t)}
       </div>
       <div class="row-menu" onclick="event.stopPropagation()">
         <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
@@ -4068,6 +4067,7 @@ function renderTodoList(options = {}) {
           <div class="row-menu-item" style="color:var(--red)" onclick="_resolveTodoMenuAction(${t.id},'delete')">🗑 حذف</div>
         </div>
       </div>
+      ${_todoSubtasksBlockHtml(t)}
     </div>`;
   };
 
@@ -4321,8 +4321,8 @@ function _todoSubtaskBadgeHtml(t) {
 
 function _todoSubtaskAddRowHtml(todoId) {
   return `<div class="todo-subtask-add">
-    <input class="form-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})" onclick="event.stopPropagation()">
-    <button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_addTodoSubtaskFromList(${todoId})">افزودن</button>
+    <input class="form-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="_addTodoSubtaskFromList(${todoId})">افزودن</button>
   </div>`;
 }
 
@@ -4331,17 +4331,14 @@ function _todoSubtasksBlockHtml(t) {
   const canEdit = _todoCanEdit(t);
   const canComplete = _todoCanComplete(t);
   if (!list.length && !canEdit) return '';
-  if (!list.length) {
-    return `<button type="button" class="todo-subtask-start" onclick="event.stopPropagation();_revealTodoSubtaskAdd(${t.id})">+ ریزکار</button>`;
-  }
-  const items = list.map(item => `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}" onclick="event.stopPropagation()">
+  const items = list.map(item => `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}">
     <label>
       <input type="checkbox" ${item.done ? 'checked' : ''} ${canComplete ? '' : 'disabled'} onchange="_toggleTodoSubtask(${t.id},${item.id},this.checked)">
       <span>${escapeHtml(item.text)}</span>
     </label>
     ${canEdit ? `<button type="button" class="todo-subtask-del" onclick="_deleteTodoSubtask(${t.id},${item.id})" aria-label="حذف ریزکار">×</button>` : ''}
   </div>`).join('');
-  return `<div class="todo-subtasks" onclick="event.stopPropagation()">
+  return `<div class="todo-subtasks">
     ${items}
     ${canEdit ? _todoSubtaskAddRowHtml(t.id) : ''}
   </div>`;
@@ -4419,9 +4416,9 @@ function _paintTodoSubtasks(t) {
   if (!t) return;
   document.querySelectorAll('.todo-row[data-todo-id="' + t.id + '"]').forEach(row => {
     const nextBlock = _todoSubtasksBlockHtml(t);
-    const current = row.querySelector('.todo-subtasks, .todo-subtask-start');
+    const current = row.querySelector('.todo-subtasks');
     if (current) current.outerHTML = nextBlock || '';
-    else if (nextBlock) row.querySelector('.todo-row-body')?.insertAdjacentHTML('beforeend', nextBlock);
+    else if (nextBlock) row.insertAdjacentHTML('beforeend', nextBlock);
     const badge = row.querySelector('[data-todo-sub-progress]');
     const nextBadge = _todoSubtaskBadgeHtml(t);
     if (badge) {
@@ -4436,15 +4433,6 @@ function _paintTodoSubtasks(t) {
     if (nextBadge) badge.outerHTML = nextBadge;
     else badge.remove();
   });
-}
-
-function _revealTodoSubtaskAdd(todoId) {
-  const t = _db.todos.find(x => x.id == todoId);
-  if (!t || !_todoCanEdit(t)) return;
-  document.querySelectorAll('.todo-row[data-todo-id="' + todoId + '"] .todo-subtask-start').forEach(btn => {
-    btn.outerHTML = `<div class="todo-subtasks" onclick="event.stopPropagation()">${_todoSubtaskAddRowHtml(todoId)}</div>`;
-  });
-  document.getElementById('todo-sub-add-' + todoId)?.focus();
 }
 
 function _toggleTodoSubtask(todoId, subId, checked) {
@@ -4473,6 +4461,7 @@ function _addTodoSubtaskFromList(todoId) {
   if (input) input.value = '';
   _persistTodoSubtasks(t);
   _paintTodoSubtasks(t);
+  document.getElementById('todo-sub-add-' + todoId)?.focus();
 }
 
 function _deleteTodoSubtask(todoId, subId) {
