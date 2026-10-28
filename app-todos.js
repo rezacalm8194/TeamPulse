@@ -4506,6 +4506,18 @@ function _deferTodoSubtaskDraft(id) {
   _openTodoSubtaskDraftDeferSheet(id);
 }
 
+function _takeTodoSubtaskDraftForSave() {
+  const input = document.getElementById('todo-subtask-new');
+  const pending = String(input?.value || '').trim();
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft.slice() : [];
+  if (pending) {
+    draft.push({ id: _nextTodoSubtaskId(draft), text: pending.slice(0, 200), done: false });
+    if (input) input.value = '';
+  }
+  window._todoSubtaskDraft = _normalizeTodoSubtasks(draft);
+  return window._todoSubtaskDraft.slice();
+}
+
 function _refreshTodoSubtaskDraftList() {
   const el = document.getElementById('todo-subtask-draft-list');
   if (!el) return;
@@ -6160,6 +6172,7 @@ async function saveTodo() {
       window._todoSaveInProgress = false;
       return;
     }
+    const subtasks = _takeTodoSubtaskDraftForSave();
     const created = quickItems.map(item => _buildTodoRecord(meta, {
       title: item.title,
       dateJalali: item.dateJalali,
@@ -6169,6 +6182,7 @@ async function saveTodo() {
       note: item.note || '',
       mainTodayRank: 0,
       remindMin: item.remindMin != null ? item.remindMin : meta.remindMin,
+      subtasks: quickItems.length === 1 ? subtasks : [],
     }));
     if (_isTeamGuest() && created.some(t => !t.assignee_id && !t.assignee_email)) {
       window._todoSaveInProgress = false;
@@ -6193,7 +6207,7 @@ async function saveTodo() {
     window._todoSaveInProgress = false;
     return;
   }
-  const newTodo = _buildTodoRecord(meta, { title, subtasks: window._todoSubtaskDraft });
+  const newTodo = _buildTodoRecord(meta, { title, subtasks: _takeTodoSubtaskDraftForSave() });
   if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
     window._todoSaveInProgress = false;
     showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
