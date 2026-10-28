@@ -4300,13 +4300,28 @@ function _normalizeTodoSubtasks(list) {
     while (seen.has(id)) id += 1;
     seen.add(id);
     const done = !!(item && item.done);
-    out.push({ id, text, done, deferred: !done && !!(item && item.deferred) });
+    const deferTo = done ? '' : _todoSubtaskDeferTo(item);
+    out.push({ id, text, done, defer_to: deferTo, deferred: !!deferTo });
   });
   return out.slice(0, 40);
 }
 
 function _todoSubtasks(t) {
   return _normalizeTodoSubtasks(t && t.subtasks);
+}
+
+function _todoSubtaskDeferTo(item) {
+  if (!item || item.done) return '';
+  if (item.defer_to === 'next' || item.defer_to === 'tomorrow') return item.defer_to;
+  if (item.deferred) return 'tomorrow';
+  return '';
+}
+
+function _todoSubtaskDeferLabel(item) {
+  const dest = _todoSubtaskDeferTo(item);
+  if (dest === 'next') return 'دور بعدی';
+  if (dest === 'tomorrow') return 'فردا';
+  return '↪ انتقال';
 }
 
 function _todoSubtaskProgress(t) {
@@ -4329,30 +4344,53 @@ function _todoSubtaskTickColors(t, item) {
 
 function _applyParentTickToSubtasks(list) {
   let leftover = 0;
+  let next = 0;
   const subtasks = _normalizeTodoSubtasks(list).map(item => {
-    if (item.deferred && !item.done) {
-      leftover += 1;
-      return { ...item, done: false, deferred: false };
+    if (item.defer_to === 'next' && !item.done) {
+      next += 1;
+      return { ...item, done: false, defer_to: 'next', deferred: true };
     }
-    return { ...item, done: true, deferred: false };
+    if ((item.defer_to === 'tomorrow' || item.deferred) && !item.done) {
+      leftover += 1;
+      return { ...item, done: false, defer_to: '', deferred: false };
+    }
+    return { ...item, done: true, defer_to: '', deferred: false };
   });
-  return { subtasks, leftover };
+  return { subtasks, leftover, next };
+}
+
+function _carryDeferredSubtasks(t) {
+  const applied = _applyParentTickToSubtasks(t.subtasks);
+  t.subtasks = applied.subtasks;
+  t.updated_at = new Date().toISOString();
+  if (applied.leftover) {
+    const tomorrow = typeof _tomorrowJalaliStr === 'function' ? _tomorrowJalaliStr() : '';
+    const currentKey = _jalaliKey(_todoScheduledDate(t) || '');
+    if (tomorrow && (!currentKey || currentKey <= _jalaliToday())) {
+      t.date_jalali = tomorrow;
+      t.scheduled_date = tomorrow;
+      t.scheduledDate = tomorrow;
+      t.main_today_rank = 0;
+    }
+    return applied;
+  }
+  return applied;
+}
+
+function _todoParentTickShouldHold(t, carried) {
+  if (!carried) return false;
+  if (carried.leftover) return true;
+  return !!(carried.next && !_isTodoRecurring(t));
+}
+
+function _todoParentTickHoldToast(carried) {
+  if (carried?.leftover) return 'ریزکارهای امروز تیک شد؛ بقیه برای فردای همین کار ماند';
+  return 'ریزکارهای دور بعد تیک نشدند؛ این کار تکرار ندارد و باز ماند';
 }
 
 function _carryDeferredSubtasksToTomorrow(t) {
-  const applied = _applyParentTickToSubtasks(t.subtasks);
-  t.subtasks = applied.subtasks;
-  if (!applied.leftover) return false;
-  const tomorrow = typeof _tomorrowJalaliStr === 'function' ? _tomorrowJalaliStr() : '';
-  const currentKey = _jalaliKey(_todoScheduledDate(t) || '');
-  if (tomorrow && (!currentKey || currentKey <= _jalaliToday())) {
-    t.date_jalali = tomorrow;
-    t.scheduled_date = tomorrow;
-    t.scheduledDate = tomorrow;
-    t.main_today_rank = 0;
-  }
-  t.updated_at = new Date().toISOString();
-  return true;
+  const carried = _carryDeferredSubtasks(t);
+  return _todoParentTickShouldHold(t, carried);
 }
 
 function _todoSubtaskAddRowHtml(todoId) {
@@ -4369,10 +4407,11 @@ function _todoSubtasksBlockHtml(t) {
   if (!list.length && !canEdit) return '';
   const items = list.map(item => {
     const colors = _todoSubtaskTickColors(t, item);
+    const dest = _todoSubtaskDeferTo(item);
     const deferBtn = (canComplete || canEdit) && !item.done
-      ? `<button type="button" class="todo-subtask-defer${item.deferred ? ' is-on' : ''}" onclick="_deferTodoSubtaskTomorrow(${t.id},${item.id})" title="${item.deferred ? 'برگرد به امروز' : 'انتقال این ریزکار به فردا'}">${item.deferred ? 'فردا' : '↪ فردا'}</button>`
+      ? `<button type="button" class="todo-subtask-defer${dest ? ' is-on' : ''}${dest === 'next' ? ' is-next' : ''}" onclick="_openTodoSubtaskDeferSheet(${t.id},${item.id})" title="انتقال ریزکار به فردا یا دور بعدی">${_todoSubtaskDeferLabel(item)}</button>`
       : '';
-    return `<div class="todo-subtask${item.done ? ' is-done' : ''}${item.deferred ? ' is-deferred' : ''}" data-subtask-id="${item.id}">
+    return `<div class="todo-subtask${item.done ? ' is-done' : ''}${dest ? ' is-deferred' : ''}${dest === 'next' ? ' is-next' : ''}" data-subtask-id="${item.id}">
     <button type="button" class="todo-subtask-tick" ${canComplete ? '' : 'disabled'} aria-pressed="${item.done ? 'true' : 'false'}" onclick="_toggleTodoSubtask(${t.id},${item.id})"
       style="border-color:${colors.border};background:${colors.background}">${item.done ? '✓' : ''}</button>
     <span>${escapeHtml(item.text)}</span>
@@ -4403,7 +4442,7 @@ function _todoSubtaskDraftRowHtml(item) {
     <button type="button" class="todo-subtask-tick" aria-pressed="${item.done ? 'true' : 'false'}" onclick="_toggleTodoSubtaskDraft(${item.id})"
       style="border-color:${item.done ? 'var(--green)' : 'var(--border2)'};background:${item.done ? 'var(--green)' : 'transparent'}">${item.done ? '✓' : ''}</button>
     <span>${escapeHtml(item.text)}</span>
-    ${item.done ? '' : `<button type="button" class="todo-subtask-defer${item.deferred ? ' is-on' : ''}" onclick="_deferTodoSubtaskDraft(${item.id})">${item.deferred ? 'فردا' : '↪ فردا'}</button>`}
+    ${item.done ? '' : `<button type="button" class="todo-subtask-defer${_todoSubtaskDeferTo(item) ? ' is-on' : ''}${_todoSubtaskDeferTo(item) === 'next' ? ' is-next' : ''}" onclick="_openTodoSubtaskDraftDeferSheet(${item.id})">${_todoSubtaskDeferLabel(item)}</button>`}
     <button type="button" class="todo-subtask-del" onclick="_removeTodoSubtaskDraft(${item.id})" aria-label="حذف ریزکار">×</button>
   </div>`;
 }
@@ -4433,16 +4472,38 @@ function _toggleTodoSubtaskDraft(id, checked) {
   const item = draft.find(row => Number(row.id) === Number(id));
   if (!item) return;
   item.done = arguments.length > 1 ? !!checked : !item.done;
-  if (item.done) item.deferred = false;
+  if (item.done) { item.deferred = false; item.defer_to = ''; }
+  _refreshTodoSubtaskDraftList();
+}
+
+function _todoSubtaskDeferChoices() {
+  return [
+    { value: '', label: 'همین نوبت', desc: 'با تیک کار، این ریزکار هم تیک می‌شود' },
+    { value: 'tomorrow', label: 'فردا', desc: 'با تیک کار، به فردای همین کار می‌رود' },
+    { value: 'next', label: 'دور بعدی', desc: 'با تیک کار، برای نوبت تکرار بعد می‌ماند' },
+  ];
+}
+
+function _openTodoSubtaskDraftDeferSheet(id) {
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  const item = draft.find(row => Number(row.id) === Number(id));
+  if (!item || item.done) return;
+  _openQuickPickSheet('انتقال ریزکار', _todoSubtaskDeferChoices(), _todoSubtaskDeferTo(item), (val) => {
+    _setTodoSubtaskDraftDefer(id, val);
+  });
+}
+
+function _setTodoSubtaskDraftDefer(id, val) {
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  const item = draft.find(row => Number(row.id) === Number(id));
+  if (!item || item.done) return;
+  item.defer_to = val === 'next' || val === 'tomorrow' ? val : '';
+  item.deferred = !!item.defer_to;
   _refreshTodoSubtaskDraftList();
 }
 
 function _deferTodoSubtaskDraft(id) {
-  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
-  const item = draft.find(row => Number(row.id) === Number(id));
-  if (!item || item.done) return;
-  item.deferred = !item.deferred;
-  _refreshTodoSubtaskDraftList();
+  _openTodoSubtaskDraftDeferSheet(id);
 }
 
 function _refreshTodoSubtaskDraftList() {
@@ -4495,12 +4556,12 @@ function _toggleTodoSubtask(todoId, subId, checked) {
   const item = t.subtasks.find(row => Number(row.id) === Number(subId));
   if (!item) return;
   item.done = arguments.length > 2 ? !!checked : !item.done;
-  if (item.done) item.deferred = false;
+  if (item.done) { item.deferred = false; item.defer_to = ''; }
   _persistTodoSubtasks(t);
   _paintTodoSubtasks(t);
 }
 
-function _deferTodoSubtaskTomorrow(todoId, subId) {
+function _openTodoSubtaskDeferSheet(todoId, subId) {
   _todosInit();
   const t = _db.todos.find(x => x.id == todoId);
   if (!t) return;
@@ -4508,13 +4569,34 @@ function _deferTodoSubtaskTomorrow(todoId, subId) {
     showToast('برای انتقال این ریزکار دسترسی نداری', 'error');
     return;
   }
+  const item = _todoSubtasks(t).find(row => Number(row.id) === Number(subId));
+  if (!item || item.done) return;
+  _openQuickPickSheet('انتقال ریزکار', _todoSubtaskDeferChoices(), _todoSubtaskDeferTo(item), (val) => {
+    _setTodoSubtaskDefer(todoId, subId, val);
+  });
+}
+
+function _setTodoSubtaskDefer(todoId, subId, val) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t) return;
   t.subtasks = _todoSubtasks(t);
   const item = t.subtasks.find(row => Number(row.id) === Number(subId));
   if (!item || item.done) return;
-  item.deferred = !item.deferred;
+  item.defer_to = val === 'next' || val === 'tomorrow' ? val : '';
+  item.deferred = !!item.defer_to;
   _persistTodoSubtasks(t);
   _paintTodoSubtasks(t);
-  showToast(item.deferred ? 'این ریزکار برای فردای همین کار ماند' : 'ریزکار به امروز برگشت', 'success');
+  showToast(
+    item.defer_to === 'next' ? 'این ریزکار برای دور بعدی همین کار ماند'
+      : item.defer_to === 'tomorrow' ? 'این ریزکار برای فردای همین کار ماند'
+      : 'ریزکار به همین نوبت برگشت',
+    'success'
+  );
+}
+
+function _deferTodoSubtaskTomorrow(todoId, subId) {
+  _openTodoSubtaskDeferSheet(todoId, subId);
 }
 
 function _addTodoSubtaskFromList(todoId) {
@@ -4761,23 +4843,23 @@ function _completeTodoWithReport(t, report) {
   const oldDone = !!t.done;
   const intendedOp = oldDone ? 'reopen' : 'complete';
   let extraTodos = [];
-  if (!oldDone && _carryDeferredSubtasksToTomorrow(t)) {
-    if (report) {
-      t.staff_report = report;
-      t.report_updated_at = new Date().toISOString();
-    }
-    renderTodoList();
-    try {
-      _save(true, { scheduleServerSync: false, quiet: true });
-      void _syncTodoDelta(t, 'edit');
-    } catch (e) {
-      console.error('[TeamPulse] todo subtask carry persist failed:', e);
-    }
-    showToast('ریزکارهای امروز تیک شد؛ بقیه برای فردای همین کار ماند', 'success');
-    return;
-  }
   if (!oldDone) {
-    t.subtasks = _applyParentTickToSubtasks(t.subtasks).subtasks;
+    const carried = _carryDeferredSubtasks(t);
+    if (_todoParentTickShouldHold(t, carried)) {
+      if (report) {
+        t.staff_report = report;
+        t.report_updated_at = new Date().toISOString();
+      }
+      renderTodoList();
+      try {
+        _save(true, { scheduleServerSync: false, quiet: true });
+        void _syncTodoDelta(t, 'edit');
+      } catch (e) {
+        console.error('[TeamPulse] todo subtask carry persist failed:', e);
+      }
+      showToast(_todoParentTickHoldToast(carried), 'success');
+      return;
+    }
   }
   t.done = !t.done;
   t.done_at = t.done ? new Date().toISOString() : null;
@@ -4848,7 +4930,8 @@ function _resolveOverdueTodo(id, action) {
 
   if (action === 'done') {
     if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این کار دسترسی نداری', 'error'); return; }
-    if (_carryDeferredSubtasksToTomorrow(t)) {
+    const carried = _carryDeferredSubtasks(t);
+    if (_todoParentTickShouldHold(t, carried)) {
       renderTodoList();
       try {
         _save(true, { scheduleServerSync: false, quiet: true });
@@ -4856,10 +4939,9 @@ function _resolveOverdueTodo(id, action) {
       } catch (e) {
         console.error('[TeamPulse] todo subtask carry persist failed:', e);
       }
-      showToast('ریزکارهای امروز تیک شد؛ بقیه برای فردای همین کار ماند', 'success');
+      showToast(_todoParentTickHoldToast(carried), 'success');
       return;
     }
-    t.subtasks = _applyParentTickToSubtasks(t.subtasks).subtasks;
     if (_isTodoRecurring(t)) {
       const completedAt = new Date().toISOString();
       const snapshot = _createTodoOccurrenceRecord(t, 'late_completed', completedAt);

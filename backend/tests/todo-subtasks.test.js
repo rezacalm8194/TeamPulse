@@ -24,6 +24,7 @@ function extractFn(source, name) {
 }
 
 const context = vm.createContext({});
+vm.runInContext(extractFn(todos, '_todoSubtaskDeferTo'), context);
 vm.runInContext(extractFn(todos, '_normalizeTodoSubtasks'), context);
 vm.runInContext(extractFn(todos, '_todoSubtasks'), context);
 vm.runInContext(extractFn(todos, '_todoSubtaskProgress'), context);
@@ -54,6 +55,7 @@ test('parent tick completes subtasks except those deferred to tomorrow', () => {
     { id: 3, text: 'ج', done: true },
   ]);
   assert.equal(applied.leftover, 1);
+  assert.equal(applied.next, 0);
   assert.equal(applied.subtasks[0].done, true);
   assert.equal(applied.subtasks[0].deferred, false);
   assert.equal(applied.subtasks[1].done, false);
@@ -65,6 +67,18 @@ test('parent tick completes subtasks except those deferred to tomorrow', () => {
   ]);
   assert.equal(all.leftover, 0);
   assert.equal(all.subtasks.every(item => item.done), true);
+});
+
+test('parent tick keeps next-cycle subtasks undone', () => {
+  const applied = context._applyParentTickToSubtasks([
+    { id: 1, text: 'الف', done: false },
+    { id: 2, text: 'ب', done: false, defer_to: 'next' },
+  ]);
+  assert.equal(applied.leftover, 0);
+  assert.equal(applied.next, 1);
+  assert.equal(applied.subtasks[0].done, true);
+  assert.equal(applied.subtasks[1].done, false);
+  assert.equal(applied.subtasks[1].defer_to, 'next');
 });
 
 test('caps subtasks at 40 items', () => {
@@ -81,8 +95,10 @@ test('list, editor, and tick persist through todo delta', () => {
   assert.match(todos, /function _addTodoSubtaskFromList\(/);
   assert.match(todos, /class="todo-subtask-tick"/);
   assert.match(todos, /function _deferTodoSubtaskTomorrow\(/);
-  assert.match(todos, /_carryDeferredSubtasksToTomorrow\(t\)/);
-  assert.match(app, /'_deferTodoSubtaskTomorrow'/);
+  assert.match(todos, /function _openTodoSubtaskDeferSheet\(/);
+  assert.match(todos, /function _carryDeferredSubtasks\(/);
+  assert.match(app, /'_openTodoSubtaskDeferSheet'/);
+  assert.match(app, /t\.subtasks = t\.subtasks\.map\(item => item && typeof item === 'object' \? \{ \.\.\.item, done: false, deferred: false, defer_to: '' \} : item\)/);
   assert.doesNotMatch(todos, /function _revealTodoSubtaskAdd\(/);
   assert.match(todos, /ریزکارها/);
   assert.match(todos, /subtasks: _normalizeTodoSubtasks\(fields\.subtasks\)/);
@@ -90,5 +106,4 @@ test('list, editor, and tick persist through todo delta', () => {
   assert.match(app, /_tpLazyFor\('app-todos\.js'/);
   assert.match(app, /'_toggleTodoSubtask'/);
   assert.match(app, /if \(Array\.isArray\(t\.subtasks\)\) \{/);
-  assert.match(app, /t\.subtasks = t\.subtasks\.map\(item => item && typeof item === 'object' \? \{ \.\.\.item, done: false, deferred: false \} : item\)/);
 });

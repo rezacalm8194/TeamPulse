@@ -4360,7 +4360,11 @@ body.instr-select-mode ._ifcard.instr-selected {
 .todo-subtask-defer:hover, .todo-subtask-defer.is-on {
   color:var(--amber); border-color:var(--amber); background:rgba(251,191,36,.1);
 }
+.todo-subtask-defer.is-next, .todo-subtask-defer.is-next:hover {
+  color:var(--accent2); border-color:var(--accent2); background:rgba(124,106,247,.1);
+}
 .todo-subtask.is-deferred span { color:var(--amber); }
+.todo-subtask.is-next span { color:var(--accent2); }
 .todo-subtask-del {
   background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer;
   padding:4px 8px; line-height:1; min-height:32px;
