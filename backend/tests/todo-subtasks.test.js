@@ -102,7 +102,9 @@ test('list, editor, and tick persist through todo delta', () => {
   assert.doesNotMatch(todos, /function _revealTodoSubtaskAdd\(/);
   assert.match(todos, /ریزکارها/);
   assert.match(todos, /subtasks: _normalizeTodoSubtasks\(fields\.subtasks\)/);
-  assert.match(todos, /const newTodo = _buildTodoRecord\(meta, \{ title, subtasks: window\._todoSubtaskDraft \}\)/);
+  assert.match(todos, /const newTodo = _buildTodoRecord\(meta, \{ title, subtasks: _takeTodoSubtaskDraftForSave\(\) \}\)/);
+  assert.match(todos, /subtasks: quickItems\.length === 1 \? subtasks : \[\]/);
+  assert.match(todos, /function _takeTodoSubtaskDraftForSave\(/);
   assert.match(app, /_tpLazyFor\('app-todos\.js'/);
   assert.match(app, /'_toggleTodoSubtask'/);
   assert.match(app, /if \(Array\.isArray\(t\.subtasks\)\) \{/);
