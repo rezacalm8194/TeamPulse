@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp380';
+const TP_ASSET_V = 'tp381';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2833,6 +2833,61 @@ function _reminderDueKey(reminder) {
   return _jalaliKey(reminder?.due_date_jalali || '');
 }
 
+function _reminderMatchesPackageService(reminder, pkg) {
+  if (!reminder || !pkg) return false;
+  if (reminder.package_id != null && String(reminder.package_id) === String(pkg.id)) return true;
+  const pt = typeof _resolvePackageType === 'function'
+    ? _resolvePackageType(pkg.type_id)
+    : (_db.package_types || []).find(item => String(item.id) === String(pkg.type_id));
+  const pkgKey = typeof _serviceMergeKey === 'function' ? _serviceMergeKey(pt?.label || '') : String(pt?.label || '').trim();
+  const remKey = typeof _serviceMergeKey === 'function' ? _serviceMergeKey(reminder.title || '') : String(reminder.title || '').trim();
+  return !!(pkgKey && remKey && pkgKey === remKey);
+}
+
+function _packageCoversReminderCycle(pkg, reminder) {
+  if (!pkg || !reminder) return false;
+  if (String(pkg.student_id) !== String(reminder.student_id)) return false;
+  if (_jalaliKey(pkg.payment_due_date) !== _jalaliKey(reminder.due_date_jalali)) return false;
+  if (!_reminderMatchesPackageService(reminder, pkg)) return false;
+  if (/از یادآوری/.test(String(pkg.note || ''))) return true;
+  if (reminder.package_id == null || reminder.package_id === '') return true;
+  return String(reminder.package_id) !== String(pkg.id);
+}
+
+function _persistReminderCycleAdvance(reminder) {
+  reminder.done = false;
+  reminder.notified_levels = [];
+  reminder.updated_at = new Date().toISOString();
+  if (typeof _enqueueDurableBusinessDelta === 'function') {
+    _enqueueDurableBusinessDelta('reminders', reminder, 'upsert');
+  }
+}
+
+function _advanceReminderPastRecordedCycleSales(reminder) {
+  if (!reminder || reminder.done || !_isPaymentReminder(reminder)) return false;
+  const repeatMonths = Number(reminder.repeat_months || 0);
+  if (repeatMonths <= 0) return false;
+  let changed = false;
+  for (let i = 0; i < 24; i++) {
+    if (!(_db.packages || []).some(pkg => _packageCoversReminderCycle(pkg, reminder))) break;
+    const dueKey = _jalaliKey(reminder.due_date_jalali);
+    const next = _nextFuturePaymentReminderDate(reminder.due_date_jalali, repeatMonths);
+    if (!next || _jalaliKey(next) <= dueKey) break;
+    reminder.due_date_jalali = next;
+    _persistReminderCycleAdvance(reminder);
+    changed = true;
+  }
+  return changed;
+}
+
+function _reconcileRemindersForRecordedCycleSales() {
+  let changed = false;
+  (_db.reminders || []).forEach(reminder => {
+    if (_advanceReminderPastRecordedCycleSales(reminder)) changed = true;
+  });
+  return changed;
+}
+
 function _consumePaymentReminder(reminder) {
   if (!reminder || reminder.done || !_isPaymentReminder(reminder)) return false;
   const repeatMonths = Number(reminder.repeat_months || 0);
@@ -2902,8 +2957,8 @@ function _reconcileStudentPaymentReminders(studentId, payment = null) {
 }
 
 function _reconcileOverdueRemindersForSettledCustomers() {
+  let changed = _reconcileRemindersForRecordedCycleSales();
   const ids = [...new Set((_db.reminders || []).filter(reminder => !reminder.done && _isPaymentReminder(reminder)).map(reminder => reminder.student_id))];
-  let changed = false;
   ids.forEach(id => {
     if (_reconcileStudentPaymentReminders(id)) changed = true;
   });
@@ -3066,25 +3121,29 @@ function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
 
 function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
   const repeatMonths = Number(pkg.repeat_months || 0);
-  const existing = _db.reminders.find(r=>r.package_id===pkgId);
+  const existing = _db.reminders.find(r=>String(r.package_id)===String(pkgId));
   const dueDate = _packagePaymentDueDate({...pkg,start_date:startDate});
   const amount = (pkg.total_amount||0)+(pkg.initial_cost||0);
   if(!dueDate||amount<=0){
-    if(existing)_db.reminders=_db.reminders.filter(r=>r.package_id!==pkgId);
+    if(existing)_db.reminders=_db.reminders.filter(r=>String(r.package_id)!==String(pkgId));
     return;
   }
   startDate = startDate || _formatJalali(..._todayJalali());
   const pt=_db.package_types.find(t=>t.id===pkg.type_id);
+  const keepDue = existing && _jalaliKey(existing.due_date_jalali) > _jalaliKey(dueDate)
+    ? existing.due_date_jalali
+    : dueDate;
   const patch = {
     student_id:studentId,
     package_id:pkgId,
     title:`سررسید پرداخت: ${pt?pt.label:''}`,
-    due_date_jalali:dueDate,
+    due_date_jalali:keepDue,
     repeat_months:repeatMonths,
     amount,
     note:pkg.note||'',
     done:false,
     notified_levels:[],
+    updated_at:new Date().toISOString(),
   };
   if(existing)Object.assign(existing,patch);
   else _db.reminders.push({id:_nextId('reminders'),...patch,created_at:new Date().toISOString()});
@@ -3384,16 +3443,27 @@ window.api = {
       r.repeat_months=repeatMonths;
       if(repeatMonths>0){
         r.due_date_jalali=next;
-        r.done=false;
-        r.notified_levels=[];
+        _persistReminderCycleAdvance(r);
         // Keep the completed purchase on its original due date. Only the
         // reminder moves forward to the next renewal cycle.
         if(pkg)pkg.payment_due_date=baseDate;
       }else{
         r.done=true;
+        r.updated_at=new Date().toISOString();
         if(pkg)pkg.payment_due_date=p.payment_due_date||r.due_date_jalali;
+        if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert');
       }
-      _save(); return _P({ok:true,reminder:r});
+      if(pkg && typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('packages',pkg,'upsert');
+      _advanceReminderPastRecordedCycleSales(r);
+      (_db.reminders||[]).forEach(other=>{
+        if(other===r || other.done)return;
+        if(String(other.student_id)!==String(r.student_id))return;
+        if(!_isPaymentReminder(other))return;
+        if(_advanceReminderPastRecordedCycleSales(other) && typeof _enqueueDurableBusinessDelta==='function'){
+          _enqueueDurableBusinessDelta('reminders',other,'upsert');
+        }
+      });
+      _save(true,{urgent:true}); return _P({ok:true,reminder:r});
     },
   },
 
@@ -26258,7 +26328,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v380';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v381';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
