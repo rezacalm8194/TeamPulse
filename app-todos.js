@@ -827,14 +827,16 @@ function _todoStaffTaskRow(t, todayKey = _jalaliToday()) {
   const showPerson = String(_todoStaffFilter.staffId || 'all') === 'all';
   const person = showPerson ? escapeHtml(_todoAssigneeLabel(t) || 'پرسنل') : '';
   const rankBadge = _todo135SlotBadgeHtml(t);
+  const subBadge = _todoSubtaskBadgeHtml(t);
   const meta = [person, dateLabel, timeLabel].filter(Boolean).join(' · ');
   return `<div data-todo-id="${t.id}" class="todo-row todo-row-lite${t.done ? ' is-done' : ''}${isOverdue ? ' is-overdue' : ''}">
     <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" title="${t.done?'برداشتن تیک':'تیک انجام'}">
       ${t.done?'✓':''}
     </button>
     <div class="todo-row-body" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">
-      <span data-todo-title class="todo-row-title">${escapeHtml(t.title || 'بدون عنوان')}${rankBadge ? ` ${rankBadge}` : ''}</span>
+      <span data-todo-title class="todo-row-title">${escapeHtml(t.title || 'بدون عنوان')}${rankBadge ? ` ${rankBadge}` : ''}</span>${subBadge}
       <span class="todo-row-sub">${meta}</span>
+      ${_todoSubtasksBlockHtml(t)}
     </div>
     <div class="row-menu" onclick="event.stopPropagation()">
       <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
@@ -3378,7 +3380,7 @@ function _todo135BoardHtml(todayTodos, opts = {}) {
         : '';
       return `<div class="todo-135-item${t.done ? ' is-done' : ''}${repeating ? ' is-repeat' : ''}" data-todo-id="${t.id}" draggable="false">
         <button data-todo-complete onpointerdown="_todoCompletePointerDown(event,${t.id})" onpointerup="_todoCompletePointerUp(event,${t.id})" onpointercancel="_todoCompletePointerCancel(event)" onclick="_todoCompleteClick(event,${t.id})" aria-pressed="${t.done ? 'true' : 'false'}" aria-label="تکمیل">${t.done ? '✓' : ''}</button>
-        <span class="todo-135-item-title" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}</span>
+        <span class="todo-135-item-title" onclick="${canEdit ? `openEditTodo(${t.id})` : `_openTodoReadonly(${t.id})`}">${escapeHtml(t.title || 'بدون عنوان')}${_todoSubtaskBadgeHtml(t)}</span>
         ${repeatBtn}
         ${unpinBtn}
       </div>`;
@@ -4034,6 +4036,7 @@ function renderTodoList(options = {}) {
             ${escapeHtml(t.title)}
             ${repeatIcon?`<span style="font-size:10px;opacity:.6"> ${repeatIcon}</span>`:''}
           </span>
+          ${_todoSubtaskBadgeHtml(t)}
           ${priorityBadge}
           ${_todo135SlotBadgeHtml(t)}
           ${cat ? '<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:' + cat[1] + '22;color:' + cat[1] + ';font-weight:600">' + cat[0] + '</span>' : ''}
@@ -4054,6 +4057,7 @@ function renderTodoList(options = {}) {
         <div style="font-size:11px;margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           ${_todoDateBadge(t, todayKey, tomorrowKey, isOverdue)}
         </div>
+        ${_todoSubtasksBlockHtml(t)}
       </div>
       <div class="row-menu" onclick="event.stopPropagation()">
         <button class="row-menu-btn todo-overdue-menu-btn" onclick="toggleRowMenu(event,'${todoMenuId}')" aria-label="عملیات کار">⋮</button>
@@ -4283,6 +4287,203 @@ function _initTodoDragDrop() {
   });
 }
 
+
+function _normalizeTodoSubtasks(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const out = [];
+  list.forEach((item, index) => {
+    const text = String(item && item.text != null ? item.text : item || '').trim().slice(0, 200);
+    if (!text) return;
+    let id = Number(item && item.id);
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) id = index + 1;
+    while (seen.has(id)) id += 1;
+    seen.add(id);
+    out.push({ id, text, done: !!(item && item.done) });
+  });
+  return out.slice(0, 40);
+}
+
+function _todoSubtasks(t) {
+  return _normalizeTodoSubtasks(t && t.subtasks);
+}
+
+function _todoSubtaskProgress(t) {
+  const list = _todoSubtasks(t);
+  return { total: list.length, done: list.filter(item => item.done).length };
+}
+
+function _todoSubtaskBadgeHtml(t) {
+  const progress = _todoSubtaskProgress(t);
+  if (!progress.total) return '';
+  return `<span class="todo-subtask-badge" data-todo-sub-progress="${t.id}">${fa(progress.done)}/${fa(progress.total)} ریزکار</span>`;
+}
+
+function _todoSubtaskAddRowHtml(todoId) {
+  return `<div class="todo-subtask-add">
+    <input class="form-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})" onclick="event.stopPropagation()">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_addTodoSubtaskFromList(${todoId})">افزودن</button>
+  </div>`;
+}
+
+function _todoSubtasksBlockHtml(t) {
+  const list = _todoSubtasks(t);
+  const canEdit = _todoCanEdit(t);
+  const canComplete = _todoCanComplete(t);
+  if (!list.length && !canEdit) return '';
+  if (!list.length) {
+    return `<button type="button" class="todo-subtask-start" onclick="event.stopPropagation();_revealTodoSubtaskAdd(${t.id})">+ ریزکار</button>`;
+  }
+  const items = list.map(item => `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}" onclick="event.stopPropagation()">
+    <label>
+      <input type="checkbox" ${item.done ? 'checked' : ''} ${canComplete ? '' : 'disabled'} onchange="_toggleTodoSubtask(${t.id},${item.id},this.checked)">
+      <span>${escapeHtml(item.text)}</span>
+    </label>
+    ${canEdit ? `<button type="button" class="todo-subtask-del" onclick="_deleteTodoSubtask(${t.id},${item.id})" aria-label="حذف ریزکار">×</button>` : ''}
+  </div>`).join('');
+  return `<div class="todo-subtasks" onclick="event.stopPropagation()">
+    ${items}
+    ${canEdit ? _todoSubtaskAddRowHtml(t.id) : ''}
+  </div>`;
+}
+
+function _todoSubtaskEditorHtml() {
+  const list = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  return `<div class="form-group full todo-subtasks-editor">
+    <label class="form-label">ریزکارها</label>
+    <div id="todo-subtask-draft-list">${list.map(_todoSubtaskDraftRowHtml).join('') || '<div class="todo-subtask-empty">هنوز ریزکاری تعریف نشده</div>'}</div>
+    <div class="todo-subtask-add">
+      <input class="form-input" id="todo-subtask-new" maxlength="200" placeholder="مثلاً: پیام بده، فایل را بفرست..." onkeydown="_tpOnEnter(event,'_addTodoSubtaskDraft')">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_addTodoSubtaskDraft()">افزودن</button>
+    </div>
+  </div>`;
+}
+
+function _todoSubtaskDraftRowHtml(item) {
+  return `<div class="todo-subtask${item.done ? ' is-done' : ''}" data-subtask-id="${item.id}">
+    <label>
+      <input type="checkbox" ${item.done ? 'checked' : ''} onchange="_toggleTodoSubtaskDraft(${item.id},this.checked)">
+      <span>${escapeHtml(item.text)}</span>
+    </label>
+    <button type="button" class="todo-subtask-del" onclick="_removeTodoSubtaskDraft(${item.id})" aria-label="حذف ریزکار">×</button>
+  </div>`;
+}
+
+function _nextTodoSubtaskId(list) {
+  return Math.max(0, ...(list || []).map(item => Number(item.id) || 0)) + 1;
+}
+
+function _addTodoSubtaskDraft() {
+  const input = document.getElementById('todo-subtask-new');
+  const text = String(input?.value || '').trim();
+  if (!text) return;
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  draft.push({ id: _nextTodoSubtaskId(draft), text: text.slice(0, 200), done: false });
+  window._todoSubtaskDraft = _normalizeTodoSubtasks(draft);
+  if (input) input.value = '';
+  _refreshTodoSubtaskDraftList();
+}
+
+function _removeTodoSubtaskDraft(id) {
+  window._todoSubtaskDraft = _normalizeTodoSubtasks((window._todoSubtaskDraft || []).filter(item => Number(item.id) !== Number(id)));
+  _refreshTodoSubtaskDraftList();
+}
+
+function _toggleTodoSubtaskDraft(id, checked) {
+  const draft = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  const item = draft.find(row => Number(row.id) === Number(id));
+  if (!item) return;
+  item.done = !!checked;
+  _refreshTodoSubtaskDraftList();
+}
+
+function _refreshTodoSubtaskDraftList() {
+  const el = document.getElementById('todo-subtask-draft-list');
+  if (!el) return;
+  const list = Array.isArray(window._todoSubtaskDraft) ? window._todoSubtaskDraft : [];
+  el.innerHTML = list.map(_todoSubtaskDraftRowHtml).join('') || '<div class="todo-subtask-empty">هنوز ریزکاری تعریف نشده</div>';
+}
+
+function _persistTodoSubtasks(t) {
+  t.subtasks = _normalizeTodoSubtasks(t.subtasks);
+  t.updated_at = new Date().toISOString();
+  try {
+    _save(true, { scheduleServerSync: false, quiet: true });
+    void _syncTodoDelta(t, 'edit');
+  } catch (e) {
+    console.error('[TeamPulse] todo subtask persist failed:', e);
+  }
+}
+
+function _paintTodoSubtasks(t) {
+  if (!t) return;
+  document.querySelectorAll('.todo-row[data-todo-id="' + t.id + '"]').forEach(row => {
+    const nextBlock = _todoSubtasksBlockHtml(t);
+    const current = row.querySelector('.todo-subtasks, .todo-subtask-start');
+    if (current) current.outerHTML = nextBlock || '';
+    else if (nextBlock) row.querySelector('.todo-row-body')?.insertAdjacentHTML('beforeend', nextBlock);
+    const badge = row.querySelector('[data-todo-sub-progress]');
+    const nextBadge = _todoSubtaskBadgeHtml(t);
+    if (badge) {
+      if (nextBadge) badge.outerHTML = nextBadge;
+      else badge.remove();
+    } else if (nextBadge) {
+      row.querySelector('[data-todo-title]')?.insertAdjacentHTML('afterend', nextBadge);
+    }
+  });
+  document.querySelectorAll('.todo-135-item[data-todo-id="' + t.id + '"] [data-todo-sub-progress]').forEach(badge => {
+    const nextBadge = _todoSubtaskBadgeHtml(t);
+    if (nextBadge) badge.outerHTML = nextBadge;
+    else badge.remove();
+  });
+}
+
+function _revealTodoSubtaskAdd(todoId) {
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t || !_todoCanEdit(t)) return;
+  document.querySelectorAll('.todo-row[data-todo-id="' + todoId + '"] .todo-subtask-start').forEach(btn => {
+    btn.outerHTML = `<div class="todo-subtasks" onclick="event.stopPropagation()">${_todoSubtaskAddRowHtml(todoId)}</div>`;
+  });
+  document.getElementById('todo-sub-add-' + todoId)?.focus();
+}
+
+function _toggleTodoSubtask(todoId, subId, checked) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t) return;
+  if (!_todoCanComplete(t)) { showToast('برای تیک‌زدن این ریزکار دسترسی نداری', 'error'); return; }
+  t.subtasks = _todoSubtasks(t);
+  const item = t.subtasks.find(row => Number(row.id) === Number(subId));
+  if (!item) return;
+  item.done = !!checked;
+  _persistTodoSubtasks(t);
+  _paintTodoSubtasks(t);
+}
+
+function _addTodoSubtaskFromList(todoId) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای افزودن ریزکار دسترسی نداری', 'error'); return; }
+  const input = document.getElementById('todo-sub-add-' + todoId);
+  const text = String(input?.value || '').trim();
+  if (!text) return;
+  t.subtasks = _todoSubtasks(t);
+  t.subtasks.push({ id: _nextTodoSubtaskId(t.subtasks), text: text.slice(0, 200), done: false });
+  if (input) input.value = '';
+  _persistTodoSubtasks(t);
+  _paintTodoSubtasks(t);
+}
+
+function _deleteTodoSubtask(todoId, subId) {
+  _todosInit();
+  const t = _db.todos.find(x => x.id == todoId);
+  if (!t) return;
+  if (!_todoCanEdit(t)) { showToast('برای حذف ریزکار دسترسی نداری', 'error'); return; }
+  t.subtasks = _todoSubtasks(t).filter(row => Number(row.id) !== Number(subId));
+  _persistTodoSubtasks(t);
+  _paintTodoSubtasks(t);
+}
 
 function _quickAddTodo(title) {
   _todosInit();
@@ -5434,6 +5635,7 @@ function openAddTodo(dateStr, presetAssigneeId = '', presetMainTodayRank = 0) {
   }
   _requestNotificationPermission();
   window._quickTodoExtras = {};
+  window._todoSubtaskDraft = [];
   const today = _todayJalaliStr();
   const presetRank = _parseMainTodayRank(presetMainTodayRank);
   const forcedSelfId = _isTeamGuest() && !_teamPerm('todo_create_others') && !_teamPerm('todo_manage_staff') && ownStaff ? String(ownStaff.id) : '';
@@ -5469,6 +5671,7 @@ function openAddTodo(dateStr, presetAssigneeId = '', presetMainTodayRank = 0) {
       <label class="form-label">توضیحات</label>
       <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات..."></textarea>
     </div>
+    ${_todoSubtaskEditorHtml()}
     <div class="form-group full" style="border:1px solid rgba(124,106,247,.28);border-radius:10px;padding:10px;background:rgba(124,106,247,.045)">
       <label class="form-label">قانون ۱-۳-۵ امروز</label>
       <select class="form-input" id="todo-main-today-rank">
@@ -5723,6 +5926,7 @@ function _buildTodoRecord(meta, fields) {
     sync_gcal: meta.syncGcal,
     gcal_event_id: null,
     gcal_calendar_id: meta.syncGcal ? _gcal.calendarId() : null,
+    subtasks: _normalizeTodoSubtasks(fields.subtasks),
     done: false, done_at: null, completedAt: null, completed_at: null, archived: false, status: 'pending',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -5819,7 +6023,7 @@ async function saveTodo() {
     window._todoSaveInProgress = false;
     return;
   }
-  const newTodo = _buildTodoRecord(meta, { title });
+  const newTodo = _buildTodoRecord(meta, { title, subtasks: window._todoSubtaskDraft });
   if (_isTeamGuest() && !newTodo.assignee_id && !newTodo.assignee_email) {
     window._todoSaveInProgress = false;
     showToast('کار بدون مسئول ذخیره نمی‌شود', 'error');
@@ -5843,6 +6047,7 @@ function _openTodoReadonly(id) {
       <div><b style="color:var(--text)">تاریخ:</b> ${DateService.disp(_todoScheduledDate(t) || '')} ${t.time ? ' · ' + escapeHtml(_todoTimeRangeLabel(t)) : ''}</div>
       <div><b style="color:var(--text)">وضعیت:</b> ${escapeHtml(t.status || (t.done ? 'completed' : 'pending'))}</div>
       ${t.staff_report ? `<details open style="border:1px solid rgba(62,207,142,.24);border-radius:10px;padding:9px;background:rgba(62,207,142,.05)"><summary style="cursor:pointer;font-weight:800;color:var(--green)">گزارش انجام کار</summary><div style="margin-top:7px">${escapeHtml(t.staff_report)}</div></details>` : ''}
+      ${_todoSubtasks(t).length ? `<div><b style="color:var(--text)">ریزکارها:</b></div>${_todoSubtasksBlockHtml(t)}` : ''}
     </div>
   `, [{label:'بستن', cls:'btn-ghost', action:'closeModal()'}]);
 }
@@ -5854,6 +6059,7 @@ function openEditTodo(id) {
   if (!t) return;
   if (!_todoCanEdit(t)) { _openTodoReadonly(id); return; }
   _requestNotificationPermission();
+  window._todoSubtaskDraft = _todoSubtasks(t);
 
   const weekDays = [
     {key:'sat', label:'ش'}, {key:'sun', label:'ی'}, {key:'mon', label:'د'},
@@ -5903,6 +6109,7 @@ function openEditTodo(id) {
             <textarea class="form-input" id="todo-note" rows="2" placeholder="جزئیات...">${escapeHtml(t.note||'')}</textarea>
           </div>
         </details>
+        ${_todoSubtaskEditorHtml()}
         <div class="todo-edit-grid-2">
           <div class="form-group">
             <label class="form-label">مسئول انجام</label>
@@ -6199,6 +6406,9 @@ async function updateTodo(id) {
   const prevEventId = t.gcal_event_id;
   const prevCalendarId = t.gcal_calendar_id || _gcal.calendarId();
   const originalScheduledDate = _todoScheduledDate(t);
+  const subtasks = window._todoSubtaskDraft != null
+    ? _normalizeTodoSubtasks(window._todoSubtaskDraft)
+    : _todoSubtasks(t);
   if (normalizedMainTodayRank > 0) {
     _clearConflictingTodo135Ranks(normalizedMainTodayRank, t.id, _todo135PersonKey({
       ...t,
@@ -6239,6 +6449,7 @@ async function updateTodo(id) {
         status: 'pending',
         archived: false,
         _occurrence: true,
+        subtasks,
         updated_at: new Date().toISOString(),
       };
       _db.todos.push(occurrence);
@@ -6263,6 +6474,7 @@ async function updateTodo(id) {
     requires_approval: !!document.getElementById('todo-requires-approval')?.checked,
     date_jalali: dateJalali, scheduled_date: dateJalali, scheduledDate: dateJalali, time, duration_min: durationMin, repeat, weekdays,
     priority, category: category2, main_today_rank: normalizedMainTodayRank, goal_id: goalId2 ? +goalId2 : null, remind_min: remindMin,
+    subtasks,
     sync_gcal: syncGcalWanted,
     updated_at: new Date().toISOString(),
   });
