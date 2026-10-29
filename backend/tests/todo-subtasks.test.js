@@ -153,6 +153,8 @@ test('list, editor, and tick persist through todo delta', () => {
   assert.match(todos, /class="todo-subtasks"/);
   assert.match(todos, /function _addTodoSubtaskFromList\(/);
   assert.match(todos, /class="todo-subtask-tick"/);
+  assert.match(todos, /todo-subtask-add-input/);
+  assert.match(todos, /todo-subtask-add-btn/);
   assert.match(todos, /function _deferTodoSubtaskTomorrow\(/);
   assert.match(todos, /function _openTodoSubtaskDeferSheet\(/);
   assert.match(todos, /function _carryDeferredSubtasks\(/);

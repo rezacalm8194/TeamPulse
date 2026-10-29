@@ -4370,8 +4370,26 @@ body.instr-select-mode ._ifcard.instr-selected {
   padding:4px 8px; line-height:1; min-height:32px;
 }
 .todo-subtask-del:hover { color:var(--red); }
-.todo-subtask-add { display:flex; gap:6px; align-items:center; margin-top:2px; }
-.todo-subtask-add .form-input { flex:1; min-width:0; height:36px; }
+.todo-subtask-add { display:flex; gap:8px; align-items:center; min-height:28px; padding:2px 8px; margin-top:0; border-radius:8px; }
+.todo-subtask-add:focus-within { background:rgba(255,255,255,.04); }
+.todo-subtask-add-mark {
+  width:16px; height:16px; border-radius:50%; flex-shrink:0;
+  border:1.5px dashed var(--border2);
+}
+.todo-subtask-add-input {
+  flex:1; min-width:0; width:auto; height:26px; padding:0;
+  border:0; background:transparent; outline:none;
+  font-family:var(--font); font-size:12px; font-weight:600;
+  color:var(--text); direction:rtl;
+}
+.todo-subtask-add-input::placeholder { color:var(--text3); font-weight:500; }
+.todo-subtask-add-btn {
+  width:28px; height:28px; flex-shrink:0; padding:0;
+  border:0; border-radius:7px; background:transparent;
+  color:var(--text3); font-family:var(--font); font-size:18px; font-weight:800; line-height:1;
+  cursor:pointer;
+}
+.todo-subtask-add-btn:hover { color:var(--accent2); background:rgba(124,106,247,.12); }
 .todo-subtask-badge {
   display:inline-flex; align-items:center;
   font-size:9px; padding:1px 7px; border-radius:4px; margin-right:6px;
@@ -4381,6 +4399,8 @@ body.instr-select-mode ._ifcard.instr-selected {
 .todo-subtasks-editor { margin-top:8px; }
 @media (max-width: 768px) {
   .todo-subtask { min-height:44px; }
+  .todo-subtask-add { min-height:36px; }
+  .todo-subtask-add-btn { width:32px; height:32px; }
 }
 .todo-135 {
   margin: 4px 0 12px;
