@@ -4397,8 +4397,9 @@ function _carryDeferredSubtasksToTomorrow(t) {
 
 function _todoSubtaskAddRowHtml(todoId) {
   return `<div class="todo-subtask-add">
-    <input class="form-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})">
-    <button type="button" class="btn btn-ghost btn-sm" onclick="_addTodoSubtaskFromList(${todoId})">افزودن</button>
+    <span class="todo-subtask-add-mark" aria-hidden="true"></span>
+    <input class="todo-subtask-add-input" id="todo-sub-add-${todoId}" maxlength="200" placeholder="ریزکار جدید..." aria-label="ریزکار جدید" onkeydown="_tpOnEnter1(event,'_addTodoSubtaskFromList',${todoId})">
+    <button type="button" class="todo-subtask-add-btn" onclick="_addTodoSubtaskFromList(${todoId})" aria-label="افزودن">+</button>
   </div>`;
 }
 
@@ -4433,8 +4434,9 @@ function _todoSubtaskEditorHtml() {
     <label class="form-label">ریزکارها</label>
     <div id="todo-subtask-draft-list">${list.map(_todoSubtaskDraftRowHtml).join('') || '<div class="todo-subtask-empty">هنوز ریزکاری تعریف نشده</div>'}</div>
     <div class="todo-subtask-add">
-      <input class="form-input" id="todo-subtask-new" maxlength="200" placeholder="مثلاً: پیام بده، فایل را بفرست..." onkeydown="_tpOnEnter(event,'_addTodoSubtaskDraft')">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="_addTodoSubtaskDraft()">افزودن</button>
+      <span class="todo-subtask-add-mark" aria-hidden="true"></span>
+      <input class="todo-subtask-add-input" id="todo-subtask-new" maxlength="200" placeholder="مثلاً: پیام بده، فایل را بفرست..." aria-label="ریزکار جدید" onkeydown="_tpOnEnter(event,'_addTodoSubtaskDraft')">
+      <button type="button" class="todo-subtask-add-btn" onclick="_addTodoSubtaskDraft()" aria-label="افزودن">+</button>
     </div>
   </div>`;
 }
