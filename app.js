@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp386';
+const TP_ASSET_V = 'tp387';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -22844,6 +22844,37 @@ function _todoHasCatchUpOnScheduledDay(t) {
   });
 }
 
+function _advanceRecurringTodoSubtasks(list) {
+  if (!Array.isArray(list)) return [];
+  // ریزکار تکرار مستقل ندارد. تیک‌خورده‌ها مال همان نوبت‌اند و در اسنپ‌شات می‌مانند.
+  // ناتمام‌ها (از جمله «دور بعدی») با نوبت باز بعدی می‌آیند، بدون بازنشانی تیک.
+  return list
+    .filter(item => item && typeof item === 'object' && !item.done)
+    .map(item => ({ ...item, done: false, deferred: false, defer_to: '' }));
+}
+
+function _pruneRevivedOneShotSubtasks(t) {
+  if (!t || !Array.isArray(t.subtasks) || !t.subtasks.length) return false;
+  const root = String(_todoRootId(t));
+  const liveKey = _jalaliKey(_todoScheduledDate(t) || '') || 0;
+  const doneIds = new Set();
+  (_db.todos || []).forEach(row => {
+    if (!row || !(row._snapshot || row._occurrence)) return;
+    if (String(_todoRootId(row)) !== root) return;
+    const occKey = _jalaliKey(_todoScheduledDate(row) || '') || 0;
+    if (liveKey && occKey && occKey >= liveKey) return;
+    (Array.isArray(row.subtasks) ? row.subtasks : []).forEach(item => {
+      if (item && item.done && item.id != null) doneIds.add(Number(item.id));
+    });
+  });
+  if (!doneIds.size) return false;
+  const next = t.subtasks.filter(item => !(item && !item.done && doneIds.has(Number(item.id))));
+  if (next.length === t.subtasks.length) return false;
+  t.subtasks = next;
+  t.updated_at = new Date().toISOString();
+  return true;
+}
+
 function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   if (!_isTodoRecurring(t)) return;
   t.recurrence_parent_id = _todoRootId(t);
@@ -22866,7 +22897,7 @@ function _advanceRecurringTodoOccurrence(t, scheduledDate) {
   t.scheduled_date = t.date_jalali || '';
   t.scheduledDate = t.scheduled_date;
   if (Array.isArray(t.subtasks)) {
-    t.subtasks = t.subtasks.map(item => item && typeof item === 'object' ? { ...item, done: false, deferred: false, defer_to: '' } : item);
+    t.subtasks = _advanceRecurringTodoSubtasks(t.subtasks);
   }
 }
 
@@ -26335,7 +26366,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v386';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v387';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
