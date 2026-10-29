@@ -3839,6 +3839,7 @@ function renderTodoList(options = {}) {
         t.done_at = null;
         t.updated_at = new Date().toISOString();
         _advanceTodoDate(t, doneDayStr);
+        if (Array.isArray(t.subtasks)) t.subtasks = _advanceRecurringTodoSubtasks(t.subtasks);
         _archiveChanged = true;
       }
     }
@@ -3856,6 +3857,7 @@ function renderTodoList(options = {}) {
         t.updated_at = new Date().toISOString();
         _archiveChanged = true;
       }
+      if (_pruneRevivedOneShotSubtasks(t)) _archiveChanged = true;
     }
   });
   if (_archiveChanged) {
