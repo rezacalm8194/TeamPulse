@@ -29,6 +29,7 @@ test('refresh pagination cannot restore archive rows deleted while the request w
     FINANCE_NEWEST_FIRST_KEYS: [],
     _dropStaleDurableBusinessDeltas: () => {},
     _pendingBusinessDeltaIds: () => new Set(),
+    _bumpCollectionNextId: () => {},
     _persistPartLoadState: () => {}, _persistDatabaseSnapshot: () => {},
   });
   vm.runInContext(source.slice(start, end), c);

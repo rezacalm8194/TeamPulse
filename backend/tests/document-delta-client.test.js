@@ -301,6 +301,8 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
   assert.match(appSource, /'guide_categories','guide_items','case_forms','todos'/);
   assert.match(appSource, /localBeforeLoad\?\.case_forms\?\.length/);
   assert.match(appSource, /function _mergeLocalBusinessCollections\(/);
+  assert.match(appSource, /function _blockedBusinessIds\(/);
+  assert.match(appSource, /Keep tombstones recorded after overlayBase was cloned/);
   assert.match(appSource, /function _pruneTombstonesForPresentItems\(/);
   assert.match(appSource, /resurrectLocal/);
   assert.match(appSource, /while \(!_paginatedCollectionFullyLoaded\(key\) && pages < 100\)/);

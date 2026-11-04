@@ -298,6 +298,9 @@ test('reminder delete records tombstones and a durable delete delta', () => {
   assert.match(appSource, /_recordDeletedItems\('reminders',id\)/);
   assert.match(appSource, /_recordDeletedItems\('package_reminders',row\.package_id\)/);
   assert.match(appSource, /_enqueueDurableBusinessDelta\('reminders',row,'delete'\)/);
+  assert.match(appSource, /function _blockedBusinessIds\(/);
+  assert.match(appSource, /if \(blocked\.has\(id\)\) return;/);
+  assert.match(appSource, /Keep tombstones recorded after overlayBase was cloned/);
 });
 
 test('package sync does not recreate a reminder the user deleted', () => {
@@ -316,5 +319,19 @@ test('package sync does not recreate a reminder the user deleted', () => {
   }, '1405/08/12');
   assert.equal(sandbox._db.reminders.length, 0);
   sandbox._todayJalali = () => [1405, 6, 15];
+});
+
+test('local business merge does not resurrect a tombstoned reminder', () => {
+  const merge = extractFunction(appSource, '_mergeLocalBusinessCollections');
+  const ctx = vm.createContext({
+    _db: { reminders: [] },
+    _blockedBusinessIds: (key) => key === 'reminders' ? new Set(['7']) : new Set(),
+    _mergeBusinessRow: (key, local) => local,
+  });
+  vm.runInContext(merge, ctx);
+  ctx._mergeLocalBusinessCollections({
+    reminders: [{ id: 7, title: 'تجدید پکیج: کوچینگ', amount: 119000000 }],
+  }, ['reminders']);
+  assert.equal(ctx._db.reminders.length, 0);
 });
 
