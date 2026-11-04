@@ -137,3 +137,39 @@ test('style attributes are hoisted off HTML before innerHTML parse', () => {
   assert.doesNotMatch(hoisted, /\sstyle="/);
   assert.equal(ctx._tpHoistStyles('<b>no style</b>'), '<b>no style</b>');
 });
+
+test('on* handlers are hoisted off HTML before innerHTML parse', () => {
+  const ctx = loadBinder();
+  const hoisted = ctx._tpHoistStyles('<button class="x" onclick="closeSidebar()">x</button>');
+  assert.match(hoisted, /data-tp-onclick="closeSidebar\(\)"/);
+  assert.doesNotMatch(hoisted, /\sonclick="/);
+  const mixed = ctx._tpHoistStyles('<div style="color:red" onchange="foo(1)">x</div>');
+  assert.match(mixed, /data-tp-style="color:red"/);
+  assert.match(mixed, /data-tp-onchange="foo\(1\)"/);
+  assert.doesNotMatch(mixed, /\s(?:style|on[a-z]+)="/i);
+});
+
+test('binder click-dispatches data-tp-onclick the same as onclick', () => {
+  const ctx = loadBinder();
+  let n = 0;
+  ctx.closeSidebar = function () { n += 1; };
+  const el = Object.assign(Object.create(ctx.Element.prototype), {
+    nodeType: 1,
+    attributes: [{ name: 'data-tp-onclick', value: 'closeSidebar()' }],
+    listeners: Object.create(null),
+    addEventListener(type, fn) {
+      (this.listeners[type] || (this.listeners[type] = [])).push(fn);
+    },
+    removeAttribute(name) {
+      this.attributes = this.attributes.filter((a) => a.name !== name);
+    },
+    click() {
+      const ev = { target: this, type: 'click', stopPropagation() {}, preventDefault() {} };
+      for (const fn of this.listeners.click || []) fn.call(this, ev);
+    },
+  });
+  ctx._tpBindInline(el);
+  assert.equal(el.attributes.some((a) => a.name === 'data-tp-onclick'), false);
+  el.click();
+  assert.equal(n, 1);
+});

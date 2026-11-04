@@ -15,23 +15,23 @@
   <meta name="apple-mobile-web-app-title" content="TeamPulse">
   <link rel="apple-touch-icon" href="/app-icon-192-v3.png?v=3">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1">
-  <link rel="preload" href="/fonts/Vazirmatn-Regular.woff2?v=tp392" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/app.css?v=tp392" as="style">
-    <link rel="preload" href="/tp-inline-bind.js?v=tp392" as="script">
-  <link rel="preload" href="/app.js?v=tp392" as="script">
-  <link rel="stylesheet" href="/app.css?v=tp392">
-  <script src="/tp-inline-bind.js?v=tp392" defer></script>
-  <script src="/app.js?v=tp392" defer></script>
+  <link rel="preload" href="/fonts/Vazirmatn-Regular.woff2?v=tp393" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/app.css?v=tp393" as="style">
+    <link rel="preload" href="/tp-inline-bind.js?v=tp393" as="script">
+  <link rel="preload" href="/app.js?v=tp393" as="script">
+  <link rel="stylesheet" href="/app.css?v=tp393">
+  <script src="/tp-inline-bind.js?v=tp393" defer></script>
+  <script src="/app.js?v=tp393" defer></script>
 
 </head>
 <body>
 
-<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+<div class="sidebar-backdrop" id="sidebar-backdrop" data-tp-onclick="closeSidebar()"></div>
 
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-      <button class="sidebar-close-btn" onclick="closeSidebar()" title="بستن منو">✕</button>
+      <button class="sidebar-close-btn" data-tp-onclick="closeSidebar()" title="بستن منو">✕</button>
       <img src="logo.png" id="logo-icon" style="width:40px;height:40px;border-radius:10px;flex-shrink:0;object-fit:cover" alt="TeamPulse">
       <div><h1 id="app-title">TeamPulse</h1><p id="app-subtitle">مدیریت شاگردان</p></div>
     </div>
@@ -39,7 +39,7 @@
     <nav class="sidebar-nav" id="sidebar-nav">
       <a class="nav-item" data-page="home" title="داشبورد"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 7-5.5L17 9v7.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5z"/><path d="M7.5 17v-4.5h5V17"/></svg></span><span>داشبورد</span></a>
       <div class="nav-group-plan" id="nav-group-plan">
-        <button class="nav-group-head" id="nav-plan-head" onclick="_togglePlanGroup(event)" title="برنامه‌ریزی">
+        <button class="nav-group-head" id="nav-plan-head" data-tp-onclick="_togglePlanGroup(event)" title="برنامه‌ریزی">
           <span class="nav-group-head-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 2.5v3M13 2.5v3"/></svg></span>
           <span class="nav-group-head-label">برنامه‌ریزی</span>
           <span class="nav-group-head-count" id="nav-plan-count" style="display:none">0</span>
@@ -66,7 +66,7 @@
       <a class="nav-item" data-page="reminders" title="یادآوری‌ها" style="display:none"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5a4.2 4.2 0 00-4.2 4.2c0 4.9-1.8 6-1.8 6h12s-1.8-1.1-1.8-6A4.2 4.2 0 0010 2.5z"/><path d="M8.3 15.2a1.8 1.8 0 003.4 0"/></svg></span><span>یادآوری‌ها</span><span class="badge" id="reminder-badge" style="display:none">0</span></a>
 
       <div class="nav-section">سیستم</div>
-      <a class="nav-item" onclick="_tpWalletNav()" title="کیف پول"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h10.5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6a2 2 0 012-2z"/><path d="M4.8 6.5V5.2c0-.9.6-1.6 1.5-1.8l6.5-1.1c1-.2 1.9.6 1.9 1.6v2.6"/><path d="M13.4 11.5h3.1"/><circle cx="13.2" cy="11.5" r=".7" fill="currentColor" stroke="none"/></svg></span><span>کیف پول</span></a>
+      <a class="nav-item" data-tp-onclick="_tpWalletNav()" title="کیف پول"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h10.5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6a2 2 0 012-2z"/><path d="M4.8 6.5V5.2c0-.9.6-1.6 1.5-1.8l6.5-1.1c1-.2 1.9.6 1.9 1.6v2.6"/><path d="M13.4 11.5h3.1"/><circle cx="13.2" cy="11.5" r=".7" fill="currentColor" stroke="none"/></svg></span><span>کیف پول</span></a>
       <a class="nav-item" data-page="settings" title="تنظیمات"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.7v2M10 15.3v2M17.3 10h-2M4.7 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8"/></svg></span><span>تنظیمات</span></a>
       <a class="nav-item" data-page="tutorial" title="آموزش‌ها"><span class="nav-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.2C8.7 4 6.7 3.5 3.5 3.5v11c3.2 0 5.2.5 6.5 1.7 1.3-1.2 3.3-1.7 6.5-1.7v-11c-3.2 0-5.2.5-6.5 1.7z"/><path d="M10 5.2v11"/></svg></span><span>آموزش‌ها</span></a>
     </nav>
@@ -74,30 +74,30 @@
 
 
     <div class="sidebar-bottom">
-      <button id="admin-panel-btn" class="btn-sidebar" onclick="_tpOpenAdminPanel()" style="display:none;width:100%;padding:8px;font-size:12.5px;text-align:center">👑 پنل مدیریت</button>
+      <button id="admin-panel-btn" class="btn-sidebar" data-tp-onclick="_tpOpenAdminPanel()" style="display:none;width:100%;padding:8px;font-size:12.5px;text-align:center">👑 پنل مدیریت</button>
       <div id="admin-panel-divider" class="sidebar-divider" style="display:none"></div>
       <div style="display:flex;gap:6px">
-        <button class="btn-sidebar btn-sidebar-muted" onclick="_tpAuthThenBackup()" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
-        <button class="btn-sidebar btn-sidebar-muted" onclick="_tpAuthThenImport()" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
+        <button class="btn-sidebar btn-sidebar-muted" data-tp-onclick="_tpAuthThenBackup()" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
+        <button class="btn-sidebar btn-sidebar-muted" data-tp-onclick="_tpAuthThenImport()" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
       </div>
       <div class="sidebar-divider"></div>
-      <button id="logout-btn" class="btn-sidebar" onclick="_tpSignOut()" style="width:100%;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:12px;text-align:center">🚪 خروج</button>
+      <button id="logout-btn" class="btn-sidebar" data-tp-onclick="_tpSignOut()" style="width:100%;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:12px;text-align:center">🚪 خروج</button>
     </div>
   </aside>
   <div class="main">
     <header class="topbar">
-      <button class="hamburger" id="hamburger-btn" data-role="menu" onclick="toggleSidebar()">☰</button>
+      <button class="hamburger" id="hamburger-btn" data-role="menu" data-tp-onclick="toggleSidebar()">☰</button>
       <h2 class="page-title" id="page-title">شاگردان</h2>
       <div class="topbar-actions" id="topbar-actions"></div>
       <!-- Auth buttons - shown when NOT logged in -->
       <div id="topbar-auth-btns" style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-        <button class="tp-hover-bg3" onclick="_showAuthScreen('login')"
+        <button class="tp-hover-bg3" data-tp-onclick="_showAuthScreen('login')"
           style="padding:7px 16px;border-radius:20px;border:1px solid var(--border2);
             background:var(--bg3);color:var(--text);cursor:pointer;font-family:var(--font);
             font-size:12px;font-weight:600;white-space:nowrap;transition:all .15s">
           🔐 ورود
         </button>
-        <button onclick="_showAuthScreen('register')"
+        <button data-tp-onclick="_showAuthScreen('register')"
           style="padding:7px 12px;border-radius:20px;
             background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;
             border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;
@@ -108,14 +108,14 @@
       </div>
       <!-- User info - shown when logged in -->
       <div id="topbar-user-btns" style="display:none;align-items:center;gap:8px;flex-shrink:0">
-        <button id="account-btn" class="tp-hover-bg3" onclick="renderAccountSwitcher()" title="حساب کاربری"
+        <button id="account-btn" class="tp-hover-bg3" data-tp-onclick="renderAccountSwitcher()" title="حساب کاربری"
           style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;
             border:1px solid var(--border2);background:var(--bg3);color:var(--text);
             font-family:var(--font);font-size:12px;cursor:pointer;white-space:nowrap;transition:all .15s">
           <span style="font-size:16px">👤</span>
           <span id="account-name-display" style="max-width:100px;overflow:hidden;text-overflow:ellipsis">---</span>
         </button>
-        <button id="topbar-logout-btn" class="topbar-logout-btn" onclick="_tpSignOut()"
+        <button id="topbar-logout-btn" class="topbar-logout-btn" data-tp-onclick="_tpSignOut()"
           style="padding:6px 12px;border-radius:20px;border:1px solid rgba(239,68,68,.3);
             background:rgba(239,68,68,.1);color:var(--red);cursor:pointer;
             font-family:var(--font);font-size:12px;font-weight:600;white-space:nowrap;transition:all .15s">
@@ -129,7 +129,7 @@
       display:none;align-items:center;justify-content:space-between;gap:12px;
       border-bottom:2px solid rgba(255,255,255,.2);z-index:100">
       <span>👑 در حال مشاهده حساب <strong id="impersonate-name">---</strong> هستید</span>
-      <button class="tp-hover-admin" onclick="_adminReturnToAdmin()"
+      <button class="tp-hover-admin" data-tp-onclick="_adminReturnToAdmin()"
         style="padding:5px 14px;border-radius:20px;border:2px solid white;background:rgba(255,255,255,.15);
         color:white;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;
         transition:background .15s">
@@ -141,12 +141,12 @@
     </main>
     <nav class="bottom-nav">
       <div class="bn-row">
-        <div class="bn-item" data-page="home" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg></span><span>داشبورد</span></div>
-        <div class="bn-item" data-page="goals" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l7-7M16 5h3v3"/></svg></span><span>اهداف</span></div>
-        <div class="bn-item" data-page="habits" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M13 3s1 4-2 6c-2-2-4-1-4-1s-3 4-1 8a7 7 0 0 0 13-1c1-4-2-7-2-7s0 4-3 5c1-5-1-8-1-10Z"/></svg></span><span>عادت‌ها</span></div>
-        <div class="bn-item" data-page="todolist" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span><span>کارها</span></div>
-        <div class="bn-item" data-page="instructions" onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.9.7 1.5 1.7 1.5 2.6h4c0-.9.6-1.9 1.5-2.6A6 6 0 0 0 12 3Z"/></svg></span><span>مرکز دانش</span></div>
-        <div class="bn-item" onclick="openSidebar()"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span>بیشتر</span></div>
+        <div class="bn-item" data-page="home" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg></span><span>داشبورد</span></div>
+        <div class="bn-item" data-page="goals" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l7-7M16 5h3v3"/></svg></span><span>اهداف</span></div>
+        <div class="bn-item" data-page="habits" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M13 3s1 4-2 6c-2-2-4-1-4-1s-3 4-1 8a7 7 0 0 0 13-1c1-4-2-7-2-7s0 4-3 5c1-5-1-8-1-10Z"/></svg></span><span>عادت‌ها</span></div>
+        <div class="bn-item" data-page="todolist" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span><span>کارها</span></div>
+        <div class="bn-item" data-page="instructions" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.9.7 1.5 1.7 1.5 2.6h4c0-.9.6-1.9 1.5-2.6A6 6 0 0 0 12 3Z"/></svg></span><span>مرکز دانش</span></div>
+        <div class="bn-item" data-tp-onclick="openSidebar()"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span>بیشتر</span></div>
       </div>
       <div class="bn-safe-spacer"></div>
     </nav>
@@ -157,12 +157,12 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── Bottom Sheet: ایجاد مورد جدید ── -->
-<div class="bottom-sheet-overlay" id="new-item-sheet" onclick="if(event.target===this)closeNewItemSheet()">
+<div class="bottom-sheet-overlay" id="new-item-sheet" data-tp-onclick="if(event.target===this)closeNewItemSheet()">
   <div class="bottom-sheet">
     <div class="bottom-sheet-handle"></div>
     <div class="bs-title">ایجاد مورد جدید</div>
 
-    <div class="bs-option bs-task" onclick="closeNewItemSheet();openAddTodo()">
+    <div class="bs-option bs-task" data-tp-onclick="closeNewItemSheet();openAddTodo()">
       <span class="bs-option-icon">📝</span>
       <div>
         <div class="bs-option-label">کار</div>
@@ -170,7 +170,7 @@
       </div>
     </div>
 
-    <div class="bs-option bs-goal" onclick="closeNewItemSheet();openAddGoal()">
+    <div class="bs-option bs-goal" data-tp-onclick="closeNewItemSheet();openAddGoal()">
       <span class="bs-option-icon">🎯</span>
       <div>
         <div class="bs-option-label">هدف</div>
@@ -178,7 +178,7 @@
       </div>
     </div>
 
-    <div class="bs-option bs-habit" onclick="closeNewItemSheet();openAddHabit()">
+    <div class="bs-option bs-habit" data-tp-onclick="closeNewItemSheet();openAddHabit()">
       <span class="bs-option-icon">🔥</span>
       <div>
         <div class="bs-option-label">عادت</div>
