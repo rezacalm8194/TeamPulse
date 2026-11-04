@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp390';
+const TP_ASSET_V = 'tp391';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -5554,6 +5554,26 @@ function _todoPagingState(archived = false) {
   window._tpTodoPaging = window._tpTodoPaging || {};
   return window._tpTodoPaging[key] || (window._tpTodoPaging[key] = { cursor: null, done: false, loading: null });
 }
+function _applyServerDeletedTodoIds(ids) {
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(id => String(id)).filter(Boolean))];
+  if (!list.length) return;
+  const pendingKeep = new Set();
+  try {
+    (_readDurableTodoDeltaQueue() || []).forEach(item => {
+      const op = String(item?.operation || '');
+      if (op === 'delete') return;
+      if (item?.todoId != null) pendingKeep.add(String(item.todoId));
+      if (item?.todo?.id != null) pendingKeep.add(String(item.todo.id));
+    });
+  } catch (e) {}
+  const drop = list.filter(id => !pendingKeep.has(id));
+  if (!drop.length) return;
+  if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos(drop);
+  if (Array.isArray(_db?.todos)) {
+    const gone = new Set(drop);
+    _db.todos = _db.todos.filter(todo => !todo || todo.id == null || !gone.has(String(todo.id)));
+  }
+}
 async function _loadTodoPage(archived = false, { reset = false } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   const state = _todoPagingState(archived);
@@ -5595,6 +5615,7 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
       existing.set(id, local ? _resolveIncomingTodo(local, todo, { authoritative }) : todo);
     });
     _db.todos = [...existing.values()];
+    if (Array.isArray(payload.deleted_ids)) _applyServerDeletedTodoIds(payload.deleted_ids);
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
     state.failed = false;
@@ -19695,7 +19716,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   if ((operation === 'complete' || operation === 'reopen') && !extraSnapshots.length) {
     extraSnapshots = _todoLocalCompletionExtras(todoSnapshot);
   }
-  if (operation === 'complete' || operation === 'delete') {
+  if (operation === 'complete') {
     const deleted = typeof _localDeletedTodoIds === 'function' ? _localDeletedTodoIds() : new Set();
     extraSnapshots = extraSnapshots.filter(item => item && item.id != null && !deleted.has(String(item.id)));
   }
@@ -26400,7 +26421,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v390';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v391';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

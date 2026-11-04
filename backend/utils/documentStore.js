@@ -49,6 +49,31 @@ function isSafePartKey(key) {
   return typeof key === 'string' && key.length > 0 && key.length <= 80 && /^[A-Za-z0-9_]+$/.test(key);
 }
 
+const INTERNAL_ARRAY_PARTS = new Set(['_todoTombstones', '_deletedTodoIds']);
+
+function mergeInternalIdList(previous, incoming) {
+  const ids = new Set();
+  (Array.isArray(previous) ? previous : []).forEach(id => {
+    if (id != null && id !== '') ids.add(String(id));
+  });
+  (Array.isArray(incoming) ? incoming : []).forEach(id => {
+    if (id != null && id !== '') ids.add(String(id));
+  });
+  return [...ids];
+}
+
+function assignLoadedPart(scalars, collections, partKey, value) {
+  if (partKey === SCALARS_PART) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) Object.assign(scalars, value);
+    return;
+  }
+  if (INTERNAL_ARRAY_PARTS.has(partKey)) {
+    scalars[partKey] = mergeInternalIdList(scalars[partKey], value);
+    return;
+  }
+  collections[partKey] = value;
+}
+
 function parseCollectionInclude(raw) {
   if (raw == null) return null;
   const text = String(raw).trim();
@@ -77,6 +102,10 @@ function splitDocument(data) {
   }
   Object.keys(data).forEach(key => {
     if (!isSafePartKey(key) && key !== SCALARS_PART) {
+      scalars[key] = data[key];
+      return;
+    }
+    if (typeof key === 'string' && key.startsWith('_') && key !== SCALARS_PART) {
       scalars[key] = data[key];
       return;
     }
@@ -183,7 +212,7 @@ function loadWorkspaceMeta(db, accountId) {
 
 function loadDocumentParts(db, accountId, collectionKeys = []) {
   ensureDocumentStoreSchema(db);
-  const wanted = new Set([SCALARS_PART]);
+  const wanted = new Set([SCALARS_PART, ...INTERNAL_ARRAY_PARTS]);
   (collectionKeys || []).forEach(key => {
     if (isSafePartKey(key) && key !== SCALARS_PART) wanted.add(key);
   });
@@ -195,9 +224,7 @@ function loadDocumentParts(db, accountId, collectionKeys = []) {
   const scalars = {};
   const collections = {};
   rows.forEach(row => {
-    const value = parsePartValue(row.part_key, row.data);
-    if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
-    else collections[row.part_key] = value;
+    assignLoadedPart(scalars, collections, row.part_key, parsePartValue(row.part_key, row.data));
   });
   if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
     collections.todos = loadAllTodos(db, accountId);
@@ -208,9 +235,8 @@ function loadDocumentParts(db, accountId, collectionKeys = []) {
     }
   });
   collectionKeys.forEach(key => {
-    if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
-      collections[key] = [];
-    }
+    if (!isSafePartKey(key) || key === SCALARS_PART || INTERNAL_ARRAY_PARTS.has(key)) return;
+    if (!Object.prototype.hasOwnProperty.call(collections, key)) collections[key] = [];
   });
   return { scalars, collections, data: assembleDocument(scalars, collections) };
 }
@@ -225,9 +251,7 @@ function loadWorkspaceDocument(db, accountId) {
     const scalars = {};
     const collections = {};
     rows.forEach(row => {
-      const value = parsePartValue(row.part_key, row.data);
-      if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
-      else collections[row.part_key] = value;
+      assignLoadedPart(scalars, collections, row.part_key, parsePartValue(row.part_key, row.data));
     });
     if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
     BUSINESS_COLLECTIONS.forEach(key => {
@@ -267,6 +291,13 @@ function upsertPartRow(db, accountId, partKey, json) {
   return hash;
 }
 
+function dropMigratedInternalArrayParts(db, accountId, hashes) {
+  INTERNAL_ARRAY_PARTS.forEach(key => {
+    db.prepare('DELETE FROM user_data_parts WHERE account_id=? AND part_key=?').run(accountId, key);
+    if (hashes) delete hashes[key];
+  });
+}
+
 function upsertUserDataMeta(db, accountId, etag) {
   const existing = db.prepare('SELECT account_id FROM user_data WHERE account_id=?').get(accountId);
   if (existing) {
@@ -302,6 +333,7 @@ function writeWorkspaceDocument(db, accountId, data, {
     const { scalars, collections } = splitDocument(data);
     const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
+    dropMigratedInternalArrayParts(db, accountId, hashes);
     const writtenCollections = Object.keys(collections);
     writtenCollections.forEach(key => {
       if (key === 'todos') {
@@ -403,7 +435,7 @@ async function loadWorkspaceMetaAsync(db, accountId) {
 async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
   return offloadOrInline(db, 'loadDocumentParts', [accountId, collectionKeys], async () => {
     ensureDocumentStoreSchema(db);
-    const wanted = new Set([SCALARS_PART]);
+    const wanted = new Set([SCALARS_PART, ...INTERNAL_ARRAY_PARTS]);
     (collectionKeys || []).forEach(key => {
       if (isSafePartKey(key) && key !== SCALARS_PART) wanted.add(key);
     });
@@ -415,9 +447,7 @@ async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
     const scalars = {};
     const collections = {};
     for (const row of rows) {
-      const value = parsePartValue(row.part_key, row.data);
-      if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
-      else collections[row.part_key] = value;
+      assignLoadedPart(scalars, collections, row.part_key, parsePartValue(row.part_key, row.data));
       await yieldEventLoop();
     }
     if (wanted.has('todos') && hasMigratedTodos(db, accountId)) {
@@ -429,9 +459,8 @@ async function loadDocumentPartsAsync(db, accountId, collectionKeys = []) {
       }
     });
     collectionKeys.forEach(key => {
-      if (isSafePartKey(key) && key !== SCALARS_PART && !Object.prototype.hasOwnProperty.call(collections, key)) {
-        collections[key] = [];
-      }
+      if (!isSafePartKey(key) || key === SCALARS_PART || INTERNAL_ARRAY_PARTS.has(key)) return;
+      if (!Object.prototype.hasOwnProperty.call(collections, key)) collections[key] = [];
     });
     return { scalars, collections, data: assembleDocument(scalars, collections) };
   });
@@ -448,9 +477,7 @@ async function loadWorkspaceDocumentAsync(db, accountId) {
       const scalars = {};
       const collections = {};
       for (const row of rows) {
-        const value = parsePartValue(row.part_key, row.data);
-        if (row.part_key === SCALARS_PART) Object.assign(scalars, value);
-        else collections[row.part_key] = value;
+        assignLoadedPart(scalars, collections, row.part_key, parsePartValue(row.part_key, row.data));
         await yieldEventLoop();
       }
       if (hasMigratedTodos(db, accountId)) collections.todos = loadAllTodos(db, accountId);
@@ -495,6 +522,7 @@ async function writeWorkspaceDocumentAsync(db, accountId, data, {
     const hashes = replaceAll ? {} : loadPartHashes(db, accountId);
     await yieldEventLoop();
     hashes[SCALARS_PART] = upsertPartRow(db, accountId, SCALARS_PART, JSON.stringify(scalars));
+    dropMigratedInternalArrayParts(db, accountId, hashes);
     const writtenCollections = Object.keys(collections);
     for (const key of writtenCollections) {
       if (key === 'todos') {
