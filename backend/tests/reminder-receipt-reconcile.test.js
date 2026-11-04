@@ -68,6 +68,9 @@ for (const name of [
   '_reconcileRemindersForRecordedCycleSales',
   '_reconcileStudentPaymentReminders',
   '_reconcileOverdueRemindersForSettledCustomers',
+  '_packageReminderSuppressed',
+  '_clearPackageReminderSuppression',
+  '_removePackageReminder',
   '_syncPackageReminder',
 ]) {
   vm.runInContext(extractFunction(appSource, name), sandbox);
@@ -289,3 +292,29 @@ test('first sale that owns the reminder is not treated as an already-renewed cyc
   assert.equal(reminder.due_date_jalali, due);
   sandbox._todayJalali = () => [1405, 6, 15];
 });
+
+test('reminder delete records tombstones and a durable delete delta', () => {
+  assert.match(appSource, /delete: \(id\)=>\{ const row=\(_db\.reminders\|\|\[\]\)\.find/);
+  assert.match(appSource, /_recordDeletedItems\('reminders',id\)/);
+  assert.match(appSource, /_recordDeletedItems\('package_reminders',row\.package_id\)/);
+  assert.match(appSource, /_enqueueDurableBusinessDelta\('reminders',row,'delete'\)/);
+});
+
+test('package sync does not recreate a reminder the user deleted', () => {
+  sandbox._todayJalali = () => [1405, 8, 6];
+  sandbox._db = {
+    package_types: [{ id: 3, label: 'کوچینگ' }],
+    reminders: [],
+    _deletedItems: { package_reminders: { '91': '2026-11-04T00:00:00.000Z' } },
+  };
+  sandbox._nextId = () => 9;
+  sandbox._syncPackageReminder(2, 91, {
+    type_id: 3,
+    total_amount: 119000000,
+    repeat_months: 6,
+    payment_due_date: '1405/08/12',
+  }, '1405/08/12');
+  assert.equal(sandbox._db.reminders.length, 0);
+  sandbox._todayJalali = () => [1405, 6, 15];
+});
+

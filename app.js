@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp388';
+const TP_ASSET_V = 'tp390';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3112,15 +3112,38 @@ function _staffSummary(s) {
   return{...s,roles,expectedMonthly,remainingThisMonth,totalPaid:paymentsTotal+adjTotal,paid_this_month:paidThisMonth,days_until:daysUntil};
 }
 
+function _packageReminderSuppressed(pkgId) {
+  if (pkgId == null || pkgId === '') return false;
+  const map = _db?._deletedItems?.package_reminders;
+  return !!(map && Object.prototype.hasOwnProperty.call(map, String(pkgId)));
+}
+
+function _clearPackageReminderSuppression(pkgId) {
+  if (pkgId == null || pkgId === '') return;
+  const map = _db?._deletedItems?.package_reminders;
+  if (map) delete map[String(pkgId)];
+}
+
+function _removePackageReminder(existing, pkgId) {
+  if (!existing) return;
+  if (typeof _recordDeletedItems === 'function') _recordDeletedItems('reminders', existing.id);
+  _db.reminders = (_db.reminders || []).filter(r => String(r.package_id) !== String(pkgId));
+  if (typeof _enqueueDurableBusinessDelta === 'function') {
+    _enqueueDurableBusinessDelta('reminders', existing, 'delete');
+  }
+}
+
 function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
   const dueDate = _packagePaymentDueDate({...pkg,start_date:startDate});
   const amount = (pkg.total_amount||0)+(pkg.initial_cost||0);
   if(!dueDate||amount<=0)return;
   const pt=_db.package_types.find(t=>t.id===pkg.type_id);
-  _db.reminders.push({id:_nextId('reminders'),student_id:studentId,package_id:pkgId,
+  const row={id:_nextId('reminders'),student_id:studentId,package_id:pkgId,
     title:`سررسید پرداخت: ${pt?pt.label:''}`,due_date_jalali:dueDate,
     repeat_months:pkg.repeat_months||0,amount,
-    note:'',done:false,notified_levels:[],created_at:new Date().toISOString()});
+    note:'',done:false,notified_levels:[],created_at:new Date().toISOString()};
+  _db.reminders.push(row);
+  if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert');
 }
 
 function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
@@ -3128,8 +3151,12 @@ function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
   const existing = _db.reminders.find(r=>String(r.package_id)===String(pkgId));
   const dueDate = _packagePaymentDueDate({...pkg,start_date:startDate});
   const amount = (pkg.total_amount||0)+(pkg.initial_cost||0);
+  if(_packageReminderSuppressed(pkgId)){
+    _removePackageReminder(existing,pkgId);
+    return;
+  }
   if(!dueDate||amount<=0){
-    if(existing)_db.reminders=_db.reminders.filter(r=>String(r.package_id)!==String(pkgId));
+    _removePackageReminder(existing,pkgId);
     return;
   }
   startDate = startDate || _formatJalali(..._todayJalali());
@@ -3151,6 +3178,8 @@ function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
   };
   if(existing)Object.assign(existing,patch);
   else _db.reminders.push({id:_nextId('reminders'),...patch,created_at:new Date().toISOString()});
+  const row=existing||_db.reminders[_db.reminders.length-1];
+  if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3415,9 +3444,9 @@ window.api = {
 
   reminders: {
     getAll: ()=>_P(_db.reminders.map(r=>{const s=_db.students.find(x=>x.id===r.student_id);return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali)};}).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))),
-    add: (p)=>{ _db.reminders.push({id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title:p.title||'یادآوری',due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}); _save(); return _P({ok:true}); },
-    update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});_save();} return _P({ok:true}); },
-    delete: (id)=>{ _db.reminders=_db.reminders.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    add: (p)=>{ const row={id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title:p.title||'یادآوری',due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}; if(typeof _clearPackageReminderSuppression==='function')_clearPackageReminderSuppression(row.package_id); _db.reminders.push(row); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
+    update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});r.updated_at=new Date().toISOString(); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert'); _save(true,{urgent:true});} return _P({ok:true}); },
+    delete: (id)=>{ const row=(_db.reminders||[]).find(x=>String(x.id)===String(id)); _recordDeletedItems('reminders',id); if(row&&row.package_id!=null&&row.package_id!=='')_recordDeletedItems('package_reminders',row.package_id); _db.reminders=(_db.reminders||[]).filter(x=>String(x.id)!==String(id)); if(row&&typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'delete'); _save(true,{urgent:true}); return _P({ok:true}); },
     markPaid: (p)=>{
       const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
       const next = r.repeat_months>0 ? _nextFuturePaymentReminderDate(r.due_date_jalali,r.repeat_months) : '';
@@ -3434,7 +3463,12 @@ window.api = {
         r.done=true;
         if(pkg)pkg.payment_due_date=r.due_date_jalali;
       }
-      _save(); return _P({ok:true,reminder:r});
+      r.updated_at=new Date().toISOString();
+      if(typeof _enqueueDurableBusinessDelta==='function'){
+        _enqueueDurableBusinessDelta('reminders',r,'upsert');
+        if(pkg)_enqueueDurableBusinessDelta('packages',pkg,'upsert');
+      }
+      _save(true,{urgent:true}); return _P({ok:true,reminder:r});
     },
     completePurchase: (p)=>{
       const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
@@ -26366,7 +26400,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v388';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v390';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
