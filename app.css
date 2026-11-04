@@ -5,7 +5,7 @@
   font-weight: 400;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp393') format('woff2');
+  src: url('/fonts/Vazirmatn-Regular.woff2?v=tp394') format('woff2');
 }
 @font-face {
   font-family: 'Vazirmatn';
@@ -13,7 +13,7 @@
   font-weight: 600;
   font-display: swap;
   unicode-range: U+0020-007E, U+00A0-00FF, U+0600-06FF, U+200C-2027, U+20A0-20CF;
-  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp393') format('woff2');
+  src: url('/fonts/Vazirmatn-SemiBold.woff2?v=tp394') format('woff2');
 }
 :root {
   --bg:      #0f1117;
@@ -2690,6 +2690,10 @@ body.light mark { background: rgba(251,191,36,.5); }
 .summary-entry-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .summary-entry-note { font-size: 12px; color: var(--text2); line-height: 1.8; }
 .summary-entry-extra { font-size: 12px; color: var(--text3); line-height: 1.8; margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.summary-entry-label { font-size: 11px; font-weight: 700; color: var(--text2); margin: 8px 0 4px; }
+.summary-entry-followups, .summary-entry-achievements { margin-top: 6px; }
+.summary-fu-item { font-size: 12px; color: var(--text2); line-height: 1.7; }
+.summary-fu-item.done { color: var(--text3); text-decoration: line-through; }
 .key-event-item {
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;

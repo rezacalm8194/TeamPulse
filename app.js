@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp393';
+const TP_ASSET_V = 'tp394';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -13849,6 +13849,34 @@ async function commitArchiveImport(){
 }
 
 // ── Full sessions summary (journal-style) ─────────────────────────────────────
+function _sessionsSummaryFollowups(s) {
+  return (s.followups || []).filter(f => String(f?.text || '').trim());
+}
+function _sessionsSummaryFollowupCopy(s) {
+  const list = _sessionsSummaryFollowups(s);
+  if (!list.length) return '';
+  return ['اقدامات تا جلسه بعد:', ...list.map(f => {
+    const due = f.due_date_jalali ? ` (موعد: ${DateService.disp(f.due_date_jalali)})` : '';
+    return `- ${f.done ? 'انجام شد — ' : ''}${String(f.text).trim()}${due}`;
+  })].join('\n');
+}
+function _sessionsSummaryFollowupHtml(s) {
+  const list = _sessionsSummaryFollowups(s);
+  if (!list.length) return '';
+  return `<div class="summary-entry-followups"><div class="summary-entry-label">📌 اقدامات تا جلسه بعد</div>${list.map(f => {
+    const due = f.due_date_jalali ? ` <span class="session-fu-due">موعد: ${escapeHtml(DateService.disp(f.due_date_jalali))}</span>` : '';
+    return `<div class="summary-fu-item${f.done ? ' done' : ''}">${f.done ? '✓' : '○'} ${escapeHtml(String(f.text).trim())}${due}</div>`;
+  }).join('')}</div>`;
+}
+function _sessionsSummaryAchievementsCopy(s) {
+  const text = String(s.achievements || '').trim();
+  return text ? `پیشرفت‌ها:\n${text}` : '';
+}
+function _sessionsSummaryAchievementsHtml(s) {
+  const text = String(s.achievements || '').trim();
+  if (!text) return '';
+  return `<div class="summary-entry-achievements"><div class="summary-entry-label">🌱 پیشرفت‌ها</div><div class="summary-entry-note">${renderRich(s.achievements)}</div>${_achievementPeriodBadge(s)}</div>`;
+}
 async function openSessionsSummary(studentId, displayName) {
   const groups = await window.api.sessions.getAll();
   const g = groups.find(x => x.student_id === studentId);
@@ -13862,7 +13890,9 @@ async function openSessionsSummary(studentId, displayName) {
           `${DateService.disp(s.date_jalali)}${s.importance==='key'?' ⭐':''}`,
           s.title || '(بدون عنوان)',
           s.note ? String(s.note).trim() : '',
-          s.extra_note ? String(s.extra_note).trim() : ''
+          s.extra_note ? String(s.extra_note).trim() : '',
+          _sessionsSummaryFollowupCopy(s),
+          _sessionsSummaryAchievementsCopy(s)
         ].filter(Boolean).join('\n'))
       ].join('\n\n--------------------\n\n');
   window._sessionsSummaryCopyText = copyText;
@@ -13875,6 +13905,8 @@ async function openSessionsSummary(studentId, displayName) {
         <div class="summary-entry-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
         ${s.note ? `<div class="summary-entry-note">${renderRich(s.note)}</div>` : ''}
         ${s.extra_note ? `<div class="summary-entry-extra">${renderRich(s.extra_note)}</div>` : ''}
+        ${_sessionsSummaryFollowupHtml(s)}
+        ${_sessionsSummaryAchievementsHtml(s)}
       </div>`).join('');
 
   openModal(`📋 خلاصه کل ${META.sessionPlural||'جلسات'} — ${escapeHtml(displayName)}`, `
@@ -26446,7 +26478,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v393';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v394';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
