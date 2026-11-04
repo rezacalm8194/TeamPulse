@@ -29,13 +29,24 @@ function client(fetch) {
   });
   vm.runInContext(['_cloneData', '_todoMergeTime', '_todoHasReopenAfter', '_pickMergedTodo',
     '_todoPendingDeltaOp', '_todoServerHydrateIsAuthoritative', '_resolveIncomingTodo',
-    '_todoPagingState', '_todoTabNeedsArchivedPages', '_todoPagesStaleForServerEtag',
-    '_loadTodoPage', '_reloadCompleteTodosFromServer'].map(name => extract(name)).join('\n'), c);
+    '_todoPagingState', '_applyServerDeletedTodoIds', '_todoTabNeedsArchivedPages',
+    '_todoPagesStaleForServerEtag', '_loadTodoPage', '_reloadCompleteTodosFromServer'].map(name => extract(name)).join('\n'), c);
   return c;
 }
 const done = { id: 201, done: true, archived: false, status: 'completed', done_at: '2026-09-05T08:00:00Z' };
 const open = { ...done, done: false, status: 'pending', done_at: null };
-const response = (items, cursor = null) => ({ ok: true, json: async () => ({ items, next_cursor: cursor, etag: 'new' }) });
+const response = (items, cursor = null, deleted_ids = []) => ({
+  ok: true,
+  json: async () => ({ items, next_cursor: cursor, etag: 'new', deleted_ids }),
+});
+
+test('a later device drops a todo that desktop already deleted', async () => {
+  const c = client(async () => response([{ id: 1, done: false }], null, ['201']));
+  c._db.todos = [{ id: 1, done: false }, structuredClone(done)];
+  assert.equal(await c._loadTodoPage(false, { reset: true }), true);
+  assert.equal(c._db.todos.find(t => t.id === 201), undefined);
+  assert.equal(c._db.todos.find(t => t.id === 1).id, 1);
+});
 
 test('Android receives desktop reopen on page two while hydrated etag is still old', async () => {
   const calls = [];
@@ -159,6 +170,7 @@ test('document polling does not mark a failed todo hydration as synchronized', a
     json: async () => ({ etag: 'new', collections: {} }),
   });
   Object.assign(c, {
+    _tpBrowserOffline: () => false,
     currentPage: 'todolist',
     BUSINESS_PAGINATED_KEYS: [],
     FINANCE_NEWEST_FIRST_KEYS: [],

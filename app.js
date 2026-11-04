@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp390';
+const TP_ASSET_V = 'tp392';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3443,10 +3443,10 @@ window.api = {
   },
 
   reminders: {
-    getAll: ()=>_P(_db.reminders.map(r=>{const s=_db.students.find(x=>x.id===r.student_id);return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali)};}).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))),
+    getAll: ()=>{ const blocked=typeof _blockedBusinessIds==='function'?_blockedBusinessIds('reminders'):new Set(); return _P((_db.reminders||[]).filter(r=>r&&!blocked.has(String(r.id))).map(r=>{const s=_db.students.find(x=>x.id===r.student_id);return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali)};}).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))); },
     add: (p)=>{ const row={id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title:p.title||'یادآوری',due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}; if(typeof _clearPackageReminderSuppression==='function')_clearPackageReminderSuppression(row.package_id); _db.reminders.push(row); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
     update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){Object.assign(r,p.patch||{});r.updated_at=new Date().toISOString(); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert'); _save(true,{urgent:true});} return _P({ok:true}); },
-    delete: (id)=>{ const row=(_db.reminders||[]).find(x=>String(x.id)===String(id)); _recordDeletedItems('reminders',id); if(row&&row.package_id!=null&&row.package_id!=='')_recordDeletedItems('package_reminders',row.package_id); _db.reminders=(_db.reminders||[]).filter(x=>String(x.id)!==String(id)); if(row&&typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'delete'); _save(true,{urgent:true}); return _P({ok:true}); },
+    delete: (id)=>{ const row=(_db.reminders||[]).find(x=>String(x.id)===String(id)); _recordDeletedItems('reminders',id); if(row&&row.package_id!=null&&row.package_id!=='')_recordDeletedItems('package_reminders',row.package_id); _db.reminders=(_db.reminders||[]).filter(x=>String(x.id)!==String(id)); if(row&&typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'delete'); _save(true,{urgent:true}); return (typeof _syncToServer==='function'?_syncToServer():_P({ok:true})).then(()=>({ok:true})).catch(()=>({ok:true})); },
     markPaid: (p)=>{
       const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
       const next = r.repeat_months>0 ? _nextFuturePaymentReminderDate(r.due_date_jalali,r.repeat_months) : '';
@@ -5333,12 +5333,16 @@ function _overlayPartialServerData(target, payload) {
       const mergedDeletes = _mergeDeletedItemMaps(target._deletedItems, src._deletedItems);
       const guarded = [...(typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : []), 'todos'];
       guarded.forEach(col => {
-        const localCol = target._deletedItems?.[col] && typeof target._deletedItems[col] === 'object' && !Array.isArray(target._deletedItems[col])
+        const fromTarget = target._deletedItems?.[col] && typeof target._deletedItems[col] === 'object' && !Array.isArray(target._deletedItems[col])
           ? { ...target._deletedItems[col] }
+          : {};
+        const fromLive = _db?._deletedItems?.[col] && typeof _db._deletedItems[col] === 'object' && !Array.isArray(_db._deletedItems[col])
+          ? { ..._db._deletedItems[col] }
           : {};
         // Partial document payloads still carry inferred deletes from an older
         // truncated phone write. Never import those over a larger local cache.
-        mergedDeletes[col] = localCol;
+        // Keep tombstones recorded after overlayBase was cloned (e.g. reminder delete).
+        mergedDeletes[col] = { ...fromTarget, ...fromLive };
       });
       target._deletedItems = mergedDeletes;
       return;
@@ -5554,6 +5558,26 @@ function _todoPagingState(archived = false) {
   window._tpTodoPaging = window._tpTodoPaging || {};
   return window._tpTodoPaging[key] || (window._tpTodoPaging[key] = { cursor: null, done: false, loading: null });
 }
+function _applyServerDeletedTodoIds(ids) {
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(id => String(id)).filter(Boolean))];
+  if (!list.length) return;
+  const pendingKeep = new Set();
+  try {
+    (_readDurableTodoDeltaQueue() || []).forEach(item => {
+      const op = String(item?.operation || '');
+      if (op === 'delete') return;
+      if (item?.todoId != null) pendingKeep.add(String(item.todoId));
+      if (item?.todo?.id != null) pendingKeep.add(String(item.todo.id));
+    });
+  } catch (e) {}
+  const drop = list.filter(id => !pendingKeep.has(id));
+  if (!drop.length) return;
+  if (typeof _rememberDeletedTodos === 'function') _rememberDeletedTodos(drop);
+  if (Array.isArray(_db?.todos)) {
+    const gone = new Set(drop);
+    _db.todos = _db.todos.filter(todo => !todo || todo.id == null || !gone.has(String(todo.id)));
+  }
+}
 async function _loadTodoPage(archived = false, { reset = false } = {}) {
   if (!_sbUser || !_sbSession?.token) return false;
   const state = _todoPagingState(archived);
@@ -5595,6 +5619,7 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
       existing.set(id, local ? _resolveIncomingTodo(local, todo, { authoritative }) : todo);
     });
     _db.todos = [...existing.values()];
+    if (Array.isArray(payload.deleted_ids)) _applyServerDeletedTodoIds(payload.deleted_ids);
     state.cursor = payload.next_cursor || null;
     state.done = !state.cursor;
     state.failed = false;
@@ -5669,6 +5694,20 @@ function _pendingBusinessDeltaIds(collection) {
     .filter(row => String(row?.collection) === String(collection) && row?.id != null
       && String(row.operation || 'upsert') !== 'delete')
     .map(row => String(row.id)));
+}
+function _blockedBusinessIds(collection) {
+  const ids = new Set();
+  const tombs = _db?._deletedItems?.[collection];
+  if (tombs && typeof tombs === 'object' && !Array.isArray(tombs)) {
+    Object.keys(tombs).forEach(id => { if (id) ids.add(String(id)); });
+  }
+  if (typeof _readDurableBusinessDeltaQueue !== 'function') return ids;
+  _readDurableBusinessDeltaQueue().forEach(row => {
+    if (String(row?.collection) !== String(collection)) return;
+    if (String(row?.operation || '') !== 'delete' || row?.id == null) return;
+    ids.add(String(row.id));
+  });
+  return ids;
 }
 function _dropStaleDurableBusinessDeltas(collection, incoming) {
 	if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection)) return;
@@ -5748,10 +5787,14 @@ function _mergeLocalBusinessCollections(localBeforeLoad, collections = []) {
   collections.forEach(key => {
     const localRows = Array.isArray(localBeforeLoad[key]) ? localBeforeLoad[key] : [];
     if (!localRows.length) return;
-    const byId = new Map((Array.isArray(_db?.[key]) ? _db[key] : []).map(row => [String(row?.id), row]));
+    const blocked = typeof _blockedBusinessIds === 'function' ? _blockedBusinessIds(key) : new Set();
+    const byId = new Map((Array.isArray(_db?.[key]) ? _db[key] : [])
+      .filter(row => row && row.id != null && !blocked.has(String(row.id)))
+      .map(row => [String(row.id), row]));
     localRows.forEach(localRow => {
       if (!localRow || localRow.id == null) return;
       const id = String(localRow.id);
+      if (blocked.has(id)) return;
       byId.set(id, _mergeBusinessRow(key, localRow, byId.get(id)));
     });
     _db[key] = [...byId.values()];
@@ -5933,9 +5976,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       existing.set(String(row.id), row);
     });
     _dropStaleDurableBusinessDeltas(collection, incoming);
+    const blocked = typeof _blockedBusinessIds === 'function' ? _blockedBusinessIds(collection) : new Set();
     incoming.forEach(row => {
       const id = String(row?.id);
-      if (!id) return;
+      if (!id || blocked.has(id)) return;
       const finance = typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
         && FINANCE_NEWEST_FIRST_KEYS.includes(collection);
 		if (finance && _pendingBusinessDeltaIds(collection).has(id)) return;
@@ -5944,9 +5988,11 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
     // A refresh response may predate an archive deletion made on this device.
     // Read current tombstones after the request, before persisting stale rows.
     const deleted = _db?._deletedItems?.[collection];
-    _db[collection] = [...existing.values()].filter(row =>
-      !deleted || !Object.prototype.hasOwnProperty.call(deleted, String(row.id))
-    );
+    _db[collection] = [...existing.values()].filter(row => {
+      const id = String(row?.id);
+      if (blocked.has(id)) return false;
+      return !deleted || !Object.prototype.hasOwnProperty.call(deleted, id);
+    });
     _bumpCollectionNextId(collection);
     if (reset) state.seenIds = new Set();
     state.seenIds = state.seenIds || new Set();
@@ -19695,7 +19741,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
   if ((operation === 'complete' || operation === 'reopen') && !extraSnapshots.length) {
     extraSnapshots = _todoLocalCompletionExtras(todoSnapshot);
   }
-  if (operation === 'complete' || operation === 'delete') {
+  if (operation === 'complete') {
     const deleted = typeof _localDeletedTodoIds === 'function' ? _localDeletedTodoIds() : new Set();
     extraSnapshots = extraSnapshots.filter(item => item && item.id != null && !deleted.has(String(item.id)));
   }
@@ -26400,7 +26446,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v390';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v392';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

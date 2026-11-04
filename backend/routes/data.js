@@ -778,10 +778,12 @@ router.get('/:accountId/todos', auth, async (req, res) => {
       archived,
       filter,
     });
+    const scalarParts = await loadDocumentPartsAsync(db, workspace.storageKey, []);
     res.json({
       ...page,
       ...(grant ? {} : { total: countTodos(db, workspace.storageKey, !!archived) }),
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      deleted_ids: [...deletedTodoIdSet(scalarParts.data || {}, {})],
       etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -1924,6 +1924,7 @@ async function deleteReminder(id) {
   if (!confirm('این یادآوری حذف شود؟')) return;
   await window.api.reminders.delete(id);
   showToast('حذف شد', 'error');
+  if (typeof _applyDeletedItemTombstones === 'function') _applyDeletedItemTombstones(_db);
   await refreshReminderSurface();
 }
 

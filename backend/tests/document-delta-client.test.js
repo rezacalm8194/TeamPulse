@@ -126,6 +126,10 @@ test('todo tick keeps complete operation after advancing a recurring task', () =
 test('complete todo deletion syncs through todo delta instead of a full document save', () => {
   assert.match(todosSource, /_syncTodoDelta\(t, 'delete', removedTodos\)/);
   assert.match(appSource, /operation === 'complete' \|\| operation === 'reopen' \|\| operation === 'delete'/);
+  assert.match(appSource, /if \(operation === 'complete'\) \{/);
+  assert.match(appSource, /function _applyServerDeletedTodoIds\(/);
+  assert.match(appSource, /if \(Array\.isArray\(payload\.deleted_ids\)\) _applyServerDeletedTodoIds\(payload\.deleted_ids\)/);
+  assert.match(dataSource, /deleted_ids: \[\.\.\.deletedTodoIdSet\(scalarParts\.data \|\| \{\}, \{\}\)\]/);
 });
 
 test('customer receipts keep a durable delta so todo ticks cannot swallow them', () => {
@@ -297,6 +301,8 @@ test('customer affairs refresh keeps unsynced local rows during partial server l
   assert.match(appSource, /'guide_categories','guide_items','case_forms','todos'/);
   assert.match(appSource, /localBeforeLoad\?\.case_forms\?\.length/);
   assert.match(appSource, /function _mergeLocalBusinessCollections\(/);
+  assert.match(appSource, /function _blockedBusinessIds\(/);
+  assert.match(appSource, /Keep tombstones recorded after overlayBase was cloned/);
   assert.match(appSource, /function _pruneTombstonesForPresentItems\(/);
   assert.match(appSource, /resurrectLocal/);
   assert.match(appSource, /while \(!_paginatedCollectionFullyLoaded\(key\) && pages < 100\)/);

@@ -33,6 +33,33 @@ function makeDb() {
   return db;
 }
 
+test('todo tombstones stay in scalars so a later device can drop deleted rows', () => {
+  const db = makeDb();
+  writeWorkspaceDocument(db, 'acc-tomb', {
+    todos: [{ id: 1, title: 'keep' }],
+    _lastSaved: 1,
+  }, { replaceAll: true });
+  db.prepare(
+    'INSERT INTO user_data_parts(account_id,part_key,data,data_hash) VALUES (?,?,?,?)'
+  ).run('acc-tomb', '_todoTombstones', JSON.stringify(['7', '8']), 'legacy');
+  const loaded = loadDocumentParts(db, 'acc-tomb', []);
+  assert.deepEqual([...loaded.data._todoTombstones].sort(), ['7', '8']);
+  const split = splitDocument({ todos: [{ id: 1 }], _todoTombstones: ['7', '8', '9'], _lastSaved: 2 });
+  assert.deepEqual(split.scalars._todoTombstones, ['7', '8', '9']);
+  assert.equal(split.collections._todoTombstones, undefined);
+  writeWorkspaceDocument(db, 'acc-tomb', {
+    todos: [{ id: 1, title: 'keep' }],
+    _todoTombstones: ['7', '8', '9'],
+    _lastSaved: 2,
+  }, { replaceAll: false });
+  assert.equal(
+    db.prepare('SELECT 1 FROM user_data_parts WHERE account_id=? AND part_key=?').get('acc-tomb', '_todoTombstones'),
+    undefined
+  );
+  const after = loadDocumentParts(db, 'acc-tomb', []);
+  assert.deepEqual([...after.data._todoTombstones].sort(), ['7', '8', '9']);
+});
+
 test('split/assemble round-trips collections separately from scalars', () => {
   const source = {
     students: [{ id: 1, name: 'A' }],
