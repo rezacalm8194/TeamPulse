@@ -114,6 +114,7 @@ test('app.html shell handlers all parse under the CSP binder', () => {
   const ctx = loadBinder();
   const html = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
   assert.doesNotMatch(html, /script-src [^;]*'unsafe-inline'/);
+  assert.doesNotMatch(html, /(?:^|>|\s)on[a-z]+\s*=/i);
   const handlers = extractHandlers(html).filter((h) => h.code.trim());
   assert.ok(handlers.length >= 20, 'expected shell on* handlers');
   const fails = handlers.filter((h) => !ctx._tpParseInline(h.code));

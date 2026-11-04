@@ -17,8 +17,9 @@
 
 /**
  * CSP-safe binding of HTML on* attributes.
- * Inline handlers are blocked without script-src unsafe-inline.
- * This rebinds only global function calls with literal / this / event args.
+ * Inline handlers are blocked without script-src unsafe-inline, and Chrome
+ * logs each blocked handler. Hoist on* to data-tp-on* before innerHTML parse,
+ * then rebind only global function calls with literal / this / event args.
  */
 (function (global) {
   'use strict';
@@ -481,12 +482,27 @@
     }
   }
 
+  function eventTypeFromAttr(name) {
+    var lower = String(name || '').toLowerCase();
+    if (ON_RE.test(lower)) return lower.slice(2);
+    if (lower.indexOf('data-tp-on') === 0 && ON_RE.test(lower.slice(8))) return lower.slice(10);
+    return '';
+  }
+
   function hoistStyleAttrs(html) {
     var s = String(html == null ? '' : html);
-    if (s.length < 8 || s.indexOf('style') === -1) return s;
-    return s.replace(/(\s)style\s*=\s*(["'])([\s\S]*?)\2/gi, function (_, sp, q, css) {
-      return sp + 'data-tp-style=' + q + css + q;
-    });
+    if (s.length < 8) return s;
+    if (s.indexOf('style') !== -1) {
+      s = s.replace(/(\s)style\s*=\s*(["'])([\s\S]*?)\2/gi, function (_, sp, q, css) {
+        return sp + 'data-tp-style=' + q + css + q;
+      });
+    }
+    if (/\son[a-z]/i.test(s)) {
+      s = s.replace(/(\s)on([a-z]+)\s*=\s*(["'])([\s\S]*?)\3/gi, function (_, sp, ev, q, code) {
+        return sp + 'data-tp-on' + String(ev).toLowerCase() + '=' + q + code + q;
+      });
+    }
+    return s;
   }
 
   function sanitizeTree(root) {
@@ -562,8 +578,8 @@
       for (var a = 0; a < el.attributes.length; a++) attrs.push(el.attributes[a]);
       for (var b = 0; b < attrs.length; b++) {
         var attr = attrs[b];
-        if (!ON_RE.test(attr.name)) continue;
-        var type = attr.name.slice(2).toLowerCase();
+        var type = eventTypeFromAttr(attr.name);
+        if (!type) continue;
         var code = attr.value;
         el.removeAttribute(attr.name);
         var prog = parseProgram(code);
