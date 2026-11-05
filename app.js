@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp396';
+const TP_ASSET_V = 'tp397';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4354,22 +4354,18 @@ const _gdrive = {
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gdrive_'+Math.random().toString(36).slice(2);
       const resultKey='teampulse_oauth_result_'+state;
-      const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
+      const redirectUri=location.origin+'/oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       let done=false;
       let timeoutId=null;
-      let closeTimer=null;
-      let closeGraceTimer=null;
       let storageTimer=null;
       let oauthChannel=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
-        clearInterval(closeTimer);
-        clearTimeout(closeGraceTimer);
         clearInterval(storageTimer);
         if(oauthChannel){try{oauthChannel.close();}catch(e){}}
       };
@@ -4389,7 +4385,6 @@ const _gdrive = {
       const handler=e=>{
         if(e.data?.type!=='gdrive_token')return;
         if(e.origin!==window.location.origin)return;
-        if(e.source!==w)return;
         acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
@@ -4408,20 +4403,7 @@ const _gdrive = {
         if(!raw)return;
         try{acceptPayload(JSON.parse(raw));}catch(e){}
       },300);
-      closeTimer=setInterval(()=>{
-        if(done||!w.closed||closeGraceTimer)return;
-        closeGraceTimer=setTimeout(()=>{
-          let raw=null;
-          try{raw=localStorage.getItem(resultKey);}catch(e){}
-          if(raw){
-            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){}
-          }
-          if(done)return;
-          cleanup();
-          reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
-        },2000);
-      },500);
-      timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
+      timeoutId=setTimeout(()=>{cleanup();reject(new Error('ورود گوگل تمام نشد؛ دوباره تلاش کن'));},180000);
     });
   },
 
@@ -4740,22 +4722,18 @@ const _gcal = {
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gcal_'+Math.random().toString(36).slice(2);
       const resultKey='teampulse_oauth_result_'+state;
-      const redirectUri=location.origin+location.pathname.replace(/[^/]*$/,'')+'oauth_callback.html';
+      const redirectUri=location.origin+'/oauth_callback.html';
       const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       let done=false;
       let timeoutId=null;
-      let closeTimer=null;
-      let closeGraceTimer=null;
       let storageTimer=null;
       let oauthChannel=null;
       const cleanup=()=>{
         done=true;
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
-        clearInterval(closeTimer);
-        clearTimeout(closeGraceTimer);
         clearInterval(storageTimer);
         if(oauthChannel){try{oauthChannel.close();}catch(e){}}
       };
@@ -4776,7 +4754,6 @@ const _gcal = {
       const handler=e=>{
         if(e.data?.type!=='gcal_token')return;
         if(e.origin!==window.location.origin)return;
-        if(e.source!==w)return;
         acceptPayload(e.data);
       };
       window.addEventListener('message',handler);
@@ -4795,20 +4772,7 @@ const _gcal = {
         if(!raw)return;
         try{acceptPayload(JSON.parse(raw));}catch(e){}
       },300);
-      closeTimer=setInterval(()=>{
-        if(done||!w.closed||closeGraceTimer)return;
-        closeGraceTimer=setTimeout(()=>{
-          let raw=null;
-          try{raw=localStorage.getItem(resultKey);}catch(e){}
-          if(raw){
-            try{if(acceptPayload(JSON.parse(raw)))return;}catch(e){}
-          }
-          if(done)return;
-          cleanup();
-          reject(new Error('پنجره ورود گوگل بسته شد و اتصال کامل نشد.'));
-        },2000);
-      },500);
-      timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timeout'));},120000);
+      timeoutId=setTimeout(()=>{cleanup();reject(new Error('ورود گوگل تمام نشد؛ دوباره تلاش کن'));},180000);
     });
   },
 
@@ -26716,7 +26680,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v396';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v397';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
