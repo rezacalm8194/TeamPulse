@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp395';
+const TP_ASSET_V = 'tp396';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4664,7 +4664,7 @@ const _gdrive = {
 // ساخت آن: Google Cloud Console → OAuth Client ID (نوع Web application) →
 // Authorized JavaScript origins: https://teampulse.ir →
 // Authorized redirect URIs: https://teampulse.ir/app/oauth_callback.html (مسیر دقیق فایل روی سرور)
-const APP_GOOGLE_CLIENT_ID = '1084819671818-dgpcfrb1vp53cihjn4bnhhv7l8kesfnq.apps.googleusercontent.com';
+const APP_GOOGLE_CLIENT_ID = '4364778189-8mh8qa6smrtv6q7bjrhg0et8at391mje.apps.googleusercontent.com';
 
 const _gcal = {
   enabled: false,
@@ -26716,7 +26716,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v395';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v396';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
