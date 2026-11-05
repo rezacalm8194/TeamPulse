@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp398';
+const TP_ASSET_V = 'tp399';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4418,6 +4418,21 @@ const _gdrive = {
     return res;
   },
 
+  async readDriveError(res, prefix) {
+    let detail = '';
+    try {
+      const j = await res.json();
+      detail = (j.error && (j.error.message || j.error.status)) || '';
+    } catch (e) {}
+    if (res.status === 403 && /insufficient|scope/i.test(detail)) {
+      return 'دسترسی Drive در اجازه گوگل نیست. در Data Access اسکوپ drive.file را اضافه کن و دوباره اتصال Drive را بزن.';
+    }
+    if (res.status === 403 && /not been used|Access Not Configured|has not been enabled/i.test(detail)) {
+      return 'Google Drive API در این پروژه خاموش است.';
+    }
+    return prefix + res.status + (detail ? ' — ' + detail : '');
+  },
+
   driveQuery(query) {
     return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1&spaces=drive`;
   },
@@ -4440,7 +4455,7 @@ const _gdrive = {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({name, mimeType:'application/vnd.google-apps.folder', ...(parentId ? {parents:[parentId]} : {})}),
     });
-    if (!res.ok) throw new Error('ساخت پوشه Drive ناموفق: ' + res.status);
+    if (!res.ok) throw new Error(await this.readDriveError(res, 'ساخت پوشه Drive ناموفق: '));
     const j = await res.json();
     return j.id;
   },
@@ -4455,7 +4470,7 @@ const _gdrive = {
     const res = await this.req(url, {method:fileId?'PATCH':'POST', headers:{'Content-Type':`multipart/related; boundary="${boundary}"`}, body:multipart});
     if (!res.ok) {
       if (fileId && (res.status === 404 || res.status === 403)) return this.uploadBytes(name, parentId, mime, body, null);
-      throw new Error('آپلود ناموفق: ' + res.status);
+      throw new Error(await this.readDriveError(res, 'آپلود ناموفق: '));
     }
     if (fileId) return fileId;
     const j = await res.json();
@@ -26680,7 +26695,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v398';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v399';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
