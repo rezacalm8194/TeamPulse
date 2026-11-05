@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v397';
+const CACHE = 'team-pulse-static-v398';
 // Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
@@ -42,6 +42,8 @@ function shouldSkip(request) {
   return request.method !== 'GET' ||
     !isSameOrigin(request) ||
     url.pathname === '/sw.js' ||
+    url.pathname === '/oauth_callback.html' ||
+    url.pathname === '/oauth_callback.js' ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/share/') ||
     url.pathname.startsWith('/blog');

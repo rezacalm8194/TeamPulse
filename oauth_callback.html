@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'self'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'self'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>در حال اتصال...</title>
 <style>
@@ -12,79 +12,6 @@
 </head>
 <body>
   <p id="msg">در حال تکمیل اتصال…</p>
-  <script>
-    (function () {
-      const status = document.getElementById('msg');
-      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const accessToken = params.get('access_token');
-      const expiresIn = Number(params.get('expires_in') || 3600);
-      const state = params.get('state') || '';
-      const error = params.get('error');
-      const errorDescription = params.get('error_description');
-      if (!/^(gcal|gdrive)_[a-z0-9]+$/i.test(state)) {
-        status.textContent = 'درخواست اتصال معتبر نیست.';
-        setTimeout(function () { window.close(); }, 800);
-        return;
-      }
-      const messageType = state.indexOf('gcal_') === 0 ? 'gcal_token' : 'gdrive_token';
-
-      const payload = error
-        ? {
-            type: messageType,
-            error: errorDescription || error,
-            state: state
-          }
-        : {
-            type: messageType,
-            token: accessToken,
-            expires_in: Number.isFinite(expiresIn) ? expiresIn : 3600,
-            state: state
-          };
-
-      if (!error && !accessToken) {
-        payload.error = 'no_token_returned';
-      }
-
-      try {
-        if (state) {
-          localStorage.setItem('teampulse_oauth_result_' + state, JSON.stringify({
-            ...payload,
-            saved_at: Date.now()
-          }));
-        }
-      } catch (storageErr) {
-        console.error('OAuth callback storage error:', storageErr);
-      }
-
-      try {
-        if ('BroadcastChannel' in window) {
-          const channel = new BroadcastChannel('teampulse_oauth');
-          channel.postMessage(payload);
-          setTimeout(function () { channel.close(); }, 1000);
-        }
-      } catch (channelErr) {
-        console.error('OAuth callback channel error:', channelErr);
-      }
-
-      if (!window.opener || window.opener.closed) {
-        status.textContent = payload.error
-          ? 'اتصال انجام نشد. این صفحه را ببند و دوباره تلاش کن.'
-          : 'اتصال دریافت شد. به صفحه اصلی TeamPulse برگرد.';
-        setTimeout(function () { window.close(); }, 800);
-        return;
-      }
-
-      try {
-        window.opener.postMessage(payload, window.location.origin);
-        status.textContent = payload.error
-          ? 'اتصال انجام نشد.'
-          : 'اتصال با موفقیت انجام شد. این پنجره بسته می‌شود.';
-        setTimeout(function () { window.close(); }, 300);
-      } catch (err) {
-        console.error('OAuth callback error:', err);
-        status.textContent = 'ارسال نتیجه اتصال به TeamPulse ناموفق بود.';
-      }
-    })();
-  </script>
+  <script src="/oauth_callback.js?v=tp398"></script>
 </body>
 </html>
