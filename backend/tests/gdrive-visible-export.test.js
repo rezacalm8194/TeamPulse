@@ -17,6 +17,8 @@ test('Drive sync writes visible student and session files, not hidden appData', 
   assert.match(app, /اتصال به Google Drive/);
   assert.match(app, /_gdrive\.connect\(APP_GOOGLE_CLIENT_ID\)/);
   assert.match(app, /this\.startHeartbeat\(\)/);
+  assert.doesNotMatch(app, /پنجره ورود گوگل بسته شد و اتصال کامل نشد/);
+  assert.match(app, /location\.origin\+'\/oauth_callback\.html'/);
 });
 
 test('student session csv keeps student identity columns', () => {
