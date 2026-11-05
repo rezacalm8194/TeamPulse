@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp394';
+const TP_ASSET_V = 'tp395';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3714,6 +3714,7 @@ window.api = {
           const creds = {
             _gdrive_client_id:_db._gdrive_client_id,_gdrive_token:_db._gdrive_token,_gdrive_token_expiry:_db._gdrive_token_expiry,
             _gdrive_file_id:_db._gdrive_file_id,_gdrive_enabled:_db._gdrive_enabled,
+            _gdrive_folder_id:_db._gdrive_folder_id,_gdrive_file_ids:_db._gdrive_file_ids,
             _gcal_token:_db._gcal_token,_gcal_token_expiry:_db._gcal_token_expiry,_gcal_enabled:_db._gcal_enabled,
             _gcal_calendar_id:_db._gcal_calendar_id,_gcal_calendars:_db._gcal_calendars,
             _gcal_owner_calendar_email:_db._gcal_owner_calendar_email,
@@ -3749,6 +3750,8 @@ window.api = {
           _gdrive_token_expiry:_db._gdrive_token_expiry,
           _gdrive_file_id:_db._gdrive_file_id,
           _gdrive_enabled:_db._gdrive_enabled,
+          _gdrive_folder_id:_db._gdrive_folder_id,
+          _gdrive_file_ids:_db._gdrive_file_ids,
           _gcal_token:_db._gcal_token,
           _gcal_token_expiry:_db._gcal_token_expiry,
           _gcal_enabled:_db._gcal_enabled,
@@ -4157,6 +4160,8 @@ function _importFile() {
           _gdrive_token_expiry:_db._gdrive_token_expiry,
           _gdrive_file_id:_db._gdrive_file_id,
           _gdrive_enabled:_db._gdrive_enabled,
+          _gdrive_folder_id:_db._gdrive_folder_id,
+          _gdrive_file_ids:_db._gdrive_file_ids,
           _gcal_token:_db._gcal_token,
           _gcal_token_expiry:_db._gcal_token_expiry,
           _gcal_enabled:_db._gcal_enabled,
@@ -4200,6 +4205,105 @@ function _importFile() {
 // ════════════════════════════════════════════════════════════════════════════
 // GOOGLE DRIVE SYNC
 // ════════════════════════════════════════════════════════════════════════════
+function _gdriveCsvCell(value) {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
+  return text;
+}
+function _gdriveToCsv(headers, rows) {
+  const lines = [headers.map(_gdriveCsvCell).join(',')];
+  (rows || []).forEach(row => {
+    lines.push(headers.map(key => _gdriveCsvCell(row[key])).join(','));
+  });
+  return '\uFEFF' + lines.join('\r\n');
+}
+function _gdriveStudentMap() {
+  const map = Object.create(null);
+  (_db.students || []).forEach(s => { map[String(s.id)] = s; });
+  return map;
+}
+function _gdriveFollowupsText(session) {
+  return (session.followups || []).map(f => {
+    const due = f.due_date_jalali ? ' (' + f.due_date_jalali + ')' : '';
+    return (f.text || '') + (f.done ? ' ✓' : '') + due;
+  }).filter(Boolean).join(' | ');
+}
+function _gdriveStudentsCsv() {
+  const headers = ['id','نام','نام خانوادگی','تلفن','تاریخ شمسی','دسته','منبع شناخت','سازمان','وضعیت رابطه','توضیح','یادداشت','آرشیو','wallet'];
+  const rows = (_db.students || []).map(s => ({
+    id: s.id,
+    'نام': s.name || '',
+    'نام خانوادگی': s.lname || '',
+    'تلفن': s.phone || '',
+    'تاریخ شمسی': s.date_jalali || '',
+    'دسته': s.customer_category || '',
+    'منبع شناخت': s.referral_source || '',
+    'سازمان': s.organization_name || '',
+    'وضعیت رابطه': s.relationship_status || '',
+    'توضیح': s.description || s.address || '',
+    'یادداشت': s.note || '',
+    'آرشیو': s.archived ? 'بله' : 'خیر',
+    wallet: s.wallet || 0,
+  }));
+  return _gdriveToCsv(headers, rows);
+}
+function _gdriveSessionsCsv() {
+  const students = _gdriveStudentMap();
+  const headers = ['id','id_شاگرد','نام شاگرد','نام خانوادگی','تاریخ جلسه','عنوان جلسه','نوع','مدت دقیقه','اهمیت','یادداشت جلسه','دستاوردها','اقدام‌های پیگیری'];
+  const rows = (_db.sessions || []).slice().sort((a, b) => {
+    const byStudent = Number(a.student_id || 0) - Number(b.student_id || 0);
+    if (byStudent) return byStudent;
+    return String(b.date_jalali || '').localeCompare(String(a.date_jalali || ''), 'fa');
+  }).map(sess => {
+    const student = students[String(sess.student_id)] || {};
+    return {
+      id: sess.id,
+      'id_شاگرد': sess.student_id || '',
+      'نام شاگرد': student.name || '',
+      'نام خانوادگی': student.lname || '',
+      'تاریخ جلسه': sess.date_jalali || '',
+      'عنوان جلسه': sess.title || '',
+      'نوع': sess.type || '',
+      'مدت دقیقه': sess.duration_min || '',
+      'اهمیت': sess.importance || '',
+      'یادداشت جلسه': sess.note || '',
+      'دستاوردها': sess.achievements || '',
+      'اقدام‌های پیگیری': _gdriveFollowupsText(sess),
+    };
+  });
+  return _gdriveToCsv(headers, rows);
+}
+function _gdrivePaymentsCsv() {
+  const students = _gdriveStudentMap();
+  const headers = ['id','id_شاگرد','نام شاگرد','مبلغ','تاریخ','روش','بسته','یادداشت'];
+  const rows = (_db.payments || []).map(p => {
+    const student = students[String(p.student_id)] || {};
+    return {
+      id: p.id,
+      'id_شاگرد': p.student_id || '',
+      'نام شاگرد': ((student.name || '') + ' ' + (student.lname || '')).trim(),
+      'مبلغ': p.amount || 0,
+      'تاریخ': p.date_jalali || '',
+      'روش': p.method || '',
+      'بسته': p.package_id || '',
+      'یادداشت': p.note || '',
+    };
+  });
+  return _gdriveToCsv(headers, rows);
+}
+function _gdrivePersistCreds(extra) {
+  return {
+    _gdrive_client_id: _db._gdrive_client_id,
+    _gdrive_token: _db._gdrive_token,
+    _gdrive_token_expiry: _db._gdrive_token_expiry,
+    _gdrive_file_id: _db._gdrive_file_id,
+    _gdrive_enabled: _db._gdrive_enabled,
+    _gdrive_folder_id: _db._gdrive_folder_id,
+    _gdrive_file_ids: _db._gdrive_file_ids,
+    ...(extra || {}),
+  };
+}
+
 const _gdrive = {
   enabled: false,
   clientId: '',
@@ -4207,8 +4311,22 @@ const _gdrive = {
   tokenExpiry: 0,
   fileId: null,
   timer: null,
-  SCOPE: 'https://www.googleapis.com/auth/drive.appdata',
-  FILE_NAME: 'coaching_reza_sync.json',
+  beat: null,
+  SCOPE: 'https://www.googleapis.com/auth/drive.file',
+  FILE_NAME: 'teampulse-backup.json',
+  ROOT_NAME: 'TeamPulse — خروجی خودکار',
+  FOLDERS: {
+    students: '01 — شاگردان و امور مشتریان',
+    sessions: '02 — جلسات هر شاگرد',
+    payments: '03 — حساب مشتریان',
+    backup: '09 — پشتیبان و تنظیمات',
+  },
+  FILES: {
+    students: 'لیست شاگردان.csv',
+    sessions: 'فهرست جلسات.csv',
+    payments: 'پرداخت‌ها.csv',
+    backup: 'teampulse-backup.json',
+  },
 
   setSyncStatusUI(status, msg) {
     const el=document.getElementById('gdrive-status');
@@ -4220,11 +4338,12 @@ const _gdrive = {
     if(btn)btn.textContent=this.enabled?'🔌 قطع Drive':'☁️ اتصال Drive';
   },
 
-  async ensureToken() {
+  async ensureToken(allowPrompt) {
     if(this.token&&Date.now()<this.tokenExpiry)return this.token;
     if(_db._gdrive_token&&_db._gdrive_token_expiry>Date.now()){
       this.token=_db._gdrive_token;this.tokenExpiry=_db._gdrive_token_expiry;return this.token;
     }
+    if(!allowPrompt)throw new Error('برای ارسال به Drive دوباره وصل شو');
     return this.requestToken();
   },
 
@@ -4307,134 +4426,232 @@ const _gdrive = {
   },
 
   async req(url,opts={}) {
-    const token=await this.ensureToken();
-    const res=await fetch(url,{...opts,headers:{'Authorization':'Bearer '+token,...(opts.headers||{})}});
+    const allowPrompt=!!opts.allowPrompt;
+    const token=await this.ensureToken(allowPrompt);
+    const headers={'Authorization':'Bearer '+token,...(opts.headers||{})};
+    const rest={...opts};
+    delete rest.allowPrompt;
+    const res=await fetch(url,{...rest,headers});
     if(res.status===401){this.token=null;this.tokenExpiry=0;delete _db._gdrive_token;delete _db._gdrive_token_expiry;_save(false);throw new Error('نیاز به ورود مجدد');}
     return res;
   },
 
+  driveQuery(query) {
+    return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1&spaces=drive`;
+  },
+
+  async findNamed(name, parentId) {
+    const safeName = String(name).replace(/'/g, "\\'");
+    const query = parentId
+      ? `name='${safeName}' and '${parentId}' in parents and trashed=false`
+      : `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const res = await this.req(this.driveQuery(query));
+    const j = await res.json().catch(()=>({}));
+    return j.files?.[0]?.id || null;
+  },
+
+  async createFolder(name, parentId) {
+    const existing = await this.findNamed(name, parentId || null);
+    if (existing) return existing;
+    const res = await this.req('https://www.googleapis.com/drive/v3/files?fields=id', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, mimeType:'application/vnd.google-apps.folder', ...(parentId ? {parents:[parentId]} : {})}),
+    });
+    if (!res.ok) throw new Error('ساخت پوشه Drive ناموفق: ' + res.status);
+    const j = await res.json();
+    return j.id;
+  },
+
+  async uploadBytes(name, parentId, mime, body, fileId) {
+    const boundary = '----tp_gdrive_' + Date.now();
+    const url = fileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+    const meta = JSON.stringify({name, mimeType:mime, ...(fileId ? {} : {parents:[parentId]})});
+    const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}; charset=UTF-8\r\n\r\n${body}\r\n--${boundary}--`;
+    const res = await this.req(url, {method:fileId?'PATCH':'POST', headers:{'Content-Type':`multipart/related; boundary="${boundary}"`}, body:multipart});
+    if (!res.ok) {
+      if (fileId && (res.status === 404 || res.status === 403)) return this.uploadBytes(name, parentId, mime, body, null);
+      throw new Error('آپلود ناموفق: ' + res.status);
+    }
+    if (fileId) return fileId;
+    const j = await res.json();
+    return j.id;
+  },
+
+  fileIds() {
+    if (!_db._gdrive_file_ids || typeof _db._gdrive_file_ids !== 'object') _db._gdrive_file_ids = {};
+    return _db._gdrive_file_ids;
+  },
+
+  async ensureLayout() {
+    const ids = this.fileIds();
+    ids.root = ids.root || _db._gdrive_folder_id || await this.createFolder(this.ROOT_NAME);
+    _db._gdrive_folder_id = ids.root;
+    ids.studentsFolder = ids.studentsFolder || await this.createFolder(this.FOLDERS.students, ids.root);
+    ids.sessionsFolder = ids.sessionsFolder || await this.createFolder(this.FOLDERS.sessions, ids.root);
+    ids.paymentsFolder = ids.paymentsFolder || await this.createFolder(this.FOLDERS.payments, ids.root);
+    ids.backupFolder = ids.backupFolder || await this.createFolder(this.FOLDERS.backup, ids.root);
+    return ids;
+  },
+
   async findFile() {
-    if(this.fileId)return this.fileId;
-    if(_db._gdrive_file_id){this.fileId=_db._gdrive_file_id;return this.fileId;}
-    const res=await this.req(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D'${this.FILE_NAME}'&fields=files(id)&pageSize=1`);
-    const j=await res.json();
-    if(j.files?.length){this.fileId=j.files[0].id;_db._gdrive_file_id=this.fileId;_save(false);}
-    return this.fileId||null;
+    const ids = this.fileIds();
+    if (ids.backup) { this.fileId = ids.backup; return ids.backup; }
+    if (_db._gdrive_file_id) { this.fileId = _db._gdrive_file_id; ids.backup = this.fileId; return this.fileId; }
+    const layout = await this.ensureLayout();
+    const found = await this.findNamed(this.FILES.backup, layout.backupFolder);
+    if (found) {
+      this.fileId = found;
+      ids.backup = found;
+      _db._gdrive_file_id = found;
+      _save(false);
+    }
+    return found || null;
   },
 
   async push() {
-    const body=JSON.stringify(_serverSafeData(_db));
-    const boundary='----coaching_boundary';
-    const fileId=await this.findFile();
-    const url=fileId
-      ?`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-      :`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id`;
-    const meta=JSON.stringify({name:this.FILE_NAME,...(fileId?{}:{parents:['appDataFolder']})});
-    const multipart=`--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
-    const res=await this.req(url,{method:fileId?'PATCH':'POST',headers:{'Content-Type':`multipart/related; boundary="${boundary}"`},body:multipart});
-    if(!res.ok)throw new Error('آپلود ناموفق: '+res.status);
-    if(!fileId){const j=await res.json();this.fileId=j.id;_db._gdrive_file_id=j.id;_save(false);}
+    const layout = await this.ensureLayout();
+    const ids = this.fileIds();
+    ids.students = await this.uploadBytes(this.FILES.students, layout.studentsFolder, 'text/csv', _gdriveStudentsCsv(), ids.students);
+    ids.sessions = await this.uploadBytes(this.FILES.sessions, layout.sessionsFolder, 'text/csv', _gdriveSessionsCsv(), ids.sessions);
+    ids.payments = await this.uploadBytes(this.FILES.payments, layout.paymentsFolder, 'text/csv', _gdrivePaymentsCsv(), ids.payments);
+    const backupId = await this.uploadBytes(this.FILES.backup, layout.backupFolder, 'application/json', JSON.stringify(_serverSafeData(_db)), ids.backup || this.fileId);
+    ids.backup = backupId;
+    this.fileId = backupId;
+    _db._gdrive_file_id = backupId;
+    _db._gdrive_file_ids = ids;
+    _save(false);
     return true;
   },
 
   async pull() {
-    const fileId=await this.findFile();
-    if(!fileId)return null;
-    const res=await this.req(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
-    if(!res.ok)return null;
+    const fileId = await this.findFile();
+    if (!fileId) return null;
+    const res = await this.req(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    if (!res.ok) return null;
     return res.json();
   },
 
   schedulePush() {
     clearTimeout(this.timer);
-    this.timer=setTimeout(async()=>{
-      this.setSyncStatusUI('syncing','در حال آپلود...');
-      try{await this.push();this.setSyncStatusUI('ok','سینک شد ✓');}
-      catch(e){this.setSyncStatusUI('error',e.message);}
-    },3000);
+    this.timer = setTimeout(async () => {
+      this.setSyncStatusUI('syncing', 'در حال ارسال به Drive...');
+      try {
+        await this.push();
+        this.setSyncStatusUI('ok', 'شاگردان و جلسات در Drive به‌روز شد ✓');
+      } catch (e) {
+        this.setSyncStatusUI('error', e.message);
+      }
+    }, 3000);
+  },
+
+  startHeartbeat() {
+    clearInterval(this.beat);
+    this.beat = setInterval(() => {
+      if (!this.enabled) return;
+      if (!this.token || Date.now() >= this.tokenExpiry) {
+        this.setSyncStatusUI('error', 'برای ارسال به Drive دوباره وصل شو');
+        return;
+      }
+      this.schedulePush();
+    }, 5 * 60 * 1000);
   },
 
   async connect(clientId) {
-    this.clientId=clientId;
-    _db._gdrive_client_id=clientId;
+    this.clientId = clientId || APP_GOOGLE_CLIENT_ID;
+    _db._gdrive_client_id = this.clientId;
     _save(false);
-    this.setSyncStatusUI('syncing','در حال اتصال...');
-    try{
-      await this.ensureToken();
-      this.enabled=true;
-      _db._gdrive_enabled=true;
-      // Auto sync on connect
-      const remote=await this.pull();
-      const remoteTime=remote?._lastSaved||0;
-      const localTime=_db._lastSaved||0;
-      if(remote?.students&&remoteTime>localTime){
-        const creds={_gdrive_client_id:_db._gdrive_client_id,_gdrive_token:_db._gdrive_token,_gdrive_token_expiry:_db._gdrive_token_expiry,_gdrive_file_id:_db._gdrive_file_id,_gdrive_enabled:true};
-        _db={...remote,...creds};_migrate(_db);_save(false);
-        this.setSyncStatusUI('ok','داده از Drive دریافت شد ✓');
-        showToast('داده‌های جدیدتر از Google Drive دریافت شد ✓','success');
-        setTimeout(()=>location.reload(),1000);
-      } else {
-        await this.push();
-        this.setSyncStatusUI('ok','متصل و سینک شد ✓');
-        showToast('به Google Drive متصل شدی ✓','success');
-      }
-      document.getElementById('gdrive-sync-btn').textContent='🔌 قطع Drive';
-    }catch(e){
-      this.enabled=false;
-      this.setSyncStatusUI('error',e.message);
-      showToast('خطا: '+e.message,'error');
+    this.setSyncStatusUI('syncing', 'در حال اتصال...');
+    try {
+      await this.ensureToken(true);
+      this.enabled = true;
+      _db._gdrive_enabled = true;
+      await this.push();
+      this.startHeartbeat();
+      this.setSyncStatusUI('ok', 'متصل و شاگردان/جلسات ارسال شد ✓');
+      showToast('داده تیم‌پالس به Google Drive ارسال شد ✓', 'success');
+      const btn = document.getElementById('gdrive-sync-btn');
+      if (btn) btn.textContent = '🔌 قطع Drive';
+    } catch (e) {
+      this.enabled = false;
+      this.setSyncStatusUI('error', e.message);
+      showToast('خطا: ' + e.message, 'error');
     }
   },
 
   disconnect() {
-    this.enabled=false;this.token=null;this.tokenExpiry=0;this.fileId=null;
-    delete _db._gdrive_client_id;delete _db._gdrive_token;delete _db._gdrive_token_expiry;delete _db._gdrive_file_id;delete _db._gdrive_enabled;
+    this.enabled = false;
+    this.token = null;
+    this.tokenExpiry = 0;
+    clearTimeout(this.timer);
+    clearInterval(this.beat);
+    delete _db._gdrive_token;
+    delete _db._gdrive_token_expiry;
+    delete _db._gdrive_enabled;
     _save(false);
-    this.setSyncStatusUI('idle','قطع شد');
-    showToast('از Drive قطع شدی','');
-    document.getElementById('gdrive-sync-btn').textContent='☁️ اتصال Drive';
+    this.setSyncStatusUI('idle', 'قطع شد');
+    showToast('از Drive قطع شدی', '');
+    const btn = document.getElementById('gdrive-sync-btn');
+    if (btn) btn.textContent = '☁️ اتصال Drive';
   },
 
   async manualPush() {
-    this.setSyncStatusUI('syncing','در حال آپلود...');
-    try{await this.push();this.setSyncStatusUI('ok','آپلود شد ✓');showToast('آپلود به Drive ✓','success');}
-    catch(e){this.setSyncStatusUI('error',e.message);showToast('خطا: '+e.message,'error');}
+    this.setSyncStatusUI('syncing', 'در حال آپلود...');
+    try {
+      await this.ensureToken(true);
+      await this.push();
+      this.setSyncStatusUI('ok', 'آپلود شد ✓');
+      showToast('آپلود به Drive ✓', 'success');
+    } catch (e) {
+      this.setSyncStatusUI('error', e.message);
+      showToast('خطا: ' + e.message, 'error');
+    }
   },
 
   async manualPull() {
-    this.setSyncStatusUI('syncing','در حال دریافت...');
-    try{
-      const remote=await this.pull();
-      if(!remote?.students){showToast('فایلی در Drive یافت نشد','error');this.setSyncStatusUI('idle','فایلی نیست');return;}
-      const creds={_gdrive_client_id:_db._gdrive_client_id,_gdrive_token:_db._gdrive_token,_gdrive_token_expiry:_db._gdrive_token_expiry,_gdrive_file_id:_db._gdrive_file_id,_gdrive_enabled:true};
-      _db={...remote,...creds};_migrate(_db);_save(false);
-      this.setSyncStatusUI('ok','دریافت شد ✓');showToast('داده از Drive دریافت شد ✓','success');
-      setTimeout(()=>location.reload(),800);
-    }catch(e){this.setSyncStatusUI('error',e.message);showToast('خطا: '+e.message,'error');}
+    this.setSyncStatusUI('syncing', 'در حال دریافت...');
+    try {
+      await this.ensureToken(true);
+      const remote = await this.pull();
+      if (!remote?.students) {
+        showToast('فایلی در Drive یافت نشد', 'error');
+        this.setSyncStatusUI('idle', 'فایلی نیست');
+        return;
+      }
+      const creds = _gdrivePersistCreds({_gdrive_enabled: true});
+      _db = {...remote, ...creds};
+      _migrate(_db);
+      _save(false);
+      this.setSyncStatusUI('ok', 'دریافت شد ✓');
+      showToast('داده از Drive دریافت شد ✓', 'success');
+      setTimeout(() => location.reload(), 800);
+    } catch (e) {
+      this.setSyncStatusUI('error', e.message);
+      showToast('خطا: ' + e.message, 'error');
+    }
   },
 
   async initOnLoad() {
-    this.clientId=_db._gdrive_client_id||'';
-    if(_db._gdrive_enabled&&this.clientId){
-      this.enabled=true;
-      if(_db._gdrive_token&&_db._gdrive_token_expiry>Date.now()){
-        this.token=_db._gdrive_token;this.tokenExpiry=_db._gdrive_token_expiry;
+    this.clientId = _db._gdrive_client_id || APP_GOOGLE_CLIENT_ID;
+    if (_db._gdrive_enabled && this.clientId) {
+      this.enabled = true;
+      if (_db._gdrive_token && _db._gdrive_token_expiry > Date.now()) {
+        this.token = _db._gdrive_token;
+        this.tokenExpiry = _db._gdrive_token_expiry;
       }
-      if(_db._gdrive_file_id)this.fileId=_db._gdrive_file_id;
-      this.setSyncStatusUI('ok','متصل');
-      document.getElementById('gdrive-sync-btn').textContent='🔌 قطع Drive';
-      // Check for newer remote on startup
-      try{
-        const remote=await this.pull();
-        if(remote?.students&&(remote._lastSaved||0)>(_db._lastSaved||0)+5000){
-          const creds={_gdrive_client_id:_db._gdrive_client_id,_gdrive_token:_db._gdrive_token,_gdrive_token_expiry:_db._gdrive_token_expiry,_gdrive_file_id:_db._gdrive_file_id,_gdrive_enabled:true};
-          _db={...remote,...creds};_migrate(_db);_save(false);
-          showToast('داده جدیدتر از Drive دریافت شد ✓','success');
-          setTimeout(()=>location.reload(),800);
-        }
-      }catch(e){console.log('Startup sync:',e.message);}
+      if (_db._gdrive_file_id) this.fileId = _db._gdrive_file_id;
+      this.setSyncStatusUI('ok', this.token ? 'متصل' : 'برای ارسال دوباره وصل شو');
+      const btn = document.getElementById('gdrive-sync-btn');
+      if (btn) btn.textContent = '🔌 قطع Drive';
+      this.startHeartbeat();
+      if (this.token) {
+        try { await this.push(); this.setSyncStatusUI('ok', 'شاگردان و جلسات در Drive به‌روز شد ✓'); }
+        catch (e) { this.setSyncStatusUI('error', e.message); }
+      }
     } else {
-      this.setSyncStatusUI('idle','متصل نشده');
+      this.setSyncStatusUI('idle', 'متصل نشده');
     }
   },
 };
@@ -12296,6 +12513,24 @@ async function renderSettings() {
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
         برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
+      </p>
+    </div>
+
+    <div class="detail-section">
+      <h3>☁️ اتصال به Google Drive</h3>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        بعد از اتصال، لیست شاگردان و جلسات هر شاگرد جداگانه به پوشه «TeamPulse — خروجی خودکار» در گوگل درایو فرستاده می‌شود و با هر ذخیره در اپ به‌روز می‌شود.
+      </p>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <button class="btn ${_gdrive.enabled?'btn-danger':'btn-primary'}" id="gdrive-sync-btn" onclick="gdriveConnectUI()">
+          ${_gdrive.enabled?'🔌 قطع Drive':'☁️ اتصال Drive'}
+        </button>
+        ${_gdrive.enabled ? `<button class="btn btn-ghost" onclick="gdriveManualPushUI()">⬆️ ارسال الان</button>` : ''}
+      </div>
+      <div id="gdrive-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
+      ${_db._gdrive_folder_id ? `<p style="font-size:11px;margin-top:6px"><a href="https://drive.google.com/drive/folders/${encodeURIComponent(_db._gdrive_folder_id)}" target="_blank" rel="noopener">باز کردن پوشه در Google Drive</a></p>` : ''}
+      <p style="font-size:10px;color:var(--text3);margin-top:4px">
+        توکن گوگل حدود یک ساعت معتبر است؛ اگر ارسال متوقف شد دوباره «اتصال Drive» را بزن. تا وقتی اپ باز است، هر ۵ دقیقه هم یک‌بار ارسال می‌شود.
       </p>
     </div>
   </div>
@@ -26109,11 +26344,14 @@ document.addEventListener('click', function(e) {
 
 // GDrive connect UI
 async function gdriveConnectUI() {
-  const id = document.getElementById('gdrive-client-id-input')?.value.trim();
-  if (!id || !id.includes('.apps.googleusercontent.com')) {
-    showToast('Client ID معتبر نیست','error'); return;
-  }
-  await _gdrive.connect(id);
+  if (_gdrive.enabled) { _gdrive.disconnect(); renderSettings(); return; }
+  await _gdrive.connect(APP_GOOGLE_CLIENT_ID);
+  renderSettings();
+}
+
+async function gdriveManualPushUI() {
+  await _gdrive.manualPush();
+  renderSettings();
 }
 
 // Google Calendar connect UI
@@ -26478,7 +26716,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v394';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v395';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
