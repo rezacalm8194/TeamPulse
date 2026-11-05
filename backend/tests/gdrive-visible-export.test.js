@@ -21,6 +21,9 @@ test('Drive sync writes visible student and session files, not hidden appData', 
   assert.match(app, /this\.startHeartbeat\(\)/);
   assert.doesNotMatch(app, /پنجره ورود گوگل بسته شد و اتصال کامل نشد/);
   assert.match(app, /location\.origin\+'\/oauth_callback\.html'/);
+  assert.match(app, /function _gdriveWriteSession\(/);
+  assert.match(app, /tp_gdrive_session_/);
+  assert.match(app, /await _gdrive\.initOnLoad\(\)/);
 });
 
 test('oauth callback script is external so server CSP can run it', () => {
