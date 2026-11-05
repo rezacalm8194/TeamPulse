@@ -5,6 +5,8 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..', '..');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const oauthHtml = fs.readFileSync(path.join(root, 'oauth_callback.html'), 'utf8');
+const oauthJs = fs.readFileSync(path.join(root, 'oauth_callback.js'), 'utf8');
 
 test('Drive sync writes visible student and session files, not hidden appData', () => {
   assert.match(app, /SCOPE:\s*'https:\/\/www\.googleapis\.com\/auth\/drive\.file'/);
@@ -19,6 +21,14 @@ test('Drive sync writes visible student and session files, not hidden appData', 
   assert.match(app, /this\.startHeartbeat\(\)/);
   assert.doesNotMatch(app, /پنجره ورود گوگل بسته شد و اتصال کامل نشد/);
   assert.match(app, /location\.origin\+'\/oauth_callback\.html'/);
+});
+
+test('oauth callback script is external so server CSP can run it', () => {
+  assert.doesNotMatch(oauthHtml, /<script>\s*\(/);
+  assert.match(oauthHtml, /<script src="\/oauth_callback\.js\?v=tp\d+">/);
+  assert.match(oauthJs, /access_token/);
+  assert.match(oauthJs, /teampulse_oauth_result_/);
+  assert.match(oauthJs, /BroadcastChannel/);
 });
 
 test('student session csv keeps student identity columns', () => {

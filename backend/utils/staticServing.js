@@ -38,6 +38,7 @@ const PUBLIC_STATIC_ROOT_FILES = new Set([
   'app.html',
   'privacy.html',
   'oauth_callback.html',
+  'oauth_callback.js',
   '502.html',
   'app.js',
   'app.css',
