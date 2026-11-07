@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp401';
+const TP_ASSET_V = 'tp402';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4796,6 +4796,10 @@ const _gdrive = {
         if (_db._gdrive_file_id) this.fileId = _db._gdrive_file_id;
         const btn = document.getElementById('gdrive-sync-btn');
         if (btn) btn.textContent = '🔌 قطع Drive';
+        if (!_authTokenUsable(_sbSession?.token)) {
+          this.setSyncStatusUI(this.token ? 'ok' : 'idle', this.token ? 'متصل' : 'متصل نشده');
+          return;
+        }
         this.startHeartbeat();
         this.setSyncStatusUI('syncing', 'در حال بازیابی اتصال Drive...');
         try {
@@ -22271,7 +22275,6 @@ async function _authOnSuccess() {
   }
   window._activeDBKey = _teamActiveDBKey();
   await _loadPrimaryDatabase();
-  try { await _gdrive.initOnLoad(); } catch (e) {}
   // init() can render the todo list and schedule a save. Keep that save local
   // until the authoritative server etag has been refreshed below.
   window._initialServerLoadPending = true;
@@ -26864,7 +26867,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v401';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v402';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

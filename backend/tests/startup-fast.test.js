@@ -87,6 +87,7 @@ test('workspace registry sync is not on the first-paint path', () => {
   const auth = appJs.slice(appJs.indexOf('async function _authOnSuccess()'), appJs.indexOf('await init();'));
   assert.match(auth, /await _loadPrimaryDatabase\(\)/);
   assert.doesNotMatch(auth, /await _refreshWorkspacesFromServer\(\)/);
+  assert.doesNotMatch(auth, /await _gdrive\.initOnLoad\(\)/);
 });
 
 test('desktop push uses PNG assets and in-app fallback', () => {
