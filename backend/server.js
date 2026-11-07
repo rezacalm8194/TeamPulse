@@ -211,6 +211,7 @@ app.use('/api/share', require('./routes/share'));
 app.use('/api/bale', require('./routes/bale'));
 app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/wallet', require('./routes/wallet'));
+app.use('/api/google', require('./routes/google'));
 app.use('/api/speech', speechLimiter, require('./routes/speech'));
 console.log('Speech API loaded');
 function _clientAssetFromAppJs() {

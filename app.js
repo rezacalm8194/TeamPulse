@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp400';
+const TP_ASSET_V = 'tp401';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4337,6 +4337,18 @@ function _gdriveApplySession(sess) {
   if (sess.fileIds) _db._gdrive_file_ids = sess.fileIds;
   return true;
 }
+function _gdriveB64url(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function _gdrivePkcePair() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const verifier = _gdriveB64url(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return { verifier, challenge: _gdriveB64url(new Uint8Array(digest)) };
+}
 
 const _gdrive = {
   enabled: false,
@@ -4372,25 +4384,96 @@ const _gdrive = {
     if(btn)btn.textContent=this.enabled?'🔌 قطع Drive':'☁️ اتصال Drive';
   },
 
+  applyAccessToken(token, expiresIn) {
+    const ttl = (Number(expiresIn) || 3600) - 60;
+    this.token = token;
+    this.tokenExpiry = Date.now() + Math.max(ttl, 60) * 1000;
+    _db._gdrive_token = this.token;
+    _db._gdrive_token_expiry = this.tokenExpiry;
+    _db._gdrive_enabled = true;
+    this.enabled = true;
+    _save(false);
+    _gdriveWriteSession();
+    return this.token;
+  },
+
+  async serverOauthReady() {
+    if (this._oauthReady != null) return this._oauthReady;
+    try {
+      const res = await _apiFetch('/api/google/drive/status');
+      const j = await res.json().catch(() => ({}));
+      this._oauthReady = !!(res.ok && j.configured);
+      this._oauthConnected = !!(res.ok && j.connected);
+    } catch (e) {
+      this._oauthReady = false;
+    }
+    return this._oauthReady;
+  },
+
+  async silentRefresh() {
+    const res = await _apiFetch('/api/google/drive/refresh', { method: 'POST', body: '{}' });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) return null;
+    return this.applyAccessToken(j.access_token, j.expires_in);
+  },
+
+  async exchangeCode(code, redirectUri, verifier) {
+    const res = await _apiFetch('/api/google/drive/exchange', {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier || '',
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) {
+      throw new Error(j.message || j.error || 'تبادل کد گوگل ناموفق');
+    }
+    this._oauthConnected = true;
+    return this.applyAccessToken(j.access_token, j.expires_in);
+  },
+
   async ensureToken(allowPrompt, opts) {
     if(this.token&&Date.now()<this.tokenExpiry)return this.token;
     if(_db._gdrive_token&&_db._gdrive_token_expiry>Date.now()){
       this.token=_db._gdrive_token;this.tokenExpiry=_db._gdrive_token_expiry;return this.token;
     }
-    if(!allowPrompt)throw new Error('برای ارسال به Drive دوباره وصل شو');
+    try {
+      const fresh = await this.silentRefresh();
+      if (fresh) return fresh;
+    } catch (e) {}
+    if(!allowPrompt)throw new Error('برای ارسال به Drive دوباره از تنظیمات وصل شو');
     return this.requestToken(opts);
   },
 
   async requestToken(opts) {
     if(!this.clientId)throw new Error('Client ID تنظیم نشده');
+    const useCode = await this.serverOauthReady();
+    const pkce = useCode ? await _gdrivePkcePair() : { verifier: '', challenge: '' };
     return new Promise((resolve,reject)=>{
       const w=window.open('','_blank','width=500,height=650');
       if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gdrive_'+Math.random().toString(36).slice(2);
       const resultKey='teampulse_oauth_result_'+state;
       const redirectUri=location.origin+'/oauth_callback.html';
-      const prompt = opts && opts.consent === false ? '' : '&prompt=consent';
-      const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}${prompt}`;
+      const params=new URLSearchParams({
+        client_id: this.clientId,
+        redirect_uri: redirectUri,
+        scope: this.SCOPE,
+        state,
+      });
+      if(useCode){
+        params.set('response_type','code');
+        params.set('access_type','offline');
+        params.set('include_granted_scopes','true');
+        params.set('code_challenge', pkce.challenge);
+        params.set('code_challenge_method','S256');
+      }else{
+        params.set('response_type','token');
+      }
+      if(!(opts && opts.consent===false)) params.set('prompt','consent');
+      const url='https://accounts.google.com/o/oauth2/v2/auth?'+params.toString();
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       let done=false;
@@ -4409,15 +4492,22 @@ const _gdrive = {
         if(data.state!==state)return false;
         cleanup();
         try{localStorage.removeItem(resultKey);}catch(e){}
-        if(data.error){reject(new Error(data.error));return true;}
-        this.token=data.token;
-        this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
-        _db._gdrive_token=this.token;_db._gdrive_token_expiry=this.tokenExpiry;
-        _db._gdrive_enabled=true;
-        this.enabled=true;
-        _save(false);
-        _gdriveWriteSession();
-        resolve(this.token);
+        const finish=async()=>{
+          try{
+            if(data.error)throw new Error(data.error);
+            if(data.code){
+              await this.exchangeCode(data.code, redirectUri, pkce.verifier);
+              resolve(this.token);
+              return;
+            }
+            if(!data.token)throw new Error('no_token_returned');
+            this.applyAccessToken(data.token, data.expires_in);
+            resolve(this.token);
+          }catch(err){
+            reject(err);
+          }
+        };
+        finish();
         return true;
       };
       const handler=e=>{
@@ -4452,7 +4542,18 @@ const _gdrive = {
     const rest={...opts};
     delete rest.allowPrompt;
     const res=await fetch(url,{...rest,headers});
-    if(res.status===401){this.token=null;this.tokenExpiry=0;delete _db._gdrive_token;delete _db._gdrive_token_expiry;_save(false);throw new Error('نیاز به ورود مجدد');}
+    if(res.status===401){
+      this.token=null;this.tokenExpiry=0;delete _db._gdrive_token;delete _db._gdrive_token_expiry;
+      try {
+        const fresh = await this.silentRefresh();
+        if (fresh) {
+          headers.Authorization = 'Bearer ' + fresh;
+          return fetch(url, {...rest, headers});
+        }
+      } catch (e) {}
+      _save(false);
+      throw new Error('نیاز به ورود مجدد');
+    }
     return res;
   },
 
@@ -4547,7 +4648,7 @@ const _gdrive = {
   },
 
   async push() {
-    await this.ensureToken(!!this.enabled, { consent: false });
+    await this.ensureToken(false);
     const layout = await this.ensureLayout();
     const ids = this.fileIds();
     ids.students = await this.uploadBytes(this.FILES.students, layout.studentsFolder, 'text/csv', _gdriveStudentsCsv(), ids.students);
@@ -4590,11 +4691,11 @@ const _gdrive = {
       if (!this.enabled) return;
       try {
         if (!this.token || Date.now() >= this.tokenExpiry) {
-          await this.ensureToken(true, { consent: false });
+          await this.ensureToken(false);
         }
         this.schedulePush();
       } catch (e) {
-        this.setSyncStatusUI('error', 'اتصال ماند؛ برای ادامه ارسال گوگل را تأیید کن');
+        this.setSyncStatusUI('error', 'اتصال ذخیره شد؛ برای ادامه ارسال یک‌بار از تنظیمات وصل شو');
       }
     }, 5 * 60 * 1000);
   },
@@ -4602,10 +4703,11 @@ const _gdrive = {
   async connect(clientId) {
     this.clientId = clientId || APP_GOOGLE_CLIENT_ID;
     _db._gdrive_client_id = this.clientId;
+    this._oauthReady = null;
     _save(false);
     this.setSyncStatusUI('syncing', 'در حال اتصال...');
     try {
-      await this.ensureToken(true);
+      await this.requestToken({ consent: true });
       this.enabled = true;
       _db._gdrive_enabled = true;
       _save(true, { urgent: true });
@@ -4627,12 +4729,14 @@ const _gdrive = {
     this.enabled = false;
     this.token = null;
     this.tokenExpiry = 0;
+    this._oauthConnected = false;
     clearTimeout(this.timer);
     clearInterval(this.beat);
     delete _db._gdrive_token;
     delete _db._gdrive_token_expiry;
     delete _db._gdrive_enabled;
     _gdriveClearSession();
+    try { _apiFetch('/api/google/drive', { method: 'DELETE' }); } catch (e) {}
     _save(false);
     this.setSyncStatusUI('idle', 'قطع شد');
     showToast('از Drive قطع شدی', '');
@@ -4693,18 +4797,18 @@ const _gdrive = {
         const btn = document.getElementById('gdrive-sync-btn');
         if (btn) btn.textContent = '🔌 قطع Drive';
         this.startHeartbeat();
-        if (this.token) {
-          this.setSyncStatusUI('ok', 'متصل');
-          try { await this.push(); this.setSyncStatusUI('ok', 'شاگردان و جلسات در Drive به‌روز شد ✓'); }
-          catch (e) { this.setSyncStatusUI('error', e.message); }
-        } else {
-          this.setSyncStatusUI('syncing', 'در حال بازیابی اتصال Drive...');
-          try {
-            await this.ensureToken(true, { consent: false });
-            await this.push();
-            this.setSyncStatusUI('ok', 'اتصال Drive بازیابی شد ✓');
-          } catch (e) {
-            this.setSyncStatusUI('error', 'اتصال ماند؛ برای ادامه ارسال گوگل را تأیید کن');
+        this.setSyncStatusUI('syncing', 'در حال بازیابی اتصال Drive...');
+        try {
+          await this.ensureToken(false);
+          await this.push();
+          this.setSyncStatusUI('ok', 'شاگردان و جلسات در Drive به‌روز شد ✓');
+        } catch (e) {
+          if (this.token) this.setSyncStatusUI('ok', 'متصل');
+          else {
+            this.enabled = false;
+            this.setSyncStatusUI('error', 'یک‌بار از تنظیمات «اتصال Drive» را بزن تا ورود ماندگار شود');
+            const reconnect = document.getElementById('gdrive-sync-btn');
+            if (reconnect) reconnect.textContent = '☁️ اتصال Drive';
           }
         }
       } else {
@@ -12561,7 +12665,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>☁️ اتصال به Google Drive</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        بعد از اتصال، لیست شاگردان و جلسات هر شاگرد جداگانه به پوشه «TeamPulse — خروجی خودکار» در گوگل درایو فرستاده می‌شود و با هر ذخیره در اپ به‌روز می‌شود.
+        یک‌بار از همین‌جا وصل شو. بعد از آن اتصال می‌ماند و با بستن اپ نیاز به ورود دوباره نیست. لیست شاگردان و جلسات به پوشه «TeamPulse — خروجی خودکار» فرستاده می‌شود.
       </p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button class="btn ${_gdrive.enabled?'btn-danger':'btn-primary'}" id="gdrive-sync-btn" onclick="gdriveConnectUI()">
@@ -12572,7 +12676,7 @@ async function renderSettings() {
       <div id="gdrive-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       ${_db._gdrive_folder_id ? `<p style="font-size:11px;margin-top:6px"><a href="https://drive.google.com/drive/folders/${encodeURIComponent(_db._gdrive_folder_id)}" target="_blank" rel="noopener">باز کردن پوشه در Google Drive</a></p>` : ''}
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
-        توکن گوگل حدود یک ساعت معتبر است؛ اگر ارسال متوقف شد دوباره «اتصال Drive» را بزن. تا وقتی اپ باز است، هر ۵ دقیقه هم یک‌بار ارسال می‌شود.
+        ورود گوگل فقط از همین دکمه انجام می‌شود؛ باز کردن برنامه پنجره گوگل را نشان نمی‌دهد.
       </p>
     </div>
   </div>
@@ -26760,7 +26864,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v400';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v401';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

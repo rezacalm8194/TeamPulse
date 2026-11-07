@@ -6,6 +6,7 @@
     return hashParams.get(name) || queryParams.get(name);
   }
   const accessToken = readParam('access_token');
+  const authCode = readParam('code');
   const expiresIn = Number(readParam('expires_in') || 3600);
   const state = readParam('state') || '';
   const error = readParam('error');
@@ -21,16 +22,18 @@
     : {
       type: messageType,
       token: accessToken,
+      code: authCode,
       expires_in: Number.isFinite(expiresIn) ? expiresIn : 3600,
       state: state
     };
-  if (!error && !accessToken) payload.error = 'no_token_returned';
+  if (!error && !accessToken && !authCode) payload.error = 'no_token_returned';
 
   try {
     localStorage.setItem('teampulse_oauth_result_' + state, JSON.stringify({
       type: payload.type,
       error: payload.error || null,
       token: payload.token || null,
+      code: payload.code || null,
       expires_in: payload.expires_in || 3600,
       state: payload.state,
       saved_at: Date.now()

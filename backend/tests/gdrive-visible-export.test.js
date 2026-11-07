@@ -30,6 +30,7 @@ test('oauth callback script is external so server CSP can run it', () => {
   assert.doesNotMatch(oauthHtml, /<script>\s*\(/);
   assert.match(oauthHtml, /<script src="\/oauth_callback\.js\?v=tp\d+">/);
   assert.match(oauthJs, /access_token/);
+  assert.match(oauthJs, /readParam\('code'\)/);
   assert.match(oauthJs, /teampulse_oauth_result_/);
   assert.match(oauthJs, /BroadcastChannel/);
 });
