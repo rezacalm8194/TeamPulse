@@ -77,6 +77,14 @@ test('staff role rows all include add-item UI like bonus', () => {
   assert.match(extraSource, /container\.insertAdjacentHTML\('beforeend', staffRoleRowHtml\(newRole/);
 });
 
+test('staff payment history shows month roles as expandable chips', () => {
+  assert.match(extraSource, /function staffPayRolesHtml\(/);
+  assert.match(extraSource, /function findStaffMonthlyForPayment\(/);
+  assert.match(extraSource, /class="staff-pay-roles"/);
+  assert.match(extraSource, /staffPayRolesHtml\(monthRec\.roles, monthRec\.fixed_salary\)/);
+  assert.match(extraSource, /staffPayRolesHtml\(m\.roles, m\.fixed_salary\)/);
+});
+
 test('staff account modal footer shows live grand total', () => {
   assert.match(extraSource, /id="staff-modal-grand-total"/);
   assert.match(extraSource, /function updateStaffModalGrandTotal\(/);
