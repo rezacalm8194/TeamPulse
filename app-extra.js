@@ -974,6 +974,7 @@ async function renderStaff() {
         <td>
           <span class="amount amount-paid">${fmt(m.grand_total)} تومان</span>
           ${m.adj_total !== 0 ? `<div style="font-size:10px;color:${m.adj_total>0?'var(--green)':'var(--red)'};margin-top:2px">(حقوق: ${fmt(m.total)} ${m.adj_total>0?'+ پاداش':'- جریمه'}: ${fmt(Math.abs(m.adj_total))})</div>` : ''}
+          ${staffPayRolesHtml(m.roles, m.fixed_salary)}
         </td>
         <td data-label="عملیات">
           <div class="row-menu">
@@ -1382,6 +1383,69 @@ function staffRoleTagSuffix(r) {
 
 function isStaffBonusRoleLabel(label) {
   return /پاداش|bonus/i.test(label || '');
+}
+
+function findStaffMonthlyForPayment(payment, monthlyRecords) {
+  const list = monthlyRecords || [];
+  if (payment?.monthly_id != null && payment.monthly_id !== '') {
+    const byId = list.find(m => String(m.id) === String(payment.monthly_id));
+    if (byId) return byId;
+  }
+  const note = String(payment?.note || '').trim();
+  if (!note) return null;
+  return list.find(m => note === `حقوق ${m.label}`) || null;
+}
+
+function staffPayRoleItemHtml(role, item) {
+  const isBonus = isStaffBonusRoleLabel(role.role_label || role.label);
+  const note = String(item.note || '').trim();
+  const count = Math.max(0, +(item.count || 0));
+  const unit = _staffRoleItemRate(role, item);
+  const noteHtml = note ? `<span class="staff-pay-item-note">${escapeHtml(note)}</span>` : '';
+  if (isBonus) {
+    return `<li>${noteHtml}${noteHtml && unit ? '<span class="staff-pay-item-dot">·</span>' : ''}${unit ? `<span class="staff-pay-item-amt">${fmt(unit)} تومان</span>` : ''}</li>`;
+  }
+  const total = unit * count;
+  const bits = [
+    noteHtml,
+    unit ? `<span class="staff-pay-item-amt">${fmt(unit)}</span>` : '',
+    count ? `<span class="staff-pay-item-count">× ${fa(count)}</span>` : '',
+    total ? `<span class="staff-pay-item-total">${fmt(total)} تومان</span>` : '',
+  ].filter(Boolean);
+  return `<li>${bits.join('<span class="staff-pay-item-dot">·</span>')}</li>`;
+}
+
+function staffPayRoleChipHtml(role, amount, items) {
+  const label = role.role_label || role.label || 'نقش';
+  const isBonus = isStaffBonusRoleLabel(label);
+  const count = items.reduce((a, i) => a + Math.max(0, +(i.count || 0)), 0);
+  const meta = isBonus
+    ? (items.length > 1 ? `${fa(items.length)} آیتم` : '')
+    : (count > 0 ? `${fa(count)} نفر` : '');
+  const head = `
+    <span class="staff-pay-role-name">${escapeHtml(label)}</span>
+    ${meta ? `<span class="staff-pay-role-meta">${meta}</span>` : ''}
+    <span class="staff-pay-role-amt">${amount ? `${fmt(amount)} تومان` : '—'}</span>`;
+  if (!items.length) return `<div class="staff-pay-role">${head}</div>`;
+  return `<details class="staff-pay-role is-expandable">
+    <summary>${head}</summary>
+    <ul class="staff-pay-role-items">${items.map(item => staffPayRoleItemHtml(role, item)).join('')}</ul>
+  </details>`;
+}
+
+function staffPayRolesHtml(roles, fixedSalary = 0) {
+  const chips = [];
+  if (+fixedSalary > 0) {
+    chips.push(staffPayRoleChipHtml({ role_label: 'حقوق ثابت' }, +fixedSalary, []));
+  }
+  (roles || []).forEach(role => {
+    const items = _staffRoleFilledItems(role);
+    const amount = +(role.amount || 0) || _staffRolePayTotal(role);
+    if (!amount && !items.length) return;
+    chips.push(staffPayRoleChipHtml(role, amount, items));
+  });
+  if (!chips.length) return '';
+  return `<div class="staff-pay-roles">${chips.join('')}</div>`;
 }
 
 function staffBonusItemsFromRole(role) {
@@ -1943,15 +2007,24 @@ async function openStaffDetail(id) {
 
     <div class="detail-section">
       <h3>💰 حقوق و دستمزد (پرداخت‌های آزاد) <button class="btn btn-ghost btn-sm" style="margin-right:8px" onclick="openStaffPayment(${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">+ ثبت پرداخت</button></h3>
-      ${payments.length===0?'<p style="font-size:12px;color:var(--text3)">پرداختی ثبت نشده</p>':payments.slice(0,10).map(p=>`
-        <div class="detail-row">
-          <span class="detail-key">${DateService.disp(p.date_jalali)}${p.note?` — ${escapeHtml(p.note)}`:''}</span>
-          <span class="detail-val amount-paid" style="display:flex;align-items:center;gap:6px">
-            ${fmt(p.amount)} تومان
-            <button class="btn btn-ghost btn-sm" onclick="openEditStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
-          </span>
-        </div>`).join('')}
+      ${payments.length===0?'<p style="font-size:12px;color:var(--text3)">پرداختی ثبت نشده</p>':payments.slice(0,10).map(p=>{
+        const monthRec = findStaffMonthlyForPayment(p, monthly);
+        return `
+        <div class="staff-pay-history-item">
+          <div class="staff-pay-history-top">
+            <div>
+              <div class="staff-pay-history-date">${DateService.disp(p.date_jalali)}</div>
+              ${p.note ? `<div class="staff-pay-history-note">${escapeHtml(p.note)}</div>` : ''}
+            </div>
+            <span class="detail-val amount-paid" style="display:flex;align-items:center;gap:6px">
+              ${fmt(p.amount)} تومان
+              <button class="btn btn-ghost btn-sm" onclick="openEditStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteStaffPayment(${p.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
+            </span>
+          </div>
+          ${monthRec ? staffPayRolesHtml(monthRec.roles, monthRec.fixed_salary) : ''}
+        </div>`;
+      }).join('')}
     </div>
 
     <div class="detail-section">
@@ -1978,17 +2051,19 @@ async function openStaffDetail(id) {
           else trendBadge = `<span style="color:var(--text3);font-size:11px">= بدون تغییر</span>`;
         }
         return `
-        <div class="detail-row">
-          <span class="detail-key">
-            ${escapeHtml(m.label)} ${trendBadge}${m.paid?' <span class="status status-ok" style="margin-right:4px">پرداخت‌شده</span>':''}
-            ${m.roles && m.roles.length ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">${m.roles.map(r=>`${escapeHtml(r.role_label)}: ${fmt(r.amount)}`).join(' | ')}</div>` : ''}
-          </span>
-          <span class="detail-val" style="display:flex;align-items:center;gap:6px">
-            ${fmt(m.total)} تومان
-            ${!m.paid?`<button class="btn btn-primary btn-sm" onclick="markMonthlyPaid(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ پرداخت شد</button>`:''}
-            <button class="btn btn-ghost btn-sm" onclick="openFixMonthlyMonth(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))}, ${m.jy}, ${m.jm})">✏️ اصلاح ماه</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteMonthly(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
-          </span>
+        <div class="staff-pay-history-item">
+          <div class="staff-pay-history-top">
+            <div>
+              <div class="staff-pay-history-date">${escapeHtml(m.label)} ${trendBadge}${m.paid?' <span class="status status-ok" style="margin-right:4px">پرداخت‌شده</span>':''}</div>
+            </div>
+            <span class="detail-val" style="display:flex;align-items:center;gap:6px">
+              ${fmt(m.total)} تومان
+              ${!m.paid?`<button class="btn btn-primary btn-sm" onclick="markMonthlyPaid(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">✓ پرداخت شد</button>`:''}
+              <button class="btn btn-ghost btn-sm" onclick="openFixMonthlyMonth(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))}, ${m.jy}, ${m.jm})">✏️ اصلاح ماه</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteMonthly(${m.id}, ${id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑</button>
+            </span>
+          </div>
+          ${staffPayRolesHtml(m.roles, m.fixed_salary)}
         </div>`;
       }).join('')}
     </div>

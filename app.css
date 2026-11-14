@@ -2128,6 +2128,74 @@ input[type="date"]::-webkit-datetime-edit {
 .detail-row:last-child { border-bottom: none; }
 .detail-key { color: var(--text2); }
 .detail-val { font-weight: 500; }
+.staff-pay-history-item {
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.staff-pay-history-item:last-child { border-bottom: none; }
+.staff-pay-history-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.staff-pay-history-date { font-size: 12px; color: var(--text2); }
+.staff-pay-history-note { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.staff-pay-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.staff-pay-role {
+  background: rgba(124,106,247,.10);
+  border: 1px solid rgba(124,106,247,.22);
+  border-radius: 10px;
+  padding: 6px 10px;
+  min-width: min(100%, 148px);
+  flex: 1 1 148px;
+  max-width: 100%;
+}
+.staff-pay-role > summary,
+.staff-pay-role:not(details) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.staff-pay-role > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.staff-pay-role > summary::-webkit-details-marker { display: none; }
+.staff-pay-role.is-expandable > summary::after {
+  content: '▾';
+  color: var(--text3);
+  font-size: 10px;
+}
+.staff-pay-role-name { font-size: 11px; font-weight: 800; color: var(--text); }
+.staff-pay-role-meta { font-size: 10px; color: var(--text3); font-weight: 600; }
+.staff-pay-role-amt { font-size: 11px; font-weight: 800; color: var(--accent2); margin-right: auto; }
+.staff-pay-role-items {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+.staff-pay-role-items li {
+  font-size: 10.5px;
+  color: var(--text2);
+  line-height: 1.65;
+  background: var(--bg2);
+  border-radius: 7px;
+  padding: 5px 8px;
+}
+.staff-pay-item-note { color: var(--text); font-weight: 600; }
+.staff-pay-item-dot { margin: 0 5px; color: var(--text3); }
+.staff-pay-item-amt, .staff-pay-item-count { color: var(--text2); }
+.staff-pay-item-total { color: var(--accent2); font-weight: 700; }
 
 /* ── Dashboard two-col ──────────────────────────────────── */
 .dash-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
