@@ -112,6 +112,7 @@ test('completed today todos stay inline in the today list', () => {
   assert.doesNotMatch(todos, /todo-done-details/);
   assert.doesNotMatch(todos, /کار انجام‌شده امروز/);
   assert.match(todos, /todayTodos\.filter\(t => !mainTodayIds\.has\(t\.id\)\)\.sort\(_sortByTime\)/);
+  assert.match(todos, /if \(t\.done && !_todoIsDoneToday\(t, todayKey\)\) continue;/);
 });
 
 test('client assets stay version-synced across app.js, app.html, and sw.js', () => {
