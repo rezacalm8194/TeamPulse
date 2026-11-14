@@ -3325,6 +3325,7 @@ function _todo135IsTodayItem(t, todayKey = _jalaliToday()) {
 function _todo135TodosForPerson(personKey, todayKey = _jalaliToday()) {
   return (_db.todos || []).filter(t => {
     if (!_todoCanView(t) || t.archived) return false;
+    if (t.done && !_todoIsDoneToday(t, todayKey)) return false;
     if (_todo135PersonKey(t) !== personKey) return false;
     return _todo135IsTodayItem(t, todayKey);
   });
@@ -3819,8 +3820,10 @@ function renderTodoList(options = {}) {
   const duplicateCleanupCount = _dedupeOpenTodos();
   _archiveChanged = duplicateCleanupCount > 0;
   _db.todos.forEach(t => {
-    if (t.done && !t.archived && t.repeat && t.repeat !== 'none' && t.done_at) {
-      const parts = _jalaliFromInstant(t.done_at);
+    if (t.done && !t.archived && t.repeat && t.repeat !== 'none') {
+      const rawDoneAt = t.done_at || t.completed_at || t.completedAt;
+      if (!rawDoneAt) return;
+      const parts = _jalaliFromInstant(rawDoneAt);
       if (!parts) return;
       const [dy,dm,dd] = parts;
       const doneDayStr = _formatJalali(dy,dm,dd);
@@ -3843,12 +3846,9 @@ function renderTodoList(options = {}) {
         _archiveChanged = true;
       }
     }
-    if (t.done && !t.archived && (!t.repeat || t.repeat === 'none') && t.done_at) {
-      const parts = _jalaliFromInstant(t.done_at);
-      if (!parts) return;
-      const [dy,dm,dd] = parts;
-      const doneDayKey = _jalaliKey(_formatJalali(dy,dm,dd));
-      if (doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
+    if (t.done && !t.archived && (!t.repeat || t.repeat === 'none')) {
+      const doneDayKey = _todoDoneDayKey(t);
+      if (doneDayKey && doneDayKey < _todayK) { t.archived = true; _archiveChanged = true; }
     }
     if (!t.done && !t.archived && _isTodoRecurring(t)) {
       const scheduledKey = _jalaliKey(_todoScheduledDate(t) || '');
@@ -3916,6 +3916,9 @@ function renderTodoList(options = {}) {
   for (let i = 0; i < _allTodos.length; i++) {
     const t = _allTodos[i];
     if (!_todoCanView(t) || !_todoIsMineScope(t)) continue;
+    // تیک روزهای قبل — حتی اگر هنوز archive نشده — در لیست روزانه نماند.
+    // skipMaintenance بعد از hydrate نباید آن‌ها را یک لحظه نشان بدهد.
+    if (t.done && !_todoIsDoneToday(t, todayKey)) continue;
     if (t.archived && !_todoIsDoneToday(t, _todayKeyForFilter)) continue;
     const doneToday = _todoIsDoneToday(t, todayKey);
     if (doneToday) completedTodayTotal++;
