@@ -77,6 +77,13 @@ test('staff role rows all include add-item UI like bonus', () => {
   assert.match(extraSource, /container\.insertAdjacentHTML\('beforeend', staffRoleRowHtml\(newRole/);
 });
 
+test('staff account modal footer shows live grand total', () => {
+  assert.match(extraSource, /id="staff-modal-grand-total"/);
+  assert.match(extraSource, /function updateStaffModalGrandTotal\(/);
+  assert.match(extraSource, /row\.dataset\.payTotal = String\(total\)/);
+  assert.match(extraSource, /oninput="updateStaffModalGrandTotal\(\)"/);
+});
+
 test('staff role occurrence count is editable, persisted, and included in totals', () => {
   assert.match(extraSource, /class="form-input role-count"[^>]*oninput="updateRoleRowTotal\(this\)"/);
   assert.match(extraSource, /class="form-input bonus-count"/);
