@@ -1451,7 +1451,7 @@ function staffRoleRowHtml(role, existing) {
   const total = _staffRolePayTotal({ ...(existing || {}), amount: isBonus ? rate : defaultRate, count, bonus_items: items, label: role.label });
   const summaryText = isBonus ? `${fmt(rate)} تومان` : (count ? `${fa(count)} نفر` : 'بدون تعداد');
   return `
-    <div class="role-row staff-items-row" data-role-label="${escapeHtml(role.label)}" data-role-kind="${isBonus ? 'bonus' : 'rate'}">
+    <div class="role-row staff-items-row" data-role-label="${escapeHtml(role.label)}" data-role-kind="${isBonus ? 'bonus' : 'rate'}" data-pay-total="${total}">
       <label class="role-row-label">
         <input type="checkbox" class="role-checkbox" data-role-id="${role.id}" ${checked ? 'checked' : ''}
           onchange="onRoleCheckChange(this)">
@@ -1539,7 +1539,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
       </div>
       <div class="form-group">
         <label class="form-label">حقوق ثابت ماهانه (تومان)</label>
-        <input class="form-input amount-input" id="st-salary" type="number" value="${s?.salary||0}">
+        <input class="form-input amount-input" id="st-salary" type="number" value="${s?.salary||0}" oninput="updateStaffModalGrandTotal()">
       </div>
       <div class="form-group">
         ${calendarDateFieldHtml('st-start', s?.start_date || '', 'تاریخ شروع همکاری')}
@@ -1583,8 +1583,18 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
     { label: 'ذخیره', cls: 'btn-primary', action: editing ? `saveStaffEdit(${id})` : 'saveStaffNew()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
+  const actionsEl = document.querySelector('#modal-overlay .modal > .modal-actions');
+  if (actionsEl && !actionsEl.querySelector('#staff-modal-grand-total')) {
+    actionsEl.insertAdjacentHTML('beforeend', `
+      <div id="staff-modal-grand-total" class="staff-modal-grand-total">
+        <div class="staff-modal-grand-label">مجموع حساب</div>
+        <div class="staff-modal-grand-amount">۰ تومان</div>
+        <div class="staff-modal-grand-words"></div>
+      </div>`);
+  }
   initDatePickers();
   initAmountHints();
+  updateStaffModalGrandTotal();
 }
 
 function onRoleCheckChange(checkbox) {
@@ -1604,8 +1614,10 @@ function updateRoleRowTotal(input) {
   const amount = +(row.querySelector('.role-amount').value || 0);
   const count = +(row.querySelector('.role-count').value || 0);
   const total = amount * count;
+  row.dataset.payTotal = String(total);
   row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
   row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
+  updateStaffModalGrandTotal();
 }
 
 function updateStaffBonusTotal(elOrRow) {
@@ -1632,6 +1644,7 @@ function updateStaffBonusTotal(elOrRow) {
     });
     if (count) count.value = countValue;
   }
+  row.dataset.payTotal = String(total);
   row.querySelector('.role-total-amount').textContent = `${fmt(total)} تومان`;
   row.querySelector('.role-total-words').textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
   const summaryAmount = row.querySelector('.bonus-summary-amount');
@@ -1639,6 +1652,21 @@ function updateStaffBonusTotal(elOrRow) {
     if (isBonus) summaryAmount.textContent = `${fmt(unitRate)} تومان`;
     else summaryAmount.textContent = countValue ? `${fa(countValue)} نفر` : 'بدون تعداد';
   }
+  updateStaffModalGrandTotal();
+}
+
+function updateStaffModalGrandTotal() {
+  const el = document.getElementById('staff-modal-grand-total');
+  if (!el) return;
+  let total = +(document.getElementById('st-salary')?.value || 0);
+  document.querySelectorAll('#staff-role-rows .role-row').forEach(row => {
+    if (!row.querySelector('.role-checkbox')?.checked) return;
+    total += +(row.dataset.payTotal || 0);
+  });
+  const amountEl = el.querySelector('.staff-modal-grand-amount');
+  const wordsEl = el.querySelector('.staff-modal-grand-words');
+  if (amountEl) amountEl.textContent = `${fmt(total)} تومان`;
+  if (wordsEl) wordsEl.textContent = total > 0 ? `${numberToPersianWords(total)} تومان` : '';
 }
 
 function addStaffBonusItem(button) {
@@ -1684,6 +1712,7 @@ async function addRoleInline() {
   container.insertAdjacentHTML('beforeend', staffRoleRowHtml(newRole, { amount: 0, count: 1 }));
   document.getElementById('st-newrole').value = '';
   initAmountHints();
+  updateStaffModalGrandTotal();
   showToast('نقش اضافه شد ✓', 'success');
 }
 
