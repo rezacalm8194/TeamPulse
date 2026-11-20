@@ -37,9 +37,27 @@ test('only TeamPulse oauth callback URLs are accepted', () => {
   assert.equal(oauth.allowedRedirect('https://teampulse.ir/app'), false);
 });
 
+test('admin Drive oauth can target another account without dropping the admin token', () => {
+  assert.equal(oauth.resolveOauthAccountId({ user: { id: 'admin', role: 'admin' }, query: { account_id: 'user-b' }, body: {} }), 'user-b');
+  assert.equal(oauth.resolveOauthAccountId({ user: { id: 'admin', role: 'admin' }, query: {}, body: {} }), 'admin');
+  assert.throws(
+    () => oauth.resolveOauthAccountId({ user: { id: 'user-a', role: 'user' }, query: { account_id: 'user-b' }, body: {} }),
+    (err) => err && err.status === 403
+  );
+  assert.match(app, /function _parkGoogleIntegrations\(/);
+  assert.match(app, /async function _rebindGoogleIntegrations\(/);
+  assert.match(app, /_parkGoogleIntegrations\(\)/);
+  assert.match(app, /await _rebindGoogleIntegrations\(\)/);
+  assert.doesNotMatch(app, /_gdrive\.disconnect\(\);[\s\S]{0,80}_loadImpersonatedAccountFromServer/);
+  assert.match(app, /\/api\/google\/drive\/status' \+ _gdriveOauthQs\(\)/);
+  assert.match(app, /\/api\/google\/drive' \+ _gdriveOauthQs\(\), \{ method: 'DELETE' \}/);
+  assert.match(app, /deferIfImpersonating: true/);
+  assert.match(app, /this\._suspended = true/);
+});
+
 test('boot and heartbeat never open the Google account picker', () => {
-  const initStart = app.indexOf('async initOnLoad()');
-  const initChunk = app.slice(initStart, initStart + 1600);
+  const initStart = app.indexOf('async initOnLoad(');
+  const initChunk = app.slice(initStart, initStart + 2200);
   assert.match(initChunk, /ensureToken\(false\)/);
   assert.doesNotMatch(initChunk, /ensureToken\(true/);
   const beatStart = app.indexOf('startHeartbeat()');
