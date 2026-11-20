@@ -16,6 +16,20 @@ function isConfigured() {
   return !!(clientId() && clientSecret());
 }
 
+function resolveOauthAccountId(req) {
+  const requested = String(
+    (req && req.body && typeof req.body === 'object' && req.body.account_id) ||
+    (req && req.query && req.query.account_id) ||
+    ''
+  ).trim();
+  const selfId = String(req?.user?.id || '');
+  if (!requested || requested === selfId) return selfId;
+  if (req?.user?.role !== 'admin') {
+    throw fail(403, 'forbidden');
+  }
+  return requested;
+}
+
 function allowedRedirect(uri) {
   const value = String(uri || '');
   const allow = new Set([
@@ -149,6 +163,7 @@ module.exports = {
   TOKEN_URL,
   clientId,
   isConfigured,
+  resolveOauthAccountId,
   allowedRedirect,
   ensureGoogleDriveOauthSchema,
   persistRefresh,

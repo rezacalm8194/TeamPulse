@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp405';
+const TP_ASSET_V = 'tp406';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4303,6 +4303,26 @@ function _gdrivePersistCreds(extra) {
     ...(extra || {}),
   };
 }
+function _googleOauthAccountId() {
+  if (window._impersonating?.userId) return String(window._impersonating.userId);
+  return String(_sbUser?.id || '');
+}
+function _gdriveOauthQs() {
+  const id = _googleOauthAccountId();
+  return id ? ('?account_id=' + encodeURIComponent(id)) : '';
+}
+function _parkGoogleIntegrations() {
+  // Preserve each account's Drive session before switching _db to the
+  // impersonated account. The in-memory token is deliberately cleared by park().
+  try { if (_gdrive.enabled) _gdriveWriteSession(); } catch (e) {}
+  try { _gdrive.park(); } catch (e) {}
+  try { _gcal.park(); } catch (e) {}
+}
+async function _rebindGoogleIntegrations() {
+  _parkGoogleIntegrations();
+  try { await _gdrive.initOnLoad(); } catch (e) {}
+  try { _gcal.initOnLoad(); } catch (e) {}
+}
 function _gdriveSessionKey() {
   return 'tp_gdrive_session_' + encodeURIComponent(window._activeDBKey || (typeof DB_KEY === 'string' ? DB_KEY : 'default'));
 }
@@ -4385,9 +4405,11 @@ const _gdrive = {
   },
 
   applyAccessToken(token, expiresIn) {
+    if (this._suspended) return this.token;
     const ttl = (Number(expiresIn) || 3600) - 60;
     this.token = token;
     this.tokenExpiry = Date.now() + Math.max(ttl, 60) * 1000;
+    this._boundAccountId = _googleOauthAccountId();
     _db._gdrive_token = this.token;
     _db._gdrive_token_expiry = this.tokenExpiry;
     _db._gdrive_enabled = true;
@@ -4400,7 +4422,7 @@ const _gdrive = {
   async serverOauthReady() {
     if (this._oauthReady != null) return this._oauthReady;
     try {
-      const res = await _apiFetch('/api/google/drive/status');
+      const res = await _apiFetch('/api/google/drive/status' + _gdriveOauthQs());
       const j = await res.json().catch(() => ({}));
       this._oauthReady = !!(res.ok && j.configured);
       this._oauthConnected = !!(res.ok && j.connected);
@@ -4411,7 +4433,10 @@ const _gdrive = {
   },
 
   async silentRefresh() {
-    const res = await _apiFetch('/api/google/drive/refresh', { method: 'POST', body: '{}' });
+    const res = await _apiFetch('/api/google/drive/refresh' + _gdriveOauthQs(), {
+      method: 'POST',
+      body: JSON.stringify({ account_id: _googleOauthAccountId() }),
+    });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j.access_token) return null;
     return this.applyAccessToken(j.access_token, j.expires_in);
@@ -4424,6 +4449,7 @@ const _gdrive = {
         code,
         redirect_uri: redirectUri,
         code_verifier: verifier || '',
+        account_id: _googleOauthAccountId(),
       }),
     });
     const j = await res.json().catch(() => ({}));
@@ -4648,7 +4674,9 @@ const _gdrive = {
   },
 
   async push() {
+    if (this._suspended) return false;
     await this.ensureToken(false);
+    if (this._suspended) return false;
     const layout = await this.ensureLayout();
     const ids = this.fileIds();
     ids.students = await this.uploadBytes(this.FILES.students, layout.studentsFolder, 'text/csv', _gdriveStudentsCsv(), ids.students);
@@ -4657,6 +4685,7 @@ const _gdrive = {
     const backupId = await this.uploadBytes(this.FILES.backup, layout.backupFolder, 'application/json', JSON.stringify(_serverSafeData(_db)), ids.backup || this.fileId);
     ids.backup = backupId;
     this.fileId = backupId;
+    if (this._suspended) return false;
     _db._gdrive_file_id = backupId;
     _db._gdrive_file_ids = ids;
     _save(false);
@@ -4673,8 +4702,10 @@ const _gdrive = {
   },
 
   schedulePush() {
+    if (this._suspended) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(async () => {
+      if (this._suspended) return;
       this.setSyncStatusUI('syncing', 'در حال ارسال به Drive...');
       try {
         await this.push();
@@ -4688,7 +4719,7 @@ const _gdrive = {
   startHeartbeat() {
     clearInterval(this.beat);
     this.beat = setInterval(async () => {
-      if (!this.enabled) return;
+      if (this._suspended || !this.enabled) return;
       try {
         if (!this.token || Date.now() >= this.tokenExpiry) {
           await this.ensureToken(false);
@@ -4701,6 +4732,7 @@ const _gdrive = {
   },
 
   async connect(clientId) {
+    this._suspended = false;
     this.clientId = clientId || APP_GOOGLE_CLIENT_ID;
     _db._gdrive_client_id = this.clientId;
     this._oauthReady = null;
@@ -4725,18 +4757,38 @@ const _gdrive = {
     }
   },
 
+  park() {
+    // Park is a temporary account switch, not a disconnect. Keep credentials
+    // in the account-scoped session store so returning to the admin restores it.
+    try { if (this.enabled) _gdriveWriteSession(); } catch (e) {}
+    this._suspended = true;
+    this.enabled = false;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.fileId = null;
+    this._oauthReady = null;
+    this._oauthConnected = undefined;
+    this._initing = false;
+    this._boundAccountId = null;
+    clearTimeout(this.timer);
+    clearInterval(this.beat);
+    this.timer = null;
+    this.beat = null;
+  },
+
   disconnect() {
     this.enabled = false;
     this.token = null;
     this.tokenExpiry = 0;
     this._oauthConnected = false;
+    this._boundAccountId = null;
     clearTimeout(this.timer);
     clearInterval(this.beat);
     delete _db._gdrive_token;
     delete _db._gdrive_token_expiry;
     delete _db._gdrive_enabled;
     _gdriveClearSession();
-    try { _apiFetch('/api/google/drive', { method: 'DELETE' }); } catch (e) {}
+    try { _apiFetch('/api/google/drive' + _gdriveOauthQs(), { method: 'DELETE' }); } catch (e) {}
     _save(false);
     this.setSyncStatusUI('idle', 'قطع شد');
     showToast('از Drive قطع شدی', '');
@@ -4780,9 +4832,14 @@ const _gdrive = {
     }
   },
 
-  async initOnLoad() {
+  async initOnLoad(opts) {
+    if (opts && opts.deferIfImpersonating) {
+      try { if (localStorage.getItem('tp_impersonating_state')) return; } catch (e) {}
+    }
     if (this._initing) return;
     this._initing = true;
+    this._suspended = false;
+    this._boundAccountId = _googleOauthAccountId();
     try {
       const sess = _gdriveReadSession();
       if (sess && sess.enabled) _gdriveApplySession(sess);
@@ -5021,6 +5078,7 @@ const _gcal = {
   },
 
   async connect() {
+    this._suspended=false;
     this.clientId=APP_GOOGLE_CLIENT_ID;
     this.setStatusUI('syncing','در حال اتصال...');
     try{
@@ -5043,6 +5101,14 @@ const _gcal = {
     }
   },
 
+  park() {
+    this._suspended=true;
+    this.enabled=false;
+    this.token=null;
+    this.tokenExpiry=0;
+    if(this.importTimer){clearInterval(this.importTimer);this.importTimer=null;}
+  },
+
   disconnect() {
     this.enabled=false;this.token=null;this.tokenExpiry=0;
     delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;delete _db._gcal_calendar_id;delete _db._gcal_calendars;
@@ -5061,6 +5127,7 @@ const _gcal = {
   },
 
   async importEvents({silent=true, forceAuth=false} = {}) {
+    if(this._suspended)return {created:0,updated:0};
     if(!this.enabled&&!_db._gcal_enabled)return {created:0,updated:0};
     const token = forceAuth ? await this.ensureToken() : this.validTokenOrNull();
     if(!token){
@@ -5290,7 +5357,11 @@ const _gcal = {
     return body;
   },
 
-  initOnLoad() {
+  initOnLoad(opts) {
+    if (opts && opts.deferIfImpersonating) {
+      try { if (localStorage.getItem('tp_impersonating_state')) return; } catch (e) {}
+    }
+    this._suspended=false;
     this.clientId=APP_GOOGLE_CLIENT_ID;
     if(_consumeStoredGcalOAuthResult())return;
     if(_db._gcal_enabled){
@@ -5324,6 +5395,7 @@ function _consumeStoredGcalOAuthResult() {
     try{data=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}
     try{localStorage.removeItem(key);}catch(e){}
     if(!data||data.type!=='gcal_token')return;
+    if(_gcal._suspended)return;
     if(data.error){showToast('خطا در اتصال Google Calendar: '+data.error,'error');return;}
     if(!data.token)return;
     _gcal.token=data.token;
@@ -22944,6 +23016,7 @@ async function _initAuth() {
         await init();
         updateAccountDisplay();
         _showImpersonateBar(impersonatingState.userName);
+        await _rebindGoogleIntegrations();
         return true;
       }
     } catch(e) { console.warn('[Impersonate restore] error:', e.message); }
@@ -25845,6 +25918,8 @@ async function _adminImpersonate(userId, userName) {
 
     if (!confirm('وارد حساب «' + userName + '» می‌شوید؟ برای بازگشت از نوار بنفش بالای صفحه استفاده کنید.')) return;
 
+    _parkGoogleIntegrations();
+
     // ذخیره کامل وضعیت ادمین
     const adminSession = localStorage.getItem('tp_session');
     const adminUser = { ..._sbUser };
@@ -25922,6 +25997,7 @@ async function _adminImpersonate(userId, userName) {
     // نمایش نوار بازگشت
     _showImpersonateBar(userName);
     _updateAuthUI();
+    await _rebindGoogleIntegrations();
 
     showToast('وارد حساب «' + userName + '» شدید', 'success');
     currentPage = 'students';
@@ -25983,6 +26059,8 @@ async function _adminReturnToAdmin() {
     // پاک کردن وضعیت impersonation
     window._impersonating = null;
 
+    _parkGoogleIntegrations();
+
     // stop intervals
     clearInterval(window._syncInterval);
     clearInterval(window._pollInterval);
@@ -26002,6 +26080,7 @@ async function _adminReturnToAdmin() {
 
     _hideImpersonateBar();
     _updateAuthUI();
+    await _rebindGoogleIntegrations();
     currentPage = 'admin_panel';
     allStudents = [];
     renderPage();
@@ -26628,11 +26707,11 @@ async function importBackup() {
 })();
 
 // Init Google Drive on startup
-_gdrive.initOnLoad();
+_gdrive.initOnLoad({ deferIfImpersonating: true });
 
 // Init Google Calendar on startup
 _startGcalOAuthRescue();
-_gcal.initOnLoad();
+_gcal.initOnLoad({ deferIfImpersonating: true });
 
 // Start app — auth first
 // Debug mode
@@ -26867,7 +26946,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v405';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v406';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

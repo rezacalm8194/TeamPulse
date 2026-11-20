@@ -4,6 +4,7 @@ const { logger } = require('../utils/logger');
 const {
   ensureGoogleDriveOauthSchema,
   isConfigured,
+  resolveOauthAccountId,
   hasRefresh,
   deleteRefresh,
   exchangeCode,
@@ -38,17 +39,24 @@ function sendErr(req, res, err) {
 }
 
 router.get('/drive/status', auth, (req, res) => {
-  res.json({
-    configured: isConfigured(),
-    connected: hasRefresh(req.user.id),
-  });
+  try {
+    const accountId = resolveOauthAccountId(req);
+    res.json({
+      configured: isConfigured(),
+      connected: hasRefresh(accountId),
+      account_id: accountId,
+    });
+  } catch (err) {
+    sendErr(req, res, err);
+  }
 });
 
 router.post('/drive/exchange', auth, async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const accountId = resolveOauthAccountId(req);
     const tokens = await exchangeCode({
-      accountId: req.user.id,
+      accountId,
       code: String(body.code || ''),
       redirectUri: String(body.redirect_uri || ''),
       codeVerifier: String(body.code_verifier || ''),
@@ -61,7 +69,8 @@ router.post('/drive/exchange', auth, async (req, res) => {
 
 router.post('/drive/refresh', auth, async (req, res) => {
   try {
-    const tokens = await refreshAccess(req.user.id);
+    const accountId = resolveOauthAccountId(req);
+    const tokens = await refreshAccess(accountId);
     res.json(tokens);
   } catch (err) {
     sendErr(req, res, err);
@@ -69,8 +78,13 @@ router.post('/drive/refresh', auth, async (req, res) => {
 });
 
 router.delete('/drive', auth, (req, res) => {
-  deleteRefresh(req.user.id);
-  res.json({ ok: true });
+  try {
+    const accountId = resolveOauthAccountId(req);
+    deleteRefresh(accountId);
+    res.json({ ok: true, account_id: accountId });
+  } catch (err) {
+    sendErr(req, res, err);
+  }
 });
 
 module.exports = router;
