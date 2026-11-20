@@ -4314,7 +4314,12 @@ function _gdriveOauthQs() {
 function _parkGoogleIntegrations() {
   // Preserve each account's Drive session before switching _db to the
   // impersonated account. The in-memory token is deliberately cleared by park().
-  try { if (_gdrive.enabled) _gdriveWriteSession(); } catch (e) {}
+  try {
+    if (_gdrive.enabled) {
+      _gdriveWriteSession();
+      if (!window._impersonating) _gdriveWriteSessionFor(window._activeDBKey || _userDBKey(), _db);
+    }
+  } catch (e) {}
   try { _gdrive.park(); } catch (e) {}
   try { _gcal.park(); } catch (e) {}
 }
@@ -4336,6 +4341,20 @@ function _gdriveWriteSession() {
       folderId: _db._gdrive_folder_id || null,
       fileId: _db._gdrive_file_id || null,
       fileIds: _db._gdrive_file_ids || {},
+    }));
+  } catch (e) {}
+}
+function _gdriveWriteSessionFor(dbKey, data) {
+  try {
+    const key = 'tp_gdrive_session_' + encodeURIComponent(dbKey || 'default');
+    localStorage.setItem(key, JSON.stringify({
+      enabled: true,
+      clientId: _gdrive.clientId || data?._gdrive_client_id || '',
+      token: _gdrive.token || data?._gdrive_token || null,
+      tokenExpiry: _gdrive.tokenExpiry || data?._gdrive_token_expiry || 0,
+      folderId: data?._gdrive_folder_id || null,
+      fileId: data?._gdrive_file_id || null,
+      fileIds: data?._gdrive_file_ids || {},
     }));
   } catch (e) {}
 }
@@ -26069,6 +26088,10 @@ async function _adminReturnToAdmin() {
 
     // بارگذاری نسخه تأییدشده ادمین از IndexedDB با fallback محلی
     await _loadPrimaryDatabase();
+    // A Google refresh token is account-scoped on the server; restore the
+    // admin's browser session explicitly after loading the admin database.
+    const adminDriveSession = (() => { try { return JSON.parse(localStorage.getItem('tp_gdrive_session_' + encodeURIComponent(window._activeDBKey || 'default')) || 'null'); } catch (e) { return null; } })();
+    if (adminDriveSession?.enabled) _gdriveApplySession(adminDriveSession);
 
     // آپدیت META به حالت ادمین
     try {
