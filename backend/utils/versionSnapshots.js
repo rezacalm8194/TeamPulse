@@ -1,5 +1,6 @@
 const { createHash } = require('crypto');
 const { BUSINESS_COLLECTIONS } = require('./businessStore');
+const { isAccountTrashed, ownerAccountIdFromStorageKey } = require('./accountTrash');
 
 const VERSION_PARTS_MARKER = '{"_layout":"version_parts"}';
 
@@ -297,6 +298,7 @@ function insertVersionSummary(db, versionId, accountId, createdAt, serializedDat
 }
 
 function saveVersionSnapshotParts(db, accountId, { force = false } = {}) {
+  if (isAccountTrashed(db, ownerAccountIdFromStorageKey(accountId))) return false;
   const rows = db.prepare(
     'SELECT part_key,data_hash FROM user_data_parts WHERE account_id=? ORDER BY part_key'
   ).all(accountId);
@@ -528,6 +530,7 @@ function snapshotAgeMs(createdAt) {
 }
 
 function isVersionSnapshotDue(db, accountId, { force = false } = {}) {
+  if (isAccountTrashed(db, ownerAccountIdFromStorageKey(accountId))) return false;
   if (force) return true;
   const latestMeta = db.prepare(`
     SELECT created_at
@@ -546,6 +549,7 @@ function isVersionSnapshotDue(db, accountId, { force = false } = {}) {
 }
 
 function pruneVersionSnapshots(db, accountId, nowMs = Date.now()) {
+  if (isAccountTrashed(db, ownerAccountIdFromStorageKey(accountId))) return 0;
   const rows = db.prepare(
     'SELECT id, created_at FROM user_data_versions WHERE account_id=?'
   ).all(accountId);
@@ -600,6 +604,7 @@ function pruneAllVersionSnapshots(db, nowMs = Date.now()) {
   let deleted = 0;
   const run = db.transaction(() => {
     for (const row of accounts) {
+      if (isAccountTrashed(db, ownerAccountIdFromStorageKey(row.account_id))) continue;
       deleted += pruneVersionSnapshots(db, row.account_id, nowMs);
     }
   });
@@ -608,6 +613,7 @@ function pruneAllVersionSnapshots(db, nowMs = Date.now()) {
 }
 
 function saveVersionSnapshot(db, accountId, serializedData, { force = false } = {}) {
+  if (isAccountTrashed(db, ownerAccountIdFromStorageKey(accountId))) return false;
   const latestMeta = db.prepare(`
     SELECT version_id, created_at, data_hash
     FROM user_data_version_summaries

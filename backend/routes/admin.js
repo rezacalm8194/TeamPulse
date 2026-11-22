@@ -6,6 +6,14 @@ const bcrypt = require('bcryptjs');
 const webpush = require('web-push');
 const { logger } = require('../utils/logger');
 const { isProtectedAccount, withProtectedFlag } = require('../utils/protectedAdmin');
+const {
+  ensureAccountTrashSchema,
+  isAccountTrashed,
+  trashAccount,
+  restoreAccount,
+  listTrashedAccounts,
+  hardDeleteAccount,
+} = require('../utils/accountTrash');
 const { ensureTokenRevocationSchema, bumpTokenVersion } = require('../utils/tokenRevocation');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot } = require('../utils/versionSnapshots');
 const { collectStorageReport } = require('../utils/storageReport');
@@ -24,6 +32,7 @@ const { encryptSecret, decryptSecret, canEncryptSecrets } = require('../utils/se
 ensureTokenRevocationSchema(db);
 ensureVersionSnapshotSchema(db);
 ensureDocumentStoreSchema(db);
+ensureAccountTrashSchema(db);
 const vapidReady = configureWebPush(webpush, process.env, logger);
 
 const ALLOWED_ACCOUNT_ROLES = new Set(['admin', 'owner', 'user']);
@@ -287,7 +296,12 @@ router.get('/stats', auth, adminOnly, (req, res) => {
   try {
     ensureWalletTables();
     ensureAdminAccountColumns();
-    const users = db.prepare("SELECT a.id,a.name,a.email,a.role,a.plan,a.is_active,a.created_at,a.updated_at,a.subscription_until,(SELECT COUNT(*) FROM clients WHERE account_id=a.id) as client_count,(SELECT COALESCE(SUM(amount),0) FROM payments WHERE account_id=a.id AND status='paid') as total_income FROM accounts a ORDER BY a.created_at DESC").all();
+    const users = db.prepare(`SELECT a.id,a.name,a.email,a.role,a.plan,a.is_active,a.created_at,a.updated_at,a.subscription_until,
+      (SELECT COUNT(*) FROM clients WHERE account_id=a.id) as client_count,
+      (SELECT COALESCE(SUM(amount),0) FROM payments WHERE account_id=a.id AND status='paid') as total_income
+      FROM accounts a
+      WHERE a.deleted_at IS NULL
+      ORDER BY a.created_at DESC`).all();
     const one = (sql) => Number(db.prepare(sql).pluck().get() || 0);
     const monthSeries = (table, valueSql='COUNT(*)', dateColumn='created_at', where='1=1') =>
       db.prepare(`SELECT strftime('%Y-%m',${dateColumn}) label, ${valueSql} value FROM ${table} WHERE ${where} AND ${dateColumn}>=date('now','start of month','-5 months') GROUP BY label ORDER BY label`).all();
@@ -370,6 +384,67 @@ router.put('/users/:id/role', auth, adminOnly, (req, res) => {
     });
     res.json({ success: true, role });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/users/trash', auth, adminOnly, (req, res) => {
+  try {
+    res.json({ accounts: listTrashedAccounts(db) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/users/:id/restore', auth, adminOnly, (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const target = db.prepare('SELECT id,email,role,deleted_at FROM accounts WHERE id=?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'not found' });
+    if (!target.deleted_at) return res.status(400).json({ error: 'account_not_in_trash' });
+    if (!restoreAccount(db, targetId)) return res.status(400).json({ error: 'restore_failed' });
+    logger.audit('account_restored', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: targetId,
+      entityType: 'account', entityId: targetId,
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/users/:id/permanent', auth, adminOnly, (req, res) => {
+  try {
+    ensureWalletTables();
+    const targetId = req.params.id;
+    const target = db.prepare('SELECT id,email,role,deleted_at FROM accounts WHERE id=?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'not found' });
+    if (!target.deleted_at) return res.status(400).json({ error: 'account_not_in_trash' });
+    if (isProtectedAccount(db, target)) {
+      return res.status(403).json({ error: 'cannot delete protected admin' });
+    }
+    const confirmEmail = String(req.body?.confirm_email || '').trim().toLowerCase();
+    const accountEmail = String(target.email || '').trim().toLowerCase();
+    if (!confirmEmail || confirmEmail !== accountEmail) {
+      return res.status(400).json({ error: 'confirm_email_mismatch' });
+    }
+    const fileDriver = createStorageDriver();
+    hardDeleteAccount(db, targetId, {
+      deleteWorkspaceDocumentsForAccount,
+      deleteStoredFiles,
+      storageDriver: fileDriver,
+      logger,
+    });
+    try {
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(lower(trim(email)))');
+    } catch (_) {}
+    logger.audit('account_hard_deleted', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: targetId,
+      entityType: 'account', entityId: targetId,
+    });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Permanent delete user failed:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.put('/users/:id/status', auth, adminOnly, (req, res) => {
@@ -541,57 +616,31 @@ router.post('/charge-requests/:id/reject', auth, adminOnly, (req, res) => {
   updateChargeRequestStatus(req, res, 'rejected');
 });
 
-// حذف کامل و امن یک حساب کاربری و تمام داده‌های وابسته به آن.
-// نکته حیاتی: ترتیب حذف باید طوری باشد که همیشه جدول‌های فرزند قبل از
-// جدول‌های والد پاک شوند، وگرنه SQLite به‌خاطر FOREIGN KEY جلوی حذف را
-// می‌گیرد (همین چیزی که باعث ارور 500 می‌شد). کل عملیات هم داخل یک
-// تراکنش اتمیک انجام می‌شود تا اگر جایی خطا بدهد، هیچ داده‌ای از این
-// حساب یا حساب‌های دیگر به‌صورت نصفه‌ونیمه حذف یا دست‌خورده نشود.
+// Move account to recycle bin (30-day retention). Hard delete is only via
+// DELETE /users/:id/permanent or the scheduled purge job.
 router.delete('/users/:id', auth, adminOnly, (req, res) => {
   try {
-    ensureWalletTables();
     const targetId = req.params.id;
-    const target = db.prepare("SELECT id,email,role FROM accounts WHERE id=?").get(targetId);
+    const target = db.prepare('SELECT id,email,role,deleted_at FROM accounts WHERE id=?').get(targetId);
     if (!target) return res.status(404).json({ error: 'not found' });
+    if (target.deleted_at) return res.status(400).json({ error: 'account_already_in_trash' });
     if (isProtectedAccount(db, target)) {
       return res.status(403).json({ error: 'cannot delete protected admin' });
     }
     if (targetId === req.user.id) {
       return res.status(403).json({ error: 'cannot delete your own account while logged in' });
     }
-
-    const fileDriver = createStorageDriver();
-    deleteStoredFiles(db, fileDriver, { ownerAccountId: targetId });
-    const deleteAccountCascade = db.transaction((accountId) => {
-      db.prepare("DELETE FROM payments WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM sessions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM reminders WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM staff_payments WHERE account_id=?").run(accountId);
-
-      db.prepare("DELETE FROM files WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM tasks WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM wallet_transactions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM wallet_charge_requests WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM user_wallets WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM sync_events WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM push_subscriptions WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM user_data_version_summaries WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
-      db.prepare("DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?").run(accountId, accountId + '::workspace::%');
-      deleteWorkspaceDocumentsForAccount(db, accountId);
-      db.prepare("DELETE FROM account_workspaces WHERE owner_account_id=?").run(accountId);
-
-      db.prepare("DELETE FROM clients WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM staff WHERE account_id=?").run(accountId);
-      db.prepare("DELETE FROM accounts WHERE id=?").run(accountId);
+    if (!trashAccount(db, targetId, req.user.id)) {
+      return res.status(400).json({ error: 'trash_failed' });
+    }
+    bumpTokenVersion(db, targetId);
+    logger.audit('account_trashed', {
+      requestId: req.requestId, actorUserId: req.user.id, targetUserId: targetId,
+      entityType: 'account', entityId: targetId,
     });
-
-    deleteAccountCascade(targetId);
-    // If this was the last legacy case-only duplicate, enforce uniqueness
-    // immediately without waiting for another server restart.
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_nocase ON accounts(lower(trim(email)))');
-    res.json({ success: true });
-  } catch(e) {
-    console.error('Delete user failed:', e);
+    res.json({ success: true, trashed: true });
+  } catch (e) {
+    console.error('Trash user failed:', e);
     res.status(500).json({ error: e.message });
   }
 });

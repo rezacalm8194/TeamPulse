@@ -6,8 +6,13 @@ const {
   isJtiRevoked,
   currentTokenVersion,
 } = require('../utils/tokenRevocation');
+const {
+  ensureAccountTrashSchema,
+  ACCOUNT_DEACTIVATED_MESSAGE,
+} = require('../utils/accountTrash');
 
 ensureTokenRevocationSchema(db);
+ensureAccountTrashSchema(db);
 
 function takeBodyToken(req) {
   // sendBeacon cannot set Authorization. Putting the JWT in the query string
@@ -41,11 +46,14 @@ module.exports = (req, res, next) => {
       return res.status(401).json({ error: 'invalid token' });
     }
     const account = db.prepare(
-      'SELECT id, email, role, is_active FROM accounts WHERE id=?'
+      'SELECT id, email, role, is_active, deleted_at FROM accounts WHERE id=?'
     ).get(payload.id);
     if (!account || Number(account.is_active) !== 1) {
       logger.warn('unauthorized_access', { requestId: req.requestId, path: req.path, ip: req.ip });
       return res.status(401).json({ error: 'unauthorized' });
+    }
+    if (account.deleted_at) {
+      return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
     }
     if (currentTokenVersion(db, account.id) !== payload.tv) {
       logger.warn('invalid_token', {

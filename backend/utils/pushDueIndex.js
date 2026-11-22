@@ -1,4 +1,5 @@
 // Lightweight due-index for the push reminder cron.
+const { ensureAccountTrashSchema } = require('./accountTrash');
 // The cron must not load every active account's JSON every minute.
 
 const { isPaymentReminder } = require('./reminderKind');
@@ -409,6 +410,7 @@ function parseDuePayload(raw) {
 
 function listDuePushItems(db, now, options = {}) {
   ensurePushDueIndexSchema(db);
+  ensureAccountTrashSchema(db);
   const nowMs = now.getTime();
   const limit = options.limit ?? 250;
   return db.prepare(`
@@ -417,6 +419,7 @@ function listDuePushItems(db, now, options = {}) {
     FROM push_due_items i
     INNER JOIN accounts a ON a.id = i.account_id
     WHERE a.is_active = 1
+      AND a.deleted_at IS NULL
       AND i.due_ms <= ?
       AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = i.account_id)
     ORDER BY i.due_ms ASC
@@ -429,6 +432,7 @@ function listDuePushItems(db, now, options = {}) {
 
 function listPushReindexAccountIds(db, now, options = {}) {
   ensurePushDueIndexSchema(db);
+  ensureAccountTrashSchema(db);
   const maxUnindexed = options.maxUnindexed ?? DEFAULT_MAX_UNINDEXED;
   const dirty = db.prepare(`
     SELECT a.id AS id
@@ -436,6 +440,7 @@ function listPushReindexAccountIds(db, now, options = {}) {
     INNER JOIN push_due_index i ON i.account_id = a.id
     LEFT JOIN user_data u ON u.account_id = a.id
     WHERE a.is_active = 1
+      AND a.deleted_at IS NULL
       AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
       AND IFNULL(i.data_etag, '') != IFNULL(u.data_etag, '')
   `).all();
@@ -444,6 +449,7 @@ function listPushReindexAccountIds(db, now, options = {}) {
     SELECT a.id AS id
     FROM accounts a
     WHERE a.is_active = 1
+      AND a.deleted_at IS NULL
       AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
       AND NOT EXISTS (SELECT 1 FROM push_due_index i WHERE i.account_id = a.id)
     LIMIT ?

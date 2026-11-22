@@ -16,6 +16,11 @@ const { loadWorkspaceMeta, loadDocumentParts } = require('../utils/documentStore
 const { logger } = require('../utils/logger');
 const { isWorkspaceActive } = require('../utils/workspaceTrash');
 const {
+  ensureAccountTrashSchema,
+  isAccountActive,
+  ACCOUNT_DEACTIVATED_MESSAGE,
+} = require('../utils/accountTrash');
+const {
   normalizeTeamPermissions,
   parseJsonArray,
   pickResolvedTeamPermissions,
@@ -23,6 +28,7 @@ const {
 
 ensureTeamAccessSchema(db);
 ensureTokenRevocationSchema(db);
+ensureAccountTrashSchema(db);
 try { db.exec('ALTER TABLE accounts ADD COLUMN phone TEXT'); } catch {}
 try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_unique ON accounts(phone) WHERE phone IS NOT NULL AND phone<>''"); } catch {}
 
@@ -42,8 +48,20 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password || !phone)
       return res.status(400).json({ error: 'name, email, phone, password required' });
     if (password.length < 8) return res.status(400).json({ error: 'password too short' });
-    const exists = db.prepare('SELECT id FROM accounts WHERE lower(email)=?').get(email);
-    if (exists) return res.status(409).json({ error: 'email already exists' });
+    const exists = db.prepare('SELECT id, deleted_at FROM accounts WHERE lower(email)=?').get(email);
+    if (exists) {
+      if (exists.deleted_at) {
+        return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+      }
+      return res.status(409).json({ error: 'email already exists' });
+    }
+    const phoneTaken = db.prepare('SELECT id, deleted_at FROM accounts WHERE phone=?').get(phone);
+    if (phoneTaken) {
+      if (phoneTaken.deleted_at) {
+        return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+      }
+      return res.status(409).json({ error: 'phone already exists' });
+    }
     const id = randomUUID();
     const hash = await bcrypt.hash(password, 10);
     db.prepare('INSERT INTO accounts (id,name,email,phone,password,business_name,business_type) VALUES (?,?,?,?,?,?,?)').run(id, name, email, phone, hash, business_name||null, business_type||null);
@@ -68,9 +86,15 @@ router.post('/login', async (req, res) => {
     // Legacy databases may contain case-only duplicate emails because the old
     // UNIQUE constraint was case-sensitive. Check each candidate's existing
     // hash and prefer the oldest matching account; never rewrite a password.
+    const trashed = db.prepare(`
+      SELECT id FROM accounts WHERE lower(trim(email))=? AND deleted_at IS NOT NULL LIMIT 1
+    `).get(email);
+    if (trashed) {
+      return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+    }
     const candidates = db.prepare(`
       SELECT * FROM accounts
-      WHERE lower(trim(email))=? AND is_active=1
+      WHERE lower(trim(email))=? AND is_active=1 AND deleted_at IS NULL
       ORDER BY datetime(created_at) ASC, rowid ASC
     `).all(email);
     let user = null;
@@ -95,8 +119,11 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', auth, (req, res) => {
   try {
-    const user = db.prepare('SELECT id,name,email,phone,business_name,business_type,role,plan,created_at FROM accounts WHERE id=?').get(req.user.id);
+    const user = db.prepare('SELECT id,name,email,phone,business_name,business_type,role,plan,created_at,deleted_at FROM accounts WHERE id=?').get(req.user.id);
     if (!user) return res.status(404).json({ error: 'not found' });
+    if (user.deleted_at) {
+      return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+    }
     res.json(user);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -192,9 +219,12 @@ router.post('/team-invite/resolve', auth, (req, res) => {
     if (invitedEmail && invitedEmail !== memberEmail) return res.status(403).json({ error: 'invite email mismatch' });
 
     const owner = ownerUserId
-      ? db.prepare('SELECT id,name,email FROM accounts WHERE id=? AND is_active=1').get(ownerUserId)
-      : db.prepare('SELECT id,name,email FROM accounts WHERE lower(email)=? AND is_active=1').get(ownerEmail);
+      ? db.prepare('SELECT id,name,email FROM accounts WHERE id=? AND is_active=1 AND deleted_at IS NULL').get(ownerUserId)
+      : db.prepare('SELECT id,name,email FROM accounts WHERE lower(email)=? AND is_active=1 AND deleted_at IS NULL').get(ownerEmail);
     if (!owner) return res.status(404).json({ error: 'owner not found' });
+    if (!isAccountActive(db, owner.id)) {
+      return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+    }
     if (ownerEmail && String(owner.email || '').trim().toLowerCase() !== ownerEmail) {
       return res.status(403).json({ error: 'owner email mismatch' });
     }
@@ -298,8 +328,11 @@ router.post('/forgot-password', async (req, res) => {
     const newPassword = String(req.body.new_password || '');
     if (!phone) return res.status(400).json({ error: 'invalid phone' });
     if (newPassword.length < 8) return res.status(400).json({ error: 'password too short' });
-    const user = db.prepare('SELECT id FROM accounts WHERE phone=? AND is_active=1').get(phone);
+    const user = db.prepare('SELECT id, deleted_at FROM accounts WHERE phone=? AND is_active=1').get(phone);
     if (!user) return res.status(404).json({ error: 'phone not found' });
+    if (user.deleted_at) {
+      return res.status(403).json({ error: 'account_deactivated', message: ACCOUNT_DEACTIVATED_MESSAGE });
+    }
     const hash = await bcrypt.hash(newPassword, 10);
     db.transaction(() => {
       db.prepare("UPDATE accounts SET password=?, updated_at=datetime('now') WHERE id=?").run(hash, user.id);
