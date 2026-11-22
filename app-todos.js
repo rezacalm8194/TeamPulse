@@ -1777,9 +1777,24 @@ function _todoCalendarTasksSignature() {
 }
 
 
+// Repeat previews are only needed up to the end of what the calendar can show:
+// the cursor month + the next one (covers month grid tails and week views
+// that cross a month), or the whole cursor year in year view. Expanding a
+// full year ahead for a month view built ~6,600 copies and took ~0.8 s.
+function _todoCalendarPreviewHorizonKey() {
+  const today = _todayJalaliStr();
+  const [cy, cm] = _jalaliParse(_todoCalendarCursor || today);
+  let y = cy, m = _todoViewMode === 'year' ? 13 : cm + 2;
+  while (m > 12) { m -= 12; y += 1; }
+  const viewEnd = y * 10000 + m * 100 + 31;
+  const selected = _jalaliKey(_todoCalendarSelectedDate || '') || 0;
+  return Math.max(viewEnd, selected);
+}
+
 function _todoTasksForCalendar() {
   _todosInit();
-  const sig = _todoCalendarTasksSignature();
+  const horizonKey = _todoCalendarPreviewHorizonKey();
+  const sig = _todoCalendarTasksSignature() + '|' + horizonKey;
   if (_todoCalendarTasksCache.sig === sig) return _todoCalendarTasksCache.items;
   const base = (_db.todos || [])
     .filter(t => _todoCanView(t) && _todoIsMineScope(t) && !t.archived && t.date_jalali)
@@ -1796,6 +1811,7 @@ function _todoTasksForCalendar() {
     for (let i = 0; i < 370; i++) {
       const nextDate = _calcNextRepeatDate(cursor);
       if (!nextDate) break;
+      if (_jalaliKey(nextDate) > horizonKey) break;
       const key = `${t.id}:${nextDate}`;
       if (!seen.has(key)) {
         seen.add(key);
