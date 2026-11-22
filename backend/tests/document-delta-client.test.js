@@ -321,7 +321,8 @@ test('sign-in waits for the authoritative etag before sending a document delta',
 });
 
 test('poll never starts a collection reload during active hydration and GETs coalesce', () => {
-  assert.match(appSource, /window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight \|\| window\._resumeServerSyncInFlight/);
+  assert.match(appSource, /if \(window\._tpHydratingFromServer \|\| window\._tpLoadFromServerInFlight\) return false;/);
+  assert.match(appSource, /if \(window\._resumeServerSyncInFlight && !fromResume\) return false;/);
   assert.match(appSource, /_todoActiveTab === 'staff' \|\| _todoActiveTab === 'report' \|\| _todoActiveTab === 'my_report'/);
   assert.match(appSource, /\? await _reloadCompleteTodosFromServer\(\{ reset: true \}\)/);
   assert.match(appSource, /if \(!todoOk\) return false/);
@@ -440,4 +441,19 @@ test('goal vision photos survive hydrate instead of being replaced by a photo-le
   };
   ctx._preserveGoalVisionMedia(cleared, local);
   assert.equal(cleared.vision_assets.length, 0);
+});
+
+test('resume poll is not blocked by its own in-flight marker', () => {
+  const resume = appSource.slice(appSource.indexOf('async function _syncFromServerOnResume()'));
+  assert.match(resume.slice(0, 1500), /await _pollServerStatus\(\{ fromResume: true \}\)/);
+});
+
+test('status poll catches up every changed part, not only the visible page', () => {
+  assert.match(appSource, /async function _tpCatchUpServerChanges\(status\)/);
+  assert.match(appSource, /caughtUp = await _tpCatchUpServerChanges\(status\)/);
+  assert.match(appSource, /'&changed_since=' \+ Math\.max\(0, Math\.floor\(since\)\)/);
+  // Unsynced local finance edits must survive a catch-up merge.
+  const merge = appSource.slice(appSource.indexOf('function _tpMergeServerBusinessRows('));
+  assert.match(merge.slice(0, 1200), /if \(finance && pending\.has\(id\)\) return;/);
+  assert.match(merge.slice(0, 1200), /blocked\.has\(id\)/);
 });

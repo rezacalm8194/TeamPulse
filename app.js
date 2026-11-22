@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp407';
+const TP_ASSET_V = 'tp408';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -21737,8 +21737,179 @@ async function _refreshLiveSmallPartsFromServer(keys) {
     return false;
   }
 }
-async function _pollServerStatus() {
-  if (window._tpHydratingFromServer || window._tpLoadFromServerInFlight || window._resumeServerSyncInFlight) return false;
+// ---------------------------------------------------------------------------
+// Cross-device catch-up.
+// /status returns a hash per stored part plus the server clock. Each poll we
+// compare against the hashes this device last applied and pull exactly what
+// changed — business rows via ?changed_since (any page, any order) and small
+// document parts via ?include — regardless of which screen is open. Before
+// this, a phone only refreshed collections visible on its current page and
+// then marked the whole etag as hydrated, so everything else stayed days old.
+// ---------------------------------------------------------------------------
+const _TP_CATCHUP_SKIP_PARTS = new Set(['__scalars__', 'todos', '_todoTombstones', '_deletedTodoIds']);
+const _TP_CATCHUP_OVERLAP_MS = 5000;
+function _tpSyncStateKey() {
+  return 'tp_sync_state_' + (window._activeDBKey || DB_KEY);
+}
+function _tpReadSyncState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(_tpSyncStateKey()) || 'null');
+    if (raw && typeof raw === 'object') {
+      return { parts: raw.parts && typeof raw.parts === 'object' ? raw.parts : {},
+        business: raw.business && typeof raw.business === 'object' ? raw.business : {} };
+    }
+  } catch (e) {}
+  return { parts: {}, business: {} };
+}
+function _tpWriteSyncState(state) {
+  try { localStorage.setItem(_tpSyncStateKey(), JSON.stringify(state)); } catch (e) {}
+}
+function _tpMergeServerBusinessRows(collection, incoming) {
+  if (!Array.isArray(incoming) || !incoming.length || !_db) return false;
+  const finance = FINANCE_NEWEST_FIRST_KEYS.includes(collection);
+  const blocked = _blockedBusinessIds(collection);
+  const pending = _pendingBusinessDeltaIds(collection);
+  const next = Array.isArray(_db[collection]) ? _db[collection].slice() : [];
+  const index = new Map();
+  next.forEach((row, i) => { if (row && row.id != null) index.set(String(row.id), i); });
+  let changed = false;
+  incoming.forEach(row => {
+    const id = row?.id == null ? '' : String(row.id);
+    if (!id || blocked.has(id)) return;
+    // Unsynced local edit on this device: keep it, our own upload wins.
+    if (finance && pending.has(id)) return;
+    const i = index.get(id);
+    const merged = i == null ? row : _mergeBusinessRow(collection, next[i], row);
+    if (i == null) {
+      index.set(id, next.length);
+      next.push(merged);
+      changed = true;
+    } else if (JSON.stringify(next[i]) !== JSON.stringify(merged)) {
+      next[i] = merged;
+      changed = true;
+    }
+  });
+  if (!changed) return false;
+  _db[collection] = next;
+  _bumpCollectionNextId(collection);
+  if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+  return true;
+}
+async function _tpCatchUpBusinessCollection(accId, key, since) {
+  let cursor = null;
+  let pages = 0;
+  let serverTime = null;
+  let changed = false;
+  do {
+    let query = _workspaceQuery() + '&changed_since=' + Math.max(0, Math.floor(since)) + '&limit=500';
+    if (cursor) query += '&cursor=' + encodeURIComponent(cursor);
+    const res = await _apiFetch('/api/data/' + accId + '/' + key + query);
+    if (!res.ok) return { ok: false, changed };
+    const payload = await res.json();
+    // An older backend ignores changed_since; never treat its page as a delta.
+    if (!Array.isArray(payload?.items) || payload.server_time == null) return { ok: false, changed };
+    if (serverTime == null) serverTime = Number(payload.server_time) || 0;
+    if (_tpMergeServerBusinessRows(key, payload.items)) changed = true;
+    cursor = payload.next_cursor || null;
+    pages++;
+  } while (cursor && pages < 40);
+  return { ok: !cursor, changed, serverTime };
+}
+async function _tpCatchUpServerChanges(status) {
+  const hashes = status?.part_hashes;
+  if (!hashes || typeof hashes !== 'object' || !_db) return false;
+  if (window._initialServerLoadPending) return false;
+  if (!_sbUser || !_sbSession?.token) return false;
+  const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
+  if (!accId) return false;
+  const state = _tpReadSyncState();
+  let changed = false;
+  let stateDirty = false;
+
+  // 1) Business rows (students, sessions, payments, …): pull every row the
+  //    server accepted since our last pull, whatever page it lives on.
+  for (const key of BUSINESS_PAGINATED_KEYS) {
+    const hash = hashes[key];
+    if (!hash) continue;
+    const prev = state.business[key] || {};
+    if (prev.hash === hash) continue;
+    const since = Math.max(0, Number(prev.since || 0) - _TP_CATCHUP_OVERLAP_MS);
+    const result = await _tpCatchUpBusinessCollection(accId, key, since);
+    if (result.changed) changed = true;
+    if (result.ok) {
+      state.business[key] = { hash, since: result.serverTime || Number(status.server_time) || 0 };
+      stateDirty = true;
+    }
+  }
+
+  // 2) Document parts already cached on this device (staff, habits, goals,
+  //    instructions, …) plus scalar tombstones (deletes made elsewhere).
+  let dirty = new Set();
+  try {
+    const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
+    dirty = new Set([...Object.keys(patch?.collections || {}), ...Object.keys(patch?.scalars || {})]);
+  } catch (e) {}
+  const docKeys = Object.keys(hashes).filter(key =>
+    !_TP_CATCHUP_SKIP_PARTS.has(key) && !key.startsWith('_') &&
+    !BUSINESS_PAGINATED_KEYS.includes(key) &&
+    state.parts[key] !== hashes[key] &&
+    Object.prototype.hasOwnProperty.call(_db, key) && _tpPartLoaded(key) &&
+    !dirty.has(key));
+  const scalarsChanged = !!hashes.__scalars__ && state.parts.__scalars__ !== hashes.__scalars__;
+  if (docKeys.length || scalarsChanged) {
+    // Scalars ride along with any include request; use a tiny core part as
+    // the carrier when only tombstones/meta changed.
+    const fetchKeys = docKeys.length ? docKeys : ['session_order'];
+    try {
+      const res = await _apiFetch('/api/data/' + accId + _workspaceQuery() + _documentIncludeQuery(fetchKeys));
+      const payload = res.ok ? await res.json() : null;
+      const data = payload?.data;
+      if (data && typeof data === 'object') {
+        const applied = [];
+        docKeys.forEach(key => {
+          if (!Object.prototype.hasOwnProperty.call(data, key)) return;
+          const serverVal = data[key];
+          const before = JSON.stringify(_db[key] ?? null);
+          if (_SYNC_ID_COLLECTION_KEYS.has(key) || _isSyncIdCollection(key, serverVal)) {
+            _db[key] = _mergeIdList(_db[key], serverVal);
+          } else {
+            _db[key] = serverVal;
+          }
+          if (JSON.stringify(_db[key] ?? null) !== before) changed = true;
+          applied.push(key);
+          state.parts[key] = hashes[key];
+        });
+        if (data._deletedItems && typeof data._deletedItems === 'object') {
+          const before = JSON.stringify(_db._deletedItems || {});
+          _db._deletedItems = _mergeDeletedItemMaps(_db._deletedItems, data._deletedItems);
+          if (JSON.stringify(_db._deletedItems) !== before) changed = true;
+        }
+        if (scalarsChanged && !dirty.has('_deletedItems')) state.parts.__scalars__ = hashes.__scalars__;
+        stateDirty = true;
+        if (applied.length) _mergeLoadedPartHashes(applied);
+        window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+        applied.forEach(key => window._tpSessionFetchedParts.add(key));
+      }
+    } catch (e) {
+      console.warn('[TeamPulse] part catch-up skipped:', e.message);
+    }
+  }
+
+  if (stateDirty) _tpWriteSyncState(state);
+  if (changed) {
+    _applyDeletedItemTombstones(_db);
+    _migrate(_db);
+    try { _persistDatabaseSnapshot(window._activeDBKey || DB_KEY, _db); } catch (e) {}
+  }
+  return changed;
+}
+
+async function _pollServerStatus({ fromResume = false } = {}) {
+  // The resume path itself sets _resumeServerSyncInFlight before it polls;
+  // without the fromResume bypass every focus/visibility resume skipped the
+  // poll entirely and only rescheduled the timer.
+  if (window._tpHydratingFromServer || window._tpLoadFromServerInFlight) return false;
+  if (window._resumeServerSyncInFlight && !fromResume) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   if (_tpBrowserOffline()) {
     _tpMarkNetworkFailure();
@@ -21759,6 +21930,23 @@ async function _pollServerStatus() {
     const status = await res.json();
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
+    let caughtUp = false;
+    if (status.part_hashes) {
+      window._tpHydratingFromServer = true;
+      try { caughtUp = await _tpCatchUpServerChanges(status); }
+      catch (e) { console.warn('[TeamPulse] catch-up skipped:', e.message); }
+      finally { window._tpHydratingFromServer = false; }
+    }
+    return (await _applyServerStatusPoll(status)) || caughtUp;
+  } catch(e) {
+    window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 1);
+    console.warn('[TeamPulse] status poll skipped:', e.message);
+    return false;
+  }
+}
+
+async function _applyServerStatusPoll(status) {
+  {
     if (_localCollectionsExceedServer(status) || _localBusinessCollectionsAheadOfServer(status)) {
       window._forceNextSync = false;
       window._avoidFullDocumentSync = true;
@@ -21858,10 +22046,6 @@ async function _pollServerStatus() {
       _ensurePendingServerSync(50);
     }
     return !!(laggingOnPage.length || todoOnPage || liveSmallChanged);
-  } catch(e) {
-    window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 1);
-    console.warn('[TeamPulse] status poll skipped:', e.message);
-    return false;
   }
 }
 
@@ -21993,7 +22177,7 @@ async function _syncFromServerOnResume() {
     await _tpEnsureFreshClient();
     await _flushPendingLocalWritesOnResume();
     window._lastServerPollAt = Date.now();
-    const updated = await _pollServerStatus();
+    const updated = await _pollServerStatus({ fromResume: true });
     _refreshUiAfterServerLoad(updated, { force: true });
     _startServerPollLoop(_nextServerPollDelay());
     return updated;
@@ -27081,7 +27265,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v407';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v408';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
