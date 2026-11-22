@@ -65,6 +65,7 @@ const {
   activeWorkspaceNameTaken,
   workspaceCustomerCounts,
 } = require('../utils/workspaceTrash');
+const { clientClockSkewMs, correctPatchClock, correctRowsClock } = require('../utils/clockSkew');
 const {
   ensureTodoStoreSchema,
   todoState,
@@ -689,6 +690,13 @@ async function handleDocumentDelta(req, res) {
     const meta = await loadWorkspaceMetaAsync(db, storageKey);
     if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const patch = { collections: hasCollections ? collections : {}, scalars: hasScalars ? scalars : {} };
+    // A device with a wrong clock would otherwise lose (or wrongly win) every
+    // edit conflict; put its row timestamps on the server clock first.
+    const clockSkew = clientClockSkewMs(req.body?.client_now);
+    if (clockSkew) {
+      correctPatchClock(patch, clockSkew);
+      logger.info('client_clock_skew_corrected', { route: 'delta', skew_ms: clockSkew, user: req.user.id });
+    }
     const useParts = meta.layout === 'parts';
     let previousData;
     if (useParts) {
@@ -881,6 +889,11 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       incomingTodos.push(incomingTodo);
     }
     if (!incomingTodos.length) return res.status(400).json({ error: 'invalid_todo' });
+    const todoClockSkew = clientClockSkewMs(req.body?.client_now);
+    if (todoClockSkew) {
+      correctRowsClock(incomingTodos, todoClockSkew).forEach((todo, i) => { incomingTodos[i] = todo; });
+      logger.info('client_clock_skew_corrected', { route: 'todos', skew_ms: todoClockSkew, user: req.user.id });
+    }
     const meta = await loadWorkspaceMetaAsync(db, storageKey);
     if (!meta) return res.status(409).json({ error: 'delta_requires_full_sync' });
     const useParts = meta.layout === 'parts';

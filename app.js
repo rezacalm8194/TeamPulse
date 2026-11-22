@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp414';
+const TP_ASSET_V = 'tp415';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -109,6 +109,7 @@ function _syncStaffPaymentExpense(payment) {
   const data = {amount:Number(payment.amount||0),date_jalali:payment.date_jalali||'',category:'حقوق و دستمزد',payment_method:'پرداخت پرسنل',account_id:payment.account_id||null,description:payment.note||title,source:'staff_payment',staff_payment_id:payment.id,updated_at:new Date().toISOString()};
   if (expense) Object.assign(expense,data);
   else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense);payment.expense_id=expense.id; }
+  if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', expense, 'upsert');
   return expense;
 }
 function _removeStaffPaymentExpense(payment) {
@@ -2321,7 +2322,9 @@ function _bumpCollectionNextId(collection, extraRows) {
 function _nextId(t) {
   let id = _bumpCollectionNextId(t);
   const used = new Set((_db[t] || []).map(x => String(x?.id)));
-  const tombs = t === 'instructions' ? _db._deletedItems?.instructions : null;
+  // Never hand out an id that was deleted: its tombstone would hide the new
+  // row everywhere (server and other devices filter tombstoned ids).
+  const tombs = _db._deletedItems?.[t] && typeof _db._deletedItems[t] === 'object' ? _db._deletedItems[t] : null;
   while (used.has(String(id)) || (tombs && Object.prototype.hasOwnProperty.call(tombs, String(id)))) id += 1;
   _db._nextId[t] = id + 1;
   return id;
@@ -3228,7 +3231,7 @@ window.api = {
   families: {
     getAll: ()=>_P(_db.families.map(_familySummary)),
     add: (p)=>{ const id=_nextId('families'); _db.families.push({id,name:p.name}); (p.member_ids||[]).forEach(mid=>{const s=_db.students.find(x=>x.id===mid);if(s)s.family_id=id;}); _save(); return _P({id,name:p.name}); },
-    delete: (id)=>{ _db.students.forEach(s=>{if(s.family_id===id)s.family_id=null;}); _db.families=_db.families.filter(x=>x.id!==id); _save(); return _P({ok:true}); },
+    delete: (id)=>{ _db.students.forEach(s=>{if(s.family_id===id)s.family_id=null;}); _db.families=_db.families.filter(x=>x.id!==id); _recordDeletedItems('families', id); _save(); return _P({ok:true}); },
   },
 
   students: {
@@ -6580,7 +6583,7 @@ function _dropStaleDurableBusinessDeltas(collection, incoming) {
     if (String(entry?.operation || 'upsert') === 'delete') return true;
     const remote = incomingById.get(String(entry.id));
     if (!remote) return true;
-    const queuedTs = _businessRowTimestamp(entry.item);
+    const queuedTs = _tpLocalEditTime(_businessRowTimestamp(entry.item));
     const remoteUpdated = Date.parse(remote.updated_at || '') || 0;
     if (finance && !remoteUpdated) return false;
     const remoteTs = finance ? remoteUpdated : _businessRowTimestamp(remote);
@@ -6599,7 +6602,8 @@ function _mergeBusinessRow(collection, local, remote) {
     // Desktop/server is source of truth. A later local updated_at on the phone
     // is usually a cache touch, not a real sale edit.
     if (!_pendingBusinessDeltaIds(collection).has(String(id))) return remote;
-    return localTs > remoteTs ? local : remote;
+    // Queued = edited on this device: compare on the server clock.
+    return _tpLocalEditTime(localTs) > remoteTs ? local : remote;
   }
   const newer = localTs >= remoteTs ? local : remote;
   if (collection === 'sessions') {
@@ -6614,7 +6618,24 @@ function _mergeBusinessRow(collection, local, remote) {
 function _keepLocalBusinessRow(row, collection) {
   if (!row) return false;
   if (typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined' && FINANCE_NEWEST_FIRST_KEYS.includes(collection)) {
-    return row.id != null && _pendingBusinessDeltaIds(collection).has(String(row.id));
+    if (row.id != null && _pendingBusinessDeltaIds(collection).has(String(row.id))) return true;
+    // A sale/receipt/expense recorded on this device that the server has never
+    // acknowledged must survive a merge even if it is not (or no longer) in the
+    // durable queue — e.g. many offline entries, or expenses/wallet rows that
+    // were never queued. Rows the server already knows keep "server wins"
+    // (a local updated_at bump is usually a cache touch, not an edit).
+    const rowId = row.id != null ? String(row.id) : '';
+    const hashes = typeof _readServerSyncHashes === 'function' ? _readServerSyncHashes() : null;
+    const known = hashes?.collections?.[collection];
+    if (rowId && known) return !Object.prototype.hasOwnProperty.call(known, rowId);
+    // No baseline hashes (first sync / storage full): fall back to "created or
+    // changed after the last successful sync", measured on this device's clock.
+    const lastSyncAt = Math.max(
+      Number(window._lastServerSyncSavedAt || 0),
+      Number((typeof _readServerSyncBaseline === 'function' ? _readServerSyncBaseline() : null)?.savedAt || 0)
+    );
+    const ts = _businessRowTimestamp(row);
+    return ts > 0 && lastSyncAt > 0 && ts > lastSyncAt;
   }
   const pending = typeof _readServerSyncPending === 'function' ? _readServerSyncPending() : null;
   const ts = _businessRowTimestamp(row);
@@ -19254,6 +19275,24 @@ async function _authEnsureLiveSession(saved) {
 }
 
 // ── API helper برای سرور خودمان ─────────────────────────────────────────────
+// Offset between this device's clock and the server's, learned from the HTTP
+// Date header. Used only when comparing timestamps of rows EDITED ON THIS
+// DEVICE against server rows, so a phone with a wrong clock does not lose (or
+// wrongly win) its edits. Offsets under a minute are treated as zero.
+window._tpServerClockOffset = window._tpServerClockOffset || 0;
+function _tpNoteServerClock(response) {
+  try {
+    const header = response?.headers?.get?.('Date');
+    const serverMs = header ? Date.parse(header) : NaN;
+    if (!Number.isFinite(serverMs)) return;
+    const offset = serverMs - Date.now();
+    window._tpServerClockOffset = Math.abs(offset) >= 60000 && Math.abs(offset) <= 30 * 86400000 ? offset : 0;
+  } catch (_) {}
+}
+function _tpLocalEditTime(ms) {
+  const n = Number(ms) || 0;
+  return n ? n + (Number(window._tpServerClockOffset) || 0) : 0;
+}
 async function _apiFetch(path, opts = {}) {
   const url = _tpApiOrigin() + path;
   const isFormData = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
@@ -19315,6 +19354,7 @@ async function _apiFetch(path, opts = {}) {
         }
       }
       const response = await fetch(url, { cache: 'no-store', ...fetchOpts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) });
+      _tpNoteServerClock(response);
       if (response.status === 401) {
         if (!skipAuthRecover && !_tpIsPublicAuthPath(path)) void _tpHandleUnauthorized();
         return response;
@@ -20002,7 +20042,11 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
         return;
       }
 
-      const localTime = Date.parse(localItem.updated_at || localItem.created_at || '') || 0;
+      // Only rows changed on this device pass keepUnsynced below, so their
+      // timestamps are on this device's clock: compare on the server clock.
+      // (serverLooksPartial also keeps unchanged rows: no shift for those.)
+      const localRawTime = Date.parse(localItem.updated_at || localItem.created_at || '') || 0;
+      const localTime = serverLooksPartial ? localRawTime : _tpLocalEditTime(localRawTime);
       const serverTime = Date.parse(serverItem.updated_at || serverItem.created_at || '') || 0;
       if (key === 'todos') {
         Object.assign(serverItem, _resolveIncomingTodo(localItem, serverItem, {
@@ -20422,13 +20466,40 @@ function _readDurableBusinessDeltaQueue() {
   }
 }
 
+// Finance entries (sales, receipts, expenses, wallet) get a much larger
+// budget than other queued rows: evicting one can lose a user's money record.
+const _DURABLE_DELTA_FINANCE_LIMIT = 1000;
+const _DURABLE_DELTA_OTHER_LIMIT = 64;
+function _trimDurableBusinessDeltaQueue(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const isFinance = entry => typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
+    && FINANCE_NEWEST_FIRST_KEYS.includes(String(entry?.collection));
+  const finance = rows.filter(isFinance);
+  const other = rows.filter(entry => !isFinance(entry));
+  if (finance.length <= _DURABLE_DELTA_FINANCE_LIMIT && other.length <= _DURABLE_DELTA_OTHER_LIMIT) return rows;
+  const keep = new Set([
+    ...finance.slice(-_DURABLE_DELTA_FINANCE_LIMIT),
+    ...other.slice(-_DURABLE_DELTA_OTHER_LIMIT),
+  ]);
+  return rows.filter(entry => keep.has(entry));
+}
 function _writeDurableBusinessDeltaQueue(list) {
+  const next = _trimDurableBusinessDeltaQueue(list);
   try {
-    const next = (Array.isArray(list) ? list : []).slice(-64);
     if (!next.length) localStorage.removeItem(_businessDeltaQueueKey());
     else localStorage.setItem(_businessDeltaQueueKey(), JSON.stringify(next));
   } catch (e) {
     console.warn('[TeamPulse] durable business-delta queue write failed:', e.message);
+    // Storage full: keep at least the finance entries rather than nothing.
+    try {
+      const financeOnly = next.filter(entry => typeof FINANCE_NEWEST_FIRST_KEYS !== 'undefined'
+        && FINANCE_NEWEST_FIRST_KEYS.includes(String(entry?.collection)));
+      if (financeOnly.length) localStorage.setItem(_businessDeltaQueueKey(), JSON.stringify(financeOnly));
+    } catch (_) {}
+    if (!window._durableDeltaQuotaWarned && typeof showToast === 'function') {
+      window._durableDeltaQuotaWarned = true;
+      showToast('فضای ذخیره‌سازی مرورگر پر است؛ برای امنیت ثبت‌ها، به اینترنت وصل شوید تا همگام‌سازی انجام شود', 'error');
+    }
   }
 }
 
@@ -20885,6 +20956,7 @@ function _syncTodoDelta(todo, operation = 'upsert', extraTodos = []) {
             operation,
             todo: todoSnapshot,
             todos: extraSnapshots.length ? [...extraSnapshots, todoSnapshot] : undefined,
+            client_now: Date.now(),
             base_etag: window._serverDataEtag || null,
             todo_id_high_water: _db?._todoIdHighWater || 0,
             staff_id: teamSession
@@ -21311,6 +21383,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
           collections: documentPatch.collections,
           scalars: documentPatch.scalars,
           client_saved_at: syncSavedAt,
+          client_now: Date.now(),
           base_etag: window._serverDataEtag || null,
         }),
       });
@@ -22726,6 +22799,7 @@ function _flushPendingServerSyncKeepalive() {
     collections: patch.collections,
     scalars: patch.scalars,
     client_saved_at: savedAt,
+    client_now: Date.now(),
     base_etag: window._serverDataEtag || null,
   } : fullBody;
   const path = useDelta
@@ -22749,6 +22823,7 @@ function _flushPendingServerSyncKeepalive() {
       operation: 'upsert',
       todos: todoUpsert,
       todo: todoUpsert[todoUpsert.length - 1],
+      client_now: Date.now(),
       base_etag: window._serverDataEtag || null,
       todo_id_high_water: _db?._todoIdHighWater || 0,
     });
@@ -22764,6 +22839,7 @@ function _flushPendingServerSyncKeepalive() {
             operation: 'upsert',
             todos: todoUpsert,
             todo: todoUpsert[todoUpsert.length - 1],
+            client_now: Date.now(),
             base_etag: window._serverDataEtag || null,
             todo_id_high_water: _db?._todoIdHighWater || 0,
           }),

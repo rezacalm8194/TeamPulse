@@ -378,7 +378,8 @@ test('knowledge files created while impersonating still sync and stay in the cur
   assert.match(appSource, /Matching knowledge folders alone must not freeze sync/);
   assert.match(appSource, /_enqueueDurableBusinessDelta\('instructions', item, 'upsert'\)/);
   assert.match(appSource, /const onlyKnowledge = !!knowledgePatch && knowledgeKeys.length/);
-  assert.match(appSource, /t === 'instructions'/);
+  // _nextId skips tombstoned ids for every collection (instructions included).
+  assert.match(appSource, /const tombs = _db\._deletedItems\?\.\[t\]/);
   const extraSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'app-extra.js'), 'utf8');
   assert.match(extraSource, /if \(!targetId\) return;/);
   assert.doesNotMatch(extraSource, /if \(!targetId\) \{\s*_instrParentId = null;/);

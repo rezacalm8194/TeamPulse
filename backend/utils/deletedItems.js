@@ -13,6 +13,10 @@ const TOMBSTONE_COLLECTIONS = [
   'staff_adjustments',
   'staff_monthly',
   'staff_role_entries',
+  // Finance rows: a stale device must not bring back a deleted expense or
+  // shared account and silently change the totals.
+  'expenses',
+  'families',
   // Knowledge-center parts are synced as whole arrays (not 200-row pages).
   // Track explicit deletes so a stale empty cache cannot wipe them silently.
   'instructions',

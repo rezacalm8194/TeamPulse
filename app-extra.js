@@ -370,6 +370,7 @@ function _syncStaffPaymentExpense(payment) {
   const data = {amount:Number(payment.amount||0),date_jalali:payment.date_jalali||'',category:'حقوق و دستمزد',payment_method:'پرداخت پرسنل',account_id:payment.account_id||null,description:payment.note||title,source:'staff_payment',staff_payment_id:payment.id,updated_at:new Date().toISOString()};
   if (expense) Object.assign(expense,data);
   else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense);payment.expense_id=expense.id; }
+  if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', expense, 'upsert');
   return expense;
 }
 function _removeStaffPaymentExpense(payment) {
@@ -471,10 +472,14 @@ function saveExpense() {
       const now = new Date().toISOString();
       quickItems.forEach((q, i) => {
         const desc = baseDesc ? `${q.description} — ${baseDesc}` : q.description;
-        _db.expenses.push({ id:_db._nextId.expenses++, created_at:now, amount:q.amount, date_jalali:date,
+        // _nextId skips ids already used or deleted (a reused deleted id
+        // would be hidden by its tombstone).
+        const quickExpense = { id:_nextId('expenses'), created_at:now, amount:q.amount, date_jalali:date,
           category: q.category || baseCategory, payment_method: baseMethod, account_id: baseAccount,
           description: desc, repeat_months:0, reminder_days:0,
-          receipts: i===0 ? baseReceipts : [], updated_at: now });
+          receipts: i===0 ? baseReceipts : [], updated_at: now };
+        _db.expenses.push(quickExpense);
+        if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', quickExpense, 'upsert');
       });
       _save();
       showToast(`${fa(quickItems.length)} هزینه ثبت شد ✓`,'success');
@@ -484,10 +489,11 @@ function saveExpense() {
   }
   const amount=_expenseAmountValue(document.getElementById('expense-amount')?.value);
   if(!amount){showToast('مبلغ هزینه را وارد کنید','error');return;}
-  const expense=id==null?{id:_db._nextId.expenses++,created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
+  const expense=id==null?{id:_nextId('expenses'),created_at:new Date().toISOString()}:(_db.expenses||[]).find(e=>String(e.id)===String(id));
   if(!expense){showToast('هزینه پیدا نشد','error');return;}
   Object.assign(expense,{amount,date_jalali:date,category:document.getElementById('expense-category')?.value||'سایر',payment_method:document.getElementById('expense-method')?.value||'سایر',account_id:document.getElementById('expense-account')?.value||null,description:(document.getElementById('expense-description')?.value||'').trim(),repeat_months:repeatMonths,reminder_days:reminderDays,receipts:_cloneData(window._pendingExpenseReceipts||[]),updated_at:new Date().toISOString()});
   if(id==null)_db.expenses.push(expense);
+  if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('expenses',expense,'upsert');
   _db.expense_reminders=_db.expense_reminders||[];
   const existingReminder=_db.expense_reminders.find(r=>String(r.expense_id)===String(expense.id)&&!r.done);
   if(repeatMonths>0){
@@ -507,6 +513,7 @@ async function deleteExpense(id) {
   if(!expense||!confirm('این هزینه حذف شود؟'))return;
   try{await _IDB.deleteMany((expense.receipts||[]).map(a=>a.id));}catch(e){}
   _db.expenses=_db.expenses.filter(e=>String(e.id)!==String(id));
+  _recordDeletedItems('expenses', id);
   _db.expense_reminders=(_db.expense_reminders||[]).filter(r=>String(r.expense_id)!==String(id));
   _save();
   showToast('هزینه حذف شد','error');
