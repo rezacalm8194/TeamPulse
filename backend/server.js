@@ -299,6 +299,26 @@ const server = app.listen(PORT, HOST, () => {
       if (migratedFiles.migrated) logger.info('shared_files_migrated', migratedFiles);
       const orphans = gcOrphanFiles(db, fileDriver);
       if (orphans) logger.info('shared_files_orphans_deleted', { deleted: orphans });
+      // Workspaces deleted more than 30 days ago leave the recycle bin for
+      // good. Runs at startup and every 6 hours; restorable until then.
+      const runTrashPurge = () => {
+        try {
+          const { purgeExpiredTrashedWorkspaces } = require('./utils/workspaceTrash');
+          const { deleteWorkspaceDocument } = require('./utils/documentStore');
+          const { deleteStoredFiles } = require('./utils/fileStore');
+          const { workspaceStorageKey } = require('./utils/teamAccessSchema');
+          purgeExpiredTrashedWorkspaces(db, {
+            deleteWorkspaceDocument,
+            deleteStoredFiles,
+            storageDriver: createStorageDriver(),
+            workspaceStorageKey,
+          }, { logger });
+        } catch (error) {
+          logger.error('workspace_trash_purge_job_failed', { error });
+        }
+      };
+      runTrashPurge();
+      setInterval(runTrashPurge, 6 * 60 * 60 * 1000).unref();
       void flushPendingTodoAudits(db, logger);
     } catch (error) {
       logger.error('startup_job_failed', { error });

@@ -54,6 +54,16 @@ const {
 const { createStorageDriver } = require('../utils/storage');
 const { deleteStoredFiles } = require('../utils/fileStore');
 const {
+  TRASH_RETENTION_DAYS,
+  ensureWorkspaceTrashSchema,
+  isWorkspaceActive,
+  isWorkspaceTrashed,
+  countActiveWorkspaces,
+  trashWorkspace,
+  restoreWorkspace,
+  listTrashedWorkspaces,
+} = require('../utils/workspaceTrash');
+const {
   ensureTodoStoreSchema,
   todoState,
   loadAllTodos,
@@ -168,6 +178,7 @@ db.prepare(`
   )
 `).run();
 db.prepare("CREATE INDEX IF NOT EXISTS idx_account_workspaces_owner ON account_workspaces(owner_account_id, created_at)").run();
+ensureWorkspaceTrashSchema(db);
 ensureTeamAccessSchema(db);
 
 function sanitizeUserDataForStorage(data) {
@@ -201,11 +212,10 @@ function requestedWorkspaceId(req) {
   return normalizeWorkspaceId(req.query.workspace || req.body?.workspace || 'default');
 }
 
+// A workspace in the recycle bin does not "exist" for any data route: its
+// rows stay intact on disk but nobody can read or write them until restored.
 function workspaceExists(ownerAccountId, workspaceId) {
-  if (workspaceId === 'default') return true;
-  return !!db.prepare(`
-    SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?
-  `).get(ownerAccountId, workspaceId);
+  return isWorkspaceActive(db, ownerAccountId, workspaceId);
 }
 
 function resolveWorkspace(req, res, targetId) {
@@ -1087,18 +1097,23 @@ router.get('/:accountId/workspaces', auth, (req, res) => {
   const isOwner = req.user.id === targetId || req.user.role === 'admin';
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   const rows = isOwner
-    ? db.prepare('SELECT workspace_id AS id,name,created_at AS created FROM account_workspaces WHERE owner_account_id=? ORDER BY created_at,id').all(targetId)
+    ? db.prepare('SELECT workspace_id AS id,name,created_at AS created FROM account_workspaces WHERE owner_account_id=? AND deleted_at IS NULL ORDER BY created_at,id').all(targetId)
     : db.prepare(`
         SELECT w.workspace_id AS id,w.name,w.created_at AS created
         FROM account_workspaces w
         JOIN team_access_grants g ON g.owner_account_id=w.owner_account_id AND g.workspace_id=w.workspace_id
-        WHERE w.owner_account_id=? AND g.member_email=? AND g.status='active'
+        WHERE w.owner_account_id=? AND g.member_email=? AND g.status='active' AND w.deleted_at IS NULL
         ORDER BY w.created_at,w.workspace_id
       `).all(targetId, requesterEmail);
   const hasDefault = isOwner || !!db.prepare(`SELECT 1 FROM team_access_grants WHERE owner_account_id=? AND workspace_id='default' AND member_email=? AND status='active'`).get(targetId, requesterEmail);
   if (!isOwner && !hasDefault && !rows.length) return res.status(403).json({ error: 'forbidden' });
   if (hasDefault) rows.unshift({ id:'default', name:'میزکار اصلی', created:null });
-  res.json({ workspaces: rows, limit: MAX_WORKSPACES_PER_ACCOUNT });
+  const payload = { workspaces: rows, limit: MAX_WORKSPACES_PER_ACCOUNT };
+  if (isOwner) {
+    payload.trash = listTrashedWorkspaces(db, targetId);
+    payload.trash_retention_days = TRASH_RETENTION_DAYS;
+  }
+  res.json(payload);
 });
 
 router.post('/:accountId/workspaces', auth, (req, res) => {
@@ -1108,7 +1123,8 @@ router.post('/:accountId/workspaces', auth, (req, res) => {
     const workspaceId = String(req.body?.id || '').trim();
     const name = String(req.body?.name || '').trim().slice(0, 80);
     if (!/^acc_[a-zA-Z0-9_-]{6,80}$/.test(workspaceId) || !name) return res.status(400).json({ error: 'invalid_workspace' });
-    const count = db.prepare('SELECT COUNT(*) AS n FROM account_workspaces WHERE owner_account_id=?').get(targetId).n;
+    if (isWorkspaceTrashed(db, targetId, workspaceId)) return res.status(409).json({ error: 'workspace_in_trash' });
+    const count = countActiveWorkspaces(db, targetId);
     if (count >= MAX_WORKSPACES_PER_ACCOUNT - 1) return res.status(409).json({ error: 'workspace_limit', limit: MAX_WORKSPACES_PER_ACCOUNT });
     db.prepare(`INSERT INTO account_workspaces(owner_account_id,workspace_id,name) VALUES (?,?,?)`).run(targetId, workspaceId, name);
     res.status(201).json({ workspace: { id: workspaceId, name } });
@@ -1123,7 +1139,7 @@ router.patch('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
   if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   const name = String(req.body?.name || '').trim().slice(0, 80);
   if (!name) return res.status(400).json({ error: 'invalid_name' });
-  const result = db.prepare(`UPDATE account_workspaces SET name=?,updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=?`).run(name, targetId, req.params.workspaceId);
+  const result = db.prepare(`UPDATE account_workspaces SET name=?,updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=? AND deleted_at IS NULL`).run(name, targetId, req.params.workspaceId);
   if (!result.changes) return res.status(404).json({ error: 'workspace_not_found' });
   res.json({ success: true });
 });
@@ -1133,20 +1149,26 @@ router.delete('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
   if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   const workspaceId = String(req.params.workspaceId || '');
   if (workspaceId === 'default') return res.status(400).json({ error: 'default_workspace' });
-  const storageKey = workspaceStorageKey(targetId, workspaceId);
-  const run = db.transaction(() => {
-    const result = db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
-    if (!result.changes) return false;
-    db.prepare('DELETE FROM team_access_grants WHERE owner_account_id=? AND workspace_id=?').run(targetId, workspaceId);
-    try { db.prepare("DELETE FROM push_subscriptions WHERE account_id=? AND COALESCE(workspace_id,'default')=?").run(targetId, workspaceId); } catch {}
-    db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=?').run(storageKey);
-    db.prepare('DELETE FROM user_data_versions WHERE account_id=?').run(storageKey);
-    deleteWorkspaceDocument(db, storageKey);
-    deleteStoredFiles(db, createStorageDriver(), { ownerAccountId: targetId, workspaceId });
-    return true;
-  });
-  if (!run()) return res.status(404).json({ error: 'workspace_not_found' });
-  res.json({ success: true });
+  // Moves the workspace to the recycle bin. Data, version snapshots and files
+  // are kept and can be restored for TRASH_RETENTION_DAYS; the periodic purge
+  // in server.js removes them permanently afterwards.
+  if (!trashWorkspace(db, targetId, workspaceId)) return res.status(404).json({ error: 'workspace_not_found' });
+  logger.info('workspace_trashed', { owner: targetId, workspace: workspaceId, by: req.user.id });
+  res.json({ success: true, trashed: true, retention_days: TRASH_RETENTION_DAYS });
+});
+
+router.post('/:accountId/workspaces/:workspaceId/restore', auth, (req, res) => {
+  const targetId = req.params.accountId;
+  if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+  const workspaceId = String(req.params.workspaceId || '');
+  const result = restoreWorkspace(db, targetId, workspaceId, { maxSecondary: MAX_WORKSPACES_PER_ACCOUNT - 1 });
+  if (!result.ok) {
+    const status = result.error === 'workspace_limit' ? 409 : 404;
+    return res.status(status).json({ error: result.error, limit: MAX_WORKSPACES_PER_ACCOUNT });
+  }
+  logger.info('workspace_restored', { owner: targetId, workspace: workspaceId, by: req.user.id });
+  const row = db.prepare('SELECT workspace_id AS id,name,created_at AS created FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').get(targetId, workspaceId);
+  res.json({ success: true, workspace: row });
 });
 
 // نسخه‌های سرور فقط با درخواست صریح کاربر فهرست/بازیابی می‌شوند؛ هیچ مسیر

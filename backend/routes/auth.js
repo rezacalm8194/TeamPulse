@@ -14,6 +14,7 @@ const {
 const { ensureTeamAccessSchema, normalizeWorkspaceId, workspaceStorageKey } = require('../utils/teamAccessSchema');
 const { loadWorkspaceMeta, loadDocumentParts } = require('../utils/documentStore');
 const { logger } = require('../utils/logger');
+const { isWorkspaceActive } = require('../utils/workspaceTrash');
 const {
   normalizeTeamPermissions,
   parseJsonArray,
@@ -114,7 +115,8 @@ router.post('/team-invite/grant', auth, (req, res) => {
       return res.status(400).json({ error: 'invalid team grant' });
     }
     if (workspaceId !== 'default') {
-      const workspace = db.prepare('SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').get(req.user.id, workspaceId);
+      // Workspaces in the recycle bin cannot receive or accept team invites.
+      const workspace = isWorkspaceActive(db, req.user.id, workspaceId);
       if (!workspace) return res.status(404).json({ error: 'workspace_not_found' });
     }
     db.prepare(`
@@ -197,7 +199,7 @@ router.post('/team-invite/resolve', auth, (req, res) => {
       return res.status(403).json({ error: 'owner email mismatch' });
     }
     if (workspaceId !== 'default') {
-      const workspace = db.prepare('SELECT 1 FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?').get(owner.id, workspaceId);
+      const workspace = isWorkspaceActive(db, owner.id, workspaceId);
       if (!workspace) return res.status(404).json({ error: 'workspace_not_found' });
     }
 

@@ -23,7 +23,7 @@ cd /d "%~2"
 
 rem One-click production: promote develop -> main on GitHub, then sync the
 rem live server over SSH (same host pattern as deploy-staging.bat).
-set "PROD_SSH=pachim@37.32.12.186"
+set "PROD_SSH=pachim@85.198.53.38"
 set "PROD_DIR=/home/pachim/TeamPulse.ir"
 set "COMMIT_MSG=deploy: update TeamPulse"
 set "WAIT_FOR_PACHIM_HOOK=0"
