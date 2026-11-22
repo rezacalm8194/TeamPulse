@@ -4417,6 +4417,7 @@ const _gdrive = {
   },
 
   setSyncStatusUI(status, msg) {
+    if (status !== 'syncing') this._lastStatus = { status, msg, at: Date.now() };
     const el=document.getElementById('gdrive-status');
     if(!el)return;
     const icons={idle:'☁️',syncing:'⏳',ok:'✅',error:'❌'};
@@ -4473,6 +4474,13 @@ const _gdrive = {
   // (cleared cache, another device, data sync overwrote the local flag).
   async refreshAccountUI() {
     this.renderAccountLine();
+    // The settings page is re-drawn from scratch, so bring back the result of
+    // the last send (with its time) instead of an empty status line.
+    if (this._lastStatus) {
+      let t = '';
+      try { t = new Date(this._lastStatus.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch (e) {}
+      this.setSyncStatusUI(this._lastStatus.status, (this._lastStatus.msg || '') + (t ? ' — ساعت ' + t : ''));
+    }
     if (this._suspended && window._impersonating) return;
     if (!_authTokenUsable(_sbSession?.token)) return;
     const st = await this.checkServerStatus();
@@ -4481,10 +4489,38 @@ const _gdrive = {
       try { await this.initOnLoad(); } catch (e) {}
       return;
     }
-    if (st.connected && this.enabled && !this.email) {
-      try { await this.silentRefresh(); } catch (e) {}
+    const tokenValid = !!(this.token && Date.now() < this.tokenExpiry);
+    if (!st.connected && this.enabled && !tokenValid) {
+      // Only the local flag said "connected": the server holds no login, so
+      // nothing can be sent. Say so instead of showing a fake connection.
+      this._markDisconnected(st.configured
+        ? 'ورود ماندگار گوگل روی سرور ذخیره نیست؛ یک‌بار «اتصال Drive» را بزن'
+        : 'ورود ماندگار Drive روی سرور تنظیم نشده (GOOGLE_OAUTH_CLIENT_SECRET)؛ بعد از تنظیم، «اتصال Drive» را بزن');
+      return;
+    }
+    if (this.enabled && !this.email) {
+      if (st.connected) { try { await this.silentRefresh(); } catch (e) {} }
+      if (!this.email) await this.fetchEmailDirect();
     }
     this.renderAccountLine();
+  },
+
+  // Fallback that does not depend on the backend: ask Drive directly (works
+  // with the drive.file scope) which Google account the token belongs to.
+  async fetchEmailDirect() {
+    if (!this.token || Date.now() >= this.tokenExpiry) return '';
+    try {
+      const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', {
+        headers: { Authorization: 'Bearer ' + this.token },
+      });
+      if (!res.ok) return '';
+      const j = await res.json().catch(() => ({}));
+      const email = j && j.user && j.user.emailAddress;
+      if (email) this.setEmail(email);
+      return email || '';
+    } catch (e) {
+      return '';
+    }
   },
 
   applyAccessToken(token, expiresIn) {
@@ -4786,6 +4822,7 @@ const _gdrive = {
     _db._gdrive_file_ids = ids;
     _save(false);
     _gdriveWriteSession();
+    if (!this.email) this.fetchEmailDirect().catch(() => {});
     return true;
   },
 
@@ -27296,9 +27333,19 @@ function _getRealViewportHeight() {
 function _setRealAppHeight() {
   const vv = window.visualViewport || null;
   const layoutH = window.innerHeight || document.documentElement.clientHeight || _getRealViewportHeight();
-  const h = vv ? vv.height : layoutH;
+  let h = vv ? vv.height : layoutH;
   const vvOffsetTop = vv ? (vv.offsetTop || 0) : 0;
   const vvBottomGap = vv ? Math.max(0, Math.round(layoutH - (vv.height + vvOffsetTop))) : 0;
+  // iOS PWA (standalone): visualViewport/innerHeight گاهی کمتر از ارتفاع واقعی صفحه گزارش می‌شود
+  // و زیر نوار پایین فضای مشکی خالی می‌ماند. وقتی کیبورد بسته است، ارتفاع کامل صفحه را می‌گیریم.
+  if (window.navigator.standalone === true) {
+    const kbLikelyOpen = (h < _vvBaseHeight - 150) || vvBottomGap > 150;
+    if (!kbLikelyOpen) {
+      const portrait = window.matchMedia ? window.matchMedia('(orientation: portrait)').matches : true;
+      const screenH = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
+      h = Math.max(h, layoutH, document.documentElement.clientHeight || 0, screenH || 0);
+    }
+  }
   document.documentElement.style.setProperty('--app-vh', h + 'px');
   document.documentElement.style.setProperty('--modal-vh', h + 'px');
   document.documentElement.style.setProperty('--vv-height', h + 'px');
@@ -27309,6 +27356,7 @@ function _setRealAppHeight() {
   // تشخیص کیبورد مجازی: اگه ارتفاع بیش از ۱۵۰px نسبت به مقدار پایه کم شده باشه یعنی کیبورد بازه
   const keyboardWasOpen = window._mobileKeyboardOpen;
   window._mobileKeyboardOpen = (h < _vvBaseHeight - 150) || vvBottomGap > 150;
+  if (!window._mobileKeyboardOpen && h > _vvBaseHeight) _vvBaseHeight = h;
   const hasOpenModal = !!document.querySelector('.modal-overlay.open');
   document.body.classList.toggle('modal-keyboard-open', !!(window._mobileKeyboardOpen && hasOpenModal));
 

@@ -63,6 +63,7 @@ body.light {
 /* ── Reset ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html {
+  background: var(--bg2); /* iOS PWA: اگر فاصله‌ای زیر نوار پایین ماند، هم‌رنگ نوار باشد نه مشکی */
   overflow-x: hidden;
   overflow-y: hidden;
   width: 100%;
