@@ -1,5 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const zlib = require('zlib');
 const bcrypt = require('bcryptjs');
 const {
   ACCOUNT_TRASH_RETENTION_DAYS,
@@ -11,7 +15,11 @@ const {
   hardDeleteAccount,
   purgeExpiredTrashedAccounts,
   isAccountTrashed,
+  writePrePurgeAccountBackup,
 } = require('../utils/accountTrash');
+const { ensureDocumentStoreSchema, writeWorkspaceDocument } = require('../utils/documentStore');
+const { workspaceStorageKey } = require('../utils/teamAccessSchema');
+const { hasAppDocumentPayload } = require('../utils/userBackup');
 const {
   ensureTokenRevocationSchema,
   currentTokenVersion,
@@ -65,6 +73,7 @@ function setup() {
     CREATE TABLE accounts (
       id TEXT PRIMARY KEY, email TEXT, password TEXT, name TEXT, role TEXT DEFAULT 'owner',
       is_active INTEGER DEFAULT 1, token_version INTEGER DEFAULT 0, phone TEXT,
+      business_name TEXT, business_type TEXT, plan TEXT,
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT
     );
     CREATE TABLE clients (id TEXT PRIMARY KEY, account_id TEXT, name TEXT);
@@ -83,6 +92,7 @@ function setup() {
     CREATE TABLE user_data_versions (account_id TEXT PRIMARY KEY, payload TEXT);
     CREATE TABLE account_workspaces (
       owner_account_id TEXT NOT NULL, workspace_id TEXT NOT NULL, name TEXT,
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
       PRIMARY KEY (owner_account_id, workspace_id)
     );
     CREATE TABLE staff (id TEXT PRIMARY KEY, account_id TEXT);
@@ -98,11 +108,16 @@ function setup() {
     INSERT INTO files VALUES ('f1', 'victim', 'victim', 'default', 'a.jpg'), ('f2', 'other', 'other', 'default', 'b.jpg');
     INSERT INTO user_data_versions VALUES ('victim::workspace::default', '{}'), ('other::workspace::default', '{}');
     INSERT INTO docs VALUES ('victim::workspace::default', 'data'), ('other::workspace::default', 'keep');
-    INSERT INTO account_workspaces VALUES ('victim', 'default', 'Main'), ('other', 'default', 'Main');
+    INSERT INTO account_workspaces (owner_account_id, workspace_id, name)
+      VALUES ('victim', 'default', 'Main'), ('other', 'default', 'Main');
     INSERT INTO push_subscriptions VALUES ('ps1', 'victim');
   `);
   ensureAccountTrashSchema(db);
   ensureTokenRevocationSchema(db);
+  ensureDocumentStoreSchema(db);
+  writeWorkspaceDocument(db, workspaceStorageKey('victim', 'default'), {
+    students: [{ id: 1, name: 'KeepMe' }],
+  }, { replaceAll: true });
 
   let fileDeleteCalls = 0;
   const deps = {
@@ -234,6 +249,7 @@ test('hardDeleteAccount skips file deletes when the database transaction fails',
     deleteStoredFiles() { fileDeleteCalls += 1; },
     storageDriver: null,
     logger: null,
+    skipPrePurgeBackup: true,
   };
   assert.throws(() => hardDeleteAccount(db, 'victim', failingDeps));
   assert.equal(fileDeleteCalls, 0);
@@ -242,8 +258,9 @@ test('hardDeleteAccount skips file deletes when the database transaction fails',
 
 test('hard delete wipes victim data only', () => {
   const { db, deps } = setup();
+  const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-purge-backup-'));
   trashAccount(db, 'victim', 'admin-1', { now: T0 });
-  hardDeleteAccount(db, 'victim', deps);
+  hardDeleteAccount(db, 'victim', { ...deps, backupDir });
   assert.equal(count(db, "SELECT COUNT(*) AS n FROM accounts WHERE id='victim'"), 0);
   assert.equal(count(db, "SELECT COUNT(*) AS n FROM clients WHERE account_id='victim'"), 0);
   assert.equal(count(db, "SELECT COUNT(*) AS n FROM files WHERE account_id='victim'"), 0);
@@ -252,6 +269,44 @@ test('hard delete wipes victim data only', () => {
   assert.equal(count(db, "SELECT COUNT(*) AS n FROM clients WHERE account_id='other'"), 1);
   assert.equal(count(db, "SELECT COUNT(*) AS n FROM docs WHERE storage_key='other::workspace::default'"), 1);
   assert.equal(deps.fileDeleteCalls, 1);
+  const backups = fs.readdirSync(backupDir).filter(name => name.endsWith('.json.gz'));
+  assert.equal(backups.length, 1);
+  const payload = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(backupDir, backups[0]))).toString('utf8'));
+  assert.ok(hasAppDocumentPayload(payload));
+  assert.equal(payload.meta.account_id, 'victim');
+  fs.rmSync(backupDir, { recursive: true, force: true });
+});
+
+test('hard delete is aborted when pre-purge backup cannot be written', () => {
+  const { db, deps } = setup();
+  trashAccount(db, 'victim', 'admin-1', { now: T0 });
+  const blocker = path.join(os.tmpdir(), `tp-not-a-dir-${Date.now()}`);
+  fs.writeFileSync(blocker, 'blocked');
+  assert.throws(() => writePrePurgeAccountBackup(db, 'victim', { backupDir: blocker }), /ENOTDIR|EEXIST|ENOENT/);
+  assert.throws(
+    () => hardDeleteAccount(db, 'victim', { ...deps, backupDir: blocker }),
+    /ENOTDIR|EEXIST|ENOENT/
+  );
+  assert.equal(count(db, "SELECT COUNT(*) AS n FROM accounts WHERE id='victim'"), 1);
+  fs.unlinkSync(blocker);
+});
+
+test('hard delete tolerates missing optional wallet tables', () => {
+  const { db, deps } = setup();
+  trashAccount(db, 'victim', 'admin-1', { now: T0 });
+  db.exec('DROP TABLE wallet_transactions');
+  db.exec('DROP TABLE wallet_charge_requests');
+  db.exec('DROP TABLE user_wallets');
+  hardDeleteAccount(db, 'victim', { ...deps, skipPrePurgeBackup: true });
+  assert.equal(count(db, "SELECT COUNT(*) AS n FROM accounts WHERE id='victim'"), 0);
+});
+
+test('purge never hard-deletes trashed admin accounts', () => {
+  const { db, deps } = setup();
+  db.prepare(`UPDATE accounts SET role='admin' WHERE id='victim'`).run();
+  trashAccount(db, 'victim', 'admin-1', { now: T0 - 40 * DAY });
+  assert.equal(purgeExpiredTrashedAccounts(db, { ...deps, skipPrePurgeBackup: true }, { now: T0, env: {} }), 0);
+  assert.equal(count(db, "SELECT COUNT(*) AS n FROM accounts WHERE id='victim'"), 1);
 });
 
 test('trash list reports retention metadata and counts', () => {

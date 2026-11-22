@@ -54,6 +54,9 @@ const {
 const { createStorageDriver } = require('../utils/storage');
 const { deleteStoredFiles } = require('../utils/fileStore');
 const {
+  isAccountTrashed,
+} = require('../utils/accountTrash');
+const {
   TRASH_RETENTION_DAYS,
   ensureWorkspaceTrashSchema,
   isWorkspaceActive,
@@ -198,6 +201,7 @@ function sanitizeUserDataForStorage(data) {
 }
 
 function canAccessWorkspace(req, targetId, workspaceId) {
+  if (isAccountTrashed(db, targetId)) return false;
   if (req.user.id === targetId || req.user.role === 'admin') return true;
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   if (!requesterEmail) return false;
@@ -220,6 +224,7 @@ function requestedWorkspaceId(req) {
 // A workspace in the recycle bin does not "exist" for any data route: its
 // rows stay intact on disk but nobody can read or write them until restored.
 function workspaceExists(ownerAccountId, workspaceId) {
+  if (isAccountTrashed(db, ownerAccountId)) return false;
   return isWorkspaceActive(db, ownerAccountId, workspaceId);
 }
 
@@ -1115,6 +1120,9 @@ router.post('/:accountId', auth, handleSaveData);
 
 router.get('/:accountId/workspaces', auth, (req, res) => {
   const targetId = req.params.accountId;
+  if (isAccountTrashed(db, targetId) && req.user.id !== targetId && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
   const isOwner = req.user.id === targetId || req.user.role === 'admin';
   const requesterEmail = String(req.user.email || '').trim().toLowerCase();
   const rows = isOwner

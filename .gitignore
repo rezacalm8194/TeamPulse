@@ -38,6 +38,7 @@ backend/database/*.db
 backend/database/*.db-shm
 backend/database/*.db-wal
 backend/database/snapshots/
+backend/database/purged-accounts/
 backend/database.db
 backend/database.db-shm
 backend/database.db-wal
