@@ -90,15 +90,47 @@ function trashWorkspace(db, ownerAccountId, workspaceId, { now = Date.now() } = 
   return run();
 }
 
+// Names are compared loosely so «هیدروماهر», «هيدروماهر» (Arabic ye) and
+// extra spaces/ZWNJ count as the same name.
+function normalizeWorkspaceName(name) {
+  return String(name || '')
+    .replace(/[\u064A\u0649]/g, '\u06CC')
+    .replace(/\u0643/g, '\u06A9')
+    .replace(/[\u200c\u200f\u200e]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function activeWorkspaceNameTaken(db, ownerAccountId, name, { exceptWorkspaceId = null } = {}) {
+  ensureWorkspaceTrashSchema(db);
+  const wanted = normalizeWorkspaceName(name);
+  if (!wanted) return false;
+  return db.prepare(`
+    SELECT workspace_id, name FROM account_workspaces
+    WHERE owner_account_id=? AND deleted_at IS NULL
+  `).all(ownerAccountId).some(row =>
+    row.workspace_id !== exceptWorkspaceId && normalizeWorkspaceName(row.name) === wanted
+  );
+}
+
 function restoreWorkspace(db, ownerAccountId, workspaceId, { maxSecondary = Infinity, now = Date.now() } = {}) {
   ensureWorkspaceTrashSchema(db);
   const run = db.transaction(() => {
     if (!isWorkspaceTrashed(db, ownerAccountId, workspaceId)) return { ok: false, error: 'workspace_not_in_trash' };
     if (countActiveWorkspaces(db, ownerAccountId) >= maxSecondary) return { ok: false, error: 'workspace_limit' };
+    // If an active workspace took the same name meanwhile, restore under a
+    // numbered name so the two can't be confused.
+    const current = db.prepare('SELECT name FROM account_workspaces WHERE owner_account_id=? AND workspace_id=?')
+      .get(ownerAccountId, workspaceId);
+    let name = String(current?.name || workspaceId);
+    for (let n = 2; activeWorkspaceNameTaken(db, ownerAccountId, name) && n < 100; n++) {
+      name = `${String(current?.name || workspaceId)} (${n})`;
+    }
     db.prepare(`
-      UPDATE account_workspaces SET deleted_at=NULL, updated_at=?
+      UPDATE account_workspaces SET deleted_at=NULL, name=?, updated_at=?
       WHERE owner_account_id=? AND workspace_id=?
-    `).run(sqlTime(now), ownerAccountId, workspaceId);
+    `).run(name, sqlTime(now), ownerAccountId, workspaceId);
     if (hasTable(db, 'team_access_grants')) {
       db.prepare(`
         UPDATE team_access_grants SET status='active', updated_at=datetime('now')
@@ -181,8 +213,27 @@ function purgeExpiredTrashedWorkspaces(db, deps, { now = Date.now(), logger = nu
   return purged;
 }
 
+// Active customer count per workspace from the business-store state table
+// (one indexed lookup each). Missing table/rows → no count, never an error.
+function workspaceCustomerCounts(db, storageKeys) {
+  const counts = new Map();
+  if (!storageKeys.length || !hasTable(db, 'workspace_business_state')) return counts;
+  const stmt = db.prepare(`
+    SELECT row_count, archived_count FROM workspace_business_state
+    WHERE storage_key=? AND collection_key='students'
+  `);
+  for (const key of storageKeys) {
+    const row = stmt.get(key);
+    if (row) counts.set(key, Math.max(0, Number(row.row_count || 0) - Number(row.archived_count || 0)));
+  }
+  return counts;
+}
+
 module.exports = {
   TRASH_RETENTION_DAYS,
+  normalizeWorkspaceName,
+  activeWorkspaceNameTaken,
+  workspaceCustomerCounts,
   SUSPENDED_GRANT_STATUS,
   ensureWorkspaceTrashSchema,
   isWorkspaceActive,

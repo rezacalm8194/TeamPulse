@@ -62,6 +62,8 @@ const {
   trashWorkspace,
   restoreWorkspace,
   listTrashedWorkspaces,
+  activeWorkspaceNameTaken,
+  workspaceCustomerCounts,
 } = require('../utils/workspaceTrash');
 const {
   ensureTodoStoreSchema,
@@ -1112,6 +1114,16 @@ router.get('/:accountId/workspaces', auth, (req, res) => {
   if (isOwner) {
     payload.trash = listTrashedWorkspaces(db, targetId);
     payload.trash_retention_days = TRASH_RETENTION_DAYS;
+    // Shown next to each name so same-named workspaces can't be mixed up.
+    try {
+      const keyFor = id => workspaceStorageKey(targetId, id);
+      const counts = workspaceCustomerCounts(db, [keyFor('default'), ...rows.map(r => keyFor(r.id)), ...payload.trash.map(r => keyFor(r.id))]);
+      rows.forEach(r => { if (counts.has(keyFor(r.id))) r.customers = counts.get(keyFor(r.id)); });
+      payload.trash.forEach(r => { if (counts.has(keyFor(r.id))) r.customers = counts.get(keyFor(r.id)); });
+      if (counts.has(keyFor('default'))) payload.default_customers = counts.get(keyFor('default'));
+    } catch (error) {
+      logger.warn('workspace_customer_counts_failed', { error });
+    }
   }
   res.json(payload);
 });
@@ -1124,6 +1136,7 @@ router.post('/:accountId/workspaces', auth, (req, res) => {
     const name = String(req.body?.name || '').trim().slice(0, 80);
     if (!/^acc_[a-zA-Z0-9_-]{6,80}$/.test(workspaceId) || !name) return res.status(400).json({ error: 'invalid_workspace' });
     if (isWorkspaceTrashed(db, targetId, workspaceId)) return res.status(409).json({ error: 'workspace_in_trash' });
+    if (activeWorkspaceNameTaken(db, targetId, name)) return res.status(409).json({ error: 'workspace_name_taken' });
     const count = countActiveWorkspaces(db, targetId);
     if (count >= MAX_WORKSPACES_PER_ACCOUNT - 1) return res.status(409).json({ error: 'workspace_limit', limit: MAX_WORKSPACES_PER_ACCOUNT });
     db.prepare(`INSERT INTO account_workspaces(owner_account_id,workspace_id,name) VALUES (?,?,?)`).run(targetId, workspaceId, name);
@@ -1139,6 +1152,9 @@ router.patch('/:accountId/workspaces/:workspaceId', auth, (req, res) => {
   if (req.user.id !== targetId && req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   const name = String(req.body?.name || '').trim().slice(0, 80);
   if (!name) return res.status(400).json({ error: 'invalid_name' });
+  if (activeWorkspaceNameTaken(db, targetId, name, { exceptWorkspaceId: req.params.workspaceId })) {
+    return res.status(409).json({ error: 'workspace_name_taken' });
+  }
   const result = db.prepare(`UPDATE account_workspaces SET name=?,updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=? AND deleted_at IS NULL`).run(name, targetId, req.params.workspaceId);
   if (!result.changes) return res.status(404).json({ error: 'workspace_not_found' });
   res.json({ success: true });

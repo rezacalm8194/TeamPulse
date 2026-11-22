@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp413';
+const TP_ASSET_V = 'tp414';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -6991,7 +6991,41 @@ async function _supportsWorkspaceApi() {
   return supported;
 }
 
+// Same loose comparison as the server (Arabic ye/kaf, spaces, ZWNJ, case).
+function _workspaceNameKey(name) {
+  return String(name || '')
+    .replace(/[\u064A\u0649]/g, '\u06CC')
+    .replace(/\u0643/g, '\u06A9')
+    .replace(/[\u200c\u200f\u200e]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+function _workspaceNameTaken(name, exceptId = null) {
+  const key = _workspaceNameKey(name);
+  if (!key) return false;
+  if (exceptId !== 'default' && _workspaceNameKey(_getDefaultAccountName()) === key) return true;
+  return _getAccounts().some(a => String(a.id) !== String(exceptId) && _workspaceNameKey(a.name) === key);
+}
+const _WORKSPACE_NAME_TAKEN_MSG = 'میزکاری با همین نام دارید؛ یک نام متفاوت انتخاب کنید';
+function _workspaceDateFa(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return '';
+  const [jy, jm, jd] = gregorianToJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  return formatJalali(jy, jm, jd);
+}
+function _workspaceMetaLine(parts) {
+  const text = parts.filter(Boolean).join(' · ');
+  return text ? '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + escapeHtml(text) + '</div>' : '';
+}
+function _workspaceCustomersLabel(n) {
+  return Number.isFinite(Number(n)) && n !== null && n !== undefined && n !== '' ? faDigits(Number(n)) + ' مشتری' : '';
+}
+
 async function _createAccount(name) {
+  if (_workspaceNameTaken(name)) { showToast(_WORKSPACE_NAME_TAKEN_MSG, 'error'); return null; }
   const accounts = _getAccounts();
   if (accounts.length + 1 >= MAX_WORKSPACES) {
     showToast('حداکثر ۵ میزکار (با احتساب میزکار اصلی) قابل ایجاد است', 'error');
@@ -7061,7 +7095,9 @@ async function _createAccount(name) {
       }
       const message = errorCode === 'workspace_limit'
         ? 'حداکثر ۵ میزکار قابل ایجاد است'
-        : 'ایجاد میزکار روی سرور انجام نشد';
+        : errorCode === 'workspace_name_taken'
+          ? _WORKSPACE_NAME_TAKEN_MSG
+          : 'ایجاد میزکار روی سرور انجام نشد';
       showToast(message, 'error');
       return null;
     }
@@ -7135,6 +7171,7 @@ async function _refreshWorkspacesFromServer() {
     // re-registering them; restoring happens only from the recycle bin.
     window._workspaceTrash = Array.isArray(payload.trash) ? payload.trash : [];
     window._workspaceTrashDays = Number(payload.trash_retention_days) || 30;
+    window._workspaceDefaultCustomers = payload.default_customers;
     const trashedIds = new Set(window._workspaceTrash.map(item => String(item.id)));
     const local = _getAccounts().filter(account => !trashedIds.has(String(account.id)));
     const currentWasTrashed = trashedIds.has(String(_currentAccountId()));
@@ -7222,6 +7259,10 @@ async function renderAccountSwitcher() {
     return '<div id="acc-row-' + a.id + '" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:' + (isCurrent ? 'rgba(124,106,247,.15)' : 'var(--bg3)') + ';border:1px solid ' + (isCurrent ? 'var(--accent2)' : 'var(--border2)') + ';margin-bottom:6px">' +
       '<span style="font-size:18px">' + (a.isDefault ? '🏠' : '👤') + '</span>' +
       '<div style="flex:1;min-width:0"><div id="acc-name-display-' + a.id + '" style="font-weight:600;font-size:13px">' + escapeHtml(a.name) + '</div>' +
+      _workspaceMetaLine([
+        a.isDefault ? 'میزکار اصلی' : (_workspaceDateFa(a.created) ? 'ساخت ' + _workspaceDateFa(a.created) : ''),
+        _workspaceCustomersLabel(a.isDefault ? window._workspaceDefaultCustomers : a.customers),
+      ]) +
       (isCurrent ? '<div style="font-size:10px;color:var(--green)">✓ میزکار فعلی</div>' : '') +
       '</div>' +
       (!a.isDefault ? '<button class="btn btn-ghost btn-sm" onclick="_startRenameAccount(\'' + a.id + '\',this)" title="ویرایش نام">✏️</button>' : '') +
@@ -7367,7 +7408,11 @@ function _workspaceTrashSectionHtml() {
     return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--bg3);border:1px dashed var(--border2);margin-bottom:6px">' +
       '<span style="font-size:16px">🗑</span>' +
       '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;opacity:.8">' + escapeHtml(item.name || '') + '</div>' +
-      (left != null ? '<div style="font-size:10px;color:var(--text3)">' + faDigits(left) + ' روز تا حذف دائمی</div>' : '') +
+      _workspaceMetaLine([
+        _workspaceDateFa(item.deleted_at) ? 'حذف ' + _workspaceDateFa(item.deleted_at) : '',
+        _workspaceCustomersLabel(item.customers),
+        left != null ? faDigits(left) + ' روز تا حذف دائمی' : '',
+      ]) +
       '</div>' +
       '<button class="btn btn-ghost btn-sm" onclick="_restoreWorkspaceFromTrash(\'' + safeId + '\')">↩️ بازگردانی</button>' +
     '</div>';
@@ -7406,6 +7451,11 @@ function _startRenameAccount(id, btnOrName) {
 }
 
 async function _renameAccount(id, newName) {
+  if (_workspaceNameTaken(newName, id)) {
+    showToast(_WORKSPACE_NAME_TAKEN_MSG, 'error');
+    void renderAccountSwitcher();
+    return;
+  }
   if (id === 'default') {
     _db.meta.appTitle = newName;
     _setDefaultAccountName(newName);
@@ -7413,16 +7463,22 @@ async function _renameAccount(id, newName) {
     _save();
     applyMetaToUI();
   } else {
-    const accs = _getAccounts();
-    const a = accs.find(x => x.id === id);
-    if (a) { a.name = newName; _saveAccounts(accs); }
     const ownerId = _workspaceOwnerId();
     if (_sbSession?.token && ownerId !== 'guest' && await _supportsWorkspaceApi()) {
       const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {
         method:'PATCH', body:JSON.stringify({ name:newName })
       });
+      if (res.status === 409) {
+        // Another device already has a workspace with this name.
+        showToast(_WORKSPACE_NAME_TAKEN_MSG, 'error');
+        void renderAccountSwitcher();
+        return;
+      }
       if (!res.ok) showToast('تغییر نام روی سرور ذخیره نشد', 'error');
     }
+    const accs = _getAccounts();
+    const a = accs.find(x => x.id === id);
+    if (a) { a.name = newName; _saveAccounts(accs); }
   }
   const el = document.getElementById('acc-name-display-' + id);
   if (el) el.textContent = newName;

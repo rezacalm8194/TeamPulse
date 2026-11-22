@@ -8,6 +8,9 @@ const {
   restoreWorkspace,
   listTrashedWorkspaces,
   purgeExpiredTrashedWorkspaces,
+  normalizeWorkspaceName,
+  activeWorkspaceNameTaken,
+  workspaceCustomerCounts,
 } = require('../utils/workspaceTrash');
 
 // Uses better-sqlite3 like the rest of the suite; falls back to Node's
@@ -133,4 +136,40 @@ test('a restored workspace is never purged', () => {
   restoreWorkspace(db, 'u1', 'acc_shop01');
   assert.equal(purgeExpiredTrashedWorkspaces(db, deps, { now: T0 + 90 * DAY }), 0);
   assert.equal(count(db, 'SELECT COUNT(*) n FROM docs'), 1);
+});
+
+test('workspace names compare loosely (Arabic ye/kaf, spaces, ZWNJ)', () => {
+  assert.equal(normalizeWorkspaceName('  هيدرو  ماهر '), normalizeWorkspaceName('هیدرو ماهر'));
+  assert.equal(normalizeWorkspaceName('كوچينگ'), normalizeWorkspaceName('کوچینگ'));
+  assert.equal(normalizeWorkspaceName('می\u200cخواهم'), normalizeWorkspaceName('میخواهم'));
+  assert.equal(normalizeWorkspaceName('Shop'), normalizeWorkspaceName('shop'));
+});
+
+test('duplicate names are detected among active workspaces only', () => {
+  const { db } = setup();
+  assert.equal(activeWorkspaceNameTaken(db, 'u1', 'فروشگاه'), true);
+  assert.equal(activeWorkspaceNameTaken(db, 'u1', ' فروشگاه '), true);
+  assert.equal(activeWorkspaceNameTaken(db, 'u1', 'فروشگاه', { exceptWorkspaceId: 'acc_shop01' }), false, 'renaming to own name is fine');
+  assert.equal(activeWorkspaceNameTaken(db, 'u2', 'فروشگاه'), false, 'other owners do not count');
+  trashWorkspace(db, 'u1', 'acc_shop01', { now: T0 });
+  assert.equal(activeWorkspaceNameTaken(db, 'u1', 'فروشگاه'), false, 'trashed names are free');
+});
+
+test('restoring next to a same-named active workspace gets a numbered name', () => {
+  const { db } = setup();
+  trashWorkspace(db, 'u1', 'acc_shop01', { now: T0 });
+  db.prepare("INSERT INTO account_workspaces(owner_account_id, workspace_id, name) VALUES ('u1','acc_shop02','فروشگاه')").run();
+  assert.deepEqual(restoreWorkspace(db, 'u1', 'acc_shop01'), { ok: true });
+  assert.equal(db.prepare("SELECT name FROM account_workspaces WHERE workspace_id='acc_shop01'").get().name, 'فروشگاه (2)');
+});
+
+test('customer counts exclude archived customers and tolerate missing data', () => {
+  const { db } = setup();
+  assert.equal(workspaceCustomerCounts(db, ['u1']).size, 0, 'no table → empty');
+  db.exec(`CREATE TABLE workspace_business_state (storage_key TEXT, collection_key TEXT, data_hash TEXT,
+    row_count INTEGER, archived_count INTEGER, updated_at TEXT);
+    INSERT INTO workspace_business_state VALUES ('u1','students','h',12,2,NULL), ('u1','payments','h',99,0,NULL);`);
+  const counts = workspaceCustomerCounts(db, ['u1', 'u1::workspace::acc_gym001']);
+  assert.equal(counts.get('u1'), 10);
+  assert.equal(counts.has('u1::workspace::acc_gym001'), false);
 });
