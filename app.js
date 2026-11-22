@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp408';
+const TP_ASSET_V = 'tp411';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -5063,6 +5063,10 @@ const _gcal = {
   token: null,
   tokenExpiry: 0,
   importTimer: null,
+  email: '',
+  _lastRefreshFatal: false,
+  _oauthReady: null,
+  _pending: new Set(),
   SCOPE: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly',
 
   preferredTeamCalendarId() {
@@ -5092,13 +5096,158 @@ const _gcal = {
   },
 
   setStatusUI(status, msg) {
+    if (status !== 'syncing') this._lastStatus = { status, msg, at: Date.now() };
     const el=document.getElementById('gcal-status');
     if(!el)return;
     const icons={idle:'🗓️',syncing:'⏳',ok:'✅',error:'❌'};
     el.textContent=(icons[status]||'🗓️')+' '+(msg||'');
     el.style.color=status==='ok'?'var(--green)':status==='error'?'var(--red)':status==='syncing'?'var(--accent2)':'var(--text3)';
     const btn=document.getElementById('gcal-sync-btn');
-    if(btn)btn.textContent=this.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال Google Calendar';
+    if(btn){
+      btn.textContent=this.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال با گوگل';
+      btn.classList.toggle('btn-danger',!!this.enabled);
+      btn.classList.toggle('btn-primary',!this.enabled);
+    }
+    this.renderAccountLine();
+  },
+
+  setEmail(email) {
+    const value = String(email || '').trim().toLowerCase();
+    if (!value || !value.includes('@') || value === this.email) return;
+    this.email = value;
+    _db._gcal_account_email = value;
+    this.renderAccountLine();
+  },
+
+  renderAccountLine() {
+    const el = document.getElementById('gcal-account');
+    if (!el) return;
+    if (this.enabled) {
+      el.style.display = '';
+      el.textContent = this.email ? ('✅ متصل به: ' + this.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)';
+      el.style.color = 'var(--green)';
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+  },
+
+  // ── Persistent login (server keeps a refresh token, like Drive) ──────────
+  async checkServerStatus() {
+    try {
+      const res = await _apiFetch('/api/google/calendar/status' + _gdriveOauthQs());
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false };
+      this._oauthReady = !!j.configured;
+      if (j.connected && j.email) this.setEmail(j.email);
+      return { ok: true, configured: !!j.configured, connected: !!j.connected, email: j.email || '' };
+    } catch (e) {
+      return { ok: false };
+    }
+  },
+
+  async serverOauthReady() {
+    if (this._oauthReady != null) return this._oauthReady;
+    for (let i = 0; i < 2; i++) {
+      const st = await this.checkServerStatus();
+      if (st.ok) return this._oauthReady;
+    }
+    return true;
+  },
+
+  applyAccessToken(token, expiresIn, scope) {
+    if (this._suspended) return this.token;
+    const ttl = (Number(expiresIn) || 3600) - 60;
+    this.token = token;
+    this.tokenExpiry = Date.now() + Math.max(ttl, 60) * 1000;
+    _db._gcal_token = this.token;
+    _db._gcal_token_expiry = this.tokenExpiry;
+    _db._gcal_scope = this.SCOPE;
+    _save(false);
+    return this.token;
+  },
+
+  async silentRefresh() {
+    this._lastRefreshFatal = false;
+    if (!_authTokenUsable(_sbSession?.token)) return null;
+    const res = await _apiFetch('/api/google/calendar/refresh' + _gdriveOauthQs(), {
+      method: 'POST',
+      body: JSON.stringify({ account_id: _googleOauthAccountId() }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) {
+      const code = String(j.error || '');
+      this._lastRefreshFatal = res.status === 404 || code === 'not_connected' ||
+        code === 'invalid_grant' || code === 'google_oauth_not_configured';
+      return null;
+    }
+    if (j.email) this.setEmail(j.email);
+    return this.applyAccessToken(j.access_token, j.expires_in, j.scope);
+  },
+
+  async exchangeCode(code, redirectUri, verifier) {
+    const res = await _apiFetch('/api/google/calendar/exchange', {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier || '',
+        account_id: _googleOauthAccountId(),
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) throw new Error(j.message || j.error || 'تبادل کد گوگل ناموفق');
+    const tok = this.applyAccessToken(j.access_token, j.expires_in, j.scope);
+    if (j.email) this.setEmail(j.email);
+    return tok;
+  },
+
+  // Token for background work (import, delete, list): never opens a popup.
+  async backgroundToken() {
+    const valid = this.validTokenOrNull();
+    if (valid) return valid;
+    try { return await this.silentRefresh(); } catch (e) { this._lastRefreshFatal = false; return null; }
+  },
+
+  _markDisconnected(message) {
+    this.enabled = false;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.email = '';
+    if (this.importTimer) { clearInterval(this.importTimer); this.importTimer = null; }
+    this.setStatusUI('error', message);
+    try { _refreshTodoGcalCheckboxes(); } catch (e) {}
+  },
+
+  // Settings page: show Gmail + last result, and re-attach a server-side
+  // connection that was lost locally (other device, cleared cache).
+  async refreshAccountUI() {
+    this.renderAccountLine();
+    if (this._lastStatus) {
+      let t = '';
+      try { t = new Date(this._lastStatus.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch (e) {}
+      this.setStatusUI(this._lastStatus.status, (this._lastStatus.msg || '') + (t ? ' — ساعت ' + t : ''));
+    }
+    if (this._suspended && window._impersonating) return;
+    if (!_authTokenUsable(_sbSession?.token)) return;
+    const st = await this.checkServerStatus();
+    if (!st.ok) return;
+    if (st.connected && !this.enabled) {
+      try { await this.initOnLoad(); } catch (e) {}
+      if (this.enabled && typeof renderSettings === 'function' && currentPage === 'settings') renderSettings();
+      return;
+    }
+    const tokenValid = !!this.validTokenOrNull();
+    if (!st.connected && this.enabled && !tokenValid) {
+      this._markDisconnected(st.configured
+        ? 'ورود ماندگار Google Calendar روی سرور ذخیره نیست؛ یک‌بار «اتصال با گوگل» را بزن'
+        : 'ورود ماندگار گوگل روی سرور تنظیم نشده (GOOGLE_OAUTH_CLIENT_SECRET)');
+      return;
+    }
+    if (this.enabled && !this.email && st.connected) {
+      try { await this.silentRefresh(); } catch (e) {}
+    }
+    this.renderAccountLine();
   },
 
   clearToken() {
@@ -5107,12 +5256,19 @@ const _gcal = {
     _save(false);
   },
 
-  async ensureToken({force=false} = {}) {
-    if(force)this.clearToken();
+  async ensureToken({force=false, allowPrompt=true} = {}) {
+    if(force){this.clearToken();return this.requestToken();}
     if(this.token&&Date.now()<this.tokenExpiry)return this.token;
     if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
       this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;return this.token;
     }
+    try {
+      const fresh = await this.silentRefresh();
+      if (fresh) return fresh;
+    } catch (e) { this._lastRefreshFatal = false; }
+    if(!allowPrompt)throw new Error(this._lastRefreshFatal
+      ? 'برای ادامه یک‌بار از تنظیمات «اتصال با گوگل» را بزن'
+      : 'ارتباط با گوگل موقتاً برقرار نشد؛ دوباره تلاش می‌شود');
     return this.requestToken();
   },
 
@@ -5126,13 +5282,34 @@ const _gcal = {
 
   async requestToken() {
     if(!this.clientId)throw new Error('Client ID تنظیم نشده');
+    // Open the window first (inside the click) so popup blockers allow it.
+    const w=window.open('','_blank','width=500,height=650');
+    if(!w)throw new Error('پنجره ورود گوگل باز نشد');
+    const useCode = await this.serverOauthReady();
+    const pkce = useCode ? await _gdrivePkcePair() : { verifier: '', challenge: '' };
     return new Promise((resolve,reject)=>{
-      const w=window.open('','_blank','width=500,height=650');
-      if(!w){reject(new Error('پنجره ورود گوگل باز نشد'));return;}
       const state='gcal_'+Math.random().toString(36).slice(2);
       const resultKey='teampulse_oauth_result_'+state;
       const redirectUri=location.origin+'/oauth_callback.html';
-      const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(this.clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(this.SCOPE)}&state=${state}&prompt=consent`;
+      const params=new URLSearchParams({
+        client_id: this.clientId,
+        redirect_uri: redirectUri,
+        scope: this.SCOPE,
+        state,
+        prompt: 'consent',
+      });
+      if(useCode){
+        params.set('response_type','code');
+        params.set('access_type','offline');
+        params.set('code_challenge', pkce.challenge);
+        params.set('code_challenge_method','S256');
+        // lets the startup rescue finish the exchange if this page reloads
+        try{localStorage.setItem('tp_gcal_pkce_'+state, JSON.stringify({verifier:pkce.verifier, redirectUri, at:Date.now()}));}catch(e){}
+      }else{
+        params.set('response_type','token');
+      }
+      const url='https://accounts.google.com/o/oauth2/v2/auth?'+params.toString();
+      this._pending.add(state);
       try{localStorage.removeItem(resultKey);}catch(e){}
       w.location=url;
       let done=false;
@@ -5141,6 +5318,8 @@ const _gcal = {
       let oauthChannel=null;
       const cleanup=()=>{
         done=true;
+        this._pending.delete(state);
+        try{localStorage.removeItem('tp_gcal_pkce_'+state);}catch(e){}
         window.removeEventListener('message',handler);
         clearTimeout(timeoutId);
         clearInterval(storageTimer);
@@ -5149,15 +5328,22 @@ const _gcal = {
       const acceptPayload=data=>{
         if(data?.type!=='gcal_token')return false;
         if(data.state!==state)return false;
+        if(done)return true;
         cleanup();
         try{localStorage.removeItem(resultKey);}catch(e){}
         if(data.error){reject(new Error(data.error));return true;}
-        this.token=data.token;
-        this.tokenExpiry=Date.now()+(data.expires_in-60)*1000;
-        _db._gcal_token=this.token;_db._gcal_token_expiry=this.tokenExpiry;
-        _db._gcal_scope=this.SCOPE;
-        _save(false);
-        resolve(this.token);
+        (async()=>{
+          try{
+            if(data.code){
+              await this.exchangeCode(data.code, redirectUri, pkce.verifier);
+              resolve(this.token);
+              return;
+            }
+            if(!data.token)throw new Error('no_token_returned');
+            this.applyAccessToken(data.token, data.expires_in);
+            resolve(this.token);
+          }catch(err){reject(err);}
+        })();
         return true;
       };
       const handler=e=>{
@@ -5188,7 +5374,12 @@ const _gcal = {
   async req(url,opts={}) {
     const token=await this.ensureToken();
     const res=await fetch(url,{...opts,headers:{'Authorization':'Bearer '+token,...(opts.headers||{})}});
-    if(res.status===401){this.clearToken();throw new Error('نیاز به ورود مجدد');}
+    if(res.status===401){
+      this.clearToken();
+      const fresh=await this.backgroundToken();
+      if(fresh)return fetch(url,{...opts,headers:{'Authorization':'Bearer '+fresh,...(opts.headers||{})}});
+      throw new Error('نیاز به ورود مجدد');
+    }
     return res;
   },
 
@@ -5197,7 +5388,7 @@ const _gcal = {
     const fetchCalendarList = async token => fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=items(id,summary,primary,accessRole,backgroundColor)&minAccessRole=writer',{
       headers:{'Authorization':'Bearer '+token}
     });
-    let token=this.validTokenOrNull();
+    let token=await this.backgroundToken();
     const needsScopeUpgrade = !!token && _db._gcal_scope !== this.SCOPE;
     if(!token || needsScopeUpgrade){
       if(silent && !allowReauth)return [];
@@ -5272,11 +5463,15 @@ const _gcal = {
     this.enabled=false;
     this.token=null;
     this.tokenExpiry=0;
+    this.email='';
+    this._oauthReady=null;
     if(this.importTimer){clearInterval(this.importTimer);this.importTimer=null;}
   },
 
   disconnect() {
-    this.enabled=false;this.token=null;this.tokenExpiry=0;
+    this.enabled=false;this.token=null;this.tokenExpiry=0;this.email='';
+    try { _apiFetch('/api/google/calendar' + _gdriveOauthQs(), { method: 'DELETE' }); } catch (e) {}
+    delete _db._gcal_account_email;
     delete _db._gcal_token;delete _db._gcal_token_expiry;delete _db._gcal_enabled;delete _db._gcal_calendar_id;delete _db._gcal_calendars;
     _save(false);
     this.setStatusUI('idle','متصل نشده');
@@ -5295,9 +5490,13 @@ const _gcal = {
   async importEvents({silent=true, forceAuth=false} = {}) {
     if(this._suspended)return {created:0,updated:0};
     if(!this.enabled&&!_db._gcal_enabled)return {created:0,updated:0};
-    const token = forceAuth ? await this.ensureToken() : this.validTokenOrNull();
+    const token = forceAuth ? await this.ensureToken() : await this.backgroundToken();
     if(!token){
-      if(!silent)this.setStatusUI('error','برای وارد کردن رویدادها دوباره به گوگل وصل شو');
+      if(this._lastRefreshFatal){
+        this._markDisconnected('اتصال Google Calendar منقضی یا لغو شده؛ یک‌بار «اتصال با گوگل» را بزن');
+      }else if(!silent){
+        this.setStatusUI('error','ارتباط با گوگل موقتاً برقرار نشد؛ دوباره تلاش می‌شود');
+      }
       return {created:0,updated:0};
     }
     if(!silent)this.setStatusUI('syncing','در حال وارد کردن رویدادهای Google Calendar...');
@@ -5476,7 +5675,7 @@ const _gcal = {
   async deleteEvent(eventId, calendarId=null) {
     if(!this.enabled||!eventId)return;
     try{
-      const token=this.validTokenOrNull();
+      const token=await this.backgroundToken();
       if(!token){
         console.warn('Calendar delete skipped: no valid token');
         return;
@@ -5523,24 +5722,46 @@ const _gcal = {
     return body;
   },
 
-  initOnLoad(opts) {
+  async initOnLoad(opts) {
     if (opts && opts.deferIfImpersonating) {
       try { if (localStorage.getItem('tp_impersonating_state')) return; } catch (e) {}
     }
-    this._suspended=false;
-    this.clientId=APP_GOOGLE_CLIENT_ID;
-    if(_consumeStoredGcalOAuthResult())return;
-    if(_db._gcal_enabled){
-      this.enabled=true;
-      if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
-        this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;
+    if (this._initing) return;
+    this._initing = true;
+    try {
+      this._suspended=false;
+      this.clientId=APP_GOOGLE_CLIENT_ID;
+      if(_consumeStoredGcalOAuthResult())return;
+      if(_db._gcal_account_email && !this.email) this.email = String(_db._gcal_account_email);
+      const authReady = _authTokenUsable(_sbSession?.token);
+      // The server's stored login is the source of truth: restore it when the
+      // local flag was lost (another device, cleared cache, data restore).
+      if(!_db._gcal_enabled && authReady){
+        const st = await this.checkServerStatus();
+        if(st.ok && st.connected) _db._gcal_enabled = true;
       }
-      this.setStatusUI('ok','متصل؛ تقویم مقصد: '+this.calendarName());
-      this.startAutoImport();
-      setTimeout(()=>this.refreshCalendars({silent:true}).catch(()=>{}),500);
-      setTimeout(()=>this.importEvents({silent:true}),1200);
-    } else {
-      this.setStatusUI('idle','متصل نشده');
+      if(_db._gcal_enabled){
+        this.enabled=true;
+        if(_db._gcal_token&&_db._gcal_token_expiry>Date.now()){
+          this.token=_db._gcal_token;this.tokenExpiry=_db._gcal_token_expiry;
+        }
+        if(!this.token && authReady){
+          try { await this.silentRefresh(); } catch (e) { this._lastRefreshFatal = false; }
+          if(!this.token && this._lastRefreshFatal){
+            this._markDisconnected('یک‌بار از تنظیمات «اتصال با گوگل» را بزن تا ورود Google Calendar ماندگار شود');
+            return;
+          }
+        }
+        this.setStatusUI('ok','متصل؛ تقویم مقصد: '+this.calendarName());
+        try { _refreshTodoGcalCheckboxes(); } catch (e) {}
+        this.startAutoImport();
+        setTimeout(()=>this.refreshCalendars({silent:true}).catch(()=>{}),500);
+        setTimeout(()=>this.importEvents({silent:true}),1200);
+      } else {
+        this.setStatusUI('idle','متصل نشده');
+      }
+    } finally {
+      this._initing = false;
     }
   },
 };
@@ -5557,12 +5778,37 @@ function _consumeStoredGcalOAuthResult() {
   let used=false;
   keys.forEach(key=>{
     if(used)return;
+    // A login started in this page is finished by requestToken() itself.
+    const stateId=key.slice('teampulse_oauth_result_'.length);
+    if(_gcal._pending && _gcal._pending.has(stateId))return;
     let data=null;
     try{data=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}
     try{localStorage.removeItem(key);}catch(e){}
     if(!data||data.type!=='gcal_token')return;
     if(_gcal._suspended)return;
     if(data.error){showToast('خطا در اتصال Google Calendar: '+data.error,'error');return;}
+    if(data.code && !data.token){
+      // Page reloaded while the Google window was open: finish the exchange.
+      let pk=null;
+      try{pk=JSON.parse(localStorage.getItem('tp_gcal_pkce_'+stateId)||'null');}catch(e){}
+      try{localStorage.removeItem('tp_gcal_pkce_'+stateId);}catch(e){}
+      if(!pk)return;
+      used=true;
+      _gcal.exchangeCode(data.code, pk.redirectUri, pk.verifier).then(()=>{
+        _gcal.enabled=true;
+        _db._gcal_enabled=true;
+        _save(false);
+        _gcal.setStatusUI('ok','متصل شد ✓');
+        showToast('به Google Calendar متصل شدی ✓','success');
+        _refreshTodoGcalCheckboxes();
+        _gcal.startAutoImport();
+        setTimeout(()=>_gcal.refreshCalendars({silent:true}).catch(()=>{}),100);
+        setTimeout(()=>_gcal.importEvents({silent:false}),300);
+      }).catch(err=>{
+        showToast('خطا در اتصال Google Calendar: '+err.message,'error');
+      });
+      return;
+    }
     if(!data.token)return;
     _gcal.token=data.token;
     _gcal.tokenExpiry=Date.now()+((Number(data.expires_in)||3600)-60)*1000;
@@ -12898,6 +13144,7 @@ async function renderSettings() {
             <button class="btn btn-ghost" onclick="gcalSaveOwnerCalendarEmailUI()">ذخیره مقصد</button>
           </div>
         </div>` : ''}
+      <div id="gcal-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gcal.enabled?'':'display:none'}">${_gcal.enabled ? escapeHtml(_gcal.email ? ('✅ متصل به: ' + _gcal.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
       <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
         برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
@@ -12961,6 +13208,7 @@ async function renderSettings() {
   setTimeout(_checkPushStatusForSettings, 100);
   setTimeout(loadBalePayStatus, 50);
   setTimeout(() => { try { _gdrive.refreshAccountUI(); } catch (e) {} }, 120);
+  setTimeout(() => { try { _gcal.refreshAccountUI(); } catch (e) {} }, 160);
 }
 
 function _syncThemeToggleUI() {
@@ -22753,6 +23001,7 @@ async function _authOnSuccess() {
       if (hydrated) loadedFromServer = true;
     } catch (e) {}
     try { await _gdrive.initOnLoad(); } catch (e) {}
+    try { await _gcal.initOnLoad(); } catch (e) {}
     if (loadedFromServer) {
       console.log('[TeamPulse] Data synced from server');
       updateAccountDisplay();
@@ -27302,7 +27551,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v408';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v411';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {
