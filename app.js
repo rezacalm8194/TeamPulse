@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp416';
+const TP_ASSET_V = 'tp417';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1038,8 +1038,39 @@ function _freshData() {
   };
 }
 
+// Recurring todos append a history row per completion, forever (14k rows /
+// 2.2 MB on one account, parsed at every start). The server keeps the full
+// log and unions on every write; when it says so (todo_history_days in a
+// response), keep only that recent window locally. The logic here only reads
+// recent rows (closed today? reopened after done?).
+function _tpNoteTodoHistoryWindow(payload) {
+  const days = Number(payload?.todo_history_days);
+  // In-memory only: trust it for this session's server, never a remembered
+  // one (a rolled-back server without the union must not get trimmed rows).
+  if (Number.isFinite(days) && days >= 7) window._tpTodoHistoryDays = days;
+}
+function _tpTodoHistoryWindowDays() {
+  return Number(window._tpTodoHistoryDays) >= 7 ? Number(window._tpTodoHistoryDays) : 0;
+}
+function _trimLocalTodoHistory(d) {
+  const days = _tpTodoHistoryWindowDays();
+  if (!days || !Array.isArray(d?.todos)) return;
+  const cutoff = Date.now() - days * 86400000;
+  d.todos.forEach(todo => {
+    const rows = todo && Array.isArray(todo.history) ? todo.history : null;
+    if (!rows || rows.length <= 3) return;
+    const keepFrom = rows.length - 3;
+    const kept = rows.filter((row, i) => {
+      if (i >= keepFrom) return true;
+      const at = Date.parse(row?.created_at || '');
+      return !Number.isFinite(at) || at >= cutoff;
+    });
+    if (kept.length !== rows.length) todo.history = kept;
+  });
+}
 function _migrate(d) {
   d.meta = {...DEFAULT_META,...(d.meta||{})};
+  _trimLocalTodoHistory(d);
   if(!Number.isFinite(Number(d.meta.archive_stale_days))||Number(d.meta.archive_stale_days)<1)d.meta.archive_stale_days=14;
   d.meta.automation = {...DEFAULT_AUTOMATION,...(d.meta.automation&&typeof d.meta.automation==='object'?d.meta.automation:{})};
   if(!Number.isFinite(Number(d.meta.automation.package_due_days))||Number(d.meta.automation.package_due_days)<1)d.meta.automation.package_due_days=3;
@@ -6089,9 +6120,17 @@ function _restorePartLoadState(data = _db) {
   window._tpAvailableParts = null;
 }
 function _rememberServerParts(payload) {
+  // Knowledge parts that arrived in this document response are fresh from
+  // the server for this session; without this, the page loader fetched them
+  // again right after startup (~570 KB duplicate request).
+  const markKnowledgeFetched = keys => {
+    window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
+    keys.forEach(key => { if (_KNOWLEDGE_SESSION_REFRESH_KEYS.has(key)) window._tpSessionFetchedParts.add(key); });
+  };
   if (!payload?.partial) {
     window._tpLoadedParts = null;
     window._tpAvailableParts = null;
+    if (payload?.data) markKnowledgeFetched(Object.keys(payload.data));
     _persistPartLoadState();
     return;
   }
@@ -6099,6 +6138,7 @@ function _rememberServerParts(payload) {
     (payload.loaded_parts || []).filter(key => key && key !== '__scalars__')
   );
   window._tpAvailableParts = new Set(payload.available_parts || []);
+  if (payload.data) markKnowledgeFetched((payload.loaded_parts || []).filter(key => Object.prototype.hasOwnProperty.call(payload.data, key)));
   _persistPartLoadState();
 }
 function _tpPartLoaded(key) {
@@ -6350,10 +6390,10 @@ async function _ensureDocumentParts(keys) {
     if (_todoActiveTab === 'completed' || _todoActiveTab === 'archive') await _loadTodoPage(true, { reset: false });
   }
   // Business collections: first page only. Full totals use _ensureCompleteBusinessParts.
-  for (const key of BUSINESS_PAGINATED_KEYS) {
-    if (!requested.includes(key)) continue;
-    await _ensureBusinessPartLoaded(key);
-  }
+  // Independent requests: load up to 4 at once instead of one after another
+  // (8 sequential round trips cost ~2 s at startup).
+  await _tpRunWithConcurrency(BUSINESS_PAGINATED_KEYS.filter(key => requested.includes(key)),
+    key => _ensureBusinessPartLoaded(key));
   window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
   const needed = requested.filter(key => {
     if (key === 'todos' || BUSINESS_PAGINATED_KEYS.includes(key)) return false;
@@ -6460,6 +6500,7 @@ async function _loadTodoPage(archived = false, { reset = false } = {}) {
     const res = await _apiFetch('/api/data/' + accId + '/todos' + query);
     if (!res.ok) { state.failed = true; return false; }
     const payload = await res.json();
+    _tpNoteTodoHistoryWindow(payload);
     const incoming = Array.isArray(payload.items) ? payload.items : [];
     const existing = new Map();
     (Array.isArray(_db?.todos) ? _db.todos : []).forEach(todo => {
@@ -6805,6 +6846,15 @@ function _dirtyBusinessCollectionsForRebase() {
     const patch = _buildServerSyncPatch(_serverSafeData(_db || {}));
     return Object.keys(patch?.collections || {}).filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
   } catch (e) { return []; }
+}
+// Runs task(item) for every item with at most `limit` in flight. Rejects like
+// Promise.all if any task throws.
+async function _tpRunWithConcurrency(items, task, limit = 4) {
+  const queue = Array.isArray(items) ? [...items] : [];
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) await task(queue.shift());
+  });
+  await Promise.all(workers);
 }
 async function _reloadBusinessFirstPagesFromServer(collections = [], { reset = true } = {}) {
   const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
@@ -21861,9 +21911,7 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {
         await _loadTodoPage(false, { reset: false });
       }
-      for (const key of businessKeys) {
-        await _ensureBusinessPartLoaded(key, { reset: false });
-      }
+      await _tpRunWithConcurrency(businessKeys, key => _ensureBusinessPartLoaded(key, { reset: false }));
       if (localBeforeLoad && businessKeys.length) _mergeLocalBusinessCollections(localBeforeLoad, businessKeys);
     }
     if (payload.partial) {
@@ -21888,6 +21936,7 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
         delete payload.data._availableParts;
       }
     }
+    _tpNoteTodoHistoryWindow(payload);
     const { data } = payload;
     const activeWorkspaceId = _currentAccountId();
     if (payload.workspace_id && String(payload.workspace_id) !== activeWorkspaceId) {

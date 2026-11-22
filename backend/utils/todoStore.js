@@ -1,4 +1,5 @@
 const { createHash } = require('crypto');
+const { withPreservedHistory } = require('./todoHistory');
 
 const TODO_MIGRATION = 'phase4_workspace_todos_v1';
 
@@ -113,14 +114,21 @@ function upsertTodos(db, storageKey, todos, { refresh = true } = {}) {
       updated_at=excluded.updated_at
   `);
   let changed = 0;
-  for (const todo of Array.isArray(todos) ? todos : []) {
-    const id = todoId(todo);
+  const selectPrevious = db.prepare(
+    'SELECT payload_hash,payload FROM workspace_todos WHERE storage_key=? AND todo_id=?'
+  );
+  for (const incoming of Array.isArray(todos) ? todos : []) {
+    const id = todoId(incoming);
     if (!id) continue;
+    const previous = selectPrevious.get(storageKey, id);
+    let storedTodo = null;
+    if (previous?.payload) {
+      try { storedTodo = JSON.parse(previous.payload); } catch (_) { storedTodo = null; }
+    }
+    // Clients receive only recent history; never let that shrink the stored log.
+    const todo = withPreservedHistory(incoming, storedTodo);
     const payload = JSON.stringify(todo);
     const payloadHash = hashText(payload);
-    const previous = db.prepare(
-      'SELECT payload_hash FROM workspace_todos WHERE storage_key=? AND todo_id=?'
-    ).get(storageKey, id);
     if (previous?.payload_hash === payloadHash) continue;
     upsert.run(storageKey, id, payload, payloadHash, todo?.archived ? 1 : 0, todo?.done ? 1 : 0,
       todoDateKey(todo), todo?.updated_at || null);
@@ -144,8 +152,15 @@ function deleteTodos(db, storageKey, ids, { refresh = true } = {}) {
 function replaceTodos(db, storageKey, todos) {
   ensureTodoStoreSchema(db);
   const run = db.transaction(() => {
+    // Keep each surviving todo's full history across the delete+reinsert.
+    const storedById = new Map();
+    db.prepare('SELECT todo_id,payload FROM workspace_todos WHERE storage_key=?').all(storageKey).forEach(row => {
+      try { storedById.set(String(row.todo_id), JSON.parse(row.payload)); } catch (_) {}
+    });
+    const withHistory = (Array.isArray(todos) ? todos : []).map(todo =>
+      withPreservedHistory(todo, storedById.get(String(todoId(todo)))));
     db.prepare('DELETE FROM workspace_todos WHERE storage_key=?').run(storageKey);
-    upsertTodos(db, storageKey, todos, { refresh: false });
+    upsertTodos(db, storageKey, withHistory, { refresh: false });
     db.prepare('INSERT OR IGNORE INTO workspace_todo_migrations(storage_key) VALUES (?)').run(storageKey);
     return refreshTodoState(db, storageKey);
   });
