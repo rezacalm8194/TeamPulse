@@ -2365,10 +2365,10 @@ function _syncTodoEventRepeatDays() {
 }
 
 
-function _clearStudentBirthday(studentId) {
+async function _clearStudentBirthday(studentId) {
   const s = (_db.students || []).find(x => x.id == studentId);
   if (!s) return;
-  if (!confirm('تاریخ تولد این شاگرد از تقویم حذف شود؟')) return;
+  if (!await tpConfirm('تاریخ تولد این شاگرد از تقویم حذف شود؟')) return;
   ['birth_jalali','birthday_jalali','birth_date','birthday'].forEach(k => { if (s[k] !== undefined) s[k] = ''; });
   s.updated_at = new Date().toISOString();
   _todoBirthdayIndexCache = { sig: '', map: new Map() };
@@ -2450,8 +2450,8 @@ function saveTodoCalendarEvent() {
 }
 
 
-function deleteTodoCalendarEvent(id) {
-  if (!confirm('این مناسبت حذف شود؟')) return;
+async function deleteTodoCalendarEvent(id) {
+  if (!await tpConfirm('این مناسبت حذف شود؟')) return;
   _db.todo_calendar_events = (_db.todo_calendar_events || []).filter(e => String(e.id) !== String(id));
   _save();
   closeModal();
@@ -4737,7 +4737,7 @@ function _completeTodoFromList(id) {
 }
 
 
-function _toggleTodo(id) {
+async function _toggleTodo(id) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
@@ -4752,7 +4752,7 @@ function _toggleTodo(id) {
       showToast('برای برداشتن تیک این کار دسترسی نداری', 'error');
       return;
     }
-    if (!confirm('تیک امروز این کار حذف شود؟')) return;
+    if (!await tpConfirm('تیک امروز این کار حذف شود؟')) return;
     _undoTodoTick(snapshot);
     return;
   }
@@ -4953,7 +4953,7 @@ function _completeTodoWithReport(t, report) {
 }
 
 
-function _resolveOverdueTodo(id, action) {
+async function _resolveOverdueTodo(id, action) {
   _todosInit();
   const t = _db.todos.find(x => x.id == id);
   if (!t) return;
@@ -5023,7 +5023,7 @@ function _resolveOverdueTodo(id, action) {
   }
 
   if (action === 'delete_occurrence') {
-    if (!confirm('فقط همین نوبت حذف شود؟ قالب تکرار و نوبت امروز دست‌نخورده می‌ماند.')) return;
+    if (!await tpConfirm('فقط همین نوبت حذف شود؟ قالب تکرار و نوبت امروز دست‌نخورده می‌ماند.')) return;
     _deleteTodoOccurrenceOnly(t, scheduledDate);
     _save();
     showToast('نوبت حذف شد؛ زنجیره تکرار حفظ شد.', 'success');
@@ -5107,11 +5107,12 @@ function _deleteTodoOccurrenceOnly(t, scheduledDate = _todoScheduledDate(t)) {
 }
 
 
-function _moveTodoOccurrenceToDate(t, scheduledDate, targetDate, targetLabel) {
+async function _moveTodoOccurrenceToDate(t, scheduledDate, targetDate, targetLabel) {
   const rootId = _todoRootId(t);
   const existingTarget = _todoHasOccurrenceFor(rootId, targetDate, t.id);
   if (existingTarget) {
-    const makeBoth = confirm(`از همین کار یک نوبت برای ${targetLabel} وجود دارد. تایید = هر دو نوبت ${targetLabel} انجام شوند. انصراف = نوبت قبلی رد شود و فقط نوبت ${targetLabel} باقی بماند.`);
+    const makeBoth = await tpChoose(`از همین کار یک نوبت برای ${targetLabel} وجود دارد. نوبت قبلی (${DateService.disp(scheduledDate)}) هم برای ${targetLabel} منتقل شود، یا نوبت قبلی انجام‌نشده بسته شود؟`, { okText: `هر دو برای ${targetLabel}`, cancelText: 'بستن نوبت قبلی' });
+    if (makeBoth === null) return;
     if (!makeBoth) {
       if (_isTodoRecurring(t)) _createTodoOccurrenceRecord(t, 'skipped', new Date().toISOString());
       _db.todos = _db.todos.filter(x => x.id != t.id);
@@ -5186,11 +5187,11 @@ function _openResolveAllOverdueTodos() {
 }
 
 
-function _resolveAllOverdueTodos(action) {
+async function _resolveAllOverdueTodos(action) {
   const items = _currentOverdueTodos();
   if (!items.length) { closeModal(); return; }
   const labels = { done:'انجام‌شده', skip:'رد کردن', delete_occurrence:'حذف' };
-  if (!confirm(`برای ${fa(items.length)} نوبت عقب‌افتاده عملیات «${labels[action] || action}» انجام شود؟`)) return;
+  if (!await tpConfirm(`برای ${fa(items.length)} نوبت عقب‌افتاده عملیات «${labels[action] || action}» انجام شود؟`)) return;
   items.slice().forEach(t => {
     const scheduledDate = _todoScheduledDate(t);
     if (action === 'done') {
@@ -6626,7 +6627,8 @@ async function updateTodo(id) {
   }
   const isPastRecurringOccurrence = _isTodoRecurring(t) && originalScheduledDate && _jalaliKey(originalScheduledDate) < _jalaliToday();
   if (isPastRecurringOccurrence) {
-    const editOnlyThis = confirm('این کار یک نوبت عقب‌افتاده از کار تکرارشونده است. تایید = فقط همین نوبت ویرایش شود. انصراف = کل زنجیره/قالب تکرار ویرایش شود.');
+    const editOnlyThis = await tpChoose('این کار یک نوبت عقب‌افتاده از کار تکرارشونده است. تغییرات فقط روی همین نوبت اعمال شود یا روی کل زنجیره‌ی تکرار؟', { okText: 'فقط همین نوبت', cancelText: 'کل زنجیره‌ی تکرار' });
+    if (editOnlyThis === null) return;
     if (editOnlyThis) {
       const occurrence = {
         ...t,
@@ -6715,7 +6717,7 @@ async function deleteTodo(id) {
   if (!_todoCanDelete(t)) { showToast('برای حذف این کار دسترسی نداری', 'error'); return; }
   const scheduledDate = _todoScheduledDate(t);
   if (_isTodoRecurring(t) && scheduledDate && _jalaliKey(scheduledDate) < _jalaliToday()) {
-    if (!confirm('فقط همین نوبت عقب‌افتاده حذف شود؟ قالب تکرار و نوبت امروز حذف نمی‌شود.')) return;
+    if (!await tpConfirm('فقط همین نوبت عقب‌افتاده حذف شود؟ قالب تکرار و نوبت امروز حذف نمی‌شود.')) return;
     _deleteTodoOccurrenceOnly(t, scheduledDate);
     _save();
     await _syncToServer();
@@ -6727,7 +6729,6 @@ async function deleteTodo(id) {
     renderTodoList();
     return;
   }
-  if (!confirm('این کار حذف شود؟')) return;
   if (typeof _automationDismissPackageDueTodo === 'function' && _automationDismissPackageDueTodo(t)) {
     _save(true, { scheduleServerSync: false });
     void _syncTodoDelta(t, 'edit');
@@ -6735,18 +6736,37 @@ async function deleteTodo(id) {
     renderTodoList();
     return;
   }
-  if (t && t.gcal_event_id) {
-    _gcal.deleteEvent(t.gcal_event_id, t.gcal_calendar_id);
-  }
-  _rememberDeletedTodos([t.id, _todoRootId(t)]);
-  _db.todos = _db.todos.filter(x => x.id != id);
-  _save();
-  await _syncToServer();
-  if (_teamAccessSession() && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
-    showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
-    return;
-  }
-  showToast('کار حذف شد', 'success');
+  // No confirm: the delete can be undone for a few seconds instead. The
+  // Google Calendar event is removed only when the undo window ends.
+  const tombIds = [t.id, _todoRootId(t)].filter(x => x != null && x !== '').map(String);
+  const hadTodoTomb = new Set(Array.isArray(_db._deletedTodoIds) ? _db._deletedTodoIds.map(String) : []);
+  const hadItemTomb = new Set(Object.keys(_db._deletedItems?.todos || {}));
+  const gcalEvent = t.gcal_event_id ? [t.gcal_event_id, t.gcal_calendar_id] : null;
+  await _tpUndoableDelete({
+    label: 'کار حذف شد',
+    collections: ['todos'],
+    run: () => {
+      _rememberDeletedTodos(tombIds);
+      _db.todos = _db.todos.filter(x => x.id != id);
+      _save();
+    },
+    onUndo: () => {
+      // The root id may differ from the row id; clear only tombstones we added.
+      const added = tombIds.filter(x => !hadTodoTomb.has(x));
+      if (Array.isArray(_db._deletedTodoIds)) _db._deletedTodoIds = _db._deletedTodoIds.filter(x => !added.includes(String(x)));
+      const items = _db._deletedItems?.todos;
+      if (items) tombIds.forEach(x => { if (!hadItemTomb.has(x)) delete items[x]; });
+    },
+    refresh: () => renderTodoList(),
+    commit: async () => {
+      if (gcalEvent) _gcal.deleteEvent(gcalEvent[0], gcalEvent[1]);
+      if (!_teamAccessSession()) return;
+      await _syncToServer();
+      if (!window._tpSyncHoldUntil && (_db._lastSaved || 0) > (window._teamLastOwnerDataSavedAt || 0)) {
+        showToast('حذف روی حساب اصلی ذخیره نشد؛ دسترسی هم‌تیمی را دوباره باز کن', 'error');
+      }
+    },
+  });
   renderTodoList();
 }
 
@@ -6767,7 +6787,7 @@ async function _deleteTodoCompletely(id, options = {}) {
   const msg = isSeries
     ? 'این کار تکرارشونده است. حذف کامل شود؟'
     : 'این کار حذف شود؟';
-  if (!confirm(msg)) return;
+  if (!await tpConfirm(msg)) return;
   if (typeof _automationDismissPackageDueTodo === 'function' && _automationDismissPackageDueTodo(t)) {
     _save(true, { scheduleServerSync: false });
     void _syncTodoDelta(t, 'edit');
@@ -6963,10 +6983,10 @@ async function _loadMoreTodoArchive() {
 }
 
 
-function _clearTodoArchive(kind = window._todoArchiveTab || 'mine') {
+async function _clearTodoArchive(kind = window._todoArchiveTab || 'mine') {
   const isStaffArchiveTodo = (t) => !!(t.assignee_id || t.assignee_email || t.staff_id);
   const label = kind === 'staff' ? 'بایگانی کارهای پرسنل' : 'بایگانی کارهای من';
-  if (!confirm('همه ' + label + ' پاک شود؟')) return;
+  if (!await tpConfirm('همه ' + label + ' پاک شود؟')) return;
   _db.todos = _db.todos.filter(t => {
     if (!t.archived) return true;
     const isStaff = isStaffArchiveTodo(t);

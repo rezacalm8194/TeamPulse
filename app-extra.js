@@ -173,8 +173,8 @@ function openFiscalYearClosing(year=null) {
   const actions=closing?[{label:'بازگشایی گزارش',cls:'btn-ghost',action:`reopenFiscalYear(${selected})`},{label:'بستن',cls:'btn-primary',action:'closeModal()'}]:[{label:'ثبت و بستن سال',cls:'btn-primary',action:`confirmFiscalYearClosing(${selected})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}];
   openModal(`🏁 بستن سال مالی ${fa(selected)}`,content,actions,{fullPage:true});
 }
-function confirmFiscalYearClosing(year) {
-  if(!confirm(`گزارش سال مالی ${fa(year)} ثبت و بسته شود؟`))return;
+async function confirmFiscalYearClosing(year) {
+  if(!await tpConfirm(`گزارش سال مالی ${fa(year)} ثبت و بسته شود؟`))return;
   _db.fiscal_year_closings=_db.fiscal_year_closings||[];
   const snapshot={..._fiscalYearReport(year),created_at:new Date().toISOString()};
   const existing=_db.fiscal_year_closings.find(x=>Number(x.year)===Number(year));
@@ -224,7 +224,7 @@ function saveFinancialBudget(id=null) {
   if(duplicate){Object.assign(duplicate,data);showToast('بودجه همان دوره به‌روزرسانی شد ✓','success');}else if(id==null){_db.financial_budgets.push({id:_nextId('financial_budgets'),...data,created_at:new Date().toISOString()});showToast('بودجه ذخیره شد ✓','success');}else{const b=_db.financial_budgets.find(x=>Number(x.id)===Number(id));if(b)Object.assign(b,data);}
   _save();openBudgetManager();if(currentPage==='dashboard')renderDashboard();
 }
-function deleteFinancialBudget(id) { if(!confirm('این بودجه حذف شود؟'))return;_db.financial_budgets=(_db.financial_budgets||[]).filter(b=>Number(b.id)!==Number(id));_save();openBudgetManager(); }
+async function deleteFinancialBudget(id) { if(!await tpConfirm('این بودجه حذف شود؟'))return;_db.financial_budgets=(_db.financial_budgets||[]).filter(b=>Number(b.id)!==Number(id));_save();openBudgetManager(); }
 function budgetDashboardHtml(year,month) { const b=_budgetFor(year,month);if(!b)return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h3 style="margin:0">🎯 بودجه ماه</h3><p style="font-size:11px;color:var(--text3);margin:5px 0 0">برای این ماه هنوز بودجه‌ای ثبت نشده است.</p></div><button class="btn btn-ghost btn-sm" onclick="openBudgetForm()">تعریف بودجه</button></div></div>`;const a=_budgetActual(year,month);const alerts=[];if(b.expense_limit&&a.expenses>=b.expense_limit)alerts.push('سقف هزینه کل رد شده');else if(b.expense_limit&&a.expenses/b.expense_limit>=.8)alerts.push('هزینه به ۸۰٪ سقف رسیده');Object.entries(b.category_limits||{}).forEach(([c,l])=>{if((a.categories[c]||0)>=l)alerts.push(`سقف ${c} رد شده`);});return `<div class="detail-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">🎯 بودجه ${fa(year)}/${fa(month)}</h3><button class="btn btn-ghost btn-sm" onclick="openBudgetManager()">مدیریت</button></div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px;font-size:11px"><div>درآمد ${fmt(a.income)} / ${fmt(b.income_target)}${_budgetBar(a.income,b.income_target,'var(--green)')}</div><div>هزینه ${fmt(a.expenses)} / ${fmt(b.expense_limit)}${_budgetBar(a.expenses,b.expense_limit,'var(--red)')}</div><div>سود ${fmt(a.profit)} / ${fmt(b.profit_target)}${_budgetBar(a.profit,b.profit_target,'var(--accent)')}</div></div>${alerts.length?`<div style="font-size:11px;color:var(--amber);margin-top:10px">⚠️ ${alerts.join(' · ')}</div>`:''}</div>`; }
 
 function _cashForecast(days=30) {
@@ -397,10 +397,10 @@ function saveFinancialAccount(id=null) {
   if(id==null){const item={id:_db._nextId.financial_accounts++,...data,created_at:new Date().toISOString()};_db.financial_accounts.push(item);}else{const item=(_db.financial_accounts||[]).find(a=>String(a.id)===String(id));if(item)Object.assign(item,data);}
   _save();showToast('حساب مالی ذخیره شد ✓','success');openFinancialAccounts();
 }
-function deleteFinancialAccount(id) {
+async function deleteFinancialAccount(id) {
   const used=(_db.payments||[]).some(p=>String(p.account_id||'')===String(id))||(_db.expenses||[]).some(e=>String(e.account_id||'')===String(id));
   if(used){showToast('این حساب به تراکنش‌ها متصل است و قابل حذف نیست','error');return;}
-  if(!confirm('این حساب حذف شود؟'))return;
+  if(!await tpConfirm('این حساب حذف شود؟'))return;
   _db.financial_accounts=_db.financial_accounts.filter(a=>String(a.id)!==String(id));_save();openFinancialAccounts();
 }
 
@@ -510,13 +510,22 @@ function saveExpense() {
 async function deleteExpense(id) {
   const expense=(_db.expenses||[]).find(e=>String(e.id)===String(id));
   if(expense?.source==='staff_payment'){showToast('این هزینه از پرداخت حقوق ساخته شده؛ آن را از حساب پرسنل اصلاح کنید','error');return;}
-  if(!expense||!confirm('این هزینه حذف شود؟'))return;
-  try{await _IDB.deleteMany((expense.receipts||[]).map(a=>a.id));}catch(e){}
-  _db.expenses=_db.expenses.filter(e=>String(e.id)!==String(id));
-  _recordDeletedItems('expenses', id);
-  _db.expense_reminders=(_db.expense_reminders||[]).filter(r=>String(r.expense_id)!==String(id));
-  _save();
-  showToast('هزینه حذف شد','error');
+  if(!expense)return;
+  // No confirm: undoable for a few seconds. Receipt files are deleted only
+  // when the undo window ends, so «بازگردانی» brings them back too.
+  const receiptIds=(expense.receipts||[]).map(a=>a.id);
+  await _tpUndoableDelete({
+    label:'هزینه حذف شد',
+    collections:['expenses','expense_reminders'],
+    run:()=>{
+      _db.expenses=_db.expenses.filter(e=>String(e.id)!==String(id));
+      _recordDeletedItems('expenses', id);
+      _db.expense_reminders=(_db.expense_reminders||[]).filter(r=>String(r.expense_id)!==String(id));
+      _save();
+    },
+    refresh:()=>openExpenseManager(),
+    commit:async()=>{ try{await _IDB.deleteMany(receiptIds);}catch(e){} },
+  });
   openExpenseManager();
 }
 
@@ -1918,7 +1927,7 @@ async function saveStaffEdit(id) {
 }
 
 async function deleteStaff(id, name) {
-  if (!confirm(`آیا مطمئنی "${name}" حذف شود؟ تمام سوابق پرداخت و ارزیابی او نیز حذف می‌شود.`)) return;
+  if (!await tpConfirm(`آیا مطمئنی "${name}" حذف شود؟ تمام سوابق پرداخت و ارزیابی او نیز حذف می‌شود.`)) return;
   await window.api.staff.delete(id);
   showToast('حذف شد', 'error');
   await renderStaff();
@@ -1957,7 +1966,7 @@ async function updateStaffRole(id, label) {
   showToast('ذخیره شد ✓', 'success');
 }
 async function mergeDuplicateStaffRoles() {
-  if(!confirm('نقش‌های هم‌نام و نقش‌های بدون استفاده‌ای که از خدمات وارد شده‌اند یکپارچه شوند؟ تمام ارجاع‌ها و مبالغ حفظ می‌شوند و نسخه قبلی در آرشیو داخلی می‌ماند.'))return;
+  if(!await tpConfirm('نقش‌های هم‌نام و نقش‌های بدون استفاده‌ای که از خدمات وارد شده‌اند یکپارچه شوند؟ تمام ارجاع‌ها و مبالغ حفظ می‌شوند و نسخه قبلی در آرشیو داخلی می‌ماند.'))return;
   const result=await window.api.staffRoles.mergeDuplicates();
   const total=Number(result.merged||0)+Number(result.retired||0);
   showToast(total?`${fa(total)} نقش یکپارچه و ${fa(result.reassigned||0)} ارجاع منتقل شد ✓`:'مورد تکراری یا اضافی پیدا نشد','success');
@@ -1997,7 +2006,7 @@ async function confirmFixMonthlyMonth(monthlyId, staffId, name, returnToStaffPag
 }
 
 async function deleteSalaryHistory(monthlyId) {
-  if (!confirm('این رکورد از تاریخچه پرداخت‌های حقوق حذف شود؟')) return;
+  if (!await tpConfirm('این رکورد از تاریخچه پرداخت‌های حقوق حذف شود؟')) return;
   await window.api.staffMonthly.delete(monthlyId);
   showToast('رکورد پرداخت حذف شد', 'error');
   await renderStaff();
@@ -2150,7 +2159,7 @@ async function saveEditStaffPayment(id, staffId, name) {
   await openStaffDetail(staffId);
 }
 async function deleteStaffPayment(id, staffId, name) {
-  if (!confirm('این پرداخت حذف شود؟')) return;
+  if (!await tpConfirm('این پرداخت حذف شود؟')) return;
   await window.api.staffPayments.delete(id);
   showToast('حذف شد', 'error');
   await openStaffDetail(staffId);
@@ -2206,7 +2215,7 @@ async function saveEditStaffAdjustment(id, staffId, name) {
   await openStaffDetail(staffId);
 }
 async function deleteStaffAdjustment(id, staffId, name) {
-  if (!confirm('این مورد حذف شود؟')) return;
+  if (!await tpConfirm('این مورد حذف شود؟')) return;
   await window.api.staffAdjustments.delete(id);
   showToast('حذف شد', 'error');
   await openStaffDetail(staffId);
@@ -2409,7 +2418,7 @@ async function confirmMonthlyPaid(monthlyId, staffId) {
 }
 
 async function deleteMonthly(monthlyId, staffId, name) {
-  if (!confirm('این رکورد حقوق ماهانه حذف شود؟')) return;
+  if (!await tpConfirm('این رکورد حقوق ماهانه حذف شود؟')) return;
   await window.api.staffMonthly.delete(monthlyId);
   showToast('حذف شد', 'error');
   await openStaffDetail(staffId);
@@ -2947,7 +2956,7 @@ async function saveEditStaffReminder(id) {
   await renderStaff();
 }
 async function deleteStaffReminder(id) {
-  if (!confirm('این یادآوری حذف شود؟')) return;
+  if (!await tpConfirm('این یادآوری حذف شود؟')) return;
   await window.api.staffReminders.delete(id);
   showToast('حذف شد', 'error');
   await renderStaff();
@@ -6707,8 +6716,8 @@ function _visionCompressImage(dataUrl, name, type) {
   });
 }
 
-function _visionPromptUrl() {
-  const url = prompt('لینک تصویر:');
+async function _visionPromptUrl() {
+  const url = await tpPrompt('لینک تصویر:');
   if (!url) return;
   window._visionManager.items.push({ id:'url-' + Date.now(), type:'image', src:url.trim(), name:'تصویر لینک', category:'', source:'url' });
   _renderVisionManager();
@@ -7696,10 +7705,10 @@ function deleteMilestone(goalId, idx) {
   if (currentPage === 'goals') renderGoals();
   openGoalDetail(goalId);
 }
-function addMilestone(goalId) {
+async function addMilestone(goalId) {
   const g = (_db.goals||[]).find(x=>x.id===goalId);
   if (!g) return;
-  const title = prompt('عنوان بخش:');
+  const title = await tpPrompt('عنوان بخش:');
   if (!title) return;
   if (!g.milestones) g.milestones = [];
   g.milestones.push({ title, done: false });
@@ -7922,8 +7931,8 @@ function saveEditGoal(id) {
     showToast('تغییرات هدف ذخیره شد ✓' + extra, 'success');
   });
 }
-function deleteGoal(id) {
-  if (!confirm('این هدف حذف شود؟')) return;
+async function deleteGoal(id) {
+  if (!await tpConfirm('این هدف حذف شود؟')) return;
   if (typeof _recordDeletedItems === 'function') _recordDeletedItems('goals', [id]);
   _db.goals = (_db.goals||[]).filter(x=>x.id!==id);
   _removeGoalAchievement(id);
@@ -8805,10 +8814,10 @@ async function saveHabitCustomReminder(habitId, remId) {
   if (currentPage === 'habits') renderHabits();
 }
 
-function deleteHabitCustomReminder(habitId, remId) {
+async function deleteHabitCustomReminder(habitId, remId) {
   const h = (_db.habits || []).find(x => String(x.id) === String(habitId));
   if (!h) return;
-  if (!confirm('این یادآوری سفارشی حذف شود؟')) return;
+  if (!await tpConfirm('این یادآوری سفارشی حذف شود؟')) return;
   h.custom_reminders = _habitCustomList(h).filter(r => String(r.id) !== String(remId));
   _touchHabit(h);
   _save();
@@ -8817,8 +8826,8 @@ function deleteHabitCustomReminder(habitId, remId) {
   if (currentPage === 'habits') renderHabits();
 }
 
-function deleteHabit(id) {
-  if (!confirm('این عادت حذف شود؟ این کار قابل بازگشت نیست.')) return;
+async function deleteHabit(id) {
+  if (!await tpConfirm('این عادت حذف شود؟ این کار قابل بازگشت نیست.')) return;
   _db.habits = (_db.habits||[]).filter(x => String(x.id) !== String(id));
   _db.habit_logs = (_db.habit_logs||[]).filter(x => String(x.habit_id) !== String(id));
   _save(); showToast('حذف شد', 'error');
