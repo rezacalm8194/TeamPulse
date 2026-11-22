@@ -69,6 +69,7 @@ const {
   ensureBusinessStoreSchema,
   collectionState,
   loadRowsPage,
+  loadChangedRows,
 } = require('../utils/businessStore');
 const {
   ensureDocumentStoreSchema,
@@ -810,6 +811,23 @@ for (const collection of BUSINESS_COLLECTIONS) {
       const workspace = resolveWorkspace(req, res, targetId);
       if (!workspace) return;
       if (!canAccessWorkspace(req, targetId, workspace.workspaceId)) return res.status(403).json({ error: 'forbidden' });
+      // Captured before the read so a write landing during it is re-sent next time.
+      const serverTime = Date.now();
+      if (req.query.changed_since != null) {
+        const changed = loadChangedRows(db, workspace.storageKey, collection, {
+          since: req.query.changed_since,
+          cursor: req.query.cursor,
+          limit: req.query.limit,
+        });
+        const state = collectionState(db, workspace.storageKey, collection);
+        return res.json({
+          ...changed,
+          total: Number(state?.row_count || 0),
+          data_hash: state?.data_hash || null,
+          server_time: serverTime,
+          etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null,
+        });
+      }
       const page = loadRowsPage(db, workspace.storageKey, collection, {
         limit: req.query.limit,
         cursor: req.query.cursor,
@@ -1194,8 +1212,14 @@ router.get('/:accountId/status', auth, async (req, res) => {
       collections[key] = Number(collectionState(db, workspace.storageKey, key)?.row_count || 0);
     });
     collections.todos = countTodos(db, workspace.storageKey);
+    // Per-part hashes let every device pull exactly the parts that changed,
+    // not only the ones visible on its current screen.
+    let partHashes = null;
+    try { partHashes = meta?.layout === 'parts' ? loadPartHashes(db, workspace.storageKey) : null; } catch (_) { partHashes = null; }
     res.json({
       etag: meta?.etag || null,
+      part_hashes: partHashes,
+      server_time: Date.now(),
       updated_at: meta?.updated_at || null,
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
       collections,

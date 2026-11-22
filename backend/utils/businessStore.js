@@ -44,7 +44,32 @@ function searchableText(row, collection) {
   return fields.filter(Boolean).join(' ').toLocaleLowerCase('fa').slice(0, 1200);
 }
 
+const changeColumnReady = new WeakSet();
+
+// Server-assigned change clock. Rows carry a client `updated_at`, which can be
+// missing or skewed per device; `changed_at` is stamped by the server on every
+// accepted write so phones can ask "what changed since my last pull" for any
+// collection, independent of page order or which screen is open.
+function ensureChangeColumn(db) {
+  if (changeColumnReady.has(db)) return;
+  const cols = db.prepare('PRAGMA table_info(workspace_business_rows)').all();
+  if (!cols.some(col => col.name === 'changed_at')) {
+    db.exec('ALTER TABLE workspace_business_rows ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_workspace_business_changed
+    ON workspace_business_rows(storage_key,collection_key,changed_at,row_id)`);
+  changeColumnReady.add(db);
+}
+
+let lastChangeStamp = 0;
+function nextChangeStamp() {
+  const now = Date.now();
+  lastChangeStamp = now > lastChangeStamp ? now : lastChangeStamp + 1;
+  return lastChangeStamp;
+}
+
 function ensureBusinessStoreSchema(db) {
+  if (changeColumnReady.has(db)) return;
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_migrations (
       name TEXT PRIMARY KEY,
@@ -82,6 +107,7 @@ function ensureBusinessStoreSchema(db) {
       PRIMARY KEY(storage_key,collection_key)
     );
   `);
+  ensureChangeColumn(db);
 }
 
 function refreshState(db, storageKey, collection) {
@@ -128,11 +154,12 @@ function upsertRows(db, storageKey, collection, rows, { refresh = true } = {}) {
   `);
   const put = db.prepare(`
     INSERT INTO workspace_business_rows(
-      storage_key,collection_key,row_id,payload,payload_hash,archived,date_key,search_text,updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?)
+      storage_key,collection_key,row_id,payload,payload_hash,archived,date_key,search_text,updated_at,changed_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(storage_key,collection_key,row_id) DO UPDATE SET
       payload=excluded.payload,payload_hash=excluded.payload_hash,archived=excluded.archived,
-      date_key=excluded.date_key,search_text=excluded.search_text,updated_at=excluded.updated_at
+      date_key=excluded.date_key,search_text=excluded.search_text,updated_at=excluded.updated_at,
+      changed_at=excluded.changed_at
   `);
   let changed = 0;
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -151,7 +178,8 @@ function upsertRows(db, storageKey, collection, rows, { refresh = true } = {}) {
       } catch (_) {}
     }
     put.run(storageKey, collection, id, payload, payloadHash, row?.archived ? 1 : 0,
-      dateKey(row, collection), searchableText(row, collection), row?.updated_at || row?.created_at || null);
+      dateKey(row, collection), searchableText(row, collection), row?.updated_at || row?.created_at || null,
+      nextChangeStamp());
     changed++;
   }
   if (refresh && changed) refreshState(db, storageKey, collection);
@@ -254,6 +282,36 @@ function loadRowsPage(db, storageKey, collection, options = {}) {
   };
 }
 
+// Rows written after `since` (server ms clock), oldest change first. Rows that
+// predate the change clock have changed_at=0 and are covered by normal paging.
+function loadChangedRows(db, storageKey, collection, options = {}) {
+  ensureBusinessStoreSchema(db);
+  assertCollection(collection);
+  const limit = Math.min(500, Math.max(1, Number(options.limit) || 200));
+  const since = Math.max(0, Number(options.since) || 0);
+  const cursor = decodeCursor(options.cursor);
+  const params = [storageKey, collection];
+  let where = 'changed_at>?';
+  params.push(since);
+  if (cursor) {
+    where += ' AND (changed_at>? OR (changed_at=? AND row_id>?))';
+    params.push(Number(cursor[0]) || 0, Number(cursor[0]) || 0, String(cursor[1]));
+  }
+  const rows = db.prepare(`
+    SELECT row_id,payload,changed_at FROM workspace_business_rows
+    WHERE storage_key=? AND collection_key=? AND ${where}
+    ORDER BY changed_at ASC,row_id ASC LIMIT ?
+  `).all(...params, limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    items: page.map(row => { try { return JSON.parse(row.payload); } catch (_) { return null; } }).filter(Boolean),
+    next_cursor: rows.length > limit && last
+      ? Buffer.from(JSON.stringify([last.changed_at, last.row_id]), 'utf8').toString('base64url')
+      : null,
+  };
+}
+
 function refreshWorkspaceEtag(db, storageKey) {
   const hashes = db.prepare(
     'SELECT part_key,data_hash FROM user_data_parts WHERE account_id=?'
@@ -332,6 +390,7 @@ module.exports = {
   collectionState,
   loadAllRows,
   loadRowsPage,
+  loadChangedRows,
   upsertRows,
   deleteRows,
   replaceRows,
