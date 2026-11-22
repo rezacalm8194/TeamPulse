@@ -5,7 +5,7 @@ const {
   ensureGoogleDriveOauthSchema,
   isConfigured,
   resolveOauthAccountId,
-  hasRefresh,
+  readStatus,
   deleteRefresh,
   exchangeCode,
   refreshAccess,
@@ -21,6 +21,8 @@ const FA = {
   no_access_token: 'گوگل توکن دسترسی نداد',
   not_connected: 'هنوز به گوگل درایو وصل نشده',
   invalid_grant: 'اتصال گوگل منقضی شده؛ دوباره از تنظیمات وصل شو',
+  google_unreachable: 'سرور فعلاً به گوگل دسترسی ندارد؛ اتصال حفظ شده و دوباره تلاش می‌شود',
+  forbidden: 'دسترسی مجاز نیست',
 };
 
 function sendErr(req, res, err) {
@@ -41,9 +43,14 @@ function sendErr(req, res, err) {
 router.get('/drive/status', auth, (req, res) => {
   try {
     const accountId = resolveOauthAccountId(req);
+    const st = readStatus(accountId);
+    if (st.undecryptable) {
+      logger.warn('google_drive_oauth_undecryptable', { requestId: req.requestId, accountId });
+    }
     res.json({
       configured: isConfigured(),
-      connected: hasRefresh(accountId),
+      connected: st.connected,
+      email: st.connected ? st.email : '',
       account_id: accountId,
     });
   } catch (err) {
