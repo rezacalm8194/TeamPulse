@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp423';
+const TP_ASSET_V = 'tp424';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -26380,6 +26380,7 @@ async function renderAdminPanel() {
   let serverOnline = false;
   let dashboard = null;
   let storageReport = null;
+  let trashUsers = [];
 
   try {
     const res = await Promise.race([
@@ -26394,9 +26395,17 @@ async function renderAdminPanel() {
       storageReport = stats.storage || null;
       if (stats.settings) Object.assign(localSettings, stats.settings);
     }
+    if (serverOnline) {
+      const trashRes = await _apiFetch('/api/admin/users/trash');
+      if (trashRes.ok) {
+        const trashData = await trashRes.json();
+        trashUsers = trashData.accounts || [];
+      }
+    }
   } catch(e) { console.log('Admin API not available'); }
 
   window._adminAllUsers = allUsers;
+  window._adminTrashUsers = trashUsers;
   window._adminDashboard = dashboard || {};
   window._adminSettings = localSettings;
   window._adminUsersPage = 1;
@@ -26471,7 +26480,18 @@ async function renderAdminPanel() {
         <div id="admin-bulk-actions">${_adminBulkActionsHtml(firstUserPage)}</div>
         <div id="admin-users-list">${usersHTML}</div>
         <div id="admin-users-pagination">${_adminPaginationHtml(allUsers.length)}</div>
-      </div>` : ''}
+      </div>
+      ${trashUsers.length ? `
+      <div class="detail-section" style="margin-bottom:16px;border:1px solid rgba(248,113,113,.25);background:rgba(248,113,113,.04)">
+        <h3 style="margin-bottom:8px">🗑 سطل بازیافت کاربران</h3>
+        <p style="font-size:11px;color:var(--text3);margin:0 0 12px">تا ۳۰ روز قابل بازگردانی؛ بعد از آن حذف دائمی خودکار انجام می‌شود.</p>
+        <div id="admin-trash-users-list">${_adminRenderTrashUsers(trashUsers)}</div>
+      </div>` : `
+      <div class="detail-section" style="margin-bottom:16px">
+        <h3 style="margin-bottom:6px">🗑 سطل بازیافت کاربران</h3>
+        <p style="font-size:11px;color:var(--text3);margin:0">سطل خالی است.</p>
+      </div>`}
+      ` : ''}
     </div>
     </div>`);
 
@@ -26480,6 +26500,70 @@ async function renderAdminPanel() {
 
 function _adminIsProtectedUser(u) {
   return Boolean(u && u.is_protected);
+}
+
+function _adminRenderTrashUsers(users) {
+  if (!users || !users.length) {
+    return '<p style="font-size:12px;color:var(--text3);padding:8px 0">کاربری در سطل نیست.</p>';
+  }
+  return users.map(u => {
+    const uid = u.id;
+    const deletedLabel = u.deleted_at
+      ? new Date(String(u.deleted_at).replace(' ', 'T') + 'Z').toLocaleDateString('fa-IR')
+      : '—';
+    const days = u.days_remaining != null ? fa(u.days_remaining) : '—';
+    return [
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;',
+      'background:var(--bg3);border-radius:10px;margin-bottom:8px;border:1px solid var(--border2)">',
+      '<div style="flex:1;min-width:180px">',
+      '<div style="font-size:13px;font-weight:600">' + escapeHtml(u.name || '—') + '</div>',
+      '<div style="font-size:11px;color:var(--text3);direction:ltr;text-align:right">' + escapeHtml(u.email || '') + '</div>',
+      '<div style="font-size:10px;color:var(--text3);margin-top:4px">حذف: ' + escapeHtml(deletedLabel) + ' · ' + days + ' روز باقی‌مانده</div>',
+      '</div>',
+      '<button type="button" class="btn btn-ghost btn-sm" onclick="_adminRestoreTrashedUser(\'' + uid + '\')">بازگردانی</button>',
+      '<button type="button" class="btn btn-danger btn-sm" onclick="_adminPermanentDeleteUser(\'' + uid + '\')">حذف دائمی</button>',
+      '</div>'
+    ].join('');
+  }).join('');
+}
+
+async function _adminRestoreTrashedUser(userId) {
+  if (!await tpConfirm('این کاربر از سطل بازیافت بازیابی شود؟')) return;
+  const res = await _apiFetch('/api/admin/users/' + userId + '/restore', { method: 'POST' });
+  if (res.ok) {
+    showToast('کاربر بازگردانی شد ✓', 'success');
+    renderAdminPanel();
+  } else {
+    showToast('بازگردانی ناموفق بود', 'error');
+  }
+}
+
+async function _adminPermanentDeleteUser(userId) {
+  const row = (window._adminTrashUsers || []).find(u => String(u.id) === String(userId));
+  if (!row) return showToast('کاربر در سطل یافت نشد', 'error');
+  const warned = await tpConfirm(
+    'این کار برگشت‌ناپذیر است و همه اطلاعات و فایل‌های این کاربر پاک می‌شود.\n\nبرای ادامه، ایمیل کاربر را در مرحله بعد دقیقاً وارد کنید.',
+    { danger: true, okText: 'ادامه' }
+  );
+  if (!warned) return;
+  const typed = await tpPrompt('ایمیل کاربر را دقیقاً همان‌طور که در سطل نمایش داده شده وارد کنید:', '', { placeholder: 'user@example.com' });
+  if (typed === null) return;
+  const confirmEmail = String(typed).trim().toLowerCase();
+  const expected = String(row.email || '').trim().toLowerCase();
+  if (confirmEmail !== expected) {
+    showToast('ایمیل با حساب مطابقت ندارد', 'error');
+    return;
+  }
+  const res = await _apiFetch('/api/admin/users/' + userId + '/permanent', {
+    method: 'DELETE',
+    body: JSON.stringify({ confirm_email: confirmEmail }),
+  });
+  if (res.ok) {
+    showToast('حساب به‌طور دائمی حذف شد', 'success');
+    renderAdminPanel();
+  } else {
+    showToast('حذف دائمی ناموفق بود', 'error');
+  }
 }
 
 function _adminRenderUserList(users) {
@@ -26929,9 +27013,12 @@ function _adminExportUsers(users) {
 }
 async function _adminBulkDelete() {
   const ids=[..._adminSelectedUsers];
-  if (!await tpConfirm(`حذف کامل ${fa(ids.length)} حساب انتخاب‌شده؟ این عملیات برگشت‌ناپذیر است.`)) return;
+  if (!await tpConfirm(
+    `این ${fa(ids.length)} کاربر به سطل بازیافت می‌رود و تا ۳۰ روز قابل بازگردانی است. در این مدت نمی‌توانند وارد شوند.`,
+    { danger: true }
+  )) return;
   const results=await Promise.all(ids.map(id=>_apiFetch('/api/admin/users/'+id,{method:'DELETE'})));
-  showToast(`${fa(results.filter(r=>r.ok).length)} حساب حذف شد`,results.every(r=>r.ok)?'success':'error');
+  showToast(`${fa(results.filter(r=>r.ok).length)} کاربر به سطل رفت`,results.every(r=>r.ok)?'success':'error');
   _adminSelectedUsers.clear();renderAdminPanel();
 }
 
@@ -26975,9 +27062,9 @@ async function openAdminUserDetail(userId) {
           '<button onclick="_tpAdminDeleteFrom(this)" ' +
           'data-uid="' + user.id + '" data-uname="' + escapeHtml(user.name||user.email||'') + '" ' +
           'class="btn btn-danger" style="width:100%;font-size:13px">' +
-          '🗑️ حذف کامل این حساب کاربری' +
+          '🗑️ انتقال به سطل بازیافت' +
           '</button>' +
-          '<p style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">این عمل برگشت‌ناپذیر است — تمام داده‌های این کاربر حذف می‌شود</p>' +
+          '<p style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">تا ۳۰ روز قابل بازگردانی است؛ سپس حذف دائمی</p>' +
         '</div>'
       ) : '') +
     '</div>';
@@ -27052,19 +27139,17 @@ async function _adminApplyResetPassword(userId) {
 }
 
 async function _adminDeleteUser(userId, userName) {
-  // تایید از ادمین
   const confirmed = await tpConfirm(
-    '⚠️ حذف حساب کاربری\n\n' +
-    'آیا مطمئنید می‌خواهید حساب «' + userName + '» را حذف کنید?\n\n' +
-    'تمام داده‌های این کاربر از جمله مشتریان، پرداخت‌ها و جلسات حذف خواهد شد.\n' +
-    'این عمل برگشت‌ناپذیر است.'
+    'حساب «' + userName + '» به سطل بازیافت می‌رود.\n\n' +
+    'تا ۳۰ روز قابل بازگردانی است. در این مدت کاربر نمی‌تواند وارد شود.',
+    { danger: true }
   );
   if (!confirmed) return;
 
   try {
     const res = await _apiFetch('/api/admin/users/' + userId, { method: 'DELETE' });
     if (res.ok) {
-      showToast('حساب «' + userName + '» حذف شد', 'success');
+      showToast('حساب «' + userName + '» به سطل رفت', 'success');
       closeModal();
       renderAdminPanel();
     } else {

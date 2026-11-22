@@ -15,6 +15,8 @@ const { backfillVersionSummaries, pruneAllVersionSnapshots } = require('./utils/
 const { createStorageDriver } = require('./utils/storage');
 const { migrateSharedFilesToDisk, gcOrphanFiles } = require('./utils/fileStore');
 initTodoAuditStore(db);
+const { ensureAccountTrashSchema } = require('./utils/accountTrash');
+ensureAccountTrashSchema(db);
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
@@ -319,6 +321,23 @@ const server = app.listen(PORT, HOST, () => {
       };
       runTrashPurge();
       setInterval(runTrashPurge, 6 * 60 * 60 * 1000).unref();
+      const runAccountTrashPurge = () => {
+        try {
+          const { purgeExpiredTrashedAccounts, ensureAccountTrashSchema } = require('./utils/accountTrash');
+          const { deleteWorkspaceDocument, deleteWorkspaceDocumentsForAccount } = require('./utils/documentStore');
+          const { deleteStoredFiles } = require('./utils/fileStore');
+          ensureAccountTrashSchema(db);
+          purgeExpiredTrashedAccounts(db, {
+            deleteWorkspaceDocumentsForAccount,
+            deleteStoredFiles,
+            storageDriver: createStorageDriver(),
+          }, { logger });
+        } catch (error) {
+          logger.error('account_trash_purge_job_failed', { error });
+        }
+      };
+      runAccountTrashPurge();
+      setInterval(runAccountTrashPurge, 6 * 60 * 60 * 1000).unref();
       void flushPendingTodoAudits(db, logger);
     } catch (error) {
       logger.error('startup_job_failed', { error });

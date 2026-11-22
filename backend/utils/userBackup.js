@@ -233,6 +233,7 @@ function restoreAccountAppBackup(db, accountId, backup) {
     if (row) {
       db.prepare(
         // Restoring a backup brings a workspace back even if it was in the recycle bin.
+        // accounts.deleted_at is intentionally untouched — only admin POST /users/:id/restore clears it.
         `UPDATE account_workspaces SET name=?, deleted_at=NULL, updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=?`
       ).run(name, accountId, doc.workspaceId);
     } else {
