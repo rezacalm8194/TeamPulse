@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp417';
+const TP_ASSET_V = 'tp418';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1059,6 +1059,8 @@ function _trimLocalTodoHistory(d) {
   d.todos.forEach(todo => {
     const rows = todo && Array.isArray(todo.history) ? todo.history : null;
     if (!rows || rows.length <= 3) return;
+    // History of archived rows is never read (same rule as the server).
+    if (todo.archived) { todo.history = rows.slice(-3); return; }
     const keepFrom = rows.length - 3;
     const kept = rows.filter((row, i) => {
       if (i >= keepFrom) return true;

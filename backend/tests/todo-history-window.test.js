@@ -51,6 +51,20 @@ test('responses keep only the recent window (and at least the last 3 rows)', () 
   assert.deepEqual(doc.students, [{ id: 1 }]);
 });
 
+test('archived todos (and recurring snapshots) carry only the newest 3 rows', () => {
+  const snapshot = { ...dailyTodo(5), archived: true, _snapshot: true };
+  const sent = trimTodoHistoryForClient(snapshot, NOW);
+  assert.equal(sent.history.length, 3);
+  assert.equal(sent.history.at(-1).created_at, snapshot.history.at(-1).created_at);
+});
+
+test('an archived snapshot saved back with 3 rows keeps its full stored history', () => {
+  const db = openDb();
+  upsertTodos(db, 'ws', [{ ...dailyTodo(6), archived: true }]);
+  upsertTodos(db, 'ws', [trimTodoHistoryForClient(loadTodosByIds(db, 'ws', [6])[0], NOW)]);
+  assert.equal(loadTodosByIds(db, 'ws', [6])[0].history.length, 300);
+});
+
 test('history merge is a union without duplicates', () => {
   const a = [{ action: 'completed', created_at: 't1', user_id: 'u', new_value: true }];
   const b = [{ action: 'completed', created_at: 't1', user_id: 'u', new_value: true }, { action: 'unchecked', created_at: 't2', user_id: 'u', new_value: false }];
@@ -107,9 +121,12 @@ test('client trims its local copy only after this session\'s server announced th
   const before = make();
   sandbox._trimLocalTodoHistory(before);
   assert.equal(before.todos[0].history.length, 200, 'no announcement → untouched');
-  sandbox._tpNoteTodoHistoryWindow({ todo_history_days: 60 });
+  sandbox._tpNoteTodoHistoryWindow({ todo_history_days: 14 });
   const after = make();
   sandbox._trimLocalTodoHistory(after);
-  assert.ok(after.todos[0].history.length >= 59 && after.todos[0].history.length <= 61);
+  assert.ok(after.todos[0].history.length >= 13 && after.todos[0].history.length <= 15);
+  const archived = make(); archived.todos[0].archived = true;
+  sandbox._trimLocalTodoHistory(archived);
+  assert.equal(archived.todos[0].history.length, 3);
   assert.match(src, /function _migrate\(d\) \{\s*d\.meta = [^\n]+\n\s*_trimLocalTodoHistory\(d\);/);
 });

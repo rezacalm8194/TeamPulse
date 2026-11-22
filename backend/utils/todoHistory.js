@@ -13,9 +13,12 @@
 //     replaceTodos) unions the incoming rows with the stored rows, so a client
 //     that only holds the recent part can never shrink the stored log.
 //   * Responses carry only the last TODO_HISTORY_SEND_DAYS days of history
-//     (plus at least the newest TODO_HISTORY_MIN_ROWS rows).
+//     (plus at least the newest TODO_HISTORY_MIN_ROWS rows). Archived todos
+//     (incl. the per-completion snapshots of recurring todos, which each carry
+//     a copy of the parent's history) get only the newest MIN rows: the
+//     client never reads history of archived rows.
 
-const TODO_HISTORY_SEND_DAYS = 60;
+const TODO_HISTORY_SEND_DAYS = 14;
 const TODO_HISTORY_MIN_ROWS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,6 +57,7 @@ function trimTodoHistoryForClient(todo, now = Date.now()) {
   if (!todo || typeof todo !== 'object' || !Array.isArray(todo.history)) return todo;
   const history = todo.history;
   if (history.length <= TODO_HISTORY_MIN_ROWS) return todo;
+  if (todo.archived) return { ...todo, history: history.slice(-TODO_HISTORY_MIN_ROWS) };
   const cutoff = now - TODO_HISTORY_SEND_DAYS * DAY_MS;
   const keepFrom = history.length - TODO_HISTORY_MIN_ROWS;
   const kept = history.filter((row, index) => {
