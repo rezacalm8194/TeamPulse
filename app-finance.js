@@ -151,9 +151,19 @@ async function saveEditPackage(id, studentId) {
 }
 
 async function deletePackage(id) {
-  if (!confirm('این خرید و یادآوری‌های مرتبط حذف شود؟')) return;
-  await window.api.packages.delete(id);
-  showToast('حذف شد', 'error');
+  // No confirm: the delete can be undone for a few seconds instead.
+  const studentIdOfPackage = (_db.packages || []).find(p => String(p.id) === String(id))?.student_id;
+  await _tpUndoableDelete({
+    label: 'خرید و یادآوری‌های مرتبط حذف شد',
+    collections: ['packages', 'reminders'],
+    run: () => window.api.packages.delete(id),
+    refresh: async () => {
+      allStudents = await window.api.students.getAll();
+      if (currentPage === 'payments') await renderPayments();
+      else if (studentIdOfPackage != null && typeof openStudentDetail === 'function') await openStudentDetail(studentIdOfPackage);
+      else await renderPage();
+    },
+  });
   // حذف فوری از DOM بدون نیاز به رفرش
   const el = document.getElementById('pkg-row-' + id);
   if (el) {
@@ -247,13 +257,20 @@ async function savePaymentEdit(id) {
 
 
 async function deletePayment(id, context) {
-  if (!confirm('این پرداخت حذف شود؟ این عمل قابل بازگشت نیست.')) return;
+  // No confirm: the delete can be undone for a few seconds instead.
   const payments = await window.api.payments.getAll();
   const p = payments.find(x => x.id === id);
-  await window.api.payments.delete(id);
-  showToast('حذف شد', 'error');
-  if (context === 'payments') await renderPayments();
-  else { allStudents = await window.api.students.getAll(); if (p) await openStudentDetail(p.student_id); }
+  const rerender = async () => {
+    if (context === 'payments') await renderPayments();
+    else { allStudents = await window.api.students.getAll(); if (p) await openStudentDetail(p.student_id); }
+  };
+  await _tpUndoableDelete({
+    label: 'پرداخت حذف شد',
+    collections: ['payments'],
+    run: () => window.api.payments.delete(id),
+    refresh: rerender,
+  });
+  await rerender();
 }
 
 // ── General "add payment" (from Payments page) ────────────────────────────────
@@ -906,7 +923,7 @@ async function saveNewFamily() {
 
 
 async function deleteFamily(id, name) {
-  if (!confirm(`آیا مطمئن هستی به حذف حساب مشترک "${name}" یا خیر؟ (اعضا حذف نمی‌شوند، فقط اتصال‌شان قطع می‌شود)`)) return;
+  if (!await tpConfirm(`آیا مطمئن هستی به حذف حساب مشترک "${name}" یا خیر؟ (اعضا حذف نمی‌شوند، فقط اتصال‌شان قطع می‌شود)`)) return;
   await window.api.families.delete(id);
   showToast('گروه حذف شد', 'error');
   await renderFamilies(currentPage === 'payments', currentStudentAccountSearch());
@@ -1921,7 +1938,7 @@ async function saveEditReminder(id) {
 
 
 async function deleteReminder(id) {
-  if (!confirm('این یادآوری حذف شود؟')) return;
+  if (!await tpConfirm('این یادآوری حذف شود؟')) return;
   await window.api.reminders.delete(id);
   showToast('حذف شد', 'error');
   if (typeof _applyDeletedItemTombstones === 'function') _applyDeletedItemTombstones(_db);

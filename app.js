@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp420';
+const TP_ASSET_V = 'tp423';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4182,7 +4182,7 @@ async function _readBackupFileText(file) {
   return new Response(stream).text();
 }
 
-function _importFile() {
+async function _importFile() {
   const input=document.createElement('input');
   input.type='file';input.accept='.json,.gz,.json.gz,application/json,application/gzip';
   input.onchange=async e=>{
@@ -4190,7 +4190,7 @@ function _importFile() {
     try{
         const imported=JSON.parse(await _readBackupFileText(file));
         if(!imported?.students){showToast('فایل پشتیبان معتبر نیست','error');return;}
-        if(!confirm(`این فایل شامل ${imported.students.length} شاگرد است. وارد شود و داده‌های فعلی جایگزین شوند؟`))return;
+        if(!await tpConfirm(`این فایل شامل ${imported.students.length} شاگرد است. وارد شود و داده‌های فعلی جایگزین شوند؟`))return;
         _saveVersion();
         clearTimeout(window._serverSyncTimer);
         // حفظ اعتبارنامه‌ها
@@ -7004,6 +7004,7 @@ async function _switchAccount(id) {
     showToast('این میزکار در حساب شما وجود ندارد', 'error');
     return;
   }
+  if (await _tpFlushPendingUndos()) { try { await _syncToServer(); } catch (_) {} }
   _setCurrentAccountId(id);
   window._activeDBKey = _localWorkspaceDBKey(id);
   await _loadPrimaryDatabase();
@@ -8243,6 +8244,252 @@ function pkgTagsHtml(packages, opts = {}) {
   const more = extra > 0 ? `<span class="tag pkg-tags-more">+${fa(extra)}</span>` : '';
   return `<div class="pkg-tags" title="${title}">${html}${more}</div>`;
 }
+// ── In-app dialogs (replace the browser's confirm/alert/prompt) ──────────
+// The native dialogs look foreign (often English OK/Cancel), can't be styled
+// and are clumsy on phones. These return Promises, so EVERY call must be
+// awaited: `if (!await tpConfirm(...)) return;` (a missing await would make
+// the check always pass — tests/in-app-dialogs.test.js guards this).
+// They stack above any open modal and work without inline handlers (CSP).
+function _tpDialog({ title = '', message = '', okText = 'تأیید', cancelText = 'انصراف', danger = false, input = null, alertOnly = false, _choose = false } = {}) {
+  return new Promise(resolve => {
+    let root = document.getElementById('tp-dialog-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'tp-dialog-root';
+      document.body.appendChild(root);
+    }
+    const previousFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'tp-dialog-overlay';
+    overlay.setAttribute('role', 'presentation');
+    const box = document.createElement('div');
+    box.className = 'tp-dialog' + (danger ? ' tp-dialog-danger' : '');
+    box.setAttribute('role', alertOnly ? 'alertdialog' : 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    if (title) {
+      const h = document.createElement('div');
+      h.className = 'tp-dialog-title';
+      h.textContent = title;
+      box.appendChild(h);
+    }
+    const body = document.createElement('div');
+    body.className = 'tp-dialog-message';
+    body.textContent = String(message ?? '');
+    box.appendChild(body);
+    let field = null;
+    if (input) {
+      field = document.createElement('input');
+      field.className = 'form-input tp-dialog-input';
+      field.value = input.value ?? '';
+      if (input.placeholder) field.placeholder = input.placeholder;
+      field.setAttribute('aria-label', String(message || title || ''));
+      box.appendChild(field);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'tp-dialog-actions';
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'btn ' + (danger ? 'btn-danger tp-dialog-ok-danger' : 'btn-primary');
+    ok.textContent = okText;
+    let cancel = null;
+    if (!alertOnly) {
+      cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-ghost';
+      cancel.textContent = cancelText;
+      actions.appendChild(cancel);
+    }
+    actions.appendChild(ok);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+    let done = false;
+    const finish = value => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      try { previousFocus?.focus?.(); } catch (_) {}
+      resolve(value);
+    };
+    const accept = () => finish(input ? field.value : true);
+    const dismiss = () => finish(input ? null : (alertOnly ? true : (_choose ? null : false)));
+    const cancelChoice = () => finish(input ? null : false);
+    const onKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); }
+      else if (e.key === 'Enter' && (input || document.activeElement === ok || document.activeElement === box || document.activeElement === document.body)) {
+        e.preventDefault(); e.stopPropagation(); accept();
+      }
+    };
+    ok.addEventListener('click', accept);
+    cancel?.addEventListener('click', cancelChoice);
+    overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
+    document.addEventListener('keydown', onKey, true);
+    // Destructive actions focus "cancel" so a stray Enter doesn't delete.
+    setTimeout(() => { (field || (danger && cancel) || ok).focus(); if (field) field.select?.(); }, 30);
+  });
+}
+function _tpLooksDestructive(message) {
+  return /حذف|پاک|برگشت‌ناپذیر|برگشت ناپذیر|قطع|جایگزین/.test(String(message || ''));
+}
+function tpConfirm(message, opts = {}) {
+  const danger = opts.danger ?? _tpLooksDestructive(message);
+  return _tpDialog({ message, danger, okText: opts.okText || (danger ? 'بله، انجام شود' : 'تأیید'), cancelText: opts.cancelText || 'انصراف', title: opts.title || '' });
+}
+// Two real choices (both buttons act). Resolves true (ok), false (cancel
+// button) or null when dismissed (Esc / backdrop) — callers must treat null
+// as "do nothing", unlike the native confirm where closing meant "cancel".
+function tpChoose(message, opts = {}) {
+  return _tpDialog({ message, okText: opts.okText || 'تأیید', cancelText: opts.cancelText || 'انصراف', title: opts.title || '', danger: !!opts.danger, _choose: true });
+}
+function tpAlert(message, opts = {}) {
+  return _tpDialog({ message, alertOnly: true, okText: opts.okText || 'باشه', title: opts.title || '' });
+}
+function tpPrompt(message, defaultValue = '', opts = {}) {
+  return _tpDialog({ message, input: { value: defaultValue ?? '', placeholder: opts.placeholder || '' }, okText: opts.okText || 'تأیید', cancelText: opts.cancelText || 'انصراف', title: opts.title || '' });
+}
+
+// ── Undo after delete ────────────────────────────────────────────────────
+// The delete runs at once (UI updates immediately) but is not sent to the
+// server for _TP_UNDO_MS: «بازگردانی» puts back exactly the rows this delete
+// removed (plus their tombstones / queued delete ops), so the server never
+// sees it. Irreversible side effects (e.g. deleting receipt files) go in
+// `commit`, which runs only when the window ends without undo. If the app is
+// closed during the window, the normal close-time sync still sends the delete.
+const _TP_UNDO_MS = 6000;
+window._tpActiveUndos = window._tpActiveUndos || [];
+function _tpRecomputeSyncHold() {
+  const now = Date.now();
+  window._tpActiveUndos = window._tpActiveUndos.filter(u => !u.finished && u.deadline > now);
+  window._tpSyncHoldUntil = window._tpActiveUndos.reduce((m, u) => Math.max(m, u.deadline), 0);
+}
+function _tpIdsOf(rows) {
+  return new Set((Array.isArray(rows) ? rows : []).filter(r => r && r.id != null).map(r => String(r.id)));
+}
+async function _tpUndoableDelete({ label = 'حذف شد', collections = [], run, refresh = null, commit = null, onUndo = null }) {
+  const before = {};
+  const tombsBefore = {};
+  collections.forEach(c => {
+    before[c] = Array.isArray(_db?.[c]) ? _db[c].slice() : [];
+    const t = _db?._deletedItems?.[c];
+    tombsBefore[c] = t && typeof t === 'object' && !Array.isArray(t) ? { ...t } : {};
+  });
+  let queueBefore = [];
+  try { queueBefore = typeof _readDurableBusinessDeltaQueue === 'function' ? _readDurableBusinessDeltaQueue() : []; } catch (_) {}
+  const entry = { deadline: Date.now() + _TP_UNDO_MS + 400, finished: false, dbKey: window._activeDBKey || '' };
+  window._tpActiveUndos.push(entry);
+  _tpRecomputeSyncHold();
+  try {
+    await run();
+  } catch (error) {
+    entry.finished = true;
+    _tpRecomputeSyncHold();
+    throw error;
+  }
+  // Exactly what this delete removed (later deletes are not ours to restore).
+  const removed = {};
+  collections.forEach(c => {
+    const now = _tpIdsOf(_db?.[c]);
+    removed[c] = before[c].filter(r => r && r.id != null && !now.has(String(r.id)));
+  });
+  const anyRemoved = collections.some(c => removed[c].length);
+  if (!anyRemoved) { entry.finished = true; _tpRecomputeSyncHold(); return false; }
+  const restore = async () => {
+    collections.forEach(c => {
+      const ids = _tpIdsOf(removed[c]);
+      if (!ids.size) return;
+      // Put rows back in their original position; keep later edits/additions.
+      const current = Array.isArray(_db[c]) ? _db[c] : [];
+      const byId = new Map(current.filter(r => r && r.id != null).map(r => [String(r.id), r]));
+      const used = new Set();
+      const next = [];
+      before[c].forEach(r => {
+        const key = r && r.id != null ? String(r.id) : null;
+        if (key == null) return;
+        if (byId.has(key)) { next.push(byId.get(key)); used.add(key); }
+        else if (ids.has(key)) { next.push(r); used.add(key); }
+      });
+      current.forEach(r => { if (!r || r.id == null || !used.has(String(r.id))) next.push(r); });
+      _db[c] = next;
+      const tombs = _db._deletedItems?.[c];
+      if (tombs && typeof tombs === 'object') {
+        ids.forEach(id => { if (!Object.prototype.hasOwnProperty.call(tombsBefore[c], id)) delete tombs[id]; });
+      }
+    });
+    try {
+      if (typeof _readDurableBusinessDeltaQueue === 'function') {
+        const hadBefore = new Set(queueBefore.map(e => `${e?.collection}|${e?.id}|${e?.operation}`));
+        const queue = _readDurableBusinessDeltaQueue().filter(e => {
+          if (String(e?.operation) !== 'delete') return true;
+          if (hadBefore.has(`${e?.collection}|${e?.id}|${e?.operation}`)) return true;
+          return !_tpIdsOf(removed[e?.collection]).has(String(e?.id));
+        });
+        _writeDurableBusinessDeltaQueue(queue);
+      }
+    } catch (_) {}
+    try { onUndo?.(removed); } catch (_) {}
+    if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
+    _save();
+  };
+  const finish = async undo => {
+    if (entry.finished) return;
+    entry.finished = true;
+    _tpRecomputeSyncHold();
+    // Never put rows back into a different workspace's data.
+    if (undo && (window._activeDBKey || '') !== entry.dbKey) undo = false;
+    if (undo) {
+      await restore();
+      showToast('بازگردانی شد ✓', 'success');
+      try { await (refresh ? refresh() : renderPage()); } catch (_) {}
+    } else {
+      try { await commit?.(); } catch (_) {}
+    }
+    if (!window._tpSyncHoldUntil && typeof _ensurePendingServerSync === 'function') _ensurePendingServerSync(50);
+  };
+  entry.finish = finish;
+  _tpShowUndoToast(label, () => finish(true), _TP_UNDO_MS);
+  setTimeout(() => { void finish(false); }, _TP_UNDO_MS);
+  return true;
+}
+// End every open undo window now (as if it timed out). Used before leaving the
+// workspace or signing out, so the deletes are really sent and never lost.
+async function _tpFlushPendingUndos() {
+  const open = (window._tpActiveUndos || []).filter(u => !u.finished && typeof u.finish === 'function');
+  for (const u of open) { try { await u.finish(false); } catch (_) {} }
+  document.querySelectorAll('#tp-undo-root .tp-undo-toast').forEach(el => el.remove());
+  window._tpActiveUndos = [];
+  window._tpSyncHoldUntil = 0;
+  return open.length;
+}
+function _tpShowUndoToast(message, onUndo, ms = _TP_UNDO_MS) {
+  let root = document.getElementById('tp-undo-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'tp-undo-root';
+    root.setAttribute('aria-live', 'polite');
+    document.body.appendChild(root);
+  }
+  const el = document.createElement('div');
+  el.className = 'tp-undo-toast';
+  el.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.className = 'tp-undo-text';
+  text.textContent = message;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tp-undo-btn';
+  btn.textContent = 'بازگردانی';
+  const bar = document.createElement('i');
+  bar.className = 'tp-undo-bar';
+  bar.style.animationDuration = ms + 'ms';
+  el.append(text, btn, bar);
+  root.appendChild(el);
+  const close = () => { el.classList.add('tp-undo-out'); setTimeout(() => el.remove(), 200); };
+  btn.addEventListener('click', () => { btn.disabled = true; close(); onUndo(); });
+  setTimeout(close, ms);
+  return el;
+}
+
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -9748,8 +9995,8 @@ function downloadCaseFormWord(id) {
   showToast('فایل Word آماده دانلود شد ✓', 'success');
 }
 
-function deleteCaseForm(id) {
-  if (!confirm('این فرم حذف شود؟')) return;
+async function deleteCaseForm(id) {
+  if (!await tpConfirm('این فرم حذف شود؟')) return;
   _db.case_forms = (_db.case_forms || []).filter(item => +item.id !== +id);
   _save(); showToast('فرم حذف شد','error'); renderStudents();
 }
@@ -10986,9 +11233,13 @@ async function saveStudentEdit(id) {
 
 async function deleteStudent(id) {
   const s = allStudents.find(x => x.id === id);
-  if (!confirm(`آیا مطمئنی؟ "${s?.name} ${s?.lname}" و تمام اطلاعاتش حذف می‌شود.`)) return;
-  await window.api.students.delete(id);
-  showToast('حذف شد', 'error');
+  if (!await tpConfirm(`آیا مطمئنی؟ "${s?.name} ${s?.lname}" و تمام اطلاعاتش حذف می‌شود.`)) return;
+  await _tpUndoableDelete({
+    label: `«${[s?.name, s?.lname].filter(Boolean).join(' ') || 'مشتری'}» حذف شد`,
+    collections: ['students', 'packages', 'payments', 'sessions', 'wallet_tx', 'reminders', 'topics', 'key_events'],
+    run: () => window.api.students.delete(id),
+    refresh: async () => { allStudents = await window.api.students.getAll(); await refreshOpenStudentSurface(); },
+  });
   await refreshOpenStudentSurface();
 }
 
@@ -11234,7 +11485,7 @@ function toggleSessionGroup(studentId) {
 }
 
 async function deleteSession(sessionId) {
-  if (!confirm(`این ${META.sessionSingular||'جلسه'} حذف شود؟`)) return;
+  if (!await tpConfirm(`این ${META.sessionSingular||'جلسه'} حذف شود؟`)) return;
   await window.api.sessions.delete(sessionId);
   showToast('حذف شد', 'error');
   await renderSessions();
@@ -12186,9 +12437,9 @@ async function exportCustomerList() {
 // ════════════════════════════════════════════════════════════════════════════
 // SETTINGS PAGE
 // ════════════════════════════════════════════════════════════════════════════
-function _confirmClearAllData() {
+async function _confirmClearAllData() {
   // تایید اول
-  const step1 = confirm(
+  const step1 = await tpConfirm(
     '⚠️ هشدار جدی\n\n' +
     'این عمل تمام داده‌های حساب شما را پاک می‌کند:\n' +
     '• تمام شاگردان و مشتریان\n' +
@@ -12762,7 +13013,7 @@ async function _copyTeamInvite(id) {
 async function _deleteTeamMember(id) {
   const member = (_db.team_members || []).find(m => m.id === id);
   if (!member) return;
-  if (!confirm(`دسترسی ${member.email} حذف شود؟`)) return;
+  if (!await tpConfirm(`دسترسی ${member.email} حذف شود؟`)) return;
   _db.team_members = (_db.team_members || []).filter(m => m.id !== id);
   _db.team_invites = (_db.team_invites || []).filter(m => m.id !== id);
   _save();
@@ -13581,7 +13832,7 @@ function _renderVersionChoice(index) {
 async function restoreVersion(source, ref) {
   const selected = (window._availableRestoreVersions || []).find(v => v.source===source && String(v.ref)===String(ref));
   const label = selected ? new Date(selected.mtime).toLocaleString('fa-IR') : '';
-  if (!confirm(`نسخه ${label} جایگزین داده فعلی شود؟ نسخه فعلی ابتدا در تاریخچه سرور محفوظ می‌ماند. این عملیات فقط با تأیید شما انجام می‌شود.`)) return;
+  if (!await tpConfirm(`نسخه ${label} جایگزین داده فعلی شود؟ نسخه فعلی ابتدا در تاریخچه سرور محفوظ می‌ماند. این عملیات فقط با تأیید شما انجام می‌شود.`)) return;
   const result = await window.api.versions.restore(source, ref);
   if (!result.ok) { showToast(result.error || 'خطا', 'error'); return; }
   showToast('بازگردانی شد ✓ — برنامه دوباره بارگذاری می‌شود', 'success');
@@ -13589,7 +13840,7 @@ async function restoreVersion(source, ref) {
 }
 
 async function importBackup() {
-  if (!confirm('با وارد کردن فایل پشتیبان، تمام داده‌های فعلی این برنامه با آن جایگزین می‌شود (نسخه فعلی هم ذخیره می‌ماند). ادامه می‌دهی؟')) return;
+  if (!await tpConfirm('با وارد کردن فایل پشتیبان، تمام داده‌های فعلی این برنامه با آن جایگزین می‌شود (نسخه فعلی هم ذخیره می‌ماند). ادامه می‌دهی؟')) return;
   const result = await window.api.backup.import();
   if (!result.ok) {
     if (result.error) showToast(result.error, 'error');
@@ -13711,7 +13962,7 @@ async function registerBalePayWebhook() {
 
 async function disconnectBalePay() {
   if (!_sbSession?.token) return;
-  if (!confirm('اتصال بله‌پی قطع شود؟')) return;
+  if (!await tpConfirm('اتصال بله‌پی قطع شود؟')) return;
   const res = await _apiFetch('/api/bale/credentials' + _workspaceQuery(), { method: 'DELETE' });
   if (!res.ok) { showToast('قطع اتصال ناموفق بود', 'error'); return; }
   _balePayConnected = false;
@@ -13869,7 +14120,7 @@ async function updatePkgType(id, color, label) {
 }
 
 async function mergeDuplicatePkgTypes() {
-  if (!confirm('موارد هم‌نام و عنوان‌های معادل مشخص‌شده ادغام شوند؟ تمام سوابق به نام تمیز و اصلی منتقل می‌شوند و نسخه موارد ادغام‌شده در آرشیو داخلی محفوظ می‌ماند.')) return;
+  if (!await tpConfirm('موارد هم‌نام و عنوان‌های معادل مشخص‌شده ادغام شوند؟ تمام سوابق به نام تمیز و اصلی منتقل می‌شوند و نسخه موارد ادغام‌شده در آرشیو داخلی محفوظ می‌ماند.')) return;
   const result = await window.api.packageTypes.mergeDuplicates();
   if (!result.merged) {
     showToast('مورد تکراری هم‌نام یا معادلی پیدا نشد', 'success');
@@ -13880,7 +14131,7 @@ async function mergeDuplicatePkgTypes() {
 }
 
 async function deletePkgType(id) {
-  if (!confirm('این نوع پکیج حذف شود؟')) return;
+  if (!await tpConfirm('این نوع پکیج حذف شود؟')) return;
   const result = await window.api.packageTypes.delete(id);
   if (!result.ok) { showToast(result.error, 'error'); return; }
   showToast('حذف شد', 'error');
@@ -14041,14 +14292,14 @@ function insertUnderline(textareaId) {
   wrapSelection(textareaId, '<u>', '</u>');
 }
 
-function insertLink(textareaId) {
+async function insertLink(textareaId) {
   const el = document.getElementById(textareaId);
   if (!el) return;
   const start = el.selectionStart, end = el.selectionEnd;
   const selected = el.value.slice(start, end);
-  const url = prompt('آدرس لینک را وارد کنید:', 'https://');
+  const url = await tpPrompt('آدرس لینک را وارد کنید:', 'https://');
   if (!url || url === 'https://') return;
-  const label = selected || prompt('متن نمایشی لینک:', url) || url;
+  const label = selected || await tpPrompt('متن نمایشی لینک:', url) || url;
   const mdLink = `[${label}](${url})`;
   const val = el.value;
   el.value = val.slice(0, start) + mdLink + val.slice(end);
@@ -14441,8 +14692,8 @@ function _openFocusMode(textarea, noteId, field) {
 
 // ── Archive ────────────────────────────────────────────────────────────────
 async function archiveStudent(id, name) {
-  if (!confirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return;
-  if (!confirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${META.entityPlural||'شاگردان'}" منتقل می‌شود. ادامه می‌دهی؟`)) return;
+  if (!await tpConfirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return;
+  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${META.entityPlural||'شاگردان'}" منتقل می‌شود. ادامه می‌دهی؟`)) return;
   await window.api.students.setArchived({ id, archived: true });
   showToast(`${name} به بایگانی منتقل شد ✓`, 'success');
   await renderSessions();
@@ -14854,7 +15105,7 @@ function clearArchiveSelection(){
   syncArchiveSelectionUi();
 }
 function selectedArchiveIds(){return [...archiveSelectedIds];}
-async function bulkConvertArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!confirm(`${fa(ids.length)} مورد انتخاب‌شده به پرونده‌های مشتریان منتقل شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'convert'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد به مشتری تبدیل شد ✓`,'success');await renderArchive();}
+async function bulkConvertArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!await tpConfirm(`${fa(ids.length)} مورد انتخاب‌شده به پرونده‌های مشتریان منتقل شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'convert'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد به مشتری تبدیل شد ✓`,'success');await renderArchive();}
 function bulkSetArchiveCategory(){if(!archiveSelectedIds.size)return;openModal('تغییر دسته‌بندی گروهی',`<div class="form-group"><label class="form-label">دسته‌بندی جدید</label><select class="form-select" id="archive-bulk-category">${archiveCategoryOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveCategory()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
 async function applyBulkArchiveCategory(){const ids=selectedArchiveIds(),value=document.getElementById('archive-bulk-category')?.value;if(!ids.length||!value)return;await window.api.students.bulkArchiveAction({ids,action:'category',value});closeModal();archiveSelectedIds.clear();showToast('دسته‌بندی گروهی اعمال شد ✓','success');await renderArchive();}
 function bulkSetArchiveStatus(){if(!archiveSelectedIds.size)return;openModal('تغییر گروهی وضعیت ارتباط',`<div class="form-group"><label class="form-label">وضعیت ارتباط جدید</label><select class="form-select" id="archive-bulk-status">${archiveStatusOptions.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select></div>`,[{label:'اعمال به موارد انتخاب‌شده',cls:'btn-primary',action:'applyBulkArchiveStatus()'},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);}
@@ -14863,18 +15114,18 @@ async function applyBulkArchiveStatus(){
   if(value==='ناموفق'){closeModal();openArchiveLossReasonModal(ids,value);return;}
   await window.api.students.bulkArchiveAction({ids,action:'status',value});closeModal();archiveSelectedIds.clear();showToast('وضعیت ارتباط گروهی اعمال شد ✓','success');await renderArchive();
 }
-async function bulkDeleteArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!confirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'delete'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد حذف شد`,'error');await renderArchive();}
+async function bulkDeleteArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!await tpConfirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'delete'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد حذف شد`,'error');await renderArchive();}
 
 function archiveComboField(id,label,value,options,kind,placeholder=''){const selected=String(value||'');const choices=[...options];if(selected&&!choices.includes(selected))choices.unshift(selected);return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><select class="form-select" style="flex:1;min-width:0" id="${id}">${kind==='status'?`<option value="">${escapeHtml(placeholder||'— انتخاب کنید —')}</option>`:''}${choices.map(x=>`<option value="${escapeHtml(x)}" ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
 function archiveFormHtml(s={}){const description=s.description||[s.address,s.main_need].filter(Boolean).join('\n'),fullName=[s.name,s.lname].filter(Boolean).join(' ').trim(),cityKey=archiveHeaderKey('شهر'),city=String(s.archive_data?.[cityKey]??'');return `<div class="form-grid"><div class="form-group"><label class="form-label">نام و نام خانوادگی</label><input class="form-input" id="ar-full-name" value="${escapeHtml(fullName)}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="ar-referral-source" value="${escapeHtml(s.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group"><label class="form-label">شهر</label><input class="form-input" data-archive-extra data-archive-scope="archive" data-archive-key="${escapeHtml(cityKey)}" value="${escapeHtml(city)}"></div>${archiveLossReasonFields(s.loss_reason||'')}<div class="form-group full"><label class="form-label">توضیحات</label><textarea class="form-textarea" id="ar-description" rows="3">${escapeHtml(description)}</textarea></div>${archiveActivityFields(s)}${archiveExtraFieldsHtml(s,'archive',['نوع فعالیت','شهر'])}</div>`;}
 
-async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=prompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const input=document.getElementById(inputId);if(input&&!Array.from(input.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;option.textContent=value;input.appendChild(option);}if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
+async function addArchiveComboOption(kind,inputId){const label=kind==='status'?'وضعیت ارتباط جدید':'دسته‌بندی جدید';const value=await tpPrompt(`${label} را وارد کنید:`)?.trim();if(!value)return;await window.api.students.addArchiveOption({kind,value});const input=document.getElementById(inputId);if(input&&!Array.from(input.options).some(x=>x.value===value)){const option=document.createElement('option');option.value=value;option.textContent=value;input.appendChild(option);}if(input)input.value=value;if(kind==='status'){if(!archiveStatusOptions.includes(value))archiveStatusOptions.push(value);}else if(!archiveCategoryOptions.includes(value))archiveCategoryOptions.push(value);}
 
 function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id===id):{};openModal(id?'ویرایش فرد بایگانی‌شده':'افزودن فرد به بایگانی',archiveFormHtml(s),[{label:'ذخیره',cls:'btn-primary',action:`saveArchivePerson(${id||'null'})`},{label:'انصراف',cls:'btn-ghost',action:'closeModal()'}]);initDatePickers();}
 async function saveArchivePerson(id){const activity=readArchiveActivity(false);if(!activity)return;const relationship_status=document.getElementById('ar-relationship-status').value.trim();const loss_reason=readArchiveLossReason(relationship_status==='ناموفق');if(loss_reason===null)return;const old=id?archiveStudents.find(x=>x.id===id):null,fullName=document.getElementById('ar-full-name').value.trim().replace(/\s+/g,' '),oldFullName=[old?.name,old?.lname].filter(Boolean).join(' ').trim();let name='',lname='';if(old&&fullName===oldFullName){name=old.name||'';lname=old.lname||'';}else{const parts=fullName.split(' ').filter(Boolean);name=parts.shift()||'';lname=parts.join(' ');}const data={...activity,name,lname,phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',referral_source:document.getElementById('ar-referral-source').value.trim()||'متفرقه',description:document.getElementById('ar-description').value.trim(),relationship_status,loss_reason:relationship_status==='ناموفق'?loss_reason:'',date:old?.date_jalali||'',archive_data:collectArchiveExtraData('archive',old?.archive_data||{}),packages:[]};if(id){await window.api.students.update({...data,id,packages:old?.packages||[]});}else {const result=await window.api.students.addArchivedBulk([data]);id=result.ids[0];}if(activity.next_activity_date||old?.next_activity_date)await persistArchiveActivity(id,activity);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
 function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;openModal(`${escapeHtml(s.name)} ${escapeHtml(s.lname)}`,`<div class="detail-section">${archiveColumns.map(c=>`<div class="detail-row"><span class="detail-key">${escapeHtml(c)}</span><span class="detail-val">${escapeHtml(archiveColumnValue(s,c)||'—')}</span></div>`).join('')}</div>`,[{label:'✓ تبدیل به مشتری',cls:'btn-primary',action:`closeModal();convertArchiveToCustomer(${id})`},{label:'✏️ ویرایش',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف کامل',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`}]);}
-async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!confirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
-async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!confirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
+async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!await tpConfirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
+async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!await tpConfirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
 
 let _xlsxLoaderPromise=null;
 function loadXlsxLibrary(){
@@ -15626,8 +15877,8 @@ function setAchTimelineSearch(studentId, value) {
   renderAchTimelinePanel(studentId);
 }
 
-function deleteEvalForm(studentId, displayName, formId) {
-  if (!confirm('این فرم و تمام دوره‌هایش حذف شود؟')) return;
+async function deleteEvalForm(studentId, displayName, formId) {
+  if (!await tpConfirm('این فرم و تمام دوره‌هایش حذف شود؟')) return;
   saveEvalForms(studentId, loadEvalForms(studentId).filter(f => f.id !== formId));
   openEvaluation(studentId, displayName);
 }
@@ -15755,7 +16006,7 @@ function saveNewEvalForm(studentId, displayName) {
   const title = document.getElementById('ef-title').value.trim();
   const mode = document.getElementById('ef-mode')?.value || 'default';
   const desc = document.getElementById('ef-desc').value.trim();
-  if (!title) { alert('عنوان فرم را وارد کنید'); return; }
+  if (!title) { tpAlert('عنوان فرم را وارد کنید'); return; }
   let rows;
   if (mode === 'default') {
     const labels = (document.getElementById('ef-default-rows')?.value || '').split('\n').map(value => value.trim()).filter(Boolean);
@@ -16314,7 +16565,7 @@ function endEvalPeriod(studentId, displayName, formId, periodIdx) {
 function confirmEndEvalPeriod(studentId, displayName, formId, periodIdx) {
   const raw = (document.getElementById('enp-date').value || '').trim();
   const dateVal = raw.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
-  if (!dateVal) { alert('تاریخ را وارد کنید'); return; }
+  if (!dateVal) { tpAlert('تاریخ را وارد کنید'); return; }
   const forms = loadEvalForms(studentId);
   const form = forms.find(f => f.id === formId);
   if (!form || !form.periods[periodIdx] || form.periods[periodIdx].date) return;
@@ -16607,7 +16858,7 @@ function renderEvalCompare(formId) {
   if (!form) return;
   const aIdx = parseInt(document.getElementById('cmp-a').value);
   const bIdx = parseInt(document.getElementById('cmp-b').value);
-  if (aIdx === bIdx) { alert('دو دوره متفاوت انتخاب کن'); return; }
+  if (aIdx === bIdx) { tpAlert('دو دوره متفاوت انتخاب کن'); return; }
   document.getElementById('eval-compare-result').innerHTML = buildEvalCompareHtml(form, aIdx, bIdx);
 }
 
@@ -17807,7 +18058,7 @@ async function deleteChecklistItem(topicId, itemId, studentId, displayName) {
 }
 
 async function deleteTopic(topicId, studentId, displayName) {
-  if (!confirm('این موضوع حذف شود؟')) return;
+  if (!await tpConfirm('این موضوع حذف شود؟')) return;
   await window.api.topics.delete(topicId);
   showToast('حذف شد', 'error');
   await openTopics(studentId, displayName);
@@ -18068,7 +18319,7 @@ async function markKeyEventRemindDone(id, studentId, displayName) {
 }
 
 async function deleteKeyEvent(id, studentId, displayName) {
-  if (!confirm('این رویداد حذف شود؟')) return;
+  if (!await tpConfirm('این رویداد حذف شود؟')) return;
   await window.api.keyEvents.delete(id);
   showToast('حذف شد', 'error');
   await openKeyEvents(studentId, displayName);
@@ -19633,6 +19884,7 @@ const _auth = {
   },
 
   async signOut() {
+    if (await _tpFlushPendingUndos()) { try { await _syncToServer(); } catch (_) {} }
     try { await _apiFetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
     _sbSession = null;
     _sbUser = null;
@@ -20893,6 +21145,14 @@ async function _reconcileTerminalTodoCollisions(pending) {
 
 async function _syncToServer(conflictAttempt = 0) {
   if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return null;
+  // A delete with "undo" is still in its undo window: don't send it yet (the
+  // server would tombstone the ids for good). Retry right after the window.
+  const undoHoldUntil = Number(window._tpSyncHoldUntil || 0);
+  if (undoHoldUntil > Date.now()) {
+    clearTimeout(window._tpSyncHoldTimer);
+    window._tpSyncHoldTimer = setTimeout(() => { void _syncToServer(); }, undoHoldUntil - Date.now() + 30);
+    return null;
+  }
   if (_isTerminalTodoCollisionPending()) {
     _stopTerminalTodoCollisionSync();
     return null;
@@ -25667,8 +25927,8 @@ function _addStaffRoleEntry(staffId) {
   renderStaffRolesPanel(staffId);
 }
 
-function _deleteStaffRoleEntry(staffId, entryId) {
-  if (!confirm('این ورودی حذف شود؟')) return;
+async function _deleteStaffRoleEntry(staffId, entryId) {
+  if (!await tpConfirm('این ورودی حذف شود؟')) return;
   _recordDeletedItems('staff_role_entries', entryId);
   _db.staff_role_entries = (_db.staff_role_entries||[]).filter(e => e.id !== entryId);
   _forceNextServerSync();
@@ -26458,7 +26718,7 @@ async function _adminBuildAllUsersBackup(){
   };
 }
 async function _adminBackupAllUsers(button){
-  if(!confirm('از داده‌های همه کاربران یک فایل پشتیبان جامع تهیه شود؟')) return;
+  if(!await tpConfirm('از داده‌های همه کاربران یک فایل پشتیبان جامع تهیه شود؟')) return;
   const oldLabel = button?.innerHTML;
   if(button){ button.disabled=true; button.innerHTML='⏳ در حال تهیه پشتیبان...'; }
   try {
@@ -26513,7 +26773,7 @@ function _adminImportUserBackup(userId,userName){
       if(backupId!==String(target.id)||backupEmail!==String(target.email||'').trim().toLowerCase()){
         return showToast('این فایل متعلق به کاربر انتخاب‌شده نیست؛ عملیات متوقف شد','error');
       }
-      if(!confirm(`داده‌های فعلی «${userName||'این کاربر'}» با محتوای فایل جایگزین شود؟ پیش از جایگزینی، نسخه فعلی در تاریخچه سرور ذخیره می‌شود.`))return;
+      if(!await tpConfirm(`داده‌های فعلی «${userName||'این کاربر'}» با محتوای فایل جایگزین شود؟ پیش از جایگزینی، نسخه فعلی در تاریخچه سرور ذخیره می‌شود.`))return;
       let res=await _apiFetch('/api/admin/backup/users/'+encodeURIComponent(userId)+'/import',{method:'POST',body:JSON.stringify({backup:parsed})});
       if(res.status===404){
         return showToast('برای بازیابی امن این کاربر، ابتدا نسخه جدید بک‌اند را منتشر کنید','error');
@@ -26556,7 +26816,7 @@ function _adminImportAllUsersBackup(){
         }
         seen.add(id);
       }
-      if(!confirm(`داده‌های ${fa(backup.users.length)} کاربر با این فایل جایگزین شود؟ هویت همه حساب‌ها بررسی شده و نسخه‌های فعلی در تاریخچه سرور حفظ می‌شوند.`))return;
+      if(!await tpConfirm(`داده‌های ${fa(backup.users.length)} کاربر با این فایل جایگزین شود؟ هویت همه حساب‌ها بررسی شده و نسخه‌های فعلی در تاریخچه سرور حفظ می‌شوند.`))return;
       const res=await _apiFetch('/api/admin/backup/all/import',{method:'POST',body:JSON.stringify({backup})});
       if(res.status===404){
         return showToast('برای بازیابی امن و اتمیک کل کاربران، ابتدا نسخه جدید بک‌اند را منتشر کنید','error');
@@ -26669,7 +26929,7 @@ function _adminExportUsers(users) {
 }
 async function _adminBulkDelete() {
   const ids=[..._adminSelectedUsers];
-  if (!confirm(`حذف کامل ${fa(ids.length)} حساب انتخاب‌شده؟ این عملیات برگشت‌ناپذیر است.`)) return;
+  if (!await tpConfirm(`حذف کامل ${fa(ids.length)} حساب انتخاب‌شده؟ این عملیات برگشت‌ناپذیر است.`)) return;
   const results=await Promise.all(ids.map(id=>_apiFetch('/api/admin/users/'+id,{method:'DELETE'})));
   showToast(`${fa(results.filter(r=>r.ok).length)} حساب حذف شد`,results.every(r=>r.ok)?'success':'error');
   _adminSelectedUsers.clear();renderAdminPanel();
@@ -26793,7 +27053,7 @@ async function _adminApplyResetPassword(userId) {
 
 async function _adminDeleteUser(userId, userName) {
   // تایید از ادمین
-  const confirmed = confirm(
+  const confirmed = await tpConfirm(
     '⚠️ حذف حساب کاربری\n\n' +
     'آیا مطمئنید می‌خواهید حساب «' + userName + '» را حذف کنید?\n\n' +
     'تمام داده‌های این کاربر از جمله مشتریان، پرداخت‌ها و جلسات حذف خواهد شد.\n' +
@@ -26856,7 +27116,7 @@ async function _adminImpersonate(userId, userName) {
       return;
     }
 
-    if (!confirm('وارد حساب «' + userName + '» می‌شوید؟ برای بازگشت از نوار بنفش بالای صفحه استفاده کنید.')) return;
+    if (!await tpConfirm('وارد حساب «' + userName + '» می‌شوید؟ برای بازگشت از نوار بنفش بالای صفحه استفاده کنید.')) return;
 
     _parkGoogleIntegrations();
 
@@ -27090,7 +27350,7 @@ async function _approveCharge(reqId, userId, amount) {
 }
 
 async function _rejectCharge(reqId) {
-  const note = prompt('دلیل رد (اختیاری):') || '';
+  const note = await tpPrompt('دلیل رد (اختیاری):') || '';
   const res = await _apiFetch('/api/admin/charge-requests/'+reqId, {
     method: 'PUT',
     body: JSON.stringify({ status: 'rejected', note })
@@ -27689,7 +27949,7 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
       'Dismissed: ' + dismissed,
       'UA: ' + ua.slice(0,80),
     ].join('\n');
-    alert(info);
+    tpAlert(info);
   }, 1000);
 }
 
@@ -29396,6 +29656,448 @@ function _autoGrowScanAndAttach(root) {
   } else {
     start();
   }
+})();
+
+// ── Global search / command palette (_tpSearch) ───────────────────────────
+function _tpSearchNormalize(str) {
+  return String(str || '')
+    .normalize('NFKC')
+    .replace(/[يى]/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[\u200C\u200D\u2060]/g, ' ')
+  .replace(/[۰-۹٠-٩]/g, d => {
+      const fa = '۰۱۲۳۴۵۶۷۸۹';
+      const ar = '٠١٢٣٤٥٦٧٨٩';
+      const i = fa.indexOf(d);
+      if (i >= 0) return String(i);
+      const j = ar.indexOf(d);
+      return j >= 0 ? String(j) : d;
+    })
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+const _TP_SEARCH_PAGE_DEFS = [
+  { page: 'home', tab: '', label: 'داشبورد', icon: '🏠', keys: 'خانه' },
+  { page: 'dashboard', tab: '', label: 'داشبورد مالی', icon: '📊', keys: 'مدیریت مالی finance' },
+  { page: 'transactions', tab: '', label: 'تراکنش‌های مالی', icon: '📒', keys: 'تراکنش' },
+  { page: 'students', tab: '', label: 'امور مشتریان', icon: '👥', keys: 'مشتری شاگرد students' },
+  { page: 'students', tab: 'sessions', label: 'جلسات', icon: '📅', keys: 'session جلسه' },
+  { page: 'payments', tab: '', label: 'حساب مشتریان', icon: '🛒', keys: 'پرداخت payments' },
+  { page: 'payments', tab: 'reminders', label: 'یادآوری پرداخت', icon: '🔔', keys: 'reminders یادآوری' },
+  { page: 'staff', tab: '', label: 'حساب پرسنل و اعضا', icon: '🧑‍💼', keys: 'پرسنل staff' },
+  { page: 'todolist', tab: '', label: 'لیست کارها', icon: '✅', keys: 'کار todo' },
+  { page: 'calendar', tab: '', label: 'تقویم', icon: '📅', keys: 'calendar' },
+  { page: 'goals', tab: '', label: 'اهداف', icon: '🎯', keys: 'goals' },
+  { page: 'habits', tab: '', label: 'عادت‌ها', icon: '🔥', keys: 'habits' },
+  { page: 'instructions', tab: '', label: 'مرکز دانش', icon: '💡', keys: 'دانش instructions' },
+  { page: 'settings', tab: '', label: 'تنظیمات', icon: '⚙️', keys: 'settings' },
+  { page: 'tutorial', tab: '', label: 'آموزش‌ها', icon: '📖', keys: 'tutorial' },
+];
+const _TP_SEARCH_COMMAND_DEFS = [
+  { action: 'payment', title: 'پرداخت جدید', subtitle: 'دریافت جدید از مشتری', icon: '💳', keys: 'دریافت' },
+  { action: 'todo', title: 'کار جدید', subtitle: 'افزودن کار', icon: '✅', keys: 'todo task' },
+  { action: 'student', title: 'مشتری جدید', subtitle: 'ثبت مشتری', icon: '➕', keys: 'شاگرد student' },
+  { action: 'expense', title: 'هزینه جدید', subtitle: 'ثبت هزینه', icon: '🧾', keys: 'expense' },
+];
+const _TP_SEARCH_GROUP_LABELS = { page: 'صفحه‌ها', student: 'مشتری‌ها', todo: 'کارها', command: 'دستورهای سریع' };
+const _tpSearchUi = {
+  inited: false,
+  open: false,
+  index: null,
+  overlay: null,
+  input: null,
+  list: null,
+  active: 0,
+  flat: [],
+  debounce: 0,
+  prevFocus: null,
+  keyHandler: null,
+};
+function _tpSearchEditableTarget(el) {
+  if (!el || el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+function _tpSearchBuildIndex() {
+  const pageRows = _TP_SEARCH_PAGE_DEFS.filter(p => typeof _teamCan !== 'function' || _teamCan(p.page)).map(p => ({
+    kind: 'page',
+    icon: p.icon,
+    title: p.label,
+    subtitle: '',
+    hay: _tpSearchNormalize(p.label + ' ' + (p.keys || '')),
+    page: p.page,
+    tab: p.tab || '',
+  }));
+  const students = [];
+  for (const s of (_db && _db.students) || []) {
+    if (!s || s.id == null) continue;
+    const name = [s.name, s.lname].filter(Boolean).join(' ').trim();
+    const phone = String(s.phone || s.mobile || '').trim();
+    students.push({
+      kind: 'student',
+      icon: '👤',
+      title: name || 'بدون نام',
+      subtitle: phone,
+      hay: _tpSearchNormalize(name + ' ' + phone),
+      id: s.id,
+    });
+  }
+  const todosPending = [];
+  const todosDone = [];
+  for (const t of (_db && _db.todos) || []) {
+    if (!t || t.archived) continue;
+    const title = String(t.title || '').trim() || 'بدون عنوان';
+    const sub = t.date_jalali && typeof DateService !== 'undefined' ? DateService.disp(t.date_jalali) : (t.date_jalali || '');
+    const row = {
+      kind: 'todo',
+      icon: '✅',
+      title,
+      subtitle: String(sub || ''),
+      hay: _tpSearchNormalize(title),
+      id: t.id,
+    };
+    if (t.done) todosDone.push(row);
+    else todosPending.push(row);
+  }
+  const commands = _TP_SEARCH_COMMAND_DEFS.map(c => ({
+    kind: 'command',
+    icon: c.icon,
+    title: c.title,
+    subtitle: c.subtitle || '',
+    hay: _tpSearchNormalize(c.title + ' ' + (c.keys || '')),
+    action: c.action,
+  }));
+  return { pageRows, students, todosPending, todosDone, commands };
+}
+function _tpSearchMatch(list, q, max) {
+  const out = [];
+  if (!list || !list.length) return out;
+  if (!q) {
+    for (let i = 0; i < list.length && out.length < max; i++) out.push(list[i]);
+    return out;
+  }
+  for (let i = 0; i < list.length && out.length < max; i++) {
+    if (list[i].hay.includes(q)) out.push(list[i]);
+  }
+  return out;
+}
+function _tpSearchCollect(query) {
+  const q = _tpSearchNormalize(query);
+  const idx = _tpSearchUi.index || _tpSearchBuildIndex();
+  const groups = [
+    { kind: 'page', items: _tpSearchMatch(idx.pageRows, q, 6) },
+    { kind: 'student', items: _tpSearchMatch(idx.students, q, 6) },
+    { kind: 'todo', items: (() => {
+      const pending = _tpSearchMatch(idx.todosPending, q, 6);
+      const need = Math.max(0, 6 - pending.length);
+      return pending.concat(_tpSearchMatch(idx.todosDone, q, need));
+    })() },
+    { kind: 'command', items: _tpSearchMatch(idx.commands, q, 6) },
+  ];
+  const flat = [];
+  groups.forEach(g => { g.items.forEach(it => flat.push(it)); });
+  return { groups, flat };
+}
+function _tpSearchClearList(listEl) {
+  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+}
+function _tpSearchRenderResults(groups, flat, active) {
+  _tpSearchUi.flat = flat;
+  _tpSearchUi.active = active;
+  const listEl = _tpSearchUi.list;
+  if (!listEl) return;
+  _tpSearchClearList(listEl);
+  let optIdx = 0;
+  let any = false;
+  groups.forEach(group => {
+    if (!group.items.length) return;
+    any = true;
+    const wrap = document.createElement('div');
+    wrap.className = 'tp-search-group';
+    wrap.setAttribute('role', 'presentation');
+    const label = document.createElement('div');
+    label.className = 'tp-search-group-label';
+    label.textContent = _TP_SEARCH_GROUP_LABELS[group.kind] || '';
+    wrap.appendChild(label);
+    group.items.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tp-search-option' + (optIdx === active ? ' tp-search-option-active' : '');
+      btn.id = 'tp-search-opt-' + optIdx;
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', optIdx === active ? 'true' : 'false');
+      btn.addEventListener('click', () => { _tpSearchActivateItem(item); });
+      btn.addEventListener('mouseenter', () => {
+        _tpSearchUi.active = optIdx;
+        _tpSearchHighlightActive();
+      });
+      const icon = document.createElement('span');
+      icon.className = 'tp-search-option-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = item.icon || '';
+      const texts = document.createElement('span');
+      texts.className = 'tp-search-option-texts';
+      const title = document.createElement('span');
+      title.className = 'tp-search-option-title';
+      title.textContent = item.title || '';
+      texts.appendChild(title);
+      if (item.subtitle) {
+        const sub = document.createElement('span');
+        sub.className = 'tp-search-option-sub';
+        sub.textContent = item.subtitle;
+        texts.appendChild(sub);
+      }
+      btn.appendChild(icon);
+      btn.appendChild(texts);
+      wrap.appendChild(btn);
+      optIdx++;
+    });
+    listEl.appendChild(wrap);
+  });
+  if (!any) {
+    const empty = document.createElement('div');
+    empty.className = 'tp-search-empty';
+    empty.textContent = 'نتیجه‌ای پیدا نشد';
+    listEl.appendChild(empty);
+    listEl.setAttribute('aria-activedescendant', '');
+    return;
+  }
+  const id = flat[active] ? ('tp-search-opt-' + active) : '';
+  listEl.setAttribute('aria-activedescendant', id);
+  const activeEl = id ? document.getElementById(id) : null;
+  activeEl?.scrollIntoView({ block: 'nearest' });
+}
+function _tpSearchHighlightActive() {
+  const listEl = _tpSearchUi.list;
+  if (!listEl) return;
+  const buttons = listEl.querySelectorAll('.tp-search-option');
+  buttons.forEach((btn, i) => {
+    const on = i === _tpSearchUi.active;
+    btn.classList.toggle('tp-search-option-active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const id = _tpSearchUi.flat[_tpSearchUi.active] ? ('tp-search-opt-' + _tpSearchUi.active) : '';
+  listEl.setAttribute('aria-activedescendant', id);
+  document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
+}
+function _tpSearchScheduleRender() {
+  clearTimeout(_tpSearchUi.debounce);
+  _tpSearchUi.debounce = setTimeout(() => {
+    const val = _tpSearchUi.input ? _tpSearchUi.input.value : '';
+    const { groups, flat } = _tpSearchCollect(val);
+  let active = _tpSearchUi.active;
+  if (active >= flat.length) active = Math.max(0, flat.length - 1);
+    _tpSearchRenderResults(groups, flat, active);
+  }, 80);
+}
+function _tpSearchRunQueryNow() {
+  const val = _tpSearchUi.input ? _tpSearchUi.input.value : '';
+  const { groups, flat } = _tpSearchCollect(val);
+  let active = _tpSearchUi.active;
+  if (active >= flat.length) active = Math.max(0, flat.length - 1);
+  _tpSearchRenderResults(groups, flat, active);
+}
+async function _tpSearchActivateItem(item) {
+  if (!item) return;
+  _tpSearchClose();
+  if (item.kind === 'page') {
+    _homeNavigate(item.page, item.tab || undefined);
+    return;
+  }
+  if (item.kind === 'student') {
+    openStudentDetail(item.id);
+    return;
+  }
+  if (item.kind === 'todo') {
+    try {
+      await _tpEnsureChunk('app-todos.js');
+      if (typeof openEditTodo === 'function') openEditTodo(item.id);
+    } catch (_) {}
+    return;
+  }
+  if (item.kind === 'command') {
+    if (item.action === 'payment') {
+      _homeQuickPayment();
+    } else if (item.action === 'todo') {
+      try { await _tpEnsureChunk('app-todos.js'); if (typeof openAddTodo === 'function') openAddTodo(); } catch (_) {}
+    } else if (item.action === 'student') {
+      openStudentModal();
+    } else if (item.action === 'expense') {
+      try { await _tpEnsureChunk('app-extra.js'); if (typeof openExpenseForm === 'function') openExpenseForm(); } catch (_) {}
+    }
+  }
+}
+function _tpSearchOnOverlayKey(e) {
+  if (!_tpSearchUi.open) return;
+  const flat = _tpSearchUi.flat;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    _tpSearchClose();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!flat.length) return;
+    _tpSearchUi.active = (_tpSearchUi.active + 1) % flat.length;
+    _tpSearchHighlightActive();
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!flat.length) return;
+    _tpSearchUi.active = (_tpSearchUi.active - 1 + flat.length) % flat.length;
+    _tpSearchHighlightActive();
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    _tpSearchActivateItem(flat[_tpSearchUi.active]);
+    return;
+  }
+  if (e.key === 'Tab') {
+    const focusable = _tpSearchUi.overlay.querySelectorAll('button, input');
+    const list = [...focusable];
+    if (list.length < 2) return;
+    const first = list[0];
+    const last = list[list.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+}
+function _tpSearchEnsureRoot() {
+  let root = document.getElementById('tp-search-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'tp-search-root';
+    document.body.appendChild(root);
+  }
+  return root;
+}
+function _tpSearchOpen() {
+  if (_tpSearchUi.open) {
+    _tpSearchUi.input?.focus();
+    _tpSearchUi.input?.select?.();
+    return;
+  }
+  _tpSearchUi.index = _tpSearchBuildIndex();
+  _tpSearchUi.prevFocus = document.activeElement;
+  const root = _tpSearchEnsureRoot();
+  _tpSearchClearList(root);
+  const overlay = document.createElement('div');
+  overlay.className = 'tp-search-overlay';
+  const panel = document.createElement('div');
+  panel.className = 'tp-search-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', 'جست‌وجوی سریع');
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'tp-search-input-wrap';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.className = 'tp-search-input';
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('aria-label', 'جستجو');
+  input.placeholder = 'جستجو در صفحه‌ها، مشتری‌ها، کارها…';
+  input.addEventListener('input', () => {
+    _tpSearchUi.active = 0;
+    _tpSearchScheduleRender();
+  });
+  const kbd = document.createElement('span');
+  kbd.className = 'tp-search-kbd';
+  kbd.textContent = 'Esc';
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(kbd);
+  const list = document.createElement('div');
+  list.className = 'tp-search-results';
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', 'نتایج جستجو');
+  panel.appendChild(inputWrap);
+  panel.appendChild(list);
+  overlay.appendChild(panel);
+  root.appendChild(overlay);
+  _tpSearchUi.overlay = overlay;
+  _tpSearchUi.input = input;
+  _tpSearchUi.list = list;
+  _tpSearchUi.open = true;
+  _tpSearchUi.active = 0;
+  const onKey = e => _tpSearchOnOverlayKey(e);
+  _tpSearchUi.keyHandler = onKey;
+  document.addEventListener('keydown', onKey, true);
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) _tpSearchClose();
+  });
+  _tpSearchRunQueryNow();
+  setTimeout(() => { input.focus(); }, 20);
+}
+function _tpSearchClose() {
+  if (!_tpSearchUi.open) return;
+  _tpSearchUi.open = false;
+  clearTimeout(_tpSearchUi.debounce);
+  if (_tpSearchUi.keyHandler) {
+    document.removeEventListener('keydown', _tpSearchUi.keyHandler, true);
+    _tpSearchUi.keyHandler = null;
+  }
+  const root = document.getElementById('tp-search-root');
+  if (root) _tpSearchClearList(root);
+  _tpSearchUi.overlay = null;
+  _tpSearchUi.input = null;
+  _tpSearchUi.list = null;
+  _tpSearchUi.index = null;
+  _tpSearchUi.flat = [];
+  const prev = _tpSearchUi.prevFocus;
+  _tpSearchUi.prevFocus = null;
+  try { prev?.focus?.(); } catch (_) {}
+}
+function _tpSearchToggle() {
+  if (_tpSearchUi.open) _tpSearchClose();
+  else _tpSearchOpen();
+}
+function _tpSearchEnsureMobileBtn() {
+  if (document.getElementById('tp-search-open-btn')) return;
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+  const actions = document.getElementById('topbar-actions');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'tp-search-open-btn';
+  btn.className = 'tp-search-open-btn';
+  btn.setAttribute('aria-label', 'جست‌وجوی سریع');
+  btn.title = 'جست‌وجو';
+  btn.textContent = '🔍';
+  btn.addEventListener('click', () => _tpSearchOpen());
+  if (actions && actions.parentNode === topbar) topbar.insertBefore(btn, actions);
+  else topbar.appendChild(btn);
+}
+function _tpSearchInit() {
+  if (_tpSearchUi.inited) return;
+  _tpSearchUi.inited = true;
+  _tpSearchEnsureMobileBtn();
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
+      e.preventDefault();
+      _tpSearchToggle();
+      return;
+    }
+    if (e.key === '/' && !_tpSearchEditableTarget(e.target)) {
+      e.preventDefault();
+      _tpSearchOpen();
+    }
+  }, true);
+}
+(function _tpSearchBoot() {
+  const run = () => _tpSearchInit();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
+  else run();
 })();
 
 if (document.readyState === 'loading') {

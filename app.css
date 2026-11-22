@@ -5993,3 +5993,64 @@ body { top: 0 !important; }
   .topbar-actions:has(.sessions-board-filter-menu){overflow-x:auto;overflow-y:hidden}
   .sessions-board-filter-options{position:fixed;top:auto;right:auto;left:auto;margin-top:6px}
 }
+
+/* In-app dialogs (tpConfirm / tpAlert / tpPrompt) — above every modal. */
+#tp-dialog-root{position:relative;z-index:10000}
+.tp-dialog-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55);animation:tpDialogFade .12s ease-out}
+.tp-dialog{width:min(420px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:18px;border:1px solid var(--border2);border-radius:14px;background:var(--bg2);color:var(--text);box-shadow:0 18px 48px rgba(0,0,0,.4);font-family:var(--font);direction:rtl;outline:none;animation:tpDialogPop .14s ease-out}
+.tp-dialog-title{font-size:15px;font-weight:700;margin-bottom:8px}
+.tp-dialog-message{font-size:13px;line-height:1.9;color:var(--text2);white-space:pre-line;word-break:break-word}
+.tp-dialog-danger .tp-dialog-message{color:var(--text)}
+.tp-dialog-input{width:100%;margin-top:12px}
+.tp-dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.tp-dialog-actions .btn{min-height:40px;min-width:96px;justify-content:center}
+.tp-dialog-ok-danger{background:var(--red);color:#fff;border-color:var(--red)}
+.tp-dialog-ok-danger:hover{filter:brightness(1.08);background:var(--red)}
+@keyframes tpDialogFade{from{opacity:0}to{opacity:1}}
+@keyframes tpDialogPop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:768px){.tp-dialog-overlay{align-items:flex-end;padding:0}.tp-dialog{width:100%;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px))}.tp-dialog-actions .btn{flex:1}}
+/* ── Undo after delete (tp422) ───────────────────────────── */
+#tp-undo-root{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:min(440px,calc(100vw - 24px))}
+.tp-undo-toast{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px 12px 14px;border:1px solid var(--border2);border-radius:12px;background:var(--bg2);color:var(--text);box-shadow:0 10px 34px rgba(0,0,0,.38);font-family:var(--font);font-size:13px;direction:rtl;pointer-events:auto;animation:tpUndoIn .18s ease-out}
+.tp-undo-toast.tp-undo-out{opacity:0;transform:translateY(8px);transition:opacity .18s,transform .18s}
+.tp-undo-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp-undo-btn{flex:0 0 auto;min-height:36px;padding:6px 14px;border:0;border-radius:9px;background:rgba(124,106,247,.16);color:var(--accent2);font:inherit;font-weight:800;cursor:pointer}
+.tp-undo-btn:hover,.tp-undo-btn:focus-visible{background:rgba(124,106,247,.28);outline:none}
+.tp-undo-bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--accent);transform-origin:right;animation:tpUndoBar linear forwards}
+@keyframes tpUndoIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes tpUndoBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+@media(max-width:768px){#tp-undo-root{bottom:calc(84px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.tp-undo-toast{animation:none}.tp-undo-bar{animation:none;display:none}}
+
+/* ── Global search / command palette (tp423) ───────────────────────────── */
+#tp-search-root{position:relative;z-index:10050}
+.tp-search-open-btn{display:none;flex:0 0 auto;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:1px solid var(--border2);border-radius:10px;background:var(--bg3);color:var(--text2);cursor:pointer;font-family:var(--font);font-size:17px;line-height:1}
+.tp-search-open-btn:hover,.tp-search-open-btn:focus-visible{background:var(--bg2);color:var(--text);outline:2px solid var(--accent2);outline-offset:1px}
+.tp-search-overlay{position:fixed;inset:0;z-index:10050;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;background:rgba(0,0,0,.5);animation:tpSearchFade .12s ease-out;direction:rtl;font-family:var(--font)}
+.tp-search-panel{width:min(560px,100%);max-height:min(70vh,520px);display:flex;flex-direction:column;border:1px solid var(--border2);border-radius:14px;background:var(--bg2);color:var(--text);box-shadow:0 22px 56px rgba(0,0,0,.45);overflow:hidden;animation:tpSearchPop .14s ease-out}
+.tp-search-input-wrap{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border2);background:var(--bg2)}
+.tp-search-input-wrap svg{flex:0 0 auto;width:18px;height:18px;color:var(--text3)}
+.tp-search-input{flex:1;min-width:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:14px;outline:none}
+.tp-search-input::placeholder{color:var(--text3)}
+.tp-search-kbd{flex:0 0 auto;font-size:10px;color:var(--text3);border:1px solid var(--border2);border-radius:6px;padding:2px 6px;background:var(--bg3);white-space:nowrap}
+.tp-search-results{flex:1;min-height:0;overflow-y:auto;padding:8px;-webkit-overflow-scrolling:touch}
+.tp-search-group{margin-bottom:10px}
+.tp-search-group-label{font-size:11px;font-weight:700;color:var(--text3);padding:4px 8px 6px}
+.tp-search-option{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:var(--text);font:inherit;font-size:13px;text-align:right;cursor:pointer}
+.tp-search-option:hover,.tp-search-option:focus-visible{background:rgba(124,106,247,.1);outline:none}
+.tp-search-option.tp-search-option-active{background:rgba(124,106,247,.18);outline:1px solid rgba(124,106,247,.35)}
+.tp-search-option-icon{flex:0 0 auto;width:22px;text-align:center;font-size:16px;line-height:1}
+.tp-search-option-texts{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.tp-search-option-title{font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp-search-option-sub{font-size:11px;color:var(--text3);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp-search-empty{padding:20px 12px;text-align:center;font-size:13px;color:var(--text3)}
+@keyframes tpSearchFade{from{opacity:0}to{opacity:1}}
+@keyframes tpSearchPop{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:768px){
+  .tp-search-open-btn{display:inline-flex}
+  .tp-search-overlay{align-items:flex-end;padding:0;background:rgba(0,0,0,.55)}
+  .tp-search-panel{width:100%;max-height:min(85vh,640px);border-radius:16px 16px 0 0;border-bottom:0;animation:tpSearchSheet .16s ease-out}
+  .tp-search-kbd{display:none}
+}
+@keyframes tpSearchSheet{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.tp-search-overlay,.tp-search-panel{animation:none}}
