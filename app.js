@@ -29721,6 +29721,7 @@ const _tpSearchUi = {
   debounce: 0,
   prevFocus: null,
   keyHandler: null,
+  openSeq: 0,
 };
 function _tpSearchEditableTarget(el) {
   if (!el) return false;
@@ -30037,6 +30038,7 @@ async function _tpSearchOpen() {
     _tpSearchUi.input?.select?.();
     return;
   }
+  const seq = ++_tpSearchUi.openSeq;
   _tpSearchUi.index = null;
   _tpSearchUi.prevFocus = document.activeElement;
   const root = _tpSearchEnsureRoot();
@@ -30058,7 +30060,6 @@ async function _tpSearchOpen() {
   input.setAttribute('spellcheck', 'false');
   input.setAttribute('aria-label', 'جستجو');
   input.placeholder = 'جستجو در صفحه‌ها، مشتری‌ها، کارها…';
-  input.disabled = true;
   input.addEventListener('input', () => {
     _tpSearchUi.active = 0;
     _tpSearchScheduleRender();
@@ -30093,18 +30094,22 @@ async function _tpSearchOpen() {
   });
   setTimeout(() => { input.focus(); }, 20);
   try {
-    _tpSearchUi.index = await _tpSearchBuildIndex();
+    const index = await _tpSearchBuildIndex();
+    if (!_tpSearchUi.open || seq !== _tpSearchUi.openSeq) return;
+    _tpSearchUi.index = index;
   } catch (_) {
+    if (!_tpSearchUi.open || seq !== _tpSearchUi.openSeq) return;
     _tpSearchUi.index = {
       pageRows: [], students: [], todosPending: [], todosDone: [], commands: [], todosEnabled: false,
     };
   }
-  if (!_tpSearchUi.open) return;
-  input.disabled = false;
+  if (!_tpSearchUi.open || seq !== _tpSearchUi.openSeq) return;
+  if (document.activeElement !== input) input.focus();
   _tpSearchRunQueryNow();
 }
 function _tpSearchClose() {
   if (!_tpSearchUi.open) return;
+  ++_tpSearchUi.openSeq;
   _tpSearchUi.open = false;
   clearTimeout(_tpSearchUi.debounce);
   if (_tpSearchUi.keyHandler) {
