@@ -6,6 +6,7 @@ const dbPath = path.resolve(__dirname, '..', process.env.DB_PATH || './database/
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
+db.pragma('journal_size_limit = 67108864');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 

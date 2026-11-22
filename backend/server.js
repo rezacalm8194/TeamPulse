@@ -281,6 +281,14 @@ const server = app.listen(PORT, HOST, () => {
       logger.error('db_snapshot_setup_failed', { error });
     }
   }
+  if (process.env.NODE_ENV !== 'test' && process.env.DB_INCREMENTAL_VACUUM_DISABLED !== '1') {
+    try {
+      const { startNightlyIncrementalVacuum } = require('./utils/dbIncrementalVacuum');
+      startNightlyIncrementalVacuum(db, { logger, hour: 3, minute: 30 });
+    } catch (error) {
+      logger.error('db_incremental_vacuum_setup_failed', { error });
+    }
+  }
   setImmediate(() => {
     try {
       try {
