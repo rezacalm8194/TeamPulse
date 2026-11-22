@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp406';
+const TP_ASSET_V = 'tp407';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -4341,6 +4341,7 @@ function _gdriveWriteSession() {
       folderId: _db._gdrive_folder_id || null,
       fileId: _db._gdrive_file_id || null,
       fileIds: _db._gdrive_file_ids || {},
+      email: _gdrive.email || '',
     }));
   } catch (e) {}
 }
@@ -4397,6 +4398,8 @@ const _gdrive = {
   fileId: null,
   timer: null,
   beat: null,
+  email: '',
+  _lastRefreshFatal: false,
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
   FILE_NAME: 'teampulse-backup.json',
   ROOT_NAME: 'TeamPulse — خروجی خودکار',
@@ -4420,7 +4423,68 @@ const _gdrive = {
     el.textContent=(icons[status]||'☁️')+' '+(msg||'');
     el.style.color=status==='ok'?'var(--green)':status==='error'?'var(--red)':status==='syncing'?'var(--accent2)':'var(--text3)';
     const btn=document.getElementById('gdrive-sync-btn');
-    if(btn)btn.textContent=this.enabled?'🔌 قطع Drive':'☁️ اتصال Drive';
+    if(btn){
+      btn.textContent=this.enabled?'🔌 قطع Drive':'☁️ اتصال Drive';
+      btn.classList.toggle('btn-danger',!!this.enabled);
+      btn.classList.toggle('btn-primary',!this.enabled);
+    }
+    this.renderAccountLine();
+  },
+
+  setEmail(email) {
+    const value = String(email || '').trim().toLowerCase();
+    if (!value || value === this.email) return;
+    this.email = value;
+    if (this.enabled) _gdriveWriteSession();
+    this.renderAccountLine();
+  },
+
+  renderAccountLine() {
+    const el = document.getElementById('gdrive-account');
+    if (!el) return;
+    if (this.enabled) {
+      el.style.display = '';
+      el.textContent = this.email ? ('✅ متصل به: ' + this.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)';
+      el.style.color = 'var(--green)';
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+  },
+
+  // Uncached look-up of the server-side connection (source of truth for
+  // whether a persistent refresh token exists for this account).
+  async checkServerStatus() {
+    try {
+      const res = await _apiFetch('/api/google/drive/status' + _gdriveOauthQs());
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false };
+      this._oauthReady = !!j.configured;
+      this._oauthConnected = !!j.connected;
+      if (j.connected && j.email) this.setEmail(j.email);
+      return { ok: true, configured: !!j.configured, connected: !!j.connected, email: j.email || '' };
+    } catch (e) {
+      return { ok: false };
+    }
+  },
+
+  // Called whenever the settings page is drawn: shows the connected Gmail and
+  // re-attaches a connection that exists on the server but was lost locally
+  // (cleared cache, another device, data sync overwrote the local flag).
+  async refreshAccountUI() {
+    this.renderAccountLine();
+    if (this._suspended && window._impersonating) return;
+    if (!_authTokenUsable(_sbSession?.token)) return;
+    const st = await this.checkServerStatus();
+    if (!st.ok) return;
+    if (st.connected && !this.enabled && !this._initing) {
+      try { await this.initOnLoad(); } catch (e) {}
+      return;
+    }
+    if (st.connected && this.enabled && !this.email) {
+      try { await this.silentRefresh(); } catch (e) {}
+    }
+    this.renderAccountLine();
   },
 
   applyAccessToken(token, expiresIn) {
@@ -4440,24 +4504,33 @@ const _gdrive = {
 
   async serverOauthReady() {
     if (this._oauthReady != null) return this._oauthReady;
-    try {
-      const res = await _apiFetch('/api/google/drive/status' + _gdriveOauthQs());
-      const j = await res.json().catch(() => ({}));
-      this._oauthReady = !!(res.ok && j.configured);
-      this._oauthConnected = !!(res.ok && j.connected);
-    } catch (e) {
-      this._oauthReady = false;
+    // A failed status call (network blip, auth still loading) must not be
+    // cached as "not configured": that silently downgraded the connection to
+    // the 1-hour implicit token flow, which then "disconnected by itself".
+    for (let i = 0; i < 2; i++) {
+      const st = await this.checkServerStatus();
+      if (st.ok) return this._oauthReady;
     }
-    return this._oauthReady;
+    return true;
   },
 
   async silentRefresh() {
+    this._lastRefreshFatal = false;
     const res = await _apiFetch('/api/google/drive/refresh' + _gdriveOauthQs(), {
       method: 'POST',
       body: JSON.stringify({ account_id: _googleOauthAccountId() }),
     });
     const j = await res.json().catch(() => ({}));
-    if (!res.ok || !j.access_token) return null;
+    if (!res.ok || !j.access_token) {
+      // Only these answers mean the server really has no usable login.
+      // Anything else (503, timeouts, 5xx) is transient: keep the connection.
+      const code = String(j.error || '');
+      this._lastRefreshFatal = res.status === 404 || code === 'not_connected' ||
+        code === 'invalid_grant' || code === 'google_oauth_not_configured';
+      if (this._lastRefreshFatal) { this._oauthConnected = false; this.email = ''; }
+      return null;
+    }
+    if (j.email) this.setEmail(j.email);
     return this.applyAccessToken(j.access_token, j.expires_in);
   },
 
@@ -4476,7 +4549,9 @@ const _gdrive = {
       throw new Error(j.message || j.error || 'تبادل کد گوگل ناموفق');
     }
     this._oauthConnected = true;
-    return this.applyAccessToken(j.access_token, j.expires_in);
+    const tok = this.applyAccessToken(j.access_token, j.expires_in);
+    if (j.email) this.setEmail(j.email);
+    return tok;
   },
 
   async ensureToken(allowPrompt, opts) {
@@ -4487,8 +4562,10 @@ const _gdrive = {
     try {
       const fresh = await this.silentRefresh();
       if (fresh) return fresh;
-    } catch (e) {}
-    if(!allowPrompt)throw new Error('برای ارسال به Drive دوباره از تنظیمات وصل شو');
+    } catch (e) { this._lastRefreshFatal = false; }
+    if(!allowPrompt)throw new Error(this._lastRefreshFatal
+      ? 'برای ارسال به Drive دوباره از تنظیمات وصل شو'
+      : 'ارتباط با گوگل موقتاً برقرار نشد؛ اتصال حفظ شده و دوباره تلاش می‌شود');
     return this.requestToken(opts);
   },
 
@@ -4745,7 +4822,11 @@ const _gdrive = {
         }
         this.schedulePush();
       } catch (e) {
-        this.setSyncStatusUI('error', 'اتصال ذخیره شد؛ برای ادامه ارسال یک‌بار از تنظیمات وصل شو');
+        if (this._lastRefreshFatal) {
+          this._markDisconnected('اتصال گوگل منقضی یا لغو شده؛ یک‌بار از تنظیمات «اتصال Drive» را بزن');
+        } else {
+          this.setSyncStatusUI('error', 'ارتباط با گوگل موقتاً برقرار نشد؛ اتصال حفظ شده و ۵ دقیقه بعد دوباره تلاش می‌شود');
+        }
       }
     }, 5 * 60 * 1000);
   },
@@ -4776,6 +4857,18 @@ const _gdrive = {
     }
   },
 
+  // The server confirmed there is no usable login any more (revoked,
+  // expired, or never stored). Show it honestly instead of a fake "connected".
+  _markDisconnected(message) {
+    this.enabled = false;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.email = '';
+    clearInterval(this.beat);
+    this.beat = null;
+    this.setSyncStatusUI('error', message);
+  },
+
   park() {
     // Park is a temporary account switch, not a disconnect. Keep credentials
     // in the account-scoped session store so returning to the admin restores it.
@@ -4789,6 +4882,7 @@ const _gdrive = {
     this._oauthConnected = undefined;
     this._initing = false;
     this._boundAccountId = null;
+    this.email = '';
     clearTimeout(this.timer);
     clearInterval(this.beat);
     this.timer = null;
@@ -4801,6 +4895,7 @@ const _gdrive = {
     this.tokenExpiry = 0;
     this._oauthConnected = false;
     this._boundAccountId = null;
+    this.email = '';
     clearTimeout(this.timer);
     clearInterval(this.beat);
     delete _db._gdrive_token;
@@ -4862,7 +4957,18 @@ const _gdrive = {
     try {
       const sess = _gdriveReadSession();
       if (sess && sess.enabled) _gdriveApplySession(sess);
+      if (sess && sess.enabled && sess.email && !this.email) this.email = String(sess.email);
       this.clientId = _db._gdrive_client_id || (sess && sess.clientId) || APP_GOOGLE_CLIENT_ID;
+      // The local flag can be lost (cache cleared, other device, data sync /
+      // restore replacing _db). The server's stored refresh token is the real
+      // source of truth, so ask it before declaring "not connected".
+      if (!_db._gdrive_enabled && this.clientId && _authTokenUsable(_sbSession?.token)) {
+        const st = await this.checkServerStatus();
+        if (st.ok && st.connected) {
+          _db._gdrive_enabled = true;
+          if (!_db._gdrive_client_id) _db._gdrive_client_id = this.clientId;
+        }
+      }
       if (_db._gdrive_enabled && this.clientId) {
         this.enabled = true;
         if (_db._gdrive_token && _db._gdrive_token_expiry > Date.now()) {
@@ -4884,12 +4990,16 @@ const _gdrive = {
           this.setSyncStatusUI('ok', 'شاگردان و جلسات در Drive به‌روز شد ✓');
         } catch (e) {
           if (this.token) this.setSyncStatusUI('ok', 'متصل');
-          else {
-            this.enabled = false;
-            this.setSyncStatusUI('error', 'یک‌بار از تنظیمات «اتصال Drive» را بزن تا ورود ماندگار شود');
-            const reconnect = document.getElementById('gdrive-sync-btn');
-            if (reconnect) reconnect.textContent = '☁️ اتصال Drive';
+          else if (this._lastRefreshFatal) {
+            this._markDisconnected('یک‌بار از تنظیمات «اتصال Drive» را بزن تا ورود ماندگار شود');
+          } else {
+            // Transient failure (network / Google / server busy): stay
+            // connected; the heartbeat retries every 5 minutes.
+            this.setSyncStatusUI('error', 'متصل؛ ارتباط با گوگل موقتاً برقرار نشد و دوباره تلاش می‌شود');
           }
+        }
+        if (this.enabled && !this.email) {
+          this.checkServerStatus().then(() => this.renderAccountLine()).catch(() => {});
         }
       } else {
         this.setSyncStatusUI('idle', 'متصل نشده');
@@ -12768,6 +12878,7 @@ async function renderSettings() {
         </button>
         ${_gdrive.enabled ? `<button class="btn btn-ghost" onclick="gdriveManualPushUI()">⬆️ ارسال الان</button>` : ''}
       </div>
+      <div id="gdrive-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gdrive.enabled?'':'display:none'}">${_gdrive.enabled ? escapeHtml(_gdrive.email ? ('✅ متصل به: ' + _gdrive.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
       <div id="gdrive-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
       ${_db._gdrive_folder_id ? `<p style="font-size:11px;margin-top:6px"><a href="https://drive.google.com/drive/folders/${encodeURIComponent(_db._gdrive_folder_id)}" target="_blank" rel="noopener">باز کردن پوشه در Google Drive</a></p>` : ''}
       <p style="font-size:10px;color:var(--text3);margin-top:4px">
@@ -12812,6 +12923,7 @@ async function renderSettings() {
   _syncThemeToggleUI();
   setTimeout(_checkPushStatusForSettings, 100);
   setTimeout(loadBalePayStatus, 50);
+  setTimeout(() => { try { _gdrive.refreshAccountUI(); } catch (e) {} }, 120);
 }
 
 function _syncThemeToggleUI() {
@@ -26969,7 +27081,7 @@ async function _tpEnsureFreshClient() {
 // Register Service Worker. Do not reload on controllerchange: skipWaiting +
 // clients.claim() already swap the worker, and a hard reload mid-boot shows a
 // brief error then opens the app a second time.
-const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v406';
+const TP_SERVICE_WORKER_URL = '/sw.js?v=team-pulse-static-v407';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(TP_SERVICE_WORKER_URL)
     .then(reg => {

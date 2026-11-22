@@ -2,6 +2,8 @@ const db = require('../config/database');
 const { encryptSecret, decryptSecret } = require('./secretBox');
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)';
+const GOOGLE_TIMEOUT_MS = 15000;
 const DEFAULT_CLIENT_ID = '4364778189-8mh8qa6smrtv6q7bjrhg0et8at391mje.apps.googleusercontent.com';
 
 function clientId() {
@@ -56,6 +58,37 @@ function ensureGoogleDriveOauthSchema(database = db) {
       updated_at INTEGER DEFAULT (strftime('%s','now'))
     )
   `).run();
+  try {
+    const cols = database.prepare('PRAGMA table_info(google_drive_oauth)').all();
+    if (!cols.some((c) => c.name === 'email')) {
+      database.prepare('ALTER TABLE google_drive_oauth ADD COLUMN email TEXT').run();
+    }
+  } catch (e) {}
+}
+
+function persistEmail(accountId, email, database = db) {
+  const value = String(email || '').trim().toLowerCase();
+  if (!accountId || !value) return;
+  ensureGoogleDriveOauthSchema(database);
+  database.prepare('UPDATE google_drive_oauth SET email=? WHERE account_id=?').run(value, accountId);
+}
+
+function readEmail(accountId, database = db) {
+  ensureGoogleDriveOauthSchema(database);
+  const row = database.prepare('SELECT email FROM google_drive_oauth WHERE account_id=?').get(accountId);
+  return (row && row.email) || '';
+}
+
+// A row whose token can no longer be decrypted (e.g. JWT_SECRET /
+// TOKEN_ENCRYPTION_KEY changed on the server) is not a usable connection.
+function readStatus(accountId, database = db) {
+  ensureGoogleDriveOauthSchema(database);
+  const row = database.prepare(
+    'SELECT refresh_token, email FROM google_drive_oauth WHERE account_id=?'
+  ).get(accountId);
+  if (!row) return { connected: false, email: '', undecryptable: false };
+  const plain = decryptSecret(row.refresh_token);
+  return { connected: !!plain, email: row.email || '', undecryptable: !plain };
 }
 
 function persistRefresh(accountId, refreshToken, scope, database = db) {
@@ -92,20 +125,63 @@ function hasRefresh(accountId, database = db) {
   return !!row;
 }
 
-async function googleTokenRequest(params, fetchImpl = fetch) {
-  const res = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params).toString(),
-  });
+function timeoutSignal(ms) {
+  try {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+  } catch (e) {}
+  return undefined;
+}
+
+// Network hiccups between the server and Google (timeouts, resets, 5xx) are
+// transient: they must never be reported as "disconnected" and never delete
+// the stored refresh token. One retry smooths over short outages.
+async function googleTokenRequest(params, fetchImpl = fetch, attempt = 0) {
+  let res;
+  try {
+    res = await fetchImpl(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params).toString(),
+      signal: timeoutSignal(GOOGLE_TIMEOUT_MS),
+    });
+  } catch (netErr) {
+    if (attempt < 1) return googleTokenRequest(params, fetchImpl, attempt + 1);
+    const err = new Error('google_unreachable');
+    err.status = 503;
+    err.code = 'google_unreachable';
+    err.transient = true;
+    throw err;
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(json.error_description || json.error || 'google_token_failed');
-    err.status = res.status === 401 ? 401 : 400;
-    err.code = json.error || 'google_token_failed';
+    if (res.status >= 500 && attempt < 1) return googleTokenRequest(params, fetchImpl, attempt + 1);
+    const code = json.error || 'google_token_failed';
+    const err = new Error(code === 'invalid_grant' ? 'invalid_grant' : (json.error_description || code));
+    err.code = code;
+    if (code === 'invalid_grant') err.status = 401;
+    else if (res.status >= 500) { err.status = 503; err.transient = true; err.message = 'google_unreachable'; }
+    else err.status = res.status === 401 ? 401 : 400;
     throw err;
   }
   return json;
+}
+
+// Works with the drive.file scope; no extra consent is needed.
+async function fetchDriveEmail(accessToken, fetchImpl = fetch) {
+  if (!accessToken) return '';
+  try {
+    const res = await fetchImpl(ABOUT_URL, {
+      headers: { Authorization: 'Bearer ' + accessToken },
+      signal: timeoutSignal(GOOGLE_TIMEOUT_MS),
+    });
+    if (!res.ok) return '';
+    const json = await res.json().catch(() => ({}));
+    return String((json.user && json.user.emailAddress) || '').trim().toLowerCase();
+  } catch (e) {
+    return '';
+  }
 }
 
 function fail(status, message) {
@@ -129,10 +205,13 @@ async function exchangeCode({ accountId, code, redirectUri, codeVerifier }, fetc
   if (json.refresh_token) persistRefresh(accountId, json.refresh_token, json.scope);
   else if (!readRefresh(accountId)) throw fail(400, 'no_refresh_token');
   if (!json.access_token) throw fail(400, 'no_access_token');
+  const email = await fetchDriveEmail(json.access_token, fetchImpl);
+  if (email) persistEmail(accountId, email);
   return {
     access_token: json.access_token,
     expires_in: Number(json.expires_in) || 3600,
     scope: json.scope || '',
+    email: email || readEmail(accountId),
   };
 }
 
@@ -149,11 +228,19 @@ async function refreshAccess(accountId, fetchImpl = fetch) {
     }, fetchImpl);
     if (json.refresh_token) persistRefresh(accountId, json.refresh_token, json.scope);
     if (!json.access_token) throw fail(400, 'no_access_token');
+    let email = readEmail(accountId);
+    if (!email) {
+      email = await fetchDriveEmail(json.access_token, fetchImpl);
+      if (email) persistEmail(accountId, email);
+    }
     return {
       access_token: json.access_token,
       expires_in: Number(json.expires_in) || 3600,
+      email,
     };
   } catch (err) {
+    // Only a definitive answer from Google (revoked / expired grant) ends the
+    // connection. Timeouts and 5xx keep the refresh token for the next try.
     if (err.code === 'invalid_grant') deleteRefresh(accountId);
     throw err;
   }
@@ -170,6 +257,11 @@ module.exports = {
   readRefresh,
   deleteRefresh,
   hasRefresh,
+  readStatus,
+  readEmail,
+  persistEmail,
+  fetchDriveEmail,
+  googleTokenRequest,
   exchangeCode,
   refreshAccess,
 };
