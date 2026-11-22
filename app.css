@@ -5981,3 +5981,15 @@ body { top: 0 !important; }
 .home-icon-btn{border:1px solid var(--border);background:var(--bg3);border-radius:8px;min-width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--text2)}.home-icon-btn:hover,.home-icon-btn:focus-visible{border-color:var(--accent2);color:var(--text);outline:none}
 .home-empty{padding:16px 0;color:var(--text3);font-size:12px;text-align:center}.home-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.home-quick-actions button{min-height:42px;padding:8px;border:1px solid var(--border);border-radius:9px;background:var(--bg3);color:var(--text2);font:inherit;font-size:12px;cursor:pointer;text-align:right}.home-quick-actions button:hover,.home-quick-actions button:focus-visible{border-color:var(--accent2);color:var(--text);outline:none}
 @media (max-width:680px){.home-hero{align-items:stretch;flex-direction:column;padding:12px}.home-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.home-stats-4{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.home-stats>div{padding:8px 4px}.home-stats-4>div{padding:7px 2px}.home-stats strong{font-size:16px}.home-stats-4 strong{font-size:14px}.home-stats span{font-size:9px;white-space:normal}.home-grid{grid-template-columns:1fr;gap:10px}.home-card{padding:14px}.home-dashboard{padding-bottom:18px}}
+
+/* Mobile top bar: actions are packed toward the end (left in RTL). With
+   plain flex-end, actions that don't fit spill over the START side, i.e. onto
+   the page title (e.g. the customers page search icon over «امور مشتریان»),
+   where they can't even be scrolled to. `safe` keeps overflow on the end side
+   (scrollable). The sessions filter menu escapes the clipped bar with
+   position:fixed at its static spot, so the bar can stay overflow:auto. */
+@media(max-width:768px){
+  body .topbar .topbar-actions{justify-content:safe flex-end}
+  .topbar-actions:has(.sessions-board-filter-menu){overflow-x:auto;overflow-y:hidden}
+  .sessions-board-filter-options{position:fixed;top:auto;right:auto;left:auto;margin-top:6px}
+}

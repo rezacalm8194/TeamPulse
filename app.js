@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp419';
+const TP_ASSET_V = 'tp420';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -7597,6 +7597,14 @@ function _getInitialPage() {
   const parsed = _parseAppHash();
   const fromHash = parsed.page;
   if (fromHash && _SAFE_RESTORE_PAGES.includes(fromHash) && parsed.ids && parsed.ids.length) return fromHash;
+  // Home-screen shortcuts (manifest.json, /app?shortcut=1#page) always open
+  // their page, even when it equals the last visited one.
+  let fromShortcut = false;
+  try { fromShortcut = new URLSearchParams(location.search).has('shortcut'); } catch (e) {}
+  if (fromShortcut && fromHash && _SAFE_RESTORE_PAGES.includes(fromHash)) {
+    try { history.replaceState(null, '', location.pathname + '#' + fromHash); } catch (e) {}
+    return fromHash;
+  }
   let fromStorage = '';
   try { fromStorage = localStorage.getItem('tp_last_page') || ''; } catch (e) { fromStorage = ''; }
   // Closing a PWA/Android WebView keeps the last hash AND sessionStorage, so
@@ -27614,16 +27622,28 @@ async function importBackup() {
   }
 }
 
-// Theme persistence
+// Theme persistence. An explicit choice (settings toggle) is remembered;
+// until the user makes one, follow the device's light/dark setting live.
 (()=>{
   const saved = localStorage.getItem('coaching_theme');
-  if (saved === 'light') {
-    document.body.classList.add('light');
-    document.getElementById('theme-btn')?.classList.remove('on');
+  const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  const applyTheme = light => {
+    // Keep toggleTheme's state in sync (it flips isDark); previously a saved
+    // light theme left isDark=true, so the first toggle click did nothing.
+    isDark = !light;
+    document.body.classList.toggle('light', light);
+    document.getElementById('theme-btn')?.classList.toggle('on', !light);
     const lbl = document.getElementById('theme-label');
-    if (lbl) lbl.textContent = 'حالت روشن';
-  } else {
-    document.getElementById('theme-btn')?.classList.add('on');
+    if (lbl) lbl.textContent = light ? 'حالت روشن' : 'حالت تیره';
+  };
+  applyTheme(saved === 'light' || saved === 'dark' ? saved === 'light' : !!mq?.matches);
+  if (mq) {
+    const follow = e => {
+      const choice = localStorage.getItem('coaching_theme');
+      if (choice !== 'light' && choice !== 'dark') applyTheme(!!e.matches);
+    };
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', follow);
+    else if (typeof mq.addListener === 'function') mq.addListener(follow);
   }
   const origToggle = toggleTheme;
   window.toggleTheme = function() {

@@ -60,6 +60,8 @@ const PUBLIC_STATIC_ROOT_FILES = new Set([
   'logo.png',
   'app-icon-192-v3.png',
   'app-icon-512-v3.png',
+  'app-icon-maskable-192-v3.png',
+  'app-icon-maskable-512-v3.png',
   'notification-badge.png',
   'notification-badge.svg',
 ]);
