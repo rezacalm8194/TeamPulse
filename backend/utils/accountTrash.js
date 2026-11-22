@@ -6,10 +6,17 @@
 // accounts.deleted_at for ACCOUNT_TRASH_RETENTION_DAYS; purge runs the old
 // hard delete after the window. Data and files stay until then.
 
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');
 const { isProtectedAccount } = require('./protectedAdmin');
+const { collectAccountAppBackup } = require('./userBackup');
 
 const ACCOUNT_TRASH_RETENTION_DAYS = 30;
 const ACCOUNT_TRASH_RETENTION_MS = ACCOUNT_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const PURGED_BACKUP_RETENTION_DAYS = 90;
+const PURGED_BACKUP_RETENTION_MS = PURGED_BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const PURGED_BACKUP_DIR = path.join(__dirname, '..', 'database', 'purged-accounts');
 
 const schemaReady = new WeakSet();
 
@@ -19,8 +26,64 @@ function sqlTime(ms) {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 }
 
+function backupFilenameStamp(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+}
+
 function hasTable(db, name) {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+}
+
+function ensurePurgedBackupDir() {
+  if (!fs.existsSync(PURGED_BACKUP_DIR)) {
+    fs.mkdirSync(PURGED_BACKUP_DIR, { recursive: true });
+  }
+  return PURGED_BACKUP_DIR;
+}
+
+function writePrePurgeAccountBackup(db, accountId, { now = Date.now(), logger = null, backupDir = null } = {}) {
+  const account = db.prepare(`
+    SELECT id, name, email, business_name, business_type, plan, created_at
+    FROM accounts WHERE id=?
+  `).get(accountId);
+  if (!account) throw new Error('account_not_found');
+  const exportedAt = new Date(now).toISOString();
+  const backup = collectAccountAppBackup(db, account, exportedAt);
+  const dir = backupDir || ensurePurgedBackupDir();
+  const filename = `${accountId}-${backupFilenameStamp(now)}.json.gz`;
+  const filePath = path.join(dir, filename);
+  try {
+    const gzip = zlib.gzipSync(Buffer.from(JSON.stringify(backup), 'utf8'));
+    fs.writeFileSync(filePath, gzip);
+    logger?.info?.('account_pre_purge_backup_written', { accountId, filePath });
+    return filePath;
+  } catch (error) {
+    logger?.error?.('account_pre_purge_backup_failed', { accountId, error });
+    throw error;
+  }
+}
+
+function purgeOldPrePurgeAccountBackups({ now = Date.now(), logger = null, backupDir = null } = {}) {
+  const dir = backupDir || PURGED_BACKUP_DIR;
+  if (!fs.existsSync(dir)) return 0;
+  const cutoff = now - PURGED_BACKUP_RETENTION_MS;
+  let removed = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json.gz')) continue;
+    const full = path.join(dir, name);
+    let mtimeMs = 0;
+    try { mtimeMs = fs.statSync(full).mtimeMs; } catch { continue; }
+    if (mtimeMs > cutoff) continue;
+    try {
+      fs.unlinkSync(full);
+      removed += 1;
+    } catch (error) {
+      logger?.error?.('purged_account_backup_cleanup_failed', { file: full, error });
+    }
+  }
+  return removed;
 }
 
 function ensureAccountTrashSchema(db) {
@@ -112,36 +175,66 @@ function listTrashedAccounts(db, { now = Date.now() } = {}) {
   }));
 }
 
-function hardDeleteAccount(db, accountId, deps) {
-  const { deleteWorkspaceDocumentsForAccount, deleteStoredFiles, storageDriver, logger } = deps;
-  const run = db.transaction((id) => {
-    db.prepare('DELETE FROM payments WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM sessions WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM reminders WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM staff_payments WHERE account_id=?').run(id);
-
-    db.prepare('DELETE FROM files WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM tasks WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM wallet_transactions WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM wallet_charge_requests WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM user_wallets WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM sync_events WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM push_subscriptions WHERE account_id=?').run(id);
+function deleteAccountRows(db, accountId) {
+  const deleteByAccount = (table) => {
+    if (!hasTable(db, table)) return;
+    db.prepare(`DELETE FROM ${table} WHERE account_id=?`).run(accountId);
+  };
+  [
+    'payments',
+    'sessions',
+    'reminders',
+    'staff_payments',
+    'files',
+    'tasks',
+    'wallet_transactions',
+    'wallet_charge_requests',
+    'user_wallets',
+    'sync_events',
+    'push_subscriptions',
+    'clients',
+    'staff',
+  ].forEach(deleteByAccount);
+  if (hasTable(db, 'user_data_version_summaries')) {
     db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=? OR account_id LIKE ?')
-      .run(id, id + '::workspace::%');
+      .run(accountId, accountId + '::workspace::%');
+  }
+  if (hasTable(db, 'user_data_versions')) {
     db.prepare('DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?')
-      .run(id, id + '::workspace::%');
-    deleteWorkspaceDocumentsForAccount(db, id);
-    db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=?').run(id);
+      .run(accountId, accountId + '::workspace::%');
+  }
+  if (hasTable(db, 'account_workspaces')) {
+    db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=?').run(accountId);
+  }
+  if (hasTable(db, 'accounts')) {
+    db.prepare('DELETE FROM accounts WHERE id=?').run(accountId);
+  }
+}
 
-    db.prepare('DELETE FROM clients WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM staff WHERE account_id=?').run(id);
-    db.prepare('DELETE FROM accounts WHERE id=?').run(id);
+function hardDeleteAccount(db, accountId, deps) {
+  const {
+    deleteWorkspaceDocumentsForAccount,
+    deleteStoredFiles,
+    storageDriver,
+    logger,
+    skipPrePurgeBackup = false,
+    backupDir,
+  } = deps;
+  if (!skipPrePurgeBackup) {
+    writePrePurgeAccountBackup(db, accountId, { logger, backupDir });
+  }
+  const run = db.transaction((id) => {
+    deleteAccountRows(db, id);
+    if (typeof deleteWorkspaceDocumentsForAccount === 'function') {
+      deleteWorkspaceDocumentsForAccount(db, id);
+    }
     return true;
   });
   run(accountId);
   try {
-    deleteStoredFiles(db, storageDriver, { ownerAccountId: accountId });
+    if (typeof deleteStoredFiles === 'function') {
+      deleteStoredFiles(db, storageDriver, { ownerAccountId: accountId });
+    }
   } catch (error) {
     logger?.error?.('account_trash_file_delete_failed', { accountId, error });
   }
@@ -150,6 +243,11 @@ function hardDeleteAccount(db, accountId, deps) {
 
 function purgeExpiredTrashedAccounts(db, deps, { now = Date.now(), logger = null, env = process.env } = {}) {
   ensureAccountTrashSchema(db);
+  try {
+    purgeOldPrePurgeAccountBackups({ now, logger, backupDir: deps?.backupDir });
+  } catch (error) {
+    logger?.error?.('purged_account_backup_retention_failed', { error });
+  }
   const cutoff = sqlTime(now - ACCOUNT_TRASH_RETENTION_MS);
   const expired = db.prepare(`
     SELECT id, email, role FROM accounts
@@ -158,6 +256,7 @@ function purgeExpiredTrashedAccounts(db, deps, { now = Date.now(), logger = null
   let purged = 0;
   for (const row of expired) {
     if (isProtectedAccount(db, row, env)) continue;
+    if (String(row.role || '').toLowerCase() === 'admin') continue;
     try {
       hardDeleteAccount(db, row.id, deps);
       purged += 1;
@@ -172,6 +271,8 @@ function purgeExpiredTrashedAccounts(db, deps, { now = Date.now(), logger = null
 module.exports = {
   ACCOUNT_TRASH_RETENTION_DAYS,
   ACCOUNT_TRASH_RETENTION_MS,
+  PURGED_BACKUP_DIR,
+  PURGED_BACKUP_RETENTION_DAYS,
   ACCOUNT_DEACTIVATED_MESSAGE,
   ensureAccountTrashSchema,
   ownerAccountIdFromStorageKey,
@@ -180,6 +281,8 @@ module.exports = {
   trashAccount,
   restoreAccount,
   listTrashedAccounts,
+  writePrePurgeAccountBackup,
+  purgeOldPrePurgeAccountBackups,
   hardDeleteAccount,
   purgeExpiredTrashedAccounts,
   daysRemaining,

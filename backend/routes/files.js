@@ -7,6 +7,7 @@ const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { storedMime } = require('../utils/safeFileServe');
 const { createStorageDriver } = require('../utils/storage');
+const { isAccountTrashed } = require('../utils/accountTrash');
 const {
   ensureSharedFilesSchema,
   objectKey,
@@ -47,7 +48,11 @@ const upload = multer({
 
 const workspaceId = value => (/^[a-zA-Z0-9_-]{1,80}$/.test(String(value || '')) ? String(value) : 'default');
 
-function canAccess(req, owner, workspace) {
+function canAccess(req, owner, workspace, { write = false } = {}) {
+  if (isAccountTrashed(db, owner)) {
+    if (!write && req.user.role === 'admin') return true;
+    return false;
+  }
   if (String(req.user.id) === String(owner) || req.user.role === 'admin') return true;
   const email = String(req.user.email || '').trim().toLowerCase();
   return !!email && !!db.prepare(`
@@ -64,7 +69,7 @@ function unlinkQuiet(filePath) {
 
 router.get('/usage', auth, (req, res) => {
   const owner = String(req.query.owner_account_id || req.user.id);
-  if (!canAccess(req, owner, workspaceId(req.query.workspace_id))) {
+  if (!canAccess(req, owner, workspaceId(req.query.workspace_id), { write: false })) {
     return res.status(403).json({ error: 'forbidden' });
   }
   res.json(storageUsage(db, owner));
@@ -92,7 +97,7 @@ router.post('/', auth, handleFileUpload, (req, res) => {
     const owner = String(req.body.owner_account_id || req.user.id);
     const workspace = workspaceId(req.body.workspace_id);
     const id = String(req.body.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
-    if (!canAccess(req, owner, workspace)) return res.status(403).json({ error: 'forbidden' });
+    if (!canAccess(req, owner, workspace, { write: true })) return res.status(403).json({ error: 'forbidden' });
     if (!id) return res.status(400).json({ error: 'invalid_file_id' });
     const existing = db.prepare(
       'SELECT size FROM shared_files WHERE id=? AND owner_account_id=? AND workspace_id=?'
@@ -140,7 +145,7 @@ router.post('/', auth, handleFileUpload, (req, res) => {
 router.get('/:id', auth, (req, res) => {
   const row = db.prepare('SELECT * FROM shared_files WHERE id=?').get(String(req.params.id));
   if (!row) return res.status(404).json({ error: 'file_not_found' });
-  if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
+  if (!canAccess(req, row.owner_account_id, row.workspace_id, { write: false })) return res.status(403).json({ error: 'forbidden' });
   try {
     const sent = sendStoredFile(req, res, row, fileDriver());
     if (!sent) return res.status(404).json({ error: 'file_not_found' });
@@ -155,7 +160,7 @@ router.delete('/:id', auth, (req, res) => {
     'SELECT owner_account_id, workspace_id, storage_key FROM shared_files WHERE id=?'
   ).get(String(req.params.id));
   if (!row) return res.json({ success: true });
-  if (!canAccess(req, row.owner_account_id, row.workspace_id)) return res.status(403).json({ error: 'forbidden' });
+  if (!canAccess(req, row.owner_account_id, row.workspace_id, { write: true })) return res.status(403).json({ error: 'forbidden' });
   if (row.storage_key) fileDriver().deleteSync(row.storage_key);
   db.prepare('DELETE FROM shared_files WHERE id=?').run(String(req.params.id));
   res.json({ success: true });

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp424';
+const TP_ASSET_V = 'tp425';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -19525,6 +19525,26 @@ function _tpMarkNetworkFailure() {
   window._serverPollFailStreak = Math.min(6, (window._serverPollFailStreak || 0) + 2);
 }
 
+async function _tpHandleAccountDeactivated(message) {
+  if (window._tpAccountDeactivated) return;
+  window._tpAccountDeactivated = true;
+  _tpStopServerLoops();
+  if (!window._tpAccountDeactivatedAlerted) {
+    window._tpAccountDeactivatedAlerted = true;
+    const text = String(message || '').trim() || 'این حساب غیرفعال شده است؛ با پشتیبانی تماس بگیرید';
+    try { await tpAlert(text); } catch (_) {}
+  }
+  if (typeof _showAuthScreen === 'function') _showAuthScreen('login');
+}
+
+async function _tpMaybeHandleAccountDeactivated(response, path) {
+  if (response.status !== 403 || _tpIsPublicAuthPath(path)) return response;
+  const body = await response.clone().json().catch(() => null);
+  if (body?.error !== 'account_deactivated') return response;
+  void _tpHandleAccountDeactivated(body.message);
+  return response;
+}
+
 async function _tpHandleUnauthorized() {
   if (window._tpHandlingUnauthorized) return window._tpHandlingUnauthorized;
   const run = (async () => {
@@ -19678,6 +19698,9 @@ async function _apiFetch(path, opts = {}) {
       if (response.status === 401) {
         if (!skipAuthRecover && !_tpIsPublicAuthPath(path)) void _tpHandleUnauthorized();
         return response;
+      }
+      if (response.status === 403) {
+        return _tpMaybeHandleAccountDeactivated(response, path);
       }
       return response;
     } catch (error) {
@@ -21144,6 +21167,7 @@ async function _reconcileTerminalTodoCollisions(pending) {
 }
 
 async function _syncToServer(conflictAttempt = 0) {
+  if (window._tpAccountDeactivated) return null;
   if (Number(window._serverSyncConflictBackoffUntil || 0) > Date.now()) return null;
   // A delete with "undo" is still in its undo window: don't send it yet (the
   // server would tombstone the ids for good). Retry right after the window.
@@ -22117,6 +22141,7 @@ function _mergeServerTodosIntoLocal(serverData) {
 
 // ── بارگذاری داده از سرور ──────────────────────────────────────────────────
 async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapshot = false, rebaseBusinessKeys = [] } = {}) {
+  if (window._tpAccountDeactivated) return false;
   if (!_sbUser || !_sbSession?.token) return false;
   if (window._rateLimitedUntil && Date.now() < window._rateLimitedUntil) return false;
   // Only the conflict handler has an outer localPending snapshot. Poll/resume
@@ -23533,6 +23558,7 @@ async function _doReset() {
 }
 
 async function _authOnSuccess() {
+  window._tpAccountDeactivated = false;
   if (typeof _cancelScheduledServerPush === 'function') _cancelScheduledServerPush();
   const pendingInvite = localStorage.getItem(TEAM_PENDING_INVITE_KEY);
   if (pendingInvite) {

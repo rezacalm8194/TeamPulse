@@ -323,10 +323,15 @@ const server = app.listen(PORT, HOST, () => {
       setInterval(runTrashPurge, 6 * 60 * 60 * 1000).unref();
       const runAccountTrashPurge = () => {
         try {
-          const { purgeExpiredTrashedAccounts, ensureAccountTrashSchema } = require('./utils/accountTrash');
-          const { deleteWorkspaceDocument, deleteWorkspaceDocumentsForAccount } = require('./utils/documentStore');
+          const {
+            purgeExpiredTrashedAccounts,
+            ensureAccountTrashSchema,
+            purgeOldPrePurgeAccountBackups,
+          } = require('./utils/accountTrash');
+          const { deleteWorkspaceDocumentsForAccount } = require('./utils/documentStore');
           const { deleteStoredFiles } = require('./utils/fileStore');
           ensureAccountTrashSchema(db);
+          purgeOldPrePurgeAccountBackups({ logger });
           purgeExpiredTrashedAccounts(db, {
             deleteWorkspaceDocumentsForAccount,
             deleteStoredFiles,
