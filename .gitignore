@@ -37,6 +37,7 @@ backend/speech-models/
 backend/database/*.db
 backend/database/*.db-shm
 backend/database/*.db-wal
+backend/database/snapshots/
 backend/database.db
 backend/database.db-shm
 backend/database.db-wal

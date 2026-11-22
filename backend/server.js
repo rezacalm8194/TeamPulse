@@ -266,6 +266,19 @@ app.use(applyCsp, (req, res) => {
 const HOST = process.env.HOST || '127.0.0.1';
 const server = app.listen(PORT, HOST, () => {
   logger.info('application_started', { port: PORT, host: HOST });
+  // Nightly consistent DB copy at 23:30 Tehran, before the host's 00:05
+  // file backup, so that backup always holds a database that opens cleanly.
+  if (process.env.NODE_ENV !== 'test' && process.env.DB_SNAPSHOT_DISABLED !== '1') {
+    try {
+      const { startNightlyDbSnapshot } = require('./utils/dbSnapshot');
+      const snapshotDir = process.env.DB_SNAPSHOT_DIR
+        ? path.resolve(__dirname, process.env.DB_SNAPSHOT_DIR)
+        : path.join(path.dirname(db.name), 'snapshots');
+      startNightlyDbSnapshot(db, { dir: snapshotDir, logger });
+    } catch (error) {
+      logger.error('db_snapshot_setup_failed', { error });
+    }
+  }
   setImmediate(() => {
     try {
       try {
