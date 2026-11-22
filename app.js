@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp411';
+const TP_ASSET_V = 'tp412';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3522,8 +3522,10 @@ window.api = {
         debt:s.balance
       })).sort((a,b)=>b.debt-a.debt);
       const earnerCandidates=summaries.map(s=>{
-        const sp=_db.payments.filter(p=>p.student_id===s.id&&(p.currency||'تومان')==='تومان');
-        const pkg=_db.packages.filter(p=>p.student_id===s.id);
+        // Indexed lookup: filtering the whole payments/packages arrays per
+        // customer made this O(customers × rows) on large workspaces.
+        const sp=_rowsForStudent('payments', s.id).filter(p=>(p.currency||'تومان')==='تومان');
+        const pkg=_rowsForStudent('packages', s.id);
         const startDays=pkg.map(p=>_jalaliApproxDays(p.start_date)).filter(d=>d!=null);
         const payDays=sp.map(p=>_jalaliApproxDays(p.date_jalali)).filter(d=>d!=null);
         let delay=null; if(startDays.length&&payDays.length)delay=Math.max(0,Math.min(...payDays)-Math.min(...startDays));
@@ -3532,7 +3534,9 @@ window.api = {
       const maxPaid=Math.max(1,...earnerCandidates.map(e=>e.paid));
       const maxDelay=Math.max(1,...earnerCandidates.map(e=>e.delay).filter(d=>d!=null));
       const topEarners=earnerCandidates.map(e=>{const an=e.paid/maxPaid;const sn=e.paid<=0?0:(e.delay==null?0.5:1-(e.delay/maxDelay));return{...e,score:0.7*an+0.3*sn};}).sort((a,b)=>b.score-a.score);
-      const pkgDistribution=_db.package_types.map(pt=>({label:pt.label,color:pt.color,count:_db.packages.filter(p=>p.type_id===pt.id).length}));
+      const pkgTypeCounts=new Map();
+      _db.packages.forEach(p=>pkgTypeCounts.set(p.type_id,(pkgTypeCounts.get(p.type_id)||0)+1));
+      const pkgDistribution=_db.package_types.map(pt=>({label:pt.label,color:pt.color,count:pkgTypeCounts.get(pt.id)||0}));
       const upcomingReminders=_pendingPaymentReminderCount(_db.reminders);
       const monthMap={};
       _db.payments.filter(p=>(p.currency||'تومان')==='تومان').forEach(p=>{const[jy,jm]=_jalaliParse(p.date_jalali);if(!jy)return;const k=jy*100+jm;monthMap[k]=(monthMap[k]||0)+(p.amount||0);});
@@ -6663,12 +6667,39 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
   }
 }
+// In-memory only (never persisted): collections whose every server page was
+// walked in THIS session, keyed by the server etag at the end of that walk.
+// Lets dashboard/finance re-renders skip a full re-download when nothing
+// changed on the server since.
+window._tpCompleteWalkEtag = window._tpCompleteWalkEtag || Object.create(null);
+function _tpCurrentServerEtag() {
+  return window._serverDataEtag || window._serverHydratedEtag || '';
+}
+function _businessPartCompleteAndFresh(key) {
+  if (!BUSINESS_PAGINATED_KEYS.includes(key)) return true;
+  const marker = window._tpCompleteWalkEtag[key];
+  if (marker == null) return false;
+  if (!window._tpSessionFetchedParts?.has(key)) return false;
+  const paging = _businessPagingState(key);
+  if (paging.loading || !paging.done || paging.search) return false;
+  if (paging.order !== _businessPageOrder(key)) return false;
+  return marker === _tpCurrentServerEtag();
+}
 async function _ensureCompleteBusinessParts(collections = []) {
+  const keys = [...new Set(collections)]
+    .filter(key => BUSINESS_PAGINATED_KEYS.includes(key))
+    .filter(key => !_businessPartCompleteAndFresh(key));
+  if (!keys.length) return;
+  // A second caller (e.g. a filter click mid-load) joins the running walk
+  // instead of resetting finance keys and restarting it from page 1.
+  const inflight = window._tpCompleteWalkInflight || (window._tpCompleteWalkInflight = Object.create(null));
+  const joined = keys.filter(key => inflight[key]).map(key => inflight[key]);
+  const todo = keys.filter(key => !inflight[key]);
+  if (!todo.length) { await Promise.all(joined); return; }
   window._tpDeferDatabasePersist = true;
   try {
-    const keys = [...new Set(collections)].filter(key => BUSINESS_PAGINATED_KEYS.includes(key));
-    for (let start = 0; start < keys.length; start += 3) {
-      await Promise.all(keys.slice(start, start + 3).map(async key => {
+    for (let start = 0; start < todo.length; start += 3) {
+      await Promise.all(todo.slice(start, start + 3).map(key => (inflight[key] = (async () => {
       // Finance lists are newest-first on desktop. Always reset those keys so
       // an Android pager that already marked oldest page-1 as done still pulls
       // today's receipts before walking the rest for balances.
@@ -6692,8 +6723,15 @@ async function _ensureCompleteBusinessParts(collections = []) {
           if (!ok) break;
         }
       }
-      }));
+      const finalPaging = _businessPagingState(key);
+      if (finalPaging.done && _paginatedCollectionFullyLoaded(key)) {
+        window._tpCompleteWalkEtag[key] = _tpCurrentServerEtag();
+      } else {
+        delete window._tpCompleteWalkEtag[key];
+      }
+      })().finally(() => { delete inflight[key]; }))));
     }
+    if (joined.length) await Promise.all(joined);
   } finally {
     window._tpDeferDatabasePersist = false;
     if (typeof _invalidateStudentRelIndex === 'function') _invalidateStudentRelIndex();
