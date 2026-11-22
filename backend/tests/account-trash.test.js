@@ -16,6 +16,7 @@ const {
   purgeExpiredTrashedAccounts,
   isAccountTrashed,
   writePrePurgeAccountBackup,
+  ensurePrePurgeAccountBackup,
 } = require('../utils/accountTrash');
 const { ensureDocumentStoreSchema, writeWorkspaceDocument } = require('../utils/documentStore');
 const { workspaceStorageKey } = require('../utils/teamAccessSchema');
@@ -318,4 +319,53 @@ test('trash list reports retention metadata and counts', () => {
   assert.equal(list[0].client_count, 1);
   assert.equal(list[0].workspace_count, 1);
   assert.equal(list[0].days_remaining, 30);
+});
+
+test('hardDeleteAccount removes on-disk shared file using keys read before the transaction', () => {
+  const { db, deps } = setup();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shared_files (
+      id TEXT PRIMARY KEY,
+      owner_account_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL DEFAULT 'default',
+      name TEXT NOT NULL,
+      storage_key TEXT,
+      size INTEGER DEFAULT 1
+    );
+  `);
+  const storageKey = 'files/victim/default/attach-1';
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-shared-del-'));
+  const absPath = path.join(root, storageKey);
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  fs.writeFileSync(absPath, 'payload');
+  db.prepare(`
+    INSERT INTO shared_files (id, owner_account_id, workspace_id, name, storage_key)
+    VALUES (?,?,?,?,?)
+  `).run('attach-1', 'victim', 'default', 'a.bin', storageKey);
+  trashAccount(db, 'victim', 'admin-1', { now: T0 });
+  const storageDriver = {
+    root,
+    deleteSync(key) {
+      const target = path.join(root, key);
+      if (fs.existsSync(target)) fs.unlinkSync(target);
+      return true;
+    },
+  };
+  hardDeleteAccount(db, 'victim', { ...deps, storageDriver, skipPrePurgeBackup: true });
+  assert.equal(fs.existsSync(absPath), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('ensurePrePurgeAccountBackup does not reuse backup older than deleted_at', () => {
+  const { db } = setup();
+  const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-purge-stale-'));
+  trashAccount(db, 'victim', 'admin-1', { now: T0 });
+  const stalePath = path.join(backupDir, 'victim-20260101-000000.json.gz');
+  fs.writeFileSync(stalePath, 'stale-backup');
+  const staleDate = new Date(T0 - 7 * DAY);
+  fs.utimesSync(stalePath, staleDate, staleDate);
+  const freshPath = ensurePrePurgeAccountBackup(db, 'victim', { now: T0 + 5000, backupDir });
+  assert.notEqual(freshPath, stalePath);
+  assert.ok(fs.existsSync(freshPath));
+  fs.rmSync(backupDir, { recursive: true, force: true });
 });

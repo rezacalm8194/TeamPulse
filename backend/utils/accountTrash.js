@@ -16,6 +16,7 @@ const ACCOUNT_TRASH_RETENTION_DAYS = 30;
 const ACCOUNT_TRASH_RETENTION_MS = ACCOUNT_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const PURGED_BACKUP_RETENTION_DAYS = 90;
 const PURGED_BACKUP_RETENTION_MS = PURGED_BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const PURGE_BACKUP_REUSE_MS = 24 * 60 * 60 * 1000;
 const PURGED_BACKUP_DIR = path.join(__dirname, '..', 'database', 'purged-accounts');
 
 const schemaReady = new WeakSet();
@@ -41,6 +42,51 @@ function ensurePurgedBackupDir() {
     fs.mkdirSync(PURGED_BACKUP_DIR, { recursive: true });
   }
   return PURGED_BACKUP_DIR;
+}
+
+function parseSqliteTimeMs(value) {
+  if (!value) return null;
+  const ms = Date.parse(String(value).replace(' ', 'T') + 'Z');
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function recentPrePurgeBackupPath(accountId, { now = Date.now(), backupDir = null, minMtimeMs = null } = {}) {
+  const dir = backupDir || PURGED_BACKUP_DIR;
+  if (!fs.existsSync(dir)) return null;
+  const prefix = `${accountId}-`;
+  const cutoff = now - PURGE_BACKUP_REUSE_MS;
+  let newestPath = null;
+  let newestMtime = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.startsWith(prefix) || !name.endsWith('.json.gz')) continue;
+    const full = path.join(dir, name);
+    let mtimeMs = 0;
+    try { mtimeMs = fs.statSync(full).mtimeMs; } catch { continue; }
+    if (mtimeMs < cutoff) continue;
+    if (minMtimeMs != null && Number.isFinite(minMtimeMs) && mtimeMs < minMtimeMs) continue;
+    if (mtimeMs > newestMtime) {
+      newestMtime = mtimeMs;
+      newestPath = full;
+    }
+  }
+  return newestPath;
+}
+
+function ensurePrePurgeAccountBackup(db, accountId, { now = Date.now(), logger = null, backupDir = null } = {}) {
+  ensureAccountTrashSchema(db);
+  const deletedAtMs = parseSqliteTimeMs(
+    db.prepare('SELECT deleted_at FROM accounts WHERE id=?').get(accountId)?.deleted_at
+  );
+  const existing = recentPrePurgeBackupPath(accountId, {
+    now,
+    backupDir: backupDir || PURGED_BACKUP_DIR,
+    minMtimeMs: deletedAtMs,
+  });
+  if (existing) {
+    logger?.info?.('account_pre_purge_backup_reused', { accountId, filePath: existing });
+    return existing;
+  }
+  return writePrePurgeAccountBackup(db, accountId, { now, logger, backupDir });
 }
 
 function writePrePurgeAccountBackup(db, accountId, { now = Date.now(), logger = null, backupDir = null } = {}) {
@@ -175,26 +221,54 @@ function listTrashedAccounts(db, { now = Date.now() } = {}) {
   }));
 }
 
-function deleteAccountRows(db, accountId) {
+function sharedStorageKeysForAccount(db, accountId) {
+  if (!hasTable(db, 'shared_files')) return [];
+  return db.prepare(`
+    SELECT storage_key FROM shared_files
+    WHERE owner_account_id=?
+      AND storage_key IS NOT NULL
+      AND trim(storage_key) <> ''
+  `).all(accountId).map(row => row.storage_key);
+}
+
+function deleteCapturedSharedFiles(storageDriver, storageKeys, { accountId, logger } = {}) {
+  if (!storageDriver?.deleteSync || !storageKeys.length) return;
+  for (const storageKey of storageKeys) {
+    try {
+      storageDriver.deleteSync(storageKey);
+    } catch (error) {
+      logger?.error?.('account_trash_shared_file_delete_failed', { accountId, storageKey, error });
+    }
+  }
+}
+
+function deleteAccountRows(db, accountId, { deleteWorkspaceDocumentsForAccount } = {}) {
   const deleteByAccount = (table) => {
     if (!hasTable(db, table)) return;
     db.prepare(`DELETE FROM ${table} WHERE account_id=?`).run(accountId);
   };
-  [
-    'payments',
-    'sessions',
-    'reminders',
-    'staff_payments',
-    'files',
-    'tasks',
-    'wallet_transactions',
-    'wallet_charge_requests',
-    'user_wallets',
-    'sync_events',
-    'push_subscriptions',
-    'clients',
-    'staff',
-  ].forEach(deleteByAccount);
+
+  deleteByAccount('payments');
+  deleteByAccount('sessions');
+  deleteByAccount('reminders');
+  deleteByAccount('staff_payments');
+  deleteByAccount('files');
+  if (hasTable(db, 'shared_files')) {
+    db.prepare('DELETE FROM shared_files WHERE owner_account_id=?').run(accountId);
+  }
+  if (hasTable(db, 'task_history') && hasTable(db, 'tasks')) {
+    db.prepare(`
+      DELETE FROM task_history
+      WHERE task_id IN (SELECT id FROM tasks WHERE account_id=?)
+    `).run(accountId);
+  }
+  deleteByAccount('tasks');
+  deleteByAccount('wallet_transactions');
+  deleteByAccount('wallet_charge_requests');
+  deleteByAccount('user_wallets');
+  deleteByAccount('sync_events');
+  deleteByAccount('push_subscriptions');
+
   if (hasTable(db, 'user_data_version_summaries')) {
     db.prepare('DELETE FROM user_data_version_summaries WHERE account_id=? OR account_id LIKE ?')
       .run(accountId, accountId + '::workspace::%');
@@ -203,9 +277,18 @@ function deleteAccountRows(db, accountId) {
     db.prepare('DELETE FROM user_data_versions WHERE account_id=? OR account_id LIKE ?')
       .run(accountId, accountId + '::workspace::%');
   }
+
+  if (typeof deleteWorkspaceDocumentsForAccount === 'function') {
+    deleteWorkspaceDocumentsForAccount(db, accountId);
+  }
+
   if (hasTable(db, 'account_workspaces')) {
     db.prepare('DELETE FROM account_workspaces WHERE owner_account_id=?').run(accountId);
   }
+
+  deleteByAccount('clients');
+  deleteByAccount('staff');
+
   if (hasTable(db, 'accounts')) {
     db.prepare('DELETE FROM accounts WHERE id=?').run(accountId);
   }
@@ -219,18 +302,18 @@ function hardDeleteAccount(db, accountId, deps) {
     logger,
     skipPrePurgeBackup = false,
     backupDir,
+    now = Date.now(),
   } = deps;
   if (!skipPrePurgeBackup) {
-    writePrePurgeAccountBackup(db, accountId, { logger, backupDir });
+    ensurePrePurgeAccountBackup(db, accountId, { logger, backupDir, now });
   }
+  const sharedStorageKeys = sharedStorageKeysForAccount(db, accountId);
   const run = db.transaction((id) => {
-    deleteAccountRows(db, id);
-    if (typeof deleteWorkspaceDocumentsForAccount === 'function') {
-      deleteWorkspaceDocumentsForAccount(db, id);
-    }
+    deleteAccountRows(db, id, { deleteWorkspaceDocumentsForAccount });
     return true;
   });
   run(accountId);
+  deleteCapturedSharedFiles(storageDriver, sharedStorageKeys, { accountId, logger });
   try {
     if (typeof deleteStoredFiles === 'function') {
       deleteStoredFiles(db, storageDriver, { ownerAccountId: accountId });
@@ -282,6 +365,8 @@ module.exports = {
   restoreAccount,
   listTrashedAccounts,
   writePrePurgeAccountBackup,
+  ensurePrePurgeAccountBackup,
+  recentPrePurgeBackupPath,
   purgeOldPrePurgeAccountBackups,
   hardDeleteAccount,
   purgeExpiredTrashedAccounts,
