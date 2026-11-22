@@ -23,11 +23,15 @@ test('app shell does not prefetch extra JS on first paint', () => {
   const appCss = fs.readFileSync(path.join(root, 'app.css'), 'utf8');
   assert.match(appCss, /@font-face[\s\S]*Vazirmatn-Regular\.woff2/);
   assert.match(appCss, /@font-face[\s\S]*Vazirmatn-SemiBold\.woff2/);
-  const assetV = appJs.match(/TP_ASSET_V = '(tp\d+)'/)?.[1];
-  assert.ok(assetV, 'TP_ASSET_V must be defined');
-  assert.match(appHtml, new RegExp(`Vazirmatn-Regular\\.woff2\\?v=${assetV}`));
-  assert.match(appCss, new RegExp(`Vazirmatn-Regular\\.woff2\\?v=${assetV}`));
-  assert.match(appCss, new RegExp(`Vazirmatn-SemiBold\\.woff2\\?v=${assetV}`));
+  // The preload must request exactly the URL app.css uses, or the browser
+  // downloads the font twice. Fonts never change, so they keep a fixed
+  // version instead of following TP_ASSET_V (no re-download per release).
+  const preloadV = appHtml.match(/rel="preload"[^>]*Vazirmatn-Regular\.woff2\?v=([\w.-]+)/)?.[1];
+  const cssRegularV = appCss.match(/Vazirmatn-Regular\.woff2\?v=([\w.-]+)/)?.[1];
+  const cssSemiBoldV = appCss.match(/Vazirmatn-SemiBold\.woff2\?v=([\w.-]+)/)?.[1];
+  assert.ok(preloadV, 'font preload must be versioned');
+  assert.equal(preloadV, cssRegularV, 'preload URL must match app.css');
+  assert.equal(cssSemiBoldV, cssRegularV);
   assert.doesNotMatch(appHtml, /wght@300;400;500;600;700/);
 });
 

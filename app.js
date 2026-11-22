@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp415';
+const TP_ASSET_V = 'tp416';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -14578,6 +14578,7 @@ function archiveEmptyMessage(){
 }
 
 async function renderArchive() {
+  _warmXlsxLibrary();
   updateTopbarActions('');
   const archiveData = await Promise.all([window.api.students.getArchived(),window.api.students.getArchiveColumns(),window.api.students.getArchiveOptions()]);
   archiveStudents=sortArchiveFieldReferralsFirst(archiveData[0]);archiveColumns=[...ARCHIVE_DEFAULT_COLUMNS];archiveCategoryOptions=archiveData[2].categories;archiveStatusOptions=archiveData[2].statuses;
@@ -14830,8 +14831,16 @@ function loadXlsxLibrary(){
   return _xlsxLoaderPromise;
 }
 
-// Keep Excel out of the critical startup path, then warm it quietly for imports.
-setTimeout(()=>loadXlsxLibrary().catch(()=>{}),5000);
+// The Excel library (~930 KB) is only needed for archive import/export, and
+// executing it blocks the main thread (~160 ms desktop, far more on phones).
+// It used to load 5 s after every app open; now it warms only when the
+// archive page is opened, and every caller still awaits loadXlsxLibrary().
+function _warmXlsxLibrary(){
+  if(typeof XLSX!=='undefined'||_xlsxLoaderPromise)return;
+  const run=()=>loadXlsxLibrary().catch(()=>{});
+  if(typeof requestIdleCallback==='function')requestIdleCallback(run,{timeout:4000});
+  else setTimeout(run,1500);
+}
 
 async function exportArchiveExcel(){
   const exportRows=archiveVisibleRows;
