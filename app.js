@@ -29665,8 +29665,10 @@ function _tpSearchNormalize(str) {
     .replace(/[يى]/g, 'ی')
     .replace(/ك/g, 'ک')
     .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
-    .replace(/[\u200C\u200D\u2060]/g, ' ')
-  .replace(/[۰-۹٠-٩]/g, d => {
+    .replace(/[\u200C\u200D\u2060]/g, '')
+    .replace(/ۀ/g, 'ه')
+    .replace(/[أإ]/g, 'ا')
+    .replace(/[۰-۹٠-٩]/g, d => {
       const fa = '۰۱۲۳۴۵۶۷۸۹';
       const ar = '٠١٢٣٤٥٦٧٨٩';
       const i = fa.indexOf(d);
@@ -29677,6 +29679,11 @@ function _tpSearchNormalize(str) {
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+}
+function _tpSearchHayFields(str) {
+  const hay = _tpSearchNormalize(str);
+  const hayCompact = hay.replace(/\s+/g, '');
+  return { hay, hayCompact };
 }
 const _TP_SEARCH_PAGE_DEFS = [
   { page: 'home', tab: '', label: 'داشبورد', icon: '🏠', keys: 'خانه' },
@@ -29716,84 +29723,124 @@ const _tpSearchUi = {
   keyHandler: null,
 };
 function _tpSearchEditableTarget(el) {
-  if (!el || el.isContentEditable) return true;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
   const tag = el.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
-function _tpSearchBuildIndex() {
-  const pageRows = _TP_SEARCH_PAGE_DEFS.filter(p => typeof _teamCan !== 'function' || _teamCan(p.page)).map(p => ({
-    kind: 'page',
-    icon: p.icon,
-    title: p.label,
-    subtitle: '',
-    hay: _tpSearchNormalize(p.label + ' ' + (p.keys || '')),
-    page: p.page,
-    tab: p.tab || '',
-  }));
+function _tpSearchCommandAllowed(action) {
+  if (action === 'todo') return true;
+  if (action === 'payment') return typeof _teamCan !== 'function' || _teamCan('payments');
+  if (action === 'student') return typeof _teamCanWriteOwnerStudents !== 'function' || _teamCanWriteOwnerStudents();
+  if (action === 'expense') return typeof _teamCan !== 'function' || _teamCan('dashboard');
+  return false;
+}
+async function _tpSearchBuildIndex() {
+  const pageRows = _TP_SEARCH_PAGE_DEFS.filter(p => typeof _teamCan !== 'function' || _teamCan(p.page)).map(p => {
+    const fields = _tpSearchHayFields(p.label + ' ' + (p.keys || ''));
+    return {
+      kind: 'page',
+      icon: p.icon,
+      title: p.label,
+      subtitle: '',
+      hay: fields.hay,
+      hayCompact: fields.hayCompact,
+      page: p.page,
+      tab: p.tab || '',
+    };
+  });
   const students = [];
-  for (const s of (_db && _db.students) || []) {
-    if (!s || s.id == null) continue;
-    const name = [s.name, s.lname].filter(Boolean).join(' ').trim();
-    const phone = String(s.phone || s.mobile || '').trim();
-    students.push({
-      kind: 'student',
-      icon: '👤',
-      title: name || 'بدون نام',
-      subtitle: phone,
-      hay: _tpSearchNormalize(name + ' ' + phone),
-      id: s.id,
-    });
+  if (typeof _teamCan !== 'function' || _teamCan('students')) {
+    for (const s of (_db && _db.students) || []) {
+      if (!s || s.id == null) continue;
+      const name = [s.name, s.lname].filter(Boolean).join(' ').trim();
+      const phone = String(s.phone || s.mobile || '').trim();
+      const fields = _tpSearchHayFields(name + ' ' + phone);
+      students.push({
+        kind: 'student',
+        icon: '👤',
+        title: name || 'بدون نام',
+        subtitle: phone,
+        hay: fields.hay,
+        hayCompact: fields.hayCompact,
+        id: s.id,
+      });
+    }
   }
   const todosPending = [];
   const todosDone = [];
-  for (const t of (_db && _db.todos) || []) {
-    if (!t || t.archived) continue;
-    const title = String(t.title || '').trim() || 'بدون عنوان';
-    const sub = t.date_jalali && typeof DateService !== 'undefined' ? DateService.disp(t.date_jalali) : (t.date_jalali || '');
-    const row = {
-      kind: 'todo',
-      icon: '✅',
-      title,
-      subtitle: String(sub || ''),
-      hay: _tpSearchNormalize(title),
-      id: t.id,
-    };
-    if (t.done) todosDone.push(row);
-    else todosPending.push(row);
+  let todosEnabled = false;
+  try {
+    await _tpEnsureChunk('app-todos.js');
+    todosEnabled = true;
+    const canView = typeof _todoCanView === 'function' ? _todoCanView : () => true;
+    for (const t of (_db && _db.todos) || []) {
+      if (!t || t.archived || !canView(t)) continue;
+      const title = String(t.title || '').trim() || 'بدون عنوان';
+      const sub = t.date_jalali && typeof DateService !== 'undefined' ? DateService.disp(t.date_jalali) : (t.date_jalali || '');
+      const fields = _tpSearchHayFields(title);
+      const row = {
+        kind: 'todo',
+        icon: '✅',
+        title,
+        subtitle: String(sub || ''),
+        hay: fields.hay,
+        hayCompact: fields.hayCompact,
+        id: t.id,
+      };
+      if (t.done) todosDone.push(row);
+      else todosPending.push(row);
+    }
+  } catch (_) {
+    todosEnabled = false;
   }
-  const commands = _TP_SEARCH_COMMAND_DEFS.map(c => ({
-    kind: 'command',
-    icon: c.icon,
-    title: c.title,
-    subtitle: c.subtitle || '',
-    hay: _tpSearchNormalize(c.title + ' ' + (c.keys || '')),
-    action: c.action,
-  }));
-  return { pageRows, students, todosPending, todosDone, commands };
+  const commands = [];
+  for (const c of _TP_SEARCH_COMMAND_DEFS) {
+    if (!_tpSearchCommandAllowed(c.action)) continue;
+    const fields = _tpSearchHayFields(c.title + ' ' + (c.keys || ''));
+    commands.push({
+      kind: 'command',
+      icon: c.icon,
+      title: c.title,
+      subtitle: c.subtitle || '',
+      hay: fields.hay,
+      hayCompact: fields.hayCompact,
+      action: c.action,
+    });
+  }
+  return { pageRows, students, todosPending, todosDone, commands, todosEnabled };
+}
+function _tpSearchRowMatches(row, q, qCompact) {
+  if (!q) return true;
+  if (row.hay.includes(q)) return true;
+  if (qCompact && row.hayCompact && row.hayCompact.includes(qCompact)) return true;
+  return false;
 }
 function _tpSearchMatch(list, q, max) {
   const out = [];
   if (!list || !list.length) return out;
+  const qCompact = q ? q.replace(/\s+/g, '') : '';
   if (!q) {
     for (let i = 0; i < list.length && out.length < max; i++) out.push(list[i]);
     return out;
   }
   for (let i = 0; i < list.length && out.length < max; i++) {
-    if (list[i].hay.includes(q)) out.push(list[i]);
+    if (_tpSearchRowMatches(list[i], q, qCompact)) out.push(list[i]);
   }
   return out;
 }
 function _tpSearchCollect(query) {
   const q = _tpSearchNormalize(query);
-  const idx = _tpSearchUi.index || _tpSearchBuildIndex();
+  const idx = _tpSearchUi.index;
+  if (!idx) return { groups: [], flat: [] };
   const groups = [
     { kind: 'page', items: _tpSearchMatch(idx.pageRows, q, 6) },
     { kind: 'student', items: _tpSearchMatch(idx.students, q, 6) },
-    { kind: 'todo', items: (() => {
+    { kind: 'todo', items: idx.todosEnabled ? (() => {
       const pending = _tpSearchMatch(idx.todosPending, q, 6);
       const need = Math.max(0, 6 - pending.length);
       return pending.concat(_tpSearchMatch(idx.todosDone, q, need));
-    })() },
+    })() : [] },
     { kind: 'command', items: _tpSearchMatch(idx.commands, q, 6) },
   ];
   const flat = [];
@@ -29822,15 +29869,16 @@ function _tpSearchRenderResults(groups, flat, active) {
     label.textContent = _TP_SEARCH_GROUP_LABELS[group.kind] || '';
     wrap.appendChild(label);
     group.items.forEach(item => {
+      const myIdx = optIdx;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'tp-search-option' + (optIdx === active ? ' tp-search-option-active' : '');
-      btn.id = 'tp-search-opt-' + optIdx;
+      btn.className = 'tp-search-option' + (myIdx === active ? ' tp-search-option-active' : '');
+      btn.id = 'tp-search-opt-' + myIdx;
       btn.setAttribute('role', 'option');
-      btn.setAttribute('aria-selected', optIdx === active ? 'true' : 'false');
+      btn.setAttribute('aria-selected', myIdx === active ? 'true' : 'false');
       btn.addEventListener('click', () => { _tpSearchActivateItem(item); });
       btn.addEventListener('mouseenter', () => {
-        _tpSearchUi.active = optIdx;
+        _tpSearchUi.active = myIdx;
         _tpSearchHighlightActive();
       });
       const icon = document.createElement('span');
@@ -29918,6 +29966,7 @@ async function _tpSearchActivateItem(item) {
     return;
   }
   if (item.kind === 'command') {
+    if (!_tpSearchCommandAllowed(item.action)) return;
     if (item.action === 'payment') {
       _homeQuickPayment();
     } else if (item.action === 'todo') {
@@ -29931,6 +29980,7 @@ async function _tpSearchActivateItem(item) {
 }
 function _tpSearchOnOverlayKey(e) {
   if (!_tpSearchUi.open) return;
+  if (e.isComposing) return;
   const flat = _tpSearchUi.flat;
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -29981,13 +30031,13 @@ function _tpSearchEnsureRoot() {
   }
   return root;
 }
-function _tpSearchOpen() {
+async function _tpSearchOpen() {
   if (_tpSearchUi.open) {
     _tpSearchUi.input?.focus();
     _tpSearchUi.input?.select?.();
     return;
   }
-  _tpSearchUi.index = _tpSearchBuildIndex();
+  _tpSearchUi.index = null;
   _tpSearchUi.prevFocus = document.activeElement;
   const root = _tpSearchEnsureRoot();
   _tpSearchClearList(root);
@@ -30008,6 +30058,7 @@ function _tpSearchOpen() {
   input.setAttribute('spellcheck', 'false');
   input.setAttribute('aria-label', 'جستجو');
   input.placeholder = 'جستجو در صفحه‌ها، مشتری‌ها، کارها…';
+  input.disabled = true;
   input.addEventListener('input', () => {
     _tpSearchUi.active = 0;
     _tpSearchScheduleRender();
@@ -30021,6 +30072,10 @@ function _tpSearchOpen() {
   list.className = 'tp-search-results';
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'نتایج جستجو');
+  const loading = document.createElement('div');
+  loading.className = 'tp-search-empty';
+  loading.textContent = 'در حال آماده‌سازی…';
+  list.appendChild(loading);
   panel.appendChild(inputWrap);
   panel.appendChild(list);
   overlay.appendChild(panel);
@@ -30036,8 +30091,17 @@ function _tpSearchOpen() {
   overlay.addEventListener('click', e => {
     if (e.target === overlay) _tpSearchClose();
   });
-  _tpSearchRunQueryNow();
   setTimeout(() => { input.focus(); }, 20);
+  try {
+    _tpSearchUi.index = await _tpSearchBuildIndex();
+  } catch (_) {
+    _tpSearchUi.index = {
+      pageRows: [], students: [], todosPending: [], todosDone: [], commands: [], todosEnabled: false,
+    };
+  }
+  if (!_tpSearchUi.open) return;
+  input.disabled = false;
+  _tpSearchRunQueryNow();
 }
 function _tpSearchClose() {
   if (!_tpSearchUi.open) return;
@@ -30060,7 +30124,7 @@ function _tpSearchClose() {
 }
 function _tpSearchToggle() {
   if (_tpSearchUi.open) _tpSearchClose();
-  else _tpSearchOpen();
+  else void _tpSearchOpen();
 }
 function _tpSearchEnsureMobileBtn() {
   if (document.getElementById('tp-search-open-btn')) return;
@@ -30074,7 +30138,7 @@ function _tpSearchEnsureMobileBtn() {
   btn.setAttribute('aria-label', 'جست‌وجوی سریع');
   btn.title = 'جست‌وجو';
   btn.textContent = '🔍';
-  btn.addEventListener('click', () => _tpSearchOpen());
+  btn.addEventListener('click', () => { void _tpSearchOpen(); });
   if (actions && actions.parentNode === topbar) topbar.insertBefore(btn, actions);
   else topbar.appendChild(btn);
 }
@@ -30083,14 +30147,18 @@ function _tpSearchInit() {
   _tpSearchUi.inited = true;
   _tpSearchEnsureMobileBtn();
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
+    if (e.isComposing || e.repeat) return;
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
       e.preventDefault();
       _tpSearchToggle();
       return;
     }
-    if (e.key === '/' && !_tpSearchEditableTarget(e.target)) {
+    if (e.key === '/' || e.code === 'Slash') {
+      if (_tpSearchEditableTarget(e.target)) return;
+      if (document.getElementById('modals')?.children.length) return;
+      if (document.getElementById('tp-dialog-root')?.children.length) return;
       e.preventDefault();
-      _tpSearchOpen();
+      void _tpSearchOpen();
     }
   }, true);
 }

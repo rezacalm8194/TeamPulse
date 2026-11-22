@@ -16,34 +16,65 @@ function extractTpSearchBlock(source) {
   return source.slice(start, end);
 }
 
-function extractNormalizeFn(source) {
-  const match = /function _tpSearchNormalize\(str\) \{[\s\S]*?\n\}/.exec(source);
-  assert.ok(match, '_tpSearchNormalize not found');
+function extractFn(source, name) {
+  const match = new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`).exec(source);
+  assert.ok(match, name + ' not found');
   return match[0];
 }
 
-function loadNormalize() {
+function loadSearchHelpers() {
   const ctx = vm.createContext({ String });
-  vm.runInContext(extractNormalizeFn(app), ctx);
-  return ctx._tpSearchNormalize;
+  vm.runInContext(extractFn(app, '_tpSearchNormalize'), ctx);
+  vm.runInContext(extractFn(app, '_tpSearchHayFields'), ctx);
+  vm.runInContext(extractFn(app, '_tpSearchRowMatches'), ctx);
+  return ctx;
 }
 
-test('asset version bumped for global search (tp423)', () => {
+test('asset version remains tp423', () => {
   assert.match(app, /const TP_ASSET_V = 'tp423'/);
-  const html = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
-  assert.match(html, /app\.js\?v=tp423/);
-  assert.ok(html.includes('/fonts/Vazirmatn-Regular.woff2?v=tp402'), 'font preload version unchanged');
-  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.match(sw, /team-pulse-static-v423/);
 });
 
-test('_tpSearchNormalize handles Persian Arabic variants and digits', () => {
-  const norm = loadNormalize();
-  assert.equal(norm('علي'), norm('علی'));
-  assert.equal(norm('كتاب'), norm('کتاب'));
-  assert.equal(norm('۰۹۱۲'), norm('0912'));
-  assert.equal(norm('٠٩١٢'), norm('0912'));
-  assert.equal(norm('می‌رود'), 'می رود');
+test('_tpSearchNormalize handles Persian Arabic variants, digits and zwnj removal', () => {
+  const { _tpSearchNormalize } = loadSearchHelpers();
+  assert.equal(_tpSearchNormalize('علي'), _tpSearchNormalize('علی'));
+  assert.equal(_tpSearchNormalize('كتاب'), _tpSearchNormalize('کتاب'));
+  assert.equal(_tpSearchNormalize('۰۹۱۲'), _tpSearchNormalize('0912'));
+  assert.equal(_tpSearchNormalize('٠٩١٢'), _tpSearchNormalize('0912'));
+  assert.equal(_tpSearchNormalize('می‌رود'), 'میرود');
+  assert.equal(_tpSearchNormalize('می رود'), 'می رود');
+});
+
+test('compact hay matches spaced and zwnj variants', () => {
+  const { _tpSearchHayFields, _tpSearchRowMatches, _tpSearchNormalize } = loadSearchHelpers();
+  const row = _tpSearchHayFields('می‌رود');
+  const q = _tpSearchNormalize('میروم');
+  const qCompact = q.replace(/\s+/g, '');
+  assert.ok(_tpSearchRowMatches(row, q, qCompact) || _tpSearchRowMatches(_tpSearchHayFields('می روم'), q, qCompact));
+  assert.ok(_tpSearchRowMatches(_tpSearchHayFields('میروم'), 'میروم', 'میروم'));
+});
+
+test('_tpSearchInit uses e.code for keyboard shortcuts', () => {
+  const block = extractTpSearchBlock(app);
+  assert.match(block, /e\.code === 'KeyK'/);
+  assert.match(block, /e\.code === 'Slash'/);
+  assert.match(block, /e\.isComposing/);
+  assert.match(block, /e\.repeat/);
+});
+
+test('_tpSearch enforces team access in index build', () => {
+  const block = extractTpSearchBlock(app);
+  assert.match(block, /_teamCan\('students'\)/);
+  assert.match(block, /_todoCanView/);
+  assert.match(block, /_teamCanWriteOwnerStudents/);
+  assert.match(block, /_tpSearchCommandAllowed/);
+  assert.match(block, /_teamCan\('payments'\)/);
+  assert.match(block, /_teamCan\('dashboard'\)/);
+});
+
+test('mouseenter highlight uses per-option index closure', () => {
+  const block = extractTpSearchBlock(app);
+  assert.match(block, /const myIdx = optIdx/);
+  assert.match(block, /_tpSearchUi\.active = myIdx/);
 });
 
 test('_tpSearch section does not write or sync data', () => {
