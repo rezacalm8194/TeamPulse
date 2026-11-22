@@ -35,7 +35,7 @@ describe('one-click deploy scripts', () => {
     assert.match(bat, /teampulse-deploy-all\.bat/);
     assert.match(bat, /git checkout develop/);
     assert.match(bat, /stash push -u -m "deploy-all auto-stash before develop"/);
-    assert.match(bat, /PROD_SSH=pachim@37\.32\.12\.186/);
+    assert.match(bat, /PROD_SSH=pachim@85\.198\.53\.38/);
     assert.match(bat, /TeamPulse\.ir/);
     assert.match(bat, /git checkout origin\/main -- scripts\/pachim-deploy\.sh/);
     assert.match(bat, /bash scripts\/pachim-deploy\.sh/);

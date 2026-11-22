@@ -8,6 +8,7 @@ const {
 const { normalizeWorkspaceId, workspaceStorageKey } = require('./teamAccessSchema');
 const { ensureVersionSnapshotSchema, saveVersionSnapshot, saveVersionSnapshotParts } = require('./versionSnapshots');
 const { BUSINESS_COLLECTIONS } = require('./businessStore');
+const { ensureWorkspaceTrashSchema } = require('./workspaceTrash');
 
 const DATA_ARRAY_KEYS = [
   'students',
@@ -47,6 +48,7 @@ function ensureWorkspaceRegistry(db) {
     CREATE INDEX IF NOT EXISTS idx_account_workspaces_owner
       ON account_workspaces(owner_account_id, created_at);
   `);
+  ensureWorkspaceTrashSchema(db);
 }
 
 function itemCounts(data) {
@@ -230,7 +232,8 @@ function restoreAccountAppBackup(db, accountId, backup) {
     ).get(accountId, doc.workspaceId);
     if (row) {
       db.prepare(
-        `UPDATE account_workspaces SET name=?, updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=?`
+        // Restoring a backup brings a workspace back even if it was in the recycle bin.
+        `UPDATE account_workspaces SET name=?, deleted_at=NULL, updated_at=datetime('now') WHERE owner_account_id=? AND workspace_id=?`
       ).run(name, accountId, doc.workspaceId);
     } else {
       db.prepare(

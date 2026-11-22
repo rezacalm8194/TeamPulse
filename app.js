@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp412';
+const TP_ASSET_V = 'tp413';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -7069,10 +7069,16 @@ async function _createAccount(name) {
   }
   return finishCreation(!!(_sbSession?.token && ownerId !== 'guest' && !canSyncWorkspace));
 }
+async function _workspaceUsesServerTrash() {
+  const ownerId = _workspaceOwnerId();
+  return !!(_sbSession?.token && ownerId !== 'guest' && await _supportsWorkspaceApi());
+}
 async function _deleteAccount(id) {
   if (id === 'default') { showToast('میزکار پیش‌فرض قابل حذف نیست', 'error'); return; }
   const ownerId = _workspaceOwnerId();
-  if (_sbSession?.token && ownerId !== 'guest' && await _supportsWorkspaceApi()) {
+  if (await _workspaceUsesServerTrash()) {
+    // The server moves it to the recycle bin (restorable for 30 days); the
+    // local copy below is only a cache and is re-downloaded on restore.
     const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id), {method:'DELETE'});
     if (!res.ok && res.status !== 404) {
       showToast('حذف میزکار روی سرور انجام نشد؛ دوباره تلاش کنید', 'error');
@@ -7124,14 +7130,27 @@ async function _refreshWorkspacesFromServer() {
     // that row itself using the signed-in user's name, so keep only secondary
     // workspaces here to avoid showing and persisting a duplicate default row.
     const remote = _normalizeSecondaryAccounts(payload.workspaces);
-    const local = _getAccounts();
+    // Workspaces in the server recycle bin (deleted here or on another device)
+    // were removed explicitly. Drop them from this device's list instead of
+    // re-registering them; restoring happens only from the recycle bin.
+    window._workspaceTrash = Array.isArray(payload.trash) ? payload.trash : [];
+    window._workspaceTrashDays = Number(payload.trash_retention_days) || 30;
+    const trashedIds = new Set(window._workspaceTrash.map(item => String(item.id)));
+    const local = _getAccounts().filter(account => !trashedIds.has(String(account.id)));
+    const currentWasTrashed = trashedIds.has(String(_currentAccountId()));
     for (const account of local) {
       if (remote.some(item => item.id === account.id) || remote.length >= MAX_WORKSPACES - 1) continue;
       const created = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces', {
         method:'POST', body:JSON.stringify({ id:account.id, name:account.name })
       });
       if (created.ok) remote.push(account);
+      else if (created.status === 409) {
+        let code = '';
+        try { code = (await created.clone().json()).error || ''; } catch(e) {}
+        if (code === 'workspace_in_trash') account._inTrash = true;
+      }
     }
+    for (let i = local.length - 1; i >= 0; i--) if (local[i]._inTrash) local.splice(i, 1);
     // میزکارهایی که قبلاً در حالت آفلاین ساخته شده‌اند، بعد از در دسترس شدن
     // سرور فقط به رجیستری اضافه نشوند؛ سند اولیه‌شان را نیز یک‌بار منتقل کن.
     for (const account of local.filter(item => item.pendingSync && remote.some(r => r.id === item.id))) {
@@ -7175,6 +7194,8 @@ async function _refreshWorkspacesFromServer() {
       }
     }
     _saveAccounts(merged);
+    // The open workspace was deleted (e.g. on another device): leave it.
+    if (currentWasTrashed) { void _switchAccount('default'); }
     return _getAccounts();
   } catch(e) {
     console.warn('[Workspace] registry sync failed:', e.message);
@@ -7218,6 +7239,7 @@ async function renderAccountSwitcher() {
         '<div id="accounts-list" style="margin-bottom:16px">' +
           allAccounts.map(makeRow).join('') +
         '</div>' +
+        _workspaceTrashSectionHtml() +
         '<div style="background:var(--bg3);border-radius:10px;padding:14px;border:1px solid var(--border2)">' +
           '<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">➕ میزکار جدید <span style="color:var(--text3)">(' + allAccounts.length + '/۵)</span></div>' +
           '<div style="display:flex;gap:8px">' +
@@ -7264,14 +7286,93 @@ async function _doCreateAndSwitch() {
   _switchAccount(id);
 }
 
-async function _confirmDeleteAccount(id, name) {
-  if (confirm('میزکار «' + name + '» حذف شود؟ تمام داده\u200cهایش پاک می\u200cشود.')) {
+// Deleting a workspace needs the exact name typed in. With the server
+// available it goes to a 30-day recycle bin; a local-only workspace (guest /
+// offline / old backend) is still removed for good, and the dialog says so.
+async function _confirmDeleteAccount(id, fallbackName) {
+  if (id === 'default') { showToast('میزکار پیش‌فرض قابل حذف نیست', 'error'); return; }
+  const account = _getAccounts().find(a => String(a.id) === String(id));
+  const name = String(account?.name || fallbackName || '').trim();
+  const usesTrash = await _workspaceUsesServerTrash();
+  const days = window._workspaceTrashDays || 30;
+  const info = usesTrash
+    ? 'میزکار به سطل بازیافت می\u200cرود و تا ' + faDigits(days) + ' روز از همین پنجره قابل بازگردانی است. بعد از آن برای همیشه پاک می\u200cشود.'
+    : 'این میزکار فقط روی همین دستگاه ذخیره شده و برای همیشه پاک می\u200cشود؛ قابل بازگردانی نیست.';
+  document.getElementById('modals').innerHTML =
+    '<div class="modal-overlay open">' +
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">🗑 حذف میزکار<button class="modal-close" id="ws-del-close">×</button></div>' +
+        '<p style="font-size:13px;line-height:1.9;margin-bottom:10px">میزکار <b id="ws-del-name"></b> و همه\u200cی مشتریان، حساب\u200cها و کارهایش حذف می\u200cشود.</p>' +
+        '<p style="font-size:12px;line-height:1.9;color:var(--text2);margin-bottom:12px">' + info + '</p>' +
+        '<label style="font-size:12px;color:var(--text2)">برای تأیید، نام میزکار را دقیقاً تایپ کنید:</label>' +
+        '<input class="form-input" id="ws-del-input" autocomplete="off" style="margin:6px 0 14px">' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button class="btn btn-ghost" id="ws-del-cancel">انصراف</button>' +
+          '<button class="btn btn-danger" id="ws-del-confirm" disabled>' + (usesTrash ? 'انتقال به سطل بازیافت' : 'حذف برای همیشه') + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  const nameEl = document.getElementById('ws-del-name');
+  if (nameEl) nameEl.textContent = '«' + name + '»';
+  const input = document.getElementById('ws-del-input');
+  const confirmBtn = document.getElementById('ws-del-confirm');
+  const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const matches = () => !!name && norm(input?.value) === norm(name);
+  const back = () => { void renderAccountSwitcher(); };
+  document.getElementById('ws-del-close')?.addEventListener('click', back);
+  document.getElementById('ws-del-cancel')?.addEventListener('click', back);
+  input?.addEventListener('input', () => { if (confirmBtn) confirmBtn.disabled = !matches(); });
+  input?.addEventListener('keydown', ev => { if (ev.key === 'Enter' && matches()) confirmBtn?.click(); });
+  confirmBtn?.addEventListener('click', async () => {
+    if (!matches() || confirmBtn.dataset.busy) return;
+    confirmBtn.dataset.busy = '1';
+    confirmBtn.disabled = true;
     const deleted = await _deleteAccount(id);
-    if (!deleted) return;
-    const row = document.getElementById('acc-row-' + id);
-    if (row) row.remove();
-    showToast('حذف شد', 'error');
+    delete confirmBtn.dataset.busy;
+    if (!deleted) { confirmBtn.disabled = !matches(); return; }
+    showToast(usesTrash ? 'میزکار به سطل بازیافت منتقل شد' : 'میزکار حذف شد', usesTrash ? 'success' : 'error');
+    void renderAccountSwitcher();
+  });
+  setTimeout(() => input?.focus(), 50);
+}
+
+async function _restoreWorkspaceFromTrash(id) {
+  const ownerId = _workspaceOwnerId();
+  if (!(await _workspaceUsesServerTrash())) { showToast('برای بازگردانی باید به سرور متصل باشید', 'error'); return; }
+  const res = await _apiFetch('/api/data/' + encodeURIComponent(ownerId) + '/workspaces/' + encodeURIComponent(id) + '/restore', { method:'POST' });
+  let payload = {};
+  try { payload = await res.json(); } catch(e) {}
+  if (!res.ok) {
+    showToast(payload.error === 'workspace_limit'
+      ? 'به سقف ۵ میزکار رسیده\u200cاید؛ اول یک میزکار دیگر را حذف کنید'
+      : 'بازگردانی انجام نشد؛ دوباره تلاش کنید', 'error');
+    return;
   }
+  const restored = payload.workspace || { id };
+  const accounts = _getAccounts().filter(a => String(a.id) !== String(id));
+  accounts.push({ id: restored.id || id, name: restored.name || id });
+  _saveAccounts(accounts);
+  showToast('میزکار «' + (restored.name || '') + '» بازگردانی شد ✓', 'success');
+  void renderAccountSwitcher();
+}
+
+function _workspaceTrashSectionHtml() {
+  const trash = Array.isArray(window._workspaceTrash) ? window._workspaceTrash : [];
+  if (!trash.length) return '';
+  const dayMs = 24 * 60 * 60 * 1000;
+  const rows = trash.map(item => {
+    const purgeMs = Date.parse(String(item.purge_at || '').replace(' ', 'T') + 'Z');
+    const left = Number.isFinite(purgeMs) ? Math.max(0, Math.ceil((purgeMs - Date.now()) / dayMs)) : null;
+    const safeId = String(item.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--bg3);border:1px dashed var(--border2);margin-bottom:6px">' +
+      '<span style="font-size:16px">🗑</span>' +
+      '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;opacity:.8">' + escapeHtml(item.name || '') + '</div>' +
+      (left != null ? '<div style="font-size:10px;color:var(--text3)">' + faDigits(left) + ' روز تا حذف دائمی</div>' : '') +
+      '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="_restoreWorkspaceFromTrash(\'' + safeId + '\')">↩️ بازگردانی</button>' +
+    '</div>';
+  }).join('');
+  return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">سطل بازیافت</div>' + rows + '</div>';
 }
 
 
