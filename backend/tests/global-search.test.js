@@ -89,3 +89,10 @@ test('_tpSearch uses textContent for user-facing result text', () => {
   assert.match(block, /\.textContent\s*=\s*item\.subtitle/);
   assert.doesNotMatch(block, /innerHTML[\s\S]*item\.(title|subtitle)/);
 });
+
+test('_tpSearchOpen keeps input enabled and guards stale async with openSeq', () => {
+  const block = extractTpSearchBlock(app);
+  assert.doesNotMatch(block, /input\.disabled\s*=\s*true/);
+  assert.match(block, /seq !== _tpSearchUi\.openSeq/);
+  assert.match(block, /openSeq/);
+});
