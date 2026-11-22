@@ -66,6 +66,8 @@ const {
   workspaceCustomerCounts,
 } = require('../utils/workspaceTrash');
 const { clientClockSkewMs, correctPatchClock, correctRowsClock } = require('../utils/clockSkew');
+// Responses carry only recent todo history; storage keeps (and unions) all of it.
+const { trimTodosForClient, trimTodoHistoryForClient, trimDocumentTodosForClient, TODO_HISTORY_SEND_DAYS } = require('../utils/todoHistory');
 const {
   ensureTodoStoreSchema,
   todoState,
@@ -802,6 +804,10 @@ router.get('/:accountId/todos', auth, async (req, res) => {
     const scalarParts = await loadDocumentPartsAsync(db, workspace.storageKey, []);
     res.json({
       ...page,
+      items: trimTodosForClient(page.items),
+      // Tells the client this server unions todo history on write, so it may
+      // keep only recent history locally too.
+      todo_history_days: TODO_HISTORY_SEND_DAYS,
       ...(grant ? {} : { total: countTodos(db, workspace.storageKey, !!archived) }),
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
       deleted_ids: [...deletedTodoIdSet(scalarParts.data || {}, {})],
@@ -1040,7 +1046,7 @@ router.post('/:accountId/todos/delta', auth, async (req, res) => {
       etag: savedEtag,
       updated_at: saved?.updated_at || null,
       todo_id_high_water: getTodoHighWater(db, storageKey),
-      todo: savedTodo,
+      todo: trimTodoHistoryForClient(savedTodo),
       server_changed: !baseEtag || baseEtag !== currentEtag,
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1247,7 +1253,7 @@ router.post('/:accountId/versions/:versionId/restore', auth, async (req, res) =>
       })).etag;
       writeTodoHighWater(db, storageKey, restored._todoIdHighWater);
     });
-    res.json({ success: true, data: restored, etag: savedEtag });
+    res.json({ success: true, data: trimDocumentTodosForClient(restored), etag: savedEtag });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1312,11 +1318,12 @@ router.get('/:accountId', auth, async (req, res) => {
     if (!loaded) return res.json({ data: null });
     const grant = getTeamGrant(req, targetId, workspace.workspaceId);
     res.json({
-      data: grant ? sanitizeDataForTeamMember(loaded.data, grant) : sanitizeUserDataForStorage(loaded.data),
+      data: trimDocumentTodosForClient(grant ? sanitizeDataForTeamMember(loaded.data, grant) : sanitizeUserDataForStorage(loaded.data)),
       workspace_id: workspace.workspaceId,
       updated_at: loaded.updated_at,
       etag: loaded.etag,
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
+      todo_history_days: TODO_HISTORY_SEND_DAYS,
       ...(partial ? { partial: true, loaded_parts: loadedParts, available_parts: availableParts } : {}),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
