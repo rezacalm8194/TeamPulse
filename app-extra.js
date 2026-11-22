@@ -521,14 +521,38 @@ function openExpenseManager() {
     ${list.length?`<div style="display:flex;flex-direction:column;gap:8px">${list.map(e=>{const reminder=reminderByExpense.get(String(e.id));return `<div style="display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg3)"><div><div style="font-size:13px;font-weight:700">${escapeHtml(e.category||'سایر')} ${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--accent2);font-weight:400">خودکار از حقوق</span>':''} <span style="font-size:10px;color:var(--text3);font-weight:400">${DateService.disp(e.date_jalali||'')}</span></div><div style="font-size:11px;color:var(--text2);margin-top:4px">${escapeHtml(e.description||e.payment_method||'بدون شرح')}</div>${Number(e.repeat_months||0)>0?`<div style="font-size:10px;color:var(--accent2);margin-top:5px">🔁 ${_expenseRepeatLabel(e.repeat_months)} · یادآوری: ${DateService.disp(reminder?.due_date_jalali||'—')}</div>`:''}${(e.receipts||[]).length?`<button class="btn btn-ghost btn-sm" style="margin-top:7px" onclick="_openAttachment('${e.receipts[0].id}',${escapeAttr(e.receipts[0].name)},${escapeAttr(e.receipts[0].type)})">🖼 مشاهده رسید</button>`:''}</div><div style="text-align:left"><div style="font-weight:800;color:var(--red);white-space:nowrap">${fmt(e.amount)} تومان</div><div style="display:flex;gap:4px;margin-top:8px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="openExpenseForm(${Number(e.id)})">ویرایش</button>${e.source==='staff_payment'?'<span style="font-size:10px;color:var(--text3);align-self:center">از حساب پرسنل</span>':`<button class="btn btn-danger btn-sm" onclick="deleteExpense(${Number(e.id)})">حذف</button>`}</div></div></div>`;}).join('')}</div>`:'<div style="text-align:center;padding:32px;color:var(--text3)">هنوز هزینه‌ای ثبت نشده است</div>'}`,[{label:'بستن',cls:'btn-ghost',action:'closeModal()'}],{fullPage:true});
 }
 
+var _DASHBOARD_PARTS = ['students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'];
 async function renderDashboard() {
-  updateTopbarActions('');
   // Financial totals must be calculated from every server page. Desktop often
   // already has the complete cache, while a new mobile install starts with
   // only the first 200 rows and otherwise appears to have "lost" older data.
-  await _ensureCompleteBusinessParts([
-    'students', 'packages', 'payments', 'sessions', 'reminders', 'expenses', 'wallet_tx'
-  ]);
+  // Previously every render (including each 3/6/12-month or year click)
+  // awaited a full re-download of all 7 collections before painting anything.
+  // Now: paint at once from the local cache, finish syncing in the background
+  // (skipped entirely when already complete for the current server etag),
+  // then repaint once with complete totals.
+  const needsSync = typeof _businessPartCompleteAndFresh === 'function'
+    ? _DASHBOARD_PARTS.some(key => !_businessPartCompleteAndFresh(key))
+    : true;
+  if (!needsSync) return _paintDashboard(false);
+  const hasLocalData = _DASHBOARD_PARTS.some(key => Array.isArray(_db?.[key]) && _db[key].length > 0);
+  if (!hasLocalData) {
+    // Nothing cached yet (fresh install): avoid flashing zero totals.
+    await _ensureCompleteBusinessParts(_DASHBOARD_PARTS);
+    return _paintDashboard(false);
+  }
+  const token = (window._dashboardPaintToken = (window._dashboardPaintToken || 0) + 1);
+  await _paintDashboard(true);
+  _ensureCompleteBusinessParts(_DASHBOARD_PARTS).then(() => {
+    if (token !== window._dashboardPaintToken || currentPage !== 'dashboard') return;
+    return _paintDashboard(false);
+  }).catch(() => {
+    if (token !== window._dashboardPaintToken || currentPage !== 'dashboard') return;
+    document.querySelectorAll('#content .finance-dash-syncing').forEach(el => el.remove());
+  });
+}
+async function _paintDashboard(syncing) {
+  updateTopbarActions('');
   const stats = await window.api.dashboard.stats();
   const { totalStudents, totalPaid, totalAmount, totalWallet, totalSessions, debtors, topEarners, familyGroups, pkgDistribution, upcomingReminders, monthlyIncome, monthlyExpenses, currentMonthIncome, currentMonthLabel, currentYearTotal, currentJalaliYear, currentMonthExpenses, previousMonthExpenses, expenseChangePercent, topExpenseCategory, unpaidStaffSalary, staffPaymentAlerts, customerDueAlerts, expenseDueAlerts } = stats;
   const netDebt = Math.max(0, totalAmount - totalPaid - totalWallet);
@@ -603,7 +627,7 @@ async function renderDashboard() {
   <div class="finance-dash-head">
     <div>
       <h3 class="finance-dash-title">وضعیت مالی</h3>
-      <div class="finance-dash-period">${escapeHtml(currentMonthLabel||'ماه جاری')}</div>
+      <div class="finance-dash-period">${escapeHtml(currentMonthLabel||'ماه جاری')}${syncing ? '<span class="finance-dash-syncing"> · در حال به‌روزرسانی…</span>' : ''}</div>
     </div>
   </div>
   <div class="stats-row finance-dashboard-stats" aria-label="خلاصه مالی ماه جاری">
@@ -788,7 +812,18 @@ async function renderDashboard() {
   </details>
   </div>
   `;
+  // Keep the user's expanded sections open across repaints (filter clicks,
+  // background sync finishing).
+  const content = document.getElementById('content');
+  const openFolds = content && content.querySelector('.finance-dashboard')
+    ? [...content.querySelectorAll('.finance-dashboard details.finance-fold')].map(d => d.open)
+    : null;
   setContent(html);
+  if (openFolds && content) {
+    content.querySelectorAll('.finance-dashboard details.finance-fold').forEach((d, i) => {
+      if (i < openFolds.length) d.open = openFolds[i];
+    });
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

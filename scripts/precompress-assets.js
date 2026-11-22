@@ -19,6 +19,7 @@ const TARGETS = [
   'app.css',
   'tp-inline-bind.js',
   'sw.js',
+  'xlsx.full.min.js',
 ];
 
 const BROTLI_OPTS = {
