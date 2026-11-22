@@ -10,7 +10,9 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { isProtectedAccount } = require('./protectedAdmin');
-const { collectAccountAppBackup } = require('./userBackup');
+// userBackup -> versionSnapshots -> accountTrash: require userBackup lazily
+// (inside writePrePurgeAccountBackup) so this circular import cannot leave
+// half-loaded exports in userBackup or versionSnapshots.
 
 const ACCOUNT_TRASH_RETENTION_DAYS = 30;
 const ACCOUNT_TRASH_RETENTION_MS = ACCOUNT_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -96,6 +98,7 @@ function writePrePurgeAccountBackup(db, accountId, { now = Date.now(), logger = 
   `).get(accountId);
   if (!account) throw new Error('account_not_found');
   const exportedAt = new Date(now).toISOString();
+  const { collectAccountAppBackup } = require('./userBackup');
   const backup = collectAccountAppBackup(db, account, exportedAt);
   const dir = backupDir || ensurePurgedBackupDir();
   const filename = `${accountId}-${backupFilenameStamp(now)}.json.gz`;
