@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp429';
+const TP_ASSET_V = 'tp430';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -11514,13 +11514,22 @@ function _paymentsShowMore(tab) {
   if (key === 'families') return renderFamilies(false, search);
   return renderPayments(search);
 }
+function _formatBnBadgeCount(count) {
+  const n = Math.max(0, parseInt(count, 10) || 0);
+  if (!n) return typeof fa === 'function' ? fa(0) : '0';
+  if (n > 99) return (typeof fa === 'function' ? fa(99) : '99') + '+';
+  return typeof fa === 'function' ? fa(n) : String(n);
+}
+
 function updateReminderBadges(count) {
-  const text = fa(count || 0);
+  const n = count || 0;
+  const text = fa(n);
   ['payments-reminder-badge', 'bn-reminder-badge'].forEach(id => {
     const badge = document.getElementById(id);
     if (!badge) return;
-    badge.style.display = count ? 'inline-block' : 'none';
-    badge.textContent = text;
+    badge.style.display = n ? 'inline-block' : 'none';
+    badge.dataset.raw = String(n);
+    badge.textContent = id === 'bn-reminder-badge' ? _formatBnBadgeCount(n) : text;
   });
 }
 
@@ -18816,7 +18825,9 @@ function _syncBnReminderBadgeFromSidebar() {
   const dst = document.getElementById('bn-reminder-badge');
   if (!src || !dst) return;
   dst.style.display = src.style.display;
-  dst.textContent = src.textContent;
+  const raw = parseInt(src.dataset.raw || '0', 10) || 0;
+  dst.dataset.raw = String(raw);
+  dst.textContent = _formatBnBadgeCount(raw);
 }
 
 function _bnNavEditorOrder() {
@@ -28086,8 +28097,12 @@ function _setPlanBadge(which, count){
     const el = document.getElementById(id);
     if (!el) return;
     el.dataset.raw = String(n);
-    if (n > 0) { el.style.display = ''; el.textContent = (typeof fa === 'function') ? fa(n) : String(n); }
-    else { el.style.display = 'none'; }
+    if (n > 0) {
+      el.style.display = '';
+      el.textContent = id === 'bn-todo-badge'
+        ? _formatBnBadgeCount(n)
+        : ((typeof fa === 'function') ? fa(n) : String(n));
+    } else { el.style.display = 'none'; }
   });
   _refreshPlanHeadCount();
 }
