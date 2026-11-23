@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp431';
+const TP_ASSET_V = 'tp432';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -12628,8 +12628,6 @@ const SETTINGS_TAB_IDS = ['account', 'business', 'connections', 'personal', 'tea
 const SETTINGS_TAB_LEGACY_MAP = {
   account: 'account',
   business: 'business',
-  connections: 'connections',
-  personal: 'personal',
   team: 'team',
   data: 'data',
   general: 'business',
@@ -12637,8 +12635,6 @@ const SETTINGS_TAB_LEGACY_MAP = {
   advanced: 'data',
   security: 'account',
   backup: 'data',
-  personal: 'personal',
-  connections: 'connections',
 };
 const SETTINGS_LEGACY_SECTION_MAP = {
   general: { tab: 'business', section: 'set-app-title' },
@@ -12706,12 +12702,14 @@ function switchSettingsTab(tab, sectionId) {
 }
 
 function dismissSetupChecklist() {
+  window._tpForceShowSetupChecklist = false;
   localStorage.setItem('tp_settings_checklist_dismissed', '1');
   const el = document.getElementById('setup-checklist-box');
   if (el) el.remove();
 }
 
 function _reopenSetupChecklist() {
+  window._tpForceShowSetupChecklist = true;
   try { localStorage.removeItem('tp_settings_checklist_dismissed'); } catch (e) {}
   void renderSettings().then(() => {
     const box = document.getElementById('setup-checklist-box');
@@ -13438,7 +13436,8 @@ async function renderSettings() {
   const allDone = setupItems.every(i => i.done);
   const checklistDismissed = localStorage.getItem('tp_settings_checklist_dismissed') === '1';
 
-  const checklistHtml = (allDone || checklistDismissed) ? '' : `
+  const checklistHidden = (allDone || checklistDismissed) && !window._tpForceShowSetupChecklist;
+  const checklistHtml = checklistHidden ? '' : `
   <div class="detail-section" id="setup-checklist-box" style="border:1px solid rgba(124,106,247,.35);background:rgba(124,106,247,.05)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3 style="margin-bottom:0">🚀 راه‌اندازی اولیه</h3>
@@ -13560,7 +13559,7 @@ async function renderSettings() {
       <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:11px;color:var(--text2);line-height:1.8">
         اگر رمز را فراموش کردی، در صفحه ورود همین شماره تماس را وارد کن و رمز جدید بگذار.
       </div>
-      ${allDone ? `<p style="font-size:11px;margin-top:12px"><button type="button" class="btn btn-ghost btn-sm" onclick="_reopenSetupChecklist()">مشاهده دوباره راه‌اندازی اولیه</button></p>` : ''}
+      ${checklistHidden ? `<p style="font-size:11px;margin-top:12px"><button type="button" class="btn btn-ghost btn-sm" onclick="_reopenSetupChecklist()">مشاهده دوباره راه‌اندازی اولیه</button></p>` : ''}
     </div>
   </div>
 
