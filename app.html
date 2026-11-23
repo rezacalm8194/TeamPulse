@@ -16,12 +16,12 @@
   <link rel="apple-touch-icon" href="/app-icon-192-v3.png?v=3">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1">
   <link rel="preload" href="/fonts/Vazirmatn-Regular.woff2?v=tp402" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/app.css?v=tp427" as="style">
-    <link rel="preload" href="/tp-inline-bind.js?v=tp427" as="script">
-  <link rel="preload" href="/app.js?v=tp427" as="script">
-  <link rel="stylesheet" href="/app.css?v=tp427">
-  <script src="/tp-inline-bind.js?v=tp427" defer></script>
-  <script src="/app.js?v=tp427" defer></script>
+  <link rel="preload" href="/app.css?v=tp428" as="style">
+    <link rel="preload" href="/tp-inline-bind.js?v=tp428" as="script">
+  <link rel="preload" href="/app.js?v=tp428" as="script">
+  <link rel="stylesheet" href="/app.css?v=tp428">
+  <script src="/tp-inline-bind.js?v=tp428" defer></script>
+  <script src="/app.js?v=tp428" defer></script>
 
 </head>
 <body>
@@ -71,14 +71,13 @@
 
 
     <div class="sidebar-bottom">
-      <button id="admin-panel-btn" class="btn-sidebar" data-tp-onclick="_tpOpenAdminPanel()" style="display:none;width:100%;padding:8px;font-size:12.5px;text-align:center">👑 پنل مدیریت</button>
+      <button id="admin-panel-btn" class="btn-sidebar sidebar-admin-btn" data-tp-onclick="_tpOpenAdminPanel()" style="display:none;width:100%;padding:8px;font-size:12.5px;text-align:center">👑 پنل مدیریت</button>
       <div id="admin-panel-divider" class="sidebar-divider" style="display:none"></div>
-      <div style="display:flex;gap:6px">
+      <div class="sidebar-data-actions" style="display:flex;gap:6px">
         <button class="btn-sidebar btn-sidebar-muted" data-tp-onclick="_tpAuthThenBackup()" style="flex:1;padding:6px 8px;text-align:center">💾 پشتیبان</button>
         <button class="btn-sidebar btn-sidebar-muted" data-tp-onclick="_tpAuthThenImport()" style="flex:1;padding:6px 8px;text-align:center">📂 وارد کردن</button>
       </div>
-      <div class="sidebar-divider"></div>
-      <button id="logout-btn" class="btn-sidebar" data-tp-onclick="_tpSignOut()" style="width:100%;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:12px;text-align:center">🚪 خروج</button>
+      <button id="logout-btn" class="btn-sidebar sidebar-logout-btn" data-tp-onclick="_tpSignOut()" style="width:100%;background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3);padding:7px 8px;font-size:12px;text-align:center">🚪 خروج</button>
     </div>
   </aside>
   <div class="main">
@@ -136,15 +135,8 @@
     <main class="content" id="content">
       <div class="loading" id="loading-msg">در حال بارگذاری...</div>
     </main>
-    <nav class="bottom-nav">
-      <div class="bn-row">
-        <div class="bn-item" data-page="home" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg></span><span>داشبورد</span></div>
-        <div class="bn-item" data-page="goals" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l7-7M16 5h3v3"/></svg></span><span>اهداف</span></div>
-        <div class="bn-item" data-page="habits" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M13 3s1 4-2 6c-2-2-4-1-4-1s-3 4-1 8a7 7 0 0 0 13-1c1-4-2-7-2-7s0 4-3 5c1-5-1-8-1-10Z"/></svg></span><span>عادت‌ها</span></div>
-        <div class="bn-item" data-page="todolist" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span><span>کارها</span></div>
-        <div class="bn-item" data-page="instructions" data-tp-onclick="bnNav(this)"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.9.7 1.5 1.7 1.5 2.6h4c0-.9.6-1.9 1.5-2.6A6 6 0 0 0 12 3Z"/></svg></span><span>مرکز دانش</span></div>
-        <div class="bn-item" data-tp-onclick="openSidebar()"><span class="bn-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span>بیشتر</span></div>
-      </div>
+    <nav class="bottom-nav" id="bottom-nav" aria-label="ناوبری اصلی">
+      <div class="bn-row" id="bn-row" role="list"></div>
       <div class="bn-safe-spacer"></div>
     </nav>
   </div>

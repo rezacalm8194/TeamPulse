@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp427';
+const TP_ASSET_V = 'tp428';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -7897,6 +7897,7 @@ function _applyTeamAccessToNav() {
     }
     el.style.display = (!s || _teamCan(page)) ? '' : 'none';
   });
+  if (typeof _renderBottomNav === 'function') _renderBottomNav();
   const accountBtn = document.getElementById('account-btn');
   if (accountBtn && s) {
     const nameEl = document.getElementById('account-name-display');
@@ -9324,7 +9325,10 @@ function setActiveMenu(page) {
     x.classList.toggle('active', x.dataset.page === menuPage);
   });
   document.querySelectorAll('.bn-item[data-page]').forEach(x => {
-    x.classList.toggle('active', x.dataset.page === menuPage);
+    const on = x.dataset.page === menuPage;
+    x.classList.toggle('active', on);
+    if (on) x.setAttribute('aria-current', 'page');
+    else x.removeAttribute('aria-current');
   });
   if (typeof _syncPlanGroupActive === 'function') _syncPlanGroupActive();
 }
@@ -9351,6 +9355,7 @@ function applyMetaToUI() {
   document.title = (META.appTitle || 'TeamPulse');
   updatePageTitle();
   _applyTeamAccessToNav();
+  if (typeof _renderBottomNav === 'function') _renderBottomNav();
 }
 
 function _setGoogleTranslateCookie(targetLang) {
@@ -13754,6 +13759,17 @@ async function renderSettings() {
       </div>
     </div>
 
+    <div class="detail-section" id="bn-nav-settings">
+      <h3>نوار پایین گوشی</h3>
+      <p style="font-size:12px;color:var(--text2);line-height:1.7;margin-top:6px">
+        چهار صفحه از میان دسترسی‌های خود را برای نوار پایین انتخاب کنید و با دکمه‌های بالا و پایین ترتیب بدهید.
+      </p>
+      <div id="bn-nav-settings-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+        <button type="button" class="btn btn-ghost" data-tp-onclick="_bnNavSettingsReset()">بازگشت به پیش‌فرض</button>
+      </div>
+    </div>
+
     ${_pushSettingsSectionHtml()}
 
   </div>
@@ -13781,6 +13797,7 @@ async function renderSettings() {
   setTimeout(loadBalePayStatus, 50);
   setTimeout(() => { try { _gdrive.refreshAccountUI(); } catch (e) {} }, 120);
   setTimeout(() => { try { _gcal.refreshAccountUI(); } catch (e) {} }, 160);
+  setTimeout(() => { try { renderBnNavSettingsEditor(); } catch (e) {} }, 0);
 }
 
 function _syncThemeToggleUI() {
@@ -18649,6 +18666,196 @@ async function init() {
   }
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// BOTTOM NAV (mobile ≤768px)
+// ════════════════════════════════════════════════════════════════════════════
+
+const BN_STORAGE_KEY = 'teampulse_bn_pages';
+const DEFAULT_BN_PAGES = ['home', 'students', 'todolist', 'dashboard'];
+const BN_FILL_POOL = ['home', 'students', 'todolist', 'dashboard', 'calendar', 'goals', 'habits', 'instructions'];
+
+const BN_PAGE_DEFS = {
+  home: { icon: '🏠', label: () => 'داشبورد' },
+  students: { icon: '👥', label: () => (document.getElementById('nav-label-students')?.textContent || ('امور ' + _entityWordPlain(true))) },
+  todolist: { icon: '✅', label: () => 'کارها' },
+  dashboard: { icon: '📊', label: () => 'مدیریت مالی' },
+  calendar: { icon: '📅', label: () => 'تقویم' },
+  goals: { icon: '🎯', label: () => 'اهداف' },
+  habits: { icon: '🔥', label: () => 'عادت‌ها' },
+  instructions: { icon: '💡', label: () => 'مرکز دانش' },
+};
+
+function _bnPageAllowed(page) {
+  if (!BN_FILL_POOL.includes(page)) return false;
+  if (!_isTeamGuest()) return true;
+  if (page === 'home') return _teamCan('home');
+  return _teamCan(page);
+}
+
+function _bnAllowedPages() {
+  return BN_FILL_POOL.filter(p => _bnPageAllowed(p));
+}
+
+function _getSavedBnPages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BN_STORAGE_KEY) || 'null');
+    if (saved && Array.isArray(saved)) return saved.filter(p => typeof p === 'string');
+  } catch (e) {}
+  return null;
+}
+
+function _resolveBottomNavSlots() {
+  const allowed = new Set(_bnAllowedPages());
+  let picks = [];
+  const saved = _getSavedBnPages();
+  if (saved) {
+    saved.forEach(p => {
+      if (picks.length >= 4) return;
+      if (allowed.has(p) && !picks.includes(p)) picks.push(p);
+    });
+  }
+  if (!picks.length) picks = DEFAULT_BN_PAGES.filter(p => allowed.has(p));
+  for (const p of BN_FILL_POOL) {
+    if (picks.length >= 4) break;
+    if (allowed.has(p) && !picks.includes(p)) picks.push(p);
+  }
+  return picks.slice(0, 4);
+}
+
+function _persistBnPages(pages) {
+  try {
+    localStorage.setItem(BN_STORAGE_KEY, JSON.stringify(pages.slice(0, 4)));
+  } catch (e) {}
+}
+
+function _bnBadgeHtml(page) {
+  if (page === 'dashboard') {
+    return '<span class="bn-badge" id="bn-reminder-badge" style="display:none" aria-hidden="true">۰</span>';
+  }
+  if (page === 'todolist') {
+    return '<span class="bn-badge" id="bn-todo-badge" style="display:none" aria-hidden="true">۰</span>';
+  }
+  return '';
+}
+
+function _bnAriaLabel(page) {
+  const def = BN_PAGE_DEFS[page];
+  const text = def && def.label ? def.label() : page;
+  return String(text || page).replace(/"/g, '');
+}
+
+function _renderBottomNav() {
+  const row = document.getElementById('bn-row');
+  if (!row) return;
+  const slots = _resolveBottomNavSlots();
+  const menuPage = (typeof _menuPageFor === 'function' && typeof currentPage !== 'undefined')
+    ? _menuPageFor(currentPage) : '';
+  row.innerHTML = slots.map(page => {
+    const def = BN_PAGE_DEFS[page] || { icon: '•', label: () => page };
+    const active = menuPage === page;
+    return `<button type="button" class="bn-item${active ? ' active' : ''}" role="listitem" data-page="${escapeHtml(page)}"
+      data-tp-onclick="bnNav(this)" aria-label="${escapeHtml(_bnAriaLabel(page))}"${active ? ' aria-current="page"' : ''}>
+      <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true">${escapeHtml(def.icon)}</span>${_bnBadgeHtml(page)}</span>
+      <span class="bn-label">${escapeHtml(def.label())}</span>
+    </button>`;
+  }).join('') + `<button type="button" class="bn-item bn-more" role="listitem" data-tp-onclick="openSidebar()" aria-label="بیشتر — منوی کناری">
+      <span class="bn-icon" aria-hidden="true">☰</span>
+      <span class="bn-label">بیشتر</span>
+    </button>`;
+  _syncBnReminderBadgeFromSidebar();
+  if (typeof _refreshPlanBadgesFromDb === 'function') _refreshPlanBadgesFromDb();
+  if (typeof setActiveMenu === 'function' && typeof currentPage !== 'undefined') {
+    setActiveMenu(currentPage);
+  }
+}
+
+function _syncBnReminderBadgeFromSidebar() {
+  const src = document.getElementById('payments-reminder-badge');
+  const dst = document.getElementById('bn-reminder-badge');
+  if (!src || !dst) return;
+  dst.style.display = src.style.display;
+  dst.textContent = src.textContent;
+}
+
+function _bnNavEditorOrder() {
+  const saved = _getSavedBnPages();
+  if (saved && saved.length) {
+    const allowed = new Set(_bnAllowedPages());
+    const picks = [];
+    saved.forEach(p => {
+      if (picks.length >= 4) return;
+      if (allowed.has(p) && !picks.includes(p)) picks.push(p);
+    });
+    while (picks.length < 4) {
+      const next = DEFAULT_BN_PAGES.find(p => allowed.has(p) && !picks.includes(p))
+        || BN_FILL_POOL.find(p => allowed.has(p) && !picks.includes(p));
+      if (!next) break;
+      picks.push(next);
+    }
+    return picks.slice(0, 4);
+  }
+  return _resolveBottomNavSlots();
+}
+
+function renderBnNavSettingsEditor() {
+  const list = document.getElementById('bn-nav-settings-list');
+  if (!list) return;
+  const order = _bnNavEditorOrder();
+  const allowed = _bnAllowedPages();
+  list.innerHTML = order.map((page, i) => {
+    const def = BN_PAGE_DEFS[page] || { icon: '•', label: () => page };
+    const options = allowed.map(p => {
+      const d = BN_PAGE_DEFS[p] || { label: () => p };
+      const sel = p === page ? ' selected' : '';
+      return `<option value="${escapeHtml(p)}"${sel}>${escapeHtml(d.label())}</option>`;
+    }).join('');
+    return `<div class="bn-settings-row" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px">
+      <span style="font-size:18px" aria-hidden="true">${escapeHtml(def.icon)}</span>
+      <label style="flex:1;font-size:12px;display:flex;flex-direction:column;gap:4px">
+        <span style="color:var(--text3);font-size:10px">جایگاه ${typeof fa === 'function' ? fa(i + 1) : (i + 1)}</span>
+        <select class="form-input" style="font-size:12px;padding:6px 8px" data-tp-onchange="_bnNavSettingsPick(${i}, this.value)">${options}</select>
+      </label>
+      <button type="button" class="btn btn-ghost" style="min-width:40px;padding:6px" data-tp-onclick="_bnNavSettingsMove(${i},-1)" aria-label="بالا" title="بالا">↑</button>
+      <button type="button" class="btn btn-ghost" style="min-width:40px;padding:6px" data-tp-onclick="_bnNavSettingsMove(${i},1)" aria-label="پایین" title="پایین">↓</button>
+    </div>`;
+  }).join('');
+  window._bnNavEditorOrder = order;
+}
+
+function _bnNavSettingsPick(slot, page) {
+  if (!BN_FILL_POOL.includes(page) || !_bnPageAllowed(page)) return;
+  const order = (window._bnNavEditorOrder || _bnNavEditorOrder()).slice();
+  const idx = order.indexOf(page);
+  if (idx !== -1 && idx !== slot) order[idx] = order[slot];
+  order[slot] = page;
+  window._bnNavEditorOrder = order;
+  _persistBnPages(order);
+  _renderBottomNav();
+  renderBnNavSettingsEditor();
+  showToast('نوار پایین ذخیره شد ✓', 'success');
+}
+
+function _bnNavSettingsMove(slot, dir) {
+  const order = (window._bnNavEditorOrder || _bnNavEditorOrder()).slice();
+  const to = slot + dir;
+  if (to < 0 || to >= order.length) return;
+  const tmp = order[slot];
+  order[slot] = order[to];
+  order[to] = tmp;
+  window._bnNavEditorOrder = order;
+  _persistBnPages(order);
+  _renderBottomNav();
+  renderBnNavSettingsEditor();
+}
+
+function _bnNavSettingsReset() {
+  try { localStorage.removeItem(BN_STORAGE_KEY); } catch (e) {}
+  window._bnNavEditorOrder = null;
+  _renderBottomNav();
+  renderBnNavSettingsEditor();
+  showToast('نوار پایین به پیش‌فرض بازگشت ✓', 'success');
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // NAV ORDER EDITOR
@@ -27824,12 +28031,16 @@ function _refreshPlanHeadCount(){
 /* صفحات اهداف/عادت‌ها/کارها می‌توانند با این تابع بج سایدبار را ست کنند */
 function _setPlanBadge(which, count){
   const map = { goals: 'nav-count-goals', habits: 'nav-count-habits', todos: 'nav-count-todos', todolist: 'nav-count-todos' };
-  const el = document.getElementById(map[which] || which);
-  if (!el) return;
+  const ids = [map[which] || which];
+  if (which === 'todos' || which === 'todolist') ids.push('bn-todo-badge');
   const n = Math.max(0, parseInt(count, 10) || 0);
-  el.dataset.raw = String(n);
-  if (n > 0) { el.style.display = ''; el.textContent = (typeof fa === 'function') ? fa(n) : String(n); }
-  else { el.style.display = 'none'; }
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.dataset.raw = String(n);
+    if (n > 0) { el.style.display = ''; el.textContent = (typeof fa === 'function') ? fa(n) : String(n); }
+    else { el.style.display = 'none'; }
+  });
   _refreshPlanHeadCount();
 }
 function _syncPlanGroupActive(){
@@ -27883,14 +28094,14 @@ function _syncPlanGroupActive(){
 })();
 function bnNav(el){
   const page=el.dataset.page;if(!page)return;
+  if (!_bnPageAllowed(page)) return;
   // بستن کیبورد iOS قبل از تغییر صفحه — جلوگیری از به‌هم‌ریختگی layout روی iOS Safari
   if (document.activeElement && document.activeElement !== document.body) {
     document.activeElement.blur();
   }
-  document.querySelectorAll('.bn-item').forEach(x=>x.classList.remove('active'));
-  el.classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
   currentPage=page;if(currentPage==='students'){_studentsTab='sessions';_keySessionsExpanded=false;}if(currentPage==='todolist')_todoActiveTab='mine';updatePageTitle();renderPage();
+  setActiveMenu(currentPage);
+  closeSidebar();
 }
 
 // Patch nav-items to close sidebar + sync bottom nav on mobile
@@ -28066,14 +28277,12 @@ async function importBackup() {
   };
 })();
 
-// Sync reminder badge to bottom nav
+// Sync reminder badge to bottom nav (bn-reminder-badge is rendered dynamically)
 (()=>{
   const remBadge=document.getElementById('payments-reminder-badge');
-  const bnBadge=document.getElementById('bn-reminder-badge');
-  if(remBadge&&bnBadge){
-    new MutationObserver(()=>{bnBadge.style.display=remBadge.style.display;bnBadge.textContent=remBadge.textContent;})
-      .observe(remBadge,{attributes:true,childList:true,subtree:true,characterData:true});
-  }
+  if(!remBadge) return;
+  new MutationObserver(()=>{ if (typeof _syncBnReminderBadgeFromSidebar === 'function') _syncBnReminderBadgeFromSidebar(); })
+    .observe(remBadge,{attributes:true,childList:true,subtree:true,characterData:true});
 })();
 
 // Init Google Drive on startup
