@@ -176,7 +176,7 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
-  setContent((html || `<div class="empty"><span>📅</span>${_entityWordPlain()}‌ای ثبت نشده</div>`) +
+  setContent((html || `<div class="empty"><span>📅</span>${_entityWord()}‌ای ثبت نشده</div>`) +
     (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
   _tpBindLazyLoaders();

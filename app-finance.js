@@ -3,7 +3,7 @@
 async function renderPurchases(search = '') {
   updateTopbarActions(`
     <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input placeholder="جستجو با نام ${_entityWordPlain()}..." oninput="renderPurchases(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجو با نام ${_entityWord()}..." oninput="renderPurchases(this.value)" value="${escapeHtml(search)}">
     </div>`);
   let packages = await window.api.packages.getAll();
   if (search.trim()) {

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp426';
+const TP_ASSET_V = 'tp427';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3480,8 +3480,8 @@ window.api = {
 
   reminders: {
     getAll: ()=>{ const blocked=typeof _blockedBusinessIds==='function'?_blockedBusinessIds('reminders'):new Set(); return _P((_db.reminders||[]).filter(r=>r&&!blocked.has(String(r.id))).map(r=>{const s=_db.students.find(x=>x.id===r.student_id);return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali)};}).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))); },
-    add: (p)=>{ const rawTitle=p.title||'یادآوری'; const title=_PKG_RENEWAL_TITLE_HEAD_RE.test(rawTitle)?_joinPkgRenewalReminderTitle(rawTitle):rawTitle; const row={id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title,due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}; if(typeof _clearPackageReminderSuppression==='function')_clearPackageReminderSuppression(row.package_id); _db.reminders.push(row); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
-    update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){const patch=p.patch||{};if(patch.title!=null&&_PKG_RENEWAL_TITLE_HEAD_RE.test(String(patch.title)))patch.title=_joinPkgRenewalReminderTitle(patch.title);Object.assign(r,patch);r.updated_at=new Date().toISOString(); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert'); _save(true,{urgent:true});} return _P({ok:true}); },
+    add: (p)=>{ const rawTitle=p.title||'یادآوری'; const title=_dedupePkgRenewalTitle(rawTitle); const row={id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title,due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}; if(typeof _clearPackageReminderSuppression==='function')_clearPackageReminderSuppression(row.package_id); _db.reminders.push(row); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
+    update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){const patch=p.patch||{};if(patch.title!=null)patch.title=_dedupePkgRenewalTitle(patch.title);Object.assign(r,patch);r.updated_at=new Date().toISOString(); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert'); _save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.reminders||[]).find(x=>String(x.id)===String(id)); _recordDeletedItems('reminders',id); if(row&&row.package_id!=null&&row.package_id!=='')_recordDeletedItems('package_reminders',row.package_id); _db.reminders=(_db.reminders||[]).filter(x=>String(x.id)!==String(id)); if(row&&typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'delete'); _save(true,{urgent:true}); return (typeof _syncToServer==='function'?_syncToServer():_P({ok:true})).then(()=>({ok:true})).catch(()=>({ok:true})); },
     markPaid: (p)=>{
       const r=_db.reminders.find(x=>String(x.id)===String(p.id)); if(!r)return _P({ok:false,error:'یادآوری پیدا نشد'});
@@ -4443,14 +4443,15 @@ const _gdrive = {
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
   FILE_NAME: 'teampulse-backup.json',
   ROOT_NAME: 'TeamPulse — خروجی خودکار',
+  // این نام‌ها کلید پیدا کردن پوشه در Drive هستند؛ تغییر نده
   FOLDERS: {
-    students: '01 — مشتریان و امور مشتریان',
-    sessions: '02 — جلسات هر مشتری',
+    students: '01 — شاگردان و امور مشتریان',
+    sessions: '02 — جلسات هر شاگرد',
     payments: '03 — حساب مشتریان',
     backup: '09 — پشتیبان و تنظیمات',
   },
   FILES: {
-    students: 'لیست مشتریان.csv',
+    students: 'لیست شاگردان.csv',
     sessions: 'فهرست جلسات.csv',
     payments: 'پرداخت‌ها.csv',
     backup: 'teampulse-backup.json',
@@ -8176,24 +8177,24 @@ let openSessionGroups = new Set();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fa(n) { return String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]); }
-const _PKG_RENEWAL_TITLE_HEAD_RE = /^(?:تجدید\s*پکیج|تمدید\s*پکیج)\s*[:：]\s*/i;
-function _stripPkgRenewalTitleHead(title) {
-  let core = String(title ?? '').trim();
-  let prev = '';
-  while (core && core !== prev) {
-    prev = core;
-    core = core.replace(_PKG_RENEWAL_TITLE_HEAD_RE, '').trim();
+const _PKG_RENEWAL_TITLE_CHUNK_RE = /^(تجدید|تمدید)\s*پکیج\s*[:：]\s*/i;
+function _dedupePkgRenewalTitle(title) {
+  const raw = String(title ?? '');
+  let rest = raw;
+  let firstWord = '';
+  let count = 0;
+  for (;;) {
+    const m = rest.match(_PKG_RENEWAL_TITLE_CHUNK_RE);
+    if (!m) break;
+    count++;
+    if (!firstWord) firstWord = m[1];
+    rest = rest.slice(m[0].length).trim();
   }
-  return core;
-}
-function _joinPkgRenewalReminderTitle(baseTitle) {
-  const core = _stripPkgRenewalTitleHead(baseTitle);
-  return core ? `تجدید پکیج: ${core}` : 'تجدید پکیج';
+  if (count <= 1) return raw;
+  return `${firstWord} پکیج: ${rest}`;
 }
 function _displayReminderTitle(title) {
-  const raw = String(title ?? '');
-  if (!_PKG_RENEWAL_TITLE_HEAD_RE.test(raw)) return raw;
-  return _joinPkgRenewalReminderTitle(raw);
+  return _dedupePkgRenewalTitle(title);
 }
 function _entityWordPlain(plural = false) {
   const meta = (typeof META === 'object' && META) ? META : {};
@@ -9700,7 +9701,7 @@ function studentAccountNameCellHtml(s, i) {
 }
 function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) {
   if (filtered.length === 0) {
-    return `<tr><td colspan="8"><div class="empty"><span>👤</span>${_entityWordPlain()}‌ای یافت نشد</div></td></tr>`;
+    return `<tr><td colspan="8"><div class="empty"><span>👤</span>${_entityWord()}‌ای یافت نشد</div></td></tr>`;
   }
   return filtered.map((s, i) => {
     const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
@@ -9718,7 +9719,7 @@ function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) 
 }
 function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
   if (filtered.length === 0) {
-    return `<div class="mstu-list"><div class="empty"><span>👤</span>${_entityWordPlain()}‌ای یافت نشد</div></div>`;
+    return `<div class="mstu-list"><div class="empty"><span>👤</span>${_entityWord()}‌ای یافت نشد</div></div>`;
   }
   return `<div class="mstu-list">${filtered.map((s, i) => {
     const fam = FAMILIES.find(f => f.id === s.family_id);
@@ -12486,7 +12487,7 @@ async function _confirmClearAllData() {
   const step1 = await tpConfirm(
     '⚠️ هشدار جدی\n\n' +
     'این عمل تمام داده‌های حساب شما را پاک می‌کند:\n' +
-    `• تمام ${_entityWordPlain(true)} و مشتریان\n` +
+    `• تمام ${_entityWordPlain(true)}\n` +
     '• تمام پرداخت‌ها و جلسات\n' +
     '• تمام کارها و یادآوری‌ها\n' +
     '• تمام تنظیمات\n\n' +
@@ -13725,7 +13726,7 @@ async function renderSettings() {
     <div class="detail-section">
       <h3>☁️ اتصال به Google Drive</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        یک‌بار از همین‌جا وصل شو. بعد از آن اتصال می‌ماند و با بستن اپ نیاز به ورود دوباره نیست. لیست ${_entityWordPlain(true)} و جلسات به پوشه «TeamPulse — خروجی خودکار» فرستاده می‌شود.
+        یک‌بار از همین‌جا وصل شو. بعد از آن اتصال می‌ماند و با بستن اپ نیاز به ورود دوباره نیست. لیست ${_entityWord(true)} و جلسات به پوشه «TeamPulse — خروجی خودکار» فرستاده می‌شود.
       </p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button class="btn ${_gdrive.enabled?'btn-danger':'btn-primary'}" id="gdrive-sync-btn" onclick="gdriveConnectUI()">
@@ -13761,7 +13762,7 @@ async function renderSettings() {
     <div class="detail-section" style="border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.04)">
       <h3 style="color:var(--red)">⚠️ منطقه خطرناک</h3>
       <p style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.7">
-        پاک کردن کل داده‌ها تمام اطلاعات حساب شما را حذف می‌کند — ${_entityWordPlain(true)}، پرداخت‌ها، جلسات، کارها و همه چیز. این عمل <strong>برگشت‌ناپذیر</strong> است.
+        پاک کردن کل داده‌ها تمام اطلاعات حساب شما را حذف می‌کند — ${_entityWord(true)}، پرداخت‌ها، جلسات، کارها و همه چیز. این عمل <strong>برگشت‌ناپذیر</strong> است.
       </p>
       <div style="margin-top:12px">
         <button class="btn btn-danger" onclick="_confirmClearAllData()" style="font-size:13px">
@@ -17424,7 +17425,7 @@ function shareEvalPeriod(formId, periodIdx) {
   const studentBadge = studentName ? `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px">
       <span style="font-size:13px">👤</span>
-      <span style="font-size:12px;font-weight:600;color:#0369a1">${_entityWordPlain()}: ${studentName}</span>
+      <span style="font-size:12px;font-weight:600;color:#0369a1">${_entityWord()}: ${studentName}</span>
     </div>` : '';
 
   const summarySection = period.summary ? `
@@ -17514,7 +17515,7 @@ function shareEvalCompare(formId, aIdx, bIdx) {
   const studentBadge = studentName ? `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px">
       <span style="font-size:13px">👤</span>
-      <span style="font-size:12px;font-weight:600;color:#0369a1">${_entityWordPlain()}: ${studentName}</span>
+      <span style="font-size:12px;font-weight:600;color:#0369a1">${_entityWord()}: ${studentName}</span>
     </div>` : '';
 
   const body = `
@@ -17777,7 +17778,7 @@ function _topicItemHtml(t, studentId, displayName) {
       <div class="topic-item-title">${escapeHtml(t.title) || '(بدون عنوان)'}</div>
       <div class="topic-item-date">${DateService.disp(t.date_jalali)}${checks}</div>
     </div>
-    <button type="button" class="topic-pin-btn${pinned ? ' is-on' : ''}" title="${pinned ? `برداشتن از بالای لیست این ${_entityWordPlain()}` : `چسباندن به بالای لیست این ${_entityWordPlain()}`}" aria-label="${pinned ? 'برداشتن سنجاق' : 'سنجاق کردن'}" aria-pressed="${pinned ? 'true' : 'false'}" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();toggleTopicPin(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">📍</button>
+    <button type="button" class="topic-pin-btn${pinned ? ' is-on' : ''}" title="${pinned ? `برداشتن از بالای لیست این ${_entityWord()}` : `چسباندن به بالای لیست این ${_entityWord()}`}" aria-label="${pinned ? 'برداشتن سنجاق' : 'سنجاق کردن'}" aria-pressed="${pinned ? 'true' : 'false'}" data-tid="${t.id}" data-sid="${studentId}" data-dname="${escapeHtml(displayName)}" onclick="event.stopPropagation();toggleTopicPin(+this.dataset.tid,+this.dataset.sid,this.dataset.dname)">📍</button>
   </div>`;
 }
 
@@ -17839,7 +17840,7 @@ async function _renderSessionCurrentTopics(studentId) {
   if (!pinned.length) { wrap.innerHTML = ''; wrap.hidden = true; _updateSesMetaSummary(); return; }
   window._sesCurrentTopicTitles = pinned.map(t => t.title || '(بدون عنوان)');
   wrap.hidden = false;
-  wrap.innerHTML = `<div class="ses-current-topics" aria-label="موضوعات جاری این ${_entityWordPlain()}">
+  wrap.innerHTML = `<div class="ses-current-topics" aria-label="موضوعات جاری این ${_entityWord()}">
     <span class="ses-current-topics-label">موضوعات جاری</span>
     ${pinned.map(t => {
       const title = t.title || '(بدون عنوان)';
@@ -17891,7 +17892,7 @@ async function openTopics(studentId, displayName) {
         </div>
         <label class="topic-pin-new">
           <input type="checkbox" id="f-topic-pin">
-          <span>چسباندن به بالای لیست این ${_entityWordPlain()}</span>
+          <span>چسباندن به بالای لیست این ${_entityWord()}</span>
         </label>
         <div class="form-group full">
           <label class="form-label">✅ آیتم‌های چک‌لیست (اختیاری)</label>
@@ -18037,7 +18038,7 @@ async function openTopicDetail(topicId, studentId, displayName) {
   openModal(`📌 ${escapeHtml(t.title) || '(بدون عنوان)'}`, `
     <div class="detail-section">
       <div class="detail-row"><span class="detail-key">تاریخ</span><span class="detail-val">${DateService.disp(t.date_jalali)}</span></div>
-      <div class="detail-row"><span class="detail-key">جایگاه</span><span class="detail-val">${t.pinned ? `📍 بالای لیست این ${_entityWordPlain()}` : 'در لیست زمانی'}</span></div>
+      <div class="detail-row"><span class="detail-key">جایگاه</span><span class="detail-val">${t.pinned ? `📍 بالای لیست این ${_entityWord()}` : 'در لیست زمانی'}</span></div>
     </div>
     <div class="detail-section">
       <h3>توضیحات کامل</h3>
@@ -23354,7 +23355,7 @@ function _authHTML(mode) {
 
 const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radius:18px;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,.4)" onerror="_tpHideBrokenImg(this)">';
   const features = [
-    { icon: '👥', text: `مدیریت ${_entityWordPlain(true)}` },
+    { icon: '👥', text: `مدیریت ${_entityWord(true)}` },
     { icon: '📅', text: 'ثبت جلسات' },
     { icon: '💰', text: 'حسابداری دقیق' },
     { icon: '✅', text: 'لیست کارها' },
