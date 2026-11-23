@@ -141,9 +141,18 @@ test('mobile css exposes mpay-list for each finance table that renders cards', (
   assert.doesNotMatch(finance, /customer-reminders-table[\s\S]{0,1200}'<div class="mpay-list">'/);
 });
 
-test('asset version tp441', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp441'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v441/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp441/);
+test('purchase mobile mpay meta omits empty fields', () => {
+  assert.match(finance, /function _purchaseMobileMetaParts\(/);
+  const fnBody = finance.slice(finance.indexOf('function _purchaseMobileMetaParts'), finance.indexOf('function _purchaseHistoryMobileCardHtml'));
+  assert.doesNotMatch(fnBody, /: '—'/);
+  assert.match(fnBody, /if \(staff\) parts\.push/);
+  assert.match(fnBody, /if \(startDisp\) parts\.push/);
+  assert.match(fnBody, /if \(dueDisp\)/);
+});
+
+test('asset version tp442', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp442'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v442/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp442/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });
