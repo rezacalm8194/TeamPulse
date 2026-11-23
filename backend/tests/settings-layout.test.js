@@ -48,9 +48,9 @@ function bootSettingsTabVm() {
   return ctx;
 }
 
-test('asset version is tp444', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp444'/);
-  assert.match(appHtml, /\?v=tp444/);
+test('asset version is tp445', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp445'/);
+  assert.match(appHtml, /\?v=tp445/);
   assert.match(sw, /team-pulse-static-v434/);
   assert.match(appHtml, /fonts\/Vazirmatn-Regular\.woff2\?v=tp402/);
 });

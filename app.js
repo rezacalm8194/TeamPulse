@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp444';
+const TP_ASSET_V = 'tp445';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3327,13 +3327,127 @@ function _removePackageReminder(existing, pkgId) {
   }
 }
 
+function _coercePackageTypeId(typeId) {
+  if (typeId == null || String(typeId).trim() === '') return typeId;
+  const row = (_db.package_types || []).find(t => String(t.id) === String(typeId));
+  return row ? row.id : typeId;
+}
+function _packageSnapshotPaymentSchedule(pkg) {
+  return {
+    payment_due_date: String(pkg?.payment_due_date || '').trim(),
+    total_amount: Number(pkg?.total_amount) || 0,
+    initial_cost: Number(pkg?.initial_cost) || 0,
+    repeat_months: Number(pkg?.repeat_months) || 0,
+    defer_until_due: _packageDefersUntilDue(pkg),
+    charge_date: String(pkg?.charge_date || '').trim(),
+  };
+}
+function _packagePaymentScheduleChanged(before, after) {
+  return before.payment_due_date !== after.payment_due_date
+    || before.total_amount !== after.total_amount
+    || before.initial_cost !== after.initial_cost
+    || before.repeat_months !== after.repeat_months
+    || before.defer_until_due !== after.defer_until_due
+    || before.charge_date !== after.charge_date;
+}
+function _packagesSameServiceChain(a, b) {
+  if (!a || !b) return false;
+  if (String(a.student_id) !== String(b.student_id)) return false;
+  const ta = _resolvePackageType(a.type_id);
+  const tb = _resolvePackageType(b.type_id);
+  const ka = ta?.label && typeof _serviceMergeKey === 'function'
+    ? _serviceMergeKey(ta.label)
+    : String(ta?.label || a.type_id || '');
+  const kb = tb?.label && typeof _serviceMergeKey === 'function'
+    ? _serviceMergeKey(tb.label)
+    : String(tb?.label || b.type_id || '');
+  if (!ka || !kb || ka !== kb) return false;
+  return Number(a.repeat_months || 0) === Number(b.repeat_months || 0);
+}
+function _hasNewerPackageSameServiceChain(pkg) {
+  if (!pkg) return false;
+  const selfId = String(pkg.id);
+  const pkgCreated = Date.parse(pkg.created_at || '') || 0;
+  return (_db.packages || []).some(other => {
+    if (String(other.id) === selfId) return false;
+    if (!_packagesSameServiceChain(other, pkg)) return false;
+    const otherId = Number(other.id);
+    const selfNum = Number(pkg.id);
+    if (Number.isFinite(otherId) && Number.isFinite(selfNum) && otherId > selfNum) return true;
+    return (Date.parse(other.created_at || '') || 0) > pkgCreated;
+  });
+}
+function _paymentReminderTitle(pkg, existingReminder) {
+  const pt = (_db.package_types || []).find(t => String(t.id) === String(pkg?.type_id));
+  const resolved = typeof _resolvePackageType === 'function' ? _resolvePackageType(pkg?.type_id) : pt;
+  const label = String((resolved || pt)?.label || '').trim();
+  if (label) return `سررسید پرداخت: ${label}`;
+  const prev = String(existingReminder?.title || '').trim();
+  if (prev && !/^سررسید پرداخت:\s*$/.test(prev)) return prev;
+  const note = String(pkg?.note || '').trim();
+  if (note) return `سررسید پرداخت: ${note.slice(0, 48)}`;
+  return prev || 'سررسید پرداخت';
+}
+function _patchPackageReminderMetadata(studentId, pkgId, pkg) {
+  const existing = (_db.reminders || []).find(r => String(r.package_id) === String(pkgId));
+  if (!existing) return;
+  existing.student_id = studentId;
+  existing.title = _paymentReminderTitle(pkg, existing);
+  if (Object.prototype.hasOwnProperty.call(pkg, 'note')) existing.note = pkg.note || '';
+  existing.updated_at = new Date().toISOString();
+  if (typeof _enqueueDurableBusinessDelta === 'function') {
+    _enqueueDurableBusinessDelta('reminders', existing, 'upsert');
+  }
+}
+function _packagesUpdateRow(p) {
+  const pkg = (_db.packages || []).find(x => x.id === p.id);
+  if (!pkg) return null;
+  const before = _packageSnapshotPaymentSchedule(pkg);
+  const qty = _packageQtyPersist(p, pkg);
+  const deferPatch = _packageDeferPersist(p, pkg);
+  const typeId = Object.prototype.hasOwnProperty.call(p, 'type_id')
+    ? _coercePackageTypeId(p.type_id ?? pkg.type_id)
+    : pkg.type_id;
+  const paymentDue = Object.prototype.hasOwnProperty.call(p, 'payment_due_date')
+    ? _packagePaymentDueDate(p)
+    : (pkg.payment_due_date || '');
+  Object.assign(pkg, {
+    type_id: typeId,
+    staff_id: Object.prototype.hasOwnProperty.call(p, 'staff_id') ? p.staff_id : pkg.staff_id,
+    total_amount: qty.total_amount,
+    initial_cost: p.initial_cost ?? pkg.initial_cost,
+    quantity: qty.quantity,
+    unit_price: qty.unit_price,
+    currency: qty.currency,
+    repeat_months: p.repeat_months ?? pkg.repeat_months,
+    start_date: p.start_date ?? pkg.start_date,
+    payment_due_date: paymentDue,
+    note: p.note ?? pkg.note,
+    updated_at: new Date().toISOString(),
+    ...deferPatch,
+  });
+  const after = _packageSnapshotPaymentSchedule(pkg);
+  const paymentChanged = _packagePaymentScheduleChanged(before, after);
+  _enqueueDurableBusinessDelta('packages', pkg, 'upsert');
+  if (paymentChanged) {
+    if (!_hasNewerPackageSameServiceChain(pkg)) {
+      _syncPackageReminder(pkg.student_id, pkg.id, pkg, pkg.start_date);
+    } else {
+      _patchPackageReminderMetadata(pkg.student_id, pkg.id, pkg);
+    }
+  } else {
+    _patchPackageReminderMetadata(pkg.student_id, pkg.id, pkg);
+  }
+  return pkg;
+}
+
 function _createRepeatReminder(studentId,pkgId,pkg,startDate) {
   const dueDate = _packagePaymentDueDate({...pkg,start_date:startDate});
   const amount = (pkg.total_amount||0)+(pkg.initial_cost||0);
   if(!dueDate||amount<=0)return;
-  const pt=_db.package_types.find(t=>t.id===pkg.type_id);
+  if (_hasNewerPackageSameServiceChain(pkg)) return;
   const row={id:_nextId('reminders'),student_id:studentId,package_id:pkgId,
-    title:`سررسید پرداخت: ${pt?pt.label:''}`,due_date_jalali:dueDate,
+    title:_paymentReminderTitle(pkg, null),due_date_jalali:dueDate,
     repeat_months:pkg.repeat_months||0,amount,
     note:'',done:false,notified_levels:[],created_at:new Date().toISOString()};
   _db.reminders.push(row);
@@ -3354,14 +3468,14 @@ function _syncPackageReminder(studentId,pkgId,pkg,startDate) {
     return;
   }
   startDate = startDate || _formatJalali(..._todayJalali());
-  const pt=_db.package_types.find(t=>t.id===pkg.type_id);
+  if (!existing && _hasNewerPackageSameServiceChain(pkg)) return;
   const keepDue = existing && _jalaliKey(existing.due_date_jalali) > _jalaliKey(dueDate)
     ? existing.due_date_jalali
     : dueDate;
   const patch = {
     student_id:studentId,
     package_id:pkgId,
-    title:`سررسید پرداخت: ${pt?pt.label:''}`,
+    title:_paymentReminderTitle(pkg, existing),
     due_date_jalali:keepDue,
     repeat_months:repeatMonths,
     amount,
@@ -3559,7 +3673,7 @@ window.api = {
       const pkgId=_nextId('packages');
       const startDate = p.date || _formatJalali(..._todayJalali());
       const qty=_packageQtyPersist(p);
-      const newPackage={id:pkgId,student_id:p.student_id,type_id:p.type_id,staff_id:p.staff_id||null,total_amount:qty.total_amount,initial_cost:p.initial_cost||0,quantity:qty.quantity,unit_price:qty.unit_price,currency:qty.currency,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString(),..._packageDeferPersist(p)};
+      const newPackage={id:pkgId,student_id:p.student_id,type_id:_coercePackageTypeId(p.type_id),staff_id:p.staff_id||null,total_amount:qty.total_amount,initial_cost:p.initial_cost||0,quantity:qty.quantity,unit_price:qty.unit_price,currency:qty.currency,repeat_months:p.repeat_months||0,start_date:startDate,payment_due_date:_packagePaymentDueDate(p),note:p.note||'',created_at:new Date().toISOString(),..._packageDeferPersist(p)};
       const duplicate=_db.packages.find(existing=>{
         const age=Date.now()-(Date.parse(existing.created_at||'')||0);
         return age>=0&&age<=15000&&_packageExactKey(existing)===_packageExactKey(newPackage);
@@ -3576,7 +3690,7 @@ window.api = {
       if(p.current_payment>0)_reconcileStudentPaymentReminders(p.student_id);
       _save(true,{urgent:true}); return _P({ok:true,id:pkgId});
     },
-    update: (p)=>{ const pkg=_db.packages.find(x=>x.id===p.id); if(pkg){const qty=_packageQtyPersist(p,pkg);Object.assign(pkg,{type_id:p.type_id??pkg.type_id,staff_id:Object.prototype.hasOwnProperty.call(p,'staff_id')?p.staff_id:pkg.staff_id,total_amount:qty.total_amount,initial_cost:p.initial_cost??pkg.initial_cost,quantity:qty.quantity,unit_price:qty.unit_price,currency:qty.currency,repeat_months:p.repeat_months??pkg.repeat_months,start_date:p.start_date??pkg.start_date,payment_due_date:Object.prototype.hasOwnProperty.call(p,'payment_due_date')?_packagePaymentDueDate(p):(pkg.payment_due_date||''),note:p.note??pkg.note,updated_at:new Date().toISOString(),..._packageDeferPersist(p,pkg)});_enqueueDurableBusinessDelta('packages', pkg, 'upsert');_syncPackageReminder(pkg.student_id,pkg.id,pkg,pkg.start_date);_save(true,{urgent:true});} return _P({ok:true}); },
+    update: (p)=>{ if(_packagesUpdateRow(p))_save(true,{urgent:true}); return _P({ok:true}); },
     delete: (id)=>{
       const row=(_db.packages||[]).find(x=>x.id===id);
       const reminderIds=_db.reminders.filter(x=>String(x.package_id)===String(id)).map(x=>x.id);
@@ -3598,7 +3712,7 @@ window.api = {
     add: (p)=>{ const createdAt=new Date().toISOString(); const row={id:_nextId('payments'),package_id:p.package_id||null,student_id:p.student_id,amount:p.amount,currency:p.currency||'تومان',date_jalali:p.date,method:p.method||'',account_id:p.account_id||null,note:p.note||'',created_at:createdAt,updated_at:createdAt}; _db.payments.push(row); _enqueueDurableBusinessDelta('payments', row, 'upsert'); _reconcileStudentPaymentReminders(p.student_id, row); _save(true,{urgent:true}); return _P({ok:true}); },
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
-    getByStudent: (sid)=>_P(_sortPaymentsNewestFirst(_rowsForStudent('payments',sid)).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
+    getByStudent: (sid)=>_P(_sortPaymentsNewestFirst(_rowsForStudent('payments',sid)).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?(_db.package_types||[]).find(t=>String(t.id)===String(pkg.type_id)):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
     getAll: ()=>{
       const pkgById = new Map((_db.packages || []).map(x => [String(x.id), x]));
       const ptById = new Map((_db.package_types || []).map(x => [String(x.id), x]));
