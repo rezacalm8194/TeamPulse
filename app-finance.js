@@ -1352,7 +1352,10 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
   const totalReceivedToman = _totalTomanPaymentsReceived();
   const showWalletColumn = financeStudents.some(s => Number(s.wallet) !== 0)
     || (FAMILIES || []).some(f => (f.members || []).some(m => Number(m.wallet) !== 0));
-  if (embedded) _syncPaymentsListShown('families', search);
+  // Embedded inside renderPayments: the outer render already synced the
+  // "show more" counter with its full key (search + filters). Re-syncing here
+  // with a different key reset the counter on every render, so «موارد بیشتر»
+  // never showed more rows.
   const familySlice = embedded ? _visiblePaymentsSlice('families', filtered) : null;
   const html = `${prefix}
   ${studentAccountOverviewHtml(financeStudents, filtered, {
@@ -1451,7 +1454,8 @@ async function saveAddFamilyMembers(familyId, familyName) {
 // ════════════════════════════════════════════════════════════════════════════
 
 async function renderReminders(search = '', embedded = false, contentPrefix = '') {
-  _syncPaymentsListShown('reminders', search);
+  // See renderFamilies: when embedded, renderPayments owns the counter key.
+  if (!embedded) _syncPaymentsListShown('reminders', search);
   if (!embedded) {
     updateTopbarActions(`
       <div class="payments-toolbar">

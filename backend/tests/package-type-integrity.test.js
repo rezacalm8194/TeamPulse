@@ -151,9 +151,9 @@ test('orphan groups list alias-only missing catalog types', () => {
   assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
 });
 
-test('asset version tp445', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp445'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v445/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp445/);
+test('asset version tp446', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp446'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v446/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp446/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });

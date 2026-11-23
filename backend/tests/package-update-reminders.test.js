@@ -178,8 +178,8 @@ test('older package in repeat chain does not get a new reminder when newer sale 
   assert.ok(!sandbox._db.reminders.some(r => String(r.package_id) === '10'));
 });
 
-test('asset version tp445', () => {
-  assert.match(appSource, /const TP_ASSET_V = 'tp445'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v445/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp445/);
+test('asset version tp446', () => {
+  assert.match(appSource, /const TP_ASSET_V = 'tp446'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v446/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp446/);
 });
