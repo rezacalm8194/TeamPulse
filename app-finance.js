@@ -1021,7 +1021,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   try{_runAutomationScans();}catch(e){}
   const reminderPaging = _businessPagingState('reminders');
   allStudents = await window.api.students.getAll();
-  const reminders = (await window.api.reminders.getAll()).filter(_isPaymentReminder);
+  const reminders = (await window.api.reminders.getAll()).filter(r => _isPaymentReminder(r) && (r.done || !_reminderPausedByArchive(r)));
   const today = jalaliKey(formatJalali(...todayJalali()));
 
   updateReminderBadges(_pendingPaymentReminderCount(reminders));

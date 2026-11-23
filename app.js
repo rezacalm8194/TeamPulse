@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp435';
+const TP_ASSET_V = 'tp436';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2810,7 +2810,7 @@ function _studentsForFinance() {
     }
     const summary = _studentListSummary(s);
     const hasFxBalance = Array.isArray(summary.fxBooks) && summary.fxBooks.some(b => Number(b.balance || 0) !== 0);
-    if (summary.balance !== 0 || hasFxBalance || _studentHasOpenPaymentReminder(s.id)) {
+    if (summary.balance !== 0 || hasFxBalance) {
       rows.push({ ...summary, archived: true });
     }
   }
@@ -2960,8 +2960,34 @@ function _isPaymentReminder(r) {
   return !(title.startsWith('اقدام جلسه') || title.startsWith('پیگیری بایگانی:') || title.startsWith('پیگیری راکد'));
 }
 
+function _isPackageRenewalReminder(r) {
+  if (!r || !_isPaymentReminder(r)) return false;
+  const title = String(r.title || '').trim();
+  if (/^سررسید\s*پرداخت\s*[:：]/.test(title)) return false;
+  return /^(تجدید|تمدید)\s*پکیج/i.test(title);
+}
+
+function _studentArchiveFinanceDebt(studentOrId) {
+  const raw = typeof studentOrId === 'object' && studentOrId
+    ? studentOrId
+    : (_db.students || []).find(s => String(s.id) === String(studentOrId ?? ''));
+  if (!raw) return { hasDebt: false, archived: false };
+  const summary = _studentListSummary(raw);
+  const hasFx = Array.isArray(summary.fxBooks) && summary.fxBooks.some(b => Number(b.balance || 0) !== 0);
+  const hasDebt = Number(summary.balance || 0) !== 0 || hasFx;
+  return { hasDebt, archived: !!raw.archived, summary };
+}
+
+function _reminderPausedByArchive(r) {
+  if (!r) return false;
+  const { archived, hasDebt } = _studentArchiveFinanceDebt(r.student_id);
+  if (!archived) return false;
+  if (!hasDebt) return true;
+  return _isPackageRenewalReminder(r);
+}
+
 function _pendingPaymentReminderCount(reminders) {
-  return (reminders || []).filter(r => !r.done && _isPaymentReminder(r)).length;
+  return (reminders || []).filter(r => !r.done && _isPaymentReminder(r) && !_reminderPausedByArchive(r)).length;
 }
 
 function _reminderDueKey(reminder) {
@@ -3718,7 +3744,7 @@ window.api = {
         .sort((a,b)=>a.dueIn-b.dueIn);
       const summaryByStudentId=new Map(financeSummaries.map(s=>[String(s.id),s]));
       const customerDueAlerts=(_db.reminders||[])
-        .filter(r=>!r.done&&r.student_id&&_isPaymentReminder(r)&&_jalaliKey(r.due_date_jalali||'')>0)
+        .filter(r=>!r.done&&r.student_id&&_isPaymentReminder(r)&&!_reminderPausedByArchive(r)&&_jalaliKey(r.due_date_jalali||'')>0)
         .map(r=>{
           const student=summaryByStudentId.get(String(r.student_id));
           const balance=Math.max(0,Number(student?.balance||0));
@@ -9315,7 +9341,7 @@ async function renderHome() {
   const habitsLeft = dueHabits.filter(h => !doneHabitIds.has(String(h.id))).length;
   // یادآوری پرداخت — دقیقاً همان منطق بج برنامه (نه همه یادآوری‌ها):
   // روی _db.reminders با _isPaymentReminder، بدون فیلتر تاریخ اضافه.
-  const pendingPayReminders = ((_db.reminders || []).filter(r => !r.done && (typeof _isPaymentReminder === 'function' ? _isPaymentReminder(r) : true))
+  const pendingPayReminders = ((_db.reminders || []).filter(r => !r.done && (typeof _isPaymentReminder === 'function' ? _isPaymentReminder(r) : true) && !(typeof _reminderPausedByArchive === 'function' && _reminderPausedByArchive(r)))
     .sort((a, b) => _jalaliKey(a.due_date_jalali || '') - _jalaliKey(b.due_date_jalali || '')));
   // Top goals: active + unfinished, lowest progress first (memory only, max 3).
   const topGoals = ((_db.goals || []).filter(g => (g.status || 'active') === 'active' && (g.progress || 0) < 100)
@@ -9806,7 +9832,7 @@ function filterAccountStudents(students, search) {
     ? students.filter(s => (s.name + s.lname).includes(search))
     : students;
   if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
-  else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0);
+  else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0 && !s.archived);
   else if (stuChip && stuChip !== 'all') {
     const chipKey = _serviceMergeKey(stuChip);
     filtered = filtered.filter(s => uniqueDisplayPackages(s.packages || []).some(p => _serviceMergeKey(p.type_label) === chipKey));
@@ -9914,7 +9940,7 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, f
   const totalDebt = statsSource.reduce((a, s) => a + Math.max(0, s.balance), 0);
   const totalPaid = statsSource.reduce((a, s) => a + s.totalPaid, 0);
   const debtorCount = statsSource.filter(s => s.balance > 0).length;
-  const settledCount = statsSource.length - debtorCount;
+  const settledCount = students.filter(s => s.balance <= 0).length;
   const fourthStat = showSessions ? `
     <div class="stat-card">
       <div class="stat-label">کل ${META.sessionPlural || 'جلسات'}</div>
@@ -11454,7 +11480,7 @@ async function _archiveStudentWithBalanceConfirm(id, name) {
     if (!await tpConfirm(`این مشتری ${fmt(Math.abs(bal))} تومان بستانکار است. بعد از بایگانی هم در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی. ادامه؟`)) return false;
   }
   if (!await tpConfirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return false;
-  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${_entityWord(true)}" منتقل می‌شود. ادامه می‌دهی؟`)) return false;
+  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${_entityWord(true)}" منتقل می‌شود. یادآوری‌های تمدید این مشتری تا زمانی که در بایگانی است متوقف می‌شوند. ادامه می‌دهی؟`)) return false;
   await window.api.students.setArchived({ id, archived: true });
   return true;
 }

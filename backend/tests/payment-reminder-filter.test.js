@@ -27,8 +27,11 @@ function extractFunction(source, name) {
   throw new Error(`unclosed ${name}`);
 }
 
-const sandbox = vm.createContext({});
+const sandbox = vm.createContext({ _db: { students: [], packages: [], payments: [] } });
 vm.runInContext(extractFunction(appSource, '_isPaymentReminder'), sandbox);
+vm.runInContext(extractFunction(appSource, '_isPackageRenewalReminder'), sandbox);
+vm.runInContext(extractFunction(appSource, '_studentArchiveFinanceDebt'), sandbox);
+vm.runInContext(extractFunction(appSource, '_reminderPausedByArchive'), sandbox);
 vm.runInContext(extractFunction(appSource, '_pendingPaymentReminderCount'), sandbox);
 
 const sessionFollowup = {
@@ -60,11 +63,11 @@ test('session followup rows are not payment reminders', () => {
 });
 
 test('financial reminder list and cash forecast skip session followups', () => {
-  assert.match(financeSource, /const reminders = \(await window\.api\.reminders\.getAll\(\)\)\.filter\(_isPaymentReminder\)/);
+  assert.match(financeSource, /const reminders = \(await window\.api\.reminders\.getAll\(\)\)\.filter\(r => _isPaymentReminder\(r\) && \(r\.done \|\| !_reminderPausedByArchive\(r\)\)\)/);
   assert.match(financeSource, /updateReminderBadges\(_pendingPaymentReminderCount\(reminders\)\)/);
-  assert.match(extraSource, /filter\(r=>!r\.done&&_isPaymentReminder\(r\)\)/);
+  assert.match(extraSource, /filter\(r=>!r\.done&&_isPaymentReminder\(r\)&&!_reminderPausedByArchive\(r\)\)/);
   const pushIndex = fs.readFileSync(path.join(root, 'backend', 'utils', 'pushDueIndex.js'), 'utf8');
-  assert.match(pushIndex, /if \(r\.done \|\| !isPaymentReminder\(r\)\) continue;/);
+  assert.match(pushIndex, /reminderPausedByArchive\(r, userData\)/);
 });
 
 test('financial push index ignores session followup reminders', () => {
