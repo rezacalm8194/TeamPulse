@@ -21,6 +21,7 @@ function fn(source, name) {
 function loadEnsure(ctx) {
   vm.runInContext(fn(app, '_serviceLabelKey'), ctx);
   vm.runInContext(fn(app, '_serviceMergeKey'), ctx);
+  vm.runInContext(app.match(/const _PKG_TYPE_TITLE_PREFIX_RE[\s\S]*?function _normalizePackageTypeTitle[\s\S]*?^}/m)[0], ctx);
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);

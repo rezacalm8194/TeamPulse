@@ -549,6 +549,24 @@ button { cursor: pointer; font-family: var(--font); }
 .stu-balance-cell .amount-debt + .stu-balance-tag { color: var(--red); }
 .stu-balance-cell .balance-credit + .stu-balance-tag { color: var(--blue); }
 .mstu-balance-wrap { margin: 9px 0 8px; }
+.tag.pkg-type-orphan {
+  background: rgba(194, 65, 12, .14);
+  color: var(--red);
+  border: 1px solid rgba(194, 65, 12, .35);
+  font-size: 10px;
+  font-weight: 700;
+}
+.svc-orphan-panel {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid rgba(194, 65, 12, .35);
+  border-radius: 10px;
+  background: rgba(194, 65, 12, .08);
+}
+.svc-orphan-title { font-size: 12px; font-weight: 800; color: var(--red); margin-bottom: 8px; }
+.svc-orphan-group { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.06); }
+.svc-orphan-group:first-of-type { border-top: 0; padding-top: 0; }
+.svc-orphan-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .purchase-from-reminder-chip {
   display: inline-block;
   font-size: 10px;
