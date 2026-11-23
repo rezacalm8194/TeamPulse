@@ -6215,3 +6215,13 @@ body { top: 0 !important; }
 .staff-row-ended td{opacity:.62}
 .staff-row-ended td:last-child{opacity:1}
 .staff-ended-tag{font-size:11px;background:var(--bg3);color:var(--text2);margin-inline-start:6px;vertical-align:middle}
+/* Renewal price increase modal (tp450) */
+.rpi-summary{font-size:12.5px;color:var(--text2);background:var(--bg3);border-radius:10px;padding:9px 12px;margin-top:6px;line-height:1.9}
+.rpi-table{max-height:46vh;overflow:auto}
+.rpi-table table{width:100%}
+.rpi-table td,.rpi-table th{padding:8px 10px}
+.rpi-table input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
+.rpi-table .rpi-new{min-width:120px;max-width:150px;padding:6px 8px;font-size:13px;text-align:left;direction:ltr}
+.rpi-table .rpi-new.rpi-manual{border-color:var(--amber)}
+.rpi-table tr.rpi-row-off td:not(:first-child):not(:last-child){opacity:.5}
+@media (max-width:640px){.rpi-table td:nth-child(4),.rpi-table th:nth-child(4){display:none}}

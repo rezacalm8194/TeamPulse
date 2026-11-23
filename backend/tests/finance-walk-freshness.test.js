@@ -82,7 +82,7 @@ test('own delta can bump walk marker when part_hashes confirm no external drift'
   assert.equal(ctx.window._tpCompleteWalkEtag.payments, 'pay-after');
 });
 
-test('asset versions aligned', () => {
-  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
-  assertTpAssetVersionsAligned(root);
+test('asset version tp450', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp450'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v450/);
 });

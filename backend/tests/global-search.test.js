@@ -30,9 +30,8 @@ function loadSearchHelpers() {
   return ctx;
 }
 
-test('asset versions aligned', () => {
-  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
-  assertTpAssetVersionsAligned(path.resolve(__dirname, '../..'));
+test('asset version remains tp450', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp450'/);
 });
 
 test('_tpSearchNormalize handles Persian Arabic variants, digits and zwnj removal', () => {

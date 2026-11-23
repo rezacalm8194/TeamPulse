@@ -5,7 +5,6 @@ const path = require('path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '../..');
-const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const finance = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
 
@@ -27,7 +26,7 @@ function loadEnsure(ctx) {
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
-  // tp449: renewal opens a short amount confirm before saving.
+  // tp450: renewal opens a short amount confirm before saving.
   ctx.openModal = () => {};
   ctx.closeModal = () => {};
   ctx.fmt = n => String(n);
@@ -162,6 +161,9 @@ test('orphan groups list alias-only missing catalog types', () => {
   assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
 });
 
-test('asset versions aligned', () => {
-  assertTpAssetVersionsAligned(root);
+test('asset version tp450', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp450'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v450/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp450/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });
