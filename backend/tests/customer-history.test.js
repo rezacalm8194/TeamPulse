@@ -119,10 +119,8 @@ test('migration defaults preserve existing pin and conversion; asset and worker 
   assert.equal(legacy.pinned_note,'');assert.equal(legacy.converted_from_archive_at,'');
   legacy.pinned_note='مهم';legacy.converted_from_archive_at='2026-01-01T00:00:00Z';
   vm.runInNewContext(defaults[0],{s:legacy});assert.equal(legacy.pinned_note,'مهم');assert.equal(legacy.converted_from_archive_at,'2026-01-01T00:00:00Z');
-  const version=source.match(/const TP_ASSET_V = 'tp(\d+)'/)[1];
-  assert.ok(source.includes(`/sw.js?v=team-pulse-static-v${version}`));
-  const worker=fs.readFileSync(path.resolve(__dirname,'../../sw.js'),'utf8');
-  assert.ok(worker.includes(`team-pulse-static-v${version}`));
-  const html=fs.readFileSync(path.resolve(__dirname,'../../app.html'),'utf8');
-  for(const match of html.matchAll(/\?v=tp(\d+)/g))assert.equal(match[1],version);
+  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
+  const v = assertTpAssetVersionsAligned(path.resolve(__dirname, '../..'));
+  const cacheSuffix = v.replace(/^tp/, '');
+  assert.ok(source.includes(`/sw.js?v=team-pulse-static-v${cacheSuffix}`));
 });

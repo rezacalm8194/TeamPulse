@@ -311,7 +311,7 @@ test('client hooks and asset version for Bale Pay exist', () => {
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const version = app.match(/TP_ASSET_V = 'tp(\d+)'/)?.[1];
+  const version = app.match(/TP_ASSET_V = '(tp[a-f0-9]+)'/)?.[1];
   assert.ok(version, 'TP_ASSET_V must be defined');
   assert.match(app, new RegExp('team-pulse-static-v' + version));
   assert.match(html, new RegExp('tp' + version));

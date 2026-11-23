@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp449';
+const TP_ASSET_V = 'tpb7884e35e6';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -195,8 +195,10 @@ function jalaliToGregorian(jy, jm, jd) {
   }
   gy += 4 * div(days, 1461);
   days = mod(days, 1461);
-  gy += div(days - 1, 365);
-  if (days > 365) days = mod(days - 1, 365);
+  if (days > 365) {
+    gy += div(days - 1, 365);
+    days = mod(days - 1, 365);
+  }
   let gd = days + 1;
   const sal_a = [0,31, ((gy%4===0 && gy%100!==0)||gy%400===0) ? 29 : 28, 31,30,31,30,31,31,30,31,30,31];
   let gm = 0;

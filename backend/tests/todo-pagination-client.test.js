@@ -116,14 +116,8 @@ test('completed today todos stay inline in the today list', () => {
 });
 
 test('client assets stay version-synced across app.js, app.html, and sw.js', () => {
-  const version = app.match(/const TP_ASSET_V = 'tp(\d+)'/)?.[1];
-  assert.ok(version, 'TP_ASSET_V must be defined in app.js');
-  assert.match(app, new RegExp(`team-pulse-static-v${version}`));
-  assert.match(html, new RegExp(`app\\.js\\?v=tp${version}`));
-  assert.match(sw, new RegExp(`team-pulse-static-v${version}`));
-  for (const match of html.matchAll(/\?v=tp(\d+)/g)) {
-    assert.equal(match[1], version);
-  }
+  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
+  assertTpAssetVersionsAligned(path.resolve(__dirname, '../..'));
 });
 
 test('income tabs render 12 rows then a client-side load-more button', () => {
