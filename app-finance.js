@@ -799,14 +799,29 @@ function _purchaseNoteDisplayHtml(note) {
   return extra ? `${badge} <span class="purchase-note-extra">${escapeHtml(extra)}</span>` : badge;
 }
 
+function _purchaseMobileMetaParts(p) {
+  const parts = [];
+  const staff = String(p.staff_name || '').trim();
+  if (staff) parts.push(escapeHtml(staff));
+  if (Number(p.repeat_months) > 0) parts.push(`هر ${fa(p.repeat_months)} ماه`);
+  else parts.push('یک‌بار');
+  const startDisp = DateService.disp(p.start_date);
+  if (startDisp) parts.push(`شروع: ${startDisp}`);
+  const dueDisp = DateService.disp(p.payment_due_date);
+  if (dueDisp) {
+    parts.push(`سررسید: ${dueDisp}${_isPackageChargeable(p) ? '' : ' · آینده'}`);
+  } else if (!_isPackageChargeable(p)) {
+    parts.push('آینده');
+  }
+  return parts;
+}
+
 function _purchaseHistoryMobileCardHtml(p) {
   const saleMenuId = `sale-menu-${p.id}`;
-  const dueLine = `سررسید: ${DateService.disp(p.payment_due_date) || '—'}${_isPackageChargeable(p) ? '' : ' · آینده'}`;
-  const metaParts = [
-    p.staff_name ? escapeHtml(p.staff_name) : '—',
-    p.repeat_months > 0 ? `هر ${fa(p.repeat_months)} ماه` : 'یک‌بار',
-    dueLine,
-  ];
+  const typeBtn = incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag');
+  const metaHtml = [typeBtn, ..._purchaseMobileMetaParts(p)]
+    .join('<span class="mpay-meta-sep" aria-hidden="true">·</span>');
+  const noteTrim = String(p.note || '').trim();
   return `<div class="mpay-card customer-sale-row">
     <div class="mpay-top">
       <div class="mpay-name-amount">
@@ -823,11 +838,8 @@ function _purchaseHistoryMobileCardHtml(p) {
         </div>
       </div>
     </div>
-    <div class="mpay-meta">${incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag')}
-      <span class="mpay-meta-sep" aria-hidden="true">·</span>
-      ${metaParts.join('<span class="mpay-meta-sep" aria-hidden="true">·</span>')}
-    </div>
-    <div class="mpay-note purchase-note-cell">${_purchaseNoteDisplayHtml(p.note)}</div>
+    <div class="mpay-meta">${metaHtml}</div>
+    ${noteTrim ? `<div class="mpay-note purchase-note-cell">${_purchaseNoteDisplayHtml(p.note)}</div>` : ''}
   </div>`;
 }
 
