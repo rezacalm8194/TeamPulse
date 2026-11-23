@@ -3570,9 +3570,12 @@ body.light mark { background: rgba(251,191,36,.5); }
   .customer-sales-table tbody tr,
   .customer-payments-table tbody tr,
   .customer-reminders-table tbody tr { position:relative; }
-  .customer-payments-table:has(.mpay-list) table { display: none; }
-  .customer-payments-table .mpay-list { display: block; }
-  .customer-payments-table .mpay-card .row-menu-btn {
+  .customer-payments-table:has(.mpay-list) table,
+  .customer-sales-table:has(.mpay-list) table { display: none; }
+  .customer-payments-table .mpay-list,
+  .customer-sales-table .mpay-list { display: block; }
+  .customer-payments-table .mpay-card .row-menu-btn,
+  .customer-sales-table .mpay-card .row-menu-btn {
     width: 32px;
     height: 32px;
     border-radius: 9px;

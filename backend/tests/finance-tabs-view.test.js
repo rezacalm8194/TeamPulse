@@ -116,9 +116,34 @@ test('reminder purchase note prefix becomes از یادآوری badge', () => {
   assert.match(html2, /متن کاربر/);
 });
 
-test('asset version tp440', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp440'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v440/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp440/);
+test('mobile css exposes mpay-list for each finance table that renders cards', () => {
+  const css = fs.readFileSync(path.join(root, 'app.css'), 'utf8');
+  const tables = new Set();
+  const marker = "'<div class=\"mpay-list\">'";
+  let from = 0;
+  while (from < finance.length) {
+    const at = finance.indexOf(marker, from);
+    if (at < 0) break;
+    const window = finance.slice(Math.max(0, at - 3000), at);
+    const hits = window.match(/customer-[\w-]+-table/g);
+    if (hits?.length) tables.add(hits[hits.length - 1]);
+    from = at + marker.length;
+  }
+  assert.ok(tables.size >= 2, 'expected payments and sales mpay tables');
+  for (const tbl of tables) {
+    const sel = `.${tbl} .mpay-list`;
+    const at = css.indexOf(sel);
+    assert.ok(at >= 0, `${tbl} missing mobile mpay-list rule`);
+    assert.match(css.slice(at, at + 180), /display:\s*block/);
+    assert.match(css, new RegExp(`\\.${tbl.replace(/-/g, '\\-')}:has\\(\\.mpay-list\\) table`));
+    assert.match(css, new RegExp(`\\.${tbl.replace(/-/g, '\\-')} \\.mpay-card \\.row-menu-btn`));
+  }
+  assert.doesNotMatch(finance, /customer-reminders-table[\s\S]{0,1200}'<div class="mpay-list">'/);
+});
+
+test('asset version tp441', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp441'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v441/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp441/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });
