@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp446';
+const TP_ASSET_V = 'tp447';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -106,17 +106,34 @@ function _syncStaffPaymentExpense(payment) {
   _db.expenses = _db.expenses || [];
   const staff = (_db.staff||[]).find(s=>String(s.id)===String(payment.staff_id));
   const title = `حقوق و دستمزد — ${[staff?.name,staff?.lname].filter(Boolean).join(' ')||'پرسنل'}`;
-  let expense = payment.expense_id && _db.expenses.find(e=>String(e.id)===String(payment.expense_id));
+  // One expense per staff payment. payment.expense_id is not always kept, so
+  // also match on staff_payment_id (otherwise every edit added a new expense).
+  const linked = _db.expenses.filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'staff_payment' && String(e.staff_payment_id) === String(payment.id)));
+  linked.sort((a, b) => Number(a.id) - Number(b.id));
+  let expense = linked[0] || null;
+  linked.slice(1).forEach(extra => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', extra.id);
+    _db.expenses = _db.expenses.filter(e => e !== extra);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', extra, 'delete');
+  });
   const data = {amount:Number(payment.amount||0),date_jalali:payment.date_jalali||'',category:'حقوق و دستمزد',payment_method:'پرداخت پرسنل',account_id:payment.account_id||null,description:payment.note||title,source:'staff_payment',staff_payment_id:payment.id,updated_at:new Date().toISOString()};
   if (expense) Object.assign(expense,data);
-  else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense);payment.expense_id=expense.id; }
+  else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense); }
+  payment.expense_id=expense.id;
   if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', expense, 'upsert');
   return expense;
 }
 function _removeStaffPaymentExpense(payment) {
-  if (!payment?.expense_id) return;
-  _recordDeletedItems('expenses', payment.expense_id);
-  _db.expenses=(_db.expenses||[]).filter(e=>String(e.id)!==String(payment.expense_id));
+  if (!payment) return;
+  const linked = (_db.expenses||[]).filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'staff_payment' && String(e.staff_payment_id) === String(payment.id)));
+  if (!linked.length) return;
+  linked.forEach(e => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', e.id);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', e, 'delete');
+  });
+  _db.expenses=(_db.expenses||[]).filter(e=>!linked.includes(e));
 }
 function copyToClipboard(text, successMsg) {
   navigator.clipboard.writeText(text).then(() => {
@@ -783,10 +800,17 @@ function fxBooksHtml(books, field = 'contract') {
     return `<span class="fx-chip">${fmt(b[field] || 0)} ${escapeHtml(b.currency)}</span>`;
   }).join('')}</div>`;
 }
-function _moneyLabel(amount, currency, quantity) {
+function _moneyLabel(amount, currency, quantity, unitPrice) {
+  // `amount` is always the TOTAL. With a quantity, show the breakdown after it
+  // («۱۴۷,۲۰۰,۰۰۰ تومان (۹۲ × ۱,۶۰۰,۰۰۰)») instead of «۹۲ × ۱۴۷,۲۰۰,۰۰۰»,
+  // which read as total × quantity.
   const qty = Math.max(1, Math.round(Number(quantity) || 1));
-  const prefix = qty > 1 ? `${fa(qty)} × ` : '';
-  return `${prefix}${fmt(amount)} ${_moneyCurrency(currency)}`;
+  const cur = _moneyCurrency(currency);
+  const total = `${fmt(amount)} ${cur}`;
+  if (qty <= 1) return total;
+  const unit = Number(unitPrice);
+  const unitValue = Number.isFinite(unit) && unit > 0 ? unit : (Number(amount) || 0) / qty;
+  return `${total} <span class="money-qty">(${fa(qty)} × ${fmt(unitValue)})</span>`;
 }
 
 function _pkgTypeUnitPatch(p) {
@@ -2750,6 +2774,7 @@ function _studentSummary(s) {
       payment_due_date: paymentDueDate,
       is_chargeable: chargeable,
       grand_total: grandTotal,
+      unit_price: Number(p.unit_price) || 0,
       due_total: chargeable && toman ? grandTotal : 0,
     };
   });
@@ -2789,6 +2814,7 @@ function _studentListSummary(s) {
       total_amount: p.total_amount || 0,
       initial_cost: p.initial_cost || 0,
       grand_total: grandTotal,
+      unit_price: Number(p.unit_price) || 0,
       due_total: chargeable && _isTomanCurrency(p.currency) ? grandTotal : 0,
       is_chargeable: chargeable,
     };
@@ -4156,7 +4182,9 @@ window.api = {
     getAll: ()=>{ _reconcileStaffRemindersForPaidMonths(); return _P(_db.staff.map(_staffSummary).reverse()); },
     getDashboard: ()=>{
       const[tjy,tjm]=_todayJalali();
-      const totalMonthlySalary=_db.staff.reduce((a,s)=>a+(s.salary||0),0);
+      // Staff who ended their cooperation (is_active === false) are kept for
+      // history but no longer count toward the monthly salary commitment.
+      const totalMonthlySalary=_db.staff.filter(s=>s.is_active!==false&&s.is_active!==0).reduce((a,s)=>a+(s.salary||0),0);
       const isThisMonth=d=>{const[jy,jm]=_jalaliParse(d);return jy===tjy&&jm===tjm;};
       const paidThisMonth=_db.staff_payments.filter(p=>isThisMonth(p.date_jalali)).reduce((a,p)=>a+(p.amount||0),0)+_db.staff_adjustments.filter(a=>isThisMonth(a.date_jalali)).reduce((a,adj)=>a+(adj.type==='penalty'?-(adj.amount||0):(adj.amount||0)),0);
       return _P({totalStaff:_db.staff.length,totalMonthlySalary,paidThisMonth,upcomingReminders:_db.staff_reminders.filter(r=>!r.done).length});
@@ -4180,9 +4208,29 @@ window.api = {
       const totalSalary=(s.salary||0)+(s.roles||[]).reduce((a,r)=>a+_staffRolePayTotal(r),0);
       const er=_db.staff_reminders.find(r=>r.staff_id===s.id);
       const rm=p.repeat_months!==undefined?p.repeat_months:(er?.repeat_months??1);
-      if(rm>0){if(er){er.repeat_months=rm;er.amount=totalSalary;if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
+      if(rm>0&&s.is_active!==false&&s.is_active!==0){if(er){er.repeat_months=rm;er.amount=totalSalary;if(s.start_date&&s.start_date!==oldStart){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);er.due_date_jalali=_formatJalali(...due);er.notified_levels=[];}else if(paymentTiming!==oldTiming&&er.due_date_jalali){const[jy,jm,jd]=_jalaliParse(er.due_date_jalali);const shifted=_addMonths(jy,jm,jd,paymentTiming==='start'?-rm:rm);er.due_date_jalali=_formatJalali(...shifted);er.notified_levels=[];}}else if(s.start_date){const[jy,jm,jd]=_jalaliParse(s.start_date);const due=paymentTiming==='start'?[jy,jm,jd]:_addMonths(jy,jm,jd,rm);_db.staff_reminders.push({id:_nextId('staff_reminders'),staff_id:s.id,title:'پرداخت حقوق',due_date_jalali:_formatJalali(...due),repeat_months:rm,amount:totalSalary,done:false,notified_levels:[],created_at:new Date().toISOString()});}}
       else if(rm===0&&er)_db.staff_reminders=_db.staff_reminders.filter(r=>r.staff_id!==s.id);
       _save(); return _P({ok:true});
+    },
+    // End / resume cooperation. Keeps every payment, expense and monthly row;
+    // only the open salary reminders are removed when cooperation ends (no
+    // future salary is due). Resuming does not recreate reminders: editing the
+    // person's salary/schedule does that, as for a new hire.
+    setActive: (p)=>{
+      const s=(_db.staff||[]).find(x=>String(x.id)===String(p.id)); if(!s)return _P({ok:false});
+      const active=!!p.active;
+      s.is_active=active;
+      s.ended_at=active?'':(p.date||_formatJalali(..._todayJalali()));
+      if(!active){
+        const open=(_db.staff_reminders||[]).filter(r=>String(r.staff_id)===String(s.id)&&!r.done);
+        if(open.length){
+          _recordDeletedItems('staff_reminders', open.map(r=>r.id));
+          _db.staff_reminders=(_db.staff_reminders||[]).filter(r=>!open.includes(r));
+        }
+      }
+      _forceNextServerSync();
+      _save(true,{urgent:true});
+      return _P({ok:true});
     },
     delete: (id)=>{
       const payments=(_db.staff_payments||[]).filter(x=>String(x.staff_id)===String(id));
@@ -10697,7 +10745,7 @@ async function openStudentDetail(id) {
           ${p.note ? ` <small style="color:var(--text3)">— ${escapeHtml(p.note)}</small>` : ''}
         </span>
         <span class="detail-val" style="display:flex;align-items:center;gap:6px">
-          ${_moneyLabel(p.total_amount, p.currency, p.quantity)}
+          ${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}
           <button class="btn btn-ghost btn-sm" onclick="openEditPackage(${p.id})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">🗑</button>
         </span>
@@ -10707,7 +10755,7 @@ async function openStudentDetail(id) {
   const pkgRows = (s.packages || []).map(p => `
     <div class="detail-row">
       <span class="detail-key">${escapeHtml(p.type_label)}${p.initial_cost ? ` <small style="color:var(--text3)">(+${fmt(p.initial_cost)} بدهی قبلی)</small>` : ''}</span>
-      <span class="detail-val">${_moneyLabel(p.grand_total, p.currency, p.quantity)}${!p.is_chargeable?' · آینده':''}</span>
+      <span class="detail-val">${_moneyLabel(p.grand_total, p.currency, p.quantity, p.unit_price)}${!p.is_chargeable?' · آینده':''}</span>
     </div>`).join('');
 
   const payRows = payments.length

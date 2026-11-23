@@ -103,7 +103,7 @@ test('month header sum includes all payments in old jalali month', () => {
   assert.match(label, /جمع 100000 تومان/);
 });
 
-test('asset version tp446', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp446'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v446/);
+test('asset version tp447', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp447'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v447/);
 });

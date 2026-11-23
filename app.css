@@ -6209,3 +6209,9 @@ body { top: 0 !important; }
 }
 @keyframes tpSearchSheet{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.tp-search-overlay,.tp-search-panel{animation:none}}
+/* Quantity breakdown after a total amount (tp447) */
+.money-qty{font-size:.82em;font-weight:500;color:var(--text3);white-space:nowrap;margin-inline-start:4px}
+/* Ended staff (tp447) */
+.staff-row-ended td{opacity:.62}
+.staff-row-ended td:last-child{opacity:1}
+.staff-ended-tag{font-size:11px;background:var(--bg3);color:var(--text2);margin-inline-start:6px;vertical-align:middle}

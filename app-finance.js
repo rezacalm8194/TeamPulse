@@ -21,7 +21,7 @@ async function renderPurchases(search = '') {
         <td style="font-weight:500">${escapeHtml(p.name)} ${escapeHtml(p.lname)}</td>
         <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span></td>
         <td style="font-size:11px;color:var(--text2)">${escapeHtml(p.staff_name||'—')}</td>
-        <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
+        <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
         <td style="color:var(--text2)">
           <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
           <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
@@ -680,7 +680,7 @@ async function openStudentIncomeHistory(studentId, kind) {
       <td>${DateService.disp(p.start_date) || '—'}</td>
       <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label || '—')}</span></td>
       <td>${escapeHtml(p.staff_name || '—')}</td>
-      <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
+      <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
       <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '—')}</td>
     </tr>`).join('') || `<tr><td colspan="5"><div class="empty">فروشی برای این ${_entityWord()} ثبت نشده</div></td></tr>`;
     openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>نوع خرید</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
@@ -903,7 +903,7 @@ function _purchaseHistoryMobileCardHtml(p) {
     <div class="mpay-top">
       <div class="mpay-name-amount">
         <div class="mpay-name">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</div>
-        <span class="mpay-amount amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span>
+        <span class="mpay-amount amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span>
       </div>
       <div class="row-menu">
         <button class="row-menu-btn" type="button" aria-label="عملیات فروش" aria-haspopup="menu" onclick="toggleRowMenu(event,'${saleMenuId}')">⋮</button>
@@ -1111,7 +1111,7 @@ async function renderPayments(search = '') {
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</td>
           <td data-label="نوع خرید">${_purchaseTypeDisplayHtml(p)}</td>
           <td data-label="مجری" style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
-          <td data-label="مبلغ کل"><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
+          <td data-label="مبلغ کل"><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date) || '—'}</div>
             <div style="font-size:10px;color:${_isPackageChargeable(p) ? 'var(--green)' : 'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date) || '—'}${_isPackageChargeable(p) ? '' : ' · آینده'}</div>
@@ -2336,7 +2336,7 @@ async function openFamilySalesHistory(familyId) {
   const rows = data.sales.length ? data.sales.map(p => `<tr>
     <td>${escapeHtml(`${p.member?.name || ''} ${p.member?.lname || ''}`.trim())}</td>
     <td><span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label || '—')}</span></td>
-    <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
+    <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
     <td>${DateService.disp(p.start_date) || '—'}</td>
     <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '')}</td>
   </tr>`).join('') : `<tr><td colspan="5"><div class="empty">فروشی برای اعضای این گروه ثبت نشده</div></td></tr>`;
