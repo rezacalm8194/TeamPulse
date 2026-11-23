@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp432';
+const TP_ASSET_V = 'tp433';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2795,6 +2795,63 @@ function _studentListSummary(s) {
   return summary;
 }
 
+function _studentHasOpenPaymentReminder(studentId) {
+  const sid = String(studentId ?? '');
+  if (!sid) return false;
+  return (_db.reminders || []).some(r => !r.done && String(r.student_id) === sid && _isPaymentReminder(r));
+}
+
+function _studentsForFinance() {
+  const rows = [];
+  for (const s of _db.students || []) {
+    if (!s.archived) {
+      rows.push(_studentListSummary(s));
+      continue;
+    }
+    const summary = _studentListSummary(s);
+    if (summary.balance !== 0 || _studentHasOpenPaymentReminder(s.id)) {
+      rows.push({ ...summary, archived: true });
+    }
+  }
+  return rows.slice().reverse();
+}
+
+function _resolveStudentFinanceSummary(studentId) {
+  const sid = Number(studentId);
+  if (!sid) return null;
+  const fromActive = allStudents.find(x => Number(x.id) === sid);
+  if (fromActive) return fromActive;
+  const raw = (_db.students || []).find(x => Number(x.id) === sid);
+  return raw ? _studentListSummary(raw) : null;
+}
+
+function _financeStudentPickerOptionsHtml() {
+  const list = _studentsForFinance();
+  const active = list.filter(s => !s.archived);
+  const archived = list.filter(s => s.archived);
+  let html = active.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
+  if (archived.length) {
+    html += `<optgroup label="بایگانی‌شده (دارای مانده)">${archived.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('')}</optgroup>`;
+  }
+  return html;
+}
+
+function _studentFinanceRecordCounts(studentId) {
+  const sid = Number(studentId);
+  return {
+    packages: _rowsForStudent('packages', sid).length,
+    payments: _rowsForStudent('payments', sid).length,
+  };
+}
+
+function _paymentOrphanPackageBadgeHtml(payment) {
+  const pkgId = payment?.package_id;
+  if (pkgId == null || pkgId === '') return '';
+  const exists = (_db.packages || []).some(pkg => String(pkg.id) === String(pkgId));
+  if (exists) return '';
+  return '<span class="tag" style="font-size:10px;opacity:.9;margin-right:4px">بدون خرید</span>';
+}
+
 function _familySummary(f) {
   const members=_db.students.filter(s=>s.family_id===f.id).map(_studentListSummary);
   const totalAmount=members.reduce((a,m)=>a+m.totalAmount,0);
@@ -3547,16 +3604,21 @@ window.api = {
       _reconcileOverdueRemindersForSettledCustomers();
       _reconcileStaffRemindersForPaidMonths();
       const summaries=_db.students.filter(s=>!s.archived).map(_studentSummary);
+      const financeSummaries=_studentsForFinance().map(row=>{
+        const raw=_db.students.find(x=>Number(x.id)===Number(row.id));
+        return raw?_studentSummary(raw):row;
+      });
       const totalAmount=summaries.reduce((a,s)=>a+s.totalAmount,0);
       const totalPaid=summaries.reduce((a,s)=>a+s.totalPaid,0);
       const totalWallet=summaries.reduce((a,s)=>a+s.wallet,0);
-      const debtors=summaries.filter(s=>s.balance>0).map(s=>({
+      const debtors=financeSummaries.filter(s=>s.balance>0).map(s=>({
         id:s.id,
         name:s.name,
         lname:s.lname,
         packages:s.packages,
         totalAmount:s.totalAmount,
-        debt:s.balance
+        debt:s.balance,
+        archived:!!s.archived,
       })).sort((a,b)=>b.debt-a.debt);
       const earnerCandidates=summaries.map(s=>{
         // Indexed lookup: filtering the whole payments/packages arrays per
@@ -3617,7 +3679,7 @@ window.api = {
         })
         .filter(item=>item.staffExists&&!item.settled&&item.amount>0&&item.dueIn!=null&&item.dueIn<=7)
         .sort((a,b)=>a.dueIn-b.dueIn);
-      const summaryByStudentId=new Map(summaries.map(s=>[String(s.id),s]));
+      const summaryByStudentId=new Map(financeSummaries.map(s=>[String(s.id),s]));
       const customerDueAlerts=(_db.reminders||[])
         .filter(r=>!r.done&&r.student_id&&_isPaymentReminder(r)&&_jalaliKey(r.due_date_jalali||'')>0)
         .map(r=>{
@@ -8291,7 +8353,7 @@ function pkgTagsHtml(packages, opts = {}) {
 // awaited: `if (!await tpConfirm(...)) return;` (a missing await would make
 // the check always pass — tests/in-app-dialogs.test.js guards this).
 // They stack above any open modal and work without inline handlers (CSP).
-function _tpDialog({ title = '', message = '', okText = 'تأیید', cancelText = 'انصراف', danger = false, input = null, alertOnly = false, _choose = false } = {}) {
+function _tpDialog({ title = '', message = '', okText = 'تأیید', cancelText = 'انصراف', danger = false, input = null, alertOnly = false, _choose = false, buttons = null } = {}) {
   return new Promise(resolve => {
     let root = document.getElementById('tp-dialog-root');
     if (!root) {
@@ -8328,19 +8390,36 @@ function _tpDialog({ title = '', message = '', okText = 'تأیید', cancelText
     }
     const actions = document.createElement('div');
     actions.className = 'tp-dialog-actions';
-    const ok = document.createElement('button');
-    ok.type = 'button';
-    ok.className = 'btn ' + (danger ? 'btn-danger tp-dialog-ok-danger' : 'btn-primary');
-    ok.textContent = okText;
+  const buttonDefs = Array.isArray(buttons) && buttons.length ? buttons : null;
+    let ok = null;
     let cancel = null;
-    if (!alertOnly) {
-      cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'btn btn-ghost';
-      cancel.textContent = cancelText;
-      actions.appendChild(cancel);
+    let focusEl = field;
+    if (buttonDefs) {
+      const cancelDef = buttonDefs.find(b => b.value === 'cancel' || String(b.label || '').includes('انصراف'));
+      buttonDefs.forEach(btn => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn ' + (btn.danger ? 'btn-danger tp-dialog-ok-danger' : btn.primary ? 'btn-primary' : 'btn-ghost');
+        b.textContent = btn.label;
+        actions.appendChild(b);
+        b.addEventListener('click', () => finish(btn.value));
+        if (btn === cancelDef || (!cancelDef && btn === buttonDefs[buttonDefs.length - 1])) focusEl = b;
+      });
+    } else {
+      ok = document.createElement('button');
+      ok.type = 'button';
+      ok.className = 'btn ' + (danger ? 'btn-danger tp-dialog-ok-danger' : 'btn-primary');
+      ok.textContent = okText;
+      if (!alertOnly) {
+        cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-ghost';
+        cancel.textContent = cancelText;
+        actions.appendChild(cancel);
+      }
+      actions.appendChild(ok);
+      focusEl = field || (danger && cancel) || ok;
     }
-    actions.appendChild(ok);
     box.appendChild(actions);
     overlay.appendChild(box);
     root.appendChild(overlay);
@@ -8354,20 +8433,20 @@ function _tpDialog({ title = '', message = '', okText = 'تأیید', cancelText
       resolve(value);
     };
     const accept = () => finish(input ? field.value : true);
-    const dismiss = () => finish(input ? null : (alertOnly ? true : (_choose ? null : false)));
+    const dismiss = () => finish(input ? null : (buttonDefs ? (buttonDefs.find(b => b.value === 'cancel')?.value ?? null) : (alertOnly ? true : (_choose ? null : false))));
     const cancelChoice = () => finish(input ? null : false);
     const onKey = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); }
-      else if (e.key === 'Enter' && (input || document.activeElement === ok || document.activeElement === box || document.activeElement === document.body)) {
+      else if (!buttonDefs && e.key === 'Enter' && (input || document.activeElement === ok || document.activeElement === box || document.activeElement === document.body)) {
         e.preventDefault(); e.stopPropagation(); accept();
       }
     };
-    ok.addEventListener('click', accept);
+    ok?.addEventListener('click', accept);
     cancel?.addEventListener('click', cancelChoice);
     overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
     document.addEventListener('keydown', onKey, true);
     // Destructive actions focus "cancel" so a stray Enter doesn't delete.
-    setTimeout(() => { (field || (danger && cancel) || ok).focus(); if (field) field.select?.(); }, 30);
+    setTimeout(() => { (focusEl)?.focus(); if (field) field.select?.(); }, 30);
   });
 }
 function _tpLooksDestructive(message) {
@@ -9066,10 +9145,13 @@ async function _homePickCustomer(title, action) {
   // Home boots without business parts; load students first page on demand
   // (user-initiated, same as visiting the students page) so the picker is never empty.
   // NOTE: ensure only fills _db — allStudents must be re-read via the api, like renderStudents does.
-  try { await _ensureBusinessPartLoaded('students'); allStudents = await window.api.students.getAll(); } catch (e) {}
-  if (!allStudents.length) { showToast('ابتدا مشتری اضافه کنید', 'error'); return; }
-  if (allStudents.length === 1) { window[action](allStudents[0].id); return; }
-  const opts = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
+  try { await _ensureBusinessPartLoaded('students'); } catch (e) {}
+  const financePick = action === 'openAddPayment';
+  let pickList = financePick ? _studentsForFinance() : await window.api.students.getAll();
+  if (!financePick) allStudents = pickList;
+  if (!pickList.length) { showToast('ابتدا مشتری اضافه کنید', 'error'); return; }
+  if (pickList.length === 1) { window[action](pickList[0].id); return; }
+  const opts = financePick ? _financeStudentPickerOptionsHtml() : pickList.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   openModal(title, `<div class="form-grid"><div class="form-group full"><label class="form-label">مشتری *</label><select class="form-select" id="home-customer-pick">${opts}</select></div></div>`, [
     { label: 'ادامه', cls: 'btn-primary', action: `_homeConfirmCustomerPick('${action}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' }
@@ -9704,7 +9786,7 @@ function studentAccountNameCellHtml(s, i) {
   return `<div class="name-cell">
             ${avatar(s.name, i)}
             <div>
-              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
+              <div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}${s.archived ? ' <span class="tag" style="font-size:10px;opacity:.9">بایگانی‌شده</span>' : ''}</div>
               ${fam ? `<div class="name-cell-sub"><span class="family-badge">👨‍👩‍👧 ${escapeHtml(fam.name)}</span></div>` : ''}
             </div>
           </div>`;
@@ -9739,7 +9821,7 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
         <div class="mstu-top">
           ${avatar(s.name, i)}
           <div class="mstu-name-wrap">
-            <div class="mstu-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div>
+            <div class="mstu-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}${s.archived ? ' <span class="tag" style="font-size:10px;opacity:.9">بایگانی‌شده</span>' : ''}</div>
             ${fam ? `<div class="mstu-family">👨‍👩‍👧 ${escapeHtml(fam.name)}</div>` : ''}
           </div>
           <div class="row-menu">
@@ -9762,11 +9844,12 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
       </div>`;
   }).join('')}</div>`;
 }
-function studentAccountOverviewHtml(students, filtered, { showSessions = true, financeReady = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null } = {}) {
-  const totalDebt = students.reduce((a, s) => a + Math.max(0, s.balance), 0);
-  const totalPaid = students.reduce((a, s) => a + s.totalPaid, 0);
-  const debtorCount = students.filter(s => s.balance > 0).length;
-  const settledCount = students.length - debtorCount;
+function studentAccountOverviewHtml(students, filtered, { showSessions = true, financeReady = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null, statsStudents = null } = {}) {
+  const statsSource = statsStudents || students;
+  const totalDebt = statsSource.reduce((a, s) => a + Math.max(0, s.balance), 0);
+  const totalPaid = statsSource.reduce((a, s) => a + s.totalPaid, 0);
+  const debtorCount = statsSource.filter(s => s.balance > 0).length;
+  const settledCount = statsSource.length - debtorCount;
   const fourthStat = showSessions ? `
     <div class="stat-card">
       <div class="stat-label">کل ${META.sessionPlural || 'جلسات'}</div>
@@ -10084,7 +10167,7 @@ async function _paintStudentsUi(search = '') {
   const html = `
   ${studentSectionNav('students')}
   ${financeReady ? '' : '<div class="todo-show-more" style="cursor:default;opacity:.85">در حال تکمیل مانده‌حساب‌ها…</div>'}
-  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, financeReady, menuPrefix: 'stu' })}
+  ${studentAccountOverviewHtml(allStudents, filtered, { showSessions: sessionsReady, financeReady, menuPrefix: 'stu', statsStudents: _studentsForFinance() })}
   ${studentPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'students\')">دریافت مشتریان بیشتر</button>'}
   ${caseFormsHtml}`;
   setContent(html);
@@ -10225,7 +10308,7 @@ async function openStudentDetail(id) {
   const payRows = payments.length
     ? payments.map(p => `
       <div class="detail-row">
-        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${escapeHtml(p.pkg_label)}${p.account_label ? ` <small style="color:var(--accent2)">· ${escapeHtml(p.account_label)}</small>`:''}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
+        <span class="detail-key">${DateService.disp(p.date_jalali)} — ${escapeHtml(p.pkg_label)}${_paymentOrphanPackageBadgeHtml(p)}${p.account_label ? ` <small style="color:var(--accent2)">· ${escapeHtml(p.account_label)}</small>`:''}${p.note ? ` <small style="color:var(--text3)">(${escapeHtml(p.note)})</small>`:''}</span>
         <span class="detail-val amount-paid">
           ${fmt(p.amount)} ${escapeHtml(p.currency || 'تومان')}
           <button class="btn btn-ghost btn-sm" style="margin-right:4px" onclick="openEditPayment(${p.id})">✏️</button>
@@ -10765,9 +10848,17 @@ async function resolveNewPurchaseExtraService() {
   return { type_id: typeId, quantity, unit_price, currency, total_amount: quantity * unit_price, label };
 }
 
-function openNewPurchase(studentId, preset = {}) {
-  const s = allStudents.find(x => x.id === studentId);
+async function openNewPurchase(studentId, preset = {}) {
+  let s = allStudents.find(x => x.id === studentId) || _resolveStudentFinanceSummary(studentId);
   if (!s) return;
+  const raw = (_db.students || []).find(x => Number(x.id) === Number(studentId));
+  if (raw?.archived || s.archived) {
+    if (!await tpConfirm('این مشتری بایگانی شده؛ از بایگانی خارج شود؟')) return;
+    await window.api.students.setArchived({ id: studentId, archived: false });
+    allStudents = await window.api.students.getAll();
+    s = allStudents.find(x => x.id === studentId) || _resolveStudentFinanceSummary(studentId);
+    if (!s) return;
+  }
   const defaultPkgId = preset.type_id || '';
   const initial = Number(preset.initial_cost || 0);
   const current = Number(preset.current_payment || 0);
@@ -11286,11 +11377,47 @@ async function saveStudentEdit(id) {
   await refreshOpenStudentSurface();
 }
 
+async function _archiveStudentWithBalanceConfirm(id, name) {
+  const summary = _resolveStudentFinanceSummary(id) || (() => {
+    const raw = (_db.students || []).find(x => Number(x.id) === Number(id));
+    return raw ? _studentListSummary(raw) : null;
+  })();
+  const bal = Number(summary?.balance || 0);
+  if (bal > 0) {
+    if (!await tpConfirm(`این مشتری ${fmt(bal)} تومان بدهکار است. بعد از بایگانی هم در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی. ادامه؟`)) return false;
+  } else if (bal < 0) {
+    if (!await tpConfirm(`این مشتری ${fmt(Math.abs(bal))} تومان بستانکار است. بعد از بایگانی هم در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی. ادامه؟`)) return false;
+  }
+  if (!await tpConfirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return false;
+  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${_entityWord(true)}" منتقل می‌شود. ادامه می‌دهی؟`)) return false;
+  await window.api.students.setArchived({ id, archived: true });
+  return true;
+}
+
 async function deleteStudent(id) {
-  const s = allStudents.find(x => x.id === id);
-  if (!await tpConfirm(`آیا مطمئنی؟ "${s?.name} ${s?.lname}" و تمام اطلاعاتش حذف می‌شود.`)) return;
+  const s = allStudents.find(x => x.id === id) || _resolveStudentFinanceSummary(id);
+  const fullName = `${s?.name || ''} ${s?.lname || ''}`.trim() || 'مشتری';
+  const { packages: pkgCount, payments: payCount } = _studentFinanceRecordCounts(id);
+  if (pkgCount || payCount) {
+    const choice = await _tpDialog({
+      message: `این مشتری ${fa(pkgCount)} خرید و ${fa(payCount)} پرداخت دارد. حذف او سوابق مالی و گزارش درآمد ماه‌های گذشته را تغییر می‌دهد. به‌جای حذف، بایگانی کن تا حسابش حفظ شود.`,
+      buttons: [
+        { label: 'بایگانی کن', value: 'archive', primary: true },
+        { label: 'انصراف', value: 'cancel' },
+      ],
+    });
+    if (choice === 'archive') {
+      if (await _archiveStudentWithBalanceConfirm(id, fullName)) {
+        showToast(`${fullName} به بایگانی منتقل شد ✓`, 'success');
+        allStudents = await window.api.students.getAll();
+        await refreshOpenStudentSurface();
+      }
+    }
+    return;
+  }
+  if (!await tpConfirm(`آیا مطمئنی؟ "${fullName}" و تمام اطلاعاتش حذف می‌شود.`)) return;
   await _tpUndoableDelete({
-    label: `«${[s?.name, s?.lname].filter(Boolean).join(' ') || 'مشتری'}» حذف شد`,
+    label: `«${fullName}» حذف شد`,
     collections: ['students', 'packages', 'payments', 'sessions', 'wallet_tx', 'reminders', 'topics', 'key_events'],
     run: () => window.api.students.delete(id),
     refresh: async () => { allStudents = await window.api.students.getAll(); await refreshOpenStudentSurface(); },
@@ -11369,12 +11496,14 @@ function toggleQuickNewPackage(prefix) {
 }
 
 function openAddPayment(studentId) {
-  const s = allStudents.find(x => x.id === studentId);
+  const s = _resolveStudentFinanceSummary(studentId);
   if (!s) return;
   const pkgOptions = paymentPackageOptionsHtml(s.packages || []);
   const pkgLabels = uniquePaymentPackageOptions(s.packages || []).map(p=>p.type_label).join('، ') || '—';
+  const archivedBanner = s.archived ? `<p style="font-size:12px;color:var(--amber);margin:0 0 8px;padding:8px 10px;border:1px solid var(--border2);border-radius:10px;background:rgba(255,255,255,.03)">این مشتری بایگانی شده است</p>` : '';
 
   openModal(`ثبت پرداخت — ${escapeHtml(s.name)} ${escapeHtml(s.lname)}`, `
+    ${archivedBanner}
     <p style="font-size:12px;color:var(--text2);margin-bottom:6px">مانده فعلی: ${balanceHtml(s.balance)}</p>
     <p style="font-size:11px;color:var(--text3);margin-bottom:10px">خدمات فعال: ${pkgLabels}</p>
     <div class="form-grid">
@@ -14856,9 +14985,7 @@ function _openFocusMode(textarea, noteId, field) {
 
 // ── Archive ────────────────────────────────────────────────────────────────
 async function archiveStudent(id, name) {
-  if (!await tpConfirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return;
-  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${_entityWord(true)}" منتقل می‌شود. ادامه می‌دهی؟`)) return;
-  await window.api.students.setArchived({ id, archived: true });
+  if (!await _archiveStudentWithBalanceConfirm(id, name)) return;
   showToast(`${name} به بایگانی منتقل شد ✓`, 'success');
   await renderSessions();
 }
@@ -15278,7 +15405,24 @@ async function applyBulkArchiveStatus(){
   if(value==='ناموفق'){closeModal();openArchiveLossReasonModal(ids,value);return;}
   await window.api.students.bulkArchiveAction({ids,action:'status',value});closeModal();archiveSelectedIds.clear();showToast('وضعیت ارتباط گروهی اعمال شد ✓','success');await renderArchive();
 }
-async function bulkDeleteArchive(){const ids=selectedArchiveIds();if(!ids.length)return;if(!await tpConfirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;await window.api.students.bulkArchiveAction({ids,action:'delete'});archiveSelectedIds.clear();showToast(`${fa(ids.length)} مورد حذف شد`,'error');await renderArchive();}
+async function bulkDeleteArchive(){
+  const ids=selectedArchiveIds();
+  if(!ids.length)return;
+  const blocked=ids.filter(id=>{const c=_studentFinanceRecordCounts(id);return c.packages||c.payments;});
+  const allowed=ids.filter(id=>!blocked.includes(id));
+  if(blocked.length&&!allowed.length){
+    await _tpDialog({message:`${fa(blocked.length)} مورد انتخاب‌شده سابقه مالی دارند و حذف نمی‌شوند.`,buttons:[{label:'باشه',value:'cancel'}]});
+    return;
+  }
+  if(blocked.length){
+    const choice=await _tpDialog({message:`${fa(blocked.length)} مورد سابقه مالی دارند و حذف نمی‌شوند. فقط ${fa(allowed.length)} مورد بدون سابقه مالی حذف شود؟`,buttons:[{label:'حذف موارد مجاز',value:'go',danger:true},{label:'انصراف',value:'cancel'}]});
+    if(choice!=='go')return;
+  }else if(!await tpConfirm(`${fa(ids.length)} مورد انتخاب‌شده و تمام اطلاعات مرتبط برای همیشه حذف شوند؟`))return;
+  await window.api.students.bulkArchiveAction({ids:allowed.length?allowed:ids,action:'delete'});
+  archiveSelectedIds.clear();
+  showToast(`${fa((allowed.length?allowed:ids).length)} مورد حذف شد`,'error');
+  await renderArchive();
+}
 
 function archiveComboField(id,label,value,options,kind,placeholder=''){const selected=String(value||'');const choices=[...options];if(selected&&!choices.includes(selected))choices.unshift(selected);return `<div class="form-group"><label class="form-label">${label}</label><div style="display:flex;gap:6px"><select class="form-select" style="flex:1;min-width:0" id="${id}">${kind==='status'?`<option value="">${escapeHtml(placeholder||'— انتخاب کنید —')}</option>`:''}${choices.map(x=>`<option value="${escapeHtml(x)}" ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="addArchiveComboOption('${kind}','${id}')">＋ افزودن</button></div></div>`;}
 function archiveFormHtml(s={}){const description=s.description||[s.address,s.main_need].filter(Boolean).join('\n'),fullName=[s.name,s.lname].filter(Boolean).join(' ').trim(),cityKey=archiveHeaderKey('شهر'),city=String(s.archive_data?.[cityKey]??'');return `<div class="form-grid"><div class="form-group"><label class="form-label">نام و نام خانوادگی</label><input class="form-input" id="ar-full-name" value="${escapeHtml(fullName)}"></div><div class="form-group"><label class="form-label">شماره تماس</label><input class="form-input" id="ar-phone" value="${escapeHtml(s.phone||'')}"></div><div class="form-group"><label class="form-label">نام مجموعه</label><input class="form-input" id="ar-org" value="${escapeHtml(s.organization_name||'')}"></div>${archiveComboField('ar-category','دسته‌بندی',s.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید') }<div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="ar-referral-source" value="${escapeHtml(s.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>${archiveComboField('ar-relationship-status','وضعیت ارتباط',s.relationship_status||'',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}<div class="form-group"><label class="form-label">شهر</label><input class="form-input" data-archive-extra data-archive-scope="archive" data-archive-key="${escapeHtml(cityKey)}" value="${escapeHtml(city)}"></div>${archiveLossReasonFields(s.loss_reason||'')}<div class="form-group full"><label class="form-label">توضیحات</label><textarea class="form-textarea" id="ar-description" rows="3">${escapeHtml(description)}</textarea></div>${archiveActivityFields(s)}${archiveExtraFieldsHtml(s,'archive',['نوع فعالیت','شهر'])}</div>`;}
@@ -15289,7 +15433,7 @@ function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id
 async function saveArchivePerson(id){const activity=readArchiveActivity(false);if(!activity)return;const relationship_status=document.getElementById('ar-relationship-status').value.trim();const loss_reason=readArchiveLossReason(relationship_status==='ناموفق');if(loss_reason===null)return;const old=id?archiveStudents.find(x=>x.id===id):null,fullName=document.getElementById('ar-full-name').value.trim().replace(/\s+/g,' '),oldFullName=[old?.name,old?.lname].filter(Boolean).join(' ').trim();let name='',lname='';if(old&&fullName===oldFullName){name=old.name||'';lname=old.lname||'';}else{const parts=fullName.split(' ').filter(Boolean);name=parts.shift()||'';lname=parts.join(' ');}const data={...activity,name,lname,phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',referral_source:document.getElementById('ar-referral-source').value.trim()||'متفرقه',description:document.getElementById('ar-description').value.trim(),relationship_status,loss_reason:relationship_status==='ناموفق'?loss_reason:'',date:old?.date_jalali||'',archive_data:collectArchiveExtraData('archive',old?.archive_data||{}),packages:[]};if(id){await window.api.students.update({...data,id,packages:old?.packages||[]});}else {const result=await window.api.students.addArchivedBulk([data]);id=result.ids[0];}if(activity.next_activity_date||old?.next_activity_date)await persistArchiveActivity(id,activity);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
 function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;openModal(`${escapeHtml(s.name)} ${escapeHtml(s.lname)}`,`<div class="detail-section">${archiveColumns.map(c=>`<div class="detail-row"><span class="detail-key">${escapeHtml(c)}</span><span class="detail-val">${escapeHtml(archiveColumnValue(s,c)||'—')}</span></div>`).join('')}</div>`,[{label:'✓ تبدیل به مشتری',cls:'btn-primary',action:`closeModal();convertArchiveToCustomer(${id})`},{label:'✏️ ویرایش',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف کامل',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`}]);}
 async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!await tpConfirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
-async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s||!await tpConfirm(`«${s.name} ${s.lname}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
+async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;const fullName=`${s.name||''} ${s.lname||''}`.trim()||'مخاطب';const {packages:pkgCount,payments:payCount}=_studentFinanceRecordCounts(id);if(pkgCount||payCount){const choice=await _tpDialog({message:`این مشتری ${fa(pkgCount)} خرید و ${fa(payCount)} پرداخت دارد. حذف او سوابق مالی و گزارش درآمد ماه‌های گذشته را تغییر می‌دهد. به‌جای حذف، بایگانی کن تا حسابش حفظ شود.`,buttons:[{label:'انصراف',value:'cancel'}]});if(choice)return;return;}if(!await tpConfirm(`«${fullName}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
 
 let _xlsxLoaderPromise=null;
 function loadXlsxLibrary(){

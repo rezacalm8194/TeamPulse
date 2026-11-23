@@ -754,7 +754,7 @@ async function _paintDashboard(syncing) {
                       <div class="name-cell">
                         ${avatar(d.name, d.id)}
                         <div>
-                          <div style="font-weight:500">${escapeHtml(d.name)} ${escapeHtml(d.lname)}</div>
+                          <div style="font-weight:500">${escapeHtml(d.name)} ${escapeHtml(d.lname)}${d.archived ? ' <span class="tag" style="font-size:10px;opacity:.9">بایگانی‌شده</span>' : ''}</div>
                         </div>
                       </div>
                     </td>
@@ -1927,6 +1927,15 @@ async function saveStaffEdit(id) {
 }
 
 async function deleteStaff(id, name) {
+  const payCount = (_db.staff_payments || []).filter(p => String(p.staff_id) === String(id)).length;
+  const adjCount = (_db.staff_adjustments || []).filter(p => String(p.staff_id) === String(id)).length;
+  if (payCount || adjCount) {
+    await _tpDialog({
+      message: `این پرسنل ${fa(payCount)} پرداخت و ${fa(adjCount)} تعدیل دارد. حذف او سوابق مالی و گزارش‌های گذشته را تغییر می‌دهد؛ برای حفظ سوابق، او را در سیستم نگه دار.`,
+      buttons: [{ label: 'انصراف', value: 'cancel' }],
+    });
+    return;
+  }
   if (!await tpConfirm(`آیا مطمئنی "${name}" حذف شود؟ تمام سوابق پرداخت و ارزیابی او نیز حذف می‌شود.`)) return;
   await window.api.staff.delete(id);
   showToast('حذف شد', 'error');

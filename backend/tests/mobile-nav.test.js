@@ -44,10 +44,10 @@ function bootBnVm(extra = {}) {
   return ctx;
 }
 
-test('asset version is tp432', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp432'/);
-  assert.match(appHtml, /\?v=tp432/);
-  assert.match(sw, /team-pulse-static-v432/);
+test('asset version is tp433', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp433'/);
+  assert.match(appHtml, /\?v=tp433/);
+  assert.match(sw, /team-pulse-static-v433/);
   assert.match(appHtml, /fonts\/Vazirmatn-Regular\.woff2\?v=tp402/);
 });
 

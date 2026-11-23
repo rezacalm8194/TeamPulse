@@ -151,12 +151,33 @@ async function saveEditPackage(id, studentId) {
 }
 
 async function deletePackage(id) {
-  // No confirm: the delete can be undone for a few seconds instead.
   const studentIdOfPackage = (_db.packages || []).find(p => String(p.id) === String(id))?.student_id;
+  const relatedPayments = (_db.payments || []).filter(p => String(p.package_id) === String(id));
+  let deletePayments = false;
+  if (relatedPayments.length) {
+    const payTotal = relatedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const choice = await _tpDialog({
+      message: `این خرید ${fa(relatedPayments.length)} پرداخت به مبلغ ${fmt(payTotal)} تومان دارد. چه کاری انجام شود؟`,
+      buttons: [
+        { label: 'حذف خرید و پرداخت‌هایش', value: 'both', danger: true },
+        { label: 'فقط خرید (پرداخت‌ها اعتبار مشتری بمانند)', value: 'pkg_only' },
+        { label: 'انصراف', value: 'cancel' },
+      ],
+    });
+    if (choice !== 'both' && choice !== 'pkg_only') return;
+    deletePayments = choice === 'both';
+  }
+  const collections = deletePayments ? ['packages', 'reminders', 'payments'] : ['packages', 'reminders'];
+  const relatedIds = deletePayments ? relatedPayments.map(p => p.id) : [];
   await _tpUndoableDelete({
-    label: 'خرید و یادآوری‌های مرتبط حذف شد',
-    collections: ['packages', 'reminders'],
-    run: () => window.api.packages.delete(id),
+    label: deletePayments ? 'خرید، یادآوری‌ها و پرداخت‌های مرتبط حذف شد' : 'خرید و یادآوری‌های مرتبط حذف شد',
+    collections,
+    run: async () => {
+      if (deletePayments) {
+        for (const payId of relatedIds) await window.api.payments.delete(payId);
+      }
+      await window.api.packages.delete(id);
+    },
     refresh: async () => {
       allStudents = await window.api.students.getAll();
       if (currentPage === 'payments') await renderPayments();
@@ -392,9 +413,11 @@ async function addServiceProductFromCatalog() {
 }
 
 
-function openGeneralPaymentModal() {
-  if (!allStudents.length) { showToast(`ابتدا ${_entityWord()} اضافه کنید`, 'error'); return; }
-  const studentOptions = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
+async function openGeneralPaymentModal() {
+  try { await _ensureBusinessPartLoaded('students'); } catch (e) {}
+  const financeStudents = _studentsForFinance();
+  if (!financeStudents.length) { showToast(`ابتدا ${_entityWord()} اضافه کنید`, 'error'); return; }
+  const studentOptions = _financeStudentPickerOptionsHtml();
 
   openModal('افزودن پرداختی', `
     <div class="form-grid">
@@ -445,7 +468,7 @@ function openGeneralPaymentModal() {
 
 function updateGeneralPaymentPkgs() {
   const sid = +document.getElementById('gp-student')?.value;
-  const s = allStudents.find(x => x.id === sid);
+  const s = _resolveStudentFinanceSummary(sid);
   const sel = document.getElementById('gp-pkg');
   const opts = paymentPackageOptionsHtml(s?.packages || []);
   sel.innerHTML = opts || '<option value="">— پکیجی ثبت نشده —</option>';
@@ -631,6 +654,8 @@ async function renderPayments(search = '') {
   }
 
   allStudents = await window.api.students.getAll();
+  const financeStudents = _studentsForFinance();
+  const financeById = new Map(financeStudents.map(s => [Number(s.id), s]));
   try {
     const remindersForBadge = await window.api.reminders.getAll();
     updateReminderBadges(_pendingPaymentReminderCount(remindersForBadge));
@@ -706,10 +731,11 @@ async function renderPayments(search = '') {
       html += `<tr><td colspan="8"><div class="empty"><span>💳</span>پرداختی ثبت نشده</div></td></tr>`;
     } else {
       paymentSlice.rows.forEach(p => {
-        const student = allStudents.find(s => s.id === p.student_id);
+        const student = financeById.get(Number(p.student_id)) || allStudents.find(s => s.id === p.student_id);
+        const orphanBadge = _paymentOrphanPackageBadgeHtml(p);
         html += `<tr>
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'payments')}</td>
-          <td data-label="پکیج">${incomeFilterButton('type', p.pkg_label || '', p.pkg_label || 'بدون پکیج', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span>`, 'income-filter-tag')}</td>
+          <td data-label="پکیج">${orphanBadge}${incomeFilterButton('type', p.pkg_label || '', p.pkg_label || 'بدون پکیج', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span>`, 'income-filter-tag')}</td>
           <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency||'تومان')}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
           <td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
@@ -873,13 +899,14 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
   else updateTopbarActions(accountCustomerTopbarHtml('families', search));
   FAMILIES = await window.api.families.getAll();
   allStudents = await window.api.students.getAll();
+  const financeStudents = _studentsForFinance();
   { const _sb = document.getElementById('student-badge'); if (_sb) { _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; } }
   const prefix = embedded ? accountCustomerTabsHtml('families') : '';
-  const filtered = filterAccountStudents(allStudents, search);
+  const filtered = filterAccountStudents(financeStudents, search);
   if (embedded) _syncPaymentsListShown('families', search);
   const familySlice = embedded ? _visiblePaymentsSlice('families', filtered) : null;
   const html = `${prefix}
-  ${studentAccountOverviewHtml(allStudents, filtered, {
+  ${studentAccountOverviewHtml(financeStudents, filtered, {
     showSessions: false,
     menuPrefix: 'acct',
     ...(familySlice ? { slice: familySlice, moreButtonHtml: _paymentsMoreButtonHtml('families', familySlice.remaining) } : {}),
