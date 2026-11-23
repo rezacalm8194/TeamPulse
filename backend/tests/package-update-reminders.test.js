@@ -177,3 +177,9 @@ test('older package in repeat chain does not get a new reminder when newer sale 
   assert.equal(sandbox._db.reminders.length, before);
   assert.ok(!sandbox._db.reminders.some(r => String(r.package_id) === '10'));
 });
+
+test('asset version tp450', () => {
+  assert.match(appSource, /const TP_ASSET_V = 'tp450'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v450/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp450/);
+});

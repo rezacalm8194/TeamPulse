@@ -1895,12 +1895,13 @@ async function savePurchaseFromSale(packageId) {
 
 // ── Bulk renewal price increase ─────────────────────────────────────────────
 // Changes only the amount of OPEN recurring payment reminders. Past sales and
-// payments are never touched; each reminder can be unticked in the preview.
+// payments are never touched. Every row stays editable: the same service can
+// have a different price per customer, so a computed amount can be overridden
+// or a customer left out.
 let _renewalPriceRows = [];
+let _renewalManual = {};
+let _renewalUnchecked = new Set();
 
-// Grouped by the reminder's own title (what the owner sees and renews, e.g.
-// «هاست دانلود» even when its sale was filed under «سایت»); the sale's service
-// is only a fallback for an empty title.
 function _renewalServiceLabel(r, pkgById, typeById) {
   const clean = v => {
     let label = String(v || '').replace(/\s+/g, ' ').trim().replace(/^سررسید پرداخت:\s*/, '');
@@ -1914,6 +1915,18 @@ function _renewalServiceLabel(r, pkgById, typeById) {
   return clean(t?.label) || 'بدون عنوان';
 }
 
+// Accepts Persian/Arabic digits, separators and decimals («۲۰», «1,500,000», «۷٫۵»).
+function _renewalParseNumber(v) {
+  const s = String(v == null ? '' : v)
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[٫]/g, '.')
+    .replace(/[^0-9.]/g, '');
+  if (!s) return NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 async function openRenewalPriceIncrease() {
   await _ensureCompleteBusinessParts(['students', 'reminders', 'packages']);
   const [reminders, packages, types] = await Promise.all([
@@ -1925,20 +1938,26 @@ async function openRenewalPriceIncrease() {
     .filter(r => !r.done && Number(r.amount) > 0 && Number(r.repeat_months || 0) > 0
       && (typeof _isPaymentReminder !== 'function' || _isPaymentReminder(r))
       && !(typeof _reminderPausedByArchive === 'function' && _reminderPausedByArchive(r)))
-    .map(r => ({ id: r.id, amount: Number(r.amount), due: r.due_date_jalali, customer: `${r.name || ''} ${r.lname || ''}`.trim(), service: _renewalServiceLabel(r, pkgById, typeById) }));
+    .map(r => ({
+      id: r.id, amount: Number(r.amount), due: r.due_date_jalali, repeat: Number(r.repeat_months || 0),
+      customer: `${r.name || ''} ${r.lname || ''}`.trim(), service: _renewalServiceLabel(r, pkgById, typeById),
+    }));
   if (!_renewalPriceRows.length) { showToast('یادآوری دوره‌ای بازی برای تغییر قیمت نیست', 'error'); return; }
+  _renewalManual = {};
+  _renewalUnchecked = new Set();
   const counts = new Map();
   _renewalPriceRows.forEach(x => counts.set(x.service, (counts.get(x.service) || 0) + 1));
   const services = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fa'));
   openModal('↗ افزایش قیمت تمدیدها', `
     <div style="font-size:12.5px;color:var(--text2);line-height:1.9;margin-bottom:10px">
       فقط مبلغ یادآوری‌های بازِ دوره‌ای عوض می‌شود. فروش‌ها و دریافت‌های گذشته دست نمی‌خورند.
+      مبلغ جدید هر نفر را می‌توانی دستی هم بنویسی.
     </div>
     <div class="form-grid">
       <div class="form-group full">
         <label class="form-label">خدمت</label>
-        <select class="form-select" id="rpi-service" onchange="renderRenewalPricePreview()">
-          ${services.map(([label, n]) => `<option value="${escapeHtml(label)}">${escapeHtml(label)} (${fa(n)})</option>`).join('')}
+        <select class="form-select" id="rpi-service" onchange="_renewalServiceChanged()">
+          ${services.map(([label, n]) => `<option value="${escapeHtml(label)}">${escapeHtml(label)} (${fa(n)} مورد)</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -1950,10 +1969,17 @@ async function openRenewalPriceIncrease() {
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">مقدار</label>
-        <input class="form-input" id="rpi-value" type="number" min="0" placeholder="مثلاً ۲۰" oninput="renderRenewalPricePreview()">
+        <label class="form-label" id="rpi-value-label">درصد افزایش</label>
+        <input class="form-input" id="rpi-value" type="text" inputmode="decimal" autocomplete="off" placeholder="مثلاً ۲۰" oninput="renderRenewalPricePreview()">
       </div>
-      <div class="form-group full">
+      <div class="form-group full" id="rpi-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:-4px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_renewalQuickPercent(10)">۱۰٪</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_renewalQuickPercent(15)">۱۵٪</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_renewalQuickPercent(20)">۲۰٪</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_renewalQuickPercent(25)">۲۵٪</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_renewalQuickPercent(30)">۳۰٪</button>
+      </div>
+      <div class="form-group full" id="rpi-round-group">
         <label class="form-label">گرد کردن مبلغ جدید</label>
         <select class="form-select" id="rpi-round" onchange="renderRenewalPricePreview()">
           <option value="100000">به نزدیک‌ترین ۱۰۰ هزار تومان</option>
@@ -1962,12 +1988,14 @@ async function openRenewalPriceIncrease() {
         </select>
       </div>
     </div>
-    <div id="rpi-preview" style="margin-top:10px"></div>
+    <div id="rpi-summary" class="rpi-summary"></div>
+    <div id="rpi-preview" style="margin-top:8px"></div>
   `, [
-    { label: 'اعمال روی موارد تیک‌خورده', cls: 'btn-primary', action: 'applyRenewalPriceIncrease()' },
+    { label: 'اعمال تغییرات', cls: 'btn-primary', action: 'applyRenewalPriceIncrease()' },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
   renderRenewalPricePreview();
+  setTimeout(() => document.getElementById('rpi-value')?.focus(), 50);
 }
 
 function _renewalNewAmount(old, mode, value, round) {
@@ -1979,42 +2007,151 @@ function _renewalNewAmount(old, mode, value, round) {
   return Math.max(0, Math.round(next));
 }
 
+function _renewalParams() {
+  const mode = document.getElementById('rpi-mode')?.value || 'percent';
+  const value = _renewalParseNumber(document.getElementById('rpi-value')?.value);
+  return {
+    service: document.getElementById('rpi-service')?.value || '',
+    mode,
+    value,
+    valid: Number.isFinite(value) && value > 0,
+    round: Number(document.getElementById('rpi-round')?.value || 0),
+  };
+}
+
+function _renewalTarget(row, params) {
+  if (Object.prototype.hasOwnProperty.call(_renewalManual, row.id)) return _renewalManual[row.id];
+  return params.valid ? _renewalNewAmount(row.amount, params.mode, params.value, params.round) : row.amount;
+}
+
+function _renewalServiceChanged() {
+  _renewalManual = {};
+  _renewalUnchecked = new Set();
+  renderRenewalPricePreview();
+}
+
+function _renewalQuickPercent(n) {
+  const mode = document.getElementById('rpi-mode');
+  const input = document.getElementById('rpi-value');
+  if (mode) mode.value = 'percent';
+  if (input) input.value = fa(n);
+  renderRenewalPricePreview();
+}
+
+function _renewalRepeatLabel(m) {
+  if (m === 12) return 'سالانه';
+  return `هر ${fa(m)} ماه`;
+}
+
 function renderRenewalPricePreview() {
   const box = document.getElementById('rpi-preview');
   if (!box) return;
-  const service = document.getElementById('rpi-service')?.value || '';
-  const mode = document.getElementById('rpi-mode')?.value || 'percent';
-  const value = Number(document.getElementById('rpi-value')?.value || 0);
-  const round = Number(document.getElementById('rpi-round')?.value || 0);
-  const roundGroup = document.getElementById('rpi-round')?.closest('.form-group');
-  if (roundGroup) roundGroup.style.display = mode === 'set' ? 'none' : '';
-  const setNote = mode === 'set'
-    ? `<div style="font-size:12px;color:var(--amber);margin-bottom:6px">در این حالت همه موارد تیک‌خورده یک مبلغ می‌گیرند؛ برای مشتری‌هایی که قیمت متفاوت دارند «درصد» یا «افزودن مبلغ» مناسب‌تر است.</div>`
+  const params = _renewalParams();
+  const label = document.getElementById('rpi-value-label');
+  const input = document.getElementById('rpi-value');
+  if (label) label.textContent = params.mode === 'percent' ? 'درصد افزایش' : params.mode === 'add' ? 'مبلغ افزایش (تومان)' : 'مبلغ جدید (تومان)';
+  if (input) input.placeholder = params.mode === 'percent' ? 'مثلاً ۲۰' : 'مثلاً ۱,۰۰۰,۰۰۰';
+  const quick = document.getElementById('rpi-quick');
+  if (quick) quick.style.display = params.mode === 'percent' ? 'flex' : 'none';
+  const roundGroup = document.getElementById('rpi-round-group');
+  if (roundGroup) roundGroup.style.display = params.mode === 'set' ? 'none' : '';
+  const rows = _renewalPriceRows.filter(x => x.service === params.service);
+  const setNote = params.mode === 'set'
+    ? `<div style="font-size:12px;color:var(--amber);margin-bottom:6px">در این حالت همه یک مبلغ می‌گیرند؛ برای مشتری‌هایی که قیمت متفاوت دارند «درصد» یا «افزودن مبلغ» مناسب‌تر است.</div>`
     : '';
-  const rows = _renewalPriceRows.filter(x => x.service === service);
-  const valid = Number.isFinite(value) && value > 0;
-  box.innerHTML = `${setNote}<div class="table-card tbl-responsive"><table>
-    <thead><tr><th></th><th>${_entityWord()}</th><th>سررسید</th><th>مبلغ فعلی</th><th>مبلغ جدید</th></tr></thead>
+  box.innerHTML = `${setNote}<div class="table-card rpi-table"><table>
+    <thead><tr>
+      <th style="width:34px"><input type="checkbox" id="rpi-all" title="انتخاب همه" onchange="_renewalToggleAll(this.checked)"></th>
+      <th>${_entityWord()}</th><th>سررسید</th><th>تکرار</th><th>مبلغ فعلی</th><th>مبلغ جدید</th>
+    </tr></thead>
     <tbody>${rows.map(x => {
-      const next = valid ? _renewalNewAmount(x.amount, mode, value, round) : x.amount;
-      const same = next === x.amount;
-      return `<tr>
-        <td><input type="checkbox" class="rpi-pick" data-id="${x.id}" data-amount="${next}" ${valid && !same ? 'checked' : ''} ${!valid || same ? 'disabled' : ''}></td>
+      const next = _renewalTarget(x, params);
+      const manual = Object.prototype.hasOwnProperty.call(_renewalManual, x.id);
+      return `<tr data-rpi-row="${x.id}">
+        <td><input type="checkbox" class="rpi-pick" data-id="${x.id}" onchange="_renewalRowPick(this)"></td>
         <td>${escapeHtml(x.customer || '—')}</td>
         <td>${escapeHtml(x.due || '—')}</td>
-        <td>${fmt(x.amount)}</td>
-        <td style="font-weight:600;color:${same ? 'var(--text3)' : 'var(--green)'}">${fmt(next)}</td>
+        <td style="color:var(--text3);white-space:nowrap">${_renewalRepeatLabel(x.repeat)}</td>
+        <td style="white-space:nowrap">${fmt(x.amount)}</td>
+        <td><input class="form-input rpi-new${manual ? ' rpi-manual' : ''}" type="text" inputmode="numeric" autocomplete="off" data-id="${x.id}" value="${fmt(next)}" oninput="_renewalRowEdit(this)" aria-label="مبلغ جدید ${escapeHtml(x.customer || '')}"></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
+  _renewalSyncChecks();
+}
+
+// Updates checkboxes and the summary without re-rendering (keeps input focus).
+function _renewalSyncChecks() {
+  const params = _renewalParams();
+  const rows = _renewalPriceRows.filter(x => x.service === params.service);
+  let picked = 0; let before = 0; let after = 0; let changedCount = 0;
+  rows.forEach(x => {
+    const next = _renewalTarget(x, params);
+    const changed = next > 0 && next !== x.amount;
+    if (changed) changedCount++;
+    const on = changed && !_renewalUnchecked.has(x.id);
+    const cb = document.querySelector(`#rpi-preview .rpi-pick[data-id="${x.id}"]`);
+    if (cb) cb.checked = on;
+    const tr = document.querySelector(`#rpi-preview tr[data-rpi-row="${x.id}"]`);
+    if (tr) tr.classList.toggle('rpi-row-off', !on);
+    if (on) { picked++; before += x.amount; after += next; }
+  });
+  const all = document.getElementById('rpi-all');
+  if (all) {
+    all.checked = changedCount > 0 && picked === changedCount;
+    all.indeterminate = picked > 0 && picked < changedCount;
+  }
+  const summary = document.getElementById('rpi-summary');
+  if (summary) {
+    summary.innerHTML = picked
+      ? `<b>${fa(picked)}</b> از ${fa(rows.length)} مورد تغییر می‌کند · جمع یک دوره: ${fmt(before)} ← <b>${fmt(after)}</b> تومان <span style="color:var(--green)">(${after >= before ? '+' : '−'}${fmt(Math.abs(after - before))})</span>`
+      : (params.valid || Object.keys(_renewalManual).length
+        ? 'موردی برای تغییر انتخاب نشده.'
+        : 'مقدار افزایش را بنویس یا مبلغ جدید هر نفر را در جدول وارد کن.');
+  }
+}
+
+function _renewalRowEdit(el) {
+  const id = Number(el?.dataset?.id);
+  if (!id) return;
+  const n = _renewalParseNumber(el.value);
+  if (Number.isFinite(n) && n > 0) {
+    _renewalManual[id] = Math.round(n);
+    _renewalUnchecked.delete(id);
+  } else {
+    delete _renewalManual[id];
+  }
+  el.classList.toggle('rpi-manual', Object.prototype.hasOwnProperty.call(_renewalManual, id));
+  _renewalSyncChecks();
+}
+
+function _renewalRowPick(el) {
+  const id = Number(el?.dataset?.id);
+  if (!id) return;
+  if (el.checked) _renewalUnchecked.delete(id); else _renewalUnchecked.add(id);
+  _renewalSyncChecks();
+}
+
+function _renewalToggleAll(on) {
+  const params = _renewalParams();
+  _renewalPriceRows.filter(x => x.service === params.service).forEach(x => {
+    if (on) _renewalUnchecked.delete(x.id); else _renewalUnchecked.add(x.id);
+  });
+  _renewalSyncChecks();
+}
+
+function _renewalPicks() {
+  const params = _renewalParams();
+  return _renewalPriceRows
+    .filter(x => x.service === params.service && !_renewalUnchecked.has(x.id))
+    .map(x => ({ id: x.id, amount: _renewalTarget(x, params), old: x.amount }))
+    .filter(x => x.amount > 0 && x.amount !== x.old);
 }
 
 async function applyRenewalPriceIncrease() {
-  const picks = [...document.querySelectorAll('#rpi-preview .rpi-pick:checked')]
-    .map(el => ({ id: Number(el.dataset.id), amount: Number(el.dataset.amount) }))
-    .filter(x => x.id && x.amount > 0);
+  const picks = _renewalPicks();
   if (!picks.length) { showToast('موردی برای تغییر انتخاب نشده', 'error'); return; }
   if (!await tpConfirm(`مبلغ ${fa(picks.length)} یادآوری عوض شود؟ فروش‌ها و دریافت‌های گذشته تغییری نمی‌کنند.`)) return;
-  const res = await window.api.reminders.setAmounts(picks);
+  const res = await window.api.reminders.setAmounts(picks.map(({ id, amount }) => ({ id, amount })));
   try { await _syncToServer(); } catch (e) {}
   closeModal();
   showToast(`مبلغ ${fa(res?.updated || 0)} یادآوری به‌روز شد ✓`, 'success');
@@ -2120,33 +2257,13 @@ function _bindPartyTxPeriodFields() {
   });
 }
 
-function _ensurePartyTxPeriodDelegation() {
-  if (document._partyTxPeriodDelegation) return;
-  document._partyTxPeriodDelegation = true;
-  document.addEventListener('click', (e) => {
-    const chip = e.target.closest?.('.tx-invoice-period-chips .tx-period-chip[data-period]');
-    if (!chip) return;
-    const overlay = chip.closest('#modal-overlay');
-    if (!overlay) return;
-    e.preventDefault();
-    setPartyTxPeriod(chip.getAttribute('data-period'));
-  });
-}
-
 
 function _rerenderPartyTxModal() {
   const view = window._partyTxPrintPayload;
   if (!view) return;
   _refreshPartyTxView(view);
-  let body = document.querySelector('#modal-overlay.tx-invoice-overlay .modal-body');
-  if (!body) {
-    body = document.querySelector('#modal-overlay .modal-body');
-    if (!body) {
-      console.warn('[party-tx] modal body not found; cannot rerender period chips');
-      return;
-    }
-    console.warn('[party-tx] #modal-overlay.tx-invoice-overlay missing; using generic modal body');
-  }
+  const body = document.querySelector('#modal-overlay.tx-invoice-overlay .modal-body');
+  if (!body) return;
   body.innerHTML = _partyTxModalHtml(view);
   if (typeof initDatePickers === 'function') initDatePickers();
   _bindPartyTxPeriodFields();
@@ -2296,10 +2413,10 @@ function _partyTxModalHtml(view) {
       </div>
       <div class="tx-invoice-period">
         <div class="tx-invoice-period-chips" role="group" aria-label="بازه فاکتور">
-          <button type="button" class="tx-period-chip ${view.period === 'all' ? 'active' : ''}" data-period="all">همه</button>
-          <button type="button" class="tx-period-chip ${view.period === 'week' ? 'active' : ''}" data-period="week">یک هفته اخیر</button>
-          <button type="button" class="tx-period-chip ${view.period === 'month' ? 'active' : ''}" data-period="month">یک ماه اخیر</button>
-          <button type="button" class="tx-period-chip ${view.period === 'custom' ? 'active' : ''}" data-period="custom">سفارشی</button>
+          <button type="button" class="tx-period-chip ${view.period === 'all' ? 'active' : ''}" onclick="setPartyTxPeriod('all')">همه</button>
+          <button type="button" class="tx-period-chip ${view.period === 'week' ? 'active' : ''}" onclick="setPartyTxPeriod('week')">یک هفته اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'month' ? 'active' : ''}" onclick="setPartyTxPeriod('month')">یک ماه اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'custom' ? 'active' : ''}" onclick="setPartyTxPeriod('custom')">سفارشی</button>
         </div>
         ${view.period === 'custom' ? `<div class="tx-invoice-period-custom">
           <div>${calendarDateFieldHtml('tx-period-from', view.periodFrom, 'از تاریخ', false)}</div>
@@ -2402,7 +2519,6 @@ function _openPartyTransactions(payload) {
     { label: '📋 کپی', cls: 'btn-ghost', action: 'copyPartyTransactions()' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ], { overlayClass: 'tx-invoice-overlay' });
-  _ensurePartyTxPeriodDelegation();
   if (typeof initDatePickers === 'function') initDatePickers();
   _bindPartyTxPeriodFields();
 }

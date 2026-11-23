@@ -337,7 +337,7 @@ test('archive confirm mentions paused renewal reminders', () => {
   assert.match(fn(app, '_archiveStudentWithBalanceConfirm'), /یادآوری‌های تمدید این مشتری تا زمانی که در بایگانی است متوقف می‌شوند/);
 });
 
-test('asset versions aligned', () => {
-  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
-  assertTpAssetVersionsAligned(root);
+test('asset version tp450', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp450'/);
+  assert.match(read('sw.js'), /team-pulse-static-v450/);
 });

@@ -79,3 +79,16 @@ test('bulk price groups by the reminder title, not the sale service', () => {
   assert.equal(vm.runInContext('_renewalServiceLabel({ title: "سررسید پرداخت: کوچینگ" }, pk, ty)', sb), 'کوچینگ');
   assert.equal(vm.runInContext('_renewalServiceLabel({ title: "", package_id: 5 }, pk, ty)', sb), 'سایت');
 });
+
+test('price inputs accept Persian/Arabic digits and separators', () => {
+  const sb = {};
+  vm.createContext(sb);
+  vm.runInContext(extractFunction(financeSource, '_renewalParseNumber'), sb);
+  assert.equal(vm.runInContext('_renewalParseNumber("۲۰")', sb), 20);
+  assert.equal(vm.runInContext('_renewalParseNumber("٢٥")', sb), 25);
+  assert.equal(vm.runInContext('_renewalParseNumber("۷۵,۰۰۰,۰۰۰")', sb), 75000000);
+  assert.equal(vm.runInContext('_renewalParseNumber("۷٫۵")', sb), 7.5);
+  assert.ok(Number.isNaN(vm.runInContext('_renewalParseNumber("")', sb)));
+  assert.doesNotMatch(financeSource, /id="rpi-value" type="number"/);
+  assert.match(financeSource, /class="form-input rpi-new/);
+});

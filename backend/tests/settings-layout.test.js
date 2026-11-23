@@ -48,9 +48,11 @@ function bootSettingsTabVm() {
   return ctx;
 }
 
-test('asset versions aligned', () => {
-  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
-  assertTpAssetVersionsAligned(path.resolve(__dirname, '../..'));
+test('asset version is tp450', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp450'/);
+  assert.match(appHtml, /\?v=tp450/);
+  assert.match(sw, /team-pulse-static-v450/);
+  assert.match(appHtml, /fonts\/Vazirmatn-Regular\.woff2\?v=tp402/);
 });
 
 test('settings tabs exclude advanced; danger zone lives in data pane', () => {
