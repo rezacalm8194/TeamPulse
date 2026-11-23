@@ -26,6 +26,15 @@ function loadEnsure(ctx) {
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
+  // tp448: renewal opens a short amount confirm before saving.
+  ctx.openModal = () => {};
+  ctx.closeModal = () => {};
+  ctx.fmt = n => String(n);
+  ctx.escapeHtml = v => String(v);
+  ctx.document = { getElementById: id => (id === 'cyc-amount' ? { value: String(ctx._cyclePurchaseDraft?.amount ?? '') } : null) };
+  vm.runInContext('var _cyclePurchaseDraft = null;', ctx);
+  vm.runInContext(fn(finance, '_openCyclePurchaseConfirm'), ctx);
+  vm.runInContext(fn(finance, 'confirmCyclePurchase'), ctx);
 }
 
 test('normalize reminder title strips nested package prefixes', () => {
@@ -74,6 +83,7 @@ test('savePurchaseFromReminder uses title when copied type_id missing from catal
   loadEnsure(ctx);
   vm.runInContext(fn(finance, 'savePurchaseFromReminder'), ctx);
   await ctx.savePurchaseFromReminder(1);
+  await ctx.confirmCyclePurchase();
   assert.equal(added.length, 1);
   assert.equal(String(added[0].type_id), '9');
 });
@@ -151,9 +161,9 @@ test('orphan groups list alias-only missing catalog types', () => {
   assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
 });
 
-test('asset version tp447', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp447'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v447/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp447/);
+test('asset version tp448', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp448'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v448/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp448/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });

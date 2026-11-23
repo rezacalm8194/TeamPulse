@@ -1514,7 +1514,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
       فروش دوره‌ای را در بخش فروش ثبت کن؛ TeamPulse بر اساس سررسید اولین پرداخت و دوره تکرار، یادآوری پرداخت را خودش می‌سازد. وقتی از همین صفحه پرداخت را تأیید کنی، دریافت ثبت می‌شود و سررسید بعدی هم خودکار جلو می‌رود.
     </p>
   </div>${incomeQuickFilterHtml('reminders')}<div class="table-card tbl-responsive customer-reminders-table">
-    <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(quickFiltered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
+    <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(quickFiltered.length)} مورد)</span><span style="display:flex;gap:6px;align-items:center"><button class="btn btn-ghost btn-sm" title="افزایش قیمت تمدیدها" onclick="openRenewalPriceIncrease()">↗ افزایش قیمت</button><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></span></div>
     <table>
       <thead><tr><th>${_entityWord()}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>`;
@@ -1735,6 +1735,7 @@ async function _saveCyclePurchase(spec) {
       package_id: res?.id,
       repeat_months,
       payment_due_date: paymentDueDate,
+      ...(spec.next_amount > 0 ? { next_amount: spec.next_amount } : {}),
     });
     if (!completed?.ok) {
       showToast(completed?.error || 'فروش ثبت شد اما انتقال یادآوری انجام نشد؛ یادآوری را ویرایش کنید', 'error');
@@ -1751,98 +1752,264 @@ async function _saveCyclePurchase(spec) {
   return true;
 }
 
-async function savePurchaseFromReminder(id) {
-  if (window._savingNewPurchase) return;
+// Renewal from a reminder / a past sale opens a short confirm with the amount,
+// so a price increase can be entered for this cycle. Past sales keep their own
+// amount; «از دوره‌های بعد هم همین مبلغ» moves the reminder to the new price.
+let _cyclePurchaseDraft = null;
+
+function _openCyclePurchaseConfirm(spec, ctx) {
+  _cyclePurchaseDraft = spec;
+  const prev = Number(spec.amount || 0);
+  const recurring = Number(spec.repeat_months || 0) > 0 && !!spec.reminder_id;
+  openModal(`🛒 ثبت فروش این دوره — ${escapeHtml(ctx.customer || '')}`, `
+    <div class="form-grid">
+      <div class="form-group full">
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.9">
+          خدمت: <b>${escapeHtml(ctx.service || '—')}</b> · سررسید: ${escapeHtml(spec.payment_due_date || '—')}
+          ${prev ? `<br>مبلغ دوره قبل: ${fmt(prev)} تومان` : ''}
+        </div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">مبلغ این دوره (تومان) *</label>
+        <input class="form-input amount-input" id="cyc-amount" type="number" min="0" value="${prev || ''}">
+      </div>
+      ${recurring ? `<div class="form-group full">
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="cyc-carry" checked>
+          اگر مبلغ را تغییر دادم، یادآوری دوره‌های بعد هم با همین مبلغ باشد
+        </label>
+      </div>` : ''}
+    </div>
+  `, [
+    { label: 'ثبت فروش', cls: 'btn-primary', action: 'confirmCyclePurchase()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+async function confirmCyclePurchase() {
+  const spec = _cyclePurchaseDraft;
+  if (!spec || window._savingNewPurchase) return;
+  const raw = document.getElementById('cyc-amount')?.value?.trim() ?? '';
+  const amount = Number(raw);
+  if (raw === '' || !Number.isFinite(amount) || amount < 0) { showToast('مبلغ معتبر وارد کنید', 'error'); return; }
+  const changed = Math.round(amount) !== Math.round(Number(spec.amount || 0));
+  const carry = !!document.getElementById('cyc-carry')?.checked;
   window._savingNewPurchase = true;
   try {
-    const reminders = await window.api.reminders.getAll();
-    const r = reminders.find(x => String(x.id) === String(id));
-    if (!r) {
-      showToast('یادآوری پیدا نشد', 'error');
-      return;
-    }
-    allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
-    let pt = null;
-    let staffId = null;
-    if (r.package_id) {
-      const pkgs = await window.api.packages.getByStudent(r.student_id);
-      const pkg = (pkgs || []).find(p => String(p.id) === String(r.package_id));
-      if (pkg?.type_id) {
-        const types = await window.api.packageTypes.getAll();
-        const exists = types.find(t => String(t.id) === String(pkg.type_id));
-        if (exists) {
-          pt = exists;
-          staffId = pkg.staff_id || null;
-        }
-      }
-    }
-    if (!pt?.id) pt = await _ensurePackageTypeByLabel(r.title);
-    if (!pt?.id) {
-      showToast('خدمت این یادآوری پیدا نشد', 'error');
-      return;
-    }
-    await _saveCyclePurchase({
-      student_id: r.student_id,
-      type_id: pt.id,
-      staff_id: staffId,
-      amount: r.amount || 0,
-      repeat_months: r.repeat_months || 0,
-      note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
-      date: formatJalali(...todayJalali()),
-      payment_due_date: r.due_date_jalali,
-      reminder_id: r.id,
+    const ok = await _saveCyclePurchase({
+      ...spec,
+      amount: Math.round(amount),
+      next_amount: changed && carry && amount > 0 ? Math.round(amount) : 0,
     });
+    if (ok) {
+      _cyclePurchaseDraft = null;
+      closeModal();
+      if (changed && carry && amount > 0) showToast(`یادآوری دوره‌های بعد هم ${fmt(amount)} تومان شد`, 'success');
+    }
   } finally {
     window._savingNewPurchase = false;
   }
+}
+
+async function savePurchaseFromReminder(id) {
+  const reminders = await window.api.reminders.getAll();
+  const r = reminders.find(x => String(x.id) === String(id));
+  if (!r) {
+    showToast('یادآوری پیدا نشد', 'error');
+    return;
+  }
+  allStudents = allStudents.length ? allStudents : await window.api.students.getAll();
+  let pt = null;
+  let staffId = null;
+  if (r.package_id) {
+    const pkgs = await window.api.packages.getByStudent(r.student_id);
+    const pkg = (pkgs || []).find(p => String(p.id) === String(r.package_id));
+    if (pkg?.type_id) {
+      const types = await window.api.packageTypes.getAll();
+      const exists = types.find(t => String(t.id) === String(pkg.type_id));
+      if (exists) {
+        pt = exists;
+        staffId = pkg.staff_id || null;
+      }
+    }
+  }
+  if (!pt?.id) pt = await _ensurePackageTypeByLabel(r.title);
+  if (!pt?.id) {
+    showToast('خدمت این یادآوری پیدا نشد', 'error');
+    return;
+  }
+  _openCyclePurchaseConfirm({
+    student_id: r.student_id,
+    type_id: pt.id,
+    staff_id: staffId,
+    amount: r.amount || 0,
+    repeat_months: r.repeat_months || 0,
+    note: r.note || `از یادآوری پرداخت: ${r.title || ''}`,
+    date: formatJalali(...todayJalali()),
+    payment_due_date: r.due_date_jalali,
+    reminder_id: r.id,
+  }, { customer: `${r.name || ''} ${r.lname || ''}`.trim(), service: pt.label });
 }
 
 async function savePurchaseFromSale(packageId) {
-  if (window._savingNewPurchase) return;
-  window._savingNewPurchase = true;
-  try {
-    const packages = await window.api.packages.getAll();
-    const pkg = packages.find(x => String(x.id) === String(packageId));
-    if (!pkg) {
-      showToast('فروش پیدا نشد', 'error');
-      return;
-    }
-    if (!pkg.type_id) {
-      showToast('خدمت این فروش پیدا نشد', 'error');
-      return;
-    }
-    const date = formatJalali(...todayJalali());
-    const todayKey = jalaliKey(date);
-    const already = packages.some(p =>
-      String(p.id) !== String(pkg.id)
-      && String(p.student_id) === String(pkg.student_id)
-      && String(p.type_id) === String(pkg.type_id)
-      && jalaliKey(p.start_date) === todayKey
-    );
-    if (already) {
-      showToast('فروش این دوره قبلاً ثبت شده', 'error');
-      return;
-    }
-    const reminders = await window.api.reminders.getAll();
-    const rem = reminders.find(r =>
-      String(r.package_id) === String(pkg.id) && !r.done && (typeof _isPaymentReminder !== 'function' || _isPaymentReminder(r))
-    );
-    await _saveCyclePurchase({
-      student_id: pkg.student_id,
-      type_id: pkg.type_id,
-      staff_id: pkg.staff_id || null,
-      amount: pkg.total_amount || 0,
-      repeat_months: pkg.repeat_months || 0,
-      note: pkg.note || '',
-      date,
-      payment_due_date: pkg.payment_due_date || rem?.due_date_jalali || date,
-      reminder_id: rem?.id || 0,
-    });
-  } finally {
-    window._savingNewPurchase = false;
+  const packages = await window.api.packages.getAll();
+  const pkg = packages.find(x => String(x.id) === String(packageId));
+  if (!pkg) {
+    showToast('فروش پیدا نشد', 'error');
+    return;
   }
+  if (!pkg.type_id) {
+    showToast('خدمت این فروش پیدا نشد', 'error');
+    return;
+  }
+  const date = formatJalali(...todayJalali());
+  const todayKey = jalaliKey(date);
+  const already = packages.some(p =>
+    String(p.id) !== String(pkg.id)
+    && String(p.student_id) === String(pkg.student_id)
+    && String(p.type_id) === String(pkg.type_id)
+    && jalaliKey(p.start_date) === todayKey
+  );
+  if (already) {
+    showToast('فروش این دوره قبلاً ثبت شده', 'error');
+    return;
+  }
+  const reminders = await window.api.reminders.getAll();
+  const rem = reminders.find(r =>
+    String(r.package_id) === String(pkg.id) && !r.done && (typeof _isPaymentReminder !== 'function' || _isPaymentReminder(r))
+  );
+  _openCyclePurchaseConfirm({
+    student_id: pkg.student_id,
+    type_id: pkg.type_id,
+    staff_id: pkg.staff_id || null,
+    // The open reminder carries the current price (it may have been raised
+    // after this sale), so prefer it over the old sale's amount.
+    amount: (rem && Number(rem.amount) > 0) ? Number(rem.amount) : (pkg.total_amount || 0),
+    repeat_months: pkg.repeat_months || 0,
+    note: pkg.note || '',
+    date,
+    payment_due_date: pkg.payment_due_date || rem?.due_date_jalali || date,
+    reminder_id: rem?.id || 0,
+  }, { customer: `${pkg.name || ''} ${pkg.lname || ''}`.trim(), service: pkg.type_label || '' });
 }
 
+// ── Bulk renewal price increase ─────────────────────────────────────────────
+// Changes only the amount of OPEN recurring payment reminders. Past sales and
+// payments are never touched; each reminder can be unticked in the preview.
+let _renewalPriceRows = [];
+
+function _renewalServiceLabel(r, pkgById, typeById) {
+  const pkg = r.package_id != null ? pkgById.get(String(r.package_id)) : null;
+  const t = pkg ? typeById.get(String(pkg.type_id)) : null;
+  let label = String(t?.label || r.title || '').trim().replace(/^سررسید پرداخت:\s*/, '');
+  if (typeof _normalizePackageTypeTitle === 'function') label = _normalizePackageTypeTitle(label);
+  return label.trim() || 'بدون عنوان';
+}
+
+async function openRenewalPriceIncrease() {
+  await _ensureCompleteBusinessParts(['students', 'reminders', 'packages']);
+  const [reminders, packages, types] = await Promise.all([
+    window.api.reminders.getAll(), window.api.packages.getAll(), window.api.packageTypes.getAll(),
+  ]);
+  const pkgById = new Map((packages || []).map(p => [String(p.id), p]));
+  const typeById = new Map((types || []).map(t => [String(t.id), t]));
+  _renewalPriceRows = (reminders || [])
+    .filter(r => !r.done && Number(r.amount) > 0 && Number(r.repeat_months || 0) > 0
+      && (typeof _isPaymentReminder !== 'function' || _isPaymentReminder(r))
+      && !(typeof _reminderPausedByArchive === 'function' && _reminderPausedByArchive(r)))
+    .map(r => ({ id: r.id, amount: Number(r.amount), due: r.due_date_jalali, customer: `${r.name || ''} ${r.lname || ''}`.trim(), service: _renewalServiceLabel(r, pkgById, typeById) }));
+  if (!_renewalPriceRows.length) { showToast('یادآوری دوره‌ای بازی برای تغییر قیمت نیست', 'error'); return; }
+  const counts = new Map();
+  _renewalPriceRows.forEach(x => counts.set(x.service, (counts.get(x.service) || 0) + 1));
+  const services = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fa'));
+  openModal('↗ افزایش قیمت تمدیدها', `
+    <div style="font-size:12.5px;color:var(--text2);line-height:1.9;margin-bottom:10px">
+      فقط مبلغ یادآوری‌های بازِ دوره‌ای عوض می‌شود. فروش‌ها و دریافت‌های گذشته دست نمی‌خورند.
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">خدمت</label>
+        <select class="form-select" id="rpi-service" onchange="renderRenewalPricePreview()">
+          ${services.map(([label, n]) => `<option value="${escapeHtml(label)}">${escapeHtml(label)} (${fa(n)})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">نوع تغییر</label>
+        <select class="form-select" id="rpi-mode" onchange="renderRenewalPricePreview()">
+          <option value="percent">درصد افزایش</option>
+          <option value="add">افزودن مبلغ ثابت</option>
+          <option value="set">مبلغ جدید برای همه</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">مقدار</label>
+        <input class="form-input" id="rpi-value" type="number" min="0" placeholder="مثلاً ۲۰" oninput="renderRenewalPricePreview()">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">گرد کردن مبلغ جدید</label>
+        <select class="form-select" id="rpi-round" onchange="renderRenewalPricePreview()">
+          <option value="100000">به نزدیک‌ترین ۱۰۰ هزار تومان</option>
+          <option value="1000000">به نزدیک‌ترین ۱ میلیون تومان</option>
+          <option value="1000">به نزدیک‌ترین هزار تومان</option>
+        </select>
+      </div>
+    </div>
+    <div id="rpi-preview" style="margin-top:10px"></div>
+  `, [
+    { label: 'اعمال روی موارد تیک‌خورده', cls: 'btn-primary', action: 'applyRenewalPriceIncrease()' },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  renderRenewalPricePreview();
+}
+
+function _renewalNewAmount(old, mode, value, round) {
+  let next = old;
+  if (mode === 'percent') next = old * (1 + value / 100);
+  else if (mode === 'add') next = old + value;
+  else if (mode === 'set') next = value;
+  if (round > 0 && mode !== 'set') next = Math.round(next / round) * round;
+  return Math.max(0, Math.round(next));
+}
+
+function renderRenewalPricePreview() {
+  const box = document.getElementById('rpi-preview');
+  if (!box) return;
+  const service = document.getElementById('rpi-service')?.value || '';
+  const mode = document.getElementById('rpi-mode')?.value || 'percent';
+  const value = Number(document.getElementById('rpi-value')?.value || 0);
+  const round = Number(document.getElementById('rpi-round')?.value || 0);
+  const roundGroup = document.getElementById('rpi-round')?.closest('.form-group');
+  if (roundGroup) roundGroup.style.display = mode === 'set' ? 'none' : '';
+  const rows = _renewalPriceRows.filter(x => x.service === service);
+  const valid = Number.isFinite(value) && value > 0;
+  box.innerHTML = `<div class="table-card tbl-responsive"><table>
+    <thead><tr><th></th><th>${_entityWord()}</th><th>سررسید</th><th>مبلغ فعلی</th><th>مبلغ جدید</th></tr></thead>
+    <tbody>${rows.map(x => {
+      const next = valid ? _renewalNewAmount(x.amount, mode, value, round) : x.amount;
+      const same = next === x.amount;
+      return `<tr>
+        <td><input type="checkbox" class="rpi-pick" data-id="${x.id}" data-amount="${next}" ${valid && !same ? 'checked' : ''} ${!valid || same ? 'disabled' : ''}></td>
+        <td>${escapeHtml(x.customer || '—')}</td>
+        <td>${escapeHtml(x.due || '—')}</td>
+        <td>${fmt(x.amount)}</td>
+        <td style="font-weight:600;color:${same ? 'var(--text3)' : 'var(--green)'}">${fmt(next)}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+async function applyRenewalPriceIncrease() {
+  const picks = [...document.querySelectorAll('#rpi-preview .rpi-pick:checked')]
+    .map(el => ({ id: Number(el.dataset.id), amount: Number(el.dataset.amount) }))
+    .filter(x => x.id && x.amount > 0);
+  if (!picks.length) { showToast('موردی برای تغییر انتخاب نشده', 'error'); return; }
+  if (!await tpConfirm(`مبلغ ${fa(picks.length)} یادآوری عوض شود؟ فروش‌ها و دریافت‌های گذشته تغییری نمی‌کنند.`)) return;
+  const res = await window.api.reminders.setAmounts(picks);
+  try { await _syncToServer(); } catch (e) {}
+  closeModal();
+  showToast(`مبلغ ${fa(res?.updated || 0)} یادآوری به‌روز شد ✓`, 'success');
+  if (currentPage === 'reminders') await renderReminders();
+  else if (currentPage === 'payments') await renderPayments();
+}
 
 function openAddFamilyMemberById(familyId) {
   closeFamilyActions();

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp447';
+const TP_ASSET_V = 'tp448';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -57,7 +57,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openServiceProductsCatalog', 'openRelinkOrphanPackageType', 'confirmRelinkOrphanPackageType',
   'saveServiceProductPrice', 'saveServiceProductLabel',
   'saveServiceProductUnit', 'saveServiceProductColor', 'addServiceProductFromCatalog',
-  'openAddReminder', 'savePurchaseFromReminder', 'savePurchaseFromSale', 'openNewFamily', 'openStudentTransactions',
+  'openAddReminder', 'savePurchaseFromReminder', 'savePurchaseFromSale', 'openRenewalPriceIncrease', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename', 'setPartyTxPeriod', 'applyPartyTxCustomPeriod'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
 [
@@ -3799,6 +3799,21 @@ window.api = {
   reminders: {
     getAll: ()=>{ const blocked=typeof _blockedBusinessIds==='function'?_blockedBusinessIds('reminders'):new Set(); return _P((_db.reminders||[]).filter(r=>r&&!blocked.has(String(r.id))).map(r=>{const s=_db.students.find(x=>x.id===r.student_id);return{...r,name:s?s.name:'',lname:s?s.lname:'',days_until:_daysUntil(r.due_date_jalali)};}).sort((a,b)=>_jalaliKey(a.due_date_jalali)-_jalaliKey(b.due_date_jalali))); },
     add: (p)=>{ const rawTitle=p.title||'یادآوری'; const title=_dedupePkgRenewalTitle(rawTitle); const row={id:_nextId('reminders'),student_id:p.student_id,package_id:p.package_id||null,source:p.source||'',title,due_date_jalali:p.due_date,repeat_months:p.repeat_months||0,amount:p.amount||0,note:p.note||'',done:false,notified_levels:[],created_at:new Date().toISOString()}; if(typeof _clearPackageReminderSuppression==='function')_clearPackageReminderSuppression(row.package_id); _db.reminders.push(row); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'upsert'); _save(true,{urgent:true}); return _P({ok:true}); },
+    // Bulk renewal price change: only open reminders, only the amount.
+    setAmounts: (list)=>{
+      let updated=0;
+      (Array.isArray(list)?list:[]).forEach(it=>{
+        const r=(_db.reminders||[]).find(x=>String(x.id)===String(it?.id));
+        const amount=Math.round(Number(it?.amount));
+        if(!r||r.done||!(amount>0)||Number(r.amount)===amount)return;
+        r.amount=amount;
+        r.updated_at=new Date().toISOString();
+        if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert');
+        updated++;
+      });
+      if(updated)_save(true,{urgent:true});
+      return _P({ok:true,updated});
+    },
     update: (p)=>{ const r=_db.reminders.find(x=>x.id===p.id); if(r){const patch=p.patch||{};if(patch.title!=null)patch.title=_dedupePkgRenewalTitle(patch.title);Object.assign(r,patch);r.updated_at=new Date().toISOString(); if(typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',r,'upsert'); _save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.reminders||[]).find(x=>String(x.id)===String(id)); _recordDeletedItems('reminders',id); if(row&&row.package_id!=null&&row.package_id!=='')_recordDeletedItems('package_reminders',row.package_id); _db.reminders=(_db.reminders||[]).filter(x=>String(x.id)!==String(id)); if(row&&typeof _enqueueDurableBusinessDelta==='function')_enqueueDurableBusinessDelta('reminders',row,'delete'); _save(true,{urgent:true}); return (typeof _syncToServer==='function'?_syncToServer():_P({ok:true})).then(()=>({ok:true})).catch(()=>({ok:true})); },
     markPaid: (p)=>{
@@ -3833,6 +3848,8 @@ window.api = {
       if(p.package_id)r.package_id=p.package_id;
       const pkg = r.package_id ? _db.packages.find(x=>String(x.id)===String(r.package_id)) : null;
       r.repeat_months=repeatMonths;
+      // Price raised for this cycle and kept for the next ones.
+      if(Number(p.next_amount)>0)r.amount=Math.round(Number(p.next_amount));
       if(repeatMonths>0){
         r.due_date_jalali=next;
         _persistReminderCycleAdvance(r);
