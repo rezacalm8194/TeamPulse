@@ -117,9 +117,43 @@ test('catalog delete requires fresh package parts', () => {
   assert.match(finance, /svc-orphan-panel/);
 });
 
-test('asset version tp443', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp443'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v443/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp443/);
+test('relink orphan buttons use single-quoted onclick args not JSON.stringify', () => {
+  assert.match(finance, /openRelinkOrphanPackageType\('\$\{_tpOnclickStr\(g\.type_id\)\}'\)/);
+  assert.match(finance, /confirmRelinkOrphanPackageType\('\$\{_tpOnclickStr\(fromTypeId\)\}'\)/);
+  assert.doesNotMatch(finance, /openRelinkOrphanPackageType\(\$\{JSON\.stringify/);
+  const ctx = vm.createContext({
+    escapeHtml(s) { return String(s); },
+    _tpOnclickStr(v) { return String(v ?? '').replace(/'/g, '&#39;'); },
+  });
+  const typeId = '38';
+  const html = `<button onclick="openRelinkOrphanPackageType('${ctx._tpOnclickStr(typeId)}')">`;
+  assert.match(html, /onclick="openRelinkOrphanPackageType\('38'\)"/);
+});
+
+test('orphan groups list alias-only missing catalog types', () => {
+  assert.match(app, /function _packageTypeNeedsCatalogRelink/);
+  assert.match(app, /ادغام قدیمی/);
+  const ctx = {
+    _db: {
+      package_types: [{ id: 10, label: 'کاننیکال', key: 'pt10' }],
+      packages: [{ id: 1, student_id: 1, type_id: '38', note: '' }],
+      students: [{ id: 1, name: 'علی', lname: 'رضا' }],
+      service_type_aliases: [{ id: '38', merged_into_id: '10' }],
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fn(app, '_resolvePackageType'), ctx);
+  vm.runInContext(fn(app, '_packageTypeNeedsCatalogRelink'), ctx);
+  vm.runInContext(fn(app, '_orphanPackageTypeGroups'), ctx);
+  const groups = ctx._orphanPackageTypeGroups();
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].type_id, '38');
+  assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
+});
+
+test('asset version tp444', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp444'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v444/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp444/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });

@@ -329,8 +329,9 @@ async function openServiceProductsCatalog() {
       <div class="svc-orphan-group">
         <div class="svc-orphan-head">
           <span>شناسه ${escapeHtml(g.type_id)} · ${fa(g.count)} فروش</span>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="openRelinkOrphanPackageType(${JSON.stringify(g.type_id)})">وصل کردن به…</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="openRelinkOrphanPackageType('${_tpOnclickStr(g.type_id)}')">وصل کردن به…</button>
         </div>
+        ${g.aliasHint ? `<div class="svc-orphan-alias" style="font-size:11px;color:var(--amber);margin-top:4px">${escapeHtml(g.aliasHint)}</div>` : ''}
         <div class="svc-orphan-meta" style="font-size:11px;color:var(--text3)">${escapeHtml((g.students || []).slice(0, 4).join('، ') || '—')}${g.students?.length > 4 ? ` و ${fa(g.students.length - 4)} نفر دیگر` : ''}${g.sampleNote ? ` · ${escapeHtml(g.sampleNote)}` : ''}</div>
       </div>`).join('')}
   </div>` : '';
@@ -439,7 +440,7 @@ async function openRelinkOrphanPackageType(fromTypeId) {
       </div>
     </details>
   `, [
-    { label: 'وصل کردن', cls: 'btn-primary', action: `confirmRelinkOrphanPackageType(${JSON.stringify(fromTypeId)})` },
+    { label: 'وصل کردن', cls: 'btn-primary', action: `confirmRelinkOrphanPackageType('${_tpOnclickStr(fromTypeId)}')` },
     { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
   ]);
 }
@@ -1550,7 +1551,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
           <button class="row-menu-btn" onclick="toggleRowMenu(event,'${reminderMenuId}')" aria-label="عملیات یادآوری">⋮</button>
           <div class="row-menu-panel" id="${reminderMenuId}">
             ${!r.done ? `<div class="row-menu-item" onclick="markReminderPaid(${r.id})">✓ پرداخت شد</div>` : ''}
-            ${!r.done && r.amount ? `<div class="row-menu-item" onclick="openBalePaymentRequest({student_id:${r.student_id},reminder_id:${r.id},package_id:${r.package_id==null?'null':JSON.stringify(r.package_id)},amount:${Math.round(Number(r.amount)||0)},title:${JSON.stringify(String(r.title||'سررسید پرداخت').slice(0,32))}})">بله‌پی</div>` : ''}
+            ${!r.done && r.amount ? `<div class="row-menu-item" onclick="openBalePaymentRequest({student_id:${r.student_id},reminder_id:${r.id},package_id:${r.package_id == null ? 'null' : `'${_tpOnclickStr(r.package_id)}'`},amount:${Math.round(Number(r.amount) || 0)},title:'${_tpOnclickStr(String(r.title || 'سررسید پرداخت').slice(0, 32))}'})">بله‌پی</div>` : ''}
             ${!r.done ? `<div class="row-menu-item" onclick="savePurchaseFromReminder(${r.id})">🛒 خرید جدید</div>` : ''}
             <div class="row-menu-item" onclick="openEditReminder(${r.id})">✏️ ویرایش</div>
             <div class="row-menu-divider"></div>

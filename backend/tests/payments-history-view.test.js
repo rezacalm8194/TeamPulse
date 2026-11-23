@@ -79,9 +79,9 @@ test('mobile uses inline income search and hides topbar duplicate', () => {
   assert.match(fs.readFileSync(path.join(root, 'app.css'), 'utf8'), /\.topbar-actions \.income-topbar-search \{ display: none !important; \}/);
 });
 
-test('asset version tp443', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp443'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v443/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp443/);
+test('asset version tp444', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp444'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v444/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp444/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });
