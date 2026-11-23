@@ -732,7 +732,14 @@ function _buildPaymentsMonthLayout(visibleRows, allFiltered) {
   return layout;
 }
 
-function paymentsHistoryFiltersHtml() {
+function incomeInlineSearchHtml(search = '') {
+  return `<div class="table-search income-inline-search">
+    <span style="color:var(--text3)">🔍</span>
+    <input placeholder="جست‌وجو در همین فهرست…" oninput="renderPayments(this.value)" value="${escapeHtml(search)}" aria-label="جست‌وجو در همین فهرست">
+  </div>`;
+}
+
+function paymentsHistoryFiltersHtml(search = '') {
   const view = window._paymentsHistoryView || { studentId: '', range: 'all' };
   const students = _studentsForFinance();
   const ranges = [
@@ -748,9 +755,12 @@ function paymentsHistoryFiltersHtml() {
   const rangeChips = ranges.map(([id, label]) =>
     `<button type="button" class="chip ${view.range === id ? 'active' : ''}" onclick="_setPaymentsHistoryRange('${id}')">${escapeHtml(label)}</button>`
   ).join('');
-  return `<div class="payments-history-filters">
-    <select class="form-select payments-history-student" aria-label="فیلتر مشتری" onchange="_setPaymentsHistoryStudent(this.value)">${studentOpts}</select>
-    <div class="chip-bar payments-history-range">${rangeChips}</div>
+  return `<div class="payments-history-filters-wrap">
+    ${incomeInlineSearchHtml(search)}
+    <div class="payments-history-filters">
+      <select class="form-select payments-history-student" aria-label="فیلتر مشتری" onchange="_setPaymentsHistoryStudent(this.value)">${studentOpts}</select>
+      <div class="chip-bar payments-history-range">${rangeChips}</div>
+    </div>
   </div>`;
 }
 
@@ -758,7 +768,8 @@ function _setPaymentsHistoryStudent(id) {
   window._paymentsHistoryView = { ...(window._paymentsHistoryView || {}), studentId: id || '' };
   _paymentsListShown.payments = PAYMENTS_LIST_CHUNK;
   _paymentsListRenderKey = '';
-  const search = document.querySelector('#topbar-actions .table-search input')?.value || '';
+  const search = document.querySelector('#content .income-inline-search input')?.value
+    || document.querySelector('#topbar-actions .table-search input')?.value || '';
   renderPayments(search);
 }
 
@@ -766,7 +777,8 @@ function _setPaymentsHistoryRange(range) {
   window._paymentsHistoryView = { ...(window._paymentsHistoryView || {}), range: range || 'all' };
   _paymentsListShown.payments = PAYMENTS_LIST_CHUNK;
   _paymentsListRenderKey = '';
-  const search = document.querySelector('#topbar-actions .table-search input')?.value || '';
+  const search = document.querySelector('#content .income-inline-search input')?.value
+    || document.querySelector('#topbar-actions .table-search input')?.value || '';
   renderPayments(search);
 }
 
@@ -808,7 +820,7 @@ function _paymentHistoryMobileCardHtml(p, showAccountColumn) {
 
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
-    return `<div class="table-search">
+    return `<div class="table-search income-topbar-search">
     <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <input placeholder="جستجوی مشتری..." oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
   </div>
@@ -816,7 +828,7 @@ function accountCustomerTopbarHtml(tab, search = '') {
   }
   if (!['purchases', 'payments', 'reminders'].includes(tab)) return '';
   const searchPlaceholder = tab === 'reminders' ? 'جستجوی یادآوری...' : 'جستجو با نام...';
-  return `<div class="table-search">
+  return `<div class="table-search income-topbar-search">
     <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <input placeholder="${searchPlaceholder}" oninput="renderPayments(this.value)" value="${escapeHtml(search)}">
   </div>`;
@@ -858,7 +870,7 @@ async function renderPayments(search = '') {
     if (q) packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
     packages = filterIncomeRows('purchases', packages);
 
-    let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('purchases')}<div class="table-card tbl-responsive customer-sales-table">
+    let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('purchases')}${incomeInlineSearchHtml(search)}<div class="table-card tbl-responsive customer-sales-table">
       <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div></div>
       <table>
         <thead><tr><th>${_entityWord()}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
@@ -913,7 +925,7 @@ async function renderPayments(search = '') {
 
     let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('payments')}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header payments-history-header">
-        ${paymentsHistoryFiltersHtml()}
+        ${paymentsHistoryFiltersHtml(search)}
         <span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span>
         <button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button>
       </div>`;
@@ -965,12 +977,13 @@ async function renderPayments(search = '') {
       '<button class="todo-show-more" onclick="_loadMoreBusiness(\'payments\')">دریافت دریافت‌های بیشتر</button>';
     setContent(html + morePayments);
   } else {
-    await renderReminders(search, true, accountCustomerTabsHtml(tab, search));
+    await renderReminders(search, true, accountCustomerTabsHtml(tab, search) + incomeInlineSearchHtml(search));
   }
 
   if (search) {
     requestAnimationFrame(() => {
-      const sp = document.querySelector('#topbar-actions .table-search input') ||
+      const sp = document.querySelector('#content .income-inline-search input') ||
+                 document.querySelector('#topbar-actions .table-search input') ||
                  document.querySelector('.table-search input');
       if (sp) { sp.focus(); try { sp.setSelectionRange(search.length, search.length); } catch(e){} }
     });
@@ -1106,7 +1119,7 @@ async function renderFamilies(embedded = currentPage === 'payments', search = ''
   allStudents = await window.api.students.getAll();
   const financeStudents = _studentsForFinance();
   { const _sb = document.getElementById('student-badge'); if (_sb) { _sb.textContent = fa(allStudents.length); _sb.style.display = allStudents.length ? '' : 'none'; } }
-  const prefix = embedded ? accountCustomerTabsHtml('families') : '';
+  const prefix = embedded ? accountCustomerTabsHtml('families') + incomeInlineSearchHtml(search) : '';
   const filtered = filterAccountStudents(financeStudents, search);
   if (embedded) _syncPaymentsListShown('families', search);
   const familySlice = embedded ? _visiblePaymentsSlice('families', filtered) : null;
