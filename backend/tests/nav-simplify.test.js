@@ -20,10 +20,10 @@ function extractFn(source, name) {
   return match[0];
 }
 
-test('asset version is tp445', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp445'/);
-  assert.match(appHtml, /\?v=tp445/);
-  assert.match(sw, /team-pulse-static-v434/);
+test('asset version is tp446', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp446'/);
+  assert.match(appHtml, /\?v=tp446/);
+  assert.match(sw, /team-pulse-static-v446/);
 });
 
 test('Google Drive FOLDERS and FILES keep legacy lookup names', () => {
@@ -111,9 +111,9 @@ test('display templates avoid hardcoded شاگرد (excluding defaults and searc
 
 test('menu badges hide zero counts', () => {
   assert.match(app, /function updateReminderBadges/);
-  assert.match(app, /badge\.style\.display = count \? 'inline-block' : 'none'/);
+  assert.match(app, /badge\.style\.display = n \? 'inline-block' : 'none'/);
   assert.match(app, /_sb\.style\.display = allStudents\.length \? '' : 'none'/);
-  assert.match(app, /if \(n > 0\) \{ el\.style\.display = ''/);
+  assert.match(app, /if \(n > 0\) \{\s*el\.style\.display = ''/);
   assert.match(appHtml, /id="student-badge" style="display:none"/);
 });
 
