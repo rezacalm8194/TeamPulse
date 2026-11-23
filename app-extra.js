@@ -780,7 +780,7 @@ async function _paintDashboard(syncing) {
 
   ${topEarners.length > 0 ? `
   <div class="detail-section" style="margin-top:14px">
-    <h3>💰 پول‌سازترین ${META.entityPlural || 'شاگردان'} <span style="font-size:10px;color:var(--text3);font-weight:400">(۷۰٪ میزان پرداختی + ۳۰٪ سرعت پرداخت)</span></h3>
+    <h3>💰 پول‌سازترین ${_entityWord(true)} <span style="font-size:10px;color:var(--text3);font-weight:400">(۷۰٪ میزان پرداختی + ۳۰٪ سرعت پرداخت)</span></h3>
     ${topEarners.map((e,i) => `
       <div class="detail-row" ${i >= 10 ? 'data-top-earner-extra style="display:none"' : ''}>
         <span class="detail-key">${fa(i+1)}. ${escapeHtml(e.name)} ${escapeHtml(e.lname)}</span>
@@ -1544,7 +1544,7 @@ function staffBonusItemHtml(item = {}, disabled = false, roleLabel = '') {
       </div>
       <div class="role-field">
         <label class="form-label">دلیل / توضیحات</label>
-        <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="مثلاً عملکرد عالی، جذب شاگرد، انجام پروژه...">
+        <input class="form-input bonus-note" value="${escapeHtml(item.note || '')}" ${disabled ? 'disabled' : ''} placeholder="مثلاً عملکرد عالی، جذب ${_entityWordPlain()}، انجام پروژه...">
       </div>
       <button type="button" class="bonus-remove" onclick="removeStaffBonusItem(this)" title="حذف آیتم">×</button>
     </div>`;
@@ -3035,7 +3035,7 @@ function _instrEnsureKnowledgeStructure() {
   if (!_db.instructions) _db.instructions = [];
   const items = _db.instructions;
   function removeEmptyDefaultStudentsCategory() {
-    const idx = items.findIndex(n => n.type === 'kcategory' && (n.kcat_key === 'students' || n.title === 'شاگردان'));
+    const idx = items.findIndex(n => n.type === 'kcategory' && (n.kcat_key === 'students' || n.title === _entityWordPlain(true)));
     if (idx < 0) return false;
     const cat = items[idx];
     const hasChildren = items.some(n => n.parent_id && +n.parent_id === +cat.id);
@@ -5010,9 +5010,9 @@ async function _confirmDeleteInstruction(id) {
 async function renderTutorial() {
   updateTopbarActions('');
   const sections = [
-    { icon:'👥', title:'شاگردان', color:'#7c6af7',
-      desc:'مرکز اصلی برنامه. هر شاگرد پروفایل کاملی داره شامل اطلاعات تماس، پکیج‌های خریداری‌شده، تاریخچه پرداخت و جلسات.',
-      tips:['برای افزودن شاگرد جدید دکمه + رو بزن','می‌تونی چند پکیج مختلف برای یه شاگرد تعریف کنی','کیف پول برای مدیریت اعتبار استفاده میشه'] },
+    { icon:'👥', title:_entityWordPlain(true), color:'#7c6af7',
+      desc:`مرکز اصلی برنامه. هر ${_entityWordPlain()} پروفایل کاملی داره شامل اطلاعات تماس، پکیج‌های خریداری‌شده، تاریخچه پرداخت و جلسات.`,
+      tips:[`برای افزودن ${_entityWordPlain()} جدید دکمه + رو بزن`,`می‌تونی چند پکیج مختلف برای یه ${_entityWordPlain()} تعریف کنی`,'کیف پول برای مدیریت اعتبار استفاده میشه'] },
     { icon:'📅', title:'جلسات', color:'#3ecf8e',
       desc:'تمام جلسات کوچینگ رو ثبت کن. می‌تونی یادداشت، فایل پیوست و علامت‌گذاری مهم داشته باشی.',
       tips:['جلسات مهم رو ستاره‌دار کن','می‌تونی فایل و عکس به هر جلسه ضمیمه کنی','توضیح اضافه برای یادداشت‌های خصوصی'] },
@@ -5020,7 +5020,7 @@ async function renderTutorial() {
       desc:'تاریخچه کامل خریدها و پرداخت‌ها. بدهی‌ها رو دنبال کن و گزارش مالی بگیر.',
       tips:['ارزهای مختلف پشتیبانی میشه','از داشبورد مالی گزارش کامل ببین'] },
     { icon:'⏰', title:'یادآوری‌ها', color:'#fbbf24',
-      desc:'سیستم یادآوری هوشمند برای تمدید پکیج‌ها. وقتی پکیج یه شاگرد تموم میشه بهت یادآوری می‌کنه.',
+      desc:`سیستم یادآوری هوشمند برای تمدید پکیج‌ها. وقتی پکیج یه ${_entityWordPlain()} تموم میشه بهت یادآوری می‌کنه.`,
       tips:['یادآوری‌های تکرارشونده ماهانه داری','می‌تونی مستقیم از یادآوری پرداخت ثبت کنی'] },
     { icon:'✅', title:'لیست کارها', color:'#34d399',
       desc:'Todo list حرفه‌ای با امکان تکرار روزانه، هفتگی، ماهانه و یادآوری. کارهای انجام‌شده با صدا تأیید میشن.',
@@ -5116,8 +5116,8 @@ async function renderTutorial() {
         ${[
           {n:'۱', title:'ثبت‌نام و ورود', desc:'ابتدا با ایمیل خود ثبت‌نام کنید. بعد از ورود، اطلاعات اولیه کسب‌وکار خود را وارد کنید.'},
           {n:'۲', title:'تعریف نوع پکیج', desc:'از منوی تنظیمات، انواع پکیج‌هایی که ارائه می‌دهید را تعریف کنید (مثلاً: کوچینگ، مشاوره).'},
-          {n:'۳', title:'افزودن اولین شاگرد', desc:'از بخش شاگردان، روی دکمه + کلیک کنید. نام، شماره تماس و پکیج را وارد کنید.'},
-          {n:'۴', title:'ثبت جلسات', desc:'بعد از هر جلسه، از بخش جلسات روی نام شاگرد کلیک کنید و جلسه جدید ثبت کنید.'},
+          {n:'۳', title:`افزودن اولین ${_entityWordPlain()}`, desc:`از بخش ${_entityWordPlain(true)}، روی دکمه + کلیک کنید. نام، شماره تماس و پکیج را وارد کنید.`},
+          {n:'۴', title:'ثبت جلسات', desc:`بعد از هر جلسه، از بخش جلسات روی نام ${_entityWordPlain()} کلیک کنید و جلسه جدید ثبت کنید.`},
           {n:'۵', title:'پیگیری پرداخت‌ها', desc:'از بخش یادآوری‌ها، سررسید پرداخت‌ها را دنبال کنید و بعد از پرداخت تأیید کنید.'},
           {n:'۶', title:'لیست کارها', desc:'کارهای روزانه و هفتگی خود را در لیست کارها ثبت کنید و تکرار زمان‌بندی‌شده تنظیم کنید.'},
           {n:'۷', title:'پشتیبان‌گیری', desc:'هفتگی از تنظیمات > پشتیبان‌گیری فایل پشتیبان تهیه کنید.'},

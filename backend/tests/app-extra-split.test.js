@@ -103,7 +103,7 @@ test('staff role occurrence count is editable, persisted, and included in totals
 });
 
 test('customer account tab hosts the case financial table', () => {
-  assert.match(financeSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشتری/);
+  assert.match(financeSource, /_tpPaymentsTab\('families'\)">[^<]*مانده حساب‌ها/);
   assert.doesNotMatch(financeSource, /_tpPaymentsTab\('families'\)">[^<]*حساب مشترک/);
   assert.match(appSource, /function studentAccountOverviewHtml\(/);
   assert.match(financeSource, /studentAccountOverviewHtml\(allStudents, filtered, \{/);
