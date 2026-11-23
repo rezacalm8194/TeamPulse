@@ -1898,12 +1898,20 @@ async function savePurchaseFromSale(packageId) {
 // payments are never touched; each reminder can be unticked in the preview.
 let _renewalPriceRows = [];
 
+// Grouped by the reminder's own title (what the owner sees and renews, e.g.
+// «هاست دانلود» even when its sale was filed under «سایت»); the sale's service
+// is only a fallback for an empty title.
 function _renewalServiceLabel(r, pkgById, typeById) {
+  const clean = v => {
+    let label = String(v || '').replace(/\s+/g, ' ').trim().replace(/^سررسید پرداخت:\s*/, '');
+    if (label && typeof _normalizePackageTypeTitle === 'function') label = _normalizePackageTypeTitle(label);
+    return label.trim();
+  };
+  const own = clean(r.title);
+  if (own && own !== 'خرید جدید') return own;
   const pkg = r.package_id != null ? pkgById.get(String(r.package_id)) : null;
   const t = pkg ? typeById.get(String(pkg.type_id)) : null;
-  let label = String(t?.label || r.title || '').trim().replace(/^سررسید پرداخت:\s*/, '');
-  if (typeof _normalizePackageTypeTitle === 'function') label = _normalizePackageTypeTitle(label);
-  return label.trim() || 'بدون عنوان';
+  return clean(t?.label) || 'بدون عنوان';
 }
 
 async function openRenewalPriceIncrease() {
@@ -1980,9 +1988,12 @@ function renderRenewalPricePreview() {
   const round = Number(document.getElementById('rpi-round')?.value || 0);
   const roundGroup = document.getElementById('rpi-round')?.closest('.form-group');
   if (roundGroup) roundGroup.style.display = mode === 'set' ? 'none' : '';
+  const setNote = mode === 'set'
+    ? `<div style="font-size:12px;color:var(--amber);margin-bottom:6px">در این حالت همه موارد تیک‌خورده یک مبلغ می‌گیرند؛ برای مشتری‌هایی که قیمت متفاوت دارند «درصد» یا «افزودن مبلغ» مناسب‌تر است.</div>`
+    : '';
   const rows = _renewalPriceRows.filter(x => x.service === service);
   const valid = Number.isFinite(value) && value > 0;
-  box.innerHTML = `<div class="table-card tbl-responsive"><table>
+  box.innerHTML = `${setNote}<div class="table-card tbl-responsive"><table>
     <thead><tr><th></th><th>${_entityWord()}</th><th>سررسید</th><th>مبلغ فعلی</th><th>مبلغ جدید</th></tr></thead>
     <tbody>${rows.map(x => {
       const next = valid ? _renewalNewAmount(x.amount, mode, value, round) : x.amount;
