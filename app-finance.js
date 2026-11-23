@@ -622,6 +622,190 @@ async function openStudentIncomeHistory(studentId, kind) {
 }
 
 
+window._paymentsHistoryView = window._paymentsHistoryView || { studentId: '', range: 'all' };
+
+function _paymentHistoryMonthKey(dateJalali) {
+  const parts = _jalaliParse(dateJalali || '');
+  if (!parts[0] || parts.some(Number.isNaN)) return null;
+  return { jy: parts[0], jm: parts[1], key: parts[0] * 100 + parts[1] };
+}
+
+function _paymentsHistoryRangeMatch(dateJalali, range) {
+  if (!range || range === 'all') return true;
+  const mk = _paymentHistoryMonthKey(dateJalali);
+  if (!mk) return false;
+  const [tjy, tjm, tjd] = todayJalali();
+  if (range === 'this_month') return mk.jy === tjy && mk.jm === tjm;
+  if (range === 'last_month') {
+    const [py, pm] = _addMonths(tjy, tjm, tjd, -1);
+    return mk.jy === py && mk.jm === pm;
+  }
+  if (range === 'last3') {
+    for (let i = 0; i < 3; i++) {
+      const [jy, jm] = _addMonths(tjy, tjm, tjd, -i);
+      if (mk.jy === jy && mk.jm === jm) return true;
+    }
+    return false;
+  }
+  if (range === 'year') return mk.jy === tjy;
+  return true;
+}
+
+function _filterPaymentsHistoryView(payments) {
+  const view = window._paymentsHistoryView || {};
+  let rows = payments || [];
+  if (view.studentId) rows = rows.filter(p => String(p.student_id) === String(view.studentId));
+  if (view.range && view.range !== 'all') {
+    rows = rows.filter(p => _paymentsHistoryRangeMatch(p.date_jalali, view.range));
+  }
+  return rows;
+}
+
+function _paymentsHistoryShowAccountColumn(payments) {
+  if ((_db.financial_accounts || []).length > 0) return true;
+  return (payments || []).some(p => p.account_id != null && String(p.account_id).trim() !== '');
+}
+
+function _paymentHistoryPackageCell(p) {
+  const pkgId = p?.package_id;
+  if (pkgId == null || pkgId === '') {
+    return `<span style="color:var(--text3);font-size:12px">${escapeHtml('پرداخت به حساب')}</span>`;
+  }
+  const orphan = _paymentOrphanPackageBadgeHtml(p);
+  if (orphan) return orphan;
+  const label = p.pkg_label || 'بدون پکیج';
+  return incomeFilterButton('type', label, label, `<span class="tag" style="background:${p.pkg_color || '#888'}22;color:${p.pkg_color || '#888'}">${escapeHtml(label)}</span>`, 'income-filter-tag');
+}
+
+function _paymentHistoryAmountCell(p) {
+  const method = String(p.method || '').trim();
+  const methodHtml = method
+    ? `<span class="payment-method-chip">${escapeHtml(method)}</span>`
+    : '';
+  return `<div class="payment-amount-cell"><span class="amount amount-paid">${_moneyLabel(p.amount, p.currency)}</span>${methodHtml}</div>`;
+}
+
+function _paymentsMonthHeaderStats(rowsInSlice, allInMonth) {
+  let tomanSum = 0;
+  const fx = new Map();
+  for (const r of rowsInSlice) {
+    const amt = Number(r.amount) || 0;
+    if (_isTomanCurrency(r.currency)) tomanSum += amt;
+    else {
+      const cur = _moneyCurrency(r.currency);
+      fx.set(cur, (fx.get(cur) || 0) + amt);
+    }
+  }
+  const partial = rowsInSlice.length < allInMonth.length;
+  return { count: rowsInSlice.length, tomanSum, fx, partial };
+}
+
+function _paymentsMonthHeaderLabel(mk, stats) {
+  const partial = stats.partial ? ' (تا اینجا)' : '';
+  let sum = `جمع ${fmt(stats.tomanSum)} تومان${partial}`;
+  if (stats.fx.size) {
+    sum += [...stats.fx.entries()].map(([cur, amt]) => ` · ${fmt(amt)} ${escapeHtml(cur)}`).join('');
+  }
+  return `${JMONTHS[mk.jm - 1]} ${fa(mk.jy)} — ${fa(stats.count)} دریافت — ${sum}`;
+}
+
+function _buildPaymentsMonthLayout(visibleRows, allFiltered) {
+  const layout = [];
+  let lastKey = null;
+  for (const p of visibleRows) {
+    const mk = _paymentHistoryMonthKey(p.date_jalali);
+    const key = mk ? mk.key : 0;
+    if (key !== lastKey) {
+      lastKey = key;
+      if (mk) {
+        const allInMonth = allFiltered.filter(r => _paymentHistoryMonthKey(r.date_jalali)?.key === mk.key);
+        const sliceInMonth = visibleRows.filter(r => _paymentHistoryMonthKey(r.date_jalali)?.key === mk.key);
+        layout.push({
+          kind: 'month',
+          mk,
+          stats: _paymentsMonthHeaderStats(sliceInMonth, allInMonth),
+        });
+      }
+    }
+    layout.push({ kind: 'payment', p });
+  }
+  return layout;
+}
+
+function paymentsHistoryFiltersHtml() {
+  const view = window._paymentsHistoryView || { studentId: '', range: 'all' };
+  const students = _studentsForFinance();
+  const ranges = [
+    ['all', 'همه'],
+    ['this_month', 'این ماه'],
+    ['last_month', 'ماه قبل'],
+    ['last3', '۳ ماه اخیر'],
+    ['year', 'امسال'],
+  ];
+  const studentOpts = `<option value="">همه مشتریان</option>${students.map(s =>
+    `<option value="${s.id}" ${String(view.studentId) === String(s.id) ? 'selected' : ''}>${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`
+  ).join('')}`;
+  const rangeChips = ranges.map(([id, label]) =>
+    `<button type="button" class="chip ${view.range === id ? 'active' : ''}" onclick="_setPaymentsHistoryRange('${id}')">${escapeHtml(label)}</button>`
+  ).join('');
+  return `<div class="payments-history-filters">
+    <select class="form-select payments-history-student" aria-label="فیلتر مشتری" onchange="_setPaymentsHistoryStudent(this.value)">${studentOpts}</select>
+    <div class="chip-bar payments-history-range">${rangeChips}</div>
+  </div>`;
+}
+
+function _setPaymentsHistoryStudent(id) {
+  window._paymentsHistoryView = { ...(window._paymentsHistoryView || {}), studentId: id || '' };
+  _paymentsListShown.payments = PAYMENTS_LIST_CHUNK;
+  _paymentsListRenderKey = '';
+  const search = document.querySelector('#topbar-actions .table-search input')?.value || '';
+  renderPayments(search);
+}
+
+function _setPaymentsHistoryRange(range) {
+  window._paymentsHistoryView = { ...(window._paymentsHistoryView || {}), range: range || 'all' };
+  _paymentsListShown.payments = PAYMENTS_LIST_CHUNK;
+  _paymentsListRenderKey = '';
+  const search = document.querySelector('#topbar-actions .table-search input')?.value || '';
+  renderPayments(search);
+}
+
+function _paymentHistoryRowMenuHtml(p) {
+  const paymentMenuId = `payment-menu-${p.id}`;
+  return `<div class="row-menu">
+    <button class="row-menu-btn" type="button" aria-label="عملیات دریافت ${escapeHtml(`${p.name} ${p.lname}`.trim())}" aria-haspopup="menu" onclick="toggleRowMenu(event,'${paymentMenuId}')">⋮</button>
+    <div class="row-menu-panel" id="${paymentMenuId}" role="menu">
+      <div class="row-menu-item" role="menuitem" onclick="openEditPayment(${p.id})">✏️ ویرایش دریافت</div>
+      <div class="row-menu-divider"></div>
+      <div class="row-menu-item danger" role="menuitem" onclick="deletePayment(${p.id}, 'payments')">🗑 حذف دریافت</div>
+    </div>
+  </div>`;
+}
+
+function _paymentHistoryMobileCardHtml(p, showAccountColumn) {
+  const accountBit = showAccountColumn && p.account_label
+    ? `<span class="mpay-account">${escapeHtml(p.account_label)}</span>`
+    : '';
+  const method = String(p.method || '').trim();
+  const metaParts = [
+    DateService.disp(p.date_jalali) || '—',
+    _paymentHistoryPackageCell(p),
+    method ? `<span class="payment-method-chip">${escapeHtml(method)}</span>` : '',
+    accountBit,
+  ].filter(Boolean);
+  return `<div class="mpay-card customer-payment-row">
+    <div class="mpay-top">
+      <div class="mpay-name-amount">
+        <div class="mpay-name">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'payments')}</div>
+        <span class="mpay-amount amount amount-paid">${_moneyLabel(p.amount, p.currency)}</span>
+      </div>
+      ${_paymentHistoryRowMenuHtml(p)}
+    </div>
+    <div class="mpay-meta">${metaParts.join('<span class="mpay-meta-sep" aria-hidden="true">·</span>')}</div>
+    ${p.note ? `<div class="mpay-note">${escapeHtml(p.note)}</div>` : ''}
+  </div>`;
+}
+
 function accountCustomerTopbarHtml(tab, search = '') {
   if (tab === 'families') {
     return `<div class="table-search">
@@ -641,12 +825,13 @@ function accountCustomerTopbarHtml(tab, search = '') {
 
 async function renderPayments(search = '') {
   const tab = _paymentsTab;
-  _syncPaymentsListShown(tab, search);
+  const view = window._paymentsHistoryView || {};
+  _syncPaymentsListShown(tab, `${search}\x1e${view.studentId || ''}\x1e${view.range || 'all'}`);
 
   updateTopbarActions(accountCustomerTopbarHtml(tab, search));
 
   if (tab === 'payments') {
-    await _ensureCompleteBusinessParts(['students', 'payments']);
+    await _ensureCompleteBusinessParts(['students', 'payments', 'financial_accounts']);
   } else if (tab === 'purchases') {
     await _ensureCompleteBusinessParts(['students', 'packages']);
   } else if (tab === 'reminders') {
@@ -720,42 +905,61 @@ async function renderPayments(search = '') {
     let payments = allPayments;
     if (q) payments = payments.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
     payments = filterIncomeRows('payments', payments);
+    payments = _filterPaymentsHistoryView(payments);
     payments = _sortPaymentsNewestFirst(payments);
+    const showAccountColumn = _paymentsHistoryShowAccountColumn(allPayments);
+    const colSpan = showAccountColumn ? 7 : 6;
+    const compact = typeof _isCompactStudentViewport === 'function' && _isCompactStudentViewport();
 
     let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('payments')}<div class="table-card tbl-responsive customer-payments-table">
-      <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
-      <table>
-        <thead><tr><th>${_entityWord()}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
-        <tbody>`;
+      <div class="table-header payments-history-header">
+        ${paymentsHistoryFiltersHtml()}
+        <span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span>
+        <button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button>
+      </div>`;
+
     const paymentSlice = _visiblePaymentsSlice('payments', payments);
+    const layout = _buildPaymentsMonthLayout(paymentSlice.rows, payments);
+
     if (payments.length === 0) {
-      html += `<tr><td colspan="8"><div class="empty"><span>💳</span>پرداختی ثبت نشده</div></td></tr>`;
+      html += `<div class="empty"><span>💳</span>پرداختی ثبت نشده</div>`;
+    } else if (compact) {
+      html += '<div class="mpay-list">';
+      for (const block of layout) {
+        if (block.kind === 'month') {
+          html += `<div class="payments-month-banner">${escapeHtml(_paymentsMonthHeaderLabel(block.mk, block.stats))}</div>`;
+        } else {
+          html += _paymentHistoryMobileCardHtml(block.p, showAccountColumn);
+        }
+      }
+      html += '</div>';
     } else {
-      paymentSlice.rows.forEach(p => {
-        const student = financeById.get(Number(p.student_id)) || allStudents.find(s => s.id === p.student_id);
-        const orphanBadge = _paymentOrphanPackageBadgeHtml(p);
-        html += `<tr>
+      const accountTh = showAccountColumn ? '<th>واریز به حساب</th>' : '';
+      html += `<table>
+        <thead><tr><th>${_entityWord()}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th>${accountTh}<th>یادداشت</th><th>عملیات</th></tr></thead>
+        <tbody>`;
+      for (const block of layout) {
+        if (block.kind === 'month') {
+          html += `<tr class="payments-month-row"><td colspan="${colSpan}">${escapeHtml(_paymentsMonthHeaderLabel(block.mk, block.stats))}</td></tr>`;
+          continue;
+        }
+        const p = block.p;
+        const accountTd = showAccountColumn
+          ? `<td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label ? 'var(--accent2)' : 'var(--text3)'}">${escapeHtml(p.account_label || 'ثبت نشده')}</td>`
+          : '';
+        html += `<tr class="customer-payment-row">
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'payments')}</td>
-          <td data-label="پکیج">${orphanBadge}${incomeFilterButton('type', p.pkg_label || '', p.pkg_label || 'بدون پکیج', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.pkg_label)}</span>`, 'income-filter-tag')}</td>
-          <td data-label="مبلغ"><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency||'تومان')}</span></td>
+          <td data-label="پکیج">${_paymentHistoryPackageCell(p)}</td>
+          <td data-label="مبلغ">${_paymentHistoryAmountCell(p)}</td>
           <td data-label="تاریخ" style="color:var(--text2)">${DateService.disp(p.date_jalali)}</td>
-          <td data-label="واریز به حساب" style="font-size:11px;color:${p.account_label?'var(--accent2)':'var(--text3)'}">${escapeHtml(p.account_label||'ثبت نشده')}</td>
-          <td data-label="مانده حساب">${student ? balanceHtml(student.balance) : '—'}</td>
-          <td data-label="یادداشت" style="color:var(--text3);font-size:11px">${escapeHtml(p.note||'')}${p.method?` (${escapeHtml(p.method)})`:''}</td>
-          <td data-label="عملیات">
-            <div class="row-menu">
-              <button class="row-menu-btn" type="button" aria-label="عملیات دریافت ${escapeHtml(`${p.name} ${p.lname}`.trim())}" aria-haspopup="menu" onclick="toggleRowMenu(event,'payment-menu-${p.id}')">⋮</button>
-              <div class="row-menu-panel" id="payment-menu-${p.id}" role="menu">
-                <div class="row-menu-item" role="menuitem" onclick="openEditPayment(${p.id})">✏️ ویرایش دریافت</div>
-                <div class="row-menu-divider"></div>
-                <div class="row-menu-item danger" role="menuitem" onclick="deletePayment(${p.id}, 'payments')">🗑 حذف دریافت</div>
-              </div>
-            </div>
-          </td>
+          ${accountTd}
+          <td data-label="یادداشت" style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '')}</td>
+          <td data-label="عملیات">${_paymentHistoryRowMenuHtml(p)}</td>
         </tr>`;
-      });
+      }
+      html += '</tbody></table>';
     }
-    html += `</tbody></table>${_paymentsMoreButtonHtml('payments', paymentSlice.remaining)}</div>`;
+    html += `${_paymentsMoreButtonHtml('payments', paymentSlice.remaining)}</div>`;
     const paymentPaging = _businessPagingState('payments');
     const morePayments = (paymentSlice.remaining > 0 || paymentPaging.done) ? '' :
       '<button class="todo-show-more" onclick="_loadMoreBusiness(\'payments\')">دریافت دریافت‌های بیشتر</button>';

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp436';
+const TP_ASSET_V = 'tp438';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -3562,7 +3562,27 @@ window.api = {
     update: (p)=>{ const pay=_db.payments.find(x=>x.id===p.id); if(pay){Object.assign(pay,{amount:p.amount??pay.amount,currency:p.currency??pay.currency,date_jalali:p.date??pay.date_jalali,method:p.method??pay.method,account_id:Object.prototype.hasOwnProperty.call(p,'account_id')?p.account_id:pay.account_id,note:p.note??pay.note,package_id:Object.prototype.hasOwnProperty.call(p,'package_id')?p.package_id:pay.package_id,updated_at:new Date().toISOString()});_enqueueDurableBusinessDelta('payments', pay, 'upsert');_reconcileStudentPaymentReminders(pay.student_id, pay);_save(true,{urgent:true});} return _P({ok:true}); },
     delete: (id)=>{ const row=(_db.payments||[]).find(x=>x.id===id); _db.payments=_db.payments.filter(x=>x.id!==id); if(row) _enqueueDurableBusinessDelta('payments', row, 'delete'); _save(); return _P({ok:true}); },
     getByStudent: (sid)=>_P(_sortPaymentsNewestFirst(_rowsForStudent('payments',sid)).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',account_label:account?account.name:''};})),
-    getAll: ()=>_P(_sortPaymentsNewestFirst(_db.payments).slice(0,300).map(p=>{const pkg=_db.packages.find(x=>x.id===p.package_id);const pt=pkg?_db.package_types.find(t=>t.id===pkg.type_id):null;const student=_db.students.find(x=>x.id===p.student_id);const account=(_db.financial_accounts||[]).find(a=>String(a.id)===String(p.account_id));return{...p,pkg_label:pt?pt.label:'مانده فعلی',pkg_color:pt?pt.color:'#888',name:student?student.name:'',lname:student?student.lname:'',account_label:account?account.name:''};})),
+    getAll: ()=>{
+      const pkgById = new Map((_db.packages || []).map(x => [String(x.id), x]));
+      const ptById = new Map((_db.package_types || []).map(x => [String(x.id), x]));
+      const studentById = new Map((_db.students || []).map(x => [String(x.id), x]));
+      const accountById = new Map((_db.financial_accounts || []).map(x => [String(x.id), x]));
+      const rows = _sortPaymentsNewestFirst(_db.payments).map(p => {
+        const pkg = p.package_id != null && p.package_id !== '' ? pkgById.get(String(p.package_id)) : null;
+        const pt = pkg ? ptById.get(String(pkg.type_id)) : null;
+        const student = studentById.get(String(p.student_id));
+        const account = p.account_id != null && String(p.account_id) !== '' ? accountById.get(String(p.account_id)) : null;
+        return {
+          ...p,
+          pkg_label: pt ? pt.label : 'مانده فعلی',
+          pkg_color: pt ? pt.color : '#888',
+          name: student ? student.name : '',
+          lname: student ? student.lname : '',
+          account_label: account ? account.name : '',
+        };
+      });
+      return _P(rows);
+    },
   },
 
   sessions: {
@@ -11700,7 +11720,7 @@ function _paymentsMoreButtonHtml(tab, remaining) {
   return `<button type="button" class="todo-show-more income-show-more" onclick="_paymentsShowMore('${tab}')">موارد بیشتر +</button>`;
 }
 function _incomeListRowSelector(tab) {
-  if (tab === 'payments') return '#content .customer-payments-table tbody tr';
+  if (tab === 'payments') return '#content .customer-payments-table tbody tr.customer-payment-row, #content .customer-payments-table .mpay-card';
   if (tab === 'reminders') return '#content .customer-reminders-table tbody tr';
   if (tab === 'families') return '#content .stu-table-wrap tbody tr, #content .mstu-list .mstu-card';
   return '#content .customer-sales-table tbody tr';
