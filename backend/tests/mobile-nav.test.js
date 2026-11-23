@@ -22,7 +22,7 @@ function extractBetween(source, start, end) {
   return source.slice(i, j);
 }
 
-function bootBnVm(extra = '') {
+function bootBnVm(extra = {}) {
   const ctx = vm.createContext({
     BN_FILL_POOL: ['home', 'students', 'todolist', 'dashboard', 'calendar', 'goals', 'habits', 'instructions'],
     DEFAULT_BN_PAGES: ['home', 'students', 'todolist', 'dashboard'],
@@ -44,14 +44,22 @@ function bootBnVm(extra = '') {
   return ctx;
 }
 
-test('asset version is tp428', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp428'/);
-  assert.match(appHtml, /\?v=tp428/);
-  assert.match(sw, /team-pulse-static-v428/);
+test('asset version is tp429', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp429'/);
+  assert.match(appHtml, /\?v=tp429/);
+  assert.match(sw, /team-pulse-static-v429/);
+  assert.match(appHtml, /fonts\/Vazirmatn-Regular\.woff2\?v=tp402/);
 });
 
 test('default bottom nav pages are home, students, todolist, dashboard', () => {
   assert.match(app, /const DEFAULT_BN_PAGES = \['home', 'students', 'todolist', 'dashboard'\]/);
+});
+
+test('BN_PAGE_DEFS has labels only (no emoji icons)', () => {
+  const block = extractBetween(app, 'const BN_PAGE_DEFS = {', '};');
+  assert.doesNotMatch(block, /icon:\s*'/);
+  assert.doesNotMatch(block, /[\u{1F300}-\u{1FAFF}]/u);
+  assert.match(app, /function _bnNavSvgMarkup\(/);
 });
 
 test('_resolveBottomNavSlots fills from pool when saved pages are invalid', () => {
@@ -85,11 +93,28 @@ test('hamburger-btn hidden only inside mobile media query', () => {
   assert.doesNotMatch(css.slice(0, idx), /#hamburger-btn\{display:none!important\}/);
 });
 
-test('bottom nav shell and settings editor hooks', () => {
-  assert.match(appHtml, /id="bn-row"/);
-  assert.match(app, /function _renderBottomNav\(/);
-  assert.match(app, /id="bn-nav-settings-list"/);
-  assert.match(app, /BN_STORAGE_KEY = 'teampulse_bn_pages'/);
+test('app.html bn-row ships default items before JS', () => {
+  const row = appHtml.match(/id="bn-row"([\s\S]*?)<\/div>\s*<div class="bn-safe-spacer"/);
+  assert.ok(row, 'bn-row block missing');
+  assert.match(row[1], /data-page="home"/);
+  assert.match(row[1], /data-page="students"/);
+  assert.match(row[1], /data-page="todolist"/);
+  assert.match(row[1], /data-page="dashboard"/);
+  assert.match(row[1], /<svg/);
+  assert.doesNotMatch(row[1], /role="listitem"/);
+  assert.doesNotMatch(row[0], /role="list"/);
+});
+
+test('bottom nav render avoids list/listitem roles', () => {
+  const renderBlock = extractBetween(app, 'function _renderBottomNav()', 'function _syncBnReminderBadgeFromSidebar');
+  assert.doesNotMatch(renderBlock, /role="listitem"/);
+  assert.doesNotMatch(appHtml, /id="bn-row"[^>]*role="list"/);
+});
+
+test('early bottom nav boot after local meta', () => {
+  assert.match(app, /function _bootstrapBottomNavEarly\(/);
+  assert.match(app, /function _readLocalMetaForBoot\(/);
+  assert.match(app, /_bootstrapBottomNavEarly\(\)/);
 });
 
 test('backup and import remain in settings data pane', () => {

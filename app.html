@@ -16,12 +16,12 @@
   <link rel="apple-touch-icon" href="/app-icon-192-v3.png?v=3">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1">
   <link rel="preload" href="/fonts/Vazirmatn-Regular.woff2?v=tp402" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/app.css?v=tp428" as="style">
-    <link rel="preload" href="/tp-inline-bind.js?v=tp428" as="script">
-  <link rel="preload" href="/app.js?v=tp428" as="script">
-  <link rel="stylesheet" href="/app.css?v=tp428">
-  <script src="/tp-inline-bind.js?v=tp428" defer></script>
-  <script src="/app.js?v=tp428" defer></script>
+  <link rel="preload" href="/app.css?v=tp429" as="style">
+    <link rel="preload" href="/tp-inline-bind.js?v=tp429" as="script">
+  <link rel="preload" href="/app.js?v=tp429" as="script">
+  <link rel="stylesheet" href="/app.css?v=tp429">
+  <script src="/tp-inline-bind.js?v=tp429" defer></script>
+  <script src="/app.js?v=tp429" defer></script>
 
 </head>
 <body>
@@ -136,7 +136,28 @@
       <div class="loading" id="loading-msg">در حال بارگذاری...</div>
     </main>
     <nav class="bottom-nav" id="bottom-nav" aria-label="ناوبری اصلی">
-      <div class="bn-row" id="bn-row" role="list"></div>
+      <div class="bn-row" id="bn-row">
+        <button type="button" class="bn-item" data-page="home" data-tp-onclick="bnNav(this)" aria-label="داشبورد">
+          <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 7-5.5L17 9v7.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5z"/><path d="M7.5 17v-4.5h5V17"/></svg></span></span>
+          <span class="bn-label">داشبورد</span>
+        </button>
+        <button type="button" class="bn-item" data-page="students" data-tp-onclick="bnNav(this)" aria-label="امور مشتریان">
+          <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.6"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6"/><circle cx="14.5" cy="7" r="2"/><path d="M13 11.6c2 .2 3.5 1.8 3.5 4.1"/></svg></span></span>
+          <span class="bn-label">امور مشتریان</span>
+        </button>
+        <button type="button" class="bn-item" data-page="todolist" data-tp-onclick="bnNav(this)" aria-label="کارها">
+          <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="3"/><path d="M6.5 10.2l2.3 2.3 4.7-5"/></svg></span><span class="bn-badge" id="bn-todo-badge" style="display:none" aria-hidden="true">۰</span></span>
+          <span class="bn-label">کارها</span>
+        </button>
+        <button type="button" class="bn-item" data-page="dashboard" data-tp-onclick="bnNav(this)" aria-label="مدیریت مالی">
+          <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="3" height="7" rx="1"/><rect x="8.5" y="5" width="3" height="12" rx="1"/><rect x="14" y="12" width="3" height="5" rx="1"/></svg></span><span class="bn-badge" id="bn-reminder-badge" style="display:none" aria-hidden="true">۰</span></span>
+          <span class="bn-label">مدیریت مالی</span>
+        </button>
+        <button type="button" class="bn-item bn-more" data-tp-onclick="openSidebar()" aria-label="بیشتر — منوی کناری">
+          <span class="bn-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12M4 10h12M4 13h12"/></svg></span>
+          <span class="bn-label">بیشتر</span>
+        </button>
+      </div>
       <div class="bn-safe-spacer"></div>
     </nav>
   </div>
