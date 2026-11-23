@@ -320,7 +320,20 @@ function confirmGeneralPurchaseStudent() {
 }
 
 async function openServiceProductsCatalog() {
+  await _ensureCompleteBusinessParts(['packages', 'reminders', 'students']);
   PKG_TYPES = await window.api.packageTypes.getAll();
+  const orphanGroups = typeof _orphanPackageTypeGroups === 'function' ? _orphanPackageTypeGroups() : [];
+  const orphanSection = orphanGroups.length ? `<div class="svc-orphan-panel">
+    <div class="svc-orphan-title">${fa(orphanGroups.reduce((a, g) => a + g.count, 0))} فروش به خدمت حذف‌شده وصل‌اند</div>
+    ${orphanGroups.map(g => `
+      <div class="svc-orphan-group">
+        <div class="svc-orphan-head">
+          <span>شناسه ${escapeHtml(g.type_id)} · ${fa(g.count)} فروش</span>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="openRelinkOrphanPackageType(${JSON.stringify(g.type_id)})">وصل کردن به…</button>
+        </div>
+        <div class="svc-orphan-meta" style="font-size:11px;color:var(--text3)">${escapeHtml((g.students || []).slice(0, 4).join('، ') || '—')}${g.students?.length > 4 ? ` و ${fa(g.students.length - 4)} نفر دیگر` : ''}${g.sampleNote ? ` · ${escapeHtml(g.sampleNote)}` : ''}</div>
+      </div>`).join('')}
+  </div>` : '';
   const rows = PKG_TYPES.length ? PKG_TYPES.map(pt => {
     const price = _pkgTypePrice(pt.price);
     const hint = _pkgTypeUnitHint(pt);
@@ -337,6 +350,7 @@ async function openServiceProductsCatalog() {
     </div>`;
   }).join('') : `<div class="empty" style="padding:18px 12px"><span>📦</span>هنوز خدمتی تعریف نشده</div>`;
   openModal('خدمات و محصولات', `
+    ${orphanSection}
     <p class="service-price-hint">نام، رنگ، واحد و قیمت پیش‌فرض — در فروش جدید همین مبلغ پیشنهاد می‌شود.</p>
     <div class="service-price-list">${rows}</div>
     <div class="service-price-add">
@@ -397,6 +411,67 @@ async function saveServiceProductUnit(id, el) {
   const pt = PKG_TYPES.find(x => x.id === id);
   if (pt) { pt.unit = unit; pt.unit_label = unit_label; }
   showToast('واحد ذخیره شد ✓', 'success');
+}
+
+async function openRelinkOrphanPackageType(fromTypeId) {
+  if (!await _ensurePackageCatalogPartsFresh()) return;
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  const group = (typeof _orphanPackageTypeGroups === 'function' ? _orphanPackageTypeGroups() : [])
+    .find(g => String(g.type_id) === String(fromTypeId));
+  if (!group) {
+    showToast('این گروه دیگر پیدا نشد', 'error');
+    return;
+  }
+  const opts = PKG_TYPES.map(pt =>
+    `<option value="${pt.id}">${escapeHtml(pt.label)}</option>`).join('');
+  openModal('وصل کردن فروش‌های بدون خدمت', `
+    <p style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px">
+      ${fa(group.count)} فروش با شناسه ${escapeHtml(fromTypeId)} به خدمت انتخاب‌شده وصل می‌شوند. مبلغ و سوابق فروش تغییر نمی‌کند؛ فقط ارجاع خدمت اصلاح می‌شود.
+    </p>
+    <div class="form-group full">
+      <label class="form-label">خدمت مقصد</label>
+      <select class="form-select" id="svc-relink-target">${opts}</select>
+    </div>
+    <details style="margin-top:10px;font-size:12px;color:var(--text2)">
+      <summary style="cursor:pointer">ساخت خدمت جدید</summary>
+      <div class="form-group" style="margin-top:8px">
+        <input class="form-input" id="svc-relink-new-label" placeholder="نام خدمت جدید">
+      </div>
+    </details>
+  `, [
+    { label: 'وصل کردن', cls: 'btn-primary', action: `confirmRelinkOrphanPackageType(${JSON.stringify(fromTypeId)})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+}
+
+async function confirmRelinkOrphanPackageType(fromTypeId) {
+  const newLabel = document.getElementById('svc-relink-new-label')?.value.trim();
+  let targetId = document.getElementById('svc-relink-target')?.value;
+  if (newLabel) {
+    const created = await window.api.packageTypes.add({ label: newLabel, color: '#7c6af7' });
+    PKG_TYPES = await window.api.packageTypes.getAll();
+    targetId = created?.id ?? PKG_TYPES.find(pt => pt.label === newLabel)?.id;
+  }
+  if (!targetId) {
+    showToast('خدمت مقصد را انتخاب کن', 'error');
+    return;
+  }
+  const count = (_db.packages || []).filter(p => String(p.type_id) === String(fromTypeId)).length;
+  if (!count) {
+    showToast('فروشی برای وصل کردن نیست', 'error');
+    closeModal();
+    await openServiceProductsCatalog();
+    return;
+  }
+  if (!await tpConfirm(`${fa(count)} فروش به خدمت جدید وصل شود؟`)) return;
+  const rows = (_db.packages || []).filter(p => String(p.type_id) === String(fromTypeId));
+  for (const row of rows) {
+    await window.api.packages.update({ id: row.id, type_id: targetId });
+  }
+  closeModal();
+  showToast('فروش‌ها وصل شدند ✓', 'success');
+  if (currentPage === 'payments') await renderPayments(currentStudentAccountSearch());
+  await openServiceProductsCatalog();
 }
 
 async function addServiceProductFromCatalog() {
@@ -818,7 +893,7 @@ function _purchaseMobileMetaParts(p) {
 
 function _purchaseHistoryMobileCardHtml(p) {
   const saleMenuId = `sale-menu-${p.id}`;
-  const typeBtn = incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag');
+  const typeBtn = p.type_orphan ? _orphanPackageTypeTagHtml() : incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag');
   const metaHtml = [typeBtn, ..._purchaseMobileMetaParts(p)]
     .join('<span class="mpay-meta-sep" aria-hidden="true">·</span>');
   const noteTrim = String(p.note || '').trim();
@@ -1032,7 +1107,7 @@ async function renderPayments(search = '') {
         const p = block.p;
         html += `<tr class="customer-sale-row">
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</td>
-          <td data-label="نوع خرید">${incomeFilterButton('type', p.type_label || '', p.type_label || 'بدون نوع', `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag')}</td>
+          <td data-label="نوع خرید">${_purchaseTypeDisplayHtml(p)}</td>
           <td data-label="مجری" style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
           <td data-label="مبلغ کل"><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">
@@ -1604,8 +1679,14 @@ function _packageTypeMatchesLabel(pt, label) {
   return false;
 }
 
+function _purchaseTypeDisplayHtml(p) {
+  if (p.type_orphan) return _orphanPackageTypeTagHtml();
+  const label = p.type_label || 'بدون نوع';
+  return incomeFilterButton('type', label, label, `<span class="tag" style="background:${p.pkg_color}22;color:${p.pkg_color}">${escapeHtml(p.type_label)}</span>`, 'income-filter-tag');
+}
+
 async function _ensurePackageTypeByLabel(label) {
-  const clean = (label || '').trim() || 'خرید جدید';
+  const clean = (typeof _normalizePackageTypeTitle === 'function' ? _normalizePackageTypeTitle(label) : String(label || '').trim()) || 'خرید جدید';
   const find = (list) => (list || []).find(x => _packageTypeMatchesLabel(x, clean));
   PKG_TYPES = await window.api.packageTypes.getAll();
   let pt = find(PKG_TYPES);
@@ -1681,8 +1762,12 @@ async function savePurchaseFromReminder(id) {
       const pkgs = await window.api.packages.getByStudent(r.student_id);
       const pkg = (pkgs || []).find(p => String(p.id) === String(r.package_id));
       if (pkg?.type_id) {
-        pt = { id: pkg.type_id };
-        staffId = pkg.staff_id || null;
+        const types = await window.api.packageTypes.getAll();
+        const exists = types.find(t => String(t.id) === String(pkg.type_id));
+        if (exists) {
+          pt = exists;
+          staffId = pkg.staff_id || null;
+        }
       }
     }
     if (!pt?.id) pt = await _ensurePackageTypeByLabel(r.title);
