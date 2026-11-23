@@ -117,6 +117,15 @@ if errorlevel 1 (
 )
 
 echo.
+echo Bumping TP_ASSET_V from bundled asset hashes...
+node scripts\bump-asset-version.js
+if errorlevel 1 (
+  echo bump-asset-version.js failed.
+  pause
+  exit /b 1
+)
+
+echo.
 echo Staging all project changes except temporary deploy files...
 git add -A
 git restore --staged changed.tmp >nul 2>nul

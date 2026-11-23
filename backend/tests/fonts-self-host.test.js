@@ -52,12 +52,10 @@ test('critical shells preload both local fonts with anonymous CORS', () => {
 });
 
 test('asset and service worker versions move together while blog caching stays skipped', () => {
+  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
+  const v = assertTpAssetVersionsAligned(path.resolve(__dirname, '../..'));
   const app = read('app.js');
-  const version = app.match(/const TP_ASSET_V = 'tp(\d+)'/)[1];
-  assert.ok(app.includes(`/sw.js?v=team-pulse-static-v${version}`));
-  assert.ok(read('sw.js').includes(`const CACHE = 'team-pulse-static-v${version}'`));
-  const shellVersions = [...read('app.html').matchAll(/\?v=tp(\d+)/g)].map(m => m[1]);
-  assert.ok(shellVersions.length > 0);
-  assert.ok(shellVersions.every(v => v === version));
+  const cacheSuffix = v.replace(/^tp/, '');
+  assert.ok(app.includes(`/sw.js?v=team-pulse-static-v${cacheSuffix}`));
   assert.match(read('sw.js'), /url\.pathname\.startsWith\('\/blog'\)/);
 });

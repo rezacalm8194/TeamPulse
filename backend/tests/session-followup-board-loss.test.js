@@ -119,13 +119,10 @@ test('archive status ناموفق without reason opens modal; with reason persis
 });
 
 test('asset versions stay aligned after session/archive follow-up features', () => {
-  const version = source.match(/const TP_ASSET_V = 'tp(\d+)'/)[1];
-  assert.ok(version);
-  assert.ok(source.includes(`/sw.js?v=team-pulse-static-v${version}`));
-  const worker = fs.readFileSync(path.resolve(__dirname, '../../sw.js'), 'utf8');
-  assert.ok(worker.includes(`team-pulse-static-v${version}`));
-  const html = fs.readFileSync(path.resolve(__dirname, '../../app.html'), 'utf8');
-  for (const match of html.matchAll(/\?v=tp(\d+)/g)) assert.equal(match[1], version);
+  const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
+  const root = path.resolve(__dirname, '../..');
+  const v = assertTpAssetVersionsAligned(root);
+  assert.ok(source.includes(`/sw.js?v=team-pulse-static-v${v.replace(/^tp/, '')}`));
   assert.match(source, /loss_reason/);
   assert.match(source, /session_followup/);
   assert.match(sessionsSource, /tp_sessions_board_filter/);

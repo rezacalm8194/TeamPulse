@@ -2120,13 +2120,33 @@ function _bindPartyTxPeriodFields() {
   });
 }
 
+function _ensurePartyTxPeriodDelegation() {
+  if (document._partyTxPeriodDelegation) return;
+  document._partyTxPeriodDelegation = true;
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest?.('.tx-invoice-period-chips .tx-period-chip[data-period]');
+    if (!chip) return;
+    const overlay = chip.closest('#modal-overlay');
+    if (!overlay) return;
+    e.preventDefault();
+    setPartyTxPeriod(chip.getAttribute('data-period'));
+  });
+}
+
 
 function _rerenderPartyTxModal() {
   const view = window._partyTxPrintPayload;
   if (!view) return;
   _refreshPartyTxView(view);
-  const body = document.querySelector('#modal-overlay.tx-invoice-overlay .modal-body');
-  if (!body) return;
+  let body = document.querySelector('#modal-overlay.tx-invoice-overlay .modal-body');
+  if (!body) {
+    body = document.querySelector('#modal-overlay .modal-body');
+    if (!body) {
+      console.warn('[party-tx] modal body not found; cannot rerender period chips');
+      return;
+    }
+    console.warn('[party-tx] #modal-overlay.tx-invoice-overlay missing; using generic modal body');
+  }
   body.innerHTML = _partyTxModalHtml(view);
   if (typeof initDatePickers === 'function') initDatePickers();
   _bindPartyTxPeriodFields();
@@ -2276,10 +2296,10 @@ function _partyTxModalHtml(view) {
       </div>
       <div class="tx-invoice-period">
         <div class="tx-invoice-period-chips" role="group" aria-label="بازه فاکتور">
-          <button type="button" class="tx-period-chip ${view.period === 'all' ? 'active' : ''}" onclick="setPartyTxPeriod('all')">همه</button>
-          <button type="button" class="tx-period-chip ${view.period === 'week' ? 'active' : ''}" onclick="setPartyTxPeriod('week')">یک هفته اخیر</button>
-          <button type="button" class="tx-period-chip ${view.period === 'month' ? 'active' : ''}" onclick="setPartyTxPeriod('month')">یک ماه اخیر</button>
-          <button type="button" class="tx-period-chip ${view.period === 'custom' ? 'active' : ''}" onclick="setPartyTxPeriod('custom')">سفارشی</button>
+          <button type="button" class="tx-period-chip ${view.period === 'all' ? 'active' : ''}" data-period="all">همه</button>
+          <button type="button" class="tx-period-chip ${view.period === 'week' ? 'active' : ''}" data-period="week">یک هفته اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'month' ? 'active' : ''}" data-period="month">یک ماه اخیر</button>
+          <button type="button" class="tx-period-chip ${view.period === 'custom' ? 'active' : ''}" data-period="custom">سفارشی</button>
         </div>
         ${view.period === 'custom' ? `<div class="tx-invoice-period-custom">
           <div>${calendarDateFieldHtml('tx-period-from', view.periodFrom, 'از تاریخ', false)}</div>
@@ -2382,6 +2402,7 @@ function _openPartyTransactions(payload) {
     { label: '📋 کپی', cls: 'btn-ghost', action: 'copyPartyTransactions()' },
     { label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' },
   ], { overlayClass: 'tx-invoice-overlay' });
+  _ensurePartyTxPeriodDelegation();
   if (typeof initDatePickers === 'function') initDatePickers();
   _bindPartyTxPeriodFields();
 }

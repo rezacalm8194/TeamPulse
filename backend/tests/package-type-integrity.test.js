@@ -5,6 +5,7 @@ const path = require('path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '../..');
+const { assertTpAssetVersionsAligned } = require('./tp-asset-version');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const finance = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
 
@@ -161,9 +162,6 @@ test('orphan groups list alias-only missing catalog types', () => {
   assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
 });
 
-test('asset version tp449', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp449'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v449/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp449/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
+test('asset versions aligned', () => {
+  assertTpAssetVersionsAligned(root);
 });

@@ -22,12 +22,35 @@ const TARGETS = [
   'xlsx.full.min.js',
 ];
 
-const BROTLI_OPTS = {
+const BROTLI_HIGH = {
   params: {
     [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
     [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
   },
 };
+const BROTLI_FAST = {
+  params: {
+    [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+    [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+  },
+};
+const BROTLI_BY_FILE = {
+  'app.js': BROTLI_FAST,
+  'xlsx.full.min.js': BROTLI_FAST,
+};
+
+function brotliOptsFor(relPath) {
+  return BROTLI_BY_FILE[relPath] || BROTLI_HIGH;
+}
+
+function stripCompressedArtifacts() {
+  for (const rel of TARGETS) {
+    for (const ext of ['.br', '.gz']) {
+      const out = path.join(ROOT, rel + ext);
+      if (fs.existsSync(out)) fs.unlinkSync(out);
+    }
+  }
+}
 
 function needsRebuild(srcPath, outPath) {
   if (!fs.existsSync(outPath)) return true;
@@ -57,7 +80,7 @@ async function compressOne(relPath) {
   }
 
   if (needsRebuild(srcPath, brPath)) {
-    const br = await brotliAsync(raw, BROTLI_OPTS);
+    const br = await brotliAsync(raw, brotliOptsFor(relPath));
     fs.writeFileSync(brPath, br);
     result.br = br.length;
   } else {
@@ -69,6 +92,7 @@ async function compressOne(relPath) {
 }
 
 async function main() {
+  stripCompressedArtifacts();
   const rows = [];
   for (const file of TARGETS) {
     rows.push(await compressOne(file));
@@ -89,4 +113,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { TARGETS, compressOne, main, ROOT };
+module.exports = { TARGETS, compressOne, main, ROOT, stripCompressedArtifacts };
