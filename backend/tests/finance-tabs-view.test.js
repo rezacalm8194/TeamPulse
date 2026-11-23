@@ -150,9 +150,9 @@ test('purchase mobile mpay meta omits empty fields', () => {
   assert.match(fnBody, /if \(dueDisp\)/);
 });
 
-test('asset version tp448', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp448'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v448/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp448/);
+test('asset version tp449', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp449'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v449/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp449/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });

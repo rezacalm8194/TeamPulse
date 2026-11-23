@@ -68,3 +68,14 @@ test('setAmounts changes only open reminders and only their amount', () => {
   assert.equal(sb.saved, 1);
   assert.equal(sb.deltas, 1);
 });
+
+test('bulk price groups by the reminder title, not the sale service', () => {
+  const sb = { _normalizePackageTypeTitle: v => String(v).replace(/^تجدید پکیج:\s*/, '') || 'خرید جدید' };
+  vm.createContext(sb);
+  vm.runInContext(extractFunction(financeSource, '_renewalServiceLabel'), sb);
+  sb.pk = new Map([['5', { type_id: 2 }]]);
+  sb.ty = new Map([['2', { label: 'سایت' }]]);
+  assert.equal(vm.runInContext('_renewalServiceLabel({ title: "هاست دانلود ", package_id: 5 }, pk, ty)', sb), 'هاست دانلود');
+  assert.equal(vm.runInContext('_renewalServiceLabel({ title: "سررسید پرداخت: کوچینگ" }, pk, ty)', sb), 'کوچینگ');
+  assert.equal(vm.runInContext('_renewalServiceLabel({ title: "", package_id: 5 }, pk, ty)', sb), 'سایت');
+});
