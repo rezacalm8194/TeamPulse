@@ -2075,10 +2075,11 @@ input[type="date"]::-webkit-datetime-edit {
 /* ── Settings tabs ──────────────────────────────────────── */
 .settings-tabs {
   display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid var(--border); padding-bottom: 0;
 }
 .settings-tab {
-  flex-shrink: 0; padding: 9px 14px; font-size: 12.5px; font-weight: 600;
+  flex-shrink: 0; min-height: 44px; padding: 9px 14px; font-size: 12.5px; font-weight: 600;
   color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent;
   transition: all .15s; white-space: nowrap; display:flex; align-items:center; gap:5px;
   background:none; border-top:none; border-right:none; border-left:none;
