@@ -465,9 +465,10 @@ async function confirmRelinkOrphanPackageType(fromTypeId) {
     return;
   }
   if (!await tpConfirm(`${fa(count)} فروش به خدمت جدید وصل شود؟`)) return;
+  const coercedTarget = typeof _coercePackageTypeId === 'function' ? _coercePackageTypeId(targetId) : targetId;
   const rows = (_db.packages || []).filter(p => String(p.type_id) === String(fromTypeId));
   for (const row of rows) {
-    await window.api.packages.update({ id: row.id, type_id: targetId });
+    await window.api.packages.update({ id: row.id, type_id: coercedTarget });
   }
   closeModal();
   showToast('فروش‌ها وصل شدند ✓', 'success');
