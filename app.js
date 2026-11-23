@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp443';
+const TP_ASSET_V = 'tp444';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8466,15 +8466,21 @@ function _mapPackageListRow(p) {
 function _orphanPackageTypeGroups() {
   const groups = new Map();
   for (const p of _db.packages || []) {
-    if (p.type_id == null || String(p.type_id).trim() === '') continue;
-    if (_resolvePackageType(p.type_id)) continue;
+    if (!_packageTypeNeedsCatalogRelink(p.type_id)) continue;
     const key = String(p.type_id);
-    if (!groups.has(key)) groups.set(key, { type_id: key, count: 0, students: new Set(), sampleNote: '' });
+    const resolved = _resolvePackageType(p.type_id);
+    const aliasHint = resolved
+      ? `نمایش فعلی: ${resolved.label} از روی ادغام قدیمی`
+      : '';
+    if (!groups.has(key)) {
+      groups.set(key, { type_id: key, count: 0, students: new Set(), sampleNote: '', aliasHint });
+    }
     const g = groups.get(key);
     g.count++;
     const st = _db.students.find(s => String(s.id) === String(p.student_id));
     if (st) g.students.add(`${st.name || ''} ${st.lname || ''}`.trim());
     if (!g.sampleNote && p.note) g.sampleNote = String(p.note).slice(0, 80);
+    if (aliasHint) g.aliasHint = aliasHint;
   }
   return [...groups.values()].map(g => ({ ...g, students: [...g.students] }));
 }
@@ -8949,6 +8955,17 @@ function escapeHtml(str) {
 }
 function escapeAttr(str) {
   return escapeHtml(JSON.stringify(str == null ? '' : String(str)));
+}
+function _tpOnclickStr(value) {
+  return escapeHtml(String(value ?? '')).replace(/'/g, '&#39;');
+}
+function _tpOnclickArrLiteral(arr) {
+  return '[' + (arr || []).map(v => `'${_tpOnclickStr(v)}'`).join(',') + ']';
+}
+function _packageTypeNeedsCatalogRelink(typeId) {
+  const id = String(typeId ?? '').trim();
+  if (!id) return false;
+  return !(_db.package_types || []).some(t => String(t.id) === id);
 }
 function excerpt(str, len=70) {
   if (!str) return '';
@@ -27316,10 +27333,10 @@ async function renderAdminPanel() {
             '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;' +
             'background:var(--bg3);border-radius:10px;border:1px solid rgba(251,191,36,.3)">' +
             '<span style="font-weight:600;font-size:13px">' + escapeHtml(p.name) + '</span>' +
-            '<button onclick="_adminImpersonate(' + JSON.stringify(p.id) + ',' + JSON.stringify(p.name) + ')" ' +
+            '<button onclick="_adminImpersonate(\'' + _tpOnclickStr(p.id) + '\',\'' + _tpOnclickStr(p.name) + '\')" ' +
             'style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--accent2);' +
             'background:rgba(124,106,247,.1);color:var(--accent2);cursor:pointer;font-family:var(--font)">🔑 ورود به‌جای کاربر</button>' +
-            '<button class="x-close-sm" onclick="_adminPinAccount(' + JSON.stringify(p.id) + ',' + JSON.stringify(p.name) + ')" ' +
+            '<button class="x-close-sm" onclick="_adminPinAccount(\'' + _tpOnclickStr(p.id) + '\',\'' + _tpOnclickStr(p.name) + '\')" ' +
             'title="برداشتن پین">✕</button>' +
             '</div>'
           ).join('')}
@@ -27783,7 +27800,7 @@ function _adminNotifyAll(){
   if(!ids.length)return showToast('کاربری برای ارسال اعلان وجود ندارد','error');
   openModal('🔔 ارسال اعلان همگانی', `<div class="form-group"><label class="form-label">عنوان</label><input class="form-input" id="admin-notify-title" value="پیام مدیریت"></div>
     <div class="form-group"><label class="form-label">متن اعلان برای ${fa(ids.length)} کاربر</label><textarea class="form-textarea" id="admin-notify-body" rows="4"></textarea></div>`,
-    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${JSON.stringify(ids)})`}]);
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${_tpOnclickArrLiteral(ids)})`}]);
 }
 
 function _adminBulkActionsHtml(visibleUsers) {
@@ -27836,7 +27853,7 @@ function _adminChangePlan(userIds) {
   if (!ids.length) return;
   openModal('💎 تغییر پلن', `<div class="form-group"><label class="form-label">پلن جدید برای ${fa(ids.length)} کاربر</label>
     <select class="form-select" id="admin-plan-select"><option value="free">رایگان</option><option value="basic">پایه</option><option value="pro">حرفه‌ای</option><option value="enterprise">سازمانی</option></select></div>`,
-    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'اعمال پلن',cls:'btn-primary',action:`_adminApplyPlan(${JSON.stringify(ids)})`}]);
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'اعمال پلن',cls:'btn-primary',action:`_adminApplyPlan(${_tpOnclickArrLiteral(ids)})`}]);
 }
 async function _adminApplyPlan(ids) {
   const plan = document.getElementById('admin-plan-select')?.value;
@@ -27848,7 +27865,7 @@ function _adminNotifySelected() {
   const ids = [..._adminSelectedUsers];
   openModal('🔔 ارسال اعلان', `<div class="form-group"><label class="form-label">عنوان</label><input class="form-input" id="admin-notify-title" value="پیام مدیریت"></div>
     <div class="form-group"><label class="form-label">متن اعلان برای ${fa(ids.length)} کاربر</label><textarea class="form-textarea" id="admin-notify-body" rows="4"></textarea></div>`,
-    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${JSON.stringify(ids)})`}]);
+    [{label:'انصراف',cls:'btn-ghost',action:'closeModal()'},{label:'ارسال اعلان',cls:'btn-primary',action:`_adminSendNotification(${_tpOnclickArrLiteral(ids)})`}]);
 }
 async function _adminSendNotification(ids) {
   const title = document.getElementById('admin-notify-title')?.value || '';

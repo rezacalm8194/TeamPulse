@@ -20,9 +20,9 @@ function extractFn(source, name) {
   return match[0];
 }
 
-test('asset version is tp443', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp443'/);
-  assert.match(appHtml, /\?v=tp443/);
+test('asset version is tp444', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp444'/);
+  assert.match(appHtml, /\?v=tp444/);
   assert.match(sw, /team-pulse-static-v434/);
 });
 

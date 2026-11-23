@@ -2336,7 +2336,7 @@ function _todoMiniKeyEventHtml(e) {
     return person ? `${person.name || ''} ${person.lname || ''}`.trim() : '';
   })();
   const plainText = (e.text || '').replace(/<[^>]*>/g,' ');
-  return `<div class="todo-mini-key-event" onclick="event.stopPropagation();_openTodoCalendarKeyEvent(${JSON.stringify(e.id)})" title="${escapeHtml(personName ? personName + ' · ' + plainText : plainText)}" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(251,191,36,.10);border-right:3px solid #fbbf24;cursor:${personName?'pointer':'default'}">
+  return `<div class="todo-mini-key-event" onclick="event.stopPropagation();_openTodoCalendarKeyEvent('${_tpOnclickStr(e.id)}')" title="${escapeHtml(personName ? personName + ' · ' + plainText : plainText)}" style="display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-radius:7px;background:rgba(251,191,36,.10);border-right:3px solid #fbbf24;cursor:${personName?'pointer':'default'}">
     <span>⭐</span><span style="font-size:10px;color:#fbbf24;font-weight:800;flex-shrink:0">رویداد مهم</span>${personName?`<span style="font-size:10px;color:#fde68a;font-weight:900;flex-shrink:0;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.22);border-radius:999px;padding:1px 6px">👤 ${escapeHtml(personName)}</span>`:''}<span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(plainText)}</span>
   </div>`;
 }
