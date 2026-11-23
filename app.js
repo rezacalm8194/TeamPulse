@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp439';
+const TP_ASSET_V = 'tp440';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8792,6 +8792,26 @@ function statusHtml(balance, isSupplier) {
   if (balance < 0) return `<span class="status" style="color:var(--blue)"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue);display:inline-block;margin-left:5px"></span>طلبکار</span>`;
   return `<span class="status status-ok">تسویه</span>`;
 }
+function studentAccountBalanceHtml(balance) {
+  if (balance > 0) {
+    return `<div class="stu-balance-cell"><span class="amount amount-debt">${fmt(balance)} ت</span><span class="stu-balance-tag">بدهکار</span></div>`;
+  }
+  if (balance < 0) {
+    return `<div class="stu-balance-cell"><span class="amount balance-credit">${fmt(-balance)} ت</span><span class="stu-balance-tag">طلبکار</span></div>`;
+  }
+  return `<span class="amount amount-paid">تسویه</span>`;
+}
+function _totalTomanPaymentsReceived() {
+  return ((_db.payments || []).filter(p => _isTomanCurrency(p.currency)).reduce((a, p) => a + (Number(p.amount) || 0), 0));
+}
+function _sortAccountStudentsDefault(rows) {
+  const list = rows || [];
+  const debt = list.filter(s => s.balance > 0).sort((a, b) => b.balance - a.balance);
+  const credit = list.filter(s => s.balance < 0).sort((a, b) => a.balance - b.balance);
+  const settled = list.filter(s => s.balance === 0).sort((a, b) =>
+    `${a.name || ''} ${a.lname || ''}`.localeCompare(`${b.name || ''} ${b.lname || ''}`, 'fa'));
+  return [...debt, ...credit, ...settled];
+}
 function escapeHtml(str) {
   if (str == null || str === false) return '';
   return String(str)
@@ -9903,25 +9923,33 @@ function studentAccountNameCellHtml(s, i) {
             </div>
           </div>`;
 }
-function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true) {
+function studentAccountTableRowsHtml(filtered, menuPrefix, financeReady = true, { showWalletColumn = true, accountBalanceView = false } = {}) {
+  const colSpan = 6 + (showWalletColumn ? 1 : 0) + (accountBalanceView ? 0 : 1);
   if (filtered.length === 0) {
-    return `<tr><td colspan="8"><div class="empty"><span>👤</span>${_entityWord()}‌ای یافت نشد</div></td></tr>`;
+    return `<tr><td colspan="${colSpan}"><div class="empty"><span>👤</span>${_entityWord()}‌ای یافت نشد</div></td></tr>`;
   }
   return filtered.map((s, i) => {
     const tableMenuId = `${menuPrefix}-table-menu-${s.id}`;
+    const balanceTd = financeReady
+      ? (accountBalanceView ? `${studentAccountBalanceHtml(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}` : `${balanceHtml(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}`)
+      : '—';
+    const walletTd = showWalletColumn
+      ? `<td>${financeReady ? (s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>') : '—'}</td>`
+      : '';
+    const statusTd = accountBalanceView ? '' : `<td>${financeReady ? statusHtml(s.balance) : '—'}</td>`;
     return `<tr>
         <td>${studentAccountNameCellHtml(s, i)}</td>
         <td class="stu-pkgs-cell">${financeReady ? pkgTagsHtml(s.packages) : '—'}</td>
         <td>${financeReady ? `<span class="amount amount-neutral">${fmt(s.totalAmount)}</span>${fxBooksHtml(s.fxBooks, 'contract')}` : '—'}</td>
         <td>${financeReady ? `<span class="amount amount-paid">${fmt(s.totalPaid)}</span>${fxBooksHtml(s.fxBooks, 'paid')}` : '—'}</td>
-        <td>${financeReady ? (s.wallet > 0 ? `<span class="wallet-badge">👛 ${fmt(s.wallet)}</span>` : '<span class="wallet-badge empty">—</span>') : '—'}</td>
-        <td>${financeReady ? `${balanceHtml(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}` : '—'}</td>
-        <td>${financeReady ? statusHtml(s.balance) : '—'}</td>
+        ${walletTd}
+        <td>${balanceTd}</td>
+        ${statusTd}
         <td>${studentAccountRowMenuHtml(s, tableMenuId)}</td>
       </tr>`;
   }).join('');
 }
-function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
+function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true, { accountBalanceView = false } = {}) {
   if (filtered.length === 0) {
     return `<div class="mstu-list"><div class="empty"><span>👤</span>${_entityWord()}‌ای یافت نشد</div></div>`;
   }
@@ -9949,17 +9977,22 @@ function studentAccountMobileHtml(filtered, menuPrefix, financeReady = true) {
             </div>
           </div>
         </div>
-        ${financeReady ? `${mstuStatusLine(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}` : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
+        ${financeReady ? (accountBalanceView ? `<div class="mstu-balance-wrap">${studentAccountBalanceHtml(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}</div>` : `${mstuStatusLine(s.balance)}${fxBooksHtml(s.fxBooks, 'balance')}`) : '<div class="mstu-status"><span>مانده حساب: —</span></div>'}
         <div class="mstu-pkgs">
           ${financeReady ? pkgTagsHtml(s.packages, { variant: 'line', emptyHtml: '<span style="color:var(--text3);font-size:11px">بدون پکیج</span>' }) : '<span style="color:var(--text3);font-size:11px">—</span>'}
         </div>
       </div>`;
   }).join('')}</div>`;
 }
-function studentAccountOverviewHtml(students, filtered, { showSessions = true, financeReady = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null, statsStudents = null } = {}) {
+function studentAccountOverviewHtml(students, filtered, {
+  showSessions = true, financeReady = true, menuPrefix = 'stu', slice = null, moreButtonHtml = null,
+  statsStudents = null, totalReceivedToman = null, showWalletColumn = true, accountBalanceView = false,
+} = {}) {
   const statsSource = statsStudents || students;
   const totalDebt = statsSource.reduce((a, s) => a + Math.max(0, s.balance), 0);
-  const totalPaid = statsSource.reduce((a, s) => a + s.totalPaid, 0);
+  const totalPaid = totalReceivedToman != null
+    ? totalReceivedToman
+    : statsSource.reduce((a, s) => a + s.totalPaid, 0);
   const debtorCount = statsSource.filter(s => s.balance > 0).length;
   const settledCount = students.filter(s => s.balance <= 0).length;
   const fourthStat = showSessions ? `
@@ -9977,6 +10010,9 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, f
   const moreHtml = moreButtonHtml != null
     ? moreButtonHtml
     : (view.remaining > 0 ? `<button type="button" class="todo-show-more" onclick="_studentShowMoreList()">نمایش بیشتر · ${fa(view.remaining)} مورد باقی‌مانده</button>` : '');
+  const walletTh = showWalletColumn ? '<th>کیف پول</th>' : '';
+  const statusTh = accountBalanceView ? '' : '<th>وضعیت</th>';
+  const tableOpts = { showWalletColumn, accountBalanceView };
   return `
   <div class="stats-row stu-stats-row">
     <div class="stat-card s-accent">
@@ -10007,15 +10043,15 @@ function studentAccountOverviewHtml(students, filtered, { showSessions = true, f
           <th>پکیج‌ها</th>
           <th>قرارداد کل</th>
           <th>پرداخت‌شده</th>
-          <th>کیف پول</th>
+          ${walletTh}
           <th>مانده حساب</th>
-          <th>وضعیت</th>
+          ${statusTh}
           <th>عملیات</th>
         </tr>
       </thead>
-      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(view.rows, menuPrefix, financeReady))}</tbody>
+      <tbody>${(_isCompactStudentViewport() ? '' : studentAccountTableRowsHtml(view.rows, menuPrefix, financeReady, tableOpts))}</tbody>
     </table></div>
-    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(view.rows, menuPrefix, financeReady) : "")}
+    ${(_isCompactStudentViewport() ? studentAccountMobileHtml(view.rows, menuPrefix, financeReady, tableOpts) : "")}
     ${moreHtml}
   </div>`;
 }

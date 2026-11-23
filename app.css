@@ -544,6 +544,22 @@ button { cursor: pointer; font-family: var(--font); }
 .mpay-note { font-size: 10.5px; color: var(--text3); margin-top: 4px; }
 .mpay-card .row-menu { position: absolute; top: 10px; left: 12px; }
 .mpay-account { color: var(--accent2); }
+.stu-balance-cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.stu-balance-tag { font-size: 10px; font-weight: 700; color: var(--text3); line-height: 1.2; }
+.stu-balance-cell .amount-debt + .stu-balance-tag { color: var(--red); }
+.stu-balance-cell .balance-credit + .stu-balance-tag { color: var(--blue); }
+.mstu-balance-wrap { margin: 9px 0 8px; }
+.purchase-from-reminder-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent2);
+  background: rgba(124, 106, 247, .12);
+  border: 1px solid rgba(124, 106, 247, .25);
+  border-radius: 6px;
+  padding: 1px 6px;
+  line-height: 1.5;
+}
 .family-actions { position: relative; flex: 0 0 auto; }
 .table-card.family-card { overflow: visible; position: relative; }
 .table-card.family-card:has(.family-actions.open) { z-index: 20; }
