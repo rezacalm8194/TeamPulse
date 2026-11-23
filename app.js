@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp434';
+const TP_ASSET_V = 'tp435';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -6833,12 +6833,39 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   }
 }
 // In-memory only (never persisted): collections whose every server page was
-// walked in THIS session, keyed by the server etag at the end of that walk.
-// Lets dashboard/finance re-renders skip a full re-download when nothing
-// changed on the server since.
+// walked in THIS session. The marker is the collection part_hash when the
+// server exposes part_hashes; otherwise the document etag (legacy).
 window._tpCompleteWalkEtag = window._tpCompleteWalkEtag || Object.create(null);
+window._serverPartHashes = window._serverPartHashes || Object.create(null);
 function _tpCurrentServerEtag() {
   return window._serverDataEtag || window._serverHydratedEtag || '';
+}
+function _applyServerPartHashes(partHashes) {
+  if (!partHashes || typeof partHashes !== 'object') return;
+  Object.assign(window._serverPartHashes, partHashes);
+}
+function _tpBusinessPartHash(key) {
+  const h = window._serverPartHashes?.[key];
+  return h != null && String(h) !== '' ? String(h) : null;
+}
+function _tpWalkFreshnessTarget(key) {
+  return _tpBusinessPartHash(key) || _tpCurrentServerEtag() || '';
+}
+function _tpRefreshWalkMarkersAfterOwnDelta(documentPatch, responseData, ctx) {
+  const nextHashes = responseData?.part_hashes;
+  if (nextHashes) _applyServerPartHashes(nextHashes);
+  if (!documentPatch || !ctx) return;
+  const touched = new Set(Object.keys(documentPatch.collections || {}));
+  touched.forEach(key => {
+    if (!BUSINESS_PAGINATED_KEYS.includes(key)) return;
+    const marker = ctx.markers?.[key];
+    if (marker == null) return;
+    const beforeHash = ctx.partHashes?.[key];
+    if (!beforeHash || String(marker) !== String(beforeHash)) return;
+    const newHash = nextHashes?.[key] ?? _tpBusinessPartHash(key);
+    if (!newHash) return;
+    window._tpCompleteWalkEtag[key] = String(newHash);
+  });
 }
 function _businessPartCompleteAndFresh(key) {
   if (!BUSINESS_PAGINATED_KEYS.includes(key)) return true;
@@ -6848,7 +6875,8 @@ function _businessPartCompleteAndFresh(key) {
   const paging = _businessPagingState(key);
   if (paging.loading || !paging.done || paging.search) return false;
   if (paging.order !== _businessPageOrder(key)) return false;
-  return marker === _tpCurrentServerEtag();
+  const target = _tpWalkFreshnessTarget(key);
+  return !!target && String(marker) === String(target);
 }
 async function _ensureCompleteBusinessParts(collections = []) {
   const keys = [...new Set(collections)]
@@ -6890,7 +6918,7 @@ async function _ensureCompleteBusinessParts(collections = []) {
       }
       const finalPaging = _businessPagingState(key);
       if (finalPaging.done && _paginatedCollectionFullyLoaded(key)) {
-        window._tpCompleteWalkEtag[key] = _tpCurrentServerEtag();
+        window._tpCompleteWalkEtag[key] = _tpWalkFreshnessTarget(key);
       } else {
         delete window._tpCompleteWalkEtag[key];
       }
@@ -21153,6 +21181,7 @@ async function _refreshServerDataEtag(accId) {
     if (statusRes.ok) {
       const status = await statusRes.json();
       if (status?.etag) window._serverDataEtag = status.etag;
+      if (status?.part_hashes) _applyServerPartHashes(status.part_hashes);
     }
   } catch (e) {}
   return window._serverDataEtag || null;
@@ -22307,6 +22336,9 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       if (directResponse.status === 413) return _sendChunkedWorkspacePayload(accId, latestPayload);
       return directResponse;
     };
+    const walkFreshnessCtx = useDocumentDelta && documentPatch
+      ? { markers: { ...window._tpCompleteWalkEtag }, partHashes: { ...(window._serverPartHashes || {}) } }
+      : null;
     let res;
     if (useDocumentDelta) {
       // Stale cached etag is the usual 409 in DevTools. /status is 200, so
@@ -22443,6 +22475,7 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
           if (statusRes.ok) {
             const status = await statusRes.json();
             if (status?.etag) window._serverDataEtag = status.etag;
+            if (status?.part_hashes) _applyServerPartHashes(status.part_hashes);
           }
         } catch (e) {}
         if (responseData.data) {
@@ -22527,6 +22560,8 @@ async function _syncToServerOnce(conflictAttempt = 0, todoCollisionAttempt = 0) 
       window._lastServerSyncSavedAt = syncSavedAt;
       window._lastServerSyncFingerprint = _dataFingerprint(_serverDataSignature(syncPayload));
       window._serverDataEtag = responseData?.etag || window._serverDataEtag || null;
+      if (responseData?.part_hashes) _applyServerPartHashes(responseData.part_hashes);
+      if (walkFreshnessCtx) _tpRefreshWalkMarkersAfterOwnDelta(documentPatch, responseData, walkFreshnessCtx);
       _writeServerSyncBaseline(syncPayload, window._serverDataEtag);
       window._avoidFullDocumentSync = false;
       window._serverPayloadTooLargeRetried = false;
@@ -23306,6 +23341,7 @@ async function _tpCatchUpBusinessCollection(accId, key, since) {
 }
 async function _tpCatchUpServerChanges(status) {
   const hashes = status?.part_hashes;
+  if (hashes && typeof hashes === 'object') _applyServerPartHashes(hashes);
   if (!hashes || typeof hashes !== 'object' || !_db) return false;
   if (window._initialServerLoadPending) return false;
   if (!_sbUser || !_sbSession?.token) return false;
@@ -23417,6 +23453,7 @@ async function _pollServerStatus({ fromResume = false } = {}) {
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const status = await res.json();
+    if (status.part_hashes) _applyServerPartHashes(status.part_hashes);
     const responseHighWater = _todoSafeNumericId(status.todo_id_high_water);
     if (responseHighWater) _applyTodoIdHighWater(responseHighWater);
     let caughtUp = false;

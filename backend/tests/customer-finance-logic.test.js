@@ -277,7 +277,7 @@ test('tpConfirm and tpChoose signatures unchanged for two-button flow', () => {
   assert.match(app, /const buttonDefs = Array\.isArray\(buttons\) && buttons\.length \? buttons : null/);
 });
 
-test('asset version tp434', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp434'/);
-  assert.match(read('sw.js'), /team-pulse-static-v434/);
+test('asset version tp435', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp435'/);
+  assert.match(read('sw.js'), /team-pulse-static-v435/);
 });
