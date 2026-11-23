@@ -24,7 +24,7 @@ function loadEnsure(ctx) {
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
-  // tp450: renewal opens a short amount confirm before saving.
+  // tp451: renewal opens a short amount confirm before saving.
   ctx.modals = [];
   ctx.openModal = (title, body, actions) => ctx.modals.push({ title, body, actions });
   ctx.closeModal = () => {};

@@ -353,7 +353,11 @@ async function openServiceProductsCatalog() {
   openModal('خدمات و محصولات', `
     ${orphanSection}
     <p class="service-price-hint">نام، رنگ، واحد و قیمت پیش‌فرض — در فروش جدید همین مبلغ پیشنهاد می‌شود.</p>
-    <div class="service-price-list">${rows}</div>
+    <div class="svc-cat-toolbar">
+      ${PKG_TYPES.length > 8 ? `<input class="form-input" type="search" placeholder="جستجو در ${fa(PKG_TYPES.length)} خدمت…" oninput="_filterServiceCatalog(this.value)">` : '<span></span>'}
+      <button type="button" class="btn btn-ghost btn-sm" onclick="openServicesBulkImport()">📥 ورود گروهی از اکسل</button>
+    </div>
+    <div class="service-price-list">${rows}<div id="svc-cat-filter-empty" class="empty" style="display:none;padding:14px">خدمتی با این نام نیست</div></div>
     <div class="service-price-add">
       <input class="form-input" id="svc-cat-new-label" placeholder="نام خدمت جدید">
       ${_pkgUnitSelectHtml({}, { id: 'svc-cat-new-unit', customId: 'svc-cat-new-unit-label', onchange: 'onPkgUnitKindChange(this)' })}
@@ -488,6 +492,252 @@ async function addServiceProductFromCatalog() {
   PKG_TYPES = await window.api.packageTypes.getAll();
   showToast('اضافه شد ✓', 'success');
   await openServiceProductsCatalog();
+}
+
+// ── Bulk add services / products (Excel, CSV or pasted rows) ────────────────
+// Rows are parsed and previewed first; nothing is saved until «افزودن». Names
+// that already exist (same merge key as the single add) are skipped unless
+// «به‌روز کردن قیمت» is ticked. One save for the whole batch.
+let _svcImportRows = [];
+const _SVC_IMPORT_COLORS = ['#7c6af7', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#84cc16', '#a855f7'];
+
+function _svcImportNumber(v) {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+  const s = String(v == null ? '' : v)
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[٫]/g, '.')
+    .replace(/[^0-9.]/g, '');
+  const n = Number(s);
+  return s && Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+function _svcImportUnit(v) {
+  const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  if (!s) return { unit: '', unit_label: '' };
+  const low = s.toLowerCase();
+  if (/^(کیلو|کیلوگرم|کیلو ?گرم|kg|kilo|kilogram)$/.test(low)) return { unit: 'kg', unit_label: '' };
+  if (/^(عدد|تعداد|دانه|count|pcs|piece)$/.test(low)) return { unit: 'count', unit_label: '' };
+  return { unit: 'custom', unit_label: s.slice(0, 24) };
+}
+
+function _svcImportHeaderMap(row) {
+  const cells = (row || []).map(c => String(c == null ? '' : c).replace(/\s+/g, ' ').trim().toLowerCase());
+  const find = re => cells.findIndex(c => re.test(c));
+  const name = find(/^(نام|عنوان|خدمت|محصول|کالا|name|title|product|service)/);
+  if (name < 0) return null;
+  return {
+    name,
+    price: find(/(قیمت|مبلغ|price|amount)/),
+    unit: find(/(واحد|unit)/),
+  };
+}
+
+// rows: array of arrays (first sheet, or pasted lines split into cells).
+function _svcImportFromRows(rows) {
+  const clean = (rows || []).filter(r => Array.isArray(r) && r.some(c => String(c == null ? '' : c).trim() !== ''));
+  if (!clean.length) return [];
+  let map = _svcImportHeaderMap(clean[0]);
+  let body = clean;
+  if (map) body = clean.slice(1);
+  else map = { name: 0, price: 1, unit: 2 };
+  const existing = new Map((PKG_TYPES || []).map(t => [_serviceMergeKey(t.label), t]));
+  const seen = new Set();
+  return body.map((r, i) => {
+    const label = String(r[map.name] == null ? '' : r[map.name]).replace(/\s+/g, ' ').trim().slice(0, 120);
+    const rawPrice = map.price >= 0 ? r[map.price] : '';
+    const price = _svcImportNumber(rawPrice);
+    const { unit, unit_label } = _svcImportUnit(map.unit >= 0 ? r[map.unit] : '');
+    const key = label ? _serviceMergeKey(label) : '';
+    let status = 'new';
+    if (!label) status = 'invalid';
+    else if (seen.has(key)) status = 'dup';
+    else if (existing.has(key)) status = 'exists';
+    if (key) seen.add(key);
+    const priceWarn = String(rawPrice == null ? '' : rawPrice).trim() !== '' && !price;
+    return { row: i + 1, label, price, unit, unit_label, status, priceWarn, existingLabel: existing.get(key)?.label || '' };
+  });
+}
+
+function _svcImportSplitPaste(text) {
+  return String(text || '').split(/\r?\n/).map(line => {
+    if (line.includes('\t')) return line.split('\t');
+    const m = line.match(/^(.*?)[,،;؛]\s*([\d۰-۹٠-٩,٬٫.\s]+)\s*(?:[,،;؛]\s*(.*))?$/);
+    if (m) return [m[1], m[2], m[3] || ''];
+    return [line];
+  });
+}
+
+function openServicesBulkImport() {
+  _svcImportRows = [];
+  openModal('ورود گروهی خدمات و محصولات', `
+    <div class="svc-import-steps">
+      <div><b>۱.</b> فایل نمونه را بگیر یا از فایل اکسل خودت استفاده کن. ستون‌ها: <b>نام</b>، <b>قیمت</b> (اختیاری)، <b>واحد</b> (اختیاری: عدد، کیلو یا هر واحد دیگر).</div>
+      <div><b>۲.</b> فایل را انتخاب کن، یا ردیف‌ها را از اکسل کپی کن و در کادر پایین بچسبان.</div>
+      <div><b>۳.</b> پیش‌نمایش را ببین و «افزودن» را بزن. چیزی قبل از آن ذخیره نمی‌شود.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="downloadServicesTemplate()">⬇ دانلود فایل نمونه</button>
+      <label class="btn btn-primary btn-sm" style="cursor:pointer">📄 انتخاب فایل اکسل یا CSV
+        <input type="file" id="svc-import-file" accept=".xlsx,.xls,.csv,.ods" style="display:none" onchange="importServicesFile(this)">
+      </label>
+    </div>
+    <textarea class="form-input" id="svc-import-paste" rows="4" placeholder="یا اینجا بچسبان؛ هر خط یک خدمت. مثلاً:&#10;کوچینگ	75000000&#10;قهوه عربیکا	1200000	کیلو" style="width:100%;resize:vertical;font-size:13px"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="previewServicesPaste()">بررسی متن چسبانده‌شده</button>
+      <label style="display:flex;gap:6px;align-items:center;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" id="svc-import-update" onchange="renderServicesImportPreview()">
+        قیمت و واحد خدمت‌های موجودِ هم‌نام را به‌روز کن
+      </label>
+    </div>
+    <div id="svc-import-preview" style="margin-top:10px"></div>
+  `, [
+    { label: 'افزودن', cls: 'btn-primary', action: 'applyServicesImport()' },
+    { label: 'بازگشت', cls: 'btn-ghost', action: 'openServiceProductsCatalog()' },
+  ]);
+}
+
+async function downloadServicesTemplate() {
+  try {
+    const X = await loadXlsxLibrary();
+    const wb = X.utils.book_new();
+    const sheet = X.utils.aoa_to_sheet([['نام', 'قیمت', 'واحد']]);
+    sheet['!cols'] = [{ wch: 36 }, { wch: 16 }, { wch: 12 }];
+    X.utils.book_append_sheet(wb, sheet, 'خدمات');
+    const help = X.utils.aoa_to_sheet([
+      ['راهنما'],
+      ['هر ردیف برگه «خدمات» یک خدمت یا محصول است. ردیف اول (عنوان ستون‌ها) را نگه دار.'],
+      ['نام: الزامی. خدمت هم‌نام با فهرست فعلی دوباره اضافه نمی‌شود.'],
+      ['قیمت: اختیاری، به تومان و بدون واحد؛ مثل 75000000'],
+      ['واحد: اختیاری؛ «عدد»، «کیلو» یا هر واحد دیگر مثل «بسته»'],
+      [],
+      ['نمونه:', '', ''],
+      ['کوچینگ ۶ ماهه', 75000000, ''],
+      ['قهوه عربیکا', 1200000, 'کیلو'],
+      ['ماگ سرامیکی', 350000, 'عدد'],
+    ]);
+    help['!cols'] = [{ wch: 70 }, { wch: 14 }, { wch: 10 }];
+    X.utils.book_append_sheet(wb, help, 'راهنما');
+    X.writeFile(wb, 'نمونه-خدمات-و-محصولات.xlsx');
+  } catch (e) {
+    showToast(e?.message || 'ساخت فایل نمونه ممکن نشد', 'error');
+  }
+}
+
+async function importServicesFile(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { showToast('فایل بزرگ‌تر از ۱۰ مگابایت است', 'error'); input.value = ''; return; }
+  try {
+    const X = await loadXlsxLibrary();
+    const buf = await file.arrayBuffer();
+    const wb = X.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    PKG_TYPES = await window.api.packageTypes.getAll();
+    _svcImportRows = _svcImportFromRows(rows);
+    renderServicesImportPreview(file.name);
+  } catch (e) {
+    showToast('خواندن فایل ممکن نشد؛ فرمت xlsx یا csv باشد', 'error');
+  } finally {
+    input.value = '';
+  }
+}
+
+async function previewServicesPaste() {
+  const text = document.getElementById('svc-import-paste')?.value || '';
+  if (!text.trim()) { showToast('متنی چسبانده نشده', 'error'); return; }
+  PKG_TYPES = await window.api.packageTypes.getAll();
+  _svcImportRows = _svcImportFromRows(_svcImportSplitPaste(text));
+  renderServicesImportPreview('متن چسبانده‌شده');
+}
+
+function _svcImportWillAdd(r, update) {
+  return r.status === 'new' || (update && r.status === 'exists' && (r.price > 0 || r.unit));
+}
+
+function renderServicesImportPreview(source) {
+  const box = document.getElementById('svc-import-preview');
+  if (!box) return;
+  if (source) box.dataset.source = source;
+  const rows = _svcImportRows;
+  if (!rows.length) { box.innerHTML = `<div class="empty" style="padding:12px">ردیفی پیدا نشد</div>`; return; }
+  const update = !!document.getElementById('svc-import-update')?.checked;
+  const c = { new: 0, exists: 0, dup: 0, invalid: 0 };
+  rows.forEach(r => { c[r.status]++; });
+  const updCount = update ? rows.filter(r => r.status === 'exists' && (r.price > 0 || r.unit)).length : 0;
+  const tag = r => {
+    if (r.status === 'new') return `<span class="tag svc-imp-new">جدید</span>`;
+    if (r.status === 'exists') return update && (r.price > 0 || r.unit)
+      ? `<span class="tag svc-imp-upd">به‌روزرسانی</span>`
+      : `<span class="tag svc-imp-skip" title="${escapeHtml(r.existingLabel)}">موجود است</span>`;
+    if (r.status === 'dup') return `<span class="tag svc-imp-skip">تکراری در فایل</span>`;
+    return `<span class="tag svc-imp-bad">بدون نام</span>`;
+  };
+  const LIMIT = 200;
+  box.innerHTML = `
+    <div class="rpi-summary">
+      ${escapeHtml(box.dataset.source || '')}: ${fa(rows.length)} ردیف ·
+      <b style="color:var(--green)">${fa(c.new)} جدید</b>
+      ${updCount ? ` · <b>${fa(updCount)} به‌روزرسانی</b>` : ''}
+      ${c.exists - updCount > 0 ? ` · ${fa(c.exists - updCount)} موجود (رد می‌شود)` : ''}
+      ${c.dup ? ` · ${fa(c.dup)} تکراری در فایل` : ''}
+      ${c.invalid ? ` · ${fa(c.invalid)} بدون نام` : ''}
+    </div>
+    <div class="table-card rpi-table" style="margin-top:8px"><table>
+      <thead><tr><th>ردیف</th><th>نام</th><th>قیمت</th><th>واحد</th><th>وضعیت</th></tr></thead>
+      <tbody>${rows.slice(0, LIMIT).map(r => `<tr class="${_svcImportWillAdd(r, update) ? '' : 'rpi-row-off'}">
+        <td style="color:var(--text3)">${fa(r.row)}</td>
+        <td>${escapeHtml(r.label || '—')}</td>
+        <td style="white-space:nowrap">${r.price ? fmt(r.price) : (r.priceWarn ? '<span style="color:var(--amber)">نامعتبر</span>' : '—')}</td>
+        <td>${escapeHtml(r.unit === 'kg' ? 'کیلو' : r.unit === 'count' ? 'عدد' : (r.unit_label || '—'))}</td>
+        <td>${tag(r)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${rows.length > LIMIT ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">${fa(LIMIT)} ردیف اول نمایش داده شد؛ همه ${fa(rows.length)} ردیف بررسی و اعمال می‌شوند.</div>` : ''}`;
+}
+
+async function applyServicesImport() {
+  if (window._svcImportSaving) return;
+  const update = !!document.getElementById('svc-import-update')?.checked;
+  const items = _svcImportRows.filter(r => _svcImportWillAdd(r, update));
+  if (!items.length) { showToast('ردیف جدیدی برای افزودن نیست', 'error'); return; }
+  window._svcImportSaving = true;
+  try {
+    let i = 0;
+    const res = await window.api.packageTypes.addMany({
+      updateExisting: update,
+      items: items.map(r => ({
+        label: r.label,
+        price: r.price,
+        ...(r.unit ? { unit: r.unit, unit_label: r.unit_label } : {}),
+        color: _SVC_IMPORT_COLORS[(i++) % _SVC_IMPORT_COLORS.length],
+      })),
+    });
+    try { await _syncToServer(); } catch (e) {}
+    PKG_TYPES = await window.api.packageTypes.getAll();
+    const parts = [];
+    if (res?.added) parts.push(`${fa(res.added)} خدمت اضافه شد`);
+    if (res?.updated) parts.push(`${fa(res.updated)} خدمت به‌روز شد`);
+    showToast((parts.join(' · ') || 'تغییری لازم نبود') + ' ✓', 'success');
+    _svcImportRows = [];
+    await openServiceProductsCatalog();
+  } finally {
+    window._svcImportSaving = false;
+  }
+}
+
+function _filterServiceCatalog(q) {
+  const key = String(q || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll('.service-price-list .service-price-row').forEach(row => {
+    const name = String(row.querySelector('.service-price-name')?.value || '').toLowerCase();
+    const on = !key || name.includes(key);
+    row.style.display = on ? '' : 'none';
+    if (on) shown++;
+  });
+  const empty = document.getElementById('svc-cat-filter-empty');
+  if (empty) empty.style.display = shown ? 'none' : '';
 }
 
 
