@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpc07bfa9843';
+const TP_ASSET_V = 'tp7070e0e5bb';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -56,7 +56,7 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openGeneralPurchaseModal', 'openGeneralPaymentModal',
   'openServiceProductsCatalog', 'openRelinkOrphanPackageType', 'confirmRelinkOrphanPackageType',
   'saveServiceProductPrice', 'saveServiceProductLabel',
-  'saveServiceProductUnit', 'saveServiceProductColor', 'addServiceProductFromCatalog',
+  'saveServiceProductUnit', 'saveServiceProductColor', 'addServiceProductFromCatalog', 'openServicesBulkImport',
   'openAddReminder', 'savePurchaseFromReminder', 'savePurchaseFromSale', 'openRenewalPriceIncrease', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename', 'setPartyTxPeriod', 'applyPartyTxCustomPeriod'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
@@ -3552,6 +3552,36 @@ window.api = {
       if (existing) Object.assign(existing, _pkgTypeUnitPatch(p));
       _save();
       return _P(item);
+    },
+    // Bulk add (Excel / pasted rows). Same duplicate rule as add() (merge key),
+    // existing names are skipped unless updateExisting; one save for the batch.
+    addMany: (p)=>{
+      const items=Array.isArray(p?.items)?p.items:[];
+      const updateExisting=!!p?.updateExisting;
+      const byKey=new Map((_db.package_types||[]).map(t=>[_serviceMergeKey(t.label),t]));
+      let added=0,updated=0,skipped=0;
+      items.forEach(it=>{
+        const label=String(it?.label||'').replace(/\s+/g,' ').trim().slice(0,120);
+        if(!label){skipped++;return;}
+        const key=_serviceMergeKey(label);
+        const existing=byKey.get(key);
+        const unitPatch=_pkgTypeUnitPatch(it);
+        if(existing){
+          if(!updateExisting){skipped++;return;}
+          let changed=false;
+          if(_pkgTypePrice(it.price)>0){existing.price=_pkgTypePrice(it.price);changed=true;}
+          if(unitPatch.unit){Object.assign(existing,unitPatch);changed=true;}
+          if(changed)updated++;else skipped++;
+          return;
+        }
+        const id=_nextId('package_types');
+        const next={id,key:'pt'+id,label,color:it.color||'#7c6af7',price:_pkgTypePrice(it.price),...unitPatch};
+        _db.package_types.push(next);
+        byKey.set(key,next);
+        added++;
+      });
+      if(added||updated){_forceNextServerSync();_save(true,{urgent:true});}
+      return _P({ok:true,added,updated,skipped});
     },
     update: (p)=>{ const pt=_db.package_types.find(x=>String(x.id)===String(p.id));let merge={merged:0,reassigned:0};if(pt){if(p.label!=null)pt.label=String(p.label||'').trim();if(p.color!=null)pt.color=p.color;if(Object.prototype.hasOwnProperty.call(p,'price'))pt.price=_pkgTypePrice(p.price);Object.assign(pt,_pkgTypeUnitPatch(p));merge=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(merge.merged)_forceNextServerSync();_save();} return _P({ok:true,...merge}); },
     mergeDuplicates: ()=>{const result=_mergeDuplicatePackageTypes(_db);delete _db._serviceCatalogMergeNeedsSave;if(result.aborted)return _P({ok:false,error:'ادغام لغو شد؛ هنوز ارجاعی به خدمت حذف‌شده باقی مانده'});if(result.merged){_forceNextServerSync();_save();}return _P({ok:true,...result});},

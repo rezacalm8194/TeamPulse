@@ -26,7 +26,7 @@ function loadEnsure(ctx) {
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
-  // tp450: renewal opens a short amount confirm before saving.
+  // tp451: renewal opens a short amount confirm before saving.
   ctx.openModal = () => {};
   ctx.closeModal = () => {};
   ctx.fmt = n => String(n);
@@ -161,9 +161,9 @@ test('orphan groups list alias-only missing catalog types', () => {
   assert.match(groups[0].aliasHint, /نمایش فعلی: کاننیکال از روی ادغام قدیمی/);
 });
 
-test('asset version tp450', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp450'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v450/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp450/);
+test('asset version tp451', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp451'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v451/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp451/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });
