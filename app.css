@@ -494,6 +494,54 @@ button { cursor: pointer; font-family: var(--font); }
 .table-header .title { font-size: 13px; font-weight: 600; }
 .table-header .title-wrap { display: flex; flex-direction: column; gap: 2px; }
 .table-header .subtitle { font-size: 11px; color: var(--text3); font-weight: 400; }
+.payments-history-header { flex-wrap: wrap; gap: 10px 12px; }
+.payments-history-header .title { margin-right: auto; }
+.payments-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; order: -1; flex: 1 1 100%; }
+.payments-history-student { min-width: 160px; max-width: 220px; font-size: 12px; height: 32px; padding: 4px 10px; }
+.payments-history-range { flex-wrap: wrap; gap: 4px; }
+.payments-history-range .chip { font-size: 11px; padding: 4px 8px; }
+.payments-month-row td {
+  background: rgba(124, 106, 247, .08);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 10px 14px !important;
+  border-bottom: 1px solid var(--border);
+}
+.payments-month-banner {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 10px 14px;
+  background: rgba(124, 106, 247, .08);
+  border-bottom: 1px solid var(--border);
+}
+.payment-amount-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.payment-method-chip {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text3);
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 1px 6px;
+  line-height: 1.5;
+}
+.mpay-list { display: none; }
+.mpay-card {
+  position: relative;
+  padding: 12px 14px 12px 42px;
+  border-bottom: 1px solid var(--border);
+}
+.mpay-top { display: flex; align-items: flex-start; gap: 8px; }
+.mpay-name-amount { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.mpay-name { font-weight: 600; font-size: 13px; min-width: 0; }
+.mpay-amount { font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.mpay-meta { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mpay-meta-sep { opacity: .55; }
+.mpay-note { font-size: 10.5px; color: var(--text3); margin-top: 4px; }
+.mpay-card .row-menu { position: absolute; top: 10px; left: 12px; }
+.mpay-account { color: var(--accent2); }
 .family-actions { position: relative; flex: 0 0 auto; }
 .table-card.family-card { overflow: visible; position: relative; }
 .table-card.family-card:has(.family-actions.open) { z-index: 20; }
@@ -3504,6 +3552,14 @@ body.light mark { background: rgba(251,191,36,.5); }
   .customer-sales-table tbody tr,
   .customer-payments-table tbody tr,
   .customer-reminders-table tbody tr { position:relative; }
+  .customer-payments-table:has(.mpay-list) table { display: none; }
+  .customer-payments-table .mpay-list { display: block; }
+  .customer-payments-table .mpay-card .row-menu-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    font-size: 16px;
+  }
   .customer-sales-table td[data-label="عملیات"],
   .customer-payments-table td[data-label="عملیات"],
   .customer-reminders-table td[data-label="عملیات"] {

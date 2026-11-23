@@ -31,7 +31,8 @@ for (const name of ['_jalaliParse', '_jalaliKey', '_sortPaymentsNewestFirst']) {
 
 test('receipts APIs sort by jalali date newest first instead of insertion order', () => {
   assert.match(appSource, /function _sortPaymentsNewestFirst\(/);
-  assert.match(appSource, /getAll: \(\)=>_P\(_sortPaymentsNewestFirst\(_db\.payments\)\.slice\(0,300\)/);
+  assert.match(appSource, /getAll: \(\)=>\{/);
+  assert.doesNotMatch(appSource, /_sortPaymentsNewestFirst\(_db\.payments\)\.slice\(0,300\)/);
   assert.match(appSource, /getByStudent: \(sid\)=>_P\(_sortPaymentsNewestFirst\(_rowsForStudent\('payments',sid\)\)/);
   assert.doesNotMatch(appSource, /getAll: \(\)=>_P\(\[\.\.\._db\.payments\]\.reverse\(\)\.slice\(0,300\)/);
   const financeSource = fs.readFileSync(path.join(root, 'app-finance.js'), 'utf8');
