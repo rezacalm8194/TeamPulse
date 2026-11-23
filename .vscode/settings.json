@@ -1,0 +1,8 @@
+{
+  "[shellscript]": {
+    "files.eol": "\n"
+  },
+  "files.associations": {
+    "*.sh": "shellscript"
+  }
+}
