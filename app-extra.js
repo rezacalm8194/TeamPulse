@@ -366,16 +366,34 @@ function _syncStaffPaymentExpense(payment) {
   _db.expenses = _db.expenses || [];
   const staff = (_db.staff||[]).find(s=>String(s.id)===String(payment.staff_id));
   const title = `حقوق و دستمزد — ${[staff?.name,staff?.lname].filter(Boolean).join(' ')||'پرسنل'}`;
-  let expense = payment.expense_id && _db.expenses.find(e=>String(e.id)===String(payment.expense_id));
+  // One expense per staff payment. payment.expense_id is not always kept, so
+  // also match on staff_payment_id (otherwise every edit added a new expense).
+  const linked = _db.expenses.filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'staff_payment' && String(e.staff_payment_id) === String(payment.id)));
+  linked.sort((a, b) => Number(a.id) - Number(b.id));
+  let expense = linked[0] || null;
+  linked.slice(1).forEach(extra => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', extra.id);
+    _db.expenses = _db.expenses.filter(e => e !== extra);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', extra, 'delete');
+  });
   const data = {amount:Number(payment.amount||0),date_jalali:payment.date_jalali||'',category:'حقوق و دستمزد',payment_method:'پرداخت پرسنل',account_id:payment.account_id||null,description:payment.note||title,source:'staff_payment',staff_payment_id:payment.id,updated_at:new Date().toISOString()};
   if (expense) Object.assign(expense,data);
-  else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense);payment.expense_id=expense.id; }
+  else { expense={id:_nextId('expenses'),...data,created_at:new Date().toISOString()};_db.expenses.push(expense); }
+  payment.expense_id=expense.id;
   if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', expense, 'upsert');
   return expense;
 }
 function _removeStaffPaymentExpense(payment) {
-  if (!payment?.expense_id) return;
-  _db.expenses=(_db.expenses||[]).filter(e=>String(e.id)!==String(payment.expense_id));
+  if (!payment) return;
+  const linked = (_db.expenses||[]).filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'staff_payment' && String(e.staff_payment_id) === String(payment.id)));
+  if (!linked.length) return;
+  linked.forEach(e => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', e.id);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', e, 'delete');
+  });
+  _db.expenses=(_db.expenses||[]).filter(e=>!linked.includes(e));
 }
 function openFinancialAccounts() {
   const accounts=(_db.financial_accounts||[]).slice();
@@ -853,6 +871,23 @@ function staffIsPersonnel(s) {
   return (s?.person_type || 'personnel') === 'personnel';
 }
 
+function staffIsActive(s) {
+  return s?.is_active !== false && s?.is_active !== 0;
+}
+
+async function setStaffActive(id, active) {
+  const s = (_db.staff || []).find(x => String(x.id) === String(id));
+  if (!s) return;
+  const name = `${s.name || ''} ${s.lname || ''}`.trim();
+  if (!active) {
+    const ok = await tpConfirm(`همکاری «${name}» پایان یابد؟ همه پرداخت‌ها، هزینه‌ها و سوابق او حفظ می‌شود؛ فقط یادآوری‌های پرداخت حقوق آینده‌اش حذف می‌شود و از «جمع حقوق ثابت ماهانه» کنار می‌رود.`);
+    if (!ok) return;
+  } else if (!await tpConfirm(`همکاری «${name}» از سر گرفته شود؟ برای ساخت دوباره یادآوری حقوق، حساب‌وکتاب او را ویرایش کن.`)) return;
+  await window.api.staff.setActive({ id: s.id, active: !!active });
+  showToast(active ? 'همکاری از سر گرفته شد ✓' : 'پایان همکاری ثبت شد ✓', 'success');
+  await renderStaff();
+}
+
 function staffPersonTypeLabel(s) {
   return staffIsPersonnel(s) ? 'پرسنل' : 'عضو';
 }
@@ -860,7 +895,10 @@ function staffPersonTypeLabel(s) {
 async function renderStaff() {
   updateTopbarActions(`<button class="btn btn-primary" onclick="openAddStaffChoice()">+ افزودن</button>`);
   STAFF_ROLES = await window.api.staffRoles.getAll();
-  const staffList = await window.api.staff.getAll();
+  const staffList = (await window.api.staff.getAll())
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => (staffIsActive(a.s) === staffIsActive(b.s) ? a.i - b.i : (staffIsActive(a.s) ? -1 : 1)))
+    .map(x => x.s);
   const personnelCount = staffList.filter(staffIsPersonnel).length;
   const memberCount = staffList.length - personnelCount;
   const dash = await window.api.staff.getDashboard();
@@ -929,11 +967,12 @@ async function renderStaff() {
         : `<span style="color:var(--text3)">—</span>`;
 
       const rowMenuId = `staff-menu-${s.id}`;
-      html += `<tr>
+      const ended = !staffIsActive(s);
+      html += `<tr${ended ? ' class="staff-row-ended"' : ''}>
         <td data-label="نام">
           <div class="name-cell">
             ${avatar(s.name, i)}
-            <div><div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</div><div class="name-cell-sub">${escapeHtml(s.phone||'—')}</div></div>
+            <div><div style="font-weight:500">${escapeHtml(s.name)} ${escapeHtml(s.lname)}${ended ? ' <span class="tag staff-ended-tag">پایان همکاری</span>' : ''}</div><div class="name-cell-sub">${ended && s.ended_at ? `از ${escapeHtml(s.ended_at)}` : escapeHtml(s.phone||'—')}</div></div>
           </div>
         </td>
         <td data-label="نوع"><span class="tag" style="background:${staffIsPersonnel(s)?'rgba(124,106,247,.18)':'rgba(96,165,250,.16)'};color:${staffIsPersonnel(s)?'var(--accent2)':'#60a5fa'}">${staffPersonTypeLabel(s)}</span></td>
@@ -950,6 +989,7 @@ async function renderStaff() {
               <div class="row-menu-item" onclick="openStaffDetail(${s.id})">📊 جزئیات و آمار</div>
               <div class="row-menu-item" onclick="openStaffModal(${s.id})">✏️ حساب و کتاب</div>
               <div class="row-menu-item" onclick="openSetStaffPassword(${s.id})">🔐 تغییر رمز</div>
+              <div class="row-menu-item" onclick="setStaffActive(${s.id}, ${ended ? 'true' : 'false'})">${ended ? '▶ ازسرگیری همکاری' : '⏹ پایان همکاری'}</div>
               <div class="row-menu-divider"></div>
               <div class="row-menu-item danger" onclick="deleteStaff(${s.id}, ${escapeAttr((s.name) + ' ' + (s.lname))})">🗑 حذف</div>
             </div>
@@ -1930,10 +1970,14 @@ async function deleteStaff(id, name) {
   const payCount = (_db.staff_payments || []).filter(p => String(p.staff_id) === String(id)).length;
   const adjCount = (_db.staff_adjustments || []).filter(p => String(p.staff_id) === String(id)).length;
   if (payCount || adjCount) {
-    await _tpDialog({
+    const choice = await _tpDialog({
       message: `این پرسنل ${fa(payCount)} پرداخت و ${fa(adjCount)} تعدیل دارد. حذف او سوابق مالی و گزارش‌های گذشته را تغییر می‌دهد؛ برای حفظ سوابق، او را در سیستم نگه دار.`,
-      buttons: [{ label: 'انصراف', value: 'cancel' }],
+      buttons: [
+        ...(staffIsActive((_db.staff || []).find(x => String(x.id) === String(id))) ? [{ label: 'پایان همکاری', value: 'end', primary: true }] : []),
+        { label: 'انصراف', value: 'cancel' },
+      ],
     });
+    if (choice === 'end') await setStaffActive(id, false);
     return;
   }
   if (!await tpConfirm(`آیا مطمئنی "${name}" حذف شود؟ تمام سوابق پرداخت و ارزیابی او نیز حذف می‌شود.`)) return;
