@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp428';
+const TP_ASSET_V = 'tp429';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -1804,6 +1804,7 @@ async function _loadPrimaryDatabase() {
   }
   window._tpPrimaryDatabaseSource = source;
   window._tpPrimaryDatabaseKey = key;
+  if (typeof _bootstrapBottomNavEarly === 'function') _bootstrapBottomNavEarly();
   return { source, key, idbVerified };
 }
 
@@ -13764,6 +13765,7 @@ async function renderSettings() {
       <p style="font-size:12px;color:var(--text2);line-height:1.7;margin-top:6px">
         چهار صفحه از میان دسترسی‌های خود را برای نوار پایین انتخاب کنید و با دکمه‌های بالا و پایین ترتیب بدهید.
       </p>
+      <p style="font-size:11px;color:var(--text3);margin-top:4px">این چیدمان فقط روی همین دستگاه ذخیره می‌شود.</p>
       <div id="bn-nav-settings-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
         <button type="button" class="btn btn-ghost" data-tp-onclick="_bnNavSettingsReset()">بازگشت به پیش‌فرض</button>
@@ -18676,15 +18678,54 @@ const DEFAULT_BN_PAGES = ['home', 'students', 'todolist', 'dashboard'];
 const BN_FILL_POOL = ['home', 'students', 'todolist', 'dashboard', 'calendar', 'goals', 'habits', 'instructions'];
 
 const BN_PAGE_DEFS = {
-  home: { icon: '🏠', label: () => 'داشبورد' },
-  students: { icon: '👥', label: () => (document.getElementById('nav-label-students')?.textContent || ('امور ' + _entityWordPlain(true))) },
-  todolist: { icon: '✅', label: () => 'کارها' },
-  dashboard: { icon: '📊', label: () => 'مدیریت مالی' },
-  calendar: { icon: '📅', label: () => 'تقویم' },
-  goals: { icon: '🎯', label: () => 'اهداف' },
-  habits: { icon: '🔥', label: () => 'عادت‌ها' },
-  instructions: { icon: '💡', label: () => 'مرکز دانش' },
+  home: { label: () => 'داشبورد' },
+  students: { label: () => (document.getElementById('nav-label-students')?.textContent || ('امور ' + _entityWordPlain(true))) },
+  todolist: { label: () => 'کارها' },
+  dashboard: { label: () => 'مدیریت مالی' },
+  calendar: { label: () => 'تقویم' },
+  goals: { label: () => 'اهداف' },
+  habits: { label: () => 'عادت‌ها' },
+  instructions: { label: () => 'مرکز دانش' },
 };
+
+const BN_MORE_SVG = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12M4 10h12M4 13h12"/></svg>';
+const BN_FALLBACK_SVG = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="4"/></svg>';
+
+function _bnNavSvgMarkup(page) {
+  const selectors = [
+    `.sidebar .nav-item[data-page="${page}"] .nav-icon svg`,
+    `.sidebar .nav-item.nav-sub[data-page="${page}"] .nav-icon svg`,
+    `.sidebar .nav-item[data-page="${page}"] .knowledge-lamp-icon svg`,
+  ];
+  for (let i = 0; i < selectors.length; i++) {
+    const svg = document.querySelector(selectors[i]);
+    if (svg) return svg.cloneNode(true).outerHTML;
+  }
+  return BN_FALLBACK_SVG;
+}
+
+function _readLocalMetaForBoot() {
+  try {
+    if (typeof _db !== 'undefined' && _db && _db.meta) {
+      META = { ...DEFAULT_META, ...(typeof META === 'object' ? META : {}), ..._db.meta };
+      return;
+    }
+    const key = window._activeDBKey || (typeof DB_KEY !== 'undefined' ? DB_KEY : '');
+    if (!key) return;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.meta) META = { ...DEFAULT_META, ...parsed.meta };
+  } catch (e) {}
+}
+
+function _bootstrapBottomNavEarly() {
+  _readLocalMetaForBoot();
+  try {
+    if (typeof applyMetaToUI === 'function') applyMetaToUI();
+  } catch (e) {}
+  if (typeof _renderBottomNav === 'function') _renderBottomNav();
+}
 
 function _bnPageAllowed(page) {
   if (!BN_FILL_POOL.includes(page)) return false;
@@ -18752,15 +18793,15 @@ function _renderBottomNav() {
   const menuPage = (typeof _menuPageFor === 'function' && typeof currentPage !== 'undefined')
     ? _menuPageFor(currentPage) : '';
   row.innerHTML = slots.map(page => {
-    const def = BN_PAGE_DEFS[page] || { icon: '•', label: () => page };
+    const def = BN_PAGE_DEFS[page] || { label: () => page };
     const active = menuPage === page;
-    return `<button type="button" class="bn-item${active ? ' active' : ''}" role="listitem" data-page="${escapeHtml(page)}"
+    return `<button type="button" class="bn-item${active ? ' active' : ''}" data-page="${escapeHtml(page)}"
       data-tp-onclick="bnNav(this)" aria-label="${escapeHtml(_bnAriaLabel(page))}"${active ? ' aria-current="page"' : ''}>
-      <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true">${escapeHtml(def.icon)}</span>${_bnBadgeHtml(page)}</span>
+      <span class="bn-icon-wrap"><span class="bn-icon" aria-hidden="true">${_bnNavSvgMarkup(page)}</span>${_bnBadgeHtml(page)}</span>
       <span class="bn-label">${escapeHtml(def.label())}</span>
     </button>`;
-  }).join('') + `<button type="button" class="bn-item bn-more" role="listitem" data-tp-onclick="openSidebar()" aria-label="بیشتر — منوی کناری">
-      <span class="bn-icon" aria-hidden="true">☰</span>
+  }).join('') + `<button type="button" class="bn-item bn-more" data-tp-onclick="openSidebar()" aria-label="بیشتر — منوی کناری">
+      <span class="bn-icon" aria-hidden="true">${BN_MORE_SVG}</span>
       <span class="bn-label">بیشتر</span>
     </button>`;
   _syncBnReminderBadgeFromSidebar();
@@ -18804,14 +18845,15 @@ function renderBnNavSettingsEditor() {
   const order = _bnNavEditorOrder();
   const allowed = _bnAllowedPages();
   list.innerHTML = order.map((page, i) => {
-    const def = BN_PAGE_DEFS[page] || { icon: '•', label: () => page };
+    const def = BN_PAGE_DEFS[page] || { label: () => page };
     const options = allowed.map(p => {
       const d = BN_PAGE_DEFS[p] || { label: () => p };
       const sel = p === page ? ' selected' : '';
       return `<option value="${escapeHtml(p)}"${sel}>${escapeHtml(d.label())}</option>`;
     }).join('');
+    const iconMarkup = _bnNavSvgMarkup(page);
     return `<div class="bn-settings-row" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px">
-      <span style="font-size:18px" aria-hidden="true">${escapeHtml(def.icon)}</span>
+      <span class="bn-settings-icon" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0" aria-hidden="true">${iconMarkup}</span>
       <label style="flex:1;font-size:12px;display:flex;flex-direction:column;gap:4px">
         <span style="color:var(--text3);font-size:10px">جایگاه ${typeof fa === 'function' ? fa(i + 1) : (i + 1)}</span>
         <select class="form-input" style="font-size:12px;padding:6px 8px" data-tp-onchange="_bnNavSettingsPick(${i}, this.value)">${options}</select>
@@ -18856,6 +18898,12 @@ function _bnNavSettingsReset() {
   renderBnNavSettingsEditor();
   showToast('نوار پایین به پیش‌فرض بازگشت ✓', 'success');
 }
+
+(function _bootBottomNavWhenDomReady() {
+  const run = () => { try { _bootstrapBottomNavEarly(); } catch (e) {} };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();
 
 // ════════════════════════════════════════════════════════════════════════════
 // NAV ORDER EDITOR
