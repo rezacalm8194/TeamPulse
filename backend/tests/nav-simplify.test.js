@@ -20,10 +20,22 @@ function extractFn(source, name) {
   return match[0];
 }
 
-test('asset version is tp426', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp426'/);
-  assert.match(appHtml, /\?v=tp426/);
-  assert.match(sw, /team-pulse-static-v426/);
+test('asset version is tp427', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp427'/);
+  assert.match(appHtml, /\?v=tp427/);
+  assert.match(sw, /team-pulse-static-v427/);
+});
+
+test('Google Drive FOLDERS and FILES keep legacy lookup names', () => {
+  assert.match(app, /این نام‌ها کلید پیدا کردن پوشه در Drive هستند؛ تغییر نده/);
+  assert.match(app, /students:\s*'01 — شاگردان و امور مشتریان'/);
+  assert.match(app, /sessions:\s*'02 — جلسات هر شاگرد'/);
+  assert.match(app, /students:\s*'لیست شاگردان\.csv'/);
+});
+
+test('removeEmptyDefaultStudentsCategory matches legacy شاگردان title', () => {
+  const extra = fs.readFileSync(path.join(root, 'app-extra.js'), 'utf8');
+  assert.match(extra, /removeEmptyDefaultStudentsCategory[\s\S]{0,400}n\.title === 'شاگردان'/);
 });
 
 test('sidebar menu omits families and reminders items', () => {
@@ -88,6 +100,10 @@ test('display templates avoid hardcoded شاگرد (excluding defaults and searc
     if (t.includes('تاریخچه رشد شاگرد')) return false;
     if (t.includes('// اسم شاگرد') || t.includes('// نام شاگرد') || t.includes('// پیدا کردن نام شاگرد')) return false;
     if (t.includes('// ── پایان ویزارد') || t.includes('// ── راهنمای آیکون')) return false;
+    if (t.includes('FOLDERS:') || t.includes('FILES:') || t.includes('01 — شاگردان')) return false;
+    if (t.includes('02 — جلسات هر شاگرد') || t.includes('لیست شاگردان.csv')) return false;
+    if (t.includes("n.title === 'شاگردان'")) return false;
+    if (t.includes('کلید پیدا کردن پوشه در Drive')) return false;
     return true;
   });
   assert.deepEqual(lines, [], 'unexpected شاگرد in display templates:\n' + lines.join('\n'));
@@ -101,14 +117,28 @@ test('menu badges hide zero counts', () => {
   assert.match(appHtml, /id="student-badge" style="display:none"/);
 });
 
-test('duplicate renewal prefix is normalized for display and on create', () => {
+test('duplicate renewal prefix is normalized; single prefix unchanged', () => {
   const ctx = vm.createContext({});
-  vm.runInContext(`const _PKG_RENEWAL_TITLE_HEAD_RE = /^(?:تجدید\\s*پکیج|تمدید\\s*پکیج)\\s*[:：]\\s*/i;`, ctx);
-  vm.runInContext(extractFn(app, '_stripPkgRenewalTitleHead'), ctx);
-  vm.runInContext(extractFn(app, '_joinPkgRenewalReminderTitle'), ctx);
+  vm.runInContext(`const _PKG_RENEWAL_TITLE_CHUNK_RE = /^(تجدید|تمدید)\\s*پکیج\\s*[:：]\\s*/i;`, ctx);
+  vm.runInContext(extractFn(app, '_dedupePkgRenewalTitle'), ctx);
   vm.runInContext(extractFn(app, '_displayReminderTitle'), ctx);
   assert.equal(ctx._displayReminderTitle('تجدید پکیج: تجدید پکیج: کوچینگ'), 'تجدید پکیج: کوچینگ');
-  assert.equal(ctx._joinPkgRenewalReminderTitle('تجدید پکیج: کوچینگ'), 'تجدید پکیج: کوچینگ');
+  assert.equal(ctx._displayReminderTitle('تمدید پکیج: کوچینگ'), 'تمدید پکیج: کوچینگ');
+  assert.equal(ctx._dedupePkgRenewalTitle('تجدید پکیج: کوچینگ'), 'تجدید پکیج: کوچینگ');
+});
+
+test('HTML templates do not embed _entityWordPlain in markup strings', () => {
+  const chunks = ['app.js', 'app-finance.js', 'app-sessions.js', 'app-extra.js'].map(f => fs.readFileSync(path.join(root, f), 'utf8'));
+  const bad = [];
+  for (const source of chunks) {
+    for (const line of source.split('\n')) {
+      if (!line.includes('_entityWordPlain')) continue;
+      const trimmed = line.trim();
+      if (!trimmed.includes('`') || !trimmed.includes('<')) continue;
+      bad.push(trimmed);
+    }
+  }
+  assert.deepEqual(bad, [], 'HTML templates should use _entityWord:\n' + bad.join('\n'));
 });
 
 test('backend push uses displayReminderTitle', () => {

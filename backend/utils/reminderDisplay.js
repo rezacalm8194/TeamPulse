@@ -1,28 +1,26 @@
-const RENEWAL_HEAD_RE = /^(?:تجدید\s*پکیج|تمدید\s*پکیج)\s*[:：]\s*/i;
+const RENEWAL_CHUNK_RE = /^(تجدید|تمدید)\s*پکیج\s*[:：]\s*/i;
 
-function stripPkgRenewalTitleHead(title) {
-  let core = String(title ?? '').trim();
-  let prev = '';
-  while (core && core !== prev) {
-    prev = core;
-    core = core.replace(RENEWAL_HEAD_RE, '').trim();
+function dedupePkgRenewalTitle(title) {
+  const raw = String(title ?? '');
+  let rest = raw;
+  let firstWord = '';
+  let count = 0;
+  for (;;) {
+    const m = rest.match(RENEWAL_CHUNK_RE);
+    if (!m) break;
+    count++;
+    if (!firstWord) firstWord = m[1];
+    rest = rest.slice(m[0].length).trim();
   }
-  return core;
-}
-
-function joinPkgRenewalReminderTitle(baseTitle) {
-  const core = stripPkgRenewalTitleHead(baseTitle);
-  return core ? `تجدید پکیج: ${core}` : 'تجدید پکیج';
+  if (count <= 1) return raw;
+  return `${firstWord} پکیج: ${rest}`;
 }
 
 function displayReminderTitle(title) {
-  const raw = String(title ?? '');
-  if (!RENEWAL_HEAD_RE.test(raw)) return raw;
-  return joinPkgRenewalReminderTitle(raw);
+  return dedupePkgRenewalTitle(title);
 }
 
 module.exports = {
   displayReminderTitle,
-  joinPkgRenewalReminderTitle,
-  stripPkgRenewalTitleHead,
+  dedupePkgRenewalTitle,
 };

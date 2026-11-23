@@ -30,8 +30,8 @@ function loadSearchHelpers() {
   return ctx;
 }
 
-test('asset version remains tp426', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp426'/);
+test('asset version remains tp427', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp427'/);
 });
 
 test('_tpSearchNormalize handles Persian Arabic variants, digits and zwnj removal', () => {
