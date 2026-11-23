@@ -29,6 +29,10 @@ describe('one-click deploy scripts', () => {
     assert.match(post, /strip_precompressed/);
     assert.match(post, /precompress-assets\.js/);
     assert.match(post, /\[deploy\] post-pull/);
+    assert.match(post, /grep -c 'setPartyTxPeriod'.*\|\| true/);
+    assert.match(post, /probe_finance_encoding gzip gzip/);
+    assert.match(post, /probe_finance_encoding identity identity/);
+    assert.doesNotMatch(post, /grep -c.*\|\| echo 0/);
     assert.match(panel, /pachim-post-pull\.sh/);
     assert.match(panel, /\$RELEASE/);
     assert.match(panel, /\$PACHIM_SITE_BRANCH/);
