@@ -48,10 +48,10 @@ function bootSettingsTabVm() {
   return ctx;
 }
 
-test('asset version is tp431', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp431'/);
-  assert.match(appHtml, /\?v=tp431/);
-  assert.match(sw, /team-pulse-static-v431/);
+test('asset version is tp432', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp432'/);
+  assert.match(appHtml, /\?v=tp432/);
+  assert.match(sw, /team-pulse-static-v432/);
   assert.match(appHtml, /fonts\/Vazirmatn-Regular\.woff2\?v=tp402/);
 });
 
@@ -128,9 +128,20 @@ test('legacy settings tab keys map to new tabs', () => {
   );
 });
 
-test('setup checklist hidden when onboarding complete', () => {
-  assert.match(app, /const checklistHtml = \(allDone \|\| checklistDismissed\) \? '' :/);
-  assert.doesNotMatch(app, /allDone \? checklistHtml/);
+test('setup checklist respects force-show flag and reopen link', () => {
+  assert.match(app, /const checklistHidden = \(allDone \|\| checklistDismissed\) && !window\._tpForceShowSetupChecklist/);
+  assert.match(app, /window\._tpForceShowSetupChecklist = true/);
+  assert.match(app, /function dismissSetupChecklist\(\)[\s\S]*window\._tpForceShowSetupChecklist = false/);
+  assert.match(app, /\$\{checklistHidden \? `<p[^`]*_reopenSetupChecklist\(\)/);
+  assert.doesNotMatch(app, /\$\{allDone \? `<p[^`]*_reopenSetupChecklist/);
+  assert.doesNotMatch(app, /SETTINGS_TAB_LEGACY_MAP = \{[\s\S]*personal: 'personal'/);
+  assert.doesNotMatch(app, /SETTINGS_TAB_LEGACY_MAP = \{[\s\S]*connections: 'connections'/);
+});
+
+test('normalize settings tab still maps personal and connections by id list', () => {
+  const ctx = bootSettingsTabVm();
+  assert.equal(vm.runInContext(`_normalizeSettingsTab('personal')`, ctx), 'personal');
+  assert.equal(vm.runInContext(`_normalizeSettingsTab('connections')`, ctx), 'connections');
 });
 
 test('mobile settings tabs have touch scroll and 44px tap height', () => {
