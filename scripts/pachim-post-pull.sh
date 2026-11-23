@@ -50,25 +50,75 @@ if [ -z "$ASSET_V" ]; then
   exit 1
 fi
 
-FINANCE_PROBE="$(mktemp)"
-cleanup_probe() { rm -f "$FINANCE_PROBE" "${FINANCE_PROBE}.dec" 2>/dev/null || true; }
+FINANCE_URL="${PUBLIC_ORIGIN}/app-finance.js?v=${ASSET_V}"
+PROBE_TMP="$(mktemp)"
+cleanup_probe() { rm -f "$PROBE_TMP" "${PROBE_TMP}."* 2>/dev/null || true; }
 trap cleanup_probe EXIT
 
-if curl -fsS --max-time 25 -H 'Accept-Encoding: br' "${PUBLIC_ORIGIN}/app-finance.js?v=${ASSET_V}" -o "$FINANCE_PROBE"; then
-  HITS=0
-  if command -v brotli >/dev/null 2>&1; then
-    brotli -d -f -o "${FINANCE_PROBE}.dec" "$FINANCE_PROBE" 2>/dev/null || cp -f "$FINANCE_PROBE" "${FINANCE_PROBE}.dec"
-    HITS="$(grep -c 'setPartyTxPeriod' "${FINANCE_PROBE}.dec" 2>/dev/null || echo 0)"
-  else
-    HITS="$(grep -c 'setPartyTxPeriod' "$FINANCE_PROBE" 2>/dev/null || echo 0)"
+grep_symbol_hits() {
+  local file="$1"
+  local hits
+  hits="$(grep -c 'setPartyTxPeriod' "$file" 2>/dev/null || true)"
+  hits="${hits:-0}"
+  hits="$(printf '%s' "$hits" | tr -cd '0-9')"
+  printf '%s' "${hits:-0}"
+}
+
+probe_finance_encoding() {
+  local label="$1"
+  local accept="$2"
+  local raw="${PROBE_TMP}.${label}"
+  local decoded="${PROBE_TMP}.${label}.js"
+
+  if ! curl -fsS --max-time 25 -H "Accept-Encoding: ${accept}" "$FINANCE_URL" -o "$raw"; then
+    echo "[deploy] could not fetch app-finance.js (${label})" >&2
+    return 1
   fi
-  if [ "${HITS:-0}" -lt 1 ]; then
-    echo "[deploy] live app-finance.js?v=${ASSET_V} missing setPartyTxPeriod (stale brotli/gzip or CDN cache)" >&2
-    exit 1
+
+  case "$label" in
+    identity)
+      cp -f "$raw" "$decoded"
+      ;;
+    gzip)
+      if ! gunzip -c "$raw" > "$decoded" 2>/dev/null; then
+        echo "[deploy] gunzip failed for app-finance.js (${label})" >&2
+        return 1
+      fi
+      ;;
+    br)
+      if ! command -v brotli >/dev/null 2>&1; then
+        return 0
+      fi
+      if ! brotli -d -f -o "$decoded" "$raw" 2>/dev/null; then
+        echo "[deploy] brotli decode failed for app-finance.js (${label})" >&2
+        return 1
+      fi
+      ;;
+    *)
+      echo "[deploy] unknown probe label: ${label}" >&2
+      return 1
+      ;;
+  esac
+
+  local hits
+  hits="$(grep_symbol_hits "$decoded")"
+  if [ "$hits" -lt 1 ]; then
+    echo "[deploy] app-finance.js?v=${ASSET_V} (${label}) missing setPartyTxPeriod" >&2
+    return 1
   fi
-  echo "[deploy] app-finance.js brotli probe ok (setPartyTxPeriod x${HITS})"
-else
-  echo "[deploy] warning: could not fetch ${PUBLIC_ORIGIN}/app-finance.js?v=${ASSET_V}" >&2
+  echo "[deploy] app-finance.js ${label} probe ok (setPartyTxPeriod x${hits})"
+  return 0
+}
+
+PROBE_FAIL=0
+probe_finance_encoding identity identity || PROBE_FAIL=1
+probe_finance_encoding gzip gzip || PROBE_FAIL=1
+if command -v brotli >/dev/null 2>&1; then
+  probe_finance_encoding br br || PROBE_FAIL=1
+fi
+if [ "$PROBE_FAIL" -ne 0 ]; then
+  echo "[deploy] app-finance.js live probe failed (stale .br/.gz or CDN cache?)" >&2
+  exit 1
 fi
 
 echo "[deploy] post-pull done"
