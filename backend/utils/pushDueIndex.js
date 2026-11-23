@@ -2,7 +2,7 @@
 const { ensureAccountTrashSchema } = require('./accountTrash');
 // The cron must not load every active account's JSON every minute.
 
-const { isPaymentReminder } = require('./reminderKind');
+const { isPaymentReminder, reminderPausedByArchive } = require('./reminderKind');
 
 const IRAN_OFFSET_MS = (3 * 60 + 30) * 60 * 1000;
 const PUSH_CATCH_UP_MS = 6 * 60 * 60 * 1000;
@@ -309,7 +309,7 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
   }
 
   for (const r of (userData?.reminders || [])) {
-    if (r.done || !isPaymentReminder(r)) continue;
+    if (r.done || !isPaymentReminder(r) || reminderPausedByArchive(r, userData)) continue;
     const key = `financial:${accountId}:${r.id}:${r.due_date_jalali}`;
     if (delivered.has(key)) continue;
     const dueMs = dailyFireMs(r.due_date_jalali, today);

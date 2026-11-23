@@ -46,16 +46,30 @@ function financeVm(db, extra = {}) {
     const wallet = s.wallet || 0;
     return { ...s, packages, totalAmount, totalPaid, wallet, balance: totalAmount - totalPaid - wallet, sessionCount: 0, otherPayments: null, fxBooks: null };
   };
-  ctx._isPaymentReminder = (r) => !!(r && (r.kind === 'payment' || String(r.title || '').includes('پرداخت')));
+  ctx._isPaymentReminder = (r) => {
+    if (!r) return false;
+    const source = String(r.source || '');
+    if (source === 'session_followup' || source === 'auto_stale_lead' || source === 'archive_followup') return false;
+    const title = String(r.title || '').trim();
+    return !(title.startsWith('اقدام جلسه') || title.startsWith('پیگیری بایگانی:') || title.startsWith('پیگیری راکد'));
+  };
   const financeBlockStart = app.indexOf('const _FINANCE_DECISION_PARTS');
   const financeBlockEnd = app.indexOf('function _paymentOrphanPackageBadgeHtml');
   const financeBlock = app.slice(financeBlockStart, financeBlockEnd);
-  const helpers = ['_studentHasOpenPaymentReminder', '_studentsForFinance', '_resolveStudentFinanceSummary'];
+  const helpers = [
+    '_studentsForFinance',
+    '_resolveStudentFinanceSummary',
+    '_isPaymentReminder',
+    '_isPackageRenewalReminder',
+    '_studentArchiveFinanceDebt',
+    '_reminderPausedByArchive',
+    '_pendingPaymentReminderCount',
+  ];
   const src = financeBlock + helpers.map(n => fn(app, n)).join('\n');
   ctx.fa = (n) => String(n);
   ctx.fmt = (n) => String(n);
   vm.createContext(ctx);
-  vm.runInContext(src + '\nthis._studentsForFinance=_studentsForFinance;this._studentFinanceRecordCounts=_studentFinanceRecordCounts;this._studentHasFinanceRecords=_studentHasFinanceRecords;this._resolveStudentFinanceSummary=_resolveStudentFinanceSummary;this._ensureFinancePartsFreshForDecision=_ensureFinancePartsFreshForDecision;', ctx);
+  vm.runInContext(src + '\nthis._studentsForFinance=_studentsForFinance;this._studentFinanceRecordCounts=_studentFinanceRecordCounts;this._studentHasFinanceRecords=_studentHasFinanceRecords;this._resolveStudentFinanceSummary=_resolveStudentFinanceSummary;this._ensureFinancePartsFreshForDecision=_ensureFinancePartsFreshForDecision;this._reminderPausedByArchive=_reminderPausedByArchive;this._pendingPaymentReminderCount=_pendingPaymentReminderCount;this._isPackageRenewalReminder=_isPackageRenewalReminder;', ctx);
   return ctx;
 }
 
@@ -83,16 +97,16 @@ test('_studentsForFinance includes archived debtor, excludes archived with zero 
   assert.equal(list.find(s => s.id === 2).archived, true);
 });
 
-test('archived with open payment reminder stays in finance list without balance', () => {
+test('archived settled with open package renewal reminder is not in _studentsForFinance', () => {
   const db = {
     students: [{ id: 5, name: 'A', archived: true, wallet: 0 }],
     packages: [],
     payments: [],
     package_types: [],
-    reminders: [{ id: 1, student_id: 5, done: false, title: 'پرداخت قسط', amount: 100 }],
+    reminders: [{ id: 1, student_id: 5, done: false, title: 'تجدید پکیج کوچینگ', amount: 100 }],
   };
   const ctx = financeVm(db);
-  assert.ok(ctx._studentsForFinance().some(s => s.id === 5));
+  assert.ok(!ctx._studentsForFinance().some(s => s.id === 5));
 });
 
 test('openAddPayment opens form for archived customer with balance', () => {
@@ -144,6 +158,35 @@ test('totalDebt includes archived debtor balance', () => {
   const totalDebt = financeStudents.reduce((a, s) => a + Math.max(0, s.balance), 0);
   assert.equal(totalDebt, 500);
   assert.match(fn(app, 'studentAccountOverviewHtml'), /statsStudents/);
+});
+
+test('archived settled renewal reminder paused; unarchive resumes count', () => {
+  const db = {
+    students: [{ id: 7, name: 'Z', archived: true, wallet: 0 }],
+    packages: [],
+    payments: [],
+    reminders: [{ id: 1, student_id: 7, done: false, title: 'تجدید پکیج کوچینگ' }],
+  };
+  const ctx = financeVm(db);
+  assert.equal(ctx._pendingPaymentReminderCount(db.reminders), 0);
+  db.students[0].archived = false;
+  assert.equal(ctx._pendingPaymentReminderCount(db.reminders), 1);
+});
+
+test('archived debtor payment-due reminder stays visible in badge count', () => {
+  const db = {
+    students: [{ id: 8, name: 'D', archived: true, wallet: 0 }],
+    packages: [{ id: 1, student_id: 8, total_amount: 500, currency: 'تومان' }],
+    payments: [],
+    reminders: [{ id: 2, student_id: 8, done: false, title: 'سررسید پرداخت: کوچینگ' }],
+  };
+  const ctx = financeVm(db);
+  assert.equal(ctx._pendingPaymentReminderCount(db.reminders), 1);
+  assert.equal(ctx._reminderPausedByArchive(db.reminders[0]), false);
+});
+
+test('studentAccountOverviewHtml counts settled only among active students', () => {
+  assert.match(app, /const settledCount = students\.filter\(s => s\.balance <= 0\)/);
 });
 
 test('deleteStudent blocks hard delete when payments exist', () => {
@@ -264,7 +307,6 @@ test('deletePackage pkg_only keeps payments', async () => {
     packages: [{ id: 7, student_id: 1 }],
     payments: [{ id: 11, student_id: 1, package_id: 7, amount: 200 }],
     reminders: [],
-    _deletedItems: {},
   };
   db.packages = db.packages.filter(p => p.id !== 7);
   assert.deepEqual(j(db.payments), [{ id: 11, student_id: 1, package_id: 7, amount: 200 }]);
@@ -277,7 +319,25 @@ test('tpConfirm and tpChoose signatures unchanged for two-button flow', () => {
   assert.match(app, /const buttonDefs = Array\.isArray\(buttons\) && buttons\.length \? buttons : null/);
 });
 
-test('asset version tp435', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp435'/);
-  assert.match(read('sw.js'), /team-pulse-static-v435/);
+test('push index skips package renewal for archived settled customer', () => {
+  const { computePushDueIndex } = require('../utils/pushDueIndex');
+  const nowBeforeNine = new Date('2026-08-23T05:00:00.000Z');
+  const schedule = computePushDueIndex('acc', {
+    students: [{ id: 3, name: 'A', archived: true, wallet: 0 }],
+    packages: [],
+    payments: [],
+    reminders: [
+      { id: 9, student_id: 3, due_date_jalali: '1405/06/01', done: false, title: 'تجدید پکیج کوچینگ', amount: 100 },
+    ],
+  }, nowBeforeNine, new Set());
+  assert.equal(schedule.items.length, 0);
+});
+
+test('archive confirm mentions paused renewal reminders', () => {
+  assert.match(fn(app, '_archiveStudentWithBalanceConfirm'), /یادآوری‌های تمدید این مشتری تا زمانی که در بایگانی است متوقف می‌شوند/);
+});
+
+test('asset version tp436', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp436'/);
+  assert.match(read('sw.js'), /team-pulse-static-v436/);
 });

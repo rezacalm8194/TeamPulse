@@ -229,7 +229,7 @@ function budgetDashboardHtml(year,month) { const b=_budgetFor(year,month);if(!b)
 
 function _cashForecast(days=30) {
   if (typeof _reconcileStaffRemindersForPaidMonths === 'function') _reconcileStaffRemindersForPaidMonths();
-  const incoming=(_db.reminders||[]).filter(r=>!r.done&&_isPaymentReminder(r)).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.students||[]).find(x=>String(x.id)===String(r.student_id));return {kind:'in',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'مشتری'} ${s?.lname||''}`.trim(),title:r.title||'دریافت مشتری'};}).filter(x=>x.dueIn<=days);
+  const incoming=(_db.reminders||[]).filter(r=>!r.done&&_isPaymentReminder(r)&&!_reminderPausedByArchive(r)).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.students||[]).find(x=>String(x.id)===String(r.student_id));return {kind:'in',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'مشتری'} ${s?.lname||''}`.trim(),title:r.title||'دریافت مشتری'};}).filter(x=>x.dueIn<=days);
   const outgoing=(_db.staff_reminders||[]).filter(r=>!r.done&&!(typeof _staffReminderSettlement==='function'&&_staffReminderSettlement(r).settled)).map(r=>{const dueIn=_daysUntil(r.due_date_jalali||'');const s=(_db.staff||[]).find(x=>String(x.id)===String(r.staff_id));return {kind:'out',dueIn,date:r.due_date_jalali||'',amount:Number(r.amount||0),name:`${s?.name||'پرسنل'} ${s?.lname||''}`.trim(),title:r.title||'پرداخت پرسنل'};}).filter(x=>x.dueIn<=days);
   const sort=(a,b)=>a.dueIn-b.dueIn;incoming.sort(sort);outgoing.sort(sort);
   const totalIn=incoming.reduce((s,x)=>s+x.amount,0),totalOut=outgoing.reduce((s,x)=>s+x.amount,0);
