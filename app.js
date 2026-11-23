@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp430';
+const TP_ASSET_V = 'tp431';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -9016,6 +9016,10 @@ function _homeStudentName(id) {
 function _homeNavigate(page, tab) {
   if (page === 'families') { page = 'payments'; tab = tab || 'families'; }
   else if (page === 'reminders') { page = 'payments'; tab = tab || 'reminders'; }
+  else if (page === 'settings' && tab) {
+    _settingsActiveTab = _normalizeSettingsTab(tab);
+    try { localStorage.setItem('tp_settings_tab', _settingsActiveTab); } catch (e) {}
+  }
   currentPage = page;
   if (page === 'students' && tab === 'sessions') _studentsTab = 'sessions';
   if (page === 'payments') {
@@ -12593,10 +12597,10 @@ const SAMPLE_PKG_TYPES = [
 
 function _settingsSetupState() {
   const items = [
-    { id:'apptitle', label:'نام برنامه را تنظیم کن', done: !!(META.appTitle && META.appTitle !== 'TeamPulse'), go:'general' },
-    { id:'pkgs',     label:`اولین ${META.entitySingular?'خدمت':'خدمت'} را بساز`, done: PKG_TYPES.length>0, go:'services' },
-    { id:'calendar', label:'نوع تقویم را انتخاب کن', done: !!META.calendarType, go:'general' },
-    { id:'notif',    label:'نوتیفیکیشن را فعال کن', done: (typeof Notification!=='undefined' && Notification.permission==='granted'), go:'personal' },
+    { id:'apptitle', label:'نام برنامه را تنظیم کن', done: !!(META.appTitle && META.appTitle !== 'TeamPulse'), go:'business', section:'set-app-title' },
+    { id:'pkgs',     label:`اولین ${META.entitySingular?'خدمت':'خدمت'} را بساز`, done: PKG_TYPES.length>0, go:'business', section:'pkg-types-list' },
+    { id:'calendar', label:'نوع تقویم را انتخاب کن', done: !!META.calendarType, go:'business', section:'set-calendar-type' },
+    { id:'notif',    label:'نوتیفیکیشن را فعال کن', done: (typeof Notification!=='undefined' && Notification.permission==='granted'), go:'personal', section:'push-settings' },
     { id:'backup',   label:'اولین پشتیبان را بگیر', done: !!localStorage.getItem('tp_last_backup_ts'), go:'data' },
   ];
   return items;
@@ -12616,16 +12620,89 @@ function _fmtBackupTime(ts) {
 
 function switchToSettingsServices() {
   currentPage = 'settings';
-  _settingsActiveTab = 'services';
+  _settingsActiveTab = 'business';
   renderPage();
 }
 
-let _settingsActiveTab = 'general';
+const SETTINGS_TAB_IDS = ['account', 'business', 'connections', 'personal', 'team', 'data'];
+const SETTINGS_TAB_LEGACY_MAP = {
+  account: 'account',
+  business: 'business',
+  connections: 'connections',
+  personal: 'personal',
+  team: 'team',
+  data: 'data',
+  general: 'business',
+  services: 'business',
+  advanced: 'data',
+  security: 'account',
+  backup: 'data',
+  personal: 'personal',
+  connections: 'connections',
+};
+const SETTINGS_LEGACY_SECTION_MAP = {
+  general: { tab: 'business', section: 'set-app-title' },
+  services: { tab: 'business', section: 'settings-services' },
+  advanced: { tab: 'data', section: 'settings-danger-zone' },
+  backup: { tab: 'data' },
+  security: { tab: 'account' },
+  push: { tab: 'personal', section: 'push-settings' },
+  gcal: { tab: 'connections', section: 'gcal-settings' },
+  gdrive: { tab: 'connections', section: 'gdrive-settings' },
+  bale: { tab: 'connections', section: 'bale-pay-settings' },
+  voice: { tab: 'personal', section: 'settings-voice' },
+};
 
-function switchSettingsTab(tab) {
-  _settingsActiveTab = tab;
-  document.querySelectorAll('.settings-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
-  document.querySelectorAll('.settings-pane').forEach(el => el.classList.toggle('active', el.id === 'pane-' + tab));
+function _normalizeSettingsTab(tab) {
+  const key = String(tab || '').trim().toLowerCase();
+  if (!key) return 'account';
+  if (SETTINGS_TAB_IDS.includes(key)) return key;
+  return SETTINGS_TAB_LEGACY_MAP[key] || 'account';
+}
+
+function _resolveSettingsTabTarget(tab, sectionId) {
+  const key = String(tab || '').trim().toLowerCase();
+  if (sectionId) return { tab: _normalizeSettingsTab(tab), section: sectionId };
+  const legacy = SETTINGS_LEGACY_SECTION_MAP[key];
+  if (legacy) return { tab: legacy.tab, section: legacy.section || '' };
+  return { tab: _normalizeSettingsTab(tab), section: '' };
+}
+
+function _restoreSettingsTabFromStorage() {
+  try {
+    const saved = localStorage.getItem('tp_settings_tab');
+    if (saved) return _normalizeSettingsTab(saved);
+  } catch (e) {}
+  return 'account';
+}
+
+function _scrollSettingsActiveTab() {
+  const active = document.querySelector('.settings-tab.active');
+  if (active) active.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+}
+
+let _settingsActiveTab = 'account';
+
+function switchSettingsTab(tab, sectionId) {
+  const target = _resolveSettingsTabTarget(tab, sectionId);
+  _settingsActiveTab = target.tab;
+  try { localStorage.setItem('tp_settings_tab', _settingsActiveTab); } catch (e) {}
+  document.querySelectorAll('.settings-tab').forEach(el => {
+    const on = el.dataset.tab === _settingsActiveTab;
+    el.classList.toggle('active', on);
+    if (on) el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  });
+  document.querySelectorAll('.settings-pane').forEach(el => {
+    el.classList.toggle('active', el.id === 'pane-' + _settingsActiveTab);
+  });
+  if (target.section) {
+    const run = () => {
+      const sec = document.getElementById(target.section);
+      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else setTimeout(run, 0);
+  }
 }
 
 function dismissSetupChecklist() {
@@ -12634,13 +12711,21 @@ function dismissSetupChecklist() {
   if (el) el.remove();
 }
 
+function _reopenSetupChecklist() {
+  try { localStorage.removeItem('tp_settings_checklist_dismissed'); } catch (e) {}
+  void renderSettings().then(() => {
+    const box = document.getElementById('setup-checklist-box');
+    if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 async function addSamplePkgTypes() {
   for (const s of SAMPLE_PKG_TYPES) {
     await window.api.packageTypes.add(s);
   }
   showToast('خدمات نمونه اضافه شدند ✓', 'success');
   await renderSettings();
-  switchSettingsTab('services');
+  switchSettingsTab('business');
 }
 
 function _teamSectionLabel(key) {
@@ -13128,7 +13213,7 @@ async function _saveTeamMemberEdit(id) {
 function _pushSettingsSectionHtml(options = {}) {
   const intro = options.intro || 'فعال بودن نوتیفیکیشن روی موبایل برای لپ‌تاپ کافی نیست؛ همین دستگاه را جداگانه فعال کن. اگر تب برنامه باز باشد، یادآور داخل خود صفحه هم نمایش داده می‌شود. برای اعلان سیستم وقتی پنجره بسته است، Chrome باید در پس‌زمینه در حال اجرا بماند.';
   return `
-    <div class="detail-section">
+    <div class="detail-section" id="push-settings">
       <h3>🔔 نوتیفیکیشن‌های یادآور</h3>
       <p style="font-size:12px;color:var(--text2);margin-bottom:12px">
         <span class="help-ic" title="هر دستگاهی که وارد حساب بشه باید جداگانه فعال بشه">؟</span>
@@ -13310,16 +13395,17 @@ async function renderSettings() {
   updateTopbarActions('');
   PKG_TYPES = await window.api.packageTypes.getAll();
   if (_isTeamGuest()) {
-    _settingsActiveTab = 'team';
+    _settingsActiveTab = _normalizeSettingsTab(_settingsActiveTab);
+    if (_settingsActiveTab !== 'account') _settingsActiveTab = 'team';
     setContent(`
       <div class="settings-tabs">
-        <button class="settings-tab active" data-tab="team" onclick="switchSettingsTab('team')">👥 دسترسی من</button>
-        <button class="settings-tab" data-tab="security" onclick="switchSettingsTab('security')">🔐 امنیت حساب</button>
+        <button class="settings-tab${_settingsActiveTab==='team'?' active':''}" data-tab="team" onclick="switchSettingsTab('team')">👥 دسترسی من</button>
+        <button class="settings-tab${_settingsActiveTab==='account'?' active':''}" data-tab="account" onclick="switchSettingsTab('account')">👤 حساب</button>
       </div>
-      <div class="settings-pane active" id="pane-team">
+      <div class="settings-pane${_settingsActiveTab==='team'?' active':''}" id="pane-team">
         ${_teamSettingsHtml()}
       </div>
-      <div class="settings-pane" id="pane-security">
+      <div class="settings-pane${_settingsActiveTab==='account'?' active':''}" id="pane-account">
         <div class="detail-section" style="border-color:rgba(124,106,247,.35)">
           <h3>🔐 تغییر رمز عبور</h3>
           <p style="font-size:11px;color:var(--text3);margin-bottom:12px;direction:ltr;text-align:right">${escapeHtml(_sbUser?.email || '')}</p>
@@ -13341,8 +13427,12 @@ async function renderSettings() {
       </div>
     `);
     setTimeout(_checkPushStatusForSettings, 100);
+    setTimeout(_scrollSettingsActiveTab, 0);
     return;
   }
+
+  _settingsActiveTab = _normalizeSettingsTab(_settingsActiveTab);
+  if (!SETTINGS_TAB_IDS.includes(_settingsActiveTab)) _settingsActiveTab = _restoreSettingsTabFromStorage();
 
   const setupItems = _settingsSetupState();
   const allDone = setupItems.every(i => i.done);
@@ -13356,7 +13446,7 @@ async function renderSettings() {
     </div>
     <div class="setup-checklist">
       ${setupItems.map(i => `
-        <div class="setup-item ${i.done?'done':''}" onclick="switchSettingsTab('${i.go}')">
+        <div class="setup-item ${i.done?'done':''}" onclick="switchSettingsTab('${i.go}'${i.section ? `, '${i.section}'` : ''})">
           <span class="setup-dot">${i.done?'✓':''}</span>
           <span>${escapeHtml(i.label)}</span>
         </div>`).join('')}
@@ -13420,16 +13510,16 @@ async function renderSettings() {
   const html = `
   ${checklistHtml}
 
-  <div class="settings-tabs">
-    <button class="settings-tab ${_settingsActiveTab==='general'?'active':''}" data-tab="general" onclick="switchSettingsTab('general')">⚙️ عمومی</button>
-    <button class="settings-tab ${_settingsActiveTab==='team'?'active':''}" data-tab="team" onclick="switchSettingsTab('team')">👥 هم‌تیمی‌ها</button>
-    <button class="settings-tab ${_settingsActiveTab==='services'?'active':''}" data-tab="services" onclick="switchSettingsTab('services')">🧰 خدمات</button>
-    <button class="settings-tab ${_settingsActiveTab==='data'?'active':''}" data-tab="data" onclick="switchSettingsTab('data')">💾 داده و پشتیبان</button>
-    <button class="settings-tab ${_settingsActiveTab==='personal'?'active':''}" data-tab="personal" onclick="switchSettingsTab('personal')">🎨 شخصی‌سازی</button>
-    <button class="settings-tab ${_settingsActiveTab==='advanced'?'active':''}" data-tab="advanced" onclick="switchSettingsTab('advanced')">⚠️ پیشرفته</button>
+  <div class="settings-tabs" id="settings-tabs">
+    <button type="button" class="settings-tab ${_settingsActiveTab==='account'?'active':''}" data-tab="account" onclick="switchSettingsTab('account')">👤 حساب</button>
+    <button type="button" class="settings-tab ${_settingsActiveTab==='business'?'active':''}" data-tab="business" onclick="switchSettingsTab('business')">🏢 کسب‌وکار</button>
+    <button type="button" class="settings-tab ${_settingsActiveTab==='connections'?'active':''}" data-tab="connections" onclick="switchSettingsTab('connections')">🔌 اتصال‌ها</button>
+    <button type="button" class="settings-tab ${_settingsActiveTab==='personal'?'active':''}" data-tab="personal" onclick="switchSettingsTab('personal')">🎨 شخصی‌سازی</button>
+    <button type="button" class="settings-tab ${_settingsActiveTab==='team'?'active':''}" data-tab="team" onclick="switchSettingsTab('team')">👥 هم‌تیمی‌ها</button>
+    <button type="button" class="settings-tab ${_settingsActiveTab==='data'?'active':''}" data-tab="data" onclick="switchSettingsTab('data')">💾 داده و پشتیبان</button>
   </div>
 
-  <div class="settings-pane ${_settingsActiveTab==='general'?'active':''}" id="pane-general">
+  <div class="settings-pane ${_settingsActiveTab==='account'?'active':''}" id="pane-account">
     <div class="detail-section" style="border-color:rgba(124,106,247,.35)">
       <h3>🔐 امنیت حساب و رمز عبور</h3>
       <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:14px">
@@ -13470,9 +13560,12 @@ async function renderSettings() {
       <div style="margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);font-size:11px;color:var(--text2);line-height:1.8">
         اگر رمز را فراموش کردی، در صفحه ورود همین شماره تماس را وارد کن و رمز جدید بگذار.
       </div>
+      ${allDone ? `<p style="font-size:11px;margin-top:12px"><button type="button" class="btn btn-ghost btn-sm" onclick="_reopenSetupChecklist()">مشاهده دوباره راه‌اندازی اولیه</button></p>` : ''}
     </div>
+  </div>
 
-    <div class="detail-section">
+  <div class="settings-pane ${_settingsActiveTab==='business'?'active':''}" id="pane-business">
+    <div class="detail-section" id="settings-labels">
       <h3>برچسب‌های برنامه</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
         <span class="help-ic" title="این برنامه قابل استفاده برای هر نوع کسب‌وکاره — می‌تونی اسم‌ها رو متناسب با شغل خودت تغییر بدی، مثلاً به‌جای «شاگرد» بنویس «مشتری»">؟</span>
@@ -13506,6 +13599,17 @@ async function renderSettings() {
       </div>
     </div>
 
+    <div class="detail-section" id="settings-services">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <h3 style="margin:0">خدمات قابل ارائه</h3>
+        <button class="btn btn-ghost btn-sm" onclick="mergeDuplicatePkgTypes()">بررسی و ادغام تکراری‌ها</button>
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        این لیست در فرم افزودن ${_entityWord()} و در داشبورد استفاده می‌شود. موارد هم‌نام و عنوان‌های معادل مانند «تجدید پکیج» با حفظ تمام سوابق ادغام می‌شوند.
+      </p>
+      ${pkgSectionHtml}
+    </div>
+
     <div class="detail-section">
       <h3>اتوماسیون ساده</h3>
       <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">چهار قانون آماده که بدون موتور پیچیده، کار روزانه را جلو می‌برند. پر کردن موعد اقدام جلسه به‌صورت پیش‌فرض خاموش است و هیچ اقدام خودکاری ساخته نمی‌شود.</p>
@@ -13526,31 +13630,7 @@ async function renderSettings() {
       </div>
     </div>
 
-    <div class="detail-section" id="bale-pay-settings">
-      <h3>بله‌پی — لینک پرداخت</h3>
-      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">
-        توکن بازو و توکن پرداخت کیف‌پولی را از <span dir="ltr">@BotFather</span> در بله بگیرید. این اسرار فقط روی سرور ذخیره می‌شوند و با موبایل همگام نمی‌شوند.
-        برای تست می‌توانید توکن پرداخت را خالی بگذارید تا از حالت آزمایشی استفاده شود.
-      </p>
-      <div id="bale-pay-status" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.8">در حال بررسی اتصال…</div>
-      <div class="form-grid">
-        <div class="form-group full">
-          <label class="form-label" for="bale-bot-token">توکن بازو (Bot Token)</label>
-          <input class="form-input" id="bale-bot-token" type="password" autocomplete="off" dir="ltr" placeholder="از BotFather">
-        </div>
-        <div class="form-group full">
-          <label class="form-label" for="bale-provider-token">توکن پرداخت کیف‌پولی (Provider Token)</label>
-          <input class="form-input" id="bale-provider-token" type="password" autocomplete="off" dir="ltr" placeholder="خالی = حالت تست WALLET-TEST">
-        </div>
-      </div>
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="saveBalePayCredentials()">ذخیره اتصال بله‌پی</button>
-        <button class="btn btn-ghost" onclick="registerBalePayWebhook()">ثبت وب‌هوک</button>
-        <button class="btn btn-ghost" onclick="disconnectBalePay()">قطع اتصال</button>
-      </div>
-    </div>
-
-    <div class="detail-section">
+    <div class="detail-section" id="settings-locale">
       <h3>🌍 منطقه زمانی و تقویم <span class="help-ic" title="نوع تقویم روی کل برنامه اثر می‌گذارد: اهداف، جلسات، لیست کارها، عادت‌ها، گزارش‌ها و فاکتورها">؟</span></h3>
       <div class="form-grid">
         <div class="form-group">
@@ -13634,47 +13714,85 @@ async function renderSettings() {
         تاریخ مناسبت‌های قمری برای هر سال از تقویم هجری محاسبه می‌شود و تاریخ شمسی ثابتی ندارد.
       </div>
     </div>
+  </div>
 
-    <div class="detail-section">
-      <h3>🎙️ ورودی صوتی (Voice to Text) <span class="help-ic" title="با کلیک روی آیکون میکروفون کنار هر کادر متنی، می‌توانی به‌جای تایپ، صحبت کنی و متن به‌طور خودکار نوشته شود.">؟</span></h3>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        زبان تشخیص گفتار را انتخاب کن. حالت «تشخیص خودکار» بر اساس تنظیمِ «زبان برنامه» در همین صفحه کار می‌کند (نه زبان مرورگر).
+  <div class="settings-pane ${_settingsActiveTab==='connections'?'active':''}" id="pane-connections">
+    <div class="detail-section" id="bale-pay-settings">
+      <h3>بله‌پی — لینک پرداخت</h3>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">
+        توکن بازو و توکن پرداخت کیف‌پولی را از <span dir="ltr">@BotFather</span> در بله بگیرید. این اسرار فقط روی سرور ذخیره می‌شوند و با موبایل همگام نمی‌شوند.
+        برای تست می‌توانید توکن پرداخت را خالی بگذارید تا از حالت آزمایشی استفاده شود.
       </p>
+      <div id="bale-pay-status" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.8">در حال بررسی اتصال…</div>
       <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">زبان تشخیص گفتار</label>
-          <select class="form-input" id="set-voice-lang" onchange="saveVoiceLangSetting(this.value)">
-            <option value="auto" ${_getVoiceLangPref()==='auto'?'selected':''}>🌐 تشخیص خودکار</option>
-            <option value="fa" ${_getVoiceLangPref()==='fa'?'selected':''}>🇮🇷 فارسی</option>
-            <option value="en" ${_getVoiceLangPref()==='en'?'selected':''}>🇺🇸 English</option>
-            <option value="ar" ${_getVoiceLangPref()==='ar'?'selected':''}>🇸🇦 العربية</option>
-            <option value="tr" ${_getVoiceLangPref()==='tr'?'selected':''}>🇹🇷 Türkçe</option>
-          </select>
+        <div class="form-group full">
+          <label class="form-label" for="bale-bot-token">توکن بازو (Bot Token)</label>
+          <input class="form-input" id="bale-bot-token" type="password" autocomplete="off" dir="ltr" placeholder="از BotFather">
+        </div>
+        <div class="form-group full">
+          <label class="form-label" for="bale-provider-token">توکن پرداخت کیف‌پولی (Provider Token)</label>
+          <input class="form-input" id="bale-provider-token" type="password" autocomplete="off" dir="ltr" placeholder="خالی = حالت تست WALLET-TEST">
         </div>
       </div>
-      <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
-        ${(window.SpeechRecognition || window.webkitSpeechRecognition || window.MediaRecorder)
-          ? '✅ ورودی صوتی روی این دستگاه پشتیبانی می‌شود. اگر تشخیص داخلی مرورگر پایدار نباشد، ضبط صدا برای تبدیل روی سرور استفاده می‌شود.'
-          : '⚠️ مرورگر فعلی شما نه تشخیص گفتار داخلی دارد و نه ضبط صدا را پشتیبانی می‌کند.'}
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveBalePayCredentials()">ذخیره اتصال بله‌پی</button>
+        <button class="btn btn-ghost" onclick="registerBalePayWebhook()">ثبت وب‌هوک</button>
+        <button class="btn btn-ghost" onclick="disconnectBalePay()">قطع اتصال</button>
       </div>
+    </div>
+
+    <div class="detail-section" id="gcal-settings">
+      <h3>🗓️ اتصال به Google Calendar</h3>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم انتخاب‌شده هم
+        به‌صورت خودکار وارد لیست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
+      </p>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <button class="btn ${_gcal.enabled?'btn-danger':'btn-primary'}" id="gcal-sync-btn" onclick="gcalConnectUI()">
+          ${_gcal.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال با گوگل'}
+        </button>
+        ${_gcal.enabled ? `<button class="btn btn-ghost" onclick="gcalImportUI()">⬇️ وارد کردن از گوگل</button>` : ''}
+      </div>
+      ${_gcal.enabled ? _gcalCalendarSelectHtml() : ''}
+      ${_teamAccessSession() ? `
+        <div class="form-group full" style="margin-top:10px;max-width:520px">
+          <label>ایمیل تقویم صاحب حساب</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" id="gcal-owner-calendar-email" type="email" inputmode="email" dir="ltr"
+              value="${escapeHtml(_db._gcal_owner_calendar_email || _teamAccessSession()?.ownerEmail || '')}"
+              placeholder="fatemehasantabar7073@gmail.com" style="flex:1;min-width:220px;text-align:left">
+            <button class="btn btn-ghost" onclick="gcalSaveOwnerCalendarEmailUI()">ذخیره مقصد</button>
+          </div>
+        </div>` : ''}
+      <div id="gcal-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gcal.enabled?'':'display:none'}">${_gcal.enabled ? escapeHtml(_gcal.email ? ('✅ متصل به: ' + _gcal.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
+      <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
+      <p style="font-size:10px;color:var(--text3);margin-top:4px">
+        برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
+      </p>
+    </div>
+
+    <div class="detail-section" id="gdrive-settings">
+      <h3>☁️ اتصال به Google Drive</h3>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        یک‌بار از همین‌جا وصل شو. بعد از آن اتصال می‌ماند و با بستن اپ نیاز به ورود دوباره نیست. لیست ${_entityWord(true)} و جلسات به پوشه «TeamPulse — خروجی خودکار» فرستاده می‌شود.
+      </p>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <button class="btn ${_gdrive.enabled?'btn-danger':'btn-primary'}" id="gdrive-sync-btn" onclick="gdriveConnectUI()">
+          ${_gdrive.enabled?'🔌 قطع Drive':'☁️ اتصال Drive'}
+        </button>
+        ${_gdrive.enabled ? `<button class="btn btn-ghost" onclick="gdriveManualPushUI()">⬆️ ارسال الان</button>` : ''}
+      </div>
+      <div id="gdrive-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gdrive.enabled?'':'display:none'}">${_gdrive.enabled ? escapeHtml(_gdrive.email ? ('✅ متصل به: ' + _gdrive.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
+      <div id="gdrive-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
+      ${_db._gdrive_folder_id ? `<p style="font-size:11px;margin-top:6px"><a href="https://drive.google.com/drive/folders/${encodeURIComponent(_db._gdrive_folder_id)}" target="_blank" rel="noopener">باز کردن پوشه در Google Drive</a></p>` : ''}
+      <p style="font-size:10px;color:var(--text3);margin-top:4px">
+        ورود گوگل فقط از همین دکمه انجام می‌شود؛ باز کردن برنامه پنجره گوگل را نشان نمی‌دهد.
+      </p>
     </div>
   </div>
 
   <div class="settings-pane ${_settingsActiveTab==='team'?'active':''}" id="pane-team">
     ${_teamSettingsHtml()}
-  </div>
-
-  <div class="settings-pane ${_settingsActiveTab==='services'?'active':''}" id="pane-services">
-    <div class="detail-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-        <h3 style="margin:0">خدمات قابل ارائه</h3>
-        <button class="btn btn-ghost btn-sm" onclick="mergeDuplicatePkgTypes()">بررسی و ادغام تکراری‌ها</button>
-      </div>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        این لیست در فرم افزودن ${_entityWord()} و در داشبورد استفاده می‌شود. موارد هم‌نام و عنوان‌های معادل مانند «تجدید پکیج» با حفظ تمام سوابق ادغام می‌شوند.
-      </p>
-      ${pkgSectionHtml}
-    </div>
   </div>
 
   <div class="settings-pane ${_settingsActiveTab==='data'?'active':''}" id="pane-data">
@@ -13708,53 +13826,16 @@ async function renderSettings() {
       <div id="versions-list">در حال بارگذاری...</div>
     </div>
 
-    <div class="detail-section">
-      <h3>🗓️ اتصال به Google Calendar</h3>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم انتخاب‌شده هم
-        به‌صورت خودکار وارد لیست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
+    <div class="detail-section" id="settings-danger-zone" style="border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.04)">
+      <h3 style="color:var(--red)">⚠️ منطقه خطرناک</h3>
+      <p style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.7">
+        پاک کردن کل داده‌ها تمام اطلاعات حساب شما را حذف می‌کند — ${_entityWord(true)}، پرداخت‌ها، جلسات، کارها و همه چیز. این عمل <strong>برگشت‌ناپذیر</strong> است.
       </p>
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
-        <button class="btn ${_gcal.enabled?'btn-danger':'btn-primary'}" id="gcal-sync-btn" onclick="gcalConnectUI()">
-          ${_gcal.enabled?'🔌 قطع Google Calendar':'🗓️ اتصال با گوگل'}
+      <div style="margin-top:12px">
+        <button class="btn btn-danger" onclick="_confirmClearAllData()" style="font-size:13px">
+          🗑️ پاک کردن کل داده‌های حساب
         </button>
-        ${_gcal.enabled ? `<button class="btn btn-ghost" onclick="gcalImportUI()">⬇️ وارد کردن از گوگل</button>` : ''}
       </div>
-      ${_gcal.enabled ? _gcalCalendarSelectHtml() : ''}
-      ${_teamAccessSession() ? `
-        <div class="form-group full" style="margin-top:10px;max-width:520px">
-          <label>ایمیل تقویم صاحب حساب</label>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input class="form-input" id="gcal-owner-calendar-email" type="email" inputmode="email" dir="ltr"
-              value="${escapeHtml(_db._gcal_owner_calendar_email || _teamAccessSession()?.ownerEmail || '')}"
-              placeholder="fatemehasantabar7073@gmail.com" style="flex:1;min-width:220px;text-align:left">
-            <button class="btn btn-ghost" onclick="gcalSaveOwnerCalendarEmailUI()">ذخیره مقصد</button>
-          </div>
-        </div>` : ''}
-      <div id="gcal-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gcal.enabled?'':'display:none'}">${_gcal.enabled ? escapeHtml(_gcal.email ? ('✅ متصل به: ' + _gcal.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
-      <div id="gcal-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
-      <p style="font-size:10px;color:var(--text3);margin-top:4px">
-        برای ثبت در تقویم فاطمه، تقویم فاطمه باید در Google Calendar برای این اکانت با دسترسی Make changes to events اشتراک‌گذاری شده باشد، سپس همین‌جا آن را به عنوان مقصد انتخاب کن.
-      </p>
-    </div>
-
-    <div class="detail-section">
-      <h3>☁️ اتصال به Google Drive</h3>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        یک‌بار از همین‌جا وصل شو. بعد از آن اتصال می‌ماند و با بستن اپ نیاز به ورود دوباره نیست. لیست ${_entityWord(true)} و جلسات به پوشه «TeamPulse — خروجی خودکار» فرستاده می‌شود.
-      </p>
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
-        <button class="btn ${_gdrive.enabled?'btn-danger':'btn-primary'}" id="gdrive-sync-btn" onclick="gdriveConnectUI()">
-          ${_gdrive.enabled?'🔌 قطع Drive':'☁️ اتصال Drive'}
-        </button>
-        ${_gdrive.enabled ? `<button class="btn btn-ghost" onclick="gdriveManualPushUI()">⬆️ ارسال الان</button>` : ''}
-      </div>
-      <div id="gdrive-account" style="font-size:12px;color:var(--green);padding:4px 0;direction:ltr;text-align:right;${_gdrive.enabled?'':'display:none'}">${_gdrive.enabled ? escapeHtml(_gdrive.email ? ('✅ متصل به: ' + _gdrive.email) : '✅ متصل (در حال دریافت آدرس جیمیل…)') : ''}</div>
-      <div id="gdrive-status" style="font-size:11px;color:var(--text3);min-height:18px;padding:4px 0"></div>
-      ${_db._gdrive_folder_id ? `<p style="font-size:11px;margin-top:6px"><a href="https://drive.google.com/drive/folders/${encodeURIComponent(_db._gdrive_folder_id)}" target="_blank" rel="noopener">باز کردن پوشه در Google Drive</a></p>` : ''}
-      <p style="font-size:10px;color:var(--text3);margin-top:4px">
-        ورود گوگل فقط از همین دکمه انجام می‌شود؛ باز کردن برنامه پنجره گوگل را نشان نمی‌دهد.
-      </p>
     </div>
   </div>
 
@@ -13783,20 +13864,30 @@ async function renderSettings() {
 
     ${_pushSettingsSectionHtml()}
 
-  </div>
-
-  <div class="settings-pane ${_settingsActiveTab==='advanced'?'active':''}" id="pane-advanced">
-    <div class="detail-section" style="border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.04)">
-      <h3 style="color:var(--red)">⚠️ منطقه خطرناک</h3>
-      <p style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.7">
-        پاک کردن کل داده‌ها تمام اطلاعات حساب شما را حذف می‌کند — ${_entityWord(true)}، پرداخت‌ها، جلسات، کارها و همه چیز. این عمل <strong>برگشت‌ناپذیر</strong> است.
+    <div class="detail-section" id="settings-voice">
+      <h3>🎙️ ورودی صوتی (Voice to Text) <span class="help-ic" title="با کلیک روی آیکون میکروفون کنار هر کادر متنی، می‌توانی به‌جای تایپ، صحبت کنی و متن به‌طور خودکار نوشته شود.">؟</span></h3>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
+        زبان تشخیص گفتار را انتخاب کن. حالت «تشخیص خودکار» بر اساس تنظیم «زبان برنامه» در تب کسب‌وکار کار می‌کند (نه زبان مرورگر).
       </p>
-      <div style="margin-top:12px">
-        <button class="btn btn-danger" onclick="_confirmClearAllData()" style="font-size:13px">
-          🗑️ پاک کردن کل داده‌های حساب
-        </button>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">زبان تشخیص گفتار</label>
+          <select class="form-input" id="set-voice-lang" onchange="saveVoiceLangSetting(this.value)">
+            <option value="auto" ${_getVoiceLangPref()==='auto'?'selected':''}>🌐 تشخیص خودکار</option>
+            <option value="fa" ${_getVoiceLangPref()==='fa'?'selected':''}>🇮🇷 فارسی</option>
+            <option value="en" ${_getVoiceLangPref()==='en'?'selected':''}>🇺🇸 English</option>
+            <option value="ar" ${_getVoiceLangPref()==='ar'?'selected':''}>🇸🇦 العربية</option>
+            <option value="tr" ${_getVoiceLangPref()==='tr'?'selected':''}>🇹🇷 Türkçe</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3)">
+        ${(window.SpeechRecognition || window.webkitSpeechRecognition || window.MediaRecorder)
+          ? '✅ ورودی صوتی روی این دستگاه پشتیبانی می‌شود. اگر تشخیص داخلی مرورگر پایدار نباشد، ضبط صدا برای تبدیل روی سرور استفاده می‌شود.'
+          : '⚠️ مرورگر فعلی شما نه تشخیص گفتار داخلی دارد و نه ضبط صدا را پشتیبانی می‌کند.'}
       </div>
     </div>
+
   </div>
   `;
   setContent(html);
@@ -13809,6 +13900,7 @@ async function renderSettings() {
   setTimeout(() => { try { _gdrive.refreshAccountUI(); } catch (e) {} }, 120);
   setTimeout(() => { try { _gcal.refreshAccountUI(); } catch (e) {} }, 160);
   setTimeout(() => { try { renderBnNavSettingsEditor(); } catch (e) {} }, 0);
+  setTimeout(_scrollSettingsActiveTab, 0);
 }
 
 function _syncThemeToggleUI() {
@@ -30126,6 +30218,11 @@ const _TP_SEARCH_PAGE_DEFS = [
   { page: 'habits', tab: '', label: 'عادت‌ها', icon: '🔥', keys: 'habits' },
   { page: 'instructions', tab: '', label: 'مرکز دانش', icon: '💡', keys: 'دانش instructions' },
   { page: 'settings', tab: '', label: 'تنظیمات', icon: '⚙️', keys: 'settings' },
+  { page: 'settings', tab: 'account', label: 'امنیت حساب', icon: '🔐', keys: 'security رمز account' },
+  { page: 'settings', tab: 'business', label: 'خدمات و برچسب‌ها', icon: '🏢', keys: 'services general business خدمت برچسب' },
+  { page: 'settings', tab: 'connections', label: 'اتصال گوگل و بله‌پی', icon: '🔌', keys: 'gcal gdrive google bale calendar drive' },
+  { page: 'settings', tab: 'personal', label: 'ظاهر و نوتیفیکیشن', icon: '🎨', keys: 'personal theme push voice نوتیف' },
+  { page: 'settings', tab: 'data', label: 'پشتیبان و داده', icon: '💾', keys: 'backup data advanced پشتیبان' },
   { page: 'tutorial', tab: '', label: 'آموزش‌ها', icon: '📖', keys: 'tutorial' },
 ];
 const _TP_SEARCH_COMMAND_DEFS = [
