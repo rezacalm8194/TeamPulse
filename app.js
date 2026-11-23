@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp433';
+const TP_ASSET_V = 'tp434';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2809,7 +2809,8 @@ function _studentsForFinance() {
       continue;
     }
     const summary = _studentListSummary(s);
-    if (summary.balance !== 0 || _studentHasOpenPaymentReminder(s.id)) {
+    const hasFxBalance = Array.isArray(summary.fxBooks) && summary.fxBooks.some(b => Number(b.balance || 0) !== 0);
+    if (summary.balance !== 0 || hasFxBalance || _studentHasOpenPaymentReminder(s.id)) {
       rows.push({ ...summary, archived: true });
     }
   }
@@ -2836,12 +2837,48 @@ function _financeStudentPickerOptionsHtml() {
   return html;
 }
 
+const _FINANCE_DECISION_PARTS = ['packages', 'payments', 'wallet_tx'];
+const _FINANCE_PARTS_LOAD_ALERT = 'اطلاعات مالی این مشتری کامل بارگذاری نشد؛ اتصال اینترنت را بررسی کن و دوباره امتحان کن.';
+
+async function _ensureFinancePartsFreshForDecision() {
+  try {
+    await _ensureCompleteBusinessParts(_FINANCE_DECISION_PARTS);
+  } catch (e) {}
+  const fresh = typeof _businessPartCompleteAndFresh === 'function'
+    && _FINANCE_DECISION_PARTS.every(key => _businessPartCompleteAndFresh(key));
+  if (!fresh) {
+    await tpAlert(_FINANCE_PARTS_LOAD_ALERT);
+    return false;
+  }
+  return true;
+}
+
 function _studentFinanceRecordCounts(studentId) {
   const sid = Number(studentId);
+  const student = (_db.students || []).find(x => Number(x.id) === sid);
   return {
     packages: _rowsForStudent('packages', sid).length,
     payments: _rowsForStudent('payments', sid).length,
+    wallet: _rowsForStudent('wallet_tx', sid).length,
+    walletBalance: Number(student?.wallet || 0),
   };
+}
+
+function _studentHasFinanceRecords(studentId) {
+  const c = _studentFinanceRecordCounts(studentId);
+  return !!(c.packages || c.payments || c.wallet || c.walletBalance !== 0);
+}
+
+function _studentFinanceBlockMessage(counts) {
+  const parts = [];
+  if (counts.packages) parts.push(`${fa(counts.packages)} خرید`);
+  if (counts.payments) parts.push(`${fa(counts.payments)} پرداخت`);
+  if (counts.wallet || counts.walletBalance) {
+    if (counts.wallet) parts.push(`${fa(counts.wallet)} تراکنش کیف پول`);
+    if (counts.walletBalance) parts.push(`اعتبار کیف پول ${fmt(counts.walletBalance)} تومان`);
+  }
+  const detail = parts.join(' و ') || 'سابقه مالی';
+  return `این مشتری ${detail} دارد. حذف او سوابق مالی و گزارش درآمد ماه‌های گذشته را تغییر می‌دهد. به‌جای حذف، بایگانی کن تا حسابش حفظ شود.`;
 }
 
 function _paymentOrphanPackageBadgeHtml(payment) {
@@ -11395,12 +11432,13 @@ async function _archiveStudentWithBalanceConfirm(id, name) {
 }
 
 async function deleteStudent(id) {
+  if (!await _ensureFinancePartsFreshForDecision()) return;
   const s = allStudents.find(x => x.id === id) || _resolveStudentFinanceSummary(id);
   const fullName = `${s?.name || ''} ${s?.lname || ''}`.trim() || 'مشتری';
-  const { packages: pkgCount, payments: payCount } = _studentFinanceRecordCounts(id);
-  if (pkgCount || payCount) {
+  const counts = _studentFinanceRecordCounts(id);
+  if (_studentHasFinanceRecords(id)) {
     const choice = await _tpDialog({
-      message: `این مشتری ${fa(pkgCount)} خرید و ${fa(payCount)} پرداخت دارد. حذف او سوابق مالی و گزارش درآمد ماه‌های گذشته را تغییر می‌دهد. به‌جای حذف، بایگانی کن تا حسابش حفظ شود.`,
+      message: _studentFinanceBlockMessage(counts),
       buttons: [
         { label: 'بایگانی کن', value: 'archive', primary: true },
         { label: 'انصراف', value: 'cancel' },
@@ -15408,7 +15446,8 @@ async function applyBulkArchiveStatus(){
 async function bulkDeleteArchive(){
   const ids=selectedArchiveIds();
   if(!ids.length)return;
-  const blocked=ids.filter(id=>{const c=_studentFinanceRecordCounts(id);return c.packages||c.payments;});
+  if(!await _ensureFinancePartsFreshForDecision())return;
+  const blocked=ids.filter(id=>_studentHasFinanceRecords(id));
   const allowed=ids.filter(id=>!blocked.includes(id));
   if(blocked.length&&!allowed.length){
     await _tpDialog({message:`${fa(blocked.length)} مورد انتخاب‌شده سابقه مالی دارند و حذف نمی‌شوند.`,buttons:[{label:'باشه',value:'cancel'}]});
@@ -15433,7 +15472,7 @@ function openArchivePersonModal(id=null){const s=id?archiveStudents.find(x=>x.id
 async function saveArchivePerson(id){const activity=readArchiveActivity(false);if(!activity)return;const relationship_status=document.getElementById('ar-relationship-status').value.trim();const loss_reason=readArchiveLossReason(relationship_status==='ناموفق');if(loss_reason===null)return;const old=id?archiveStudents.find(x=>x.id===id):null,fullName=document.getElementById('ar-full-name').value.trim().replace(/\s+/g,' '),oldFullName=[old?.name,old?.lname].filter(Boolean).join(' ').trim();let name='',lname='';if(old&&fullName===oldFullName){name=old.name||'';lname=old.lname||'';}else{const parts=fullName.split(' ').filter(Boolean);name=parts.shift()||'';lname=parts.join(' ');}const data={...activity,name,lname,phone:document.getElementById('ar-phone').value.trim(),organization_name:document.getElementById('ar-org').value.trim(),customer_category:document.getElementById('ar-category').value.trim()||'شخصی',referral_source:document.getElementById('ar-referral-source').value.trim()||'متفرقه',description:document.getElementById('ar-description').value.trim(),relationship_status,loss_reason:relationship_status==='ناموفق'?loss_reason:'',date:old?.date_jalali||'',archive_data:collectArchiveExtraData('archive',old?.archive_data||{}),packages:[]};if(id){await window.api.students.update({...data,id,packages:old?.packages||[]});}else {const result=await window.api.students.addArchivedBulk([data]);id=result.ids[0];}if(activity.next_activity_date||old?.next_activity_date)await persistArchiveActivity(id,activity);closeModal();showToast('در بایگانی ذخیره شد ✓','success');await renderArchive();}
 function openArchivePersonDetail(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;openModal(`${escapeHtml(s.name)} ${escapeHtml(s.lname)}`,`<div class="detail-section">${archiveColumns.map(c=>`<div class="detail-row"><span class="detail-key">${escapeHtml(c)}</span><span class="detail-val">${escapeHtml(archiveColumnValue(s,c)||'—')}</span></div>`).join('')}</div>`,[{label:'✓ تبدیل به مشتری',cls:'btn-primary',action:`closeModal();convertArchiveToCustomer(${id})`},{label:'✏️ ویرایش',cls:'btn-ghost',action:`closeModal();openArchivePersonModal(${id})`},{label:'🗑 حذف کامل',cls:'btn-danger',action:`closeModal();deleteArchivePerson(${id})`}]);}
 async function convertArchiveToCustomer(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!await tpConfirm(`«${s.name} ${s.lname}» به پرونده‌های مشتریان منتقل شود؟`))return;await unarchiveStudent(id,`${s.name} ${s.lname}`);}
-async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;const fullName=`${s.name||''} ${s.lname||''}`.trim()||'مخاطب';const {packages:pkgCount,payments:payCount}=_studentFinanceRecordCounts(id);if(pkgCount||payCount){const choice=await _tpDialog({message:`این مشتری ${fa(pkgCount)} خرید و ${fa(payCount)} پرداخت دارد. حذف او سوابق مالی و گزارش درآمد ماه‌های گذشته را تغییر می‌دهد. به‌جای حذف، بایگانی کن تا حسابش حفظ شود.`,buttons:[{label:'انصراف',value:'cancel'}]});if(choice)return;return;}if(!await tpConfirm(`«${fullName}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
+async function deleteArchivePerson(id){const s=archiveStudents.find(x=>x.id===id);if(!s)return;if(!await _ensureFinancePartsFreshForDecision())return;const fullName=`${s.name||''} ${s.lname||''}`.trim()||'مخاطب';const counts=_studentFinanceRecordCounts(id);if(_studentHasFinanceRecords(id)){await _tpDialog({message:_studentFinanceBlockMessage(counts),buttons:[{label:'انصراف',value:'cancel'}]});return;}if(!await tpConfirm(`«${fullName}» و تمام اطلاعات مرتبط برای همیشه حذف شود؟`))return;await window.api.students.delete(id);showToast('فرد از بایگانی حذف شد','error');await renderArchive();}
 
 let _xlsxLoaderPromise=null;
 function loadXlsxLibrary(){

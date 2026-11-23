@@ -151,6 +151,7 @@ async function saveEditPackage(id, studentId) {
 }
 
 async function deletePackage(id) {
+  if (!await _ensureFinancePartsFreshForDecision()) return;
   const studentIdOfPackage = (_db.packages || []).find(p => String(p.id) === String(id))?.student_id;
   const relatedPayments = (_db.payments || []).filter(p => String(p.package_id) === String(id));
   let deletePayments = false;

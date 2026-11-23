@@ -20,10 +20,10 @@ function extractFn(source, name) {
   return match[0];
 }
 
-test('asset version is tp433', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp433'/);
-  assert.match(appHtml, /\?v=tp433/);
-  assert.match(sw, /team-pulse-static-v433/);
+test('asset version is tp434', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp434'/);
+  assert.match(appHtml, /\?v=tp434/);
+  assert.match(sw, /team-pulse-static-v434/);
 });
 
 test('Google Drive FOLDERS and FILES keep legacy lookup names', () => {

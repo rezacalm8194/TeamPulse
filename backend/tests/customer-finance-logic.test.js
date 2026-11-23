@@ -47,10 +47,15 @@ function financeVm(db, extra = {}) {
     return { ...s, packages, totalAmount, totalPaid, wallet, balance: totalAmount - totalPaid - wallet, sessionCount: 0, otherPayments: null, fxBooks: null };
   };
   ctx._isPaymentReminder = (r) => !!(r && (r.kind === 'payment' || String(r.title || '').includes('پرداخت')));
-  const helpers = ['_studentHasOpenPaymentReminder', '_studentsForFinance', '_studentFinanceRecordCounts', '_resolveStudentFinanceSummary'];
-  const src = helpers.map(n => fn(app, n)).join('\n');
+  const financeBlockStart = app.indexOf('const _FINANCE_DECISION_PARTS');
+  const financeBlockEnd = app.indexOf('function _paymentOrphanPackageBadgeHtml');
+  const financeBlock = app.slice(financeBlockStart, financeBlockEnd);
+  const helpers = ['_studentHasOpenPaymentReminder', '_studentsForFinance', '_resolveStudentFinanceSummary'];
+  const src = financeBlock + helpers.map(n => fn(app, n)).join('\n');
+  ctx.fa = (n) => String(n);
+  ctx.fmt = (n) => String(n);
   vm.createContext(ctx);
-  vm.runInContext(src + '\nthis._studentsForFinance=_studentsForFinance;this._studentFinanceRecordCounts=_studentFinanceRecordCounts;this._resolveStudentFinanceSummary=_resolveStudentFinanceSummary;', ctx);
+  vm.runInContext(src + '\nthis._studentsForFinance=_studentsForFinance;this._studentFinanceRecordCounts=_studentFinanceRecordCounts;this._studentHasFinanceRecords=_studentHasFinanceRecords;this._resolveStudentFinanceSummary=_resolveStudentFinanceSummary;this._ensureFinancePartsFreshForDecision=_ensureFinancePartsFreshForDecision;', ctx);
   return ctx;
 }
 
@@ -142,9 +147,68 @@ test('totalDebt includes archived debtor balance', () => {
 });
 
 test('deleteStudent blocks hard delete when payments exist', () => {
-  assert.match(fn(app, 'deleteStudent'), /_studentFinanceRecordCounts\(id\)/);
-  assert.match(fn(app, 'deleteStudent'), /pkgCount\s*\|\|\s*payCount/);
-  assert.doesNotMatch(fn(app, 'deleteStudent'), /pkgCount\s*\|\|\s*payCount[\s\S]{0,400}window\.api\.students\.delete\(id\)/);
+  assert.match(fn(app, 'deleteStudent'), /_ensureFinancePartsFreshForDecision/);
+  assert.match(fn(app, 'deleteStudent'), /_studentHasFinanceRecords\(id\)/);
+  assert.doesNotMatch(fn(app, 'deleteStudent'), /_studentHasFinanceRecords\(id\)[\s\S]{0,500}window\.api\.students\.delete\(id\)/);
+});
+
+test('deleteStudent shows alert and does not delete when payments part is not fresh', async () => {
+  const db = { students: [{ id: 1, name: 'الف', lname: 'ب', wallet: 0 }], packages: [], payments: [], wallet_tx: [] };
+  let alertMsg = '';
+  let undoCalled = false;
+  const ctx = financeVm(db);
+  Object.assign(ctx, {
+    allStudents: [{ id: 1, name: 'الف', lname: 'ب' }],
+    _ensureCompleteBusinessParts: async () => {},
+    _businessPartCompleteAndFresh: (key) => key !== 'payments',
+    tpAlert: async (m) => { alertMsg = m; },
+    tpConfirm: async () => true,
+    _tpDialog: async () => null,
+    _archiveStudentWithBalanceConfirm: async () => false,
+    _tpUndoableDelete: async () => { undoCalled = true; },
+    refreshOpenStudentSurface: async () => {},
+    showToast: () => {},
+    window: { api: { students: { getAll: async () => [], delete: () => { undoCalled = true; } } } },
+  });
+  vm.runInContext(fn(app, 'deleteStudent') + '\nthis.deleteStudent=deleteStudent;', ctx);
+  await ctx.deleteStudent(1);
+  assert.match(alertMsg, /کامل بارگذاری نشد/);
+  assert.equal(undoCalled, false);
+  assert.equal(db.students.length, 1);
+});
+
+test('customer with wallet balance only cannot be hard-deleted', () => {
+  const db = {
+    students: [{ id: 4, name: 'کیف', archived: false, wallet: 250 }],
+    packages: [],
+    payments: [],
+    wallet_tx: [],
+  };
+  const ctx = financeVm(db);
+  assert.ok(ctx._studentHasFinanceRecords(4));
+  assert.match(fn(app, 'deleteStudent'), /_studentHasFinanceRecords\(id\)/);
+  const counts = ctx._studentFinanceRecordCounts(4);
+  assert.equal(counts.walletBalance, 250);
+});
+
+test('archived customer with foreign-currency balance appears in _studentsForFinance', () => {
+  const db = {
+    students: [{ id: 8, name: 'FX', archived: true, wallet: 0 }],
+    packages: [],
+    payments: [],
+    package_types: [],
+    reminders: [],
+  };
+  const ctx = financeVm(db);
+  const orig = ctx._studentListSummary;
+  ctx._studentListSummary = (s) => ({ ...orig(s), balance: 0, fxBooks: [{ currency: 'USD', contract: 100, paid: 0, balance: 100 }] });
+  assert.ok(ctx._studentsForFinance().some(s => s.id === 8));
+});
+
+test('deletePackage awaits finance parts before counting related payments', () => {
+  assert.match(finance, /async function deletePackage\(id\) \{[\s\S]*?if \(!await _ensureFinancePartsFreshForDecision\(\)\) return;/);
+  const body = fn(finance, 'deletePackage');
+  assert.ok(body.indexOf('_ensureFinancePartsFreshForDecision') < body.indexOf('relatedPayments'));
 });
 
 test('deletePackage with payments offers both / pkg_only and deletes related payments on both', async () => {
@@ -213,7 +277,7 @@ test('tpConfirm and tpChoose signatures unchanged for two-button flow', () => {
   assert.match(app, /const buttonDefs = Array\.isArray\(buttons\) && buttons\.length \? buttons : null/);
 });
 
-test('asset version tp433', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp433'/);
-  assert.match(read('sw.js'), /team-pulse-static-v433/);
+test('asset version tp434', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp434'/);
+  assert.match(read('sw.js'), /team-pulse-static-v434/);
 });
