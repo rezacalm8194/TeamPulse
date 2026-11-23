@@ -60,12 +60,12 @@ async function renderSessions(search = '') {
   updateTopbarActions(`
     <div class="table-search stu-topbar-search" style="margin-left:8px">
       <span class="search-toggle-icon" style="color:var(--text3)">🔍</span>
-      <input placeholder="جستجوی ${META.entitySingular||'شاگرد'}..." oninput="queueRenderSessions(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجوی ${_entityWord()}..." oninput="queueRenderSessions(this.value)" value="${escapeHtml(search)}">
     </div>
     ${sessionsBoardFilterHtml(boardFilter)}
     <div style="display:flex;align-items:stretch;border:1px solid var(--border2);border-radius:12px;overflow:hidden;background:var(--bg2);flex-shrink:0">
       <button class="btn btn-primary" onclick="openAddSessionGeneral()" style="border-radius:0;border:none;box-shadow:none">+ ثبت ${META.sessionSingular || 'جلسه'}</button>
-      <button class="btn btn-ghost" onclick="openStudentModal()" style="border-radius:0;border:0;border-right:1px solid var(--border2)">+ افزودن ${META.entitySingular || 'شاگرد'}</button>
+      <button class="btn btn-ghost" onclick="openStudentModal()" style="border-radius:0;border:0;border-right:1px solid var(--border2)">+ افزودن ${_entityWord()}</button>
     </div>
   `);
   if (boardFilter === 'all') {
@@ -129,7 +129,7 @@ async function renderSessions(search = '') {
           <span class="scn-count">(${fa(g.sessions.length)})</span>
           ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}">${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?'!':''}</span>` : ''}
         </div>
-        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${META.entitySingular||'شاگرد'}</button>
+        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${_entityWord()}</button>
         <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
         <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
         <button class="summary-btn" onclick="openSessionsSummary(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
@@ -176,7 +176,7 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
-  setContent((html || `<div class="empty"><span>📅</span>${META.entitySingular||'شاگردی'} ثبت نشده</div>`) +
+  setContent((html || `<div class="empty"><span>📅</span>${_entityWordPlain()}‌ای ثبت نشده</div>`) +
     (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
   if (!search) initSessionsDragDrop();
   _tpBindLazyLoaders();

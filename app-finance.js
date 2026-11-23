@@ -3,7 +3,7 @@
 async function renderPurchases(search = '') {
   updateTopbarActions(`
     <div class="table-search"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input placeholder="جستجو با نام شاگرد..." oninput="renderPurchases(this.value)" value="${escapeHtml(search)}">
+      <input placeholder="جستجو با نام ${_entityWordPlain()}..." oninput="renderPurchases(this.value)" value="${escapeHtml(search)}">
     </div>`);
   let packages = await window.api.packages.getAll();
   if (search.trim()) {
@@ -12,7 +12,7 @@ async function renderPurchases(search = '') {
   }
   let html = `<div class="table-card">
     <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button></div></div>
-    <table><thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
+    <table><thead><tr><th>${_entityWord()}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
   if (packages.length === 0) {
     html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
   } else {
@@ -281,7 +281,7 @@ async function openGeneralPurchaseModal() {
     .map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
   openModal('🛒 افزودن خرید جدید', `
     <div class="form-group full">
-      <label class="form-label">${META.entitySingular||'شاگرد'} *</label>
+      <label class="form-label">${_entityWord()} *</label>
       <select class="form-select" id="gpur-student">${options}</select>
     </div>
     <p style="font-size:11px;color:var(--text3);margin-top:6px">پس از انتخاب، فرم خرید کامل باز می‌شود.</p>
@@ -393,13 +393,13 @@ async function addServiceProductFromCatalog() {
 
 
 function openGeneralPaymentModal() {
-  if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
+  if (!allStudents.length) { showToast(`ابتدا ${_entityWord()} اضافه کنید`, 'error'); return; }
   const studentOptions = allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
 
   openModal('افزودن پرداختی', `
     <div class="form-grid">
       <div class="form-group full">
-        <label class="form-label">${META.entitySingular||'شاگرد'} *</label>
+        <label class="form-label">${_entityWord()} *</label>
         <select class="form-select" id="gp-student" onchange="updateGeneralPaymentPkgs()">${studentOptions}</select>
       </div>
       <div class="form-group full" id="gp-pkg-info" style="margin-bottom:-6px"></div>
@@ -508,7 +508,7 @@ function accountCustomerTabsHtml(tab, search = '') {
         <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_tpPaymentsTab('purchases')">🛒 فروش</button>
         <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_tpPaymentsTab('payments')">💳 دریافت</button>
         <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_tpPaymentsTab('reminders')">🔔 یادآوری</button>
-        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👤 حساب مشتری</button>
+        <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👤 مانده حساب‌ها</button>
       </div>
     </div>`;
 }
@@ -570,7 +570,7 @@ function incomeStudentHistoryButton(studentId, content, kind) {
 async function openStudentIncomeHistory(studentId, kind) {
   if (!allStudents.length) allStudents = await window.api.students.getAll();
   const student = allStudents.find(s => String(s.id) === String(studentId));
-  if (!student) return showToast('شاگرد پیدا نشد', 'error');
+  if (!student) return showToast(`${_entityWordPlain()} پیدا نشد`, 'error');
   const fullName = `${student.name || ''} ${student.lname || ''}`.trim();
 
   if (kind === 'sales') {
@@ -581,7 +581,7 @@ async function openStudentIncomeHistory(studentId, kind) {
       <td>${escapeHtml(p.staff_name || '—')}</td>
       <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity)}</span></td>
       <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '—')}</td>
-    </tr>`).join('') || '<tr><td colspan="5"><div class="empty">فروشی برای این شاگرد ثبت نشده</div></td></tr>';
+    </tr>`).join('') || `<tr><td colspan="5"><div class="empty">فروشی برای این ${_entityWord()} ثبت نشده</div></td></tr>`;
     openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>نوع خرید</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
     return;
   }
@@ -593,7 +593,7 @@ async function openStudentIncomeHistory(studentId, kind) {
     <td><span class="amount amount-paid">${fmt(p.amount)} ${escapeHtml(p.currency || 'تومان')}</span></td>
     <td>${escapeHtml(p.account_label || '—')}</td>
     <td style="color:var(--text3);font-size:11px">${escapeHtml([p.note, p.method].filter(Boolean).join(' · ') || '—')}</td>
-  </tr>`).join('') || '<tr><td colspan="5"><div class="empty">دریافتی برای این شاگرد ثبت نشده</div></td></tr>';
+  </tr>`).join('') || `<tr><td colspan="5"><div class="empty">دریافتی برای این ${_entityWord()} ثبت نشده</div></td></tr>`;
   openModal(`💳 دریافت‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>پکیج</th><th>مبلغ</th><th>واریز به حساب</th><th>یادداشت</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
 }
 
@@ -650,7 +650,7 @@ async function renderPayments(search = '') {
     let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('purchases')}<div class="table-card tbl-responsive customer-sales-table">
       <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button><button class="btn btn-primary btn-sm payment-header-add" title="افزودن خرید" onclick="openGeneralPurchaseModal()">+</button></div></div>
       <table>
-        <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
+        <thead><tr><th>${_entityWord()}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
     const purchaseSlice = _visiblePaymentsSlice('purchases', packages);
     if (packages.length === 0) {
@@ -699,7 +699,7 @@ async function renderPayments(search = '') {
     let html = `${accountCustomerTabsHtml(tab, search)}${incomeQuickFilterHtml('payments')}<div class="table-card tbl-responsive customer-payments-table">
       <div class="table-header"><span class="title">💳 تاریخچه دریافت‌ها (${fa(payments.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن دریافت" onclick="openGeneralPaymentModal()">+</button></div>
       <table>
-        <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
+        <thead><tr><th>${_entityWord()}</th><th>پکیج</th><th>مبلغ</th><th>تاریخ</th><th>واریز به حساب</th><th>مانده حساب</th><th>یادداشت</th><th>عملیات</th></tr></thead>
         <tbody>`;
     const paymentSlice = _visiblePaymentsSlice('payments', payments);
     if (payments.length === 0) {
@@ -810,7 +810,7 @@ function familyGroupsSectionHtml(families, search = '') {
     return `<div class="table-card" style="margin-top:16px">
       <div class="table-header"><span class="title">گروه‌های مشترک</span></div>
       <div class="empty"><span>👨‍👩‍👧</span>
-        هنوز گروه مشترکی ساخته نشده. اگر چند ${META.entitySingular||'شاگرد'} با هم (مثلاً زن و شوهر) پرداخت می‌کنند، یک گروه بسازید.
+        هنوز گروه مشترکی ساخته نشده. اگر چند ${_entityWord()} با هم (مثلاً زن و شوهر) پرداخت می‌کنند، یک گروه بسازید.
         <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="openNewFamily()">+ افزودن گروه</button></div>
       </div>
     </div>`;
@@ -937,7 +937,7 @@ function openAddFamilyMember(familyId, familyName) {
   const candidates = allStudents.filter(s => !memberIds.has(s.id));
 
   if (candidates.length === 0) {
-    showToast(`همه ${META.entityPlural||'شاگردان'} ثبت‌شده عضو این گروه هستند`, '');
+    showToast(`همه ${_entityWord(true)} ثبت‌شده عضو این گروه هستند`, '');
     return;
   }
 
@@ -1033,7 +1033,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
   </div>${incomeQuickFilterHtml('reminders')}<div class="table-card tbl-responsive customer-reminders-table">
     <div class="table-header"><span class="title">🔔 یادآوری‌ها (${fa(quickFiltered.length)} مورد)</span><button class="btn btn-primary btn-sm payment-header-add" title="افزودن یادآوری" onclick="openAddReminder()">+</button></div>
     <table>
-      <thead><tr><th>${META.entitySingular||'شاگرد'}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+      <thead><tr><th>${_entityWord()}</th><th>عنوان</th><th>سررسید</th><th>مبلغ</th><th>تکرار</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>`;
 
   if (quickFiltered.length === 0) {
@@ -1061,7 +1061,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
 
     html += `<tr>
       <td data-label="مشتری" style="font-weight:500">${incomeFilterButton('student', r.student_id, `${r.name} ${r.lname}`.trim(), `${escapeHtml(r.name)} ${escapeHtml(r.lname)}`)}</td>
-      <td data-label="عنوان">${incomeFilterButton('title', r.title || '', r.title || 'بدون عنوان', escapeHtml(r.title))}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
+      <td data-label="عنوان">${incomeFilterButton('title', r.title || '', r.title || 'بدون عنوان', escapeHtml(typeof _displayReminderTitle === 'function' ? _displayReminderTitle(r.title) : (r.title || '')))}${r.note ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(r.note)}</div>`:''}</td>
       <td data-label="سررسید">
         <div>${DateService.disp(r.due_date_jalali)}</div>
       </td>
@@ -1091,13 +1091,13 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
 
 
 function openAddReminder(presetStudentId = null) {
-  if (!allStudents.length) { showToast(`ابتدا ${META.entitySingular||'شاگرد'} اضافه کنید`, 'error'); return; }
+  if (!allStudents.length) { showToast(`ابتدا ${_entityWord()} اضافه کنید`, 'error'); return; }
   const opts = allStudents.map(s => `<option value="${s.id}" ${s.id===presetStudentId?'selected':''}>${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`).join('');
 
   openModal('یادآوری پرداخت جدید', `
     <div class="form-grid">
       <div class="form-group full">
-        <label class="form-label">${META.entitySingular||'شاگرد'} *</label>
+        <label class="form-label">${_entityWord()} *</label>
         <select class="form-select" id="r-student">${opts}</select>
       </div>
       <div class="form-group full">
@@ -1159,7 +1159,7 @@ async function markReminderPaid(id) {
   if (!r) return;
 
   openModal('تأیید پرداخت', `
-    <p style="font-size:13px;margin-bottom:12px">آیا پرداخت "<b>${escapeHtml(r.title)}</b>" برای <b>${escapeHtml(r.name)} ${escapeHtml(r.lname)}</b> انجام شده؟</p>
+    <p style="font-size:13px;margin-bottom:12px">آیا پرداخت "<b>${escapeHtml(typeof _displayReminderTitle === 'function' ? _displayReminderTitle(r.title) : (r.title || ''))}</b>" برای <b>${escapeHtml(r.name)} ${escapeHtml(r.lname)}</b> انجام شده؟</p>
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">مبلغ دریافتی (تومان)</label>

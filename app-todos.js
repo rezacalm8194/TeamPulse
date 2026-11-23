@@ -2368,7 +2368,7 @@ function _syncTodoEventRepeatDays() {
 async function _clearStudentBirthday(studentId) {
   const s = (_db.students || []).find(x => x.id == studentId);
   if (!s) return;
-  if (!await tpConfirm('تاریخ تولد این شاگرد از تقویم حذف شود؟')) return;
+  if (!await tpConfirm(`تاریخ تولد این ${_entityWordPlain()} از تقویم حذف شود؟`)) return;
   ['birth_jalali','birthday_jalali','birth_date','birthday'].forEach(k => { if (s[k] !== undefined) s[k] = ''; });
   s.updated_at = new Date().toISOString();
   _todoBirthdayIndexCache = { sig: '', map: new Map() };

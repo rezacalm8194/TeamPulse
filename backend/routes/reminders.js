@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────
 
 const router = require('express').Router();
+const { displayReminderTitle } = require('../utils/reminderDisplay');
 const db = require('../config/database');
 const auth = require('../middleware/auth');
 const cron = require('node-cron');
@@ -366,7 +367,7 @@ async function deliverIndexedItem(item) {
 
   if (kind === 'financial-reminder') {
     return deliverOnce(key, accountId, 'financial-reminder', () =>
-      pushToOwner(accountId, 'default', payload.title || 'یادآوری پرداخت', reminderBody(payload, payload.personName || ''), {
+      pushToOwner(accountId, 'default', displayReminderTitle(payload.title || 'یادآوری پرداخت'), reminderBody(payload, payload.personName || ''), {
         kind: 'financial-reminder', tag: `financial-${payload.reminderId}`, url: '/app#reminders',
       })
     );
