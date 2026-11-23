@@ -21,10 +21,26 @@ function fn(source, name) {
 function loadEnsure(ctx) {
   vm.runInContext(fn(app, '_serviceLabelKey'), ctx);
   vm.runInContext(fn(app, '_serviceMergeKey'), ctx);
-  vm.runInContext(app.match(/const _PKG_TYPE_TITLE_PREFIX_RE[\s\S]*?function _normalizePackageTypeTitle[\s\S]*?^}/m)[0], ctx);
   vm.runInContext(fn(finance, '_packageTypeMatchesLabel'), ctx);
   vm.runInContext(fn(finance, '_ensurePackageTypeByLabel'), ctx);
   vm.runInContext(fn(finance, '_saveCyclePurchase'), ctx);
+  // tp448: renewal opens a short amount confirm before saving.
+  ctx.modals = [];
+  ctx.openModal = (title, body, actions) => ctx.modals.push({ title, body, actions });
+  ctx.closeModal = () => {};
+  ctx.fmt = n => String(n);
+  ctx.fa = n => String(n);
+  ctx.escapeHtml = v => String(v);
+  ctx.document = {
+    getElementById(id) {
+      if (id === 'cyc-amount') return { value: String(ctx._amountOverride ?? ctx._cyclePurchaseDraft?.amount ?? '') };
+      if (id === 'cyc-carry') return { checked: ctx._carry !== false };
+      return null;
+    },
+  };
+  vm.runInContext('var _cyclePurchaseDraft = null;', ctx);
+  vm.runInContext(fn(finance, '_openCyclePurchaseConfirm'), ctx);
+  vm.runInContext(fn(finance, 'confirmCyclePurchase'), ctx);
 }
 
 test('reminder menu posts the same item as a sale without opening the purchase form', () => {
@@ -112,6 +128,10 @@ test('savePurchaseFromReminder registers sale from reminder fields then opens sa
   loadEnsure(ctx);
   vm.runInContext(fn(finance, 'savePurchaseFromReminder'), ctx);
   await ctx.savePurchaseFromReminder(37);
+  assert.equal(added.length, 0, 'nothing is saved before the amount is confirmed');
+  assert.equal(ctx.modals.length, 1);
+  await ctx.confirmCyclePurchase();
+  assert.equal(completed[0].next_amount, undefined, 'unchanged amount does not touch the reminder');
   assert.equal(added.length, 1);
   assert.equal(added[0].student_id, 7);
   assert.equal(added[0].type_id, 4);
@@ -183,6 +203,7 @@ test('savePurchaseFromSale clones a repeating sale for the current cycle', async
   loadEnsure(ctx);
   vm.runInContext(fn(finance, 'savePurchaseFromSale'), ctx);
   await ctx.savePurchaseFromSale(55);
+  await ctx.confirmCyclePurchase();
   assert.equal(added.length, 1);
   assert.equal(added[0].student_id, 9);
   assert.equal(added[0].type_id, 8);
@@ -193,4 +214,39 @@ test('savePurchaseFromSale clones a repeating sale for the current cycle', async
   assert.equal(completed[0].id, 12);
   assert.equal(completed[0].package_id, 101);
   assert.equal(tabs.join(','), 'purchases');
+});
+
+test('raised renewal price is saved for this sale and carried to the reminder', async () => {
+  const added = [];
+  const completed = [];
+  const ctx = vm.createContext({
+    window: {}, allStudents: [{ id: 7 }], currentPage: 'payments', showToast() {},
+    formatJalali() { return '1405/09/02'; }, todayJalali() { return [1405, 9, 2]; },
+    _nextFuturePaymentReminderDate() { return '1405/10/02'; }, _tpPaymentsTab() {},
+  });
+  ctx.window = ctx;
+  vm.runInContext('var PKG_TYPES = []', ctx);
+  ctx.window.api = {
+    reminders: {
+      getAll: async () => [{ id: 5, student_id: 7, title: 'سایت', amount: 6000000, repeat_months: 1, due_date_jalali: '1405/09/02', note: '' }],
+      completePurchase: async (p) => { completed.push(p); return { ok: true }; },
+    },
+    packages: { add: async (p) => { added.push(p); return { ok: true, id: 70 }; }, getByStudent: async () => [] },
+    packageTypes: { getAll: async () => [{ id: 2, label: 'سایت' }] },
+    students: { getAll: async () => ctx.allStudents },
+  };
+  loadEnsure(ctx);
+  vm.runInContext(fn(finance, 'savePurchaseFromReminder'), ctx);
+  await ctx.savePurchaseFromReminder(5);
+  ctx._amountOverride = 7500000;
+  await ctx.confirmCyclePurchase();
+  assert.equal(added[0].total_amount, 7500000);
+  assert.equal(completed[0].next_amount, 7500000);
+
+  added.length = 0; completed.length = 0;
+  await ctx.savePurchaseFromReminder(5);
+  ctx._carry = false;
+  await ctx.confirmCyclePurchase();
+  assert.equal(added[0].total_amount, 7500000);
+  assert.equal(completed[0].next_amount, undefined, 'one-off price leaves the reminder alone');
 });
