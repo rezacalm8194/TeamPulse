@@ -18,8 +18,21 @@ describe('one-click deploy scripts', () => {
     assert.match(sh, /git checkout -B "\$BRANCH" "origin\/\$BRANCH"/);
     assert.match(sh, /git reset --hard "origin\/\$BRANCH"/);
     assert.match(sh, /ENV_BACKUP/);
-    assert.match(sh, /precompress-assets\.js/);
+    assert.match(sh, /pachim-post-pull\.sh/);
+    assert.doesNotMatch(sh, /precompress-assets\.js/);
     assert.doesNotMatch(sh, /git pull origin/);
+  });
+
+  it('post-pull hook precompresses after panel git pull', () => {
+    const post = read('scripts/pachim-post-pull.sh');
+    const panel = read('scripts/pachim-panel-deploy.sh');
+    assert.match(post, /strip_precompressed/);
+    assert.match(post, /precompress-assets\.js/);
+    assert.match(post, /\[deploy\] post-pull/);
+    assert.match(panel, /pachim-post-pull\.sh/);
+    assert.match(panel, /\$RELEASE/);
+    assert.match(panel, /\$PACHIM_SITE_BRANCH/);
+    assert.match(read('deploy.sh'), /pachim-post-pull\.sh/);
   });
 
   it('staging shell deploy resets hard to origin/develop', () => {
