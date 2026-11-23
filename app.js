@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp438';
+const TP_ASSET_V = 'tp439';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -9716,7 +9716,8 @@ async function renderPage() {
 let stuChip = 'all';
 let stuChipsExpanded = false;
 function currentStudentAccountSearch() {
-  const cur = document.querySelector('#topbar-actions .table-search input') ||
+  const cur = document.querySelector('#content .income-inline-search input') ||
+              document.querySelector('#topbar-actions .table-search input') ||
               document.querySelector('#content .table-search input');
   return cur ? cur.value : '';
 }

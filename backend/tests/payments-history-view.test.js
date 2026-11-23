@@ -21,7 +21,7 @@ function fn(source, name) {
 
 test('payments table omits مانده حساب column', () => {
   const start = finance.indexOf("} else if (tab === 'payments')");
-  const end = finance.indexOf('await renderReminders(search, true, accountCustomerTabsHtml(tab, search));', start);
+  const end = finance.indexOf('setContent(html + morePayments);', start);
   const paymentsBlock = finance.slice(start, end);
   assert.doesNotMatch(paymentsBlock, /<th>مانده حساب<\/th>/);
   assert.doesNotMatch(paymentsBlock, /data-label="مانده حساب"/);
@@ -72,9 +72,16 @@ test('orphan-free payment without package shows پرداخت به حساب', () 
   assert.match(html, /پرداخت به حساب/);
 });
 
-test('asset version tp438', () => {
-  assert.match(app, /const TP_ASSET_V = 'tp438'/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v437/);
-  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp438/);
+test('mobile uses inline income search and hides topbar duplicate', () => {
+  assert.match(finance, /income-inline-search/);
+  assert.match(finance, /income-topbar-search/);
+  assert.match(finance, /جست‌وجو در همین فهرست…/);
+  assert.match(fs.readFileSync(path.join(root, 'app.css'), 'utf8'), /\.topbar-actions \.income-topbar-search \{ display: none !important; \}/);
+});
+
+test('asset version tp439', () => {
+  assert.match(app, /const TP_ASSET_V = 'tp439'/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /team-pulse-static-v439/);
+  assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /app\.js\?v=tp439/);
   assert.match(fs.readFileSync(path.join(root, 'app.html'), 'utf8'), /tp402/);
 });

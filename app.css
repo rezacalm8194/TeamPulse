@@ -496,8 +496,10 @@ button { cursor: pointer; font-family: var(--font); }
 .table-header .subtitle { font-size: 11px; color: var(--text3); font-weight: 400; }
 .payments-history-header { flex-wrap: wrap; gap: 10px 12px; }
 .payments-history-header .title { margin-right: auto; }
-.payments-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; order: -1; flex: 1 1 100%; }
-.payments-history-student { min-width: 160px; max-width: 220px; font-size: 12px; height: 32px; padding: 4px 10px; }
+.payments-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+.payments-history-student { min-width: 160px; max-width: 220px; font-size: 12px; }
+.payments-history-filters-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1 1 100%; order: -1; }
+.income-inline-search { display: none; }
 .payments-history-range { flex-wrap: wrap; gap: 4px; }
 .payments-history-range .chip { font-size: 11px; padding: 4px 8px; }
 .payments-month-row td {
@@ -3663,6 +3665,34 @@ body.light mark { background: rgba(251,191,36,.5); }
   }
   .topbar-actions .table-search.tb-search-open input{
     width:110px; opacity:1; pointer-events:auto;
+  }
+  .topbar-actions .income-topbar-search { display: none !important; }
+  .income-inline-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: none;
+    padding: 6px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    background: var(--bg3);
+  }
+  .income-inline-search input {
+    width: 100%;
+    min-width: 0;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+  }
+  .payments-history-student {
+    min-height: 40px;
+    height: auto;
+    line-height: 1.35;
+    padding: 8px 12px;
   }
   /* Forms */
   .form-grid{grid-template-columns:1fr!important}
