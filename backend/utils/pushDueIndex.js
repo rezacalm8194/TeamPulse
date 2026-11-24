@@ -7,6 +7,14 @@ const { isPaymentReminder, reminderPausedByArchive } = require('./reminderKind')
 const IRAN_OFFSET_MS = (3 * 60 + 30) * 60 * 1000;
 const PUSH_CATCH_UP_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_UNINDEXED = 40;
+// Accounts whose index has expired (daily horizon passed) and are rebuilt per
+// cron tick. Habits/recurring todos keep a two-day lookahead, so a slow
+// midnight backlog never makes a reminder late.
+const DEFAULT_MAX_EXPIRED = 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Failed deliveries back off instead of being retried every minute.
+const RETRY_BASE_MS = 60 * 1000;
+const RETRY_MAX_MS = 30 * 60 * 1000;
 
 function jalaliToGregorian(jy, jm, jd) {
   const div = (a, b) => Math.floor(a / b);
@@ -27,6 +35,37 @@ function jalaliToGregorian(jy, jm, jd) {
   let gm = 0;
   for (gm = 1; gm <= 12 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
   return [gy, gm, gd];
+}
+
+function gregorianToJalali(gy, gm, gd) {
+  const div = (a, b) => Math.floor(a / b);
+  const gdm = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  const gy2 = (gm > 2) ? (gy + 1) : gy;
+  let days = 355666 + (365 * gy) + div(gy2 + 3, 4) - div(gy2 + 99, 100) + div(gy2 + 399, 400) + gd + gdm[gm - 1];
+  let jy = -1595 + (33 * div(days, 12053));
+  days %= 12053;
+  jy += 4 * div(days, 1461);
+  days %= 1461;
+  if (days > 365) {
+    jy += div(days - 1, 365);
+    days = (days - 1) % 365;
+  }
+  const jm = (days < 186) ? 1 + div(days, 31) : 7 + div(days - 186, 30);
+  const jd = 1 + ((days < 186) ? (days % 31) : ((days - 186) % 30));
+  return [jy, jm, jd];
+}
+
+function jalaliDaysInMonth(jy, jm) {
+  if (jm <= 6) return 31;
+  if (jm <= 11) return 30;
+  const [gy, gm, gd] = jalaliToGregorian(jy, 12, 30);
+  const back = gregorianToJalali(gy, gm, gd);
+  return back[0] === jy && back[1] === 12 && back[2] === 30 ? 30 : 29;
+}
+
+function formatJalaliFa(jy, jm, jd) {
+  const fa = value => String(value).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+  return `${fa(jy)}/${fa(String(jm).padStart(2, '0'))}/${fa(String(jd).padStart(2, '0'))}`;
 }
 
 function parseJalali(str) {
@@ -109,6 +148,21 @@ function ensurePushDueIndexSchema(db) {
   try {
     db.exec('CREATE INDEX IF NOT EXISTS idx_push_subscriptions_account ON push_subscriptions(account_id)');
   } catch (_) { /* table is created by the reminders route */ }
+  if (!migratedDbs.has(db)) {
+    addColumnIfMissing(db, 'push_due_index', 'valid_until_ms', 'valid_until_ms INTEGER');
+    addColumnIfMissing(db, 'push_due_items', 'attempts', 'attempts INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing(db, 'push_due_items', 'next_attempt_ms', 'next_attempt_ms INTEGER');
+    migratedDbs.add(db);
+  }
+}
+
+const migratedDbs = new WeakSet();
+
+function addColumnIfMissing(db, table, name, ddl) {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(col => col.name);
+    if (cols.length && !cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  } catch (_) { /* best effort: older test schemas */ }
 }
 
 function loadDeliveredKeys(db, accountId) {
@@ -126,18 +180,20 @@ function loadDeliveredKeys(db, accountId) {
 function upsertPushDueIndex(db, accountId, dataEtag, schedule) {
   ensurePushDueIndexSchema(db);
   db.prepare(`
-    INSERT INTO push_due_index (account_id, data_etag, next_timed_ms, next_daily_ms, indexed_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
+    INSERT INTO push_due_index (account_id, data_etag, next_timed_ms, next_daily_ms, valid_until_ms, indexed_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(account_id) DO UPDATE SET
       data_etag=excluded.data_etag,
       next_timed_ms=excluded.next_timed_ms,
       next_daily_ms=excluded.next_daily_ms,
+      valid_until_ms=excluded.valid_until_ms,
       indexed_at=datetime('now')
   `).run(
     accountId,
     dataEtag || '',
     schedule?.nextTimedMs ?? null,
-    schedule?.nextDailyMs ?? null
+    schedule?.nextDailyMs ?? null,
+    schedule?.validUntilMs ?? null
   );
 }
 
@@ -172,6 +228,61 @@ function dailyFireMs(dueJalali, today) {
     return iranNineAmUtc(gy, gm, gd).getTime();
   }
   return iranNineAmUtc(today.gy, today.gm, today.gd).getTime();
+}
+
+const WEEKDAY_NAMES = { sat: 6, sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5 };
+
+function utcDayFromKey(dayKey) {
+  const { gy, gm, gd } = gregorianDayKeyToParts(dayKey);
+  return new Date(Date.UTC(gy, gm - 1, gd));
+}
+
+// Same rules the client uses to advance a recurring task (app.js
+// _advanceTodoDate / _calcNextRepeatDate), evaluated for one calendar day.
+function todoRepeatMatchesDay(todo, anchorDayKey, dayKey) {
+  const repeat = String(todo?.repeat || 'none');
+  if (dayKey === anchorDayKey) return true;
+  if (dayKey < anchorDayKey) return false;
+  const day = utcDayFromKey(dayKey);
+  const anchor = utcDayFromKey(anchorDayKey);
+  if (repeat === 'daily') return true;
+  if (repeat === 'every2days') return Math.round((day - anchor) / DAY_MS) % 2 === 0;
+  if (repeat === 'weekly') return day.getUTCDay() === anchor.getUTCDay();
+  if (repeat === 'custom_weekdays') {
+    const wanted = String(todo?.weekdays || '').split(',').map(v => v.trim()).filter(Boolean);
+    if (!wanted.length) return false;
+    return wanted.some(name => WEEKDAY_NAMES[name] === day.getUTCDay());
+  }
+  if (repeat === 'monthly') {
+    const [ay, am, ad] = gregorianToJalali(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, anchor.getUTCDate());
+    void ay; void am;
+    const [jy, jm, jd] = gregorianToJalali(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate());
+    return jd === Math.min(ad, jalaliDaysInMonth(jy, jm));
+  }
+  return false;
+}
+
+// Dates (jalali strings) a todo should be reminded on. A recurring task whose
+// stored date is in the past (not ticked yet) still gets its next occurrences;
+// before this, the server only looked at the stored date and went silent.
+function todoReminderDates(todo, today) {
+  const scheduledDate = todoScheduledDate(todo);
+  const repeat = String(todo?.repeat || 'none');
+  const anchorDayKey = jalaliDayKey(scheduledDate);
+  if (!anchorDayKey || repeat === 'none') return [scheduledDate];
+  const todayDayKey = today.gy * 10000 + today.gm * 100 + today.gd;
+  const dates = [scheduledDate];
+  if (anchorDayKey > todayDayKey + 2) return dates;
+  // today .. today+2 covers remind_min up to one day before.
+  for (let i = 0; i <= 2; i++) {
+    const d = new Date(Date.UTC(today.gy, today.gm - 1, today.gd + i));
+    const dayKey = d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+    if (dayKey <= anchorDayKey) continue;
+    if (!todoRepeatMatchesDay(todo, anchorDayKey, dayKey)) continue;
+    const [jy, jm, jd] = gregorianToJalali(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    dates.push(formatJalaliFa(jy, jm, jd));
+  }
+  return dates;
 }
 
 function compactTodo(todo) {
@@ -213,19 +324,21 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
     const scheduledDate = todoScheduledDate(t);
     if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
     if (!todoBelongsToAccount(t, accountId)) continue;
-    const taskUTC = jalaliToUTC(scheduledDate, t.time);
-    if (!taskUTC) continue;
-    const notifMs = taskUTC.getTime() - t.remind_min * 60000;
-    const key = `todo:${accountId}:${t.id}:${scheduledDate}:${t.time}:${t.remind_min}`;
-    if (delivered.has(key)) continue;
-    if (!isCatchableOrFuture(notifMs, nowMs, catchUpMs)) continue;
-    nextTimedMs = takeMin(nextTimedMs, notifMs);
-    pushItem(items, key, 'todo', notifMs, {
-      title: t.title,
-      time: t.time,
-      note: t.note || '',
-      todo: compactTodo(t),
-    });
+    for (const occurrenceDate of todoReminderDates(t, today)) {
+      const taskUTC = jalaliToUTC(occurrenceDate, t.time);
+      if (!taskUTC) continue;
+      const notifMs = taskUTC.getTime() - t.remind_min * 60000;
+      const key = `todo:${accountId}:${t.id}:${occurrenceDate}:${t.time}:${t.remind_min}`;
+      if (delivered.has(key)) continue;
+      if (!isCatchableOrFuture(notifMs, nowMs, catchUpMs)) continue;
+      nextTimedMs = takeMin(nextTimedMs, notifMs);
+      pushItem(items, key, 'todo', notifMs, {
+        title: t.title,
+        time: t.time,
+        note: t.note || '',
+        todo: { ...compactTodo(t), scheduled_date: occurrenceDate },
+      });
+    }
   }
 
   for (const h of (userData?.habits || [])) {
@@ -351,7 +464,13 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
     });
   }
 
-  return { nextTimedMs, nextDailyMs, items };
+  // Habits, weekly custom reminders and recurring todos only look a couple of
+  // days ahead, so the index must be rebuilt every day even when the account's
+  // data never changes (user did not open the app).
+  const tomorrowStart = new Date(Date.UTC(today.gy, today.gm - 1, today.gd + 1) - IRAN_OFFSET_MS);
+  const validUntilMs = tomorrowStart.getTime() + 60 * 1000;
+
+  return { nextTimedMs, nextDailyMs, validUntilMs, items };
 }
 
 function replacePushDueItems(db, accountId, items) {
@@ -413,21 +532,50 @@ function listDuePushItems(db, now, options = {}) {
   ensureAccountTrashSchema(db);
   const nowMs = now.getTime();
   const limit = options.limit ?? 250;
+  const catchUpMs = options.catchUpMs ?? PUSH_CATCH_UP_MS;
   return db.prepare(`
     SELECT i.delivery_key AS deliveryKey, i.account_id AS accountId, i.kind AS kind,
-           i.due_ms AS dueMs, i.payload AS payload
+           i.due_ms AS dueMs, i.payload AS payload, i.attempts AS attempts
     FROM push_due_items i
     INNER JOIN accounts a ON a.id = i.account_id
     WHERE a.is_active = 1
       AND a.deleted_at IS NULL
       AND i.due_ms <= ?
+      AND i.due_ms >= ?
+      AND COALESCE(i.next_attempt_ms, 0) <= ?
       AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = i.account_id)
-    ORDER BY i.due_ms ASC
+    ORDER BY COALESCE(i.next_attempt_ms, i.due_ms) ASC
     LIMIT ?
-  `).all(nowMs, limit).map(row => ({
+  `).all(nowMs, nowMs - catchUpMs, nowMs, limit).map(row => ({
     ...row,
     payload: parseDuePayload(row.payload),
   }));
+}
+
+// A delivery that could not reach any device (no matching subscription, push
+// service error) waits with exponential backoff instead of being retried every
+// minute ahead of everybody else's reminders.
+function markPushDueItemFailed(db, deliveryKey, now, options = {}) {
+  ensurePushDueIndexSchema(db);
+  const nowMs = now.getTime();
+  const row = db.prepare('SELECT attempts FROM push_due_items WHERE delivery_key=?').get(deliveryKey);
+  if (!row) return null;
+  const attempts = Number(row.attempts || 0) + 1;
+  const base = options.retryBaseMs ?? RETRY_BASE_MS;
+  const max = options.retryMaxMs ?? RETRY_MAX_MS;
+  const delay = Math.min(max, base * (2 ** Math.min(attempts - 1, 20)));
+  const nextAttemptMs = nowMs + delay;
+  db.prepare('UPDATE push_due_items SET attempts=?, next_attempt_ms=? WHERE delivery_key=?')
+    .run(attempts, nextAttemptMs, deliveryKey);
+  return { attempts, nextAttemptMs };
+}
+
+// Items older than the catch-up window can never be sent on time any more.
+function pruneStalePushDueItems(db, now, options = {}) {
+  ensurePushDueIndexSchema(db);
+  const catchUpMs = options.catchUpMs ?? PUSH_CATCH_UP_MS;
+  const result = db.prepare('DELETE FROM push_due_items WHERE due_ms < ?').run(now.getTime() - catchUpMs);
+  return result.changes || 0;
 }
 
 function listPushReindexAccountIds(db, now, options = {}) {
@@ -455,9 +603,22 @@ function listPushReindexAccountIds(db, now, options = {}) {
     LIMIT ?
   `).all(maxUnindexed);
 
+  const maxExpired = options.maxExpired ?? DEFAULT_MAX_EXPIRED;
+  const expired = db.prepare(`
+    SELECT a.id AS id
+    FROM accounts a
+    INNER JOIN push_due_index i ON i.account_id = a.id
+    WHERE a.is_active = 1
+      AND a.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
+      AND IFNULL(i.valid_until_ms, 0) <= ?
+    ORDER BY IFNULL(i.valid_until_ms, 0) ASC
+    LIMIT ?
+  `).all(now.getTime(), maxExpired);
+
   const seen = new Set();
   const ids = [];
-  for (const row of [...dirty, ...unindexed]) {
+  for (const row of [...dirty, ...unindexed, ...expired]) {
     if (seen.has(row.id)) continue;
     seen.add(row.id);
     ids.push(row.id);
@@ -474,6 +635,7 @@ module.exports = {
   PUSH_CATCH_UP_MS,
   DEFAULT_MAX_UNINDEXED,
   jalaliToGregorian,
+  gregorianToJalali,
   parseJalali,
   jalaliToUTC,
   iranTodayParts,
@@ -490,4 +652,7 @@ module.exports = {
   listDuePushItems,
   listPushReindexAccountIds,
   listPushScanAccountIds,
+  markPushDueItemFailed,
+  pruneStalePushDueItems,
+  todoReminderDates,
 };

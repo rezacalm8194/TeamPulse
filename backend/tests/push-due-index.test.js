@@ -58,10 +58,10 @@ test('idle subscribed accounts are not scanned every minute', () => {
   seedAccount(db, 'nosub', { subscribed: false });
   seedAccount(db, 'inactive', { active: 0 });
   const now = new Date('2026-08-23T12:00:00.000Z');
-  upsertPushDueIndex(db, 'idle', 'etag-1', { nextTimedMs: now.getTime() + 60 * 60 * 1000, nextDailyMs: now.getTime() + 24 * 60 * 60 * 1000 });
-  upsertPushDueIndex(db, 'due', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
-  upsertPushDueIndex(db, 'nosub', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
-  upsertPushDueIndex(db, 'inactive', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null });
+  upsertPushDueIndex(db, 'idle', 'etag-1', { nextTimedMs: now.getTime() + 60 * 60 * 1000, nextDailyMs: now.getTime() + 24 * 60 * 60 * 1000, validUntilMs: now.getTime() + 86_400_000 });
+  upsertPushDueIndex(db, 'due', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null, validUntilMs: now.getTime() + 86_400_000 });
+  upsertPushDueIndex(db, 'nosub', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null, validUntilMs: now.getTime() + 86_400_000 });
+  upsertPushDueIndex(db, 'inactive', 'etag-1', { nextTimedMs: now.getTime() - 1000, nextDailyMs: null, validUntilMs: now.getTime() + 86_400_000 });
   replacePushDueItems(db, 'idle', [{
     deliveryKey: 'todo:idle:1', kind: 'todo', dueMs: now.getTime() + 60 * 60 * 1000, payload: { title: 'later' },
   }]);
