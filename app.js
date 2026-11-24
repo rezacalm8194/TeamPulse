@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpe21f13dced';
+const TP_ASSET_V = 'tpaf929a377a';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -11868,6 +11868,10 @@ function _toggleStudentSupplierFields() {
   const wrap = document.getElementById('f-supplier-fields');
   if (!wrap) return;
   wrap.style.display = document.getElementById('f-is-supplier')?.checked ? 'grid' : 'none';
+  const showClient = !!document.getElementById('f-is-client')?.checked;
+  document.querySelectorAll('.tp-client-only').forEach(el => {
+    el.style.display = showClient ? (el.dataset.show || 'block') : 'none';
+  });
 }
 function _readStudentRolesFromForm() {
   if (!_moduleEnabled('suppliers')) {
@@ -11887,6 +11891,13 @@ function openStudentModal(id = null) {
 }
 
 async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
+  // فرم «فقط تامین‌کننده»: عنوان درست و پنهان شدن فیلدهای مخصوص مشتری (دسته‌بندی، نحوه آشنایی، وضعیت ارتباط، خدمات، حساب مشترک، کیف پول)
+  const _formRoles = _moduleEnabled('suppliers')
+    ? _partyRoles(s || (window._tpOpenStudentAsSupplier ? { is_supplier: true, is_client: false } : {}))
+    : null;
+  const _supplierOnlyForm = !!(_formRoles && _formRoles.is_supplier && !_formRoles.is_client);
+  const _formEntity = _supplierOnlyForm ? 'تامین‌کننده' : _entityWord();
+  const _clientOnly = (show) => `class="tp-client-only" data-show="${show}" style="display:${_supplierOnlyForm ? 'none' : show}"`;
   const [families, archiveOptions, savedArchiveColumns] = await Promise.all([
     window.api.families.getAll(),
     window.api.students.getArchiveOptions(),
@@ -11948,7 +11959,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         <input type="checkbox" class="fam-member-cb" value="${x.id}"> ${escapeHtml(x.name)} ${escapeHtml(x.lname)}
       </label>`).join('');
 
-  openModal(editing ? `ویرایش ${_entityWord()}` : `افزودن ${_entityWord()} جدید`, `
+  openModal(editing ? `ویرایش ${_formEntity}` : `افزودن ${_formEntity} جدید`, `
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">نام *</label>
@@ -11966,20 +11977,25 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         <label class="form-label">نام مجموعه</label>
         <input class="form-input" id="f-organization-name" placeholder="نام شرکت یا مجموعه" value="${escapeHtml(s?.organization_name || '')}">
       </div>
+      ${_studentRolesFieldsHtml(s)}
+      <div ${_clientOnly('contents')}>
       ${archiveComboField('f-customer-category','دسته‌بندی',s?.customer_category||'شخصی',archiveCategoryOptions,'category','انتخاب کنید یا بنویسید')}
       <div class="form-group"><label class="form-label">نحوه آشنایی</label><input class="form-input" id="f-referral-source" value="${escapeHtml(s?.referral_source||'متفرقه')}" placeholder="مثلاً معرفی، اینستاگرام، متفرقه"></div>
+      </div>
       <div class="form-group full">
         <label class="form-label">توضیحات</label>
-        <textarea class="form-textarea" id="f-description" rows="3" placeholder="آدرس، نیاز، مسئله یا سایر توضیحات مشتری">${escapeHtml(s?.description || [s?.address,s?.main_need].filter(Boolean).join('\n') || '')}</textarea>
+        <textarea class="form-textarea" id="f-description" rows="3" placeholder="آدرس، نیاز، مسئله یا سایر توضیحات">${escapeHtml(s?.description || [s?.address,s?.main_need].filter(Boolean).join('\n') || '')}</textarea>
       </div>
+      <div ${_clientOnly('contents')}>
       ${archiveComboField('f-relationship-status','وضعیت ارتباط',s?.relationship_status||'مشتری شد',archiveStatusOptions,'status','انتخاب کنید یا بنویسید')}
+      </div>
       <div class="form-group">
         ${calendarDateFieldHtml('f-date', s?.date_jalali, 'شروع همکاری')}
       </div>
       ${archiveExtraFieldsHtml(s||{},'student')}
-      ${_studentRolesFieldsHtml(s)}
     </div>
 
+    <div ${_clientOnly('block')}>
     <div class="form-section">این شخص از چه خدماتی استفاده می‌کند؟</div>
     <div id="pkg-selected-summary" style="margin-bottom:8px"></div>
     <div class="pkg-row" id="pkg-rows-container" style="flex-direction:column;align-items:stretch;gap:10px">
@@ -12021,6 +12037,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         <input class="form-input amount-input" id="f-wallet" type="number" placeholder="0">
       </div>
     </div>` : ''}
+    </div>
 
     <div class="form-section">یادداشت</div>
     <div class="form-group full">
@@ -12146,7 +12163,7 @@ async function saveStudentNew() {
     referral_source: document.getElementById('f-referral-source')?.value.trim() || 'متفرقه',
     organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
     description: document.getElementById('f-description')?.value.trim() || '',
-    relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
+    relationship_status: (_moduleEnabled('suppliers') && !roles.is_client) ? '' : (document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد'),
     archive_data: collectArchiveExtraData('student'),
     note: document.getElementById('f-note')?.value || '',
     pinned_note: document.getElementById('f-pinned-note')?.value || '',
