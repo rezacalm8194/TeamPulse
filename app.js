@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpaf929a377a';
+const TP_ASSET_V = 'tpc5fe0487f7';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -63,7 +63,8 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
 [
   'renderSuppliers', '_tpSuppliersTab', 'openSupplierPurchaseModal', 'saveSupplierPurchase',
   'openSupplierPaymentModal', 'saveSupplierPayment', 'deleteSupplierPurchase', 'deleteSupplierPayment',
-  'openAddSupplierStudent', 'openSupplierTransactions', '_suppliersShowMore'
+  'openAddSupplierStudent', 'openSupplierTransactions', '_suppliersShowMore',
+  'openSupplierForm', 'openSupplierEditForm', 'saveSupplierForm'
 ].forEach(name => _tpLazyFor('app-suppliers.js', name));
 [
   'renderTodoList', 'renderCalendar', 'openAddTodo',
@@ -3781,7 +3782,7 @@ window.api = {
       const description=p.description||p.address||p.main_need||'';
       const createdAt=new Date().toISOString();
       const roles = _partyRoles({ is_supplier: !!p.is_supplier, is_client: p.is_client });
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:String(p.supplier_category||'').trim(),payment_terms:String(p.payment_terms||'').trim(),supplier_rating:Number(p.supplier_rating)||0,supplier_note:String(p.supplier_note||'').trim(),wallet:0,created_at:createdAt,updated_at:createdAt});
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status===''?'':(p.relationship_status||'مشتری شد'),next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:String(p.supplier_category||'').trim(),payment_terms:String(p.payment_terms||'').trim(),supplier_rating:Number(p.supplier_rating)||0,supplier_note:String(p.supplier_note||'').trim(),contact_name:String(p.contact_name||'').trim().slice(0,120),wallet:0,created_at:createdAt,updated_at:createdAt});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -3811,7 +3812,7 @@ window.api = {
       if(p.loss_reason!==undefined)s.loss_reason=String(p.loss_reason||'').trim().slice(0,200);
       else if(p.relationship_status!==undefined&&nextStatus!=='ناموفق')s.loss_reason='';
       const roles = _partyRoles({ is_supplier: p.is_supplier ?? s.is_supplier, is_client: p.is_client ?? s.is_client });
-      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:nextStatus,archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:p.supplier_category??s.supplier_category??'',payment_terms:p.payment_terms??s.payment_terms??'',supplier_rating:p.supplier_rating??s.supplier_rating??0,supplier_note:p.supplier_note??s.supplier_note??'',updated_at:new Date().toISOString()});
+      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:nextStatus,archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:p.supplier_category??s.supplier_category??'',payment_terms:p.payment_terms??s.payment_terms??'',supplier_rating:p.supplier_rating??s.supplier_rating??0,supplier_note:p.supplier_note??s.supplier_note??'',contact_name:String(p.contact_name??s.contact_name??'').trim().slice(0,120),updated_at:new Date().toISOString()});
       const selectedPackages = p.packages || [];
       const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
       const removedPackageIds = _db.packages
@@ -12145,8 +12146,10 @@ async function resolveFamilyId() {
 
 async function saveStudentNew() {
   const name  = document.getElementById('f-name')?.value.trim();
-  const lname = document.getElementById('f-lname')?.value.trim();
-  if (!name || !lname) { showToast('نام و نام خانوادگی الزامی است', 'error'); return; }
+  const lname = document.getElementById('f-lname')?.value.trim() || '';
+  // برای تامین‌کننده (اغلب یک شرکت) نام خانوادگی لازم نیست
+  const _lnameOptional = _moduleEnabled('suppliers') && !!document.getElementById('f-is-supplier')?.checked;
+  if (!name || (!lname && !_lnameOptional)) { showToast('نام و نام خانوادگی الزامی است', 'error'); return; }
 
   const family_id = await resolveFamilyId();
 
@@ -12179,14 +12182,16 @@ async function saveStudentNew() {
   });
 
   closeModal();
-  showToast(`${name} ${lname} اضافه شد ✓`, 'success');
+  showToast(`${`${name} ${lname}`.trim()} اضافه شد ✓`, 'success');
   await refreshOpenStudentSurface();
 }
 
 async function saveStudentEdit(id) {
   const name  = document.getElementById('f-name')?.value.trim();
-  const lname = document.getElementById('f-lname')?.value.trim();
-  if (!name || !lname) { showToast('نام و نام خانوادگی الزامی است', 'error'); return; }
+  const lname = document.getElementById('f-lname')?.value.trim() || '';
+  // برای تامین‌کننده (اغلب یک شرکت) نام خانوادگی لازم نیست
+  const _lnameOptional = _moduleEnabled('suppliers') && !!document.getElementById('f-is-supplier')?.checked;
+  if (!name || (!lname && !_lnameOptional)) { showToast('نام و نام خانوادگی الزامی است', 'error'); return; }
 
   const family_id = await resolveFamilyId();
   const s = allStudents.find(x => x.id === id);
@@ -12204,7 +12209,7 @@ async function saveStudentEdit(id) {
     referral_source: document.getElementById('f-referral-source')?.value.trim() || 'متفرقه',
     organization_name: document.getElementById('f-organization-name')?.value.trim() || '',
     description: document.getElementById('f-description')?.value.trim() || '',
-    relationship_status: document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد',
+    relationship_status: (_moduleEnabled('suppliers') && !roles.is_client) ? (s?.relationship_status || '') : (document.getElementById('f-relationship-status')?.value.trim() || 'مشتری شد'),
     archive_data: collectArchiveExtraData('student',s?.archive_data||{}),
     note: document.getElementById('f-note')?.value || '',
     pinned_note: document.getElementById('f-pinned-note')?.value || '',

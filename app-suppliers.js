@@ -233,7 +233,7 @@ function _supplierRowActionsHtml(s) {
   return `<div class="row-menu">
     <button class="row-menu-btn" type="button" aria-label="عملیات" aria-haspopup="menu" onclick="toggleRowMenu(event,'${menuId}')">⋮</button>
     <div class="row-menu-panel" id="${menuId}" role="menu">
-      <div class="row-menu-item" role="menuitem" onclick="openStudentModal(${sid})">✏️ ویرایش پرونده</div>
+      <div class="row-menu-item" role="menuitem" onclick="openSupplierEditForm(${sid})">✏️ ویرایش</div>
       <div class="row-menu-item" role="menuitem" onclick="openSupplierPurchaseModal(${sid})">🛍 خرید جدید</div>
       ${canPay ? `<div class="row-menu-item" role="menuitem" onclick="openSupplierPaymentModal(${sid})">💸 ثبت پرداخت</div>` : ''}
       <div class="row-menu-divider"></div>
@@ -279,7 +279,7 @@ function _renderSuppliersTab(search) {
   }
   if (q) {
     suppliers = suppliers.filter(s => {
-      const blob = `${s.name} ${s.lname} ${s.phone} ${s.organization_name} ${s.supplier_category}`.toLowerCase();
+      const blob = `${s.name} ${s.lname} ${s.phone} ${s.organization_name} ${s.supplier_category} ${s.contact_name || ''}`.toLowerCase();
       return blob.includes(q);
     });
   }
@@ -310,7 +310,7 @@ function _renderSuppliersTab(search) {
       html += `<tr>
         <td data-label="نام" style="font-weight:500">${escapeHtml(_supplierDisplayName(s))}</td>
         <td data-label="دسته">${escapeHtml(s.supplier_category || '—')}</td>
-        <td data-label="تماس" style="font-size:12px;color:var(--text2)">${escapeHtml(s.phone || '—')}</td>
+        <td data-label="تماس" style="font-size:12px;color:var(--text2)">${escapeHtml(s.phone || '—')}${s.contact_name ? `<div style="font-size:11px;color:var(--text3)">${escapeHtml(s.contact_name)}</div>` : ''}</td>
         <td data-label="شرایط پرداخت" style="font-size:12px;color:var(--text2)">${escapeHtml(s.payment_terms || '—')}</td>
         ${showMoney ? `<td data-label="جمع خرید">${_moneyCell(sum.purchaseToman, 'تومان')}</td>` : ''}
         ${showMoney ? `<td data-label="پرداخت‌شده">${_moneyCell(sum.paidToman, 'تومان')}</td>` : ''}
@@ -1037,8 +1037,120 @@ async function openSupplierTransactions(supplierId) {
 }
 
 function openAddSupplierStudent() {
-  window._tpOpenStudentAsSupplier = true;
-  if (typeof openStudentForm === 'function') openStudentForm();
-  else if (typeof openStudentModal === 'function') openStudentModal();
-  else showToast('فرم شخص در دسترس نیست', 'error');
+  openSupplierForm(null);
+}
+
+// ویرایش: تامین‌کننده خالص با فرم فشرده؛ کسی که مشتری هم هست یا خدمت ثبت‌شده دارد با فرم کامل پرونده
+function openSupplierEditForm(id) {
+  const s = (_db.students || []).find(x => String(x.id) === String(id));
+  if (!s) return;
+  const roles = _partyRoles(s);
+  const hasPackages = (_db.packages || []).some(p => String(p.student_id) === String(s.id));
+  if (roles.is_client || hasPackages) { openStudentModal(s.id); return; }
+  openSupplierForm(s.id);
+}
+
+const SUPPLIER_PAYMENT_TERMS = ['نقدی', '۷ روزه', '۱۵ روزه', '۳۰ روزه', '۶۰ روزه', 'چکی', 'سایر'];
+
+function openSupplierForm(id) {
+  const editing = id != null;
+  const s = editing ? (_db.students || []).find(x => String(x.id) === String(id)) : null;
+  if (editing && !s) return;
+  const displayName = s ? `${s.name || ''} ${s.lname || ''}`.trim() : '';
+  const cats = [...new Set((_db.students || []).map(x => String(x.supplier_category || '').trim()).filter(Boolean))];
+  const terms = String(s?.payment_terms || 'نقدی');
+  const rating = Number(s?.supplier_rating) || 0;
+  const ratingOpts = [0, 1, 2, 3, 4, 5].map(n =>
+    `<option value="${n}" ${rating === n ? 'selected' : ''}>${n ? '★'.repeat(n) : 'بدون امتیاز'}</option>`).join('');
+  openModal(editing ? 'ویرایش تامین‌کننده' : 'تامین‌کننده جدید', `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">نام تامین‌کننده *</label>
+        <input class="form-input" id="sf-name" placeholder="نام شرکت، فروشگاه یا شخص" value="${escapeHtml(displayName)}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">شخص رابط</label>
+        <input class="form-input" id="sf-contact" placeholder="مثلاً آقای رضایی — فروش" value="${escapeHtml(s?.contact_name || '')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">شماره تماس</label>
+        <input class="form-input" id="sf-phone" inputmode="tel" placeholder="09xxxxxxxxx" value="${escapeHtml(s?.phone || '')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">حوزه تامین</label>
+        <input class="form-input" id="sf-category" list="sf-category-list" placeholder="مثلاً مواد اولیه، بسته‌بندی" value="${escapeHtml(s?.supplier_category || '')}">
+        <datalist id="sf-category-list">${cats.map(c => `<option value="${escapeHtml(c)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="form-group">
+        <label class="form-label">شرایط پرداخت</label>
+        <select class="form-select" id="sf-terms">${SUPPLIER_PAYMENT_TERMS.map(t => `<option ${terms === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">توضیحات</label>
+        <textarea class="form-textarea" id="sf-desc" rows="2" placeholder="آدرس، کالاهای اصلی، شماره حساب یا هر نکته‌ای">${escapeHtml(s?.description || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">امتیاز همکاری</label>
+        <select class="form-select" id="sf-rating">${ratingOpts}</select>
+      </div>
+      <div class="form-group" style="justify-content:flex-end">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;color:var(--text2)">
+          <input type="checkbox" id="sf-is-client" ${s && _partyRoles(s).is_client ? 'checked' : ''}>
+          <span>از من خرید هم می‌کند (مشتری هم هست)</span>
+        </label>
+      </div>
+    </div>
+  `, [
+    { label: 'ذخیره', cls: 'btn-primary', action: `saveSupplierForm(${editing ? Number(s.id) : 'null'})` },
+    { label: 'انصراف', cls: 'btn-ghost', action: 'closeModal()' },
+  ]);
+  setTimeout(() => document.getElementById('sf-name')?.focus(), 50);
+}
+
+async function saveSupplierForm(id) {
+  const name = (document.getElementById('sf-name')?.value || '').trim();
+  if (!name) { showToast('نام تامین‌کننده را وارد کنید', 'error'); return; }
+  const fields = {
+    phone: (document.getElementById('sf-phone')?.value || '').trim(),
+    contact_name: (document.getElementById('sf-contact')?.value || '').trim(),
+    supplier_category: (document.getElementById('sf-category')?.value || '').trim(),
+    payment_terms: document.getElementById('sf-terms')?.value || 'نقدی',
+    supplier_rating: Number(document.getElementById('sf-rating')?.value) || 0,
+    description: (document.getElementById('sf-desc')?.value || '').trim(),
+    is_supplier: true,
+    is_client: !!document.getElementById('sf-is-client')?.checked,
+  };
+  if (id == null) {
+    await window.api.students.add({
+      name, lname: '', organization_name: '',
+      date: typeof _todayJalali === 'function' ? _formatJalali(..._todayJalali()) : '',
+      customer_category: '', referral_source: '', relationship_status: '',
+      supplier_note: '', packages: [],
+      ...fields,
+    });
+    showToast(`${name} اضافه شد ✓`, 'success');
+  } else {
+    const s = (_db.students || []).find(x => String(x.id) === String(id));
+    if (!s) return;
+    // همه فیلدهای دیگر پرونده دست‌نخورده می‌مانند (update بعضی فیلدها را بازنویسی می‌کند)
+    await window.api.students.update({
+      id: s.id, name, lname: '',
+      organization_name: s.organization_name || '',
+      date: s.date_jalali || '',
+      customer_category: s.customer_category || '',
+      referral_source: s.referral_source ?? '',
+      relationship_status: s.relationship_status ?? '',
+      archive_data: s.archive_data || {},
+      note: s.note || '',
+      family_id: s.family_id || null,
+      supplier_note: s.supplier_note || '',
+      packages: [],
+      ...fields,
+    });
+    showToast('تامین‌کننده ذخیره شد ✓', 'success');
+  }
+  try { if (typeof _syncToServer === 'function') await _syncToServer(); } catch (e) { /* */ }
+  closeModal();
+  if (currentPage === 'suppliers') await renderSuppliers(currentSuppliersSearch());
+  else if (typeof renderPage === 'function') await renderPage();
 }
