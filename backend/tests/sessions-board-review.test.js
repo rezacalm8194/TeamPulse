@@ -195,3 +195,11 @@ test('untitled session cards show the first line of the note', () => {
   const render = slice(sessions, 'async function renderSessions(', 'function toggleKeySessionsPanel(');
   assert.equal((render.match(/_sessionCardText\(s\)/g) || []).length, 2);
 });
+
+test('board fetches missing sessions in the background instead of a «more» button', () => {
+  const render = slice(sessions, 'async function renderSessions(', 'function toggleKeySessionsPanel(');
+  assert.doesNotMatch(render, /todo-show-more|_loadMoreBusiness/);
+  assert.match(render, /const _sessMissing = !sessionPaging\.done && !\(_sessTotal > 0 && _sessLocal >= _sessTotal\);/);
+  assert.match(render, /await _ensureCompleteBusinessParts\(\['sessions'\]\);/);
+  assert.match(render, /_tpSessionsBoardWalkFailedAt/);
+});

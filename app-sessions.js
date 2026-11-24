@@ -193,8 +193,28 @@ async function renderSessions(search = '') {
     </div>`;
   }
 
+  // Column counts («N جلسه», «اقدام باز») need every session. Instead of a
+  // «دریافت جلسات بیشتر» button, fetch the rest once in the background —
+  // and only if rows are really missing (a cached device often has them all).
+  const _sessLocal = Array.isArray(_db?.sessions) ? _db.sessions.length : 0;
+  const _sessTotal = Number(sessionPaging.serverTotal || 0);
+  const _sessMissing = !sessionPaging.done && !(_sessTotal > 0 && _sessLocal >= _sessTotal);
+  const _walkRecentlyFailed = Date.now() - Number(window._tpSessionsBoardWalkFailedAt || 0) < 60000;
   setContent((html || `<div class="empty"><span>📅</span>${_entityWord()}‌ای ثبت نشده</div>`) +
-    (sessionPaging.done ? '' : '<button class="todo-show-more" onclick="_loadMoreBusiness(\'sessions\')">دریافت جلسات بیشتر</button>'));
+    (_sessMissing && !_walkRecentlyFailed ? `<div class="sessions-board-loading-more" role="status">در حال دریافت بقیه ${META.sessionPlural||'جلسات'}…</div>` : ''));
+  if (_sessMissing && !_walkRecentlyFailed && !window._tpSessionsBoardWalk) {
+    window._tpSessionsBoardWalk = (async () => {
+      try {
+        await _ensureCompleteBusinessParts(['sessions']);
+        if (!_businessPagingState('sessions').done) window._tpSessionsBoardWalkFailedAt = Date.now();
+      } catch (e) {
+        window._tpSessionsBoardWalkFailedAt = Date.now();
+      }
+      if (currentPage === 'students' && _studentsTab === 'sessions' && document.getElementById('sessions-board')) {
+        await renderSessions(currentStudentAccountSearch());
+      }
+    })().finally(() => { window._tpSessionsBoardWalk = null; });
+  }
   if (!search) initSessionsDragDrop();
   _tpBindLazyLoaders();
 
