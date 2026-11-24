@@ -1727,7 +1727,7 @@ async function refreshRolesAndOpenStaffModal(editing, id, personType = 'personne
 
     <div class="form-section">🔁 تکرار یادآوری پرداخت حقوق</div>
     <select class="form-select" id="st-repeat">
-      <option value="1" ${!editing || !currentRepeat ? 'selected' : ''}>هر ۱ ماه (ماهانه)</option>
+      <option value="1" ${!editing || !currentRepeat ? 'selected' : ''}>ماهانه</option>
       <option value="0" ${editing && currentRepeat === 0 ? 'selected' : ''}>بدون یادآوری</option>
     </select>
     ${editing ? `<p style="font-size:10px;color:var(--text3);margin-top:4px">اگر یادآوری وجود نداره، با ذخیره کردن به‌صورت خودکار ساخته می‌شه.</p>` : ''}
@@ -2783,7 +2783,7 @@ let _staffReminderDateRowSeq = 0;
 function _staffReminderRepeatOptions(selected = 1) {
   const opts = [
     [0, 'بدون تکرار'],
-    [1, 'هر ۱ ماه'],
+    [1, 'ماهانه'],
     [2, 'هر ۲ ماه'],
     [3, 'هر ۳ ماه'],
     [6, 'هر ۶ ماه'],
@@ -5071,11 +5071,11 @@ async function renderTutorial() {
       tips:['جلسات مهم رو ستاره‌دار کن','می‌تونی فایل و عکس به هر جلسه ضمیمه کنی','توضیح اضافه برای یادداشت‌های خصوصی'] },
     { icon:'🛒', title:'پرداخت‌ها', color:'#60a5fa',
       desc:'تاریخچه کامل خریدها و پرداخت‌ها. بدهی‌ها رو دنبال کن و گزارش مالی بگیر.',
-      tips:['ارزهای مختلف پشتیبانی میشه','از داشبورد مالی گزارش کامل ببین'] },
+      tips:['ارزهای مختلف پشتیبانی میشه','از مدیریت مالی گزارش کامل ببین'] },
     { icon:'⏰', title:'یادآوری‌ها', color:'#fbbf24',
       desc:`سیستم یادآوری هوشمند برای تمدید پکیج‌ها. وقتی پکیج یه ${_entityWord()} تموم میشه بهت یادآوری می‌کنه.`,
       tips:['یادآوری‌های تکرارشونده ماهانه داری','می‌تونی مستقیم از یادآوری پرداخت ثبت کنی'] },
-    { icon:'✅', title:'لیست کارها', color:'#34d399',
+    { icon:'✅', title:'فهرست کارها', color:'#34d399',
       desc:'Todo list حرفه‌ای با امکان تکرار روزانه، هفتگی، ماهانه و یادآوری. کارهای انجام‌شده با صدا تأیید میشن.',
       tips:['کارهای تکراری رو یه بار تنظیم کن','یادآوری قبل از وقت کار رو فعال کن','کارهای انجام‌شده بعد از چند ساعت به بایگانی میرن'] },
     { icon:'💡', title:'مرکز دانش', color:'#fbbf24',
@@ -5084,7 +5084,7 @@ async function renderTutorial() {
     { icon:'🧑‍💼', title:'مدیریت', color:'#fb923c',
       desc:'حقوق، نقش‌ها، پرداخت‌های ماهانه و یادآوری پرداخت پرسنل و اعضا رو مدیریت کن.',
       tips:['هر پرسنل می‌تونه چند نقش با دستمزد مجزا داشته باشه','اعضا برای پرداخت‌های غیرپرسنلی مثل اجاره مناسب‌اند'] },
-    { icon:'📊', title:'داشبورد مالی', color:'#f472b6',
+    { icon:'📊', title:'مدیریت مالی', color:'#f472b6',
       desc:'نمای کلی از وضعیت مالی: درآمد ماهانه، بدهکاران، بهترین مشتریان و نمودار درآمد.',
       tips:['نمودار درآمد رو با فیلتر سال ببین','لیست بدهکاران رو برای پیگیری استفاده کن'] },
     { icon:'⚙️', title:'تنظیمات', color:'#9399ab',
@@ -5172,7 +5172,7 @@ async function renderTutorial() {
           {n:'۳', title:`افزودن اولین ${_entityWordPlain()}`, desc:`از بخش ${_entityWord(true)}، روی دکمه + کلیک کنید. نام، شماره تماس و پکیج را وارد کنید.`},
           {n:'۴', title:'ثبت جلسات', desc:`بعد از هر جلسه، از بخش جلسات روی نام ${_entityWord()} کلیک کنید و جلسه جدید ثبت کنید.`},
           {n:'۵', title:'پیگیری پرداخت‌ها', desc:'از بخش یادآوری‌ها، سررسید پرداخت‌ها را دنبال کنید و بعد از پرداخت تأیید کنید.'},
-          {n:'۶', title:'لیست کارها', desc:'کارهای روزانه و هفتگی خود را در لیست کارها ثبت کنید و تکرار زمان‌بندی‌شده تنظیم کنید.'},
+          {n:'۶', title:'فهرست کارها', desc:'کارهای روزانه و هفتگی خود را در فهرست کارها ثبت کنید و تکرار زمان‌بندی‌شده تنظیم کنید.'},
           {n:'۷', title:'پشتیبان‌گیری', desc:'هفتگی از تنظیمات > پشتیبان‌گیری فایل پشتیبان تهیه کنید.'},
         ].map(s => `
           <div style="display:flex;gap:12px;align-items:flex-start">
@@ -6225,7 +6225,7 @@ function _goalLinkedPathPreviewHtml(g) {
   if (!tasks.length) return '';
   const fa = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
   const open = tasks.filter(t => !t.done).length;
-  return `<div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:10px">الان ${fa(tasks.length)} کار لینک‌شده داری · ${fa(open)} باز. موارد جدید زیر مستقیم به لیست کارها اضافه می‌شوند.</div>`;
+  return `<div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:10px">الان ${fa(tasks.length)} کار لینک‌شده داری · ${fa(open)} باز. موارد جدید زیر مستقیم به فهرست کارها اضافه می‌شوند.</div>`;
 }
 
 function _goalPathComposerHtml(prefix, g) {
@@ -6233,7 +6233,7 @@ function _goalPathComposerHtml(prefix, g) {
   return `
     <details open style="background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.22);border-radius:12px;padding:12px;margin-top:10px">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#60a5fa">⚡ مسیر اجرا</summary>
-      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 12px">اقدام و اقدامک مستقیم به‌صورت کار در لیست کارها ثبت می‌شوند. اقدامک یعنی کوچک‌ترین حرکت امروز.</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8;margin:8px 0 12px">اقدام و اقدامک مستقیم به‌صورت کار در فهرست کارها ثبت می‌شوند. اقدامک یعنی کوچک‌ترین حرکت امروز.</div>
       ${_goalLinkedPathPreviewHtml(g)}
       <div style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">اقدام‌ها <span style="font-weight:600;color:var(--text3)">(تا ۳ مورد، تاریخ امروز)</span></div>
@@ -6973,7 +6973,7 @@ function saveNewGoal() {
     }
     closeModal();
     const extra = created.length
-      ? (created.length === 1 ? ' · یک کار در لیست کارها ثبت شد' : ` · ${created.length} کار در لیست کارها ثبت شد`)
+      ? (created.length === 1 ? ' · یک کار در فهرست کارها ثبت شد' : ` · ${created.length} کار در فهرست کارها ثبت شد`)
       : '';
     showToast('هدف ذخیره شد ✓' + extra, 'success');
     if (currentPage === 'goals') renderGoals();
@@ -7071,7 +7071,7 @@ function _goalDetailPathHtml(id) {
         </div>
         <div>${listHtml}</div>
         <div style="margin-top:10px">
-          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (تاریخ امروز، در لیست کارها)</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">اقدام جدید (تاریخ امروز، در فهرست کارها)</div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <input class="form-input" id="goal-detail-path-action" placeholder="اقدام بعدی مسیر..." onkeydown="if(event.key==='Enter'){event.preventDefault();addGoalPathTodoFromDetail(${id},'action')}">
             <button type="button" onclick="addGoalPathTodoFromDetail(${id},'action')" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.14);color:#93c5fd;cursor:pointer;font-size:18px;font-weight:800">+</button>
@@ -7095,7 +7095,7 @@ function addGoalPathTodoFromDetail(goalId, kind) {
   _save();
   _syncGoalProgressFromLinkedWork(goalId);
   openGoalDetail(goalId);
-  showToast(kind === 'micro' ? 'اقدامک در لیست کارها ثبت شد ✓' : 'اقدام در لیست کارها ثبت شد ✓', 'success');
+  showToast(kind === 'micro' ? 'اقدامک در فهرست کارها ثبت شد ✓' : 'اقدام در فهرست کارها ثبت شد ✓', 'success');
 }
 
 function _toggleGoalPathTodo(goalId, todoId) {

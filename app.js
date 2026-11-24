@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp7070e0e5bb';
+const TP_ASSET_V = 'tpa5566d92c3';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -8056,7 +8056,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'sessions', label:'جلسات', icon:'📅', desc:'ثبت، مشاهده و پیگیری جلسات'},
   {key:'goals', label:'اهداف', icon:'🎯', desc:'برنامه‌ریزی و پیگیری هدف‌ها'},
   {key:'habits', label:'عادت‌ها', icon:'🔥', desc:'مدیریت عادت‌ها و گزارش انجام'},
-  {key:'todolist', label:'لیست کارها', icon:'✅', desc:'کارها، یادآوری‌ها و پیگیری روزانه'},
+  {key:'todolist', label:'فهرست کارها', icon:'✅', desc:'کارها، یادآوری‌ها و پیگیری روزانه'},
   {key:'calendar', label:'تقویم', icon:'📅', desc:'تقویم کارها، مناسبت‌ها، تولدها و یادآوری‌ها'},
   {key:'instructions', label:'مرکز دانش', icon:'💡', desc:'یادداشت‌ها، پوشه‌ها و فایل‌های دانشی'},
   {key:'staff', label:'حساب پرسنل و اعضا', icon:'💼', desc:'پرسنل، اعضای پرداختی، نقش‌ها، حقوق و یادآوری‌ها'},
@@ -8065,7 +8065,7 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'families', label:'حساب مشتری', icon:'👨‍👩‍👧', desc:'پرونده مالی مشتریان، مانده حساب و گروه‌های مشترک'},
   {key:'payments', label:'حساب مشتریان', icon:'🛒', desc:'فروش، دریافت، یادآوری و حساب مشتری'},
   {key:'reminders', label:'یادآوری', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
-  {key:'dashboard', label:'داشبورد مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
+  {key:'dashboard', label:'مدیریت مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
 ];
 const TODO_TEAM_PERMISSIONS = [
   {key:'todo_view_assigned', label:'مشاهده کارهای واگذارشده به خودش', icon:'✅', desc:'فقط کارهایی که مسئول انجام آن‌هاست دیده می‌شود'},
@@ -8087,12 +8087,12 @@ const TEAM_ROLE_PRESETS = {
   staff_basic: {
     label: 'پرسنل عادی',
     desc: 'فقط کارهای خودش، انجام/گزارش خودش، ساخت کار برای خودش',
-    summary: 'لیست کارها: مشاهده، انجام و گزارش کارهای خودش؛ ساخت کار فقط برای خودش.',
+    summary: 'فهرست کارها: مشاهده، انجام و گزارش کارهای خودش؛ ساخت کار فقط برای خودش.',
     permissions: ['todolist','todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report','todo_create_self']
   },
   assistant_manager: {
     label: 'منیجر / دستیار',
-    desc: 'مشتری‌ها، جلسات، لیست مشتریان، تقویم، یادآوری، لیست کارها، ساخت کار برای خودش/دیگران، ویرایش کارهای مدیر. دسترسی مالی حساس، کیف پول و تنظیمات مالکیت ندارد.',
+    desc: 'مشتری‌ها، جلسات، لیست مشتریان، تقویم، یادآوری، فهرست کارها، ساخت کار برای خودش/دیگران، ویرایش کارهای مدیر. دسترسی مالی حساس، کیف پول و تنظیمات مالکیت ندارد.',
     summary: 'امور مشتریان، جلسات، لیست مشتریان، تقویم و یادآوری؛ ساخت کار برای خودش و دیگران؛ ویرایش کارهای مدیر؛ بدون کیف پول و تنظیمات حساس.',
     permissions: [
       'students','sessions','customerlist','calendar','reminders','todolist',
@@ -8103,7 +8103,7 @@ const TEAM_ROLE_PRESETS = {
   task_manager: {
     label: 'مدیر کارها',
     desc: 'مدیریت کارهای پرسنل، دیدن تیم، گزارش تیم، حذف/ویرایش/ساخت کارها',
-    summary: 'لیست کارها و حساب پرسنل؛ مشاهده کارهای تیم، ساخت/ویرایش/حذف کارها، مدیریت چک‌لیست پرسنل و گزارش عملکرد تیم.',
+    summary: 'فهرست کارها و حساب پرسنل؛ مشاهده کارهای تیم، ساخت/ویرایش/حذف کارها، مدیریت چک‌لیست پرسنل و گزارش عملکرد تیم.',
     permissions: [
       'todolist','staff',
       'todo_view_assigned','todo_complete_own','todo_report_own','todo_view_self_report',
@@ -9553,11 +9553,11 @@ function updatePageTitle() {
     archive: `بایگانی ${_entityWordPlain(true)}`,
     staff: 'حساب پرسنل و اعضا',
     instructions: 'مرکز دانش',
-    todolist: 'لیست کارها',
+    todolist: 'فهرست کارها',
     calendar: 'تقویم',
-    tutorial: 'آموزش‌ها',
+    tutorial: 'راهنمای نرم‌افزار',
     admin_panel: '👑 پنل مدیریت',
-    dashboard: 'داشبورد مالی',
+    dashboard: 'مدیریت مالی',
     transactions: 'تراکنش‌های مالی',
     settings: 'تنظیمات',
     goals: '🎯 اهداف',
@@ -9684,11 +9684,11 @@ async function renderHome() {
   const todayKey = _jalaliKey(today);
   const sessions = (_db.sessions || []).filter(s => String(s.date_jalali || '') === today)
     .sort((a, b) => String(a.time || a.start_time || '').localeCompare(String(b.time || b.start_time || '')));
-  // «کارهای من» — دقیقاً همان اسکوپ تب mine در لیست کارها (نه کارهای پرسنل).
+  // «کارهای من» — دقیقاً همان اسکوپ تب mine در فهرست کارها (نه کارهای پرسنل).
   const openTodos = (_db.todos || []).filter(t => !t.archived && !t.done && (typeof _todoIsMineScope === 'function' ? _todoIsMineScope(t) : true));
   const overdueTodos = openTodos.filter(t => { const k = _jalaliKey(_todoScheduledDate(t)); return k > 0 && k < todayKey; });
   const todayTodos = openTodos.filter(t => _jalaliKey(_todoScheduledDate(t)) === todayKey);
-  // «کارهای پرسنل» — کارهای بازِ منتسب به پرسنل (همان اسکوپ تب staff در لیست کارها).
+  // «کارهای پرسنل» — کارهای بازِ منتسب به پرسنل (همان اسکوپ تب staff در فهرست کارها).
   // برای مهمان هم‌تیمی فقط مواردی که اجازه دیدن دارد (todo_view_team / manage).
   const _homeCanSeeStaffTodos = (() => {
     try {
@@ -9826,7 +9826,7 @@ async function renderHome() {
       ? `کار ۱-۳-۵${todos135Sorted.length ? ` (${_homeFa(todos135Sorted.length)} از ۹)` : ''}`
       : `کارها ${overdueTodos.length ? `(${_homeFa(overdueTodos.length)} معوق)` : ''}`;
   const homeTodoScopeBtns = `<button type="button" role="tab" aria-selected="${homeTodoScope === '135' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === '135' ? 'is-active' : ''}" onclick="_homeSetTodoScope('135')">کار ۱-۳-۵</button><button type="button" role="tab" aria-selected="${homeTodoScope === 'mine' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'mine' ? 'is-active' : ''}" onclick="_homeSetTodoScope('mine')">کارهای من</button>${_homeCanSeeStaffTodos ? `<button type="button" role="tab" aria-selected="${homeTodoScope === 'staff' ? 'true' : 'false'}" class="home-scope-btn ${homeTodoScope === 'staff' ? 'is-active' : ''}" onclick="_homeSetTodoScope('staff')">کارهای پرسنل (${_homeFa(staffTodosSorted.length)})</button>` : ''}`;
-  const homeTodoHead = `<div class="home-card-head"><h3>${homeTodoTitle}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها">${homeTodoScopeBtns}</div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به لیست کارها</button></div></div>`;
+  const homeTodoHead = `<div class="home-card-head"><h3>${homeTodoTitle}</h3><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><div class="home-scope-toggle" role="tablist" aria-label="انتخاب نمای کارها">${homeTodoScopeBtns}</div><button class="home-link" onclick="_homeNavigate('todolist')">رفتن به فهرست کارها</button></div></div>`;
   const homeTodoBody = homeTodoScope === 'staff'
     ? (staffTodoRows || empty(staffTodosSorted.length ? 'کار بازی برای امروز نیست.' : (openStaffTodos.length ? 'کار بازی برای امروز نیست.' : 'کاری برای پرسنل ثبت نشده است.')))
     : homeTodoScope === '135'
@@ -9860,7 +9860,7 @@ async function renderHome() {
       <div><h2>${greeting}</h2><p>امروز، ${escapeHtml(displayDate)}</p></div>
       <div class="home-stats home-stats-4" aria-label="خلاصه امروز">
         <div style="cursor:pointer" onclick="_homeGotoSessions()" title="رفتن به جلسات امروز"><strong>${_homeFa(sessions.length)}</strong><span>جلسات برگزارشده امروز</span></div>
-        <div style="cursor:pointer" onclick="_homeNavigate('todolist')" title="رفتن به لیست کارها"><strong>${_homeFa(doneTodayTodos)} از ${_homeFa(totalTodayTodos)}</strong><span>کار انجام‌شده امروز</span></div>
+        <div style="cursor:pointer" onclick="_homeNavigate('todolist')" title="رفتن به فهرست کارها"><strong>${_homeFa(doneTodayTodos)} از ${_homeFa(totalTodayTodos)}</strong><span>کار انجام‌شده امروز</span></div>
         <div style="cursor:pointer" onclick="_homeNavigate('habits')" title="رفتن به عادت‌ها"><strong>${_homeFa(doneHabitsCount)} از ${_homeFa(dueHabits.length)}</strong><span>عادت انجام‌شده امروز</span></div>
         <div style="cursor:pointer" onclick="_homeNavigate('payments','reminders')" title="رفتن به یادآوری‌ها"><strong>${_homeFa(pendingPayReminders.length)}</strong><span>یادآوری پرداخت</span></div>
       </div>
@@ -11381,7 +11381,7 @@ async function openNewPurchase(studentId, preset = {}) {
         <label class="form-label">تکرار</label>
         <select class="form-select" id="np-repeat">
           <option value="0" ${repeat===0?'selected':''}>بدون تکرار</option>
-          <option value="1" ${repeat===1?'selected':''}>هر ۱ ماه</option>
+          <option value="1" ${repeat===1?'selected':''}>ماهانه</option>
           <option value="3" ${repeat===3?'selected':''}>هر ۳ ماه</option>
           <option value="6" ${repeat===6?'selected':''}>هر ۶ ماه</option>
           <option value="12" ${repeat===12?'selected':''}>هر ۱۲ ماه</option>
@@ -11601,7 +11601,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
           <label class="form-label">🔁 تکرار / یادآوری تجدید</label>
           <select class="form-select pkg-repeat" data-type-id="${pt.id}">
             <option value="0" ${(!existing?.repeat_months)?'selected':''}>بدون تکرار</option>
-            <option value="1" ${existing?.repeat_months===1?'selected':''}>هر ۱ ماه</option>
+            <option value="1" ${existing?.repeat_months===1?'selected':''}>ماهانه</option>
             <option value="3" ${existing?.repeat_months===3?'selected':''}>هر ۳ ماه</option>
             <option value="6" ${existing?.repeat_months===6?'selected':''}>هر ۶ ماه</option>
             <option value="12" ${existing?.repeat_months===12?'selected':''}>هر ۱۲ ماه</option>
@@ -13468,7 +13468,7 @@ function _teamPermCards(prefix, selected) {
     <div style="grid-column:1/-1;margin-top:4px;padding:12px;border:1px solid rgba(96,165,250,.25);border-radius:12px;background:rgba(96,165,250,.035)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:13px;font-weight:900;color:var(--text)">مجوزهای دقیق لیست کارها</div>
+          <div style="font-size:13px;font-weight:900;color:var(--text)">مجوزهای دقیق فهرست کارها</div>
           <div style="font-size:11px;color:var(--text3);line-height:1.7">این گزینه‌ها در رابط و API اعمال می‌شوند؛ کارهای شخصی مدیر با پیش‌فرض «فقط من» خصوصی می‌مانند.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -14248,7 +14248,7 @@ async function renderSettings() {
         return `<div class="form-grid" style="gap:12px 16px">
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-stale-lead',a.stale_lead!==false)}<span>سرنخ راکد → یادآوری پیگیری</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-session-fu',a.session_followup===true)}<span>اقدام جلسه بدون موعد → پر کردن موعد</span></label>
-        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-package-due',a.package_due!==false)}<span>سررسید پکیج نزدیک → کار در لیست کارها</span></label>
+        <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-package-due',a.package_due!==false)}<span>سررسید پکیج نزدیک → کار در فهرست کارها</span></label>
         <label class="form-group" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">${chk('auto-onboarding',a.convert_onboarding!==false)}<span>تبدیل به مشتری → چک‌لیست شروع همکاری</span></label>
         <div class="form-group"><label class="form-label" for="auto-session-days">موعد اقدام جلسه (روز بعد از جلسه)</label><input class="form-input" id="auto-session-days" type="number" min="1" step="1" value="${Number(a.session_followup_days)||3}"></div>
         <div class="form-group"><label class="form-label" for="auto-package-days">پنجره سررسید پکیج (روز مانده)</label><input class="form-input" id="auto-package-days" type="number" min="1" step="1" value="${Number(a.package_due_days)||3}"></div>
@@ -14260,7 +14260,7 @@ async function renderSettings() {
     </div>
 
     <div class="detail-section" id="settings-locale">
-      <h3>🌍 منطقه زمانی و تقویم <span class="help-ic" title="نوع تقویم روی کل برنامه اثر می‌گذارد: اهداف، جلسات، لیست کارها، عادت‌ها، گزارش‌ها و فاکتورها">؟</span></h3>
+      <h3>🌍 منطقه زمانی و تقویم <span class="help-ic" title="نوع تقویم روی کل برنامه اثر می‌گذارد: اهداف، جلسات، فهرست کارها، عادت‌ها، گزارش‌ها و فاکتورها">؟</span></h3>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">منطقه زمانی</label>
@@ -14374,7 +14374,7 @@ async function renderSettings() {
       <h3>🗓️ اتصال به Google Calendar</h3>
       <p style="font-size:11px;color:var(--text3);margin-bottom:10px">
         وقتی وصل باشی، کارهایی که با تیک «ذخیره در Google Calendar» می‌سازی در گوگل هم ثبت می‌شوند؛ از آن طرف، رویدادهای تقویم انتخاب‌شده هم
-        به‌صورت خودکار وارد لیست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
+        به‌صورت خودکار وارد فهرست کارهای تیم‌پالس می‌شوند و با شناسه همان رویداد به‌روزرسانی می‌شوند تا تکراری ساخته نشود.
       </p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button class="btn ${_gcal.enabled?'btn-danger':'btn-primary'}" id="gcal-sync-btn" onclick="gcalConnectUI()">
@@ -19281,7 +19281,7 @@ function _financeNavHtml() {
   const incomeIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m6 9V5m6 13v-7m4-5-5 5-4-3-6 6"/></svg>';
   const expenseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/></svg>';
   const staffIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.5-4 2.5-6 5.5-6s5 2 5.5 6M16 8h5m-2.5-2.5v5"/></svg>';
-  return `<nav class="finance-nav" aria-label="میانبرهای مالی"><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">${incomeIcon}</span><span class="finance-nav-title">درآمد</span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">${expenseIcon}</span><span class="finance-nav-title">هزینه</span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">${staffIcon}</span><span class="finance-nav-title">پرسنل</span></button><button class="finance-nav-btn" onclick="openFinanceTools()" aria-label="ابزارهای مالی بیشتر"><span class="finance-icon">•••</span><span class="finance-nav-title">بیشتر</span></button></div></nav>`;
+  return `<nav class="finance-nav" aria-label="میانبرهای مالی"><div class="finance-nav-main"><button class="finance-nav-btn ${active==='income'?'active':''}" onclick="openFinanceDestination('income')"><span class="finance-icon">${incomeIcon}</span><span class="finance-nav-title">درآمد</span></button><button class="finance-nav-btn" onclick="openFinanceDestination('expense')"><span class="finance-icon">${expenseIcon}</span><span class="finance-nav-title">هزینه</span></button><button class="finance-nav-btn ${active==='staff'?'active':''}" onclick="openFinanceDestination('staff')"><span class="finance-icon">${staffIcon}</span><span class="finance-nav-title">پرداختی پرسنل</span></button><button class="finance-nav-btn" onclick="openFinanceTools()" aria-label="ابزارهای مالی"><span class="finance-icon">•••</span><span class="finance-nav-title">ابزارهای مالی</span></button></div></nav>`;
 }
 function openFinanceDestination(destination) {
   if(destination==='expense'){openExpenseManager();return;}
@@ -19664,15 +19664,15 @@ const DEFAULT_NAV_ORDER = [
   { page: 'students',     icon: '👥', label: () => 'امور مشتریان' },
   { page: 'goals',        icon: '🎯', label: () => 'اهداف' },
   { page: 'habits',       icon: '🔥', label: () => 'عادت‌ها' },
-  { page: 'todolist',     icon: '✅', label: () => 'لیست کارها' },
+  { page: 'todolist',     icon: '✅', label: () => 'فهرست کارها' },
   { page: 'instructions', icon: '💡', label: () => 'مرکز دانش' },
   { page: 'payments',     icon: '🛒', label: () => 'حساب مشتریان' },
   { page: 'staff',        icon: '🧑‍💼', label: () => 'حساب پرسنل و اعضا' },
-  { page: 'dashboard',    icon: '📊', label: () => 'داشبورد مالی' },
+  { page: 'dashboard',    icon: '📊', label: () => 'مدیریت مالی' },
   { page: 'transactions', icon: '📒', label: () => 'تراکنش‌های مالی' },
   { page: 'admin_panel',  icon: '👑', label: () => 'پنل مدیریت' },
   { page: 'settings',     icon: '⚙️', label: () => 'تنظیمات' },
-  { page: 'tutorial',     icon: '🎓', label: () => 'آموزش‌ها' },
+  { page: 'tutorial',     icon: '🎓', label: () => 'راهنمای نرم‌افزار' },
 ];
 
 function _normalizeNavOrder(order) {
@@ -24373,7 +24373,7 @@ const logo = '<img src="icon-192.png" style="width:70px;height:70px;border-radiu
     { icon: '👥', text: `مدیریت ${_entityWord(true)}` },
     { icon: '📅', text: 'ثبت جلسات' },
     { icon: '💰', text: 'حسابداری دقیق' },
-    { icon: '✅', text: 'لیست کارها' },
+    { icon: '✅', text: 'فهرست کارها' },
   ];
 
   const featureHtml = features.map(f =>
@@ -25135,6 +25135,7 @@ function _updateAuthUI() {
     const name = _sbUser?.email?.split('@')[0] || '';
     logoutBtn.textContent = teamSession ? '🚪 خروج از دسترسی هم‌تیمی' : '🚪 خروج (' + name + ')';
     logoutBtn.onclick = teamSession ? _leaveTeamAccess : (() => _auth.signOut());
+    // روی دسکتاپ دکمه خروج تاپ‌بار هست؛ این دکمه با CSS فقط روی موبایل دیده می‌شود
     logoutBtn.style.display = '';
   }
   const topbarLogoutBtn = document.getElementById('topbar-logout-btn');
@@ -25332,7 +25333,7 @@ async function _initAuth() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TODO LIST — لیست کارها
+// TODO LIST — فهرست کارها
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Data model ───────────────────────────────────────────────────────────────
@@ -25967,7 +25968,7 @@ function _updateTodoEndPreview() {
 }
 
 function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false, ignoreScroll = false } = {}) {
-  // لیست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
+  // فهرست کارها یک صفحه خواندنی/اسکرولی است؛ poll سرور نباید هر چند ثانیه
   // کل صفحه را rebuild کند و حس «ریلـود کوچک» یا پریدن کارها بسازد.
   if (currentPage === 'todolist' && !allowTodoList) return false;
   // اگه modal باز هست
@@ -25975,7 +25976,7 @@ function _canAutoRefresh({ allowTodoList = false, forceStaffLive = false, ignore
   // اگه روی input/textarea focus هست (کیبورد موبایل باز)
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return false;
-  // SELECT روی لیست کارها فیلتر است، نه فرم در حال ویرایش.
+  // SELECT روی فهرست کارها فیلتر است، نه فرم در حال ویرایش.
   if (tag === 'SELECT' && currentPage !== 'todolist' && !forceStaffLive) return false;
   // اگه contenteditable داره ویرایش میشه
   if (document.activeElement?.contentEditable === 'true') return false;
@@ -26284,7 +26285,7 @@ async function _handleTodoNotificationDone(todoId) {
   }
   if (!t) {
     await _openTodoListFromNotification(todoId);
-    showToast('این کار پیدا نشد؛ لیست کارها را بررسی کن', 'warning');
+    showToast('این کار پیدا نشد؛ فهرست کارها را بررسی کن', 'warning');
     return;
   }
   if (!_todoCanComplete(t)) {
@@ -30862,14 +30863,14 @@ function _tpSearchHayFields(str) {
 }
 const _TP_SEARCH_PAGE_DEFS = [
   { page: 'home', tab: '', label: 'داشبورد', icon: '🏠', keys: 'خانه' },
-  { page: 'dashboard', tab: '', label: 'داشبورد مالی', icon: '📊', keys: 'مدیریت مالی finance' },
+  { page: 'dashboard', tab: '', label: 'مدیریت مالی', icon: '📊', keys: 'مدیریت مالی finance' },
   { page: 'transactions', tab: '', label: 'تراکنش‌های مالی', icon: '📒', keys: 'تراکنش' },
   { page: 'students', tab: '', label: 'امور مشتریان', icon: '👥', keys: 'مشتری شاگرد students' },
   { page: 'students', tab: 'sessions', label: 'جلسات', icon: '📅', keys: 'session جلسه' },
   { page: 'payments', tab: '', label: 'حساب مشتریان', icon: '🛒', keys: 'پرداخت payments' },
   { page: 'payments', tab: 'reminders', label: 'یادآوری پرداخت', icon: '🔔', keys: 'reminders یادآوری' },
   { page: 'staff', tab: '', label: 'حساب پرسنل و اعضا', icon: '🧑‍💼', keys: 'پرسنل staff' },
-  { page: 'todolist', tab: '', label: 'لیست کارها', icon: '✅', keys: 'کار todo' },
+  { page: 'todolist', tab: '', label: 'فهرست کارها', icon: '✅', keys: 'کار todo' },
   { page: 'calendar', tab: '', label: 'تقویم', icon: '📅', keys: 'calendar' },
   { page: 'goals', tab: '', label: 'اهداف', icon: '🎯', keys: 'goals' },
   { page: 'habits', tab: '', label: 'عادت‌ها', icon: '🔥', keys: 'habits' },
@@ -30880,7 +30881,7 @@ const _TP_SEARCH_PAGE_DEFS = [
   { page: 'settings', tab: 'connections', label: 'اتصال گوگل و بله‌پی', icon: '🔌', keys: 'gcal gdrive google bale calendar drive' },
   { page: 'settings', tab: 'personal', label: 'ظاهر و نوتیفیکیشن', icon: '🎨', keys: 'personal theme push voice نوتیف' },
   { page: 'settings', tab: 'data', label: 'پشتیبان و داده', icon: '💾', keys: 'backup data advanced پشتیبان' },
-  { page: 'tutorial', tab: '', label: 'آموزش‌ها', icon: '📖', keys: 'tutorial' },
+  { page: 'tutorial', tab: '', label: 'راهنمای نرم‌افزار', icon: '📖', keys: 'آموزش راهنما tutorial' },
 ];
 const _TP_SEARCH_COMMAND_DEFS = [
   { action: 'payment', title: 'پرداخت جدید', subtitle: 'دریافت جدید از مشتری', icon: '💳', keys: 'دریافت' },

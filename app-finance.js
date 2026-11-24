@@ -11,8 +11,8 @@ async function renderPurchases(search = '') {
     packages = packages.filter(p => `${p.name} ${p.lname}`.toLowerCase().includes(q));
   }
   let html = `<div class="table-card">
-    <div class="table-header"><span class="title">🛒 تاریخچه کل فروش ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button></div></div>
-    <table><thead><tr><th>${_entityWord()}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
+    <div class="table-header"><span class="title">🛒 تاریخچه کل فروش‌ها (${fa(packages.length)} مورد)</span><div class="payment-header-actions"><button class="btn btn-ghost btn-sm payment-header-catalog" type="button" onclick="openServiceProductsCatalog()">خدمات و محصولات</button></div></div>
+    <table><thead><tr><th>${_entityWord()}</th><th>خدمت / محصول</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody>`;
   if (packages.length === 0) {
     html += `<tr><td colspan="8"><div class="empty"><span>🛒</span>خریدی ثبت نشده</div></td></tr>`;
   } else {
@@ -26,7 +26,7 @@ async function renderPurchases(search = '') {
           <div>شروع: ${DateService.disp(p.start_date)||'—'}</div>
           <div style="font-size:10px;color:${_isPackageChargeable(p)?'var(--green)':'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date)||'—'}${_isPackageChargeable(p)?'':' · آینده'}</div>
         </td>
-        <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?`هر ${fa(p.repeat_months)} ماه`:'یک‌بار'}</td>
+        <td style="font-size:11px;color:var(--text2)">${p.repeat_months>0?(Number(p.repeat_months) === 1 ? 'ماهانه' : `هر ${fa(p.repeat_months)} ماه`):'یک‌بار'}</td>
         <td style="font-size:11px;color:var(--text3)">${escapeHtml(p.note||'')}</td>
         <td>
           <div style="display:flex;align-items:center;gap:5px">
@@ -58,7 +58,7 @@ async function openEditPackage(id) {
   openModal(`✏️ ویرایش خرید — ${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, `
     <div class="form-grid purchase-compact">
       <div class="form-group full">
-        <label class="form-label">نوع خرید</label>
+        <label class="form-label">خدمت / محصول</label>
         <select class="form-select" id="ep-type" onchange="onPurchaseTypeChange('ep')">${typeOptions}</select>
       </div>
       <div class="form-group full">
@@ -91,7 +91,7 @@ async function openEditPackage(id) {
         <label class="form-label">🔁 تکرار</label>
         <select class="form-select" id="ep-repeat">
           <option value="0" ${!p.repeat_months?'selected':''}>بدون تکرار</option>
-          <option value="1" ${p.repeat_months===1?'selected':''}>هر ۱ ماه</option>
+          <option value="1" ${p.repeat_months===1?'selected':''}>ماهانه</option>
           <option value="3" ${p.repeat_months===3?'selected':''}>هر ۳ ماه</option>
           <option value="6" ${p.repeat_months===6?'selected':''}>هر ۶ ماه</option>
           <option value="12" ${p.repeat_months===12?'selected':''}>هر ۱۲ ماه</option>
@@ -856,9 +856,9 @@ function accountCustomerTabsHtml(tab, search = '') {
   return `
     <div class="payments-toolbar account-tabs-toolbar">
       <div class="payments-segmented" role="tablist" aria-label="حساب مشتریان">
-        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_tpPaymentsTab('purchases')">🛒 فروش</button>
-        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_tpPaymentsTab('payments')">💳 دریافت</button>
-        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_tpPaymentsTab('reminders')">🔔 یادآوری</button>
+        <button class="${tab==='purchases'?'active':''}" role="tab" aria-selected="${tab==='purchases'}" onclick="_tpPaymentsTab('purchases')">🛒 فروش‌ها</button>
+        <button class="${tab==='payments'?'active':''}" role="tab" aria-selected="${tab==='payments'}" onclick="_tpPaymentsTab('payments')">💳 دریافتی‌ها</button>
+        <button class="${tab==='reminders'?'active':''}" role="tab" aria-selected="${tab==='reminders'}" onclick="_tpPaymentsTab('reminders')">🔔 یادآوری‌ها</button>
         <button class="${tab==='families'?'active':''}" role="tab" aria-selected="${tab==='families'}" onclick="_tpPaymentsTab('families')">👤 مانده حساب‌ها</button>
       </div>
     </div>`;
@@ -933,7 +933,7 @@ async function openStudentIncomeHistory(studentId, kind) {
       <td><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
       <td style="color:var(--text3);font-size:11px">${escapeHtml(p.note || '—')}</td>
     </tr>`).join('') || `<tr><td colspan="5"><div class="empty">فروشی برای این ${_entityWord()} ثبت نشده</div></td></tr>`;
-    openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>نوع خرید</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
+    openModal(`🛒 فروش‌های ${escapeHtml(fullName)}`, `<div class="family-history-table"><table><thead><tr><th>تاریخ</th><th>خدمت / محصول</th><th>مجری</th><th>مبلغ</th><th>توضیحات</th></tr></thead><tbody>${rows}</tbody></table></div>`, [{ label: 'بستن', cls: 'btn-ghost', action: 'closeModal()' }]);
     return;
   }
 
@@ -1130,7 +1130,7 @@ function _purchaseMobileMetaParts(p) {
   const parts = [];
   const staff = String(p.staff_name || '').trim();
   if (staff) parts.push(escapeHtml(staff));
-  if (Number(p.repeat_months) > 0) parts.push(`هر ${fa(p.repeat_months)} ماه`);
+  if (Number(p.repeat_months) > 0) parts.push((Number(p.repeat_months) === 1 ? 'ماهانه' : `هر ${fa(p.repeat_months)} ماه`));
   else parts.push('یک‌بار');
   const startDisp = DateService.disp(p.start_date);
   if (startDisp) parts.push(`شروع: ${startDisp}`);
@@ -1200,7 +1200,7 @@ function paymentsHistoryFiltersHtml(search = '') {
     ['last3', '۳ ماه اخیر'],
     ['year', 'امسال'],
   ];
-  const studentOpts = `<option value="">همه مشتریان</option>${students.map(s =>
+  const studentOpts = `<option value="">همه ${escapeHtml(_entityWordPlain(true))}</option>${students.map(s =>
     `<option value="${s.id}" ${String(view.studentId) === String(s.id) ? 'selected' : ''}>${escapeHtml(s.name)} ${escapeHtml(s.lname)}</option>`
   ).join('')}`;
   const rangeChips = ranges.map(([id, label]) =>
@@ -1349,7 +1349,7 @@ async function renderPayments(search = '') {
       html += '</div>';
     } else {
       html += `<table>
-        <thead><tr><th>${_entityWord()}</th><th>نوع خرید</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
+        <thead><tr><th>${_entityWord()}</th><th>خدمت / محصول</th><th>مجری</th><th>مبلغ کل</th><th>شروع / سررسید پرداخت</th><th>تکرار</th><th>توضیحات</th><th>عملیات</th></tr></thead>
         <tbody>`;
       for (const block of layout) {
         if (block.kind === 'month') {
@@ -1359,14 +1359,14 @@ async function renderPayments(search = '') {
         const p = block.p;
         html += `<tr class="customer-sale-row">
           <td data-label="مشتری" style="font-weight:500">${incomeStudentHistoryButton(p.student_id, `${escapeHtml(p.name)} ${escapeHtml(p.lname)}`, 'sales')}</td>
-          <td data-label="نوع خرید">${_purchaseTypeDisplayHtml(p)}</td>
+          <td data-label="خدمت / محصول">${_purchaseTypeDisplayHtml(p)}</td>
           <td data-label="مجری" style="font-size:11px;color:var(--text2)">${p.staff_name ? incomeFilterButton('staff', p.staff_name, p.staff_name, escapeHtml(p.staff_name)) : '—'}</td>
           <td data-label="مبلغ کل"><span class="amount amount-paid">${_moneyLabel(p.total_amount, p.currency, p.quantity, p.unit_price)}</span></td>
           <td data-label="تاریخ" style="color:var(--text2)">
             <div>شروع: ${DateService.disp(p.start_date) || '—'}</div>
             <div style="font-size:10px;color:${_isPackageChargeable(p) ? 'var(--green)' : 'var(--amber)'};margin-top:2px">سررسید پرداخت: ${DateService.disp(p.payment_due_date) || '—'}${_isPackageChargeable(p) ? '' : ' · آینده'}</div>
           </td>
-          <td data-label="تکرار" style="font-size:11px;color:var(--text2)">${p.repeat_months > 0 ? `هر ${fa(p.repeat_months)} ماه` : 'یک‌بار'}</td>
+          <td data-label="تکرار" style="font-size:11px;color:var(--text2)">${p.repeat_months > 0 ? (Number(p.repeat_months) === 1 ? 'ماهانه' : `هر ${fa(p.repeat_months)} ماه`) : 'یک‌بار'}</td>
           <td data-label="توضیحات" class="purchase-note-cell" style="font-size:11px;color:var(--text3)">${_purchaseNoteDisplayHtml(p.note)}</td>
           <td data-label="عملیات">${_purchaseHistoryRowMenuHtml(p)}</td>
         </tr>`;
@@ -1799,7 +1799,7 @@ async function renderReminders(search = '', embedded = false, contentPrefix = ''
         <div>${DateService.disp(r.due_date_jalali)}</div>
       </td>
       <td data-label="مبلغ">${r.amount ? fmt(r.amount) + ' ت' : '—'}</td>
-      <td data-label="تکرار" style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? `هر ${fa(r.repeat_months)} ماه` : 'یک‌بار'}</td>
+      <td data-label="تکرار" style="color:var(--text2);font-size:11px">${r.repeat_months > 0 ? (Number(r.repeat_months) === 1 ? 'ماهانه' : `هر ${fa(r.repeat_months)} ماه`) : 'یک‌بار'}</td>
       <td data-label="وضعیت">${statusBadge}</td>
       <td data-label="عملیات">
         <div class="row-menu">
@@ -1849,7 +1849,7 @@ function openAddReminder(presetStudentId = null) {
         <label class="form-label">تکرار</label>
         <select class="form-select" id="r-repeat">
           <option value="0">بدون تکرار (یک‌بار)</option>
-          <option value="1">هر ۱ ماه</option>
+          <option value="1">ماهانه</option>
           <option value="3">هر ۳ ماه</option>
           <option value="6" selected>هر ۶ ماه</option>
           <option value="12">هر ۱۲ ماه</option>
@@ -2956,7 +2956,7 @@ async function openEditReminder(id) {
         <label class="form-label">تکرار</label>
         <select class="form-select" id="er-repeat">
           <option value="0" ${r.repeat_months===0?'selected':''}>بدون تکرار (یک‌بار)</option>
-          <option value="1" ${r.repeat_months===1?'selected':''}>هر ۱ ماه</option>
+          <option value="1" ${r.repeat_months===1?'selected':''}>ماهانه</option>
           <option value="3" ${r.repeat_months===3?'selected':''}>هر ۳ ماه</option>
           <option value="6" ${r.repeat_months===6?'selected':''}>هر ۶ ماه</option>
           <option value="12" ${r.repeat_months===12?'selected':''}>هر ۱۲ ماه</option>
