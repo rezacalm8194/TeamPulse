@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpc5fe0487f7';
+const TP_ASSET_V = 'tp400d4c6309';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2214,7 +2214,11 @@ function _buildServerSyncPatch(data) {
   const seenKeys = new Set();
   Object.keys(data || {}).forEach(key => {
     if (_SYNC_SKIP_KEYS.has(key)) return;
-    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)) return;
+    // فقط کالکشن‌های آرایه‌ای صفحه‌به‌صفحه لود می‌شوند. اسکالرها (meta: برچسب‌ها، بخش‌های اختیاری،
+    // اتوماسیون و…) همیشه در پارت __scalars__ همراه هر لود می‌آیند؛ قبلاً اینجا رد می‌شدند و
+    // تغییر تنظیمات هیچ‌وقت به سرور نمی‌رسید. همان شرط _syncCollectionHashes.
+    if (typeof _tpPartLoaded === 'function' && !_tpPartLoaded(key)
+      && (Array.isArray(data[key]) || _SYNC_ID_COLLECTION_KEYS.has(key))) return;
     seenKeys.add(key);
     const value = data[key];
     if (_isSyncIdCollection(key, value)) {
