@@ -66,7 +66,7 @@ test('without part_hashes compare walk marker to document etag', () => {
 });
 
 test('walk completion stores part hash not document etag when available', () => {
-  assert.match(app, /window\._tpCompleteWalkEtag\[key\] = _tpWalkFreshnessTarget\(key\)/);
+  assert.match(app, /window\._tpCompleteWalkEtag\[key\] = finalPaging\.fetchedPartHash \|\| _tpWalkFreshnessTarget\(key\)/);
   assert.match(app, /_tpBusinessPartHash\(key\) \|\| _tpCurrentServerEtag\(\)/);
 });
 

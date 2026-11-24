@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp6a7c6db3f4';
+const TP_ASSET_V = 'tpf82e9bddde';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -7447,7 +7447,9 @@ async function _ensureCompleteBusinessParts(collections = []) {
       }
       const finalPaging = _businessPagingState(key);
       if (finalPaging.done && _paginatedCollectionFullyLoaded(key)) {
-        window._tpCompleteWalkEtag[key] = _tpWalkFreshnessTarget(key);
+        // The walk's first-page hash: if the collection changed mid-walk the
+        // marker stays behind and the next check re-walks.
+        window._tpCompleteWalkEtag[key] = finalPaging.fetchedPartHash || _tpWalkFreshnessTarget(key);
       } else {
         delete window._tpCompleteWalkEtag[key];
       }
@@ -7632,7 +7634,11 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       window._serverDataEtag = payload.etag;
       state.fetchedEtag = payload.etag;
     }
-    if (startsWalk) state.fetchedPartHash = hashAtStart || null;
+    // Prefer the hash the server read with this page; it exists even before
+    // the first /status of the session.
+    const pageHash = payload.part_hash != null && String(payload.part_hash) !== '' ? String(payload.part_hash) : null;
+    if (pageHash) _applyServerPartHashes({ [collection]: pageHash });
+    if (startsWalk) state.fetchedPartHash = pageHash || hashAtStart || null;
     window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
     window._tpSessionFetchedParts.add(collection);
     _persistPartLoadState();
@@ -23668,21 +23674,30 @@ async function _loadFromServerImpl({ lightweightRebase = false, skipLocalSnapsho
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return false;
     const payload = await res.json();
+    if (payload.part_hashes && typeof payload.part_hashes === 'object') _applyServerPartHashes(payload.part_hashes);
     const remoteDocumentChanged = !!window._remoteServerDocumentChanged ||
       !!(payload.etag && previousEtag && payload.etag !== previousEtag);
     // A changed document never restarts as an unscoped full-page repair.
     // Even a forced document response repairs paginated rows for this page only.
     const businessKeys = BUSINESS_PAGINATED_KEYS.filter(key => pageParts.includes(key));
+    // When the document changed, reload page one only for collections that
+    // changed too (part hash), were not fetched yet, or are finance (always).
+    // Before, any todo tick since the last visit re-fetched sessions page one.
+    const changedBusinessKeys = businessKeys.filter(key => {
+      if (FINANCE_NEWEST_FIRST_KEYS.includes(key)) return true;
+      if (!window._tpSessionFetchedParts?.has(key)) return true;
+      return _tpBusinessPageStale(key, _businessPagingState(key), payload.etag, payload.part_hashes);
+    });
     // A forced full-document response must still repair only paginated page
     // one; null includeKeys is never permission for a complete crawl.
     const refreshTodoFirstPage = pageParts.includes('todos');
     if (remoteDocumentChanged) {
       if (lightweightRebase) {
         if (refreshTodoFirstPage && !await _loadTodoPage(false, { reset: true })) return false;
-        await _reloadBusinessFirstPagesFromServer(businessKeys, { reset: true });
+        await _reloadBusinessFirstPagesFromServer(changedBusinessKeys, { reset: true });
       } else {
         if (refreshTodoFirstPage && !await _loadTodoPage(false, { reset: true })) return false;
-        await _reloadBusinessFirstPagesFromServer(businessKeys, { reset: true });
+        await _reloadBusinessFirstPagesFromServer(changedBusinessKeys, { reset: true });
       }
     } else {
       if (Array.isArray(includeKeys) && includeKeys.includes('todos')) {

@@ -332,7 +332,7 @@ test('poll never starts a collection reload during active hydration and GETs coa
   assert.match(appSource, /!window\._tpSessionFetchedParts\?\.has\(key\)/);
   assert.doesNotMatch(appSource, /if \(includeKeys\.includes\('todos'\)/);
   assert.match(appSource, /const refreshTodoFirstPage = pageParts\.includes\('todos'\)/);
-  assert.match(appSource, /_reloadBusinessFirstPagesFromServer\(businessKeys, \{ reset: true \}\)/);
+  assert.match(appSource, /_reloadBusinessFirstPagesFromServer\(changedBusinessKeys, \{ reset: true \}\)/);
   assert.match(appSource, /if \(window\._initialServerLoadPending\) return true;/);
   assert.match(appSource, /if \(window\._initialServerLoadPending\) return;/);
   const auth = appSource.slice(appSource.indexOf('async function _authOnSuccess()'), appSource.indexOf('// شغل‌ها'));
