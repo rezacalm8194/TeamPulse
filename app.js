@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp97cc8b57ee';
+const TP_ASSET_V = 'tpd353fd2af6';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -2933,7 +2933,7 @@ function _supplierListSummary(raw) {
   purchases.forEach(p => {
     if ((p.currency || 'تومان') === 'تومان') purchaseToman += _supplierPurchaseTotal(p);
   });
-  payments.forEach(e => { paidToman += Number(e.amount) || 0; });
+  payments.forEach(e => { if ((e.currency || 'تومان') === 'تومان') paidToman += Number(e.amount) || 0; });
   const balance = purchaseToman - paidToman;
   return {
     ...s,
