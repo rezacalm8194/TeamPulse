@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp400d4c6309';
+const TP_ASSET_V = 'tp6a7c6db3f4';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -6949,7 +6949,7 @@ function _localBusinessCollectionsAheadOfServer(status) {
   }
   return false;
 }
-function _businessPagesStaleForServerEtag(etag) {
+function _businessPagesStaleForServerEtag(etag, partHashes) {
   if (!etag || window._tpHydratingFromServer || typeof _businessPagingState !== 'function') return false;
   const visible = new Set(_partsForPage(typeof currentPage === 'string' ? currentPage : 'students'));
   const keys = typeof BUSINESS_PAGINATED_KEYS !== 'undefined' ? BUSINESS_PAGINATED_KEYS : [];
@@ -6957,8 +6957,7 @@ function _businessPagesStaleForServerEtag(etag) {
     if (!visible.has(key)) continue;
     const state = _businessPagingState(key);
     if (!window._tpSessionFetchedParts?.has(key) || state.loading) continue;
-    const fetched = state.fetchedEtag;
-    if (fetched && fetched !== etag) return true;
+    if (_tpBusinessPageStale(key, state, etag, partHashes)) return true;
   }
   return false;
 }
@@ -6983,7 +6982,7 @@ function _serverStatusRequiresHydration(status) {
   if (!status) return false;
   const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
   if (status.etag && status.etag !== knownEtag) return true;
-  if (_businessPagesStaleForServerEtag(status.etag)) return true;
+  if (_businessPagesStaleForServerEtag(status.etag, status.part_hashes)) return true;
   if (_todoPagesStaleForServerEtag(status.etag)) return true;
   return _localCollectionsLagServer(status);
 }
@@ -7336,7 +7335,7 @@ async function _ensureBusinessPartLoaded(collection, { reset = false, search = '
   if (!window._tpSessionFetchedParts?.has(collection)) reset = true;
   if (collection === 'students' && normalizedSearch !== paging.search) reset = true;
   const currentEtag = window._serverHydratedEtag || window._serverDataEtag || '';
-  if (!window._tpHydratingFromServer && !paging.loading && currentEtag && paging.fetchedEtag && currentEtag !== paging.fetchedEtag) reset = true;
+  if (!window._tpHydratingFromServer && !paging.loading && _tpBusinessPageStale(collection, paging, currentEtag)) reset = true;
   if (FINANCE_NEWEST_FIRST_KEYS.includes(collection) && paging.order !== _businessPageOrder(collection)) reset = true;
   if (reset || !_tpPartLoaded(collection) || (!paging.cursor && !paging.done)) {
     await _loadBusinessPage(collection, { reset, search: normalizedSearch });
@@ -7358,6 +7357,20 @@ function _tpBusinessPartHash(key) {
   const h = window._serverPartHashes?.[key];
   return h != null && String(h) !== '' ? String(h) : null;
 }
+// A business page fetched while its collection had part hash H is still
+// current while the server reports H. The document etag changes on every
+// write anywhere (a todo tick), so comparing etags alone re-downloaded the
+// whole sessions board after unrelated edits. Falls back to the etag when
+// either hash is unknown (older server, first page before /status).
+function _tpBusinessPageStale(key, state, etag, partHashes) {
+  if (!state) return false;
+  const fetchedHash = state.fetchedPartHash;
+  const nowRaw = partHashes && typeof partHashes === 'object' && partHashes[key] != null
+    ? partHashes[key] : _tpBusinessPartHash(key);
+  const nowHash = nowRaw != null && String(nowRaw) !== '' ? String(nowRaw) : null;
+  if (fetchedHash && nowHash) return String(fetchedHash) !== nowHash;
+  return !!(etag && state.fetchedEtag && etag !== state.fetchedEtag);
+}
 function _tpWalkFreshnessTarget(key) {
   return _tpBusinessPartHash(key) || _tpCurrentServerEtag() || '';
 }
@@ -7375,6 +7388,12 @@ function _tpRefreshWalkMarkersAfterOwnDelta(documentPatch, responseData, ctx) {
     const newHash = nextHashes?.[key] ?? _tpBusinessPartHash(key);
     if (!newHash) return;
     window._tpCompleteWalkEtag[key] = String(newHash);
+    try {
+      const paging = _businessPagingState(key);
+      if (paging && paging.fetchedPartHash && String(paging.fetchedPartHash) === String(beforeHash)) {
+        paging.fetchedPartHash = String(newHash);
+      }
+    } catch (e) {}
   });
 }
 function _businessPartCompleteAndFresh(key) {
@@ -7476,7 +7495,7 @@ function _businessCollectionsNeedingServerHydration(status, candidates = BUSINES
     const paging = _businessPagingState(key);
     const localCount = _syncCollectionCount(_db, key);
     if (paging.loading) return false;
-    if (etag && paging.fetchedEtag && paging.fetchedEtag !== etag) return true;
+    if (_tpBusinessPageStale(key, paging, etag, status?.part_hashes)) return true;
     if (FINANCE_NEWEST_FIRST_KEYS.includes(key) && etag && paging.order !== _businessPageOrder(key)) return true;
     // A first page with a cursor is intentionally partial, not behind.
     return !!paging.done && Number(totals[key] || 0) !== localCount;
@@ -7551,7 +7570,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
   const order = _businessPageOrder(collection);
   if (order !== (state.order || 'asc')) reset = true;
   const currentEtag = window._serverDataEtag || window._serverHydratedEtag || '';
-  if (state.done && currentEtag && state.fetchedEtag && currentEtag !== state.fetchedEtag) reset = true;
+  if (state.done && _tpBusinessPageStale(collection, state, currentEtag)) reset = true;
   if (state.loading) {
     if (!reset) return state.loading;
     await state.loading;
@@ -7561,6 +7580,10 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
   const accId = _teamAccessSession()?.ownerUserId || _sbUser.id;
   if (!accId) return false;
   if (reset) { state.cursor = null; state.done = false; state.search = normalizedSearch; state.order = order; }
+  // Part hash known when this request starts. A walk keeps the hash of its
+  // first page, so a change mid-walk still reads as stale afterwards.
+  const hashAtStart = _tpBusinessPartHash(collection);
+  const startsWalk = reset || !state.cursor;
   state.loading = (async () => {
     let query = _workspaceQuery() + '&limit=' + BUSINESS_SERVER_PAGE_SIZE;
     if (state.cursor) query += '&cursor=' + encodeURIComponent(state.cursor);
@@ -7609,6 +7632,7 @@ async function _loadBusinessPage(collection, { reset = false, search = '' } = {}
       window._serverDataEtag = payload.etag;
       state.fetchedEtag = payload.etag;
     }
+    if (startsWalk) state.fetchedPartHash = hashAtStart || null;
     window._tpSessionFetchedParts = window._tpSessionFetchedParts || new Set();
     window._tpSessionFetchedParts.add(collection);
     _persistPartLoadState();
@@ -10480,9 +10504,21 @@ function _tpBindLazyLoaders() {
   _tpBindCaseFormsLazy();
   _tpBindBoardLazy();
 }
+// Customer name search for the board and lists: "رضا حسن" finds «رضا» +
+// «حسن تبار»; Arabic ي/ك, ZWNJ and digits are normalized like Ctrl+K search.
+function _tpPersonNameMatches(person, search) {
+  const norm = typeof _tpSearchNormalize === 'function'
+    ? (v => _tpSearchNormalize(v).toLowerCase())
+    : (v => String(v || '').toLowerCase());
+  const q = norm(search).replace(/\s+/g, ' ').trim();
+  if (!q) return true;
+  const full = norm(`${person?.name || ''} ${person?.lname || ''}`).replace(/\s+/g, ' ').trim();
+  if (full.includes(q)) return true;
+  return full.replace(/ /g, '').includes(q.replace(/ /g, ''));
+}
 function filterAccountStudents(students, search) {
   let filtered = search
-    ? students.filter(s => (s.name + s.lname).includes(search))
+    ? students.filter(s => _tpPersonNameMatches(s, search))
     : students;
   if (stuChip === 'debt') filtered = filtered.filter(s => s.balance > 0);
   else if (stuChip === 'paid') filtered = filtered.filter(s => s.balance <= 0 && !s.archived);
@@ -24319,7 +24355,7 @@ async function _applyServerStatusPoll(status) {
     const knownEtag = window._serverHydratedEtag || window._serverDataEtag || '';
     const etagChanged = !!(status.etag && knownEtag && status.etag !== knownEtag);
     if (!etagChanged) {
-      if (!_localCollectionsLagServer(status) && !_businessPagesStaleForServerEtag(status.etag)
+      if (!_localCollectionsLagServer(status) && !_businessPagesStaleForServerEtag(status.etag, status.part_hashes)
           && !_todoPagesStaleForServerEtag(status.etag)) {
         _markServerDocumentHydrated(status.etag);
         return false;

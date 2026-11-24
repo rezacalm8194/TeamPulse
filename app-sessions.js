@@ -93,7 +93,7 @@ async function renderSessions(search = '') {
   }
 
   if (search) {
-    groupsSorted = groupsSorted.filter(g => (g.name + g.lname).includes(search));
+    groupsSorted = groupsSorted.filter(g => _tpPersonNameMatches(g, search));
   }
   const todayParts = _todayJalali();
   groupsSorted = groupsSorted.filter(g => sessionGroupMatchesBoardFilter(g, boardFilter, todayParts));
@@ -120,21 +120,31 @@ async function renderSessions(search = '') {
   html += `<div class="sessions-board" id="sessions-board">`;
   groupsSorted.forEach(g => {
     const openFU = followupCounts[g.student_id] || 0;
+    const odFU = overdueCounts[g.student_id] || 0;
+    const _nameArg = escapeAttr((g.name) + ' ' + (g.lname));
     html += `
-    <div class="session-column" draggable="true" data-student-id="${g.student_id}">
+    <div class="session-column" data-student-id="${g.student_id}">
       <div class="session-column-header">
         <div class="scn-title-row">
-          <span class="scn-name" style="cursor:move" title="برای تغییر ترتیب، بکش و رها کن">⠿ ${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
+          <span class="scn-drag" title="برای تغییر ترتیب، بکش و رها کن" aria-hidden="true">⠿</span>
+          <span class="scn-name">${escapeHtml(g.name)} ${escapeHtml(g.lname)}</span>
           ${studentBoardPinHtml(g.student_id)}
-          <span class="scn-count">(${fa(g.sessions.length)})</span>
-          ${openFU > 0 ? `<span title="اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})" class="session-fu-badge${(overdueCounts[g.student_id]||0)>0?' is-overdue':''}">${fa(openFU)}${(overdueCounts[g.student_id]||0)>0?'!':''}</span>` : ''}
+          <span class="scn-count" title="تعداد ${META.sessionPlural||'جلسات'}">${fa(g.sessions.length)} ${META.sessionSingular||'جلسه'}</span>
         </div>
-        <button class="archive-btn" title="انتقال به بایگانی" onclick="archiveStudent(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📦 بایگانی این ${_entityWord()}</button>
-        <button class="topics-btn" onclick="openTopics(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📌 موضوعات مهم</button>
-        <button class="key-events-btn" onclick="openKeyEvents(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">🌟 رویدادهای مهم</button>
-        <button class="summary-btn" onclick="openSessionsSummary(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
-        <button class="eval-btn" onclick="openEvaluation(${g.student_id}, ${escapeAttr((g.name) + ' ' + (g.lname))})">📊 ارزیابی عملکرد</button>
-        <button class="session-column-add" onclick="openAddSessionGeneral(${g.student_id})">+ افزودن ${META.sessionSingular||'جلسه'}</button>
+        <div class="scn-actions-row">
+          ${openFU > 0 ? `<button type="button" class="session-fu-badge${odFU>0?' is-overdue':''}" title="${odFU>0 ? fa(odFU)+' اقدام موعدگذشته — ' : ''}مشاهده اقدامات باز" onclick="openStudentFollowups(${g.student_id}, ${_nameArg})">${fa(openFU)} اقدام باز</button>` : ''}
+          <button type="button" class="session-column-add" onclick="openAddSessionGeneral(${g.student_id})">+ ${META.sessionSingular||'جلسه'}</button>
+          <details class="scn-menu">
+            <summary class="scn-menu-btn" title="گزینه‌های بیشتر" aria-label="گزینه‌های بیشتر برای ${escapeHtml(g.name)} ${escapeHtml(g.lname)}">⋯</summary>
+            <div class="scn-menu-panel">
+              <button type="button" onclick="openTopics(${g.student_id}, ${_nameArg})">📌 موضوعات مهم</button>
+              <button type="button" onclick="openKeyEvents(${g.student_id}, ${_nameArg})">🌟 رویدادهای مهم</button>
+              <button type="button" onclick="openSessionsSummary(${g.student_id}, ${_nameArg})">📋 خلاصه کل ${META.sessionPlural||'جلسات'}</button>
+              <button type="button" onclick="openEvaluation(${g.student_id}, ${_nameArg})">📊 ارزیابی عملکرد</button>
+              <button type="button" class="scn-menu-danger" onclick="archiveStudent(${g.student_id}, ${_nameArg})">📦 بایگانی این ${_entityWord()}</button>
+            </div>
+          </details>
+        </div>
       </div>
       <div class="session-column-body">
         ${g.sessions.length === 0
@@ -219,32 +229,89 @@ function initSessionsDragDrop() {
   const board = document.getElementById('sessions-board');
   if (!board) return;
   let dragEl = null;
+  const rtl = (() => { try { return getComputedStyle(board).direction === 'rtl'; } catch (e) { return true; } })();
 
   board.querySelectorAll('.session-column').forEach(col => {
-    col.addEventListener('dragstart', () => {
+    // Only the ⠿ handle starts a drag, so selecting text or clicking a
+    // header button never moves the column by accident.
+    const handle = col.querySelector('.scn-drag');
+    if (handle) {
+      const arm = () => { col.draggable = true; };
+      const disarm = () => { if (dragEl !== col) col.draggable = false; };
+      handle.addEventListener('mousedown', arm);
+      handle.addEventListener('touchstart', arm, { passive: true });
+      handle.addEventListener('mouseup', disarm);
+      handle.addEventListener('mouseleave', disarm);
+    }
+    col.addEventListener('dragstart', (e) => {
+      if (!col.draggable) { e.preventDefault(); return; }
       dragEl = col;
       col.style.opacity = '0.4';
     });
     col.addEventListener('dragend', () => {
       col.style.opacity = '';
-      saveSessionsOrder();
+      col.draggable = false;
+      const moved = dragEl === col;
+      dragEl = null;
+      if (moved) saveSessionsOrder();
     });
     col.addEventListener('dragover', (e) => {
+      if (!dragEl) return;
       e.preventDefault();
-      if (!dragEl || dragEl === col) return;
+      if (dragEl === col) return;
       const rect = col.getBoundingClientRect();
-      const before = (e.clientX - rect.left) < rect.width / 2;
+      const mid = rect.left + rect.width / 2;
+      // In RTL the first DOM child is the rightmost column: "before" is the
+      // right half of the hovered column.
+      const before = rtl ? e.clientX > mid : e.clientX < mid;
       board.insertBefore(dragEl, before ? col : col.nextSibling);
     });
   });
 }
 
+// The board shows only some columns (first chunk, or a filter's matches).
+// Re-slot the visible columns inside the full saved order so the positions
+// of columns that are not on screen are kept.
+function _mergeSessionsBoardOrder(saved, visible) {
+  const vis = (Array.isArray(visible) ? visible : []).map(Number).filter(Number.isFinite);
+  const visSet = new Set(vis);
+  const seen = new Set();
+  const base = [];
+  (Array.isArray(saved) ? saved : []).forEach(id => {
+    const n = Number(id);
+    if (Number.isFinite(n) && !seen.has(n)) { seen.add(n); base.push(n); }
+  });
+  vis.forEach(id => { if (!seen.has(id)) { seen.add(id); base.push(id); } });
+  let i = 0;
+  return base.map(id => (visSet.has(id) ? vis[i++] : id));
+}
 
 async function saveSessionsOrder() {
   const board = document.getElementById('sessions-board');
   if (!board) return;
-  const order = [...board.querySelectorAll('.session-column[data-student-id]')].map(el => +el.dataset.studentId).filter(id => Number.isFinite(id));
-  await window.api.sessions.setOrder(order);
+  const visible = [...board.querySelectorAll('.session-column[data-student-id]')].map(el => +el.dataset.studentId).filter(id => Number.isFinite(id));
+  if (!visible.length) return;
+  let saved = [];
+  try { saved = (await window.api.sessions.getOrder()) || []; } catch (e) { saved = []; }
+  await window.api.sessions.setOrder(_mergeSessionsBoardOrder(saved, visible));
+}
+
+// Board ⋯ menus and the filter menu: close on outside click, Escape, or
+// after picking an item.
+if (!window._tpSessionsMenuCloserBound) {
+  window._tpSessionsMenuCloserBound = true;
+  const closeMenus = (except) => {
+    document.querySelectorAll('details.scn-menu[open], details.sessions-board-filter-menu[open]').forEach(d => {
+      if (d !== except) d.removeAttribute('open');
+    });
+  };
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    const menu = t && t.closest ? t.closest('details.scn-menu, details.sessions-board-filter-menu') : null;
+    if (menu && t.closest('.scn-menu-panel button')) { setTimeout(() => menu.removeAttribute('open'), 0); return; }
+    closeMenus(menu);
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(null); });
 }
 
 
