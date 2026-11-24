@@ -21,7 +21,7 @@ function _todoTabsHtml() {
 function _todoTopbarActionsHtml() {
   const tabs = [_todoTabButton('mine','کارهای من')];
   if (_todoCanOpenStaffTasksTab()) tabs.push(_todoTabButton('staff','کارهای پرسنل'));
-  return `<div class="payments-segmented todo-topbar-tabs" role="tablist" aria-label="لیست کارها">${tabs.join('')}</div>
+  return `<div class="payments-segmented todo-topbar-tabs" role="tablist" aria-label="فهرست کارها">${tabs.join('')}</div>
     <button class="btn btn-ghost btn-sm todo-archive-btn" onclick="openTodoArchive()" title="بایگانی کارها" aria-label="بایگانی کارها">📦</button>`;
 }
 
@@ -1688,10 +1688,10 @@ function _todoViewSwitcherHtml() {
   }
   const viewValue = ['list','week','month','year'].includes(_todoViewMode) ? _todoViewMode : 'list';
   const viewSelect = `
-    <label class="todo-overview-select" title="انتخاب نمای لیست کارها">
+    <label class="todo-overview-select" title="انتخاب نمای فهرست کارها">
       <span>نمای کلی</span>
-      <select onchange="_setTodoViewMode(this.value)" aria-label="نمای کلی لیست کارها">
-        <option value="list" ${viewValue==='list'?'selected':''}>لیست کارها</option>
+      <select onchange="_setTodoViewMode(this.value)" aria-label="نمای کلی فهرست کارها">
+        <option value="list" ${viewValue==='list'?'selected':''}>فهرست کارها</option>
         <option value="week" ${viewValue==='week'?'selected':''}>هفته</option>
         <option value="month" ${viewValue==='month'?'selected':''}>ماه</option>
         <option value="year" ${viewValue==='year'?'selected':''}>سال</option>
@@ -2934,7 +2934,7 @@ function _renderGregorianTodoCalendarView() {
       <div class="todo-calendar-week-grid">
         ${cells.map((d,i)=>`<div><div class="todo-calendar-week-day-label" style="font-size:11px;color:${i===0||i===6?'#60a5fa':'var(--text3)'};font-weight:800;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d)}</div>`).join('')}
       </div>
-      ${mobileRangeList('لیست کارهای این هفته', weekTasks, rawWeekTasks)}
+      ${mobileRangeList('فهرست کارهای این هفته', weekTasks, rawWeekTasks)}
       <div class="todo-calendar-side">
         ${_todoPerformanceReportHtml('گزارش عملکرد هفته', weekPerf)}
         ${listPreview('کارهای امروز', stats.todayTasks, 'امروز کاری ندارید.')}
@@ -2969,7 +2969,7 @@ function _renderGregorianTodoCalendarView() {
           ${weekDays.map(w=>`<div style="font-size:10px;color:var(--text3);font-weight:700;text-align:center;padding-bottom:2px">${w}</div>`).join('')}
           ${cells.map(x=>dayCard(x.d,{faded:x.faded})).join('')}
         </div>
-        ${mobileRangeList('لیست کارهای این ماه', monthTasks, rawMonthTasks)}
+        ${mobileRangeList('فهرست کارهای این ماه', monthTasks, rawMonthTasks)}
       </div>
     </div>`;
   }
@@ -3027,7 +3027,7 @@ function _renderGregorianTodoCalendarView() {
   ${_todoPerformanceReportHtml('گزارش عملکرد سال', _todoRangePerformance(allTasks, yearKeys, prevYearKeys))}
   <div class="todo-calendar-year-layout">
     <div class="todo-calendar-year-grid">${monthCards}</div>
-    ${mobileRangeList('لیست کارهای امسال', yearTasks, rawYearTasks)}
+    ${mobileRangeList('فهرست کارهای امسال', yearTasks, rawYearTasks)}
   </div>`;
 }
 
@@ -3158,7 +3158,7 @@ function _renderTodoCalendarView() {
       <div class="todo-calendar-week-grid">
         ${cells.map((d,i)=>`<div><div class="todo-calendar-week-day-label" style="font-size:11px;color:${i===6?'var(--red)':'var(--text3)'};font-weight:800;margin-bottom:6px;text-align:center">${weekDays[i]}</div>${dayCard(d[0],d[1],d[2],{weekIndex:i})}</div>`).join('')}
       </div>
-      ${mobileRangeList('لیست کارهای این هفته', weekTasks, rawWeekTasks)}
+      ${mobileRangeList('فهرست کارهای این هفته', weekTasks, rawWeekTasks)}
       <div class="todo-calendar-side">
         ${listPreview('کارهای امروز', stats.todayTasks, 'امروز کاری ندارید.')}
         ${listPreview('عقب‌افتاده‌ها', stats.overdue, 'کار عقب‌افتاده‌ای نیست.')}
@@ -3190,7 +3190,7 @@ function _renderTodoCalendarView() {
           ${weekDays.map(w=>`<div style="font-size:10px;color:var(--text3);font-weight:700;text-align:center;padding-bottom:2px">${w}</div>`).join('')}
           ${cells.map((x,i)=>dayCard(x.d[0],x.d[1],x.d[2],{faded:x.faded,weekIndex:i%7})).join('')}
         </div>
-        ${mobileRangeList('لیست کارهای این ماه', monthTasks, rawMonthTasks)}
+        ${mobileRangeList('فهرست کارهای این ماه', monthTasks, rawMonthTasks)}
         <div class="todo-calendar-report-section">${_todoPerformanceReportHtml('گزارش عملکرد ماه', monthPerf)}</div>
       </div>
     </div>`;
@@ -3241,7 +3241,7 @@ function _renderTodoCalendarView() {
   </div>
   <div class="todo-calendar-year-layout">
     <div class="todo-calendar-year-grid">${monthCards}</div>
-    ${mobileRangeList('لیست کارهای امسال', yearTasks, rawYearTasks)}
+    ${mobileRangeList('فهرست کارهای امسال', yearTasks, rawYearTasks)}
   </div>
   <div class="todo-calendar-report-section">${_todoPerformanceReportHtml('گزارش عملکرد سال', yearPerf)}</div>`;
 }

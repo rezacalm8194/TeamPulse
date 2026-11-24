@@ -6233,3 +6233,8 @@ body { top: 0 !important; }
 .svc-imp-upd{background:rgba(124,106,247,.16);color:var(--accent2,var(--accent))}
 .svc-imp-skip{background:var(--bg3);color:var(--text3)}
 .svc-imp-bad{background:rgba(239,68,68,.14);color:var(--red)}
+
+/* خروج تکراری: روی دسکتاپ دکمه «خروج» تاپ‌بار کافی است؛ دکمه پایین سایدبار فقط روی موبایل (که خروج تاپ‌بار مخفی است) نمایش داده می‌شود */
+@media (min-width:769px){
+  .sidebar-bottom #logout-btn.sidebar-logout-btn{ display:none!important; }
+}
