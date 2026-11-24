@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpf82e9bddde';
+const TP_ASSET_V = 'tpfbf758d560';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -6826,9 +6826,11 @@ function _mergeDeletedItemMaps(previous, incoming) {
     const prevCol = previous?.[key] && typeof previous[key] === 'object' && !Array.isArray(previous[key]) ? previous[key] : {};
     const nextCol = incoming?.[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key]) ? incoming[key] : {};
     const col = { ...prevCol };
+    // Earliest known deletion time wins (same rule as the server), so a
+    // re-stamped tombstone never changes the stored value and never loops.
     Object.entries(nextCol).forEach(([id, deletedAt]) => {
       const prevAt = col[id] || '';
-      if (!prevAt || String(deletedAt || '') >= String(prevAt)) col[id] = deletedAt || prevAt;
+      if (!prevAt || (deletedAt && String(deletedAt) < String(prevAt))) col[id] = deletedAt || prevAt;
     });
     merged[key] = col;
   });
@@ -21788,8 +21790,10 @@ function _mergeLocalPendingChangesIntoOwnerData(localBeforeLoad, ownerData, opti
       : {};
     Object.entries(tombstones).forEach(([id, deletedAt]) => {
       const remoteDeletedAt = merged._deletedItems[key][id] || '';
-      if (!remoteDeletedAt || String(deletedAt || '') >= String(remoteDeletedAt)) {
+      if (!remoteDeletedAt) {
         merged._deletedItems[key][id] = deletedAt || new Date().toISOString();
+      } else if (deletedAt && String(deletedAt) < String(remoteDeletedAt)) {
+        merged._deletedItems[key][id] = deletedAt;
       }
     });
   });
