@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tp809bded4df';
+const TP_ASSET_V = 'tp9a4ff5ae54';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -21434,6 +21434,9 @@ const _auth = {
 
   async signOut() {
     if (await _tpFlushPendingUndos()) { try { await _syncToServer(); } catch (_) {} }
+    // Detach this device from the account's reminders before the token is
+    // revoked; otherwise it keeps receiving the previous user's notifications.
+    try { await _detachPushFromThisDevice(); } catch (_) {}
     try { await _apiFetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
     _sbSession = null;
     _sbUser = null;
@@ -27040,6 +27043,20 @@ async function _ensureReminderPushEnabled(statusId) {
     showToast('فعال‌سازی نوتیفیکیشن انجام نشد: ' + e.message, 'error');
     return false;
   }
+}
+
+async function _detachPushFromThisDevice() {
+  window._lastPushRefreshKey = null;
+  window._lastPushRefreshAt = 0;
+  if (!_sbSession?.token || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const reg = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise(resolve => setTimeout(() => resolve(null), 2000)),
+  ]);
+  const sub = reg ? await reg.pushManager.getSubscription() : null;
+  if (!sub) return;
+  // Keep the browser subscription (and permission): the next login re-registers it.
+  await _apiFetch('/api/reminders/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) });
 }
 
 async function _refreshReminderPushRegistration() {

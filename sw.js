@@ -1,4 +1,4 @@
-const CACHE = 'team-pulse-static-v809bded4df';
+const CACHE = 'team-pulse-static-v9a4ff5ae54';
 // Keep install tiny. Versioned JS/CSS are cached on first fetch via cacheFirst.
 const CORE_ASSETS = [
   '/app',
@@ -287,8 +287,35 @@ self.addEventListener('push', event => {
   })());
 });
 
+// The browser may rotate the subscription while the app is closed. Re-create
+// it here and move the server rows from the old endpoint, otherwise reminders
+// stop until the user happens to open the app again.
+async function renewPushSubscription(event) {
+  const oldSubscription = event.oldSubscription || null;
+  let newSubscription = event.newSubscription || null;
+  if (!newSubscription) {
+    const key = oldSubscription?.options?.applicationServerKey;
+    if (key) {
+      newSubscription = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key,
+      });
+    }
+  }
+  if (oldSubscription?.endpoint && newSubscription) {
+    await fetch('/api/reminders/resubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldEndpoint: oldSubscription.endpoint, subscription: newSubscription.toJSON() }),
+    });
+  }
+}
+
 self.addEventListener('pushsubscriptionchange', event => {
-  event.waitUntil(notifyOpenClients({ type: 'PUSH_SUBSCRIPTION_CHANGED' }));
+  event.waitUntil((async () => {
+    try { await renewPushSubscription(event); } catch (_) { /* app re-registers on next open */ }
+    await notifyOpenClients({ type: 'PUSH_SUBSCRIPTION_CHANGED' });
+  })());
 });
 
 async function focusOrOpenApp(targetUrl = '/app', navigateExisting = true) {

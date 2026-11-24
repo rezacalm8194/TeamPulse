@@ -15,6 +15,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Failed deliveries back off instead of being retried every minute.
 const RETRY_BASE_MS = 60 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
+// A reminder whose time already passed when it first enters the index (task
+// created/edited late) is only sent if it is at most this late. Items that
+// were already indexed keep the full catch-up window (server downtime).
+const FRESH_CATCH_UP_MS = 10 * 60 * 1000;
+const WORKSPACE_SEPARATOR = '::workspace::';
+
+// Index rows are keyed by the document storage key: the owner id for the
+// default workspace, `${owner}::workspace::${id}` for the others.
+function parseStorageKey(storageKey) {
+  const key = String(storageKey || '');
+  const at = key.indexOf(WORKSPACE_SEPARATOR);
+  if (at < 0) return { ownerId: key, workspaceId: 'default' };
+  return { ownerId: key.slice(0, at), workspaceId: key.slice(at + WORKSPACE_SEPARATOR.length) || 'default' };
+}
+
+function storageKeyFor(ownerId, workspaceId) {
+  const ws = String(workspaceId || 'default');
+  return ws === 'default' ? String(ownerId) : `${ownerId}${WORKSPACE_SEPARATOR}${ws}`;
+}
+
+const SEP_LEN = WORKSPACE_SEPARATOR.length;
+const ownerSql = col => `(CASE WHEN instr(${col}, '${WORKSPACE_SEPARATOR}') > 0 THEN substr(${col}, 1, instr(${col}, '${WORKSPACE_SEPARATOR}') - 1) ELSE ${col} END)`;
+const workspaceSql = col => `(CASE WHEN instr(${col}, '${WORKSPACE_SEPARATOR}') > 0 THEN substr(${col}, instr(${col}, '${WORKSPACE_SEPARATOR}') + ${SEP_LEN}) ELSE 'default' END)`;
 
 function jalaliToGregorian(jy, jm, jd) {
   const div = (a, b) => Math.floor(a / b);
@@ -152,6 +175,7 @@ function ensurePushDueIndexSchema(db) {
     addColumnIfMissing(db, 'push_due_index', 'valid_until_ms', 'valid_until_ms INTEGER');
     addColumnIfMissing(db, 'push_due_items', 'attempts', 'attempts INTEGER NOT NULL DEFAULT 0');
     addColumnIfMissing(db, 'push_due_items', 'next_attempt_ms', 'next_attempt_ms INTEGER');
+    addColumnIfMissing(db, 'push_subscriptions', 'workspace_id', "workspace_id TEXT DEFAULT 'default'");
     migratedDbs.add(db);
   }
 }
@@ -169,6 +193,18 @@ function loadDeliveredKeys(db, accountId) {
   try {
     return new Set(
       db.prepare('SELECT delivery_key FROM push_deliveries WHERE account_id=?')
+        .all(accountId)
+        .map(row => row.delivery_key)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function loadIndexedKeys(db, accountId) {
+  try {
+    return new Set(
+      db.prepare('SELECT delivery_key FROM push_due_items WHERE account_id=?')
         .all(accountId)
         .map(row => row.delivery_key)
     );
@@ -217,6 +253,10 @@ function takeMin(current, next) {
   if (next == null || Number.isNaN(next)) return current;
   if (current == null || next < current) return next;
   return current;
+}
+
+function tomorrowStartMs(today) {
+  return Date.UTC(today.gy, today.gm - 1, today.gd + 1) - IRAN_OFFSET_MS;
 }
 
 function dailyFireMs(dueJalali, today) {
@@ -312,7 +352,12 @@ function pushItem(items, deliveryKey, kind, dueMs, payload) {
 }
 
 function computePushDueIndex(accountId, userData, now, deliveredKeys, options = {}) {
-  const catchUpMs = options.catchUpMs ?? PUSH_CATCH_UP_MS;
+  const fullCatchUpMs = options.catchUpMs ?? PUSH_CATCH_UP_MS;
+  const freshCatchUpMs = Math.min(fullCatchUpMs, options.freshCatchUpMs ?? FRESH_CATCH_UP_MS);
+  // Without knownKeys (tests, first run) every item gets the full window.
+  const knownKeys = options.knownKeys || null;
+  const ownerId = options.ownerId || parseStorageKey(accountId).ownerId;
+  const catchUpFor = key => (!knownKeys || knownKeys.has(key) ? fullCatchUpMs : freshCatchUpMs);
   const nowMs = now.getTime();
   const today = iranTodayParts(now);
   const delivered = deliveredKeys || new Set();
@@ -323,14 +368,14 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
   for (const t of (userData?.todos || [])) {
     const scheduledDate = todoScheduledDate(t);
     if (t.done || t.archived || !t.time || !scheduledDate || !(Number(t.remind_min) > 0)) continue;
-    if (!todoBelongsToAccount(t, accountId)) continue;
+    if (!todoBelongsToAccount(t, ownerId)) continue;
     for (const occurrenceDate of todoReminderDates(t, today)) {
       const taskUTC = jalaliToUTC(occurrenceDate, t.time);
       if (!taskUTC) continue;
       const notifMs = taskUTC.getTime() - t.remind_min * 60000;
       const key = `todo:${accountId}:${t.id}:${occurrenceDate}:${t.time}:${t.remind_min}`;
       if (delivered.has(key)) continue;
-      if (!isCatchableOrFuture(notifMs, nowMs, catchUpMs)) continue;
+      if (!isCatchableOrFuture(notifMs, nowMs, catchUpFor(key))) continue;
       nextTimedMs = takeMin(nextTimedMs, notifMs);
       pushItem(items, key, 'todo', notifMs, {
         title: t.title,
@@ -341,8 +386,17 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
     }
   }
 
+  // Habits already ticked today do not need today's reminder.
+  const todayDayKey = today.gy * 10000 + today.gm * 100 + today.gd;
+  const habitsDoneToday = new Set(
+    (userData?.habit_logs || [])
+      .filter(log => log && log.done && jalaliDayKey(String(log.date || '')) === todayDayKey)
+      .map(log => String(log.habit_id))
+  );
+
   for (const h of (userData?.habits || [])) {
     if (h.archived) continue;
+    const doneToday = habitsDoneToday.has(String(h.id));
     for (const rem of (h.custom_reminders || [])) {
       if (!rem || rem.done || !rem.time) continue;
       const action = String(rem.action || '').trim();
@@ -371,8 +425,9 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
       }
       for (const occ of occurrences) {
         const notifMs = occ.utc.getTime();
+        if (doneToday && occ.utc.getTime() < tomorrowStartMs(today)) continue;
         const key = `habit-custom:${accountId}:${h.id}:${rem.id}:${occ.dateKey}:${rem.time}`;
-        if (delivered.has(key) || !isCatchableOrFuture(notifMs, nowMs, catchUpMs)) continue;
+        if (delivered.has(key) || !isCatchableOrFuture(notifMs, nowMs, catchUpFor(key))) continue;
         nextTimedMs = takeMin(nextTimedMs, notifMs);
         pushItem(items, key, 'habit', notifMs, {
           title: h.title,
@@ -389,7 +444,7 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
     if (!habitUTC) continue;
     const notifMs = habitUTC.getTime() - h.remind_min * 60000;
     const key = `habit:${accountId}:${h.id}:${today.key}:${h.time}:${h.remind_min}`;
-    if (!delivered.has(key) && isCatchableOrFuture(notifMs, nowMs, catchUpMs)) {
+    if (!doneToday && !delivered.has(key) && isCatchableOrFuture(notifMs, nowMs, catchUpFor(key))) {
       nextTimedMs = takeMin(nextTimedMs, notifMs);
       pushItem(items, key, 'habit', notifMs, {
         title: h.title,
@@ -467,8 +522,7 @@ function computePushDueIndex(accountId, userData, now, deliveredKeys, options = 
   // Habits, weekly custom reminders and recurring todos only look a couple of
   // days ahead, so the index must be rebuilt every day even when the account's
   // data never changes (user did not open the app).
-  const tomorrowStart = new Date(Date.UTC(today.gy, today.gm - 1, today.gd + 1) - IRAN_OFFSET_MS);
-  const validUntilMs = tomorrowStart.getTime() + 60 * 1000;
+  const validUntilMs = tomorrowStartMs(today) + 60 * 1000;
 
   return { nextTimedMs, nextDailyMs, validUntilMs, items };
 }
@@ -537,17 +591,22 @@ function listDuePushItems(db, now, options = {}) {
     SELECT i.delivery_key AS deliveryKey, i.account_id AS accountId, i.kind AS kind,
            i.due_ms AS dueMs, i.payload AS payload, i.attempts AS attempts
     FROM push_due_items i
-    INNER JOIN accounts a ON a.id = i.account_id
+    INNER JOIN accounts a ON a.id = ${ownerSql('i.account_id')}
     WHERE a.is_active = 1
       AND a.deleted_at IS NULL
       AND i.due_ms <= ?
       AND i.due_ms >= ?
       AND COALESCE(i.next_attempt_ms, 0) <= ?
-      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = i.account_id)
+      AND EXISTS (
+        SELECT 1 FROM push_subscriptions p
+        WHERE p.account_id = a.id
+          AND COALESCE(p.workspace_id, 'default') = ${workspaceSql('i.account_id')}
+      )
     ORDER BY COALESCE(i.next_attempt_ms, i.due_ms) ASC
     LIMIT ?
   `).all(nowMs, nowMs - catchUpMs, nowMs, limit).map(row => ({
     ...row,
+    ...parseStorageKey(row.accountId),
     payload: parseDuePayload(row.payload),
   }));
 }
@@ -578,40 +637,44 @@ function pruneStalePushDueItems(db, now, options = {}) {
   return result.changes || 0;
 }
 
+// One target per (owner, workspace) that has at least one push subscription.
+// Returned as storage keys; for the default workspace that is the owner id.
 function listPushReindexAccountIds(db, now, options = {}) {
   ensurePushDueIndexSchema(db);
   ensureAccountTrashSchema(db);
   const maxUnindexed = options.maxUnindexed ?? DEFAULT_MAX_UNINDEXED;
-  const dirty = db.prepare(`
-    SELECT a.id AS id
-    FROM accounts a
-    INNER JOIN push_due_index i ON i.account_id = a.id
-    LEFT JOIN user_data u ON u.account_id = a.id
-    WHERE a.is_active = 1
-      AND a.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
-      AND IFNULL(i.data_etag, '') != IFNULL(u.data_etag, '')
+  const maxExpired = options.maxExpired ?? DEFAULT_MAX_EXPIRED;
+  const targets = `
+    WITH targets AS (
+      SELECT DISTINCT
+        CASE WHEN COALESCE(p.workspace_id, 'default') = 'default'
+          THEN p.account_id
+          ELSE p.account_id || '${WORKSPACE_SEPARATOR}' || p.workspace_id END AS storage_key
+      FROM push_subscriptions p
+      INNER JOIN accounts a ON a.id = p.account_id
+      WHERE a.is_active = 1 AND a.deleted_at IS NULL
+    )`;
+
+  const dirty = db.prepare(`${targets}
+    SELECT t.storage_key AS id
+    FROM targets t
+    INNER JOIN push_due_index i ON i.account_id = t.storage_key
+    LEFT JOIN user_data u ON u.account_id = t.storage_key
+    WHERE IFNULL(i.data_etag, '') != IFNULL(u.data_etag, '')
   `).all();
 
-  const unindexed = db.prepare(`
-    SELECT a.id AS id
-    FROM accounts a
-    WHERE a.is_active = 1
-      AND a.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
-      AND NOT EXISTS (SELECT 1 FROM push_due_index i WHERE i.account_id = a.id)
+  const unindexed = db.prepare(`${targets}
+    SELECT t.storage_key AS id
+    FROM targets t
+    WHERE NOT EXISTS (SELECT 1 FROM push_due_index i WHERE i.account_id = t.storage_key)
     LIMIT ?
   `).all(maxUnindexed);
 
-  const maxExpired = options.maxExpired ?? DEFAULT_MAX_EXPIRED;
-  const expired = db.prepare(`
-    SELECT a.id AS id
-    FROM accounts a
-    INNER JOIN push_due_index i ON i.account_id = a.id
-    WHERE a.is_active = 1
-      AND a.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.account_id = a.id)
-      AND IFNULL(i.valid_until_ms, 0) <= ?
+  const expired = db.prepare(`${targets}
+    SELECT t.storage_key AS id
+    FROM targets t
+    INNER JOIN push_due_index i ON i.account_id = t.storage_key
+    WHERE IFNULL(i.valid_until_ms, 0) <= ?
     ORDER BY IFNULL(i.valid_until_ms, 0) ASC
     LIMIT ?
   `).all(now.getTime(), maxExpired);
@@ -624,6 +687,22 @@ function listPushReindexAccountIds(db, now, options = {}) {
     ids.push(row.id);
   }
   return ids;
+}
+
+// Delivery bookkeeping for timed reminders can be dropped once it can never
+// be re-indexed (older than a few days). Payment/salary/key-event keys stay,
+// otherwise an overdue reminder would be sent again.
+function prunePushDeliveries(db, now, options = {}) {
+  const keepMs = options.keepMs ?? 3 * DAY_MS;
+  const cutoff = new Date(now.getTime() - keepMs).toISOString().replace('T', ' ').slice(0, 19);
+  try {
+    return db.prepare(`
+      DELETE FROM push_deliveries
+      WHERE kind IN ('todo', 'habit', 'todo-created') AND sent_at < ?
+    `).run(cutoff).changes || 0;
+  } catch (_) {
+    return 0;
+  }
 }
 
 function listPushScanAccountIds(db, now, options = {}) {
@@ -654,5 +733,10 @@ module.exports = {
   listPushScanAccountIds,
   markPushDueItemFailed,
   pruneStalePushDueItems,
+  prunePushDeliveries,
   todoReminderDates,
+  loadIndexedKeys,
+  parseStorageKey,
+  storageKeyFor,
+  FRESH_CATCH_UP_MS,
 };
