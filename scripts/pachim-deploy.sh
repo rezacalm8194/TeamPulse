@@ -40,5 +40,31 @@ if [ -f "$ENV_BACKUP" ]; then
   rm -f "$ENV_BACKUP"
 fi
 
+# ری‌استارت Node: برنامه زیر supervisord پاچیم با autorestart=true و user=pachim اجرا می‌شود.
+# sudo بدون رمز نداریم، پس پروسه خودمان را با SIGTERM می‌بندیم (همان سیگنال stop خود supervisor)
+# و supervisor آن را از پوشه فعلی ($SITE_DIR) با کد جدید دوباره بالا می‌آورد.
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/api/health}"
+restart_app() {
+  local old_pids new_pids i
+  old_pids="$(pgrep -u "$(id -u)" -f '^/usr/bin/node backend/server.js' || true)"
+  if [ -z "$old_pids" ]; then
+    echo "[deploy] warning: node backend/server.js not found; restart it from the Pachim panel" >&2
+    return 0
+  fi
+  echo "[deploy] restarting app (pid $old_pids)"
+  kill -TERM $old_pids
+  for i in $(seq 1 40); do
+    sleep 1
+    new_pids="$(pgrep -u "$(id -u)" -f '^/usr/bin/node backend/server.js' || true)"
+    if [ -n "$new_pids" ] && [ "$new_pids" != "$old_pids" ] && curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+      echo "[deploy] app restarted (pid $new_pids) after ${i}s"
+      return 0
+    fi
+  done
+  echo "[deploy] app did not come back within 40s; restart it from the Pachim panel" >&2
+  return 1
+}
+restart_app
+
 export SITE_DIR
 TMPDIR="${TMPDIR:-$HOME}" bash "$SITE_DIR/scripts/pachim-post-pull.sh"
