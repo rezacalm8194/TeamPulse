@@ -87,7 +87,14 @@ async function renderSessions(search = '') {
   if (savedOrder && savedOrder.length) {
     const byId = new Map(groups.map(g => [g.student_id, g]));
     groupsSorted = savedOrder.map(id => byId.get(id)).filter(Boolean);
-    groups.forEach(g => { if (!savedOrder.includes(g.student_id)) groupsSorted.push(g); });
+    const missing = groups.filter(g => !savedOrder.includes(g.student_id));
+    missing.forEach(g => groupsSorted.push(g));
+    // Customers added after the order was last saved are shown at the end;
+    // store them there so the saved order covers everyone (owner only,
+    // append-only — nothing already saved moves).
+    if (missing.length && !_teamAccessSession()) {
+      try { await window.api.sessions.setOrder([...savedOrder, ...missing.map(g => g.student_id)]); } catch (e) {}
+    }
   } else {
     groupsSorted = groups.slice();
   }

@@ -60,7 +60,7 @@ test('every business page staleness check uses the part-hash helper', () => {
   assert.doesNotMatch(app, /paging\.fetchedEtag !== etag/);
   const loader = slice(app, 'async function _loadBusinessPage(', 'async function _loadMoreBusiness(');
   assert.match(loader, /_tpBusinessPageStale\(collection, state, currentEtag\)/);
-  assert.match(loader, /if \(startsWalk\) state\.fetchedPartHash = hashAtStart \|\| null;/);
+  assert.match(loader, /if \(startsWalk\) state\.fetchedPartHash = pageHash \|\| hashAtStart \|\| null;/);
   assert.match(app, /_businessPagesStaleForServerEtag\(status\.etag, status\.part_hashes\)/);
 });
 
@@ -125,4 +125,30 @@ test('customer name search ignores spaces between first and last name and Arabic
   assert.equal(ctx.f({ name: 'نفیسه', lname: 'اسرافیلیان' }, 'علی'), false);
   assert.match(sessions, /_tpPersonNameMatches\(g, search\)/);
   assert.match(slice(app, 'function filterAccountStudents(', 'function studentAccountChipBarHtml('), /_tpPersonNameMatches\(s, search\)/);
+});
+
+test('business page responses carry the collection hash read before the page', () => {
+  const route = fs.readFileSync(path.join(root, 'backend', 'routes', 'data.js'), 'utf8');
+  const i = route.indexOf('const partHash = collectionState(db, workspace.storageKey, collection)?.data_hash || null;');
+  const j = route.indexOf('const page = loadRowsPage(db, workspace.storageKey, collection, {');
+  assert.ok(i > 0 && j > i, 'hash is read before the page');
+  assert.match(route, /total: Number\(state\?\.row_count \|\| 0\), part_hash: partHash,/);
+  assert.match(route, /available_parts: availableParts, part_hashes: partHashes/);
+});
+
+test('client keeps the page hash and skips unchanged collections after a document change', () => {
+  const loader = slice(app, 'async function _loadBusinessPage(', 'async function _loadMoreBusiness(');
+  assert.match(loader, /if \(startsWalk\) state\.fetchedPartHash = pageHash \|\| hashAtStart \|\| null;/);
+  const changed = slice(app, 'const changedBusinessKeys = businessKeys.filter(key => {', '});');
+  assert.match(changed, /FINANCE_NEWEST_FIRST_KEYS\.includes\(key\)\) return true/);
+  assert.match(changed, /!window\._tpSessionFetchedParts\?\.has\(key\)\) return true/);
+  assert.match(changed, /_tpBusinessPageStale\(key, _businessPagingState\(key\), payload\.etag, payload\.part_hashes\)/);
+  assert.doesNotMatch(app, /_reloadBusinessFirstPagesFromServer\(businessKeys, \{ reset: true \}\)/);
+  assert.match(app, /window\._tpCompleteWalkEtag\[key\] = finalPaging\.fetchedPartHash \|\| _tpWalkFreshnessTarget\(key\);/);
+});
+
+test('board stores newly added customers at the end of the saved order (owner only, append-only)', () => {
+  const render = slice(sessions, 'async function renderSessions(', 'function toggleKeySessionsPanel(');
+  assert.match(render, /if \(missing\.length && !_teamAccessSession\(\)\)/);
+  assert.match(render, /setOrder\(\[\.\.\.savedOrder, \.\.\.missing\.map\(g => g\.student_id\)\]\)/);
 });

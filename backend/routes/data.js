@@ -859,6 +859,10 @@ for (const collection of BUSINESS_COLLECTIONS) {
           etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null,
         });
       }
+      // Collection hash read before the page: a client that stored it can
+      // tell later whether this collection changed, without trusting the
+      // document etag (which changes on every write anywhere).
+      const partHash = collectionState(db, workspace.storageKey, collection)?.data_hash || null;
       const page = loadRowsPage(db, workspace.storageKey, collection, {
         limit: req.query.limit,
         cursor: req.query.cursor,
@@ -871,7 +875,7 @@ for (const collection of BUSINESS_COLLECTIONS) {
         dateTo: collection === 'sessions' ? req.query.date_to : null,
       });
       const state = collectionState(db, workspace.storageKey, collection);
-      res.json({ ...page, total: Number(state?.row_count || 0), etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null });
+      res.json({ ...page, total: Number(state?.row_count || 0), part_hash: partHash, etag: (await loadWorkspaceMetaAsync(db, workspace.storageKey))?.etag || null });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
@@ -1305,8 +1309,10 @@ router.get('/:accountId', auth, async (req, res) => {
     let partial = false;
     let loadedParts = null;
     let availableParts = null;
+    let partHashes = null;
     if (meta.layout === 'parts') {
       const hashes = loadPartHashes(db, workspace.storageKey);
+      partHashes = hashes;
       availableParts = Object.keys(hashes).filter(key => key !== SCALARS_PART);
       const selectedKeys = (includeKeys || availableParts).filter(key =>
         key !== 'todos' && !BUSINESS_COLLECTIONS.includes(key));
@@ -1332,7 +1338,7 @@ router.get('/:accountId', auth, async (req, res) => {
       etag: loaded.etag,
       todo_id_high_water: getTodoHighWater(db, workspace.storageKey),
       todo_history_days: TODO_HISTORY_SEND_DAYS,
-      ...(partial ? { partial: true, loaded_parts: loadedParts, available_parts: availableParts } : {}),
+      ...(partial ? { partial: true, loaded_parts: loadedParts, available_parts: availableParts, part_hashes: partHashes } : {}),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
