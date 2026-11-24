@@ -247,7 +247,7 @@ test('hydration scopes visible collections and keeps full backfill explicit', ()
   assert.match(appSource, /_businessCollectionsNeedingServerHydration\(status/);
   assert.match(appSource, /laggingOnPage = \[\.\.\.new Set\(\[[\s\S]*_businessCollectionsNeedingServerHydration\(status, pageBusinessKeys\)/);
   assert.doesNotMatch(appSource, /return _loadFromServer\(\{ lightweightRebase: true \}\)/);
-  assert.match(appSource, /!window\._tpHydratingFromServer && !paging\.loading && currentEtag && paging\.fetchedEtag && currentEtag !== paging\.fetchedEtag/);
+  assert.match(appSource, /!window\._tpHydratingFromServer && !paging\.loading && _tpBusinessPageStale\(collection, paging, currentEtag\)/);
   assert.match(appSource, /state\.fetchedEtag = payload\.etag/);
   assert.match(appSource, /\['payments', 'transactions', 'dashboard', 'home'\]\.includes\(currentPage\)/);
   assert.match(appSource, /async function _tpEnsureFreshClient\(/);
@@ -274,7 +274,7 @@ test('phones adopt a newer imported server document instead of keeping a partial
   assert.doesNotMatch(appSource, /remoteDocumentChanged && includeKeys && !lightweightRebase[\s\S]{0,160}return _loadFromServerImpl\(\)/);
   assert.match(appSource, /if \(hydratedTodos\) _db\.todos = hydratedTodos/);
   assert.match(appSource, /function _resolveIncomingTodo\(/);
-  assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag\)\s*&& !_todoPagesStaleForServerEtag\(status\.etag\)/);
+  assert.match(appSource, /!_localCollectionsLagServer\(status\) && !_businessPagesStaleForServerEtag\(status\.etag, status\.part_hashes\)\s*&& !_todoPagesStaleForServerEtag\(status\.etag\)/);
   assert.match(appSource, /if \(status\.etag && status\.etag !== knownEtag\) return true/);
   assert.match(appSource, /function _localCollectionsLagServer\(/);
   assert.match(appSource, /function _serverStatusRequiresHydration\(/);
