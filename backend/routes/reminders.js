@@ -21,6 +21,8 @@ const {
   refreshAccountScheduleFromItems,
   listDuePushItems,
   listPushReindexAccountIds,
+  markPushDueItemFailed,
+  pruneStalePushDueItems,
 } = require('../utils/pushDueIndex');
 const {
   todoShouldNotifyOwner,
@@ -400,22 +402,41 @@ cron.schedule('* * * * *', async () => {
   pushCronRunning = true;
   try {
     const now = new Date();
+    pruneStalePushDueItems(db, now);
     const reindexIds = listPushReindexAccountIds(db, now);
 
     for (const accountId of reindexIds) {
       await new Promise(resolve => setImmediate(resolve));
-      const userData = await loadAccountCollections(accountId, reminderCollectionKeys);
-      refreshPushDueIndex(accountId, userData || {}, now);
+      try {
+        const userData = await loadAccountCollections(accountId, reminderCollectionKeys);
+        refreshPushDueIndex(accountId, userData || {}, now);
+      } catch (e) {
+        // One broken account must not stop everyone else's reindex.
+        console.error('[Push Cron] reindex failed:', accountId, e.message);
+        try {
+          db.prepare('UPDATE push_due_index SET valid_until_ms=? WHERE account_id=?')
+            .run(now.getTime() + 10 * 60 * 1000, accountId);
+        } catch (_) {}
+      }
     }
 
     const dueItems = listDuePushItems(db, now);
     for (const item of dueItems) {
       await new Promise(resolve => setImmediate(resolve));
-      const delivered = await deliverIndexedItem(item);
+      let delivered = false;
+      try {
+        delivered = await deliverIndexedItem(item);
+      } catch (e) {
+        console.error('[Push Cron] item failed:', item.kind, e.message);
+      }
       const already = db.prepare('SELECT 1 FROM push_deliveries WHERE delivery_key=?').get(item.deliveryKey);
       if (delivered || already) {
         deletePushDueItem(db, item.deliveryKey);
         refreshAccountScheduleFromItems(db, item.accountId);
+      } else {
+        // Not delivered to any device: back off so this item cannot keep the
+        // head of the queue (LIMIT 250) and starve other accounts.
+        markPushDueItemFailed(db, item.deliveryKey, now);
       }
     }
   } catch (e) {
