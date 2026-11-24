@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpd353fd2af6';
+const TP_ASSET_V = 'tpe21f13dced';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
