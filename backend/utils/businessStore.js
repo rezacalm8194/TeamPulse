@@ -2,9 +2,11 @@ const { createHash } = require('crypto');
 
 const PHASE5_COLLECTIONS = Object.freeze(['students', 'sessions', 'payments']);
 const PHASE6_COLLECTIONS = Object.freeze(['packages', 'families', 'reminders', 'expenses', 'wallet_tx']);
-const BUSINESS_COLLECTIONS = Object.freeze([...PHASE5_COLLECTIONS, ...PHASE6_COLLECTIONS]);
+const PHASE7_COLLECTIONS = Object.freeze(['purchases']);
+const BUSINESS_COLLECTIONS = Object.freeze([...PHASE5_COLLECTIONS, ...PHASE6_COLLECTIONS, ...PHASE7_COLLECTIONS]);
 const BUSINESS_MIGRATION_PHASE5 = 'phase5_business_rows_v1';
 const BUSINESS_MIGRATION_PHASE6 = 'phase6_business_rows_v2';
+const BUSINESS_MIGRATION_PHASE7 = 'phase7_business_rows_v1';
 const BUSINESS_MIGRATION = BUSINESS_MIGRATION_PHASE5;
 
 function hashText(value) {
@@ -24,6 +26,7 @@ function rowId(row) {
 function dateKey(row, collection) {
   let raw = row?.date_jalali || row?.date || row?.created_at || '';
   if (collection === 'packages') raw = row?.start_date || row?.payment_due_date || raw;
+  if (collection === 'purchases') raw = row?.date_jalali || raw;
   if (collection === 'reminders') raw = row?.due_date || row?.date_jalali || raw;
   const value = String(raw).replace(/\D/g, '').slice(0, 8);
   return Number(value) || 0;
@@ -31,10 +34,15 @@ function dateKey(row, collection) {
 
 function searchableText(row, collection) {
   const fieldsByCollection = {
-    students: [row?.name, row?.lname, row?.phone, row?.organization_name],
+    students: [row?.name, row?.lname, row?.phone, row?.organization_name, row?.supplier_category],
     sessions: [row?.title, row?.note, row?.type],
     payments: [row?.note, row?.method],
     packages: [row?.note, row?.type_label],
+    purchases: [
+      row?.note,
+      row?.invoice_no,
+      ...(Array.isArray(row?.items) ? row.items.map((it) => it?.name) : []),
+    ],
     families: [row?.name],
     reminders: [row?.title, row?.text, row?.note],
     expenses: [row?.category, row?.description, row?.payment_method, row?.note],
@@ -361,12 +369,14 @@ function migrateCollectionParts(db, migrationName, collections) {
 function migrateBusinessParts(db) {
   const phase5 = migrateCollectionParts(db, BUSINESS_MIGRATION_PHASE5, PHASE5_COLLECTIONS);
   const phase6 = migrateCollectionParts(db, BUSINESS_MIGRATION_PHASE6, PHASE6_COLLECTIONS);
+  const phase7 = migrateCollectionParts(db, BUSINESS_MIGRATION_PHASE7, PHASE7_COLLECTIONS);
   return {
-    applied: phase5.applied || phase6.applied,
-    collections: phase5.collections + phase6.collections,
-    rows: phase5.rows + phase6.rows,
+    applied: phase5.applied || phase6.applied || phase7.applied,
+    collections: phase5.collections + phase6.collections + phase7.collections,
+    rows: phase5.rows + phase6.rows + phase7.rows,
     phase5,
     phase6,
+    phase7,
   };
 }
 
@@ -381,9 +391,11 @@ module.exports = {
   BUSINESS_COLLECTIONS,
   PHASE5_COLLECTIONS,
   PHASE6_COLLECTIONS,
+  PHASE7_COLLECTIONS,
   BUSINESS_MIGRATION,
   BUSINESS_MIGRATION_PHASE5,
   BUSINESS_MIGRATION_PHASE6,
+  BUSINESS_MIGRATION_PHASE7,
   ensureBusinessStoreSchema,
   migrateBusinessParts,
   hasMigratedCollection,

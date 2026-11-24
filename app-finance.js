@@ -2564,20 +2564,23 @@ function applyPartyTxCustomPeriod() {
 
 function _buildPartyTxItems(payload) {
   const items = [];
+  const supplierMode = payload.mode === 'supplier';
   (payload.sales || []).forEach(p => {
-    const amount = Number(p.total_amount || 0) + Number(p.initial_cost || 0);
+    const amount = supplierMode
+      ? Number(p.total_amount || 0)
+      : Number(p.total_amount || 0) + Number(p.initial_cost || 0);
     items.push({
       kind: 'purchase',
-      date: p.start_date || '',
+      date: (supplierMode ? p.date_jalali : p.start_date) || '',
       created_at: p.created_at || '',
       id: p.id,
       memberName: `${p.member?.name || p.name || ''} ${p.member?.lname || p.lname || ''}`.trim(),
-      title: p.type_label || 'خرید',
+      title: p.type_label || (supplierMode ? 'خرید از تامین‌کننده' : 'خرید'),
       note: p.note || '',
       debit: amount,
       credit: 0,
-      currency: 'تومان',
-      affectsBalance: true,
+      currency: supplierMode ? (p.currency || 'تومان') : 'تومان',
+      affectsBalance: supplierMode ? (p.currency || 'تومان') === 'تومان' : true,
     });
   });
   (payload.payments || []).forEach(p => {
@@ -2588,7 +2591,8 @@ function _buildPartyTxItems(payload) {
       created_at: p.created_at || '',
       id: p.id,
       memberName: `${p.member?.name || p.name || ''} ${p.member?.lname || p.lname || ''}`.trim(),
-      title: [p.pkg_label, p.method, p.account_label].filter(Boolean).join(' · ') || 'دریافت',
+      title: [p.pkg_label, p.method, p.account_label].filter(Boolean).join(' · ')
+        || (supplierMode ? 'پرداخت به تامین‌کننده' : 'دریافت'),
       note: p.note || '',
       debit: 0,
       credit: Number(p.amount || 0),
@@ -2622,7 +2626,9 @@ function _partyTxRowsHtml(view) {
     return `<tr><td colspan="${cols}" class="tx-invoice-empty">${empty}</td></tr>`;
   }
   return view.items.map(it => {
-    const kind = it.kind === 'purchase' ? 'خرید' : 'دریافت';
+    const kind = it.kind === 'purchase'
+      ? (view?.mode === 'supplier' ? 'خرید (بدهی ما)' : 'خرید')
+      : (view?.mode === 'supplier' ? 'پرداخت' : 'دریافت');
     const debit = it.debit ? fmt(it.debit) : '—';
     const credit = it.credit
       ? `${fmt(it.credit)}${it.currency && it.currency !== 'تومان' ? ' ' + escapeHtml(it.currency) : ''}`
@@ -2652,7 +2658,7 @@ function _partyTxModalHtml(view) {
       <div class="tx-invoice-head">
         <div>
           <div class="tx-invoice-brand">${escapeHtml(view.brand)}</div>
-          <div class="tx-invoice-kicker">صورتحساب خرید و دریافت</div>
+          <div class="tx-invoice-kicker">${view.mode === 'supplier' ? 'صورتحساب خرید و پرداخت به تامین‌کننده' : 'صورتحساب خرید و دریافت'}</div>
         </div>
         <div class="tx-invoice-issued">تاریخ صدور: ${DateService.disp(view.issued) || view.issued}</div>
       </div>
@@ -2793,7 +2799,9 @@ function _partyTxPlainText(view) {
     '',
   ];
   (view.items || []).forEach(it => {
-    const kind = it.kind === 'purchase' ? 'خرید' : 'دریافت';
+    const kind = it.kind === 'purchase'
+      ? (view?.mode === 'supplier' ? 'خرید (بدهی ما)' : 'خرید')
+      : (view?.mode === 'supplier' ? 'پرداخت' : 'دریافت');
     const amount = it.kind === 'purchase'
       ? fmt(it.debit)
       : `${fmt(it.credit)}${it.currency && it.currency !== 'تومان' ? ' ' + it.currency : ''}`;

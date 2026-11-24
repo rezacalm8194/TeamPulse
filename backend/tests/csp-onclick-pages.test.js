@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..', '..');
-const FILES = ['app.html', 'app.js', 'app-extra.js', 'app-finance.js', 'app-sessions.js', 'app-todos.js'];
+const FILES = ['app.html', 'app.js', 'app-extra.js', 'app-finance.js', 'app-suppliers.js', 'app-sessions.js', 'app-todos.js'];
 
 function loadBinder() {
   const htmlStore = new WeakMap();
@@ -153,6 +153,7 @@ test('binder click-dispatches representative controls from every nav page', () =
     sessions: ['openSessionDetail(2)', "_openAttachment(decodeURIComponent('a'),decodeURIComponent('b'),decodeURIComponent('c'))"],
     families: ['openNewFamily()', 'this.classList.toggle("checked")'],
     payments: ["_tpPaymentsTab('purchases')", "openBalePaymentRequest({student_id:1,reminder_id:2,package_id:null,amount:3,title:'x'})", 'savePurchaseFromSale(1)'],
+    suppliers: ["_tpSuppliersTab('buys',1)", 'openAddSupplierStudent()', 'openSupplierPurchaseModal(1)'],
     staff: ['openStaffDetail(1)', 'window.print()'],
     dashboard: ['openExpenseManager()', 'toggleTopEarners(this)', 'changeDashboardTrendRange(6)', 'selectDashboardTrendMonth(1)', 'openDashboardAllAlerts()', 'runDashboardAlertAction(0)', 'openDashboardCommitments()'],
     transactions: ['openFiscalYearClosing()'],
