@@ -45,7 +45,7 @@ function supplierListSummaryDebt(supplierId, purchases, expenses, options = {}) 
     if (isTomanCurrency(p.currency)) purchaseToman += purchaseTotal(p);
   });
   supplierPayments.forEach((e) => {
-    paidToman += Number(e.amount) || 0;
+    if (isTomanCurrency(e.currency)) paidToman += Number(e.amount) || 0;
   });
 
   const balance = purchaseToman - paidToman;

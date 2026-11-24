@@ -715,7 +715,7 @@ async function openSupplierPurchaseModal(supplierId, purchaseId) {
       </div>
       <div class="form-group">
         <label class="form-label">واحد پول</label>
-        <select class="form-select" id="sp-currency">${currencyOptions(purchase?.currency || 'تومان')}</select>
+        <select class="form-select" id="sp-currency" disabled title="فاز ۱: خرید فقط به تومان؛ گزارش هزینه‌ها چندارزی نیست"><option value="تومان" selected>تومان</option></select>
       </div>
       <div class="form-group">
         <label class="form-label">شماره فاکتور</label>
@@ -755,7 +755,7 @@ async function saveSupplierPurchase(purchaseId) {
     due_date_jalali: (document.getElementById('sp-due')?.value || '').trim(),
     items,
     total_amount: total,
-    currency: document.getElementById('sp-currency')?.value || 'تومان',
+    currency: 'تومان',
     invoice_no: (document.getElementById('sp-invoice')?.value || '').trim(),
     note: (document.getElementById('sp-note')?.value || '').trim(),
   };

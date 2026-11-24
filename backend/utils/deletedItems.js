@@ -1,6 +1,7 @@
 const TOMBSTONE_COLLECTIONS = [
   'students',
   'packages',
+  'purchases',
   'payments',
   'sessions',
   'wallet_tx',
@@ -41,6 +42,7 @@ const PAGINATED_COLLECTIONS = [
   'sessions',
   'payments',
   'packages',
+  'purchases',
   'families',
   'reminders',
   'expenses',
@@ -174,7 +176,7 @@ function mergeAndApplyDeletedItems(previousData, nextData, {
 const DESTRUCTIVE_COUNT_KEYS = [
   'students', 'packages', 'payments', 'sessions', 'expenses', 'families',
   'todos', 'staff', 'instructions', 'team_members', 'goals', 'habits',
-  'reminders', 'wallet_tx',
+  'reminders', 'wallet_tx', 'purchases',
 ];
 
 function collectionLength(data, key) {

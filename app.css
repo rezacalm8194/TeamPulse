@@ -3442,8 +3442,24 @@ body.light mark { background: rgba(251,191,36,.5); }
   .bottom-nav{display:flex}
   /* (محتوای واقعی داخل .bn-row است، نه مستقیم .bottom-nav) */
 
-  .sidebar-data-actions{display:none!important}
   .sidebar-bottom{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:10px}
+  .sidebar-bottom .sidebar-data-actions{
+    flex:1 1 100%;
+    display:flex;
+    gap:6px;
+    order:-1;
+    min-width:100%;
+    box-sizing:border-box;
+  }
+  .sidebar-bottom .sidebar-data-actions .btn-sidebar{
+    flex:1;
+    min-width:0;
+    width:auto!important;
+    min-height:36px;
+    padding:5px 8px!important;
+    font-size:11.5px!important;
+    opacity:1;
+  }
   .sidebar-bottom #admin-panel-btn.sidebar-admin-btn,
   .sidebar-bottom #logout-btn.sidebar-logout-btn{
     flex:1 1 calc(50% - 3px);
@@ -3451,6 +3467,7 @@ body.light mark { background: rgba(251,191,36,.5); }
     min-height:36px;
     padding:5px 8px!important;
     font-size:11.5px!important;
+    order:1;
   }
   .sidebar-bottom #admin-panel-divider{display:none!important}
 
