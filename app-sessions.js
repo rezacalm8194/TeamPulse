@@ -156,12 +156,12 @@ async function renderSessions(search = '') {
       <div class="session-column-body">
         ${g.sessions.length === 0
           ? `<div class="empty" style="padding:14px;font-size:11px"><span>📅</span>هنوز ${META.sessionSingular||'جلسه'}‌ای ثبت نشده</div>`
-          : (() => { const _isExp = !!(window._expandedSessionCols && window._expandedSessionCols.has(g.student_id)); const _vis = _isExp ? g.sessions : g.sessions.slice(0, 8); const _hid = g.sessions.length - _vis.length; const _totalExtra = g.sessions.length - 8; return _vis.map(s => `
+          : (() => { const _isExp = !!(window._expandedSessionCols && window._expandedSessionCols.has(g.student_id)); const _vis = _isExp ? g.sessions : g.sessions.slice(0, 8); const _hid = g.sessions.length - _vis.length; const _totalExtra = g.sessions.length - 8; return _vis.map(s => { const _ct = _sessionCardText(s); return `
           <div class="session-card ${s.importance==='key' ? 'key' : ''}" onclick="openSessionDetail(${s.id})">
             <div class="sc-date">${s.importance==='key' ? '⭐ ' : ''}${DateService.disp(s.date_jalali)} <span style="color:var(--text3);font-weight:400">(${jalaliWeekdayName(s.date_jalali)})</span></div>
-            <div class="sc-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
-            ${s.note ? `<div class="sc-excerpt">${escapeHtml(excerpt(s.note, 60))}</div>` : ''}
-          </div>`).join('') + (!_isExp && _hid > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">+${fa(_hid)} جلسه دیگر</button>` : '') + (_isExp && _totalExtra > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">▲ بستن</button>` : ''); })()}
+            <div class="sc-title${_ct.fromNote ? ' sc-title-from-note' : ''}"${_ct.fromNote ? ' title="عنوان ندارد؛ خط اول یادداشت"' : ''}>${escapeHtml(_ct.title) || '(بدون عنوان)'}</div>
+            ${_ct.rest ? `<div class="sc-excerpt">${escapeHtml(excerpt(_ct.rest, 60))}</div>` : ''}
+          </div>`; }).join('') + (!_isExp && _hid > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">+${fa(_hid)} جلسه دیگر</button>` : '') + (_isExp && _totalExtra > 0 ? `<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="toggleSessionsColumnExpand(event, ${g.student_id})">▲ بستن</button>` : ''); })()}
       </div>
     </div>`;
   });
@@ -180,15 +180,15 @@ async function renderSessions(search = '') {
         <span class="key-sessions-arrow">${_keySessionsExpanded ? '−' : '+'}</span>
       </button>
       <div class="key-sessions-row" id="key-sessions-row" style="${_keySessionsExpanded ? '' : 'display:none'}">
-        ${_keySessionsExpanded ? keyOnes.map(s => `
+        ${_keySessionsExpanded ? keyOnes.map(s => { const _ct = _sessionCardText(s); return `
           <div class="key-session-card" onclick="openSessionDetail(${s.id})">
             <div class="ks-top">
               <span class="ks-name">${escapeHtml(s.name)} ${escapeHtml(s.lname)}</span>
               <span class="ks-date">${DateService.disp(s.date_jalali)}</span>
             </div>
-            <div class="ks-title">${escapeHtml(s.title) || '(بدون عنوان)'}</div>
-            <div class="ks-excerpt">${renderRich(excerpt(s.note))}</div>
-          </div>`).join('') : ''}
+            <div class="ks-title${_ct.fromNote ? ' sc-title-from-note' : ''}">${escapeHtml(_ct.title) || '(بدون عنوان)'}</div>
+            <div class="ks-excerpt">${_ct.fromNote ? escapeHtml(excerpt(_ct.rest)) : renderRich(excerpt(s.note))}</div>
+          </div>`; }).join('') : ''}
       </div>
     </div>`;
   }
