@@ -8,7 +8,8 @@ set -euo pipefail
 SITE_DIR="${SITE_DIR:-/home/pachim/TeamPulse.ir}"
 BRANCH="${BRANCH:-main}"
 ENV_FILE="$SITE_DIR/backend/.env"
-ENV_BACKUP="/tmp/teampulse.env.bak.$$"
+# در $HOME و با mktemp: روی پاچیم /tmp ممکن است فایل هم‌نام از کاربر دیگری داشته باشد (Permission denied)
+ENV_BACKUP="$(mktemp "$HOME/.teampulse.env.bak.XXXXXX")"
 
 cd "$SITE_DIR"
 
@@ -40,4 +41,4 @@ if [ -f "$ENV_BACKUP" ]; then
 fi
 
 export SITE_DIR
-bash "$SITE_DIR/scripts/pachim-post-pull.sh"
+TMPDIR="${TMPDIR:-$HOME}" bash "$SITE_DIR/scripts/pachim-post-pull.sh"

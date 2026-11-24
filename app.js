@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpa5566d92c3';
+const TP_ASSET_V = 'tp97cc8b57ee';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -60,6 +60,11 @@ function _tpLazy(name) { _tpLazyFor('app-extra.js', name); }
   'openAddReminder', 'savePurchaseFromReminder', 'savePurchaseFromSale', 'openRenewalPriceIncrease', 'openNewFamily', 'openStudentTransactions',
   '_partyTxDocumentHtml', '_partyTxFilename', 'setPartyTxPeriod', 'applyPartyTxCustomPeriod'
 ].forEach(name => _tpLazyFor('app-finance.js', name));
+[
+  'renderSuppliers', '_tpSuppliersTab', 'openSupplierPurchaseModal', 'saveSupplierPurchase',
+  'openSupplierPaymentModal', 'saveSupplierPayment', 'deleteSupplierPurchase', 'deleteSupplierPayment',
+  'openAddSupplierStudent', 'openSupplierTransactions', '_suppliersShowMore'
+].forEach(name => _tpLazyFor('app-suppliers.js', name));
 [
   'renderTodoList', 'renderCalendar', 'openAddTodo',
   '_openTodo135Picker', '_assignTodo135Slot', '_assignHabitTo135Slot', '_clearTodo135Slot', '_addTodoTo135Slot',
@@ -134,6 +139,56 @@ function _removeStaffPaymentExpense(payment) {
     if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', e, 'delete');
   });
   _db.expenses=(_db.expenses||[]).filter(e=>!linked.includes(e));
+}
+function _syncSupplierPaymentExpense(payment) {
+  if (!payment) return null;
+  if (!payment.id) payment.id = _nextId('expenses');
+  if (!payment.supplier_payment_id) payment.supplier_payment_id = payment.id;
+  _db.expenses = _db.expenses || [];
+  const student = (_db.students || []).find(s => String(s.id) === String(payment.supplier_id));
+  const title = `پرداخت به تامین‌کننده — ${[student?.name, student?.lname].filter(Boolean).join(' ') || 'تامین‌کننده'}`;
+  const linked = _db.expenses.filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'supplier_payment' && String(e.supplier_payment_id) === String(payment.id)));
+  linked.sort((a, b) => Number(a.id) - Number(b.id));
+  let expense = linked[0] || null;
+  linked.slice(1).forEach(extra => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', extra.id);
+    _db.expenses = _db.expenses.filter(e => e !== extra);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', extra, 'delete');
+  });
+  const data = {
+    amount: Number(payment.amount || 0),
+    date_jalali: payment.date_jalali || '',
+    category: 'خرید از تامین‌کننده',
+    payment_method: payment.payment_method || 'پرداخت تامین‌کننده',
+    account_id: payment.account_id || null,
+    description: payment.note || title,
+    source: 'supplier_payment',
+    supplier_id: payment.supplier_id,
+    supplier_payment_id: payment.id,
+    purchase_id: payment.purchase_id || null,
+    currency: payment.currency || 'تومان',
+    updated_at: new Date().toISOString(),
+  };
+  if (expense) Object.assign(expense, data);
+  else {
+    expense = { id: payment.id, ...data, created_at: new Date().toISOString() };
+    _db.expenses.push(expense);
+  }
+  payment.expense_id = expense.id;
+  if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', expense, 'upsert');
+  return expense;
+}
+function _removeSupplierPaymentExpense(payment) {
+  if (!payment) return;
+  const linked = (_db.expenses || []).filter(e => (payment.expense_id != null && String(e.id) === String(payment.expense_id))
+    || (e.source === 'supplier_payment' && String(e.supplier_payment_id) === String(payment.id)));
+  if (!linked.length) return;
+  linked.forEach(e => {
+    if (typeof _recordDeletedItems === 'function') _recordDeletedItems('expenses', e.id);
+    if (typeof _enqueueDurableBusinessDelta === 'function') _enqueueDurableBusinessDelta('expenses', e, 'delete');
+  });
+  _db.expenses = (_db.expenses || []).filter(e => !linked.includes(e));
 }
 function copyToClipboard(text, successMsg) {
   navigator.clipboard.writeText(text).then(() => {
@@ -1057,7 +1112,7 @@ function _freshData() {
   return {
     meta: {...DEFAULT_META},
     package_types: [],
-    families:[], students:[], packages:[], payments:[], sessions:[], expenses:[], expense_reminders:[], financial_accounts:[], fiscal_year_closings:[], financial_budgets:[],
+    families:[], students:[], packages:[], payments:[], purchases:[], sessions:[], expenses:[], expense_reminders:[], financial_accounts:[], fiscal_year_closings:[], financial_budgets:[],
     wallet_tx:[], reminders:[], key_events:[], topics:[],
     staff_roles:[{id:1,label:'طراحی کاور'}],
     staff:[], staff_payments:[], staff_reminders:[], staff_adjustments:[], staff_monthly:[],
@@ -1072,7 +1127,7 @@ function _freshData() {
     archive_columns:['نام','نام خانوادگی','شماره تماس','نام مجموعه','دسته‌بندی','نحوه آشنایی','توضیحات','وضعیت ارتباط','شروع همکاری'],
     archive_categories:['شخصی','فروشگاهی','تولیدی','خدماتی','تعمیراتی'],
     archive_relationship_statuses:['تماس نگرفته','تماس گرفته شد','جلسه','نیازمند پیگیری','مشتری شد','ناموفق'],
-    _nextId:{students:1,packages:1,payments:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
+    _nextId:{students:1,packages:1,payments:1,purchases:1,sessions:1,families:1,package_types:7,guide_categories:1,guide_items:1,
              wallet_tx:1,reminders:1,key_events:1,topics:1,expenses:1,expense_reminders:1,financial_accounts:1,fiscal_year_closings:1,financial_budgets:1,staff_roles:2,todo_calendar_events:1,
              staff:1,staff_payments:1,staff_reminders:1,staff_adjustments:1,staff_monthly:1,instructions:1,instr_items:1},
   };
@@ -1125,9 +1180,10 @@ function _migrate(d) {
     d.meta.language = loc.language;
   }
   if (!d.meta.appLanguage) d.meta.appLanguage = 'fa';
+  if (!d.meta.modules || typeof d.meta.modules !== 'object') d.meta.modules = {};
   d.package_types = d.package_types || [];
   d._deletedItems = d._deletedItems && typeof d._deletedItems === 'object' ? d._deletedItems : {};
-  ['families','students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders','key_events','topics',
+  ['families','students','packages','payments','purchases','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','wallet_tx','reminders','key_events','topics',
    'staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','case_forms','todos','staff_role_entries','team_members','team_invites'].forEach(k=>{if(!d[k])d[k]=[];});
   d.staff_roles = d.staff_roles?.length ? d.staff_roles : [{id:1,label:'طراحی کاور'}];
@@ -1240,7 +1296,7 @@ function _migrate(d) {
   _mergeDuplicatePackageTypes(d);
   _mergeDuplicateStaffRoles(d);
   d._nextId = d._nextId||{};
-  ['students','packages','payments','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
+  ['students','packages','payments','purchases','sessions','expenses','expense_reminders','financial_accounts','fiscal_year_closings','financial_budgets','families','package_types','wallet_tx','reminders',
    'key_events','topics','staff_roles','staff','staff_payments','staff_reminders','staff_adjustments','staff_monthly',
    'instructions','guide_categories','guide_items','todos'].forEach(k=>{
     const maxId=(d[k]||[]).reduce((m,x)=>Math.max(m, Number(x?.id)||0), 0);
@@ -1372,12 +1428,13 @@ function _applyLocalTodoDeletionsToIncoming(data) {
   return data;
 }
 
-const _STUDENT_TOMBSTONE_RELATIONS = ['packages','payments','sessions','wallet_tx','reminders','topics','key_events'];
+const _STUDENT_TOMBSTONE_RELATIONS = ['packages','payments','purchases','sessions','wallet_tx','reminders','topics','key_events'];
 const _STAFF_TOMBSTONE_RELATIONS = ['staff_payments','staff_reminders','staff_adjustments','staff_monthly','staff_role_entries'];
 
 function _idsRelatedToStudents(collection, studentIds) {
   const set = new Set((Array.isArray(studentIds) ? studentIds : [studentIds]).map(id => String(id)));
-  return (_db[collection] || []).filter(row => set.has(String(row?.student_id))).map(row => row.id);
+  const key = collection === 'purchases' ? 'supplier_id' : 'student_id';
+  return (_db[collection] || []).filter(row => set.has(String(row?.[key]))).map(row => row.id);
 }
 
 function _idsRelatedToStaff(collection, staffIds) {
@@ -1402,6 +1459,11 @@ function _recordStaffAndRelatedDeletions(staffIds) {
   (_db.staff_payments || []).forEach(payment => {
     if (ids.some(id => String(payment?.staff_id) === String(id)) && payment?.expense_id) {
       _recordDeletedItems('expenses', payment.expense_id);
+    }
+  });
+  (_db.expenses || []).forEach(exp => {
+    if (exp?.source === 'supplier_payment' && ids.some(id => String(exp?.supplier_id) === String(id))) {
+      _recordDeletedItems('expenses', exp.id);
     }
   });
   _STAFF_TOMBSTONE_RELATIONS.forEach(collection => {
@@ -2848,9 +2910,82 @@ function _studentHasOpenPaymentReminder(studentId) {
   return (_db.reminders || []).some(r => !r.done && String(r.student_id) === sid && _isPaymentReminder(r));
 }
 
+function _supplierPurchaseTotal(row) {
+  const items = Array.isArray(row?.items) ? row.items : [];
+  const fromItems = items.reduce((sum, it) => sum + (Number(it?.qty) || 0) * (Number(it?.unit_price) || 0), 0);
+  const manual = Number(row?.total_amount) || 0;
+  return fromItems > 0 ? fromItems : manual;
+}
+function _rowsForSupplier(collection, supplierId) {
+  const sid = String(supplierId ?? '');
+  return (_db[collection] || []).filter(row => String(row?.supplier_id) === sid);
+}
+function _sortPurchasesNewestFirst(rows) {
+  return (rows || []).slice().sort((a, b) => _jalaliKey(b.date_jalali) - _jalaliKey(a.date_jalali) || Number(b.id) - Number(a.id));
+}
+function _supplierListSummary(raw) {
+  const s = raw && typeof raw === 'object' ? raw : (_db.students || []).find(x => String(x.id) === String(raw));
+  if (!s) return null;
+  const purchases = _rowsForSupplier('purchases', s.id);
+  const payments = (_db.expenses || []).filter(e => e?.source === 'supplier_payment' && String(e.supplier_id) === String(s.id));
+  let purchaseToman = 0;
+  let paidToman = 0;
+  purchases.forEach(p => {
+    if ((p.currency || 'تومان') === 'تومان') purchaseToman += _supplierPurchaseTotal(p);
+  });
+  payments.forEach(e => { paidToman += Number(e.amount) || 0; });
+  const balance = purchaseToman - paidToman;
+  return {
+    ...s,
+    purchaseTotal: purchaseToman,
+    purchaseToman,
+    supplierPaid: paidToman,
+    paidToman,
+    supplierBalance: balance,
+    balance,
+    supplierHasDebt: balance > 0,
+  };
+}
+function _suppliersForFinance() {
+  return (_db.students || [])
+    .filter(s => !s.archived && _isSupplierStudent(s))
+    .map(s => _supplierListSummary(s))
+    .filter(Boolean)
+    .reverse();
+}
+function _computePurchaseTotal(itemsOrRow, manualTotal) {
+  if (itemsOrRow && typeof itemsOrRow === 'object' && !Array.isArray(itemsOrRow)) {
+    return _computePurchaseTotal(itemsOrRow.items, itemsOrRow.total_amount);
+  }
+  const items = Array.isArray(itemsOrRow) ? itemsOrRow : [];
+  const fromItems = items.reduce((sum, it) => sum + (Number(it?.qty) || 0) * (Number(it?.unit_price) || 0), 0);
+  if (fromItems > 0) return fromItems;
+  return Number(manualTotal) || 0;
+}
+function _purchaseItemsSummary(row) {
+  const items = Array.isArray(row?.items) ? row.items.filter(it => String(it?.name || '').trim()) : [];
+  if (!items.length) return row?.note || '—';
+  const first = items[0];
+  const firstLabel = `${first.name}${first.qty ? ` ${fa(first.qty)}` : ''}${first.unit ? ` ${first.unit}` : ''}`.trim();
+  if (items.length === 1) return firstLabel;
+  return `${firstLabel} + ${fa(items.length - 1)} قلم دیگر`;
+}
+function _dueDateFromPaymentTerms(terms, baseDate) {
+  const base = baseDate || _formatJalali(..._todayJalali());
+  const map = { 'نقدی': 0, '۷ روزه': 7, '۱۵ روزه': 15, '۳۰ روزه': 30, '۶۰ روزه': 60, 'چکی': 30 };
+  const days = map[String(terms || '').trim()] ?? 0;
+  if (!days) return base;
+  const p = _jalaliParse(base);
+  if (p.length !== 3) return base;
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  d.setDate(d.getDate() + days);
+  const [jy, jm, jd] = gregorianToJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  return _formatJalali(jy, jm, jd);
+}
 function _studentsForFinance() {
   const rows = [];
   for (const s of _db.students || []) {
+    if (!_isClientStudent(s)) continue;
     if (!s.archived) {
       rows.push(_studentListSummary(s));
       continue;
@@ -3596,7 +3731,7 @@ window.api = {
   },
 
   students: {
-    getAll: ()=>_P(_db.students.filter(s=>!s.archived).map(_studentListSummary).reverse()),
+    getAll: ()=>_P(_db.students.filter(s=>!s.archived && _isClientStudent(s)).map(_studentListSummary).reverse()),
     getArchived: ()=>_P(_db.students.filter(s=>s.archived).map(_studentListSummary).reverse()),
     getArchiveColumns: ()=>_P([...(_db.archive_columns||[])]),
     setArchiveColumns: (columns)=>{_db.archive_columns=normalizeArchiveColumns(columns);_save(true,{urgent:true});return _P({ok:true});},
@@ -3645,7 +3780,8 @@ window.api = {
       const id=_nextId('students');
       const description=p.description||p.address||p.main_need||'';
       const createdAt=new Date().toISOString();
-      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,wallet:0,created_at:createdAt,updated_at:createdAt});
+      const roles = _partyRoles({ is_supplier: !!p.is_supplier, is_client: p.is_client });
+      _db.students.push({id,name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||'',customer_category:p.customer_category||'شخصی',referral_source:p.referral_source||'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:p.relationship_status||'مشتری شد',next_activity_type:'',next_activity_date:'',next_activity_note:'',last_activity_at:'',loss_reason:String(p.loss_reason||'').trim().slice(0,200),archive_data:{...(p.archive_data||{})},pinned_note:String(p.pinned_note||'').trim().slice(0,500),converted_from_archive_at:'',note_updated_at:p.note?createdAt:'',pinned_note_updated_at:p.pinned_note?createdAt:'',note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:String(p.supplier_category||'').trim(),payment_terms:String(p.payment_terms||'').trim(),supplier_rating:Number(p.supplier_rating)||0,supplier_note:String(p.supplier_note||'').trim(),wallet:0,created_at:createdAt,updated_at:createdAt});
       (p.packages||[]).forEach(pkg=>{
         const pkgId=_nextId('packages');
         const startDate = pkg.start_date || p.date || '';
@@ -3674,7 +3810,8 @@ window.api = {
       const nextStatus=p.relationship_status??s.relationship_status??'';
       if(p.loss_reason!==undefined)s.loss_reason=String(p.loss_reason||'').trim().slice(0,200);
       else if(p.relationship_status!==undefined&&nextStatus!=='ناموفق')s.loss_reason='';
-      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:nextStatus,archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:p.is_supplier||false,updated_at:new Date().toISOString()});
+      const roles = _partyRoles({ is_supplier: p.is_supplier ?? s.is_supplier, is_client: p.is_client ?? s.is_client });
+      Object.assign(s,{name:p.name,lname:p.lname,phone:p.phone||'',date_jalali:p.date||s.date_jalali,customer_category:p.customer_category||'',referral_source:p.referral_source??s.referral_source??'متفرقه',organization_name:p.organization_name||'',description,address:description,main_need:'',relationship_status:nextStatus,archive_data:p.archive_data??s.archive_data??{},note:p.note||'',family_id:p.family_id||null,is_supplier:roles.is_supplier,is_client:roles.is_client,supplier_category:p.supplier_category??s.supplier_category??'',payment_terms:p.payment_terms??s.payment_terms??'',supplier_rating:p.supplier_rating??s.supplier_rating??0,supplier_note:p.supplier_note??s.supplier_note??'',updated_at:new Date().toISOString()});
       const selectedPackages = p.packages || [];
       const selectedIds = new Set(selectedPackages.filter(pkg=>pkg.id).map(pkg=>String(pkg.id)));
       const removedPackageIds = _db.packages
@@ -3756,6 +3893,81 @@ window.api = {
       _db.reminders=_db.reminders.filter(x=>String(x.package_id)!==String(id));
       if(row) _enqueueDurableBusinessDelta('packages', row, 'delete');
       _save(true,{urgent:true}); return _P({ok:true});
+    },
+  },
+
+  purchases: {
+    getAll: () => _P(_sortPurchasesNewestFirst(_db.purchases || [])),
+    getBySupplier: (sid) => _P(_sortPurchasesNewestFirst(_rowsForSupplier('purchases', sid))),
+    add: (p) => {
+      const createdAt = new Date().toISOString();
+      const items = Array.isArray(p.items) ? p.items : [];
+      const total = _computePurchaseTotal(items, p.total_amount);
+      const row = {
+        id: _nextId('purchases'),
+        supplier_id: p.supplier_id,
+        date_jalali: p.date || p.date_jalali || _formatJalali(..._todayJalali()),
+        items: items.map(it => ({
+          name: String(it.name || '').trim(),
+          qty: Number(it.qty) || 0,
+          unit: String(it.unit || 'عدد').trim() || 'عدد',
+          unit_price: Number(it.unit_price) || 0,
+        })),
+        total_amount: total,
+        currency: p.currency || 'تومان',
+        due_date: p.due_date || p.due_date_jalali || '',
+        invoice_no: String(p.invoice_no || '').trim(),
+        note: String(p.note || '').trim(),
+        status: p.status || 'registered',
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+      _db.purchases.push(row);
+      _enqueueDurableBusinessDelta('purchases', row, 'upsert');
+      if (p.pay_now && Number(p.pay_amount || total) > 0) {
+        const pay = {
+          id: _nextId('expenses'),
+          supplier_id: p.supplier_id,
+          purchase_id: row.id,
+          amount: Number(p.pay_amount || total),
+          date_jalali: row.date_jalali,
+          account_id: p.account_id || null,
+          payment_method: p.payment_method || '',
+          note: p.pay_note || '',
+        };
+        _syncSupplierPaymentExpense(pay);
+      }
+      _save(true, { urgent: true });
+      return _P({ ok: true, id: row.id });
+    },
+    update: (p) => {
+      const row = (_db.purchases || []).find(x => String(x.id) === String(p.id));
+      if (!row) return _P({ ok: false });
+      const items = Array.isArray(p.items) ? p.items : row.items;
+      const total = p.total_amount != null ? Number(p.total_amount) : _computePurchaseTotal(items, row.total_amount);
+      Object.assign(row, {
+        supplier_id: p.supplier_id ?? row.supplier_id,
+        date_jalali: p.date ?? p.date_jalali ?? row.date_jalali,
+        items,
+        total_amount: total,
+        currency: p.currency ?? row.currency,
+        due_date: p.due_date ?? row.due_date,
+        invoice_no: p.invoice_no ?? row.invoice_no,
+        note: p.note ?? row.note,
+        status: p.status ?? row.status,
+        updated_at: new Date().toISOString(),
+      });
+      _enqueueDurableBusinessDelta('purchases', row, 'upsert');
+      _save(true, { urgent: true });
+      return _P({ ok: true });
+    },
+    delete: (id) => {
+      const row = (_db.purchases || []).find(x => String(x.id) === String(id));
+      _recordDeletedItems('purchases', id);
+      _db.purchases = (_db.purchases || []).filter(x => String(x.id) !== String(id));
+      if (row) _enqueueDurableBusinessDelta('purchases', row, 'delete');
+      _save(true, { urgent: true });
+      return _P({ ok: true });
     },
   },
 
@@ -6429,15 +6641,15 @@ const _CORE_DOCUMENT_PARTS = [
 ];
 const _KNOWLEDGE_SESSION_REFRESH_KEYS = new Set(['instructions', 'guide_categories', 'guide_items']);
 const BUSINESS_PAGINATED_KEYS = Object.freeze([
-  'students', 'sessions', 'payments', 'packages', 'families', 'reminders', 'expenses', 'wallet_tx',
+  'students', 'sessions', 'payments', 'packages', 'purchases', 'families', 'reminders', 'expenses', 'wallet_tx',
 ]);
 // Income / purchase / cash lists are newest-first. Server default pages oldest
 // first, so Android's page-1 cache stayed years behind desktop receipts.
 const FINANCE_NEWEST_FIRST_KEYS = Object.freeze([
-  'payments', 'packages', 'expenses', 'wallet_tx',
+  'payments', 'packages', 'purchases', 'expenses', 'wallet_tx',
 ]);
 function _businessPageOrder(collection) {
-  if (collection === 'packages') return 'id_desc';
+  if (collection === 'packages' || collection === 'purchases') return 'id_desc';
   return FINANCE_NEWEST_FIRST_KEYS.includes(collection) ? 'desc' : 'asc';
 }
 const _PAGINATED_PART_KEYS = new Set(['todos', ...BUSINESS_PAGINATED_KEYS]);
@@ -6451,6 +6663,7 @@ const _PAGE_DOCUMENT_PARTS = {
   students: ['students'],
   sessions: ['students', 'sessions'],
   payments: ['students', 'packages', 'payments', 'sessions', 'families', 'expenses', 'expense_reminders', 'financial_accounts', 'fiscal_year_closings', 'financial_budgets', 'wallet_tx', 'reminders'],
+  suppliers: ['students', 'purchases', 'expenses', 'financial_accounts'],
   families: ['students', 'packages', 'payments', 'sessions', 'families'],
   reminders: ['reminders', 'students', 'packages'],
   customerlist: ['students', 'packages', 'families'],
@@ -8005,7 +8218,7 @@ let FAMILIES = [];
 let CURRENCIES = ['تومان'];
 let allStudents = [];
 // safe pages list (don't restore admin panel from refresh unless admin)
-const _SAFE_RESTORE_PAGES = ['home','students','payments','sessions','families','reminders',
+const _SAFE_RESTORE_PAGES = ['home','students','suppliers','payments','sessions','families','reminders',
   'customerlist','archive','staff','instructions','todolist','calendar','tutorial','settings','dashboard','transactions','admin_panel','goals','habits'];
 function _parseAppHash() {
   const raw = (location.hash || '').replace(/^#/, '').trim();
@@ -8066,7 +8279,42 @@ const TEAM_ACCESS_SECTIONS = [
   {key:'payments', label:'حساب مشتریان', icon:'🛒', desc:'فروش، دریافت، یادآوری و حساب مشتری'},
   {key:'reminders', label:'یادآوری', icon:'🔔', desc:'یادآوری‌های مالی و سررسیدها'},
   {key:'dashboard', label:'مدیریت مالی', icon:'📊', desc:'گزارش‌های مالی و خلاصه درآمد'},
+  {key:'suppliers', label:'تامین‌کنندگان', icon:'🏭', desc:'ثبت تامین‌کننده، خرید و بدهی'},
 ];
+const WORKSPACE_MODULES = [
+  { key: 'todolist', label: 'فهرست کارها', desc: 'کارها، یادآوری‌ها و پیگیری روزانه', default: true },
+  { key: 'dashboard', label: 'مدیریت مالی', desc: 'گزارش‌های مالی و خلاصه درآمد', default: true },
+  { key: 'suppliers', label: 'تامین‌کنندگان', desc: 'ثبت تامین‌کننده، خرید و بدهی', default: false },
+];
+function _workspaceModuleDefault(key) {
+  const row = WORKSPACE_MODULES.find(m => m.key === key);
+  return row ? row.default !== false : true;
+}
+function _moduleEnabled(key) {
+  const mods = (typeof META !== 'undefined' && META?.modules) || _db?.meta?.modules;
+  if (mods && typeof mods === 'object' && Object.prototype.hasOwnProperty.call(mods, key)) return !!mods[key];
+  return _workspaceModuleDefault(key);
+}
+function _partyRoles(s) {
+  const isSupplier = !!s?.is_supplier;
+  const isClient = s?.is_client;
+  if (isClient === undefined || isClient === null) {
+    return { is_supplier: isSupplier, is_client: !isSupplier };
+  }
+  return { is_supplier: isSupplier, is_client: !!isClient };
+}
+function _isClientStudent(s) {
+  if (!_moduleEnabled('suppliers')) return true;
+  return _partyRoles(s).is_client;
+}
+function _isSupplierStudent(s) {
+  if (!_moduleEnabled('suppliers')) return !!s?.is_supplier;
+  return _partyRoles(s).is_supplier;
+}
+function _teamCanSeeFinanceAmounts() {
+  if (!_isTeamGuest()) return true;
+  return _teamCan('payments') || _teamCan('dashboard') || _teamCan('suppliers');
+}
 const TODO_TEAM_PERMISSIONS = [
   {key:'todo_view_assigned', label:'مشاهده کارهای واگذارشده به خودش', icon:'✅', desc:'فقط کارهایی که مسئول انجام آن‌هاست دیده می‌شود'},
   {key:'todo_complete_own', label:'تیک‌زدن کارهای خودش', icon:'☑️', desc:'امکان تکمیل یا برداشتن تیک کارهای واگذارشده'},
@@ -8150,6 +8398,7 @@ function _teamCan(page) {
   if (['settings','tutorial'].includes(page)) return true;
   if (page === 'students' && permissions.includes('sessions')) return true;
   if (page === 'payments' && ['reminders','families'].some(p => permissions.includes(p))) return true;
+  if (page === 'suppliers' && (permissions.includes('payments') || permissions.includes('students'))) return true;
   if (page === 'transactions' && permissions.includes('dashboard')) return true;
   return permissions.includes(page);
 }
@@ -8312,6 +8561,10 @@ function _applyTeamAccessToNav() {
   document.querySelectorAll('.nav-item[data-page], .bn-item[data-page]').forEach(el => {
     const page = el.dataset.page;
     if (page === 'sessions' && el.classList.contains('nav-item')) {
+      el.style.display = 'none';
+      return;
+    }
+    if (WORKSPACE_MODULES.some(m => m.key === page) && !_moduleEnabled(page)) {
       el.style.display = 'none';
       return;
     }
@@ -9562,6 +9815,7 @@ function updatePageTitle() {
     settings: 'تنظیمات',
     goals: '🎯 اهداف',
     habits: '🔥 عادت‌ها',
+    suppliers: 'تامین‌کنندگان',
   };
   document.getElementById('page-title').textContent = titles[currentPage];
 }
@@ -10067,6 +10321,7 @@ async function renderPage() {
     else if (currentPage === 'habits')    await renderHabits();
     else if (currentPage === 'dashboard') await renderDashboard();
     else if (currentPage === 'transactions') await renderFinancialTransactions();
+    else if (currentPage === 'suppliers') await renderSuppliers();
     else await renderStudents();
   } catch(e) {
     console.error('[TeamPulse] renderPage error:', e);
@@ -11553,6 +11808,77 @@ async function saveWalletAdjust(studentId, sign) {
   await refreshOpenStudentSurface();
 }
 
+function _studentRolesFieldsHtml(s) {
+  const presetSupplier = !!window._tpOpenStudentAsSupplier;
+  if (presetSupplier) window._tpOpenStudentAsSupplier = false;
+  const roles = _partyRoles(s || (presetSupplier ? { is_supplier: true, is_client: false } : {}));
+  if (!_moduleEnabled('suppliers')) {
+    return `<div class="form-group full">
+        <label class="form-label">این شخص:</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="f-relation-type" id="f-is-client" value="client" ${roles.is_client && !roles.is_supplier ? 'checked' : ''}>
+            <span>👤 از شما خرید می‌کند — <small style="color:var(--text3)">به ما بدهکار است</small></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="f-relation-type" id="f-is-supplier" value="supplier" ${roles.is_supplier && !roles.is_client ? 'checked' : ''}>
+            <span>🏭 شما از او خرید می‌کنید — <small style="color:var(--text3)">ما به او بدهکاریم</small></span>
+          </label>
+        </div>
+      </div>`;
+  }
+  const paymentTerms = ['نقدی', '۷ روزه', '۱۵ روزه', '۳۰ روزه', '۶۰ روزه', 'چکی', 'سایر'];
+  const cats = [...new Set((_db.students || []).map(x => String(x.supplier_category || '').trim()).filter(Boolean))];
+  const catOpts = cats.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+  const terms = String(s?.payment_terms || 'نقدی');
+  return `<div class="form-group full">
+      <label class="form-label">نقش این شخص</label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="f-is-client" ${roles.is_client ? 'checked' : ''} onchange="_toggleStudentSupplierFields()">
+          <span>👤 مشتری (از شما خرید می‌کند)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="f-is-supplier" ${roles.is_supplier ? 'checked' : ''} onchange="_toggleStudentSupplierFields()">
+          <span>🏭 تامین‌کننده (شما از او خرید می‌کنید)</span>
+        </label>
+      </div>
+    </div>
+    <div id="f-supplier-fields" class="form-grid" style="display:${roles.is_supplier ? 'grid' : 'none'}">
+      <div class="form-group">
+        <label class="form-label">حوزه تامین</label>
+        <input class="form-input" id="f-supplier-category" list="f-supplier-category-list" value="${escapeHtml(s?.supplier_category || '')}" placeholder="مثلاً مواد غذایی">
+        <datalist id="f-supplier-category-list">${catOpts}</datalist>
+      </div>
+      <div class="form-group">
+        <label class="form-label">شرایط پرداخت</label>
+        <select class="form-select" id="f-payment-terms">${paymentTerms.map(t => `<option ${terms === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">امتیاز (۱ تا ۵)</label>
+        <input class="form-input" id="f-supplier-rating" type="number" min="1" max="5" value="${Number(s?.supplier_rating) || ''}" placeholder="—">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">یادداشت تامین‌کننده</label>
+        <textarea class="form-textarea" id="f-supplier-note" rows="2">${escapeHtml(s?.supplier_note || '')}</textarea>
+      </div>
+    </div>`;
+}
+function _toggleStudentSupplierFields() {
+  const wrap = document.getElementById('f-supplier-fields');
+  if (!wrap) return;
+  wrap.style.display = document.getElementById('f-is-supplier')?.checked ? 'grid' : 'none';
+}
+function _readStudentRolesFromForm() {
+  if (!_moduleEnabled('suppliers')) {
+    const isSupplier = document.getElementById('f-is-supplier')?.checked || false;
+    return { is_supplier: isSupplier, is_client: !isSupplier };
+  }
+  const isClient = !!document.getElementById('f-is-client')?.checked;
+  const isSupplier = !!document.getElementById('f-is-supplier')?.checked;
+  return { is_client: isClient, is_supplier: isSupplier };
+}
+
 // ── Add/Edit Student Modal ────────────────────────────────────────────────────
 function openStudentModal(id = null) {
   const editing = id !== null;
@@ -11651,19 +11977,7 @@ async function refreshFamiliesAndOpenStudentModal(editing, s, id) {
         ${calendarDateFieldHtml('f-date', s?.date_jalali, 'شروع همکاری')}
       </div>
       ${archiveExtraFieldsHtml(s||{},'student')}
-      <div class="form-group full">
-        <label class="form-label">این شخص:</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="radio" name="f-relation-type" id="f-is-client" value="client" ${(!s?.is_supplier)?'checked':''}>
-            <span>👤 از شما خرید می‌کند — <small style="color:var(--text3)">به ما بدهکار است</small></span>
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="radio" name="f-relation-type" id="f-is-supplier" value="supplier" ${s?.is_supplier?'checked':''}>
-            <span>🏭 شما از او خرید می‌کنید — <small style="color:var(--text3)">ما به او بدهکاریم</small></span>
-          </label>
-        </div>
-      </div>
+      ${_studentRolesFieldsHtml(s)}
     </div>
 
     <div class="form-section">این شخص از چه خدماتی استفاده می‌کند؟</div>
@@ -11819,7 +12133,11 @@ async function saveStudentNew() {
 
   const family_id = await resolveFamilyId();
 
-  const isSupplier = document.getElementById('f-is-supplier')?.checked || false;
+  const roles = _readStudentRolesFromForm();
+  if (_moduleEnabled('suppliers') && !roles.is_client && !roles.is_supplier) {
+    showToast('حداقل یک نقش (مشتری یا تامین‌کننده) را انتخاب کنید', 'error');
+    return;
+  }
   await window.api.students.add({
     name, lname,
     phone: document.getElementById('f-phone')?.value || '',
@@ -11833,7 +12151,12 @@ async function saveStudentNew() {
     note: document.getElementById('f-note')?.value || '',
     pinned_note: document.getElementById('f-pinned-note')?.value || '',
     family_id,
-    is_supplier: isSupplier,
+    is_supplier: roles.is_supplier,
+    is_client: roles.is_client,
+    supplier_category: document.getElementById('f-supplier-category')?.value.trim() || '',
+    payment_terms: document.getElementById('f-payment-terms')?.value || '',
+    supplier_rating: Number(document.getElementById('f-supplier-rating')?.value) || 0,
+    supplier_note: document.getElementById('f-supplier-note')?.value.trim() || '',
     wallet: +(document.getElementById('f-wallet')?.value || 0),
     packages: collectPackagesFromForm(),
   });
@@ -11851,7 +12174,11 @@ async function saveStudentEdit(id) {
   const family_id = await resolveFamilyId();
   const s = allStudents.find(x => x.id === id);
 
-  const isSupplierEdit = document.getElementById('f-is-supplier')?.checked || false;
+  const roles = _readStudentRolesFromForm();
+  if (_moduleEnabled('suppliers') && !roles.is_client && !roles.is_supplier) {
+    showToast('حداقل یک نقش (مشتری یا تامین‌کننده) را انتخاب کنید', 'error');
+    return;
+  }
   await window.api.students.update({
     id, name, lname,
     phone: document.getElementById('f-phone')?.value || '',
@@ -11865,7 +12192,12 @@ async function saveStudentEdit(id) {
     note: document.getElementById('f-note')?.value || '',
     pinned_note: document.getElementById('f-pinned-note')?.value || '',
     family_id,
-    is_supplier: isSupplierEdit,
+    is_supplier: roles.is_supplier,
+    is_client: roles.is_client,
+    supplier_category: document.getElementById('f-supplier-category')?.value.trim() || '',
+    payment_terms: document.getElementById('f-payment-terms')?.value || '',
+    supplier_rating: Number(document.getElementById('f-supplier-rating')?.value) || 0,
+    supplier_note: document.getElementById('f-supplier-note')?.value.trim() || '',
     packages: collectPackagesFromForm().map(p => {
       const existing = s.packages.find(ep => ep.type_id === p.type_id);
       return { ...p, id: existing?.id, start_date: existing?.start_date };
@@ -14228,6 +14560,23 @@ async function renderSettings() {
       </div>
     </div>
 
+    <div class="detail-section" id="settings-modules">
+      <h3>بخش‌های اختیاری</h3>
+      <p style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:12px">بخش‌هایی که الان به کارتان نیاز ندارید را خاموش کنید. «تامین‌کنندگان» به‌صورت پیش‌فرض خاموش است.</p>
+      <div class="form-grid" style="gap:10px 14px">
+        ${WORKSPACE_MODULES.map(m => {
+          const on = _moduleEnabled(m.key);
+          return `<label class="form-group" style="flex-direction:row;align-items:flex-start;gap:10px;cursor:pointer;border:1px solid var(--border2);border-radius:10px;padding:12px;background:var(--bg3)">
+            <input type="checkbox" id="mod-${m.key}" ${on ? 'checked' : ''} style="margin-top:3px">
+            <span><strong>${escapeHtml(m.label)}</strong><br><small style="color:var(--text3);line-height:1.7">${escapeHtml(m.desc)}</small></span>
+          </label>`;
+        }).join('')}
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:14px">
+        <button type="button" class="btn btn-primary" onclick="saveWorkspaceModules()">ذخیره بخش‌ها</button>
+      </div>
+    </div>
+
     <div class="detail-section" id="settings-services">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
         <h3 style="margin:0">خدمات قابل ارائه</h3>
@@ -14667,6 +15016,21 @@ async function saveMeta() {
   META = await window.api.meta.update(payload);
   applyMetaToUI();
   showToast('تغییرات ذخیره شد ✓', 'success');
+}
+
+async function saveWorkspaceModules() {
+  const modules = {};
+  WORKSPACE_MODULES.forEach(m => {
+    modules[m.key] = !!document.getElementById(`mod-${m.key}`)?.checked;
+  });
+  _db.meta = { ..._db.meta, modules };
+  META = { ...META, modules };
+  _save();
+  if (typeof window.api?.meta?.update === 'function') {
+    try { await window.api.meta.update({ modules }); } catch (e) { /* */ }
+  }
+  _applyTeamAccessToNav();
+  showToast('بخش‌های اختیاری ذخیره شد ✓', 'success');
 }
 
 async function saveAutomationSettings() {
@@ -30866,6 +31230,7 @@ const _TP_SEARCH_PAGE_DEFS = [
   { page: 'dashboard', tab: '', label: 'مدیریت مالی', icon: '📊', keys: 'مدیریت مالی finance' },
   { page: 'transactions', tab: '', label: 'تراکنش‌های مالی', icon: '📒', keys: 'تراکنش' },
   { page: 'students', tab: '', label: 'امور مشتریان', icon: '👥', keys: 'مشتری شاگرد students' },
+  { page: 'suppliers', tab: '', label: 'تامین‌کنندگان', icon: '🏭', keys: 'supplier تامین‌کننده خرید' },
   { page: 'students', tab: 'sessions', label: 'جلسات', icon: '📅', keys: 'session جلسه' },
   { page: 'payments', tab: '', label: 'حساب مشتریان', icon: '🛒', keys: 'پرداخت payments' },
   { page: 'payments', tab: 'reminders', label: 'یادآوری پرداخت', icon: '🔔', keys: 'reminders یادآوری' },

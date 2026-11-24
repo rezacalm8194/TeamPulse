@@ -181,7 +181,7 @@ function collectionLength(data, key) {
   return Array.isArray(data?.[key]) ? data[key].length : 0;
 }
 
-const STUDENT_DELETE_COLLECTIONS = ['students', 'packages', 'payments', 'sessions', 'wallet_tx', 'reminders', 'topics', 'key_events'];
+const STUDENT_DELETE_COLLECTIONS = ['students', 'packages', 'payments', 'purchases', 'sessions', 'wallet_tx', 'reminders', 'topics', 'key_events'];
 
 function hasExplicitStudentDeletion(data, key, id) {
   const map = data?._deletedItems?.[key];

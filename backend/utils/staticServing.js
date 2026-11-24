@@ -45,6 +45,7 @@ const PUBLIC_STATIC_ROOT_FILES = new Set([
   'app-extra.js',
   'app-todos.js',
   'app-finance.js',
+  'app-suppliers.js',
   'app-sessions.js',
   'tp-inline-bind.js',
   'landing.js',
