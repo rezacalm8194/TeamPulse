@@ -148,3 +148,82 @@ test('items older than the catch-up window are not sent and get pruned', () => {
   assert.deepEqual(listDuePushItems(db, now).map(r => r.deliveryKey), ['ok']);
   assert.equal(pruneStalePushDueItems(db, now), 1);
 });
+
+// ── workspaces, late sends, done habits, cleanup ─────────────────────────
+const { prunePushDeliveries, parseStorageKey, storageKeyFor } = require('../utils/pushDueIndex');
+
+test('storage keys map to owner + workspace', () => {
+  assert.deepEqual(parseStorageKey('u1'), { ownerId: 'u1', workspaceId: 'default' });
+  assert.deepEqual(parseStorageKey('u1::workspace::acc_abcdef'), { ownerId: 'u1', workspaceId: 'acc_abcdef' });
+  assert.equal(storageKeyFor('u1', 'default'), 'u1');
+  assert.equal(storageKeyFor('u1', 'acc_abcdef'), 'u1::workspace::acc_abcdef');
+});
+
+test('non-default workspaces with a device are indexed and delivered', () => {
+  const db = makeDb();
+  seed(db, 'O');
+  const ws = 'O::workspace::acc_second1';
+  db.prepare('INSERT INTO user_data (account_id, data, data_etag) VALUES (?, ?, ?)').run(ws, '{}', 'w1');
+  db.prepare("INSERT INTO push_subscriptions (id, account_id, endpoint, subscription, workspace_id) VALUES ('s2','O','https://push/ws','{}','acc_second1')").run();
+  const now = new Date('2026-11-24T10:00:00Z');
+  assert.deepEqual(listPushReindexAccountIds(db, now).sort(), ['O', ws].sort());
+
+  upsertPushDueIndex(db, ws, 'w1', { validUntilMs: now.getTime() + 1e6 });
+  upsertPushDueIndex(db, 'O', 'e1', { validUntilMs: now.getTime() + 1e6 });
+  assert.deepEqual(listPushReindexAccountIds(db, now), []);
+  replacePushDueItems(db, ws, [{ deliveryKey: 'todo:ws:1', kind: 'todo', dueMs: now.getTime() - 1000, payload: {} }]);
+  const [item] = listDuePushItems(db, now);
+  assert.equal(item.accountId, ws);
+  assert.equal(item.ownerId, 'O');
+  assert.equal(item.workspaceId, 'acc_second1');
+});
+
+test('workspace items wait when only another workspace has a device', () => {
+  const db = makeDb();
+  seed(db, 'O'); // device only in default
+  const now = new Date('2026-11-24T10:00:00Z');
+  replacePushDueItems(db, 'O::workspace::acc_second1', [{ deliveryKey: 'k', kind: 'todo', dueMs: now.getTime() - 1000, payload: {} }]);
+  assert.deepEqual(listDuePushItems(db, now), []);
+});
+
+test('task ownership is checked against the owner, not the workspace key', () => {
+  const now = tehran('2026-11-24T08:00:00');
+  const data = { todos: [{ id: 1, title: 't', time: '09:00', remind_min: 15, owner_id: 'O', scheduled_date: '1405/09/03' }] };
+  assert.equal(computePushDueIndex('O::workspace::acc_second1', data, now, new Set()).items.length, 1);
+});
+
+test('a reminder that is already late when first indexed is skipped (no surprise pushes after edits)', () => {
+  const now = tehran('2026-11-24T10:00:00');
+  const data = { habits: [{ id: 1, title: 'h', time: '08:00', remind_min: 15 }] };
+  const todayKey = 'habit:A:1:2026-11-24:08:00:15';
+  // No knownKeys (legacy / tests): full window, sent late.
+  assert.ok(keysOf(computePushDueIndex('A', data, now, new Set())).includes(todayKey));
+  // First time seen (just edited): skipped.
+  assert.ok(!keysOf(computePushDueIndex('A', data, now, new Set(), { knownKeys: new Set() })).includes(todayKey));
+  // Already indexed before (server was down): still caught up.
+  assert.ok(keysOf(computePushDueIndex('A', data, now, new Set(), { knownKeys: new Set([todayKey]) })).includes(todayKey));
+  // Slightly late (5 min) new item is still sent.
+  const near = computePushDueIndex('A', data, tehran('2026-11-24T07:50:00'), new Set(), { knownKeys: new Set() });
+  assert.ok(keysOf(near).includes(todayKey));
+});
+
+test('habit already ticked today gets no reminder today, but tomorrow still does', () => {
+  const now = tehran('2026-11-24T06:00:00');
+  const data = {
+    habits: [{ id: 1, title: 'h', time: '08:00', remind_min: 15, custom_reminders: [{ id: 9, time: '20:00', date: '1405/09/03' }] }],
+    habit_logs: [{ habit_id: 1, date: '۱۴۰۵/۰۹/۰۳', done: true }],
+  };
+  const keys = keysOf(computePushDueIndex('A', data, now, new Set()));
+  assert.deepEqual(keys, ['habit:A:1:2026-11-25:08:00:15']);
+});
+
+test('delivery log keeps payment keys but drops old timed keys', () => {
+  const db = new Database(':memory:');
+  db.exec("CREATE TABLE push_deliveries (delivery_key TEXT PRIMARY KEY, account_id TEXT, kind TEXT, sent_at TEXT)");
+  const ins = db.prepare('INSERT INTO push_deliveries VALUES (?,?,?,?)');
+  ins.run('todo-old', 'A', 'todo', '2026-11-01 08:00:00');
+  ins.run('habit-new', 'A', 'habit', '2026-11-24 08:00:00');
+  ins.run('fin-old', 'A', 'financial-reminder', '2026-11-01 08:00:00');
+  assert.equal(prunePushDeliveries(db, new Date('2026-11-24T10:00:00Z')), 1);
+  assert.deepEqual(db.prepare('SELECT delivery_key FROM push_deliveries ORDER BY 1').all().map(r => r.delivery_key), ['fin-old', 'habit-new']);
+});

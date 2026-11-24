@@ -23,6 +23,10 @@ const {
   listPushReindexAccountIds,
   markPushDueItemFailed,
   pruneStalePushDueItems,
+  prunePushDeliveries,
+  loadIndexedKeys,
+  parseStorageKey,
+  storageKeyFor,
 } = require('../utils/pushDueIndex');
 const {
   todoShouldNotifyOwner,
@@ -186,6 +190,15 @@ function isOwnerSubscription(sub, accountId, ownerEmail = '') {
   return false;
 }
 
+// A reminder for a task or habit is useless hours later: if the phone is
+// offline that long, let the push service drop it. Daily (09:00) reminders
+// stay relevant for the rest of the day.
+function pushTtlSeconds(kind) {
+  if (kind === 'todo' || kind === 'habit') return 2 * 60 * 60;
+  if (kind === 'test') return 10 * 60;
+  return 12 * 60 * 60;
+}
+
 async function sendPushSubscriptions(subs, title, body, options = {}) {
   if (!subs.length) return { sent: 0, failed: 0 };
   if (!vapidReady) return { sent: 0, failed: subs.length };
@@ -221,7 +234,7 @@ async function sendPushSubscriptions(subs, title, body, options = {}) {
     sentEndpoints.add(s.endpoint);
     try {
       await webpush.sendNotification(JSON.parse(s.subscription), payload, {
-        TTL: 12 * 60 * 60,
+        TTL: pushTtlSeconds(kind),
         urgency: 'high',
       });
       sent++;
@@ -325,19 +338,44 @@ function reminderBody(item, personName = '') {
 }
 
 let pushCronRunning = false;
-const reminderCollectionKeys = ['todos', 'habits', 'students', 'staff', 'reminders', 'staff_reminders', 'key_events'];
+const reminderCollectionKeys = ['todos', 'habits', 'habit_logs', 'students', 'staff', 'reminders', 'staff_reminders', 'key_events'];
+let lastDeliveryPruneMs = 0;
 
+// accountId here is the document storage key (owner id, or
+// `${owner}::workspace::${id}` for a non-default workspace).
 function refreshPushDueIndex(accountId, userData, now) {
   const delivered = loadDeliveredKeys(db, accountId);
-  const schedule = computePushDueIndex(accountId, userData || {}, now, delivered);
+  const schedule = computePushDueIndex(accountId, userData || {}, now, delivered, {
+    ownerId: parseStorageKey(accountId).ownerId,
+    knownKeys: loadIndexedKeys(db, accountId),
+  });
   let etag = '';
   try { etag = loadWorkspaceMeta(db, accountId)?.etag || ''; } catch (_) {}
   upsertPushDueIndex(db, accountId, etag, schedule);
   replacePushDueItems(db, accountId, schedule.items || []);
 }
 
+// Team members are matched to a todo through the workspace's staff /
+// team_members rows; only load them when a team device can receive it.
+async function loadTodoRecipientData(ownerId, workspaceId) {
+  const hasTeamDevice = db.prepare(`
+    SELECT 1 FROM push_subscriptions
+    WHERE account_id=? AND COALESCE(workspace_id,'default')=? AND scope='team'
+    LIMIT 1
+  `).get(ownerId, workspaceId);
+  if (!hasTeamDevice) return {};
+  try {
+    return (await loadAccountCollections(storageKeyFor(ownerId, workspaceId), ['team_members', 'staff'])) || {};
+  } catch {
+    return {};
+  }
+}
+
 async function deliverIndexedItem(item) {
+  // item.accountId is the storage key: deliveries are recorded under it,
+  // devices are looked up by owner + workspace.
   const accountId = item.accountId;
+  const { ownerId, workspaceId } = parseStorageKey(accountId);
   const payload = item.payload || {};
   const key = item.deliveryKey;
   const kind = item.kind;
@@ -348,8 +386,9 @@ async function deliverIndexedItem(item) {
     const time = payload.time || todo.time || '';
     const note = payload.note || todo.note || '';
     console.log(`[Push] → "${title}" (account: ${accountId})`);
+    const recipientData = await loadTodoRecipientData(ownerId, workspaceId);
     return deliverOnce(key, accountId, 'todo', () =>
-      pushTodoToRecipients(accountId, 'default', {}, todo, title, `ساعت ${time}${note ? ' — ' + String(note).slice(0, 50) : ''}`)
+      pushTodoToRecipients(ownerId, workspaceId, recipientData, todo, title, `ساعت ${time}${note ? ' — ' + String(note).slice(0, 50) : ''}`)
     );
   }
 
@@ -361,7 +400,7 @@ async function deliverIndexedItem(item) {
       : `وقت انجام عادت: ساعت ${payload.time || ''}${payload.desc ? ' — ' + String(payload.desc).slice(0, 50) : ''}`;
     console.log(`[Push] → habit "${title}" (account: ${accountId})`);
     return deliverOnce(key, accountId, 'habit', () =>
-      pushToOwner(accountId, 'default', '🔥 ' + title, body, {
+      pushToOwner(ownerId, workspaceId, '🔥 ' + title, body, {
         kind: 'habit', tag: payload.custom ? `habit-custom-${payload.habitId}` : `habit-${payload.habitId}`, url: '/app#habits',
       })
     );
@@ -369,7 +408,7 @@ async function deliverIndexedItem(item) {
 
   if (kind === 'financial-reminder') {
     return deliverOnce(key, accountId, 'financial-reminder', () =>
-      pushToOwner(accountId, 'default', displayReminderTitle(payload.title || 'یادآوری پرداخت'), reminderBody(payload, payload.personName || ''), {
+      pushToOwner(ownerId, workspaceId, displayReminderTitle(payload.title || 'یادآوری پرداخت'), reminderBody(payload, payload.personName || ''), {
         kind: 'financial-reminder', tag: `financial-${payload.reminderId}`, url: '/app#reminders',
       })
     );
@@ -377,7 +416,7 @@ async function deliverIndexedItem(item) {
 
   if (kind === 'staff-reminder') {
     return deliverOnce(key, accountId, 'staff-reminder', () =>
-      pushToOwner(accountId, 'default', payload.title || 'یادآوری حقوق', reminderBody(payload, payload.personName || ''), {
+      pushToOwner(ownerId, workspaceId, payload.title || 'یادآوری حقوق', reminderBody(payload, payload.personName || ''), {
         kind: 'staff-reminder', tag: `staff-reminder-${payload.reminderId}`, url: '/app#staff',
       })
     );
@@ -386,7 +425,7 @@ async function deliverIndexedItem(item) {
   if (kind === 'key-event') {
     const name = payload.personName || '';
     return deliverOnce(key, accountId, 'key-event', () =>
-      pushToOwner(accountId, 'default', '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(payload.text || '').slice(0, 100)}`, {
+      pushToOwner(ownerId, workspaceId, '🌟 یادآوری رویداد مهم', `${name ? name + ' — ' : ''}${String(payload.text || '').slice(0, 100)}`, {
         kind: 'key-event', tag: `key-event-${payload.eventId}`, url: '/app#students',
       })
     );
@@ -403,6 +442,10 @@ cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
     pruneStalePushDueItems(db, now);
+    if (now.getTime() - lastDeliveryPruneMs > 60 * 60 * 1000) {
+      lastDeliveryPruneMs = now.getTime();
+      prunePushDeliveries(db, now);
+    }
     const reindexIds = listPushReindexAccountIds(db, now);
 
     for (const accountId of reindexIds) {
@@ -487,8 +530,9 @@ router.post('/subscribe', auth, (req, res) => {
       `).run(randomUUID(), accountId, subscription.endpoint, JSON.stringify(subscription), req.user.id, requesterEmail, memberEmail, workspaceId, scope);
     }
     try {
-      const indexed = db.prepare('SELECT 1 FROM push_due_index WHERE account_id=?').get(accountId);
-      if (!indexed) upsertPushDueIndex(db, accountId, '__pending__', { nextTimedMs: 0, nextDailyMs: 0 });
+      const storageKey = storageKeyFor(accountId, workspaceId);
+      const indexed = db.prepare('SELECT 1 FROM push_due_index WHERE account_id=?').get(storageKey);
+      if (!indexed) upsertPushDueIndex(db, storageKey, '__pending__', { nextTimedMs: 0, nextDailyMs: 0 });
     } catch (_) {}
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -514,6 +558,44 @@ router.delete('/subscribe', auth, (req, res) => {
     }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: جایگزینی اشتراک توسط Service Worker ─────────────────
+// When the browser rotates a push subscription (pushsubscriptionchange) the
+// app may be closed, so the service worker has no login token. The old
+// endpoint URL is an unguessable capability issued to this device by the push
+// service; it is enough to move that device's rows to the new subscription.
+router.post('/resubscribe', (req, res) => {
+  try {
+    const oldEndpoint = String(req.body?.oldEndpoint || '').trim();
+    const subscription = req.body?.subscription;
+    const newEndpoint = String(subscription?.endpoint || '').trim();
+    if (!oldEndpoint || !newEndpoint || !/^https:\/\//.test(newEndpoint) || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+      return res.status(400).json({ error: 'invalid' });
+    }
+    const rows = db.prepare('SELECT id, account_id, workspace_id FROM push_subscriptions WHERE endpoint=?').all(oldEndpoint);
+    if (!rows.length) return res.status(404).json({ error: 'push_subscription_not_found' });
+    const serialized = JSON.stringify(subscription);
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        const duplicate = db.prepare(`
+          SELECT id FROM push_subscriptions
+          WHERE account_id=? AND COALESCE(workspace_id,'default')=COALESCE(?,'default') AND endpoint=? AND id!=?
+        `).get(row.account_id, row.workspace_id, newEndpoint, row.id);
+        if (duplicate) {
+          db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(row.id);
+        } else {
+          db.prepare("UPDATE push_subscriptions SET endpoint=?, subscription=?, created_at=datetime('now') WHERE id=?")
+            .run(newEndpoint, serialized, row.id);
+        }
+      }
+    });
+    tx();
+    res.json({ success: true, moved: rows.length });
+  } catch (e) {
+    console.error('[Push] resubscribe failed:', e.message);
+    res.status(500).json({ error: 'resubscribe_failed' });
+  }
 });
 
 // ── API: VAPID public key برای مرورگر ─────────────────────────
