@@ -79,9 +79,13 @@ function mergeDeletedItemMaps(previous, incoming) {
     const prevCol = previous?.[key] && typeof previous[key] === 'object' ? previous[key] : {};
     const nextCol = incoming?.[key] && typeof incoming[key] === 'object' ? incoming[key] : {};
     const col = cloneTombstoneMap(prevCol);
+    // The earliest known deletion time wins. With "newest wins", a device
+    // that re-stamps an existing tombstone with "now" changed the stored
+    // value on every sync and every other device pulled and re-sent it
+    // (seen 2026-11-24: 937 todo tombstones re-stamped every ~30 s).
     Object.entries(cloneTombstoneMap(nextCol)).forEach(([id, deletedAt]) => {
       const prevAt = col[id] || '';
-      if (!prevAt || String(deletedAt || '') >= String(prevAt)) col[id] = deletedAt || prevAt;
+      if (!prevAt || (deletedAt && String(deletedAt) < String(prevAt))) col[id] = deletedAt || prevAt;
     });
     merged[key] = col;
   });
