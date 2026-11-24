@@ -152,3 +152,46 @@ test('board stores newly added customers at the end of the saved order (owner on
   assert.match(render, /if \(missing\.length && !_teamAccessSession\(\)\)/);
   assert.match(render, /setOrder\(\[\.\.\.savedOrder, \.\.\.missing\.map\(g => g\.student_id\)\]\)/);
 });
+
+test('archive asks once and offers undo; undo does not run convert-to-customer automations', async () => {
+  const confirm = slice(app, 'async function _archiveStudentWithBalanceConfirm(', 'const _TP_ARCHIVE_UNDO_MS');
+  assert.equal((confirm.match(/tpConfirm\(/g) || []).length, 1);
+  assert.match(confirm, /_tpShowUndoToast\(/);
+  const undoSrc = slice(app, 'async function _undoArchiveStudent(', 'async function deleteStudent(');
+  assert.doesNotMatch(undoSrc, /setArchived|_automationOnConvertToCustomer/);
+
+  const calls = [];
+  const ctx = {
+    _db: { students: [{ id: 4, name: 'A', archived: true, last_activity_at: 'NEW', converted_from_archive_at: 'X' }] },
+    _save: (...a) => calls.push(['save', ...a]),
+    showToast: () => {},
+    window: { api: { students: { getAll: async () => [] } } },
+    refreshOpenStudentSurface: async () => calls.push(['refresh']),
+    allStudents: [],
+  };
+  vm.createContext(ctx);
+  vm.runInContext(undoSrc + '\nthis.u=_undoArchiveStudent;', ctx);
+  const ok = await ctx.u(4, 'A', { last_activity_at: 'OLD', had_converted_at: false });
+  const s = ctx._db.students[0];
+  assert.equal(ok, true);
+  assert.equal(s.archived, false);
+  assert.equal(s.last_activity_at, 'OLD');
+  assert.equal('converted_from_archive_at' in s, false);
+  assert.ok(s.updated_at);
+  assert.equal(JSON.stringify(calls[0]), JSON.stringify(['save', true, { urgent: true }]));
+  assert.equal(await ctx.u(4, 'A', null), false, 'second undo is a no-op');
+});
+
+test('untitled session cards show the first line of the note', () => {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(slice(app, 'function _sessionCardText(', 'function _cleanPlaceholderAnswer(') + '\nthis.f=_sessionCardText;', ctx);
+  assert.equal(JSON.stringify(ctx.f({ title: 'عنوان', note: 'یادداشت' })), JSON.stringify({ title: 'عنوان', rest: 'یادداشت', fromNote: false }));
+  assert.equal(JSON.stringify(ctx.f({ title: '', note: '\n **حفظ ظاهر** کافی نیست\nخط دوم' })), JSON.stringify({ title: 'حفظ ظاهر کافی نیست', rest: 'خط دوم', fromNote: true }));
+  assert.equal(JSON.stringify(ctx.f({ title: '', note: '<p>سلام</p><p>دوم</p>' })), JSON.stringify({ title: 'سلام', rest: 'دوم', fromNote: true }));
+  assert.equal(ctx.f({ title: '', note: '' }).title, '');
+  const long = ctx.f({ title: '', note: 'کلمه '.repeat(30) });
+  assert.ok(long.title.endsWith('…') && long.title.length <= 71);
+  const render = slice(sessions, 'async function renderSessions(', 'function toggleKeySessionsPanel(');
+  assert.equal((render.match(/_sessionCardText\(s\)/g) || []).length, 2);
+});

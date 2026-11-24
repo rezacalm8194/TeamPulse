@@ -6097,6 +6097,8 @@ body { top: 0 !important; }
 .mstu-schedule-merged { font-weight:600; color:var(--text2); }
 .session-column-header .mstu-contact-schedule { flex-basis:100%; }
 .scn-title-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+/* Untitled session: first line of the note shown as title, a shade lighter. */
+.sc-title-from-note { color:var(--text2); font-weight:600; }
 /* Compact column header: name row + one actions row (⋯ holds the rest). */
 .session-column-header .scn-drag { cursor:grab; color:var(--text3); font-size:14px; line-height:1; padding:2px 1px; user-select:none; touch-action:none; }
 .session-column-header .scn-drag:hover { color:var(--text); }

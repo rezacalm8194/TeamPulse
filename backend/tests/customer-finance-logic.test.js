@@ -334,7 +334,7 @@ test('push index skips package renewal for archived settled customer', () => {
 });
 
 test('archive confirm mentions paused renewal reminders', () => {
-  assert.match(fn(app, '_archiveStudentWithBalanceConfirm'), /یادآوری‌های تمدید این مشتری تا زمانی که در بایگانی است متوقف می‌شوند/);
+  assert.match(fn(app, '_archiveStudentWithBalanceConfirm'), /یادآوری‌های تمدید تا وقتی در بایگانی است متوقف می‌شوند/);
 });
 
 test('asset version tp451', () => {

@@ -1,4 +1,4 @@
-const TP_ASSET_V = 'tpfbf758d560';
+const TP_ASSET_V = 'tp7f17813c7f';
 const TP_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 window._tpChunkReady = Object.create(null);
 window._tpChunkPromise = Object.create(null);
@@ -9471,6 +9471,24 @@ function excerpt(str, len=70) {
   const clean = str.trim();
   return clean.length > len ? clean.slice(0,len) + '…' : clean;
 }
+// Untitled sessions: the note's first line stands in as the card title
+// (display only — the stored title stays empty). `rest` is the note without
+// that line, so the card does not repeat it.
+function _sessionCardText(s, max = 70) {
+  const title = String(s?.title || '').trim();
+  const note = String(s?.note || '');
+  if (title) return { title, rest: note, fromNote: false };
+  const plain = note.replace(/<br\s*\/?>|<\/(?:p|div|li|h[1-6])>/gi, '\n').replace(/<[^>]*>/g, '').replace(/\*\*|==/g, '');
+  const lines = plain.split(/\r?\n/).map(line => line.trim());
+  const first = lines.findIndex(Boolean);
+  if (first < 0) return { title: '', rest: note, fromNote: false };
+  const line = lines[first];
+  if (line.length > max) {
+    const cut = line.slice(0, max).replace(/\s+\S*$/, '') || line.slice(0, max);
+    return { title: cut + '…', rest: line.slice(cut.length).trim(), fromNote: true };
+  }
+  return { title: line, rest: lines.slice(first + 1).filter(Boolean).join(' '), fromNote: true };
+}
 
 // ── Rich text: **bold** and ==highlight== + simple sticker emojis ────────────
 function _cleanPlaceholderAnswer(value) {
@@ -12285,14 +12303,41 @@ async function _archiveStudentWithBalanceConfirm(id, name) {
     return raw ? _studentListSummary(raw) : null;
   })();
   const bal = Number(summary?.balance || 0);
-  if (bal > 0) {
-    if (!await tpConfirm(`این مشتری ${fmt(bal)} تومان بدهکار است. بعد از بایگانی هم در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی. ادامه؟`)) return false;
-  } else if (bal < 0) {
-    if (!await tpConfirm(`این مشتری ${fmt(Math.abs(bal))} تومان بستانکار است. بعد از بایگانی هم در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی. ادامه؟`)) return false;
-  }
-  if (!await tpConfirm(`آیا مطمئنی می‌خوای "${name}" به بایگانی منتقل بشه؟`)) return false;
-  if (!await tpConfirm(`تأیید نهایی: "${name}" از لیست فعال حذف و به بخش "بایگانی ${_entityWord(true)}" منتقل می‌شود. یادآوری‌های تمدید این مشتری تا زمانی که در بایگانی است متوقف می‌شوند. ادامه می‌دهی؟`)) return false;
+  // One confirm (with the balance and reminder facts) + an undo toast,
+  // instead of three confirms in a row. Archiving deletes nothing.
+  const lines = [`«${name}» از لیست فعال به «بایگانی ${_entityWord(true)}» منتقل می‌شود.`];
+  if (bal > 0) lines.push(`این مشتری ${fmt(bal)} تومان بدهکار است؛ در مانده حساب‌ها و پیگیری‌های مالی می‌ماند و می‌توانی از او دریافت ثبت کنی.`);
+  else if (bal < 0) lines.push(`این مشتری ${fmt(Math.abs(bal))} تومان بستانکار است؛ در مانده حساب‌ها و پیگیری‌های مالی می‌ماند.`);
+  lines.push('یادآوری‌های تمدید تا وقتی در بایگانی است متوقف می‌شوند. هیچ اطلاعاتی حذف نمی‌شود و تا چند ثانیه بعد می‌توانی برگردانی.');
+  if (!await tpConfirm(lines.join('\n\n'), { title: 'بایگانی', okText: 'بایگانی کن', danger: false })) return false;
+  const raw = (_db.students || []).find(x => Number(x.id) === Number(id));
+  const before = raw ? {
+    last_activity_at: raw.last_activity_at,
+    had_converted_at: Object.prototype.hasOwnProperty.call(raw, 'converted_from_archive_at'),
+    converted_from_archive_at: raw.converted_from_archive_at,
+  } : null;
   await window.api.students.setArchived({ id, archived: true });
+  _tpShowUndoToast(`«${name}» بایگانی شد`, () => { _undoArchiveStudent(id, name, before); }, _TP_ARCHIVE_UNDO_MS);
+  return true;
+}
+const _TP_ARCHIVE_UNDO_MS = 8000;
+// Undo restores the customer exactly as before the archive. It does not go
+// through setArchived(false), which would stamp converted_from_archive_at
+// and run the "converted to customer" automations.
+async function _undoArchiveStudent(id, name, before) {
+  const s = (_db.students || []).find(x => Number(x.id) === Number(id));
+  if (!s || !s.archived) return false;
+  s.archived = false;
+  if (before) {
+    if (before.had_converted_at) s.converted_from_archive_at = before.converted_from_archive_at;
+    else delete s.converted_from_archive_at;
+    if (before.last_activity_at) s.last_activity_at = before.last_activity_at;
+  }
+  s.updated_at = new Date().toISOString();
+  _save(true, { urgent: true });
+  showToast(`«${name}» به لیست فعال برگشت ✓`, 'success');
+  try { allStudents = await window.api.students.getAll(); } catch (e) {}
+  try { await refreshOpenStudentSurface(); } catch (e) {}
   return true;
 }
 
@@ -12311,7 +12356,6 @@ async function deleteStudent(id) {
     });
     if (choice === 'archive') {
       if (await _archiveStudentWithBalanceConfirm(id, fullName)) {
-        showToast(`${fullName} به بایگانی منتقل شد ✓`, 'success');
         allStudents = await window.api.students.getAll();
         await refreshOpenStudentSurface();
       }
@@ -15924,7 +15968,6 @@ function _openFocusMode(textarea, noteId, field) {
 // ── Archive ────────────────────────────────────────────────────────────────
 async function archiveStudent(id, name) {
   if (!await _archiveStudentWithBalanceConfirm(id, name)) return;
-  showToast(`${name} به بایگانی منتقل شد ✓`, 'success');
   await renderSessions();
 }
 
